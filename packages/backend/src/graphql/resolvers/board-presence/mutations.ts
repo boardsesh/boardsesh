@@ -23,6 +23,7 @@ import { assertBoardCapNotReached } from '../social/board-limits';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite } from '../board-serial-write-lock';
 import { logger } from '../../../utils/logger';
+import { canAccessResourceWithoutLink, canViewResourceLocation } from '../../../services/privacy';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
@@ -136,19 +137,26 @@ export async function reserveAndPersistBoardClimbEvent(
 
 type BoardPresenceCommandDb = Pick<typeof db, 'select' | 'update' | 'insert'>;
 
-function toBoardCandidate(
+/**
+ * A serial is not a board's link, so a candidate carries a board's identity
+ * (uuid, name) only for a caller who may read it without the link: its owner,
+ * an approved grant, follower inheritance, or a Public board. Everyone else gets
+ * the board's geometry with an empty uuid, the projection anonymous
+ * `boardsBySerialNumbers` uses; `chooseBoardForSerial` takes the numeric id.
+ * Location and gym follow the board's location audience on top of that.
+ */
+async function toBoardCandidate(
   candidate: SerialCandidateBoard,
   userId: string,
   lastSentAt: string | null,
-): BoardCandidatePayload {
+): Promise<BoardCandidatePayload> {
   const isOwnedByMe = candidate.ownerId === userId;
-  // Private boards are still findable by serial, but we don't leak their
-  // location to people who neither own them nor would see them publicly.
-  const showLocation = candidate.isPublic || isOwnedByMe;
+  const showIdentity = isOwnedByMe || (await canAccessResourceWithoutLink('board', candidate.uuid, userId));
+  const showLocation = showIdentity && (isOwnedByMe || (await canViewResourceLocation(candidate.uuid, userId)));
   return {
     boardId: candidate.id,
-    boardUuid: candidate.uuid,
-    boardName: showLocation ? candidate.name : candidate.boardType,
+    boardUuid: showIdentity ? candidate.uuid : '',
+    boardName: showIdentity ? candidate.name : candidate.boardType,
     boardType: candidate.boardType,
     layoutId: candidate.layoutId,
     sizeId: candidate.sizeId,
@@ -671,8 +679,10 @@ export const boardPresenceMutations = {
     const lastSent = await lastSentAtByBoardIds(resolution.candidates.map((candidate) => candidate.id));
     return {
       board: null,
-      candidates: resolution.candidates.map((candidate) =>
-        toBoardCandidate(candidate, userId, lastSent.get(candidate.id) ?? null),
+      candidates: await Promise.all(
+        resolution.candidates.map((candidate) =>
+          toBoardCandidate(candidate, userId, lastSent.get(candidate.id) ?? null),
+        ),
       ),
     };
   },

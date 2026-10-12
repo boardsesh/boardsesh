@@ -1155,6 +1155,15 @@ export const socialBoardQueries = {
       throw new Error('Authentication required to perform this operation');
     }
 
+    // The pointer can name a board the caller only reached by its serial (a
+    // connect auto-binds to the one board carrying it). A serial is not that
+    // board's link, so its uuid and slug come back only to a caller who may read
+    // it without the link (owner, approved grant, follower inheritance, Public);
+    // anyone else keeps the recorded configuration alone.
+    const linkedBoardNameable = and(
+      isNotNull(dbSchema.userBoards.id),
+      resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, { allowUnlistedLink: false }),
+    );
     const rows = await db
       .select({
         serialNumber: dbSchema.userBoardSerials.serialNumber,
@@ -1164,8 +1173,10 @@ export const socialBoardQueries = {
         setIds: dbSchema.userBoardSerials.setIds,
         apiLevel: dbSchema.userBoardSerials.apiLevel,
         updatedAt: dbSchema.userBoardSerials.updatedAt,
-        boardUuid: dbSchema.userBoardSerials.boardUuid,
-        boardSlug: dbSchema.userBoards.slug,
+        boardUuid: sql<
+          string | null
+        >`CASE WHEN ${linkedBoardNameable} THEN ${dbSchema.userBoardSerials.boardUuid} ELSE NULL END`,
+        boardSlug: sql<string | null>`CASE WHEN ${linkedBoardNameable} THEN ${dbSchema.userBoards.slug} ELSE NULL END`,
       })
       .from(dbSchema.userBoardSerials)
       .leftJoin(
@@ -1509,9 +1520,9 @@ export const socialBoardQueries = {
     const [board] = await db
       .select({
         id: dbSchema.userBoards.id,
+        uuid: dbSchema.userBoards.uuid,
         boardType: dbSchema.userBoards.boardType,
         layoutId: dbSchema.userBoards.layoutId,
-        isUnlisted: dbSchema.userBoards.isUnlisted,
       })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
@@ -2464,6 +2475,8 @@ export const socialBoardMutations = {
             },
             board.ownerId,
             board.id,
+            // The editor making this change, who may not be the owner, reads the error.
+            userId,
           );
         }
         const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;

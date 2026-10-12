@@ -194,8 +194,22 @@ export function sprayStreamGate(
  * A refused wall must be reported as the caller's "not found", never as an
  * error of its own — otherwise the response is an oracle.
  */
+type SprayBoardRow = { boardType: string; layoutId: number | null };
+/** The `'capability'` reading presents the row's own uuid, so the row must carry it. */
 export async function sprayBoardRowIsReadable(
-  board: { boardType: string; layoutId: number | null; isUnlisted?: boolean | null; uuid?: string },
+  board: SprayBoardRow & { uuid: string },
+  viewerUserId: string | null | undefined,
+  lookupKey: 'capability' | 'enumerable',
+  executor?: Pick<typeof dbRead, 'execute'>,
+): Promise<boolean>;
+export async function sprayBoardRowIsReadable(
+  board: SprayBoardRow,
+  viewerUserId: string | null | undefined,
+  lookupKey: 'enumerable',
+  executor?: Pick<typeof dbRead, 'execute'>,
+): Promise<boolean>;
+export async function sprayBoardRowIsReadable(
+  board: SprayBoardRow & { uuid?: string },
   viewerUserId: string | null | undefined,
   lookupKey: 'capability' | 'enumerable',
   executor: Pick<typeof dbRead, 'execute'> = dbRead,

@@ -42,6 +42,7 @@ import {
 import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { privacyMutations } from '../graphql/resolvers/privacy';
+import { lockAndAssertBoardSerialAvailable } from '../graphql/resolvers/board-serial-write-lock';
 import { projectSessionBoardPath } from '../services/board-session-privacy';
 import { getBoardQueuePreviewSnapshot } from '../services/board-queue-preview';
 import { sessionSubscriptions } from '../graphql/resolvers/sessions/subscriptions';
@@ -276,6 +277,111 @@ describe.each(UNLISTED_SHAPES)('an Unlisted home board (%s)', (_shape, makeUnlis
       );
       expect(authorized).toMatchObject({ uuid: board.uuid, boardId: board.id, name: board.name });
     }
+  });
+
+  it('gives a stranger no link from serial candidates, a remembered serial or the duplicate-serial error', async () => {
+    const board = await makeUnlistedBoard('Serial Candidate Wall');
+    const [stored] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    const config = {
+      boardType: stored.boardType,
+      layoutId: Number(stored.layoutId),
+      sizeId: Number(stored.sizeId),
+      setIds: stored.setIds,
+    };
+    const sharedSerial = `SHARED${counter++}`;
+    await db
+      .update(dbSchema.userBoards)
+      .set({ serialNumber: sharedSerial, locationName: 'Owner garage' })
+      .where(eq(dbSchema.userBoards.id, board.id));
+    // The stranger registers their own wall on the same controller serial
+    // (createBoard's allowDuplicateSerial), which forces the candidate list.
+    await db.insert(dbSchema.userBoards).values({
+      uuid: uuidv4(),
+      slug: `${PREFIX}stranger-dup-${counter++}`,
+      ownerId: STRANGER,
+      boardType: config.boardType,
+      layoutId: config.layoutId,
+      sizeId: config.sizeId + 1,
+      setIds: config.setIds,
+      name: 'Stranger duplicate',
+      isPublic: true,
+      serialNumber: sharedSerial,
+    });
+    await grant(board, GRANTEE);
+
+    const candidatesFor = async (userId: string) => {
+      const result = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+        undefined,
+        { serial: sharedSerial, ...config },
+        authCtx(userId),
+      );
+      return result.candidates ?? [];
+    };
+    const strangerCandidates = await candidatesFor(STRANGER);
+    const hiddenCandidate = strangerCandidates.find((candidate) => candidate.boardId === board.id);
+    expect(hiddenCandidate).toMatchObject({
+      boardUuid: '',
+      boardName: config.boardType,
+      locationName: null,
+      gymName: null,
+      isOwnedByMe: false,
+    });
+    for (const secret of [board.uuid, board.slug, board.name, 'Owner garage']) {
+      expect(JSON.stringify(strangerCandidates)).not.toContain(secret);
+    }
+    for (const userId of [OWNER, GRANTEE]) {
+      const held = (await candidatesFor(userId)).find((candidate) => candidate.boardId === board.id);
+      expect(held).toMatchObject({ boardUuid: board.uuid, boardName: board.name });
+    }
+
+    // One board on the serial: the stranger's connect binds to it, and the
+    // remembered pointer stays server-side.
+    const soloSerial = `SOLO${counter++}`;
+    await db.update(dbSchema.userBoards).set({ serialNumber: soloSerial }).where(eq(dbSchema.userBoards.id, board.id));
+    for (const userId of [OTHER_STRANGER, GRANTEE]) {
+      const resolved = await boardPresenceMutations.resolveBoardCandidatesForSerial(
+        undefined,
+        { serial: soloSerial, ...config },
+        authCtx(userId),
+      );
+      expect(resolved.board?.boardId).toBe(board.id);
+    }
+    const [outsider] = await socialBoardQueries.myBoardSerialConfigs(
+      null,
+      { serialNumbers: [soloSerial] },
+      authCtx(OTHER_STRANGER),
+    );
+    expect(outsider).toMatchObject({ serialNumber: soloSerial, boardUuid: null, boardSlug: null });
+    const [approved] = await socialBoardQueries.myBoardSerialConfigs(
+      null,
+      { serialNumbers: [soloSerial] },
+      authCtx(GRANTEE),
+    );
+    expect(approved).toMatchObject({ boardUuid: board.uuid, boardSlug: board.slug });
+
+    // Registering another board on that serial and configuration is refused
+    // without naming the existing one to someone who cannot open it.
+    const duplicateError = async (userId: string) => {
+      try {
+        await db.transaction((tx) =>
+          lockAndAssertBoardSerialAvailable(tx, { serialNumber: soloSerial, ...config }, userId),
+        );
+      } catch (error) {
+        return error as { extensions?: Record<string, unknown> };
+      }
+      throw new Error('expected BOARD_SERIAL_EXISTS');
+    };
+    const refused = await duplicateError(STRANGER);
+    expect(refused.extensions?.code).toBe('BOARD_SERIAL_EXISTS');
+    expect(refused.extensions).not.toHaveProperty('boardUuid');
+    expect(refused.extensions).not.toHaveProperty('slug');
+    expect(refused.extensions).not.toHaveProperty('name');
+    expect((await duplicateError(GRANTEE)).extensions).toMatchObject({
+      code: 'BOARD_SERIAL_EXISTS',
+      boardUuid: board.uuid,
+      slug: board.slug,
+      name: board.name,
+    });
   });
 
   it('keeps the changed link only for its actual actor, including creator snapshots and payload rereads', async () => {
@@ -582,6 +688,27 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
       await expect(read(board.id, elsewhere.uuid, ctx)).rejects.toThrow('Board not found');
       await read(board.id, board.uuid, ctx);
     }
+  });
+
+  it('opens its leaderboard by its uuid for anyone, and only to its owner once hidden', async () => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Leaderboard Wall');
+    for (const ctx of [anonCtx(), authCtx(STRANGER), authCtx(OWNER)]) {
+      await expect(
+        socialBoardQueries.boardLeaderboard(null, { input: { boardUuid: board.uuid } }, ctx),
+      ).resolves.toMatchObject({ boardUuid: board.uuid });
+    }
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, board.uuid));
+    for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
+      await expect(
+        socialBoardQueries.boardLeaderboard(null, { input: { boardUuid: board.uuid } }, ctx),
+      ).rejects.toThrow('Board not found');
+    }
+    await expect(
+      socialBoardQueries.boardLeaderboard(null, { input: { boardUuid: board.uuid } }, authCtx(OWNER)),
+    ).resolves.toMatchObject({ boardUuid: board.uuid });
   });
 
   it('never stamps membership through a retained UUID after admin hiding, while its owner keeps access', async () => {

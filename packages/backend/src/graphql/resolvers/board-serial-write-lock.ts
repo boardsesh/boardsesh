@@ -4,6 +4,7 @@ import { normaliseSetIds } from '@boardsesh/board-config';
 import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../db/client';
+import { canAccessResourceWithoutLink } from '../../services/privacy';
 
 export { lockBoardSerialWrite };
 export type { BoardSerialWriteCommandDb };
@@ -22,18 +23,17 @@ type BoardSerialGuardDb = BoardSerialWriteCommandDb & Pick<typeof db, 'select'>;
 /**
  * Raised when a normal board write would recreate the exact cross-owner
  * duplicate that the serial resolver/dedupe treats as one physical wall.
- * Identifying fields stay masked for private boards.
+ * A serial is not a board's link, so the existing board is named (uuid, slug,
+ * name) only when `nameable`: the caller may read it without the link.
  */
-function duplicateSerialAcrossOwnersError(existing: {
-  uuid: string;
-  slug: string;
-  name: string;
-  isPublic: boolean;
-}): GraphQLError {
+function duplicateSerialAcrossOwnersError(
+  existing: { uuid: string; slug: string; name: string },
+  nameable: boolean,
+): GraphQLError {
   return new GraphQLError('That serial is already registered to another board', {
     extensions: {
       code: 'BOARD_SERIAL_EXISTS',
-      ...(existing.isPublic ? { boardUuid: existing.uuid, slug: existing.slug, name: existing.name } : {}),
+      ...(nameable ? { boardUuid: existing.uuid, slug: existing.slug, name: existing.name } : {}),
     },
   });
 }
@@ -48,6 +48,7 @@ export async function lockAndAssertBoardSerialAvailable(
   input: BoardSerialGuardInput,
   ownerId: string,
   excludeBoardId?: number,
+  viewerId: string = ownerId,
 ): Promise<void> {
   if (!input.serialNumber) return;
 
@@ -65,7 +66,6 @@ export async function lockAndAssertBoardSerialAvailable(
       slug: dbSchema.userBoards.slug,
       name: dbSchema.userBoards.name,
       setIds: dbSchema.userBoards.setIds,
-      isPublic: dbSchema.userBoards.isPublic,
     })
     .from(dbSchema.userBoards)
     .where(
@@ -80,5 +80,10 @@ export async function lockAndAssertBoardSerialAvailable(
       ),
     );
   const conflict = otherOwnerBoards.find((row) => normaliseSetIds(row.setIds) === normalizedSetIds);
-  if (conflict) throw duplicateSerialAcrossOwnersError(conflict);
+  if (conflict) {
+    throw duplicateSerialAcrossOwnersError(
+      conflict,
+      await canAccessResourceWithoutLink('board', conflict.uuid, viewerId),
+    );
+  }
 }

@@ -537,17 +537,14 @@ describe('myBoardSerialConfigs privacy', () => {
     expect(results[0].boardSlug).toBeNull();
   });
 
-  it('returns boardSlug=null when the linked board is soft-deleted (leftJoin excludes it)', async () => {
-    // The resolver's leftJoin filters by `isNull(userBoards.deletedAt)`. When
-    // the linked board has been soft-deleted, the join condition fails and
-    // userBoards.slug comes back as null, even though the recording row still
-    // carries its original boardUuid pointer. The recording stays usable as a
-    // fallback (config is intact), it just loses the saved-board linkage.
-    const orphanedRecording = makeRecording({
-      boardUuid: 'deleted-board-uuid',
-      boardSlug: null,
-    });
-    setupDbLeftJoin([orphanedRecording]);
+  it('returns no board link when the linked board is soft-deleted (leftJoin excludes it)', async () => {
+    // The resolver's leftJoin filters by `isNull(userBoards.deletedAt)`, and the
+    // uuid/slug columns are CASE-gated on that joined board being readable to
+    // the caller without its link. A soft-deleted board fails both, so the
+    // recording keeps its configuration as a fallback and loses the saved-board
+    // linkage. (The no-link gate itself is covered against a real database in
+    // unlisted-board-link.test.ts.)
+    setupDbLeftJoin([makeRecording({ boardUuid: null, boardSlug: null })]);
 
     const results = await socialBoardQueries.myBoardSerialConfigs(
       null,
@@ -555,8 +552,7 @@ describe('myBoardSerialConfigs privacy', () => {
       makeAuthCtx('user-1'),
     );
 
-    expect(results[0].boardUuid).toBe('deleted-board-uuid');
-    expect(results[0].boardSlug).toBeNull();
+    expect(results[0]).toMatchObject({ serialNumber: 'SERIAL001', layoutId: 1, boardUuid: null, boardSlug: null });
   });
 });
 
