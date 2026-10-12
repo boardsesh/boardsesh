@@ -15,7 +15,7 @@ import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
 import {
   canReadSocialEntity,
-  canSeeEntityActor,
+  canSeeActorOnEntity,
   notificationPrivacyCondition,
   tickPrivacyCondition,
 } from '../graphql/resolvers/shared/activity-privacy';
@@ -375,9 +375,9 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
 
     // The worker's check before it writes a notification agrees.
-    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
-    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
-    expect(await canSeeEntityActor('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
   });
 
   it("still delivers a deleted author's published climb in a notification, never their draft", async () => {

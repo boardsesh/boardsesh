@@ -624,7 +624,11 @@ describe('proposals', () => {
 
     const vote = (proposalUuid: string) =>
       socialProposalMutations.voteOnProposal(null, { input: { proposalUuid, value: 1 } }, viewer(STRANGER));
-    for (const proposalUuid of proposalUuids) {
+    // A published, listed climb is public whoever set it, so the private
+    // setter's climb is one the voter can read; the draft and the two walls
+    // are not.
+    const privateSetterProposal = proposalUuids[climbs.findIndex((climb) => climb.userId === setter)];
+    for (const proposalUuid of proposalUuids.filter((uuid) => uuid !== privateSetterProposal)) {
       await expect(vote(proposalUuid)).rejects.toThrow('Proposal not found');
     }
     const voteRows = await db
@@ -636,5 +640,6 @@ describe('proposals', () => {
     // A climb the voter can read takes the vote and returns its reason.
     const readable = await vote(PROPOSAL_UUID);
     expect(readable).toMatchObject({ uuid: PROPOSAL_UUID, userVote: 1 });
+    await expect(vote(privateSetterProposal)).resolves.toMatchObject({ uuid: privateSetterProposal, userVote: 1 });
   });
 });
