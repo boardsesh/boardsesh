@@ -10,6 +10,7 @@ export interface TrustedWorkflowRun {
   status: string;
   conclusion: string | null;
   command: 'prepare' | 'tick' | 'plan' | 'qualify' | 'abort' | null;
+  runAttempt: number;
 }
 
 export interface TrustedArtifact {
@@ -60,6 +61,7 @@ export function parseTrustedRun(input: unknown, repository: string, workflow: st
     status: run.status,
     conclusion: run.conclusion as string | null,
     command,
+    runAttempt: githubId(run.run_attempt, 'Workflow run attempt'),
   };
 }
 
@@ -94,6 +96,7 @@ export function parseTrustedArtifact(
 
 export interface StableGithubClient {
   latestSource(): Promise<TrustedArtifact>;
+  source(runId: number): Promise<TrustedArtifact>;
   latestCheckpoint(excludeRunId: number): Promise<TrustedArtifact | null>;
   candidate(runId: number): Promise<TrustedArtifact>;
   downloadArtifact(artifactId: number): Promise<Uint8Array>;
@@ -167,7 +170,120 @@ export function createStableGithubClient(options: {
     throw new Error('Artifact search exceeded 100 pages.');
   }
 
+  async function provedNoWrites(run: TrustedWorkflowRun): Promise<boolean> {
+    if (
+      run.runAttempt !== 1 ||
+      !['failure', 'cancelled', 'timed_out', 'startup_failure'].includes(run.conclusion ?? '')
+    )
+      return false;
+    const jobs: unknown[] = [];
+    let total: number | null = null;
+    for (let page = 1; page <= 100; page++) {
+      const response = object(
+        await api(`/actions/runs/${run.runId}/attempts/1/jobs?per_page=100&page=${page}`),
+        'Attempt jobs',
+      );
+      if (
+        !Array.isArray(response.jobs) ||
+        !Number.isSafeInteger(response.total_count) ||
+        Number(response.total_count) < 0
+      )
+        throw new Error('GitHub attempt jobs have incomplete pagination metadata.');
+      if (total !== null && total !== response.total_count) throw new Error('GitHub attempt job count changed.');
+      total = Number(response.total_count);
+      jobs.push(...response.jobs);
+      if (jobs.length > total) throw new Error('GitHub attempt jobs exceed the reported total.');
+      if (jobs.length === total) break;
+      if (response.jobs.length !== 100 || page === 100) throw new Error('GitHub attempt jobs are incomplete.');
+    }
+    if (jobs.length === 0) return run.conclusion === 'startup_failure';
+    const controllers: Record<string, string> = {
+      prepare: 'Freeze the exact archived bytes',
+      qualify: 'Record blocking QA verdict',
+      tick: 'Judge and apply at most one timed step',
+    };
+    const knownSteps = new Set([
+      'Set up job',
+      'Complete job',
+      'Refuse any ref but main',
+      'Resolve command',
+      'Restore trusted checkpoint and source deployment',
+      'Restore trusted checkpoint and its exact candidate',
+      'Retain preparation checkpoint',
+      'Retain frozen candidate',
+      'Retain final checkpoint even when QA fails',
+      'Collect durable upload leases',
+      'Retain checkpoint and upload leases',
+    ]);
+    const jobNames = new Set<string>();
+    const jobIds = new Set<number>();
+    for (const input of jobs) {
+      const job = object(input, 'Attempt job');
+      const jobId = githubId(job.id, 'Attempt job id');
+      if (jobIds.has(jobId)) return false;
+      jobIds.add(jobId);
+      if (
+        job.run_id !== run.runId ||
+        job.run_attempt !== 1 ||
+        job.head_sha !== run.headSha ||
+        job.run_url !== `${apiBase}/actions/runs/${run.runId}` ||
+        job.status !== 'completed'
+      )
+        return false;
+      if (
+        typeof job.name !== 'string' ||
+        !['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'].includes(job.name) ||
+        jobNames.has(job.name)
+      )
+        return false;
+      jobNames.add(job.name);
+      if (job.conclusion === 'skipped') {
+        if (job.steps !== undefined && (!Array.isArray(job.steps) || job.steps.length !== 0)) return false;
+        continue;
+      }
+      if (
+        job.name === 'smokes' ||
+        job.name === 'boot' ||
+        !['success', 'failure', 'cancelled', 'timed_out'].includes(String(job.conclusion)) ||
+        !Array.isArray(job.steps)
+      )
+        return false;
+      const expectedController = controllers[job.name];
+      let controllerSkipped = expectedController === undefined;
+      const stepNumbers = new Set<number>();
+      for (const inputStep of job.steps) {
+        const step = object(inputStep, 'Attempt job step');
+        const stepNumber = githubId(step.number, 'Attempt job step number');
+        if (stepNumbers.has(stepNumber) || step.status !== 'completed' || typeof step.name !== 'string') return false;
+        stepNumbers.add(stepNumber);
+        if (step.name === expectedController) {
+          if (controllerSkipped || step.conclusion !== 'skipped') return false;
+          controllerSkipped = true;
+        } else if (
+          !knownSteps.has(step.name) &&
+          !/^(?:Post )?(?:Run )?actions\/(?:checkout|setup-node|download-artifact|upload-artifact)@[0-9a-f]{40}$/.test(
+            step.name,
+          )
+        )
+          return false;
+        if (!['success', 'failure', 'cancelled', 'skipped', 'timed_out'].includes(String(step.conclusion)))
+          return false;
+      }
+      if (!controllerSkipped) return false;
+    }
+    return jobNames.size === 6;
+  }
+
   return {
+    async source(runId) {
+      const identifier = githubId(runId, 'Source run id');
+      const run = parseTrustedRun(await api(`/actions/runs/${identifier}`), options.repository, SOURCE_WORKFLOW);
+      if (run.runId !== identifier || run.status !== 'completed' || run.conclusion !== 'success')
+        throw new Error('Source must belong to a successful completed main push deployment.');
+      const artifact = await artifactFor(run, 'mobile-ota-stage');
+      if (artifact === null) throw new Error(`Source run ${identifier} has no staged OTA artifact.`);
+      return artifact;
+    },
     async latestSource() {
       for await (const input of runs(SOURCE_WORKFLOW)) {
         const run = parseTrustedRun(input, options.repository, SOURCE_WORKFLOW);
@@ -195,10 +311,17 @@ export function createStableGithubClient(options: {
         if (run.status !== 'completed')
           throw new Error(`Stable checkpoint run ${run.runId} is still ${run.status}; hold until it finishes.`);
         const artifact = await artifactFor(run, 'mobile-ota-stable-state');
-        if (artifact === null)
+        if (artifact === null) {
+          if (await provedNoWrites(run)) {
+            console.error(
+              `Skipping stable run ${run.runId}: complete first-attempt evidence proves no controller writes.`,
+            );
+            continue;
+          }
           throw new Error(
             `Latest stable checkpoint ${run.runId} has no state artifact; recover that run before releasing.`,
           );
+        }
         return artifact;
       }
       return null;

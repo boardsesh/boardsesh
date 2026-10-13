@@ -983,7 +983,10 @@ state artifact is the authority. The current run is ignored, along with future q
 requested writes that have not started. A future completed or in-progress write run blocks this run;
 dispatch a new controller run so it can read that newer checkpoint. Read-only plans never replace state.
 Missing or unknown future-writer status also blocks recovery. An older unfinished write
-run still blocks recovery. A missing, expired, corrupt or stale latest earlier checkpoint blocks automation, including
+run still blocks recovery. A failed artifact-less first attempt may be skipped only when complete,
+trusted job evidence proves that every controller write step was explicitly skipped. A completed
+`startup_failure` with no jobs can also be skipped. Reruns, incomplete evidence, and any started
+controller write still require recovery. A missing, expired, corrupt or stale latest earlier checkpoint blocks automation, including
 after a failed or cancelled run. Do not substitute an older artifact, reset ownership or guess a baseline.
 Recovery requires the valid latest checkpoint: repair missing state from retained authoritative evidence
 and compare its producer and owned IDs with the live server before retrying. `abort` cannot reconstruct
@@ -1019,6 +1022,28 @@ only when the repository activation variable is true. Planning does not publish 
 Retry with a **new dispatch**, rather than GitHub's Re-run button: mutating run attempts other than one are
 refused so a previous attempt's artifact IDs and ownership evidence are never replaced. Dispatch a new
 `command=tick` to resume recorded work, or a new `command=abort` for explicit recovery.
+
+**Promote a pinned staging export immediately.** To ship approved main bytes at 100% on both
+platforms without waiting for the daily qualification window, select a successful main push
+deployment with its retained `mobile-ota-stage` artifact, then dispatch:
+
+```bash
+gh workflow run mobile-ota-promote-staged.yml --ref main -f source_run_id=<deployment-run-id>
+```
+
+The main-only workflow runs in `Production` and holds `mobile-ota-production` throughout.
+It verifies source-run provenance and receipt SHA, validates both archived exports and their
+fingerprints, and checks both immutable saved production baselines before any unlock. It checks
+the live backend schema against the archived SHA and OTA-server readiness against the controller
+commit, awaits the trusted main-only unlock, then publishes the archived bytes without exporting
+again. The existing promoter checks the saved baselines again after unlock; a changed baseline
+blocks publication rather than being regenerated. The daily cadence and activation switch remain unchanged.
+
+The final summary checks each platform independently for the archived bundle, assets and Expo config,
+including after a partial failure. A failed publication remains failed even if later probes find the
+bytes served. Workflow reruns are refused: inspect both production heads and retained source bytes
+before deciding recovery. A new dispatch still cannot bypass a changed saved baseline. Do not blindly
+retry a partial publication, replace the source receipt, reset controller state or recapture baselines.
 
 #### Promoting to another branch, or as a rollout
 

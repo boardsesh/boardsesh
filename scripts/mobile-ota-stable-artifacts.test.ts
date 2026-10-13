@@ -98,13 +98,15 @@ describe('artifact commands', () => {
     expect(() => parseArtifactArgs(['candidate', '--run-id', '1; injected', '--out', 'out'])).toThrow(
       'positive safe integer',
     );
-    expect(() => parseArtifactArgs(['source', '--run-id', '13', '--out', 'out'])).toThrow('--run-id');
+    expect(parseArtifactArgs(['source', '--run-id', '13', '--out', 'out'])).toMatchObject({ runId: 13 });
+    expect(() => parseArtifactArgs(['state', '--run-id', '13', '--out', 'out'], '14')).toThrow('--run-id');
   });
 
   it('refuses a stage receipt naming a different commit than its trusted deployment', async () => {
     const directory = scratch();
     const zip = makeZip(directory, [{ name: 'receipt.json', content: JSON.stringify({ commitHash: 'b'.repeat(40) }) }]);
     const client: StableGithubClient = {
+      source: vi.fn(),
       latestSource: vi.fn(async () => ({ runId: 12, headSha: 'a'.repeat(40), artifactId: 120 })),
       latestCheckpoint: vi.fn(async () => null),
       candidate: vi.fn(),
@@ -119,6 +121,7 @@ describe('artifact commands', () => {
     const directory = scratch();
     const downloadArtifact = vi.fn();
     const client: StableGithubClient = {
+      source: vi.fn(),
       latestSource: vi.fn(),
       latestCheckpoint: vi.fn(async () => null),
       candidate: vi.fn(),
@@ -134,5 +137,25 @@ describe('artifact commands', () => {
     });
     expect(downloadArtifact).not.toHaveBeenCalled();
     expect(existsSync(output)).toBe(false);
+  });
+
+  it('downloads a pinned source without selecting the latest deployment', async () => {
+    const directory = scratch();
+    const headSha = 'a'.repeat(40);
+    const zip = makeZip(directory, [{ name: 'receipt.json', content: JSON.stringify({ commitHash: headSha }) }]);
+    const source = vi.fn(async () => ({ runId: 12, headSha, artifactId: 120 }));
+    const latestSource = vi.fn();
+    const client: StableGithubClient = {
+      source,
+      latestSource,
+      latestCheckpoint: vi.fn(),
+      candidate: vi.fn(),
+      downloadArtifact: vi.fn(async () => new Uint8Array(readFileSync(zip))),
+    };
+    await expect(
+      downloadStableArtifact(parseArtifactArgs(['source', '--run-id', '12', '--out', join(directory, 'out')]), client),
+    ).resolves.toMatchObject({ found: true, runId: 12, headSha });
+    expect(source).toHaveBeenCalledWith(12);
+    expect(latestSource).not.toHaveBeenCalled();
   });
 });

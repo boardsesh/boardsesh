@@ -1,0 +1,88 @@
+name: Promote Staged OTA
+run-name: Promote staged OTA ${{ inputs.source_run_id }}
+
+# Production deployment branch policy must allow main only.
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful main push deployment whose archived bytes should ship.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment: Production
+    permissions:
+      contents: read
+      actions: write # Dispatch and await the trusted main-only unlock.
+    concurrency:
+      group: mobile-ota-production
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+      - name: Refuse blind workflow retries after possible partial writes
+        if: github.run_attempt != 1
+        run: exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Restore pinned trusted staging artifact
+        id: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          source="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts source --run-id "$SOURCE_RUN_ID" --out ota-stage)"
+          echo "source_sha=$(jq -er .headSha <<< "$source")" >> "$GITHUB_OUTPUT"
+      - name: Validate both archived exports before unlocking
+        id: preflight
+        env:
+          SOURCE_SHA: ${{ steps.artifacts.outputs.source_sha }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+        run: node --experimental-strip-types scripts/mobile-ota-promote-staged.ts preflight --stage ota-stage --source-sha "$SOURCE_SHA"
+      - name: Require live backend schema for the archived source
+        env:
+          GITHUB_SHA: ${{ steps.artifacts.outputs.source_sha }}
+        run: node scripts/mobile-ota-schema-ready.mjs
+      - name: Wait for the OTA server rollout on the controller commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/mobile-ota-server-ready.mjs
+      - name: Await trusted main-only production unlock
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OTA_BRANCH: production
+          IOS_RUNTIME_VERSION: ${{ steps.preflight.outputs.ios_runtime }}
+          ANDROID_RUNTIME_VERSION: ${{ steps.preflight.outputs.android_runtime }}
+        run: node scripts/mobile-ota-unlock-wait.mjs
+      - name: Promote exact staged iOS and Android exports to production
+        id: promote
+        env:
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+        run: >-
+          node --experimental-strip-types scripts/mobile-ota-promote.ts
+          --receipt ota-stage/receipt.json
+          --ios-export ota-stage/ios
+          --android-export ota-stage/android
+      - name: Report each platform even after a partial promotion
+        if: always() && steps.promote.outcome != 'skipped' && steps.preflight.outcome == 'success'
+        env:
+          SOURCE_SHA: ${{ steps.artifacts.outputs.source_sha }}
+          PROMOTION_OUTCOME: ${{ steps.promote.outcome }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+        run: node --experimental-strip-types scripts/mobile-ota-promote-staged.ts report --stage ota-stage --source-sha "$SOURCE_SHA"

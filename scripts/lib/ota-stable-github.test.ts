@@ -14,6 +14,7 @@ const headSha = 'a'.repeat(40);
 const nowMs = Date.parse('2026-10-09T00:00:00Z');
 const runInput = (runId: number, workflow = STABLE_WORKFLOW, overrides: Record<string, unknown> = {}) => ({
   id: runId,
+  run_attempt: 1,
   path: workflow,
   head_branch: 'main',
   head_sha: headSha,
@@ -38,8 +39,11 @@ const artifactInput = (runId: number, name: string, overrides: Record<string, un
 function mockClient(responses: Record<string, unknown>) {
   const fetchImpl = vi.fn<typeof fetch>(async (input) => {
     const requestUrl = input instanceof Request ? input.url : input;
-    const pathname = new URL(requestUrl).pathname;
-    const matched = Object.entries(responses).find(([suffix]) => pathname.endsWith(suffix));
+    const request = new URL(requestUrl);
+    const pathname = request.pathname;
+    const matched = Object.entries(responses).find(([suffix]) =>
+      suffix.includes('?') ? `${pathname}${request.search}`.endsWith(suffix) : pathname.endsWith(suffix),
+    );
     if (!matched) throw new Error(`Unexpected API request: ${pathname}`);
     return new Response(JSON.stringify(matched[1]));
   });
@@ -106,7 +110,282 @@ describe('trusted workflow and artifact provenance', () => {
   });
 });
 
+const jobInput = (runId: number, name: string, steps: string[] = [], overrides: Record<string, unknown> = {}) => ({
+  id: runId * 100 + ['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'].indexOf(name),
+  run_id: runId,
+  run_attempt: 1,
+  head_sha: headSha,
+  run_url: `https://api.github.com/repos/${repository}/actions/runs/${runId}`,
+  name,
+  status: 'completed',
+  conclusion: steps.length === 0 ? 'skipped' : name === 'resolve' ? 'success' : 'failure',
+  steps: steps.map((name, index) => ({
+    name,
+    number: index + 1,
+    status: 'completed',
+    conclusion: [
+      'Freeze the exact archived bytes',
+      'Record blocking QA verdict',
+      'Judge and apply at most one timed step',
+    ].includes(name)
+      ? 'skipped'
+      : name.startsWith('Restore trusted checkpoint') || name === 'Retain final checkpoint even when QA fails'
+        ? 'failure'
+        : 'success',
+  })),
+  ...overrides,
+});
+
+function failedJobs(runId: number, command = 'tick') {
+  return ['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'].map((name) => {
+    const commonSteps = [
+      'Set up job',
+      'Run actions/checkout@' + 'a'.repeat(40),
+      'Run actions/setup-node@' + 'b'.repeat(40),
+    ];
+    if (name === 'resolve') return jobInput(runId, name, ['Set up job', 'Resolve command', 'Complete job']);
+    if (command === 'prepare' && name === 'prepare')
+      return jobInput(runId, name, [
+        ...commonSteps,
+        'Restore trusted checkpoint and source deployment',
+        'Freeze the exact archived bytes',
+        'Retain preparation checkpoint',
+        'Retain frozen candidate',
+        'Complete job',
+      ]);
+    if (command === 'prepare' && name === 'qualify')
+      return jobInput(runId, name, [
+        ...commonSteps,
+        'Run actions/download-artifact@' + 'c'.repeat(40),
+        'Run actions/download-artifact@' + 'c'.repeat(40),
+        'Record blocking QA verdict',
+        'Retain final checkpoint even when QA fails',
+        'Complete job',
+      ]);
+    if (command !== 'prepare' && name === 'tick')
+      return jobInput(runId, name, [
+        ...commonSteps,
+        'Restore trusted checkpoint and its exact candidate',
+        'Judge and apply at most one timed step',
+        'Collect durable upload leases',
+        'Retain checkpoint and upload leases',
+        'Post Run actions/setup-node@' + 'b'.repeat(40),
+        'Post Run actions/checkout@' + 'a'.repeat(40),
+        'Complete job',
+      ]);
+    return jobInput(runId, name);
+  });
+}
+
+describe('missing checkpoint recovery', () => {
+  it('bootstraps through the complete prepare/tick failure chain back to an empty startup failure', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [
+          runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' }),
+          runInput(13, STABLE_WORKFLOW, { conclusion: 'failure', display_title: 'OTA stable prepare' }),
+          runInput(12, STABLE_WORKFLOW, { conclusion: 'startup_failure' }),
+        ],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/13/artifacts': { artifacts: [] },
+      'runs/12/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': { total_count: 6, jobs: failedJobs(14) },
+      'runs/13/attempts/1/jobs': { total_count: 6, jobs: failedJobs(13, 'prepare') },
+      'runs/12/attempts/1/jobs': { total_count: 0, jobs: [] },
+    });
+    await expect(client.latestCheckpoint(15)).resolves.toBeNull();
+    expect(stderr.mock.calls.map(([message]) => String(message))).toEqual([
+      expect.stringContaining('run 14'),
+      expect.stringContaining('run 13'),
+      expect.stringContaining('run 12'),
+    ]);
+    stderr.mockRestore();
+  });
+
+  it('restores older durable state after proven pre-write failures', async () => {
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' }), runInput(13)],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': { total_count: 6, jobs: failedJobs(14) },
+      'runs/13/artifacts': { artifacts: [artifactInput(13, 'mobile-ota-stable-state')] },
+    });
+    await expect(client.latestCheckpoint(15)).resolves.toMatchObject({ runId: 13 });
+  });
+
+  it.each([
+    [
+      'started writer',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].steps[4].conclusion = 'success';
+      },
+    ],
+    [
+      'missing controller step',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].steps.splice(4, 1);
+      },
+    ],
+    [
+      'unknown step',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].steps[0].name = 'New writer';
+      },
+    ],
+    [
+      'wrong run',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].run_id = 13;
+      },
+    ],
+    [
+      'wrong attempt',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].run_attempt = 2;
+      },
+    ],
+    [
+      'wrong SHA',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].head_sha = 'c'.repeat(40);
+      },
+    ],
+    [
+      'wrong URL',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].run_url = 'https://api.github.com/repos/attacker/repo/actions/runs/14';
+      },
+    ],
+    [
+      'unfinished job',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].status = 'in_progress';
+      },
+    ],
+    [
+      'missing job',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs.pop();
+      },
+    ],
+    [
+      'duplicate job',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[5] = jobs[4];
+      },
+    ],
+    [
+      'duplicate step',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[3].steps[1].number = 1;
+      },
+    ],
+    [
+      'unknown job',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[5].name = 'new-writer';
+      },
+    ],
+  ])('holds after %s', async (_label, mutate) => {
+    const jobs = failedJobs(14);
+    mutate(jobs);
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' }), runInput(13)],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': { total_count: jobs.length, jobs },
+    });
+    await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
+  });
+
+  it.each(['failure', 'cancelled', 'timed_out'])('holds zero-job %s runs', async (conclusion) => {
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': { workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion })] },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': { total_count: 0, jobs: [] },
+    });
+    await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
+  });
+
+  it.each([undefined, 0, 2])('holds missing or repeated run attempt %s', async (run_attempt) => {
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [runInput(14, STABLE_WORKFLOW, { run_attempt, conclusion: 'startup_failure' })],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+    });
+    await expect(client.latestCheckpoint(15)).rejects.toThrow();
+  });
+
+  it('reads every attempt jobs page before refusing unknown evidence', async () => {
+    const { client, fetchImpl } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' })],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs?per_page=100&page=1': {
+        total_count: 101,
+        jobs: Array.from({ length: 100 }, (_, index) => jobInput(14, 'unknown', [], { id: index + 1 })),
+      },
+      'runs/14/attempts/1/jobs?per_page=100&page=2': { total_count: 101, jobs: [jobInput(14, 'tick')] },
+    });
+    await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    { jobs: [] },
+    { total_count: 6, jobs: failedJobs(14).slice(0, 5) },
+    { total_count: 5, jobs: failedJobs(14) },
+  ])('holds incomplete job pagination %j', async (response) => {
+    const { client } = mockClient({
+      'mobile-ota-stable-release.yml/runs': {
+        workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' })],
+      },
+      'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': response,
+    });
+    await expect(client.latestCheckpoint(15)).rejects.toThrow(/pagination|incomplete|reported total/);
+  });
+});
+
 describe('newest eligible artifact selection', () => {
+  it('pins a successful main deployment and validates its staged artifact provenance', async () => {
+    const { client } = mockClient({
+      'actions/runs/14': runInput(14, SOURCE_WORKFLOW),
+      'runs/14/artifacts': { artifacts: [artifactInput(14, 'mobile-ota-stage')] },
+    });
+    await expect(client.source(14)).resolves.toEqual({ runId: 14, headSha, artifactId: 140 });
+  });
+
+  it.each([
+    { id: 13 },
+    { event: 'workflow_dispatch' },
+    { head_branch: 'feature' },
+    { conclusion: 'failure' },
+    { status: 'in_progress', conclusion: null },
+    { head_repository: { full_name: 'attacker/repo' } },
+  ])('refuses an untrusted pinned source %j', async (overrides) => {
+    const { client } = mockClient({ 'actions/runs/14': runInput(14, SOURCE_WORKFLOW, overrides) });
+    await expect(client.source(14)).rejects.toThrow();
+  });
+
+  it.each([
+    { artifacts: [] },
+    { artifacts: [artifactInput(14, 'mobile-ota-stage', { expired: true })] },
+    { artifacts: [artifactInput(13, 'mobile-ota-stage')] },
+  ])('refuses missing, expired, or unrelated pinned stage artifacts %j', async ({ artifacts }) => {
+    const { client } = mockClient({
+      'actions/runs/14': runInput(14, SOURCE_WORKFLOW),
+      'runs/14/artifacts': { artifacts },
+    });
+    await expect(client.source(14)).rejects.toThrow();
+  });
+
   it('ignores queued future runs and the current run while restoring the latest older checkpoint', async () => {
     const { client, fetchImpl } = mockClient({
       'mobile-ota-stable-release.yml/runs': {
@@ -188,9 +467,10 @@ describe('newest eligible artifact selection', () => {
         ],
       },
       'runs/14/artifacts': { artifacts: [] },
+      'runs/14/attempts/1/jobs': { total_count: 0, jobs: [] },
     });
     await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it('skips failed and non-OTA deployments, returning the latest complete stage', async () => {
@@ -248,9 +528,10 @@ describe('newest eligible artifact selection', () => {
           workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion }), runInput(13)],
         },
         'runs/14/artifacts': { artifacts: [] },
+        'runs/14/attempts/1/jobs': { total_count: 0, jobs: [] },
       });
       await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(fetchImpl).toHaveBeenCalledTimes(conclusion === 'success' ? 2 : 3);
     },
   );
 

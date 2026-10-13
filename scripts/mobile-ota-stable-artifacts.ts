@@ -92,7 +92,8 @@ export function parseArtifactArgs(argv: readonly string[], currentRunId?: string
   if (!out) throw new Error('--out is required.');
   const runId = options.get('--run-id');
   const excludeRunId = options.get('--exclude-run-id') ?? (command === 'state' ? currentRunId : undefined);
-  if ((command === 'candidate') !== (runId !== undefined)) throw new Error('--run-id is required only for candidate.');
+  if (command === 'candidate' && runId === undefined) throw new Error('--run-id is required for candidate.');
+  if (command === 'state' && runId !== undefined) throw new Error('--run-id applies only to source or candidate.');
   if (command === 'state' && excludeRunId === undefined)
     throw new Error('state requires --exclude-run-id or GITHUB_RUN_ID.');
   if (command !== 'state' && options.has('--exclude-run-id'))
@@ -118,7 +119,8 @@ export async function downloadStableArtifact(
   client: StableGithubClient,
 ): Promise<ArtifactResult> {
   let artifact: TrustedArtifact | null;
-  if (options.command === 'source') artifact = await client.latestSource();
+  if (options.command === 'source')
+    artifact = options.runId === null ? await client.latestSource() : await client.source(options.runId);
   else if (options.command === 'state')
     artifact = await client.latestCheckpoint(githubId(options.excludeRunId, 'Excluded run id'));
   else artifact = await client.candidate(githubId(options.runId, 'Candidate run id'));

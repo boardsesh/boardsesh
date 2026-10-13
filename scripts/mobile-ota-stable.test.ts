@@ -815,6 +815,14 @@ describe('checkpoint file and command safety', () => {
     expect(retained.active).toEqual(options.state.active);
     expect(retained.candidate).toEqual(options.state.candidate);
   });
+  it('retains an initial checkpoint after a proven first run even when admin initialization fails', () => {
+    const { root } = fixture();
+    const path = join(root, 'state.json');
+    const execution = invokeWithoutAdmin(path, root, { loadedProducer: '0' });
+    expect(execution.status).toBe(1);
+    expect(execution.stderr).toContain('Set OTA_ADMIN_EMAIL and OTA_ADMIN_PASSWORD');
+    expect(readState(path)).toEqual({ ...initialStableState(), checkpointRunId: '202' });
+  });
   it.each([
     { overrides: { ref: 'refs/heads/other' }, error: 'Only trusted main can apply' },
     { overrides: { loadedProducer: '199' }, error: 'Checkpoint producer differs' },

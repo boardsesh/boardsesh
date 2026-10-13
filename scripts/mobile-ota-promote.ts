@@ -330,7 +330,7 @@ export async function captureProductionBaseline(options: {
   return baseline;
 }
 
-async function verifyServedExport(
+export async function verifyServedExport(
   manifestUrl: string,
   exportFiles: ValidatedExport,
   runtimeVersion: string,
