@@ -2427,7 +2427,7 @@ export function rotationDegreesForIosOrientation(orientation: IosDeviceOrientati
   return orientation === 'LANDSCAPE_LEFT' ? -90 : null;
 }
 
-function renderedFlowFileForIosDevice(
+export function renderedFlowFileForIosDevice(
   options: ScreenshotOptions,
   screenshotDevice: IosScreenshotDevice,
   captureDir: string,
@@ -2441,7 +2441,9 @@ function renderedFlowFileForIosDevice(
     // Inline the existing ten-shot flow: Maestro resolves relative subflows from
     // this temporary directory, where the committed app-store.yaml does not live.
     const legacyCommands = readFileSync(join(MAESTRO_DIR, 'app-store.yaml'), 'utf8').split('\n---\n')[1];
-    source = source.replace('- runFlow: app-store.yaml', legacyCommands);
+    // A replacement string expands $' in single-quoted regex anchors into the
+    // campaign suffix. The callback inserts the legacy YAML bytes literally.
+    source = source.replace('- runFlow: app-store.yaml', () => legacyCommands);
   }
   if (options.cpp && options.cpp !== 'all')
     source = renderCppMaestroFlow(
