@@ -6,10 +6,12 @@ import { GET_MY_BOARDS, SEARCH_CLIMBS } from '../../packages/mobile/src/lib/grap
 import { GET_BETA_LINKS } from '../../packages/shared/graphql/src/operations/beta-links';
 import { GET_CLIMB_PROPOSALS } from '../../packages/shared/graphql/src/operations/proposals';
 import { CLIMB_STATS_HISTORY } from '../../packages/shared/graphql/src/operations/climb-stats-history';
+import { CONFIRM_CLIMB_ON_WALL } from '../../packages/shared/graphql/src/operations/queue-session';
 import { CPP_BOOTSTRAP_PROFILE_QUERY, createTransport, resolveBootstrapUpstream } from '../bootstrap-cpp-scenario';
 import { createScreenshotBackend, readScreenshotFixtureManifest } from './screenshot-backend';
 import { isCppClimbId, isCppTarget, readCppPage, type CppBoard } from './screenshot-cpp';
 import { assertCppGradeCountProof } from './cpp-grade-count';
+import { isCppWallConfirmation } from './screenshot-campaign-session';
 import {
   canonicalJson,
   finalizeRecordingFrozenNow,
@@ -322,6 +324,29 @@ export function resolveCppDetailReads(
     }
   }
   if (!reads.size || reads.size > 21) throw new Error('CPP detail reads exceed the selected scene scope');
+  if (coverage.target !== 'spray') {
+    const sessionId = manifest.capture.sharedSessionId;
+    const queue = fixtures.find(
+      (fixture) =>
+        fixture.operationName === 'QueueUpdates' &&
+        record(fixture.variables) &&
+        fixture.variables.sessionId === sessionId,
+    );
+    const state = queue ? fields(queue, 'queueUpdates').state : undefined;
+    const current = record(state) ? state.currentClimbQueueItem : undefined;
+    // Evaluate the existing source contract only; never send this hardware mutation.
+    if (
+      !record(current) ||
+      !record(current.climb) ||
+      !isCppWallConfirmation(
+        CONFIRM_CLIMB_ON_WALL,
+        { climbUuid: current.climb.uuid, queueItemUuid: current.uuid },
+        manifest,
+        fixtures,
+      )
+    )
+      throw new Error('CPP detail source lacks the genuine owned leader primary queue');
+  }
   for (const expected of reads.values()) {
     const fixture = fixtures.find(
       (candidate) =>

@@ -1199,7 +1199,8 @@ jobs:
     timeout-minutes: 65
     strategy:
       fail-fast: false
-      max-parallel: 8
+      # Recording shards share one owned session; avoid competing leader connections.
+      max-parallel: ${{ inputs.fixtures == 'record' && 1 || 8 }}
       matrix: ${{ fromJSON(needs.setup.outputs.cpp_matrix) }}
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com

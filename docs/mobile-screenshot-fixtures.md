@@ -36,6 +36,15 @@ The source roster and search responses must prove each selected board and climb.
 The scope is six selected hero climbs plus the optional distinct accessory:
 at most 21 detail queries. Explicitly empty spray wall editor scenes are skipped.
 
+CPP recording shards run one at a time because they join the same private
+session; replay keeps eight parallel shards. Before authenticating or preparing
+manufacturer detail coverage, the recorded primary queue must satisfy the
+existing strict owned leader predicate, including positive JoinSession and
+account-participant leadership. This check sends no wall-confirmation request.
+The newest genuine merged response must pass; older positive snapshots never
+repair a newer negative result. Empty spray editor scenes retain their explicit
+no-JoinSession behavior.
+
 The recorder extends a temporary copy, preserves the original fixture and static
 bytes, and advances `frozenNow` using actual response timestamps. Existing exact
 responses are retained; collisions, missing responses, malformed data, changed

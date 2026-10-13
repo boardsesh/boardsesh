@@ -5,10 +5,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse, getOperationAST } from 'graphql';
-import { GET_MY_BOARDS, SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
+import {
+  GET_MY_BOARDS,
+  SEARCH_CLIMBS,
+  QUEUE_UPDATES_SUBSCRIPTION,
+} from '../../packages/mobile/src/lib/graphql/operations';
+import { JOIN_SESSION } from '../../packages/shared/graphql/src/operations/queue-session';
 import { resolveCppDetailReads, withCppDetailCoverage } from '../lib/cpp-detail-coverage';
 import { readCppPage, type CppTarget } from '../lib/screenshot-cpp';
 import { prepareCppCampaignFixtures } from '../prepare-ios-campaign-fixtures';
+import { mergeFixtureSets, graphqlFixtureContentHash } from '../screenshot-fixtures-merge';
 import {
   graphqlFixtureKey,
   finalizeRecordingFrozenNow,
@@ -79,6 +85,7 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
                   : `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
               readyText: `Scene ${index + 1}`,
               gradeLabel: 'V3',
+              statsAngle: boards[index].angle,
             },
           ];
         }),
@@ -156,11 +163,54 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
               name: climb.readyText,
               frames: 'p1r12p2r13p3r14',
               statsAngle: board.angle,
+              boardType: board.boardType,
+              layoutId: board.layoutId,
+              angle: board.angle,
             })),
           },
         },
       },
     );
+  }
+  if (target !== 'spray') {
+    const board = boards[variants.findIndex((variant) => variant.id === page.primaryBoard.id)];
+    const hero = coverage.heroClimbs[page.primaryBoard.id];
+    const sessionId = manifest.capture!.sharedSessionId!;
+    const boardPath = [board.boardType, board.layoutId, board.sizeId, board.setIds, board.angle].join('/');
+    const item = {
+      uuid: '50000000-0000-4000-8000-000000000001',
+      climb: {
+        uuid: hero.climbId,
+        boardType: board.boardType,
+        layoutId: board.layoutId,
+        angle: board.angle,
+        frames: 'p1r12p2r13p3r14',
+      },
+    };
+    const state = { queue: [item], currentClimbQueueItem: item };
+    Object.assign(coverage.scenes, {
+      search: { boardId: board.uuid, readyText: 'Filters' },
+      queue: { boardId: board.uuid, sessionId, readyText: hero.readyText },
+      status: { boardId: board.uuid, climbId: hero.climbId, readyText: hero.readyText },
+      island: { boardId: board.uuid, readyText: hero.readyText },
+    });
+    append(
+      JOIN_SESSION,
+      { sessionId, boardPath, username: 'Liz', avatarUrl: null },
+      {
+        data: {
+          joinSession: {
+            id: sessionId,
+            boardPath,
+            isPublic: false,
+            isLeader: true,
+            users: [{ userId: owner, isLeader: true }],
+            queueState: structuredClone(state),
+          },
+        },
+      },
+    );
+    append(QUEUE_UPDATES_SUBSCRIPTION, { sessionId }, { data: { queueUpdates: { __typename: 'FullSync', state } } });
   }
   return { manifest, fixtures, boards, append };
 }
@@ -395,6 +445,121 @@ describe('CPP selected detail source evidence', () => {
 });
 
 describe('CPP genuine detail recording and candidate preparation', () => {
+  it('rejects the newest negative JoinSession kept by the real merge before authentication and candidate output', async () => {
+    const api = await upstream();
+    const older = sample('kilter');
+    const newest = sample('kilter');
+    const negative = newest.fixtures.find((fixture) => fixture.operationName === 'JoinSession')!;
+    const joined = (
+      negative.response as { data: { joinSession: { isLeader: boolean; users: { isLeader: boolean }[] } } }
+    ).data.joinSession;
+    joined.isLeader = false;
+    joined.users[0].isLeader = false;
+    negative.recordedAt = '2026-10-12T00:00:02Z';
+    newest.manifest.frozenNow = '2026-10-12T00:00:03Z';
+    const sources = [older, newest];
+    const before = sources.map((source) => JSON.stringify(source.fixtures));
+    const merged = mergeFixtureSets(
+      sources.map((source, index) => ({
+        label: String(index),
+        manifest: source.manifest,
+        contentHashes: new Map(
+          source.manifest.graphql.map((entry, fixtureIndex) => [
+            entry.file,
+            graphqlFixtureContentHash(source.fixtures[fixtureIndex]),
+          ]),
+        ),
+        graphqlRecordedAt: new Map(
+          source.manifest.graphql.map((entry, fixtureIndex) => [entry.file, source.fixtures[fixtureIndex].recordedAt]),
+        ),
+      })),
+      { onConflict: 'newest' },
+    );
+    const mergedSource = {
+      ...newest,
+      manifest: merged.manifest,
+      fixtures: merged.manifest.graphql.map((entry) => {
+        const source = sources[Number(merged.sources.get(entry.file))];
+        return source.fixtures[source.manifest.graphql.findIndex((candidate) => candidate.file === entry.file)];
+      }),
+    };
+    const retained = mergedSource.fixtures.find((fixture) => fixture.operationName === 'JoinSession')!;
+    expect(retained).toBe(negative);
+    expect(merged.conflicts.find((conflict) => conflict.key.startsWith('JoinSession'))).toMatchObject({
+      took: '1',
+      over: '0',
+      tookRecordedAt: negative.recordedAt,
+    });
+    const { input, output } = save(
+      {
+        ...mergedSource,
+        manifest: structuredClone(mergedSource.manifest),
+        fixtures: structuredClone(mergedSource.fixtures),
+      },
+      api.origin,
+    );
+    const manifestBefore = readFileSync(join(input, 'manifest.json'));
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'owned leader',
+    );
+    expect(api.authRequests).toBe(0);
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+    expect(readFileSync(join(input, 'manifest.json'))).toEqual(manifestBefore);
+    expect(joined.isLeader).toBe(false);
+    expect(joined.users[0].isLeader).toBe(false);
+    expect(sources.map((source) => JSON.stringify(source.fixtures))).toEqual(before);
+  });
+  it('prepares an explicitly empty spray editor without introducing a native JoinSession requirement', async () => {
+    const api = await upstream();
+    const source = sample('spray', true);
+    expect(source.fixtures.some((fixture) => fixture.operationName === 'JoinSession')).toBe(false);
+    const { input, output } = save(source, api.origin);
+    // Keep the existing private-photo transformation; this test isolates its verified input.
+    await withCppDetailCoverage(input, { upstream: api.origin, email, password }, async (recording) => {
+      const manifest = JSON.parse(readFileSync(join(recording, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+      expect(manifest.graphql.filter((entry) => entry.operationName === 'GetBetaLinks')).toHaveLength(3);
+      expect(manifest.graphql.some((entry) => entry.operationName === 'JoinSession')).toBe(false);
+      expect(manifest.capture).toEqual(source.manifest.capture);
+      expect(existsSync(output)).toBe(false);
+    });
+    expect(api.authRequests).toBe(1);
+    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(9);
+  });
+  it.each(['join false', 'participant false', 'missing JoinSession', 'missing QueueUpdates', 'complete resume false'])(
+    'rejects manufacturer leader source %s before any authentication or detail query',
+    async (reason) => {
+      const api = await upstream();
+      const source = sample('moonboard');
+      if (reason === 'complete resume false')
+        for (const request of resolveCppDetailReads(source.manifest, source.fixtures))
+          source.append(
+            request.query,
+            request.variables,
+            pseudonymiseResponse({ data: reply(request.operationName, request.variables) }, { ownUserId: owner })
+              .response,
+          );
+      const joinedFixture = source.fixtures.find((fixture) => fixture.operationName === 'JoinSession')!;
+      const joined = (
+        joinedFixture.response as { data: { joinSession: { isLeader: boolean; users: { isLeader: boolean }[] } } }
+      ).data.joinSession;
+      if (reason === 'participant false') joined.users[0].isLeader = false;
+      else if (reason.startsWith('missing ')) {
+        const operation = reason.slice('missing '.length);
+        source.fixtures = source.fixtures.filter((fixture) => fixture.operationName !== operation);
+        source.manifest.graphql = source.manifest.graphql.filter((entry) => entry.operationName !== operation);
+      } else joined.isLeader = false;
+      const { input, output } = save(source, api.origin);
+      const before = readFileSync(join(input, 'manifest.json'));
+      await expect(
+        prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password }),
+      ).rejects.toThrow('owned leader');
+      expect(api.authRequests).toBe(0);
+      expect(api.requests).toHaveLength(0);
+      expect(existsSync(output)).toBe(false);
+      expect(readFileSync(join(input, 'manifest.json'))).toEqual(before);
+    },
+  );
   it.each(['manifest', 'fixture', 'ambient scenario'])(
     'refuses malformed %s with a bounded error before authentication',
     async (kind) => {

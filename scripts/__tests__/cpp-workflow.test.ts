@@ -18,6 +18,7 @@ interface WorkflowJob {
   needs?: string | string[];
   environment?: string;
   if?: string;
+  strategy?: { 'max-parallel'?: number | string };
 }
 const workflow = parse(readFileSync('.github/workflows/mobile-screenshots-ios.yml', 'utf8')) as {
   jobs: Record<string, WorkflowJob>;
@@ -56,6 +57,11 @@ function compute(overrides: NodeJS.ProcessEnv = {}) {
 }
 
 describe('CPP workflow isolation and matrix', () => {
+  it('serializes only CPP record shards sharing an owned session and preserves eight parallel replay shards', () => {
+    expect(workflow.jobs['cpp-capture'].strategy?.['max-parallel']).toBe(
+      "${{ inputs.fixtures == 'record' && 1 || 8 }}",
+    );
+  });
   it.each([4, 3, 0, 5])('discovers exactly four genuine shard manifests without rg (downloaded: %i)', (count) => {
     const directory = mkdtempSync(join(tmpdir(), 'cpp-manifest-discovery-'));
     directories.push(directory);
