@@ -48,48 +48,62 @@ modes. Review complete replay captures before uploading them.
 
 ## Generate Header and Search Results stills
 
-Use the original PNG directory for the matching device and locale:
+Record fresh native captures for every app locale (`en-US`, `es`, `fr`, `de`).
+Use the original PNG directory for the matching variant, device and locale:
 
 ```bash
-vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-creatives/en-US --device iphone-16-pro --locale en-US
+vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-creatives --device iphone-16-pro --locale en-US --variant default
+vp run store:creatives -- --input app-stores/apple/cpp/kilter/raw-screenshots/en-US/iphone-16-pro --output .boardsesh/app-store-creatives --device iphone-16-pro --locale en-US --variant kilter
 ```
 
-For an English campaign capture, `<rawdevice>` is
-`app-stores/apple/raw-screenshots/en-US/iphone-16-pro`.
-The generator also accepts `--device iphone-16-pro-max` when the source captures
-are from that device. It requires these unframed source images:
+`--variant` accepts `default`, `kilter`, `tension`, `moonboard`, and `spray`;
+omitting it selects `default`. The output is always
+`<output>/<variant>/<app-locale>/`. Both iPhone 16 Pro and iPhone 16 Pro Max
+native sources are supported. The default needs unframed `00-board-view.png`
+(Kilter), `14-spray-board-view.png` (the permitted Home Spray Wall), and
+`10-moonboard-board-view.png` (MoonBoard). Each CPP needs its own
+`hero-1.png`, `hero-2.png`, and `hero-3.png`; the generator reads the existing
+CPP opening recipe rather than substituting the default campaign trio.
 
-- `00-board-view.png`: Kilter.
-- `10-moonboard-board-view.png`: MoonBoard.
-- `14-spray-board-view.png`: the permitted Home Spray Wall, showing Black Pearl.
-
-The output contains `header.png` at 3840 × 1646, `search-results.png` at
-3840 × 2560, and `creative-assets.json`. Both PNGs are opaque. The manifest
-records locale, capture device, source hashes and byte counts, plus output
-dimensions and hashes. Retain it with the review artifacts; it is not an image
-to upload to Apple. These dimensions follow Apple's
+The output contains opaque `header.png` at 3840 × 1646,
+`search-results.png` at 3840 × 2560, and `creative-assets.json`. The manifest
+records variant, locale, capture device, source hashes and byte counts, CPP
+manifest hash, composition geometry, and output dimensions and hashes.
+Retain it with review artifacts; it is not an image to upload to Apple.
+These dimensions follow Apple's
 [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications).
 
-Header and Search Results use three overlapping native captures: Kilter on the
-left, the spray wall in the center foreground, and MoonBoard on the right.
-Board-name overlays are omitted so native UI remains unobscured. The exact
-spray source is required; missing it fails export. These independently sized
-compositions echo the first portrait. The output
-directory must be separate from the inputs and outside
-`app-stores/apple/screenshots/`, so the screenshot uploader cannot confuse a
-creative placement with a device screenshot.
+Header has no added text or wordmark. Its native hero is 640 px wide, centered
+at x=1920 with top y=40. Rear phones are 560 px wide, centered at x=1320 and
+x=2520 with top y=100. The background is `#110A20`, with a `#7C3AED` glow at
+50% / 45%; native panels retain the violet border and shadow. Kilter shows
+Homewall 7x10, Original 12x12 in front, and Homewall 10x10. Tension and MoonBoard
+use their own CPP hero trio. Spray keeps its own three native walls, places Liz's
+Wall in front, and overlaps a framed `lizfinal.JPG` photograph dimmed with a 30%
+black overlay. Only the spray CPP receives this extra photograph. Its original
+hash, byte count, and consent reminder stay in the export manifest; preserve the
+user-supplied campaign consent record with the reviewed assets.
+
+The central core is x=1280–2560; the intended square crop is x=1097–2743.
+The top y=0–250 and lower y=1150–1646 overlay regions are assumptions pending
+App Store Connect Preview. Inspect every variant there before approval;
+source dimensions and correct geometry alone do not establish overlay safety.
+Search Results retains localized copy and the matching variant's original
+three-board recipe. Both placements keep native app pixels unchanged.
+The output directory must be separate from the inputs and outside default or
+CPP screenshot upload trees.
 
 ## Localization and visual review
 
 | Native app / caption locale | Apple locale     | Creative output directory              |
 | --------------------------- | ---------------- | -------------------------------------- |
-| `en-US`                     | `en-US`          | `.boardsesh/app-store-creatives/en-US` |
-| `es`                        | `es-ES`, `es-MX` | `.boardsesh/app-store-creatives/es`    |
-| `fr`                        | `fr-FR`          | `.boardsesh/app-store-creatives/fr`    |
-| `de`                        | `de-DE`          | `.boardsesh/app-store-creatives/de`    |
+| `en-US`                     | `en-US`          | `.boardsesh/app-store-creatives/<variant>/en-US` |
+| `es`                        | `es-ES`, `es-MX` | `.boardsesh/app-store-creatives/<variant>/es`    |
+| `fr`                        | `fr-FR`          | `.boardsesh/app-store-creatives/<variant>/fr`    |
+| `de`                        | `de-DE`          | `.boardsesh/app-store-creatives/<variant>/de`    |
 
-Repeat the render command with the matching `--locale`, source directory and
-output directory. Translated captions must sit over UI captured in that language;
+Repeat capture and render for every variant with the matching `--locale` and
+source directory. Translated Search Results captions must sit over UI captured in that language;
 the CLI's locale selects copy and does not translate the source pixels. Follow
 the [Spanish](i18n-spanish-glossary.md), [French](i18n-french-glossary.md) and
 [German](i18n-german-glossary.md) glossaries. Keep manufacturer names unchanged
@@ -106,7 +120,7 @@ The Home Spray Wall and Black Pearl hold arrangement match the website video
 references `marketing/showcase-video/reference/ios/spray.jpg` and
 `marketing/showcase-video/reference/ios/boards-spray.jpg`; the fresh native
 `14-spray-board-view.png` supplies the first portrait’s center panel, the second portrait’s spray shot
-and these placements.
+and the default variant’s placements. CPP placements use their separately recorded hero sources.
 Existing showcase footage or website images are visual references, not proof
 that a fresh release capture has passed review. Keep URLs, other marketplace
 branding and donation messages out of the Apple compositions. Apple's

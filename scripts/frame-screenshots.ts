@@ -251,6 +251,59 @@ export const STORE_CREATIVE_PLACEMENTS = {
 } as const;
 export type StoreCreativePlacement = keyof typeof STORE_CREATIVE_PLACEMENTS;
 
+/** Header art carries native content only; Apple's overlay supplies the listing copy. */
+export async function frameStoreHeader(
+  sources: readonly Buffer[],
+  options: { sprayPhoto?: Buffer } = {},
+): Promise<Buffer> {
+  if (sources.length !== 3) throw new Error('Header requires three native board captures');
+  const dimensions = sources.map(readPngDimensions);
+  if (dimensions.some((size) => size.width !== dimensions[0].width || size.height !== dimensions[0].height))
+    throw new Error('Header sources must come from the same capture device');
+  const { width, height } = STORE_CREATIVE_PLACEMENTS.header;
+  const background = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs><radialGradient id="glow"><stop stop-color="#7C3AED" stop-opacity="0.23"/><stop offset="1" stop-color="#110A20" stop-opacity="0"/></radialGradient></defs>
+    <rect width="100%" height="100%" fill="#110A20"/>
+    <ellipse cx="50%" cy="45%" rx="45%" ry="65%" fill="url(#glow)"/>
+  </svg>`);
+  const layers: sharp.OverlayOptions[] = [];
+  if (options.sprayPhoto) {
+    // This photograph is scenery, never a substituted native app screen.
+    const photo = await sharp(options.sprayPhoto).rotate().resize(1280, 1450, { fit: 'cover' }).png().toBuffer();
+    const dimmed = await sharp(photo)
+      .composite([
+        {
+          input: Buffer.from(
+            '<svg width="1280" height="1450" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="black" fill-opacity="0.3"/></svg>',
+          ),
+        },
+      ])
+      .png()
+      .toBuffer();
+    layers.push({
+      input: await renderNativePanel({ raw: dimmed, left: 0, top: 0, width: 1280 }, height),
+      left: 1280,
+      top: 80,
+    });
+  }
+  for (const [sourceIndex, center] of [
+    [0, 1320],
+    [2, 2520],
+  ] as const) {
+    layers.push({
+      input: await renderNativePanel({ raw: sources[sourceIndex], left: 0, top: 0, width: 560 }, height),
+      left: center - 280,
+      top: 100,
+    });
+  }
+  layers.push({
+    input: await renderNativePanel({ raw: sources[1], left: 0, top: 0, width: 640 }, height),
+    left: 1920 - 320,
+    top: 40,
+  });
+  return sharp(background).composite(layers).flatten({ background: '#110A20' }).removeAlpha().png().toBuffer();
+}
+
 /** Load pinned faces through Pango, including the italic face used inside a headline. */
 export async function renderShowcaseText(
   text: string,
@@ -305,6 +358,7 @@ export async function frameShowcaseComposition(
   if (sourceSizes.some((size) => size.width !== sourceSize.width || size.height !== sourceSize.height))
     throw new Error('Showcase sources must come from the same capture device');
   if (options.placement && !boards) throw new Error('Creative placements require the three-board opening');
+  if (options.placement === 'header') return frameStoreHeader(sources);
   const { width, height } = options.placement ? STORE_CREATIVE_PLACEMENTS[options.placement] : sourceSize;
   const wide = width > height;
   const tablet = wide && !options.placement;

@@ -5,9 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderStoreCreatives, parseCreativeArguments } from '../app-store-creatives';
+import { renderStoreCreatives, parseCreativeArguments, STORE_CREATIVE_VARIANTS } from '../app-store-creatives';
+import { CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
 import { extractScreenshotIsland } from '../lib/screenshot-island';
-import { frameShowcaseComposition, renderShowcaseText, STORE_CREATIVE_PLACEMENTS } from '../frame-screenshots';
+import {
+  frameShowcaseComposition,
+  frameStoreHeader,
+  renderShowcaseText,
+  STORE_CREATIVE_PLACEMENTS,
+} from '../frame-screenshots';
 import {
   CAPTION_LOCALES,
   IOS_CAMPAIGN_CAPTURE_NAMES,
@@ -231,19 +237,20 @@ describe('multiboard App Store campaign', () => {
     );
     writeFileSync(join(input, names[1]), raw);
     const saved = await renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' });
-    expect(saved.map((pathname) => pathname.slice(output.length + 1))).toEqual(['header.png', 'search-results.png']);
+    const localizedOutput = join(output, 'default', 'en-US');
+    expect(saved).toEqual(['header.png', 'search-results.png'].map((name) => join(localizedOutput, name)));
     for (const [placement, dimensions] of Object.entries(STORE_CREATIVE_PLACEMENTS)) {
-      const rendered = readFileSync(join(output, `${placement}.png`));
+      const rendered = readFileSync(join(localizedOutput, `${placement}.png`));
       expect(await sharp(rendered).metadata()).toMatchObject({ ...dimensions, hasAlpha: false });
     }
-    const manifest = JSON.parse(readFileSync(join(output, 'creative-assets.json'), 'utf8')) as {
+    const manifest = JSON.parse(readFileSync(join(localizedOutput, 'creative-assets.json'), 'utf8')) as {
       sources: Record<string, { sha256: string }>;
       assets: Array<{ file: string; sha256: string }>;
     };
     expect(Object.keys(manifest.sources)).toEqual(names);
     expect(manifest.sources[names[0]].sha256).toBe(sha256Screenshot(raw));
     for (const asset of manifest.assets)
-      expect(asset.sha256).toBe(sha256Screenshot(readFileSync(join(output, asset.file))));
+      expect(asset.sha256).toBe(sha256Screenshot(readFileSync(join(localizedOutput, asset.file))));
     await expect(
       renderStoreCreatives({
         input,
@@ -256,6 +263,89 @@ describe('multiboard App Store campaign', () => {
       renderStoreCreatives({ input, output: input, locale: 'en-US', device: 'iphone-16-pro' }),
     ).rejects.toThrow('separate');
   }, 60_000);
+
+  it.each(CPP_TARGETS.flatMap((variant) => CAPTION_LOCALES.map((locale) => [variant, locale] as const)))(
+    'exports the %s CPP from its own fresh %s sources',
+    async (variant, locale) => {
+      const input = directory();
+      const output = directory();
+      const raw = await capture();
+      for (const name of ['hero-1.png', 'hero-2.png', 'hero-3.png']) writeFileSync(join(input, name), raw);
+      const saved = await renderStoreCreatives({ input, output, locale, variant, device: 'iphone-16-pro' });
+      expect(saved).toEqual(['header.png', 'search-results.png'].map((name) => join(output, variant, locale, name)));
+      const manifest = JSON.parse(readFileSync(join(output, variant, locale, 'creative-assets.json'), 'utf8')) as {
+        variant: string;
+        locale: string;
+        cppManifestSha256: string;
+        sources: Record<string, { sha256: string }>;
+        header: { textless: boolean; sourceOrder: string[]; needsAppStoreConnectPreview: boolean };
+        photo?: { file: string; sha256: string; dimOpacity: number; consent: string };
+      };
+      expect(manifest).toMatchObject({
+        variant,
+        locale,
+        header: { textless: true, needsAppStoreConnectPreview: true },
+      });
+      expect(manifest.cppManifestSha256).toMatch(/^[a-f0-9]{64}$/);
+      const recipe = readCppPage(variant).recipes.phone[0];
+      expect(Object.keys(manifest.sources)).toEqual(recipe.sources);
+      expect(manifest.header.sourceOrder).toEqual(
+        variant === 'spray' ? ['hero-2.png', 'hero-1.png', 'hero-3.png'] : recipe.sources,
+      );
+      if (variant === 'spray') {
+        expect(manifest.photo).toMatchObject({ file: readCppPage('spray').primaryBoard.photo, dimOpacity: 0.3 });
+        expect(manifest.photo?.consent).toContain('consent record');
+        expect(manifest.photo?.sha256).toBe(sha256Screenshot(readFileSync(readCppPage('spray').primaryBoard.photo!)));
+      } else expect(manifest.photo).toBeUndefined();
+      for (const savedFile of saved) expect(await sharp(savedFile).metadata()).toMatchObject({ hasAlpha: false });
+      await expect(
+        renderStoreCreatives({
+          input,
+          output: `app-stores/apple/cpp/${variant}/screenshots/${locale}`,
+          locale,
+          variant,
+          device: 'iphone-16-pro',
+        }),
+      ).rejects.toThrow('screenshot upload tree');
+    },
+    60_000,
+  );
+
+  it('centers textless header panels with complete native footer pixels', async () => {
+    const colors = ['#ff0000', '#00ff00', '#0000ff'];
+    const sources = await Promise.all(
+      colors.map((color) =>
+        sharp({ create: { width: 1206, height: 2622, channels: 3, background: color } })
+          .png()
+          .toBuffer(),
+      ),
+    );
+    const header = await frameStoreHeader(sources);
+    expect(await sharp(header).metadata()).toMatchObject({ ...STORE_CREATIVE_PLACEMENTS.header, hasAlpha: false });
+    const pixels = await sharp(header).removeAlpha().raw().toBuffer();
+    const pixel = (left: number, top: number) => [
+      ...pixels.subarray((top * 3840 + left) * 3, (top * 3840 + left) * 3 + 3),
+    ];
+    // Inside the true native panels, including their lower native content.
+    expect(pixel(1320, 200)).toEqual([255, 0, 0]);
+    expect(pixel(1920, 200)).toEqual([0, 255, 0]);
+    expect(pixel(2520, 200)).toEqual([0, 0, 255]);
+    expect(pixel(1320, 1280)).toEqual([255, 0, 0]);
+    expect(pixel(1920, 1400)).toEqual([0, 255, 0]);
+    expect(pixel(2520, 1280)).toEqual([0, 0, 255]);
+    expect(pixel(0, 0)).toEqual([17, 10, 32]);
+    const sprayHeader = await frameStoreHeader(sources, { sprayPhoto: sources[0] });
+    const photoPixels = await sharp(sprayHeader)
+      .extract({ left: 1920, top: 1500, width: 1, height: 1 })
+      .removeAlpha()
+      .raw()
+      .toBuffer();
+    // A real, dimmed photo remains visible below the native foreground capture.
+    expect(photoPixels[0]).toBeGreaterThan(170);
+    expect(photoPixels[0]).toBeLessThan(190);
+    expect([...photoPixels.subarray(1)]).toEqual([0, 0]);
+    await expect(frameStoreHeader(sources.slice(0, 2))).rejects.toThrow('three native');
+  });
 
   it('rejects compressed video frames, blank images and mismatched devices', async () => {
     const input = directory();
@@ -341,6 +431,9 @@ describe('multiboard App Store campaign', () => {
       'es',
     ];
     expect(parseCreativeArguments(args)).toMatchObject({ locale: 'es', device: 'iphone-16-pro' });
+    for (const variant of STORE_CREATIVE_VARIANTS)
+      expect(parseCreativeArguments([...args, '--variant', variant])).toMatchObject({ variant });
+    expect(() => parseCreativeArguments([...args, '--variant', 'woods'])).toThrow('Usage');
     expect(() => parseCreativeArguments(args.slice(0, -2))).toThrow('Usage');
     expect(() => parseCreativeArguments([...args, '--locale', 'en-US'])).toThrow('Invalid');
     expect(() => parseCreativeArguments([...args.slice(0, -1), 'it'])).toThrow('Usage');
