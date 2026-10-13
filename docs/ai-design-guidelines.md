@@ -455,9 +455,11 @@ draws that block (`HeaderControls`), and the list pads its top by the persistent
 height. The disclosed grade row is drawn below that measurement, inside the full background and
 touch surface, so showing or hiding it leaves the list's spacing and scroll position unchanged.
 
-**On iOS 26 the block floats without a continuous blur.** Individual filter capsules and
-Profile's segmented control keep their native glass surfaces. List content remains sharp between
-and beneath them, matching the GitHub app's floating filter row. UIKit owns the navigation bar's
+**On iOS 26 the block floats without a continuous blur.** Individual filter capsules keep their
+native glass surfaces. List content remains sharp between and beneath them, matching the GitHub
+app's floating filter row. Profile's translucent segmented track has a local opaque
+`systemColors.background` backing so list text cannot cross its tab labels; child filter capsules
+remain outside that backing. UIKit owns the navigation bar's
 scroll-edge material, status area and action lenses above the supplementary controls.
 
 The control block stays below the native bar as its title collapses. Opening the grade row does

@@ -53,9 +53,23 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scroll-tabs': true }, children),
-  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: typeof ctrl.materialMeasure }) => {
+  View: ({
+    children,
+    onLayout,
+    style,
+  }: {
+    children?: ReactNode;
+    onLayout?: typeof ctrl.materialMeasure;
+    style?: unknown;
+  }) => {
     if (onLayout) ctrl.materialMeasure = onLayout;
-    return createElement('div', null, children);
+    return createElement(
+      'div',
+      {
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    );
   },
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
@@ -73,7 +87,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { label: '#000', separator: '#ccc', fill: '#eee' },
+    systemColors: { label: '#000', separator: '#ccc', fill: '#eee', background: '#010203' },
     brandColors: { primary: '#6D28D9' },
     m3: { primary: '#6750A4', onSurfaceVariant: '#49454F', outlineVariant: '#CAC4D0' },
     variant: ctrl.variant,
@@ -257,7 +271,26 @@ describe('ProfileTopChrome', () => {
       expect(segments.entries.at(-1)!.trackColor).toBe('transparent');
     });
 
-    it('lets the segmented control float over the list unless the caller opts out', () => {
+    it('backs the profile tabs locally and keeps child filter controls outside the backing', () => {
+      const onSelectTab = vi.fn();
+      const { container, getByText } = render(
+        <ProfileTopChrome {...makeProps({ onSelectTab })}>
+          <span>Filter capsules</span>
+        </ProfileTopChrome>,
+      );
+      const segmentCarrier = container.querySelector('[data-segmented]')?.parentElement;
+      expect(JSON.parse(segmentCarrier?.getAttribute('data-style') ?? '{}')).toMatchObject({
+        backgroundColor: '#010203',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+      });
+      expect(segmentCarrier?.contains(getByText('Filter capsules'))).toBe(false);
+      expect(container.querySelector('[data-glass="true"]')).toBeNull();
+      segments.entries.at(-1)!.onSelect('logbook');
+      expect(onSelectTab).toHaveBeenCalledWith('logbook');
+    });
+
+    it('leaves the wider supplementary control block transparent unless the caller opts out', () => {
       render(<ProfileTopChrome {...makeProps()} />);
       expect(ctrl.glassOpaqueControls).toBeUndefined();
     });
