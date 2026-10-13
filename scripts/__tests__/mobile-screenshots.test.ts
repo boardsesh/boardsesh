@@ -38,6 +38,7 @@ import {
   isIpadScreenshotDevice,
   parseArgs,
   renderMaestroFlowForIosDevice,
+  renderedFlowFileForIosDevice,
   resolveAppStoreLocaleTargets,
   resolveAppPath,
   resolveIosScreenshotDevices,
@@ -407,6 +408,27 @@ describe('iOS campaign capture', () => {
       }),
     ).toMatch(/app-store-ipad\.yaml$/);
   });
+
+  it.each(phoneDevices.flatMap((device) => allAppLocales.map((locale) => ({ device, locale }))))(
+    'preserves literal readiness selectors in the assembled $device/$locale campaign',
+    ({ device, locale }) => {
+      const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-campaign-flow-'));
+      try {
+        const [screenshotDevice] = resolveIosScreenshotDevices([device]);
+        const flowPath = renderedFlowFileForIosDevice(options, screenshotDevice, captureDir, locale);
+        const rendered = readFileSync(flowPath, 'utf8');
+        const documents = parseAllDocuments(rendered);
+        for (const document of documents) expect(document.errors).toEqual([]);
+        expect(documents).toHaveLength(2);
+        expect(rendered).toContain("id: '^cpp-climb-painted-.+$'");
+        expect(rendered).not.toContain('- runFlow: app-store.yaml');
+        const captures = [...rendered.matchAll(/^- takeScreenshot: ([^\n]+)/gm)].map((match) => `${match[1]}.png`);
+        expect(captures.sort()).toEqual([...IOS_CAMPAIGN_CAPTURE_NAMES].sort());
+      } finally {
+        rmSync(captureDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('captures all eighteen sources without optional skipping of campaign images', () => {
     const legacy = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
