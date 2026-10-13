@@ -56,7 +56,7 @@ async function insertClimb({
   holds,
   isDraft = false,
   isHidden = false,
-  isListed = true,
+  isListed = null,
   userId = null,
   publishedAt = null,
 }: ClimbSeed): Promise<void> {

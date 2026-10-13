@@ -414,10 +414,9 @@ export async function findSimilarClimbs({
           AND h.hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND c.layout_id = ${layoutId}
           AND c.is_draft = FALSE
-          -- Listed means IS TRUE, the one definition search and feeds use
-          -- (publicClimbCondition). A NULL-listed row is unlisted there, so
-          -- it is unlisted here too. Only the duplicate gate above stays looser.
-          AND c.is_listed IS TRUE
+          -- IS NOT FALSE rather than = true so we include rows where Aurora
+          -- left is_listed NULL (most kilter/tension Aurora-synced climbs).
+          AND c.is_listed IS NOT FALSE
           -- Discovery only. The duplicate GATE (findExactDuplicateMatch) is
           -- deliberately blind to is_hidden: hiding a junk climb must not free up
           -- its holds for someone to republish the same thing hold for hold.

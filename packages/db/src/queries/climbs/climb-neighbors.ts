@@ -284,9 +284,7 @@ export async function getMaterializedSimilarClimbs(
       AND ${boardClimbNeighbors.climbUuid} = ${climbUuid}
       AND ${boardClimbs.layoutId} = ${layoutId}
       AND ${boardClimbs.isDraft} = FALSE
-      -- Listed means IS TRUE, as in publicClimbCondition: a NULL-listed
-      -- climb is unlisted to search and feeds, so it is here too.
-      AND ${boardClimbs.isListed} IS TRUE
+      AND ${boardClimbs.isListed} IS NOT FALSE
       AND ${boardClimbs.isHidden} = FALSE
       ${sizeId !== undefined ? sql`AND COALESCE(${boardClimbs.compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]` : sql``}
       AND ${climbReferenceReadableCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
