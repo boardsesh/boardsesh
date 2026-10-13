@@ -1,0 +1,90 @@
+name: Apple Manual Release Control
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mobile-store-release-control.yml'
+      - 'fastlane/lib/store_release_control.rb'
+      - 'fastlane/tests/store_release_control_test.rb'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact editable iOS marketing version to hold for manual release'
+        type: string
+        required: true
+        default: '2.6.0'
+      ios_build:
+        description: 'Exact attached iOS build number'
+        type: string
+        required: true
+        default: '17'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'mobile-store-draft' || format('mobile-store-release-control-validation-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - name: Test release control without store credentials
+        run: vp exec ruby fastlane/tests/store_release_control_test.rb
+  set-manual:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Test identity, race, and write guards
+        run: vp exec ruby fastlane/tests/store_release_control_test.rb
+      - name: Set and read back manual Apple release
+        working-directory: fastlane
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          IOS_BUILD_NUMBER: ${{ inputs.ios_build }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          STORE_RELEASE_CONTROL_OUTPUT: ${{ runner.temp }}/store-release-control.json
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$ASC_PRIVATE_KEY_BASE64" ] || { echo '::error::Missing ASC credentials'; exit 1; }
+          ASC_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-release-control-key.XXXXXX.p8")
+          export ASC_KEY_PATH
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          chmod 600 "$ASC_KEY_PATH"
+          printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+          bundle exec ruby lib/store_release_control.rb
+      - name: Retain release control readback receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-release-control
+          path: ${{ runner.temp }}/store-release-control.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -427,7 +427,9 @@ function createClient(): RetainedCppClient {
   return {
     json: (path) => json(run([path])),
     pages: (path, field) => list(json(run(['--paginate', '--slurp', path]))).flatMap((page) => list(page[field])),
-    bytes: (path) => run([path]),
+    // Logs contain ANSI escapes and ZIPs are arbitrary bytes. Capture them only
+    // into a Buffer for verification; never render this raw content in a terminal.
+    bytes: (path) => run(['--allow-escape-sequences', path]),
     isAncestor: (producerSha, preparerSha) => {
       try {
         execFileSync('git', ['merge-base', '--is-ancestor', producerSha, preparerSha], { stdio: 'pipe' });

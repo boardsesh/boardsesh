@@ -328,7 +328,7 @@ function createGoogleServiceAccountJwt(
   return `${signingInput}.${signer.sign(serviceAccount.private_key).toString('base64url')}`;
 }
 
-async function createGoogleAccessToken(serviceAccount: GoogleServiceAccount): Promise<string> {
+export async function createGoogleAccessToken(serviceAccount: GoogleServiceAccount): Promise<string> {
   const assertion = createGoogleServiceAccountJwt(serviceAccount);
   const response = await fetch(serviceAccount.token_uri, {
     method: 'POST',

@@ -1,7 +1,6 @@
 Neu in 2.6:
-- Spraywände: Fotografier deine Wand, die App findet die Griffe, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie. Keine LEDs nötig.
-- Live-Sessions deiner Crew auf Start, ihre Begehungen bei jedem Boulder.
-- Ein Pausen-Timer ab deiner Begehung, der die Warteschlange weiterschaltet.
-- Als Nächstes dran: Boulder gedrückt halten.
-- Die anderen Boards deiner Halle: ein Tipp im Wand-Sheet.
-- Geteilte Boulder-Links öffnen direkt in der App.
+- Spraywand aus einem Foto: Griffe prüfen, Boulder erstellen und Begehungen loggen. Herunterladen und ohne Empfang klettern.
+- Live-Sessions deiner Crew und ihre Einträge bei jedem Boulder.
+- Pausen-Timer mit automatischem Weiterschalten bei geöffneter App.
+- Wähle die Details unter jedem Boulder. Füge Playlists hinzu, ohne die Warteschlange zu leeren.
+- MoonBoard nutzt seine V-Skala. Routenbuch-Importe lesen mehr CSV-Formate.

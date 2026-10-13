@@ -1,0 +1,91 @@
+name: App Store Review Submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Plan or submit initial/ready drafts; resolve rejections in App Store Connect'
+        type: choice
+        options: [plan, submit]
+        default: plan
+      surfaces:
+        description: 'Comma-separated selection: default,kilter,tension,moonboard,spray'
+        type: string
+        required: true
+        default: default
+      version:
+        description: 'Exact App Store marketing version'
+        type: string
+        required: true
+        default: '2.6.0'
+      ios_build:
+        description: 'Expected attached iOS build'
+        type: string
+        required: true
+        default: '17'
+      snapshot_sha256:
+        description: 'Required for submit: SHA-256 from the visually reviewed plan artifact'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-store-draft
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Test submission guards
+        run: |
+          vp exec ruby fastlane/tests/store_audit_test.rb
+          vp exec ruby fastlane/tests/store_review_submission_test.rb
+      - name: Plan or submit reviewed Apple surfaces
+        working-directory: fastlane
+        env:
+          REVIEW_ACTION: ${{ inputs.action }}
+          REVIEW_SURFACES: ${{ inputs.surfaces }}
+          REVIEW_SNAPSHOT_SHA256: ${{ inputs.snapshot_sha256 }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          IOS_BUILD_NUMBER: ${{ inputs.ios_build }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          STORE_REVIEW_OUTPUT: ${{ runner.temp }}/store-review.json
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$ASC_PRIVATE_KEY_BASE64" ] || { echo '::error::Missing ASC credentials'; exit 1; }
+          ASC_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-review-key.XXXXXX.p8")
+          export ASC_KEY_PATH
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          chmod 600 "$ASC_KEY_PATH"
+          printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+          bundle exec fastlane ios review_submission "action:$REVIEW_ACTION" "surfaces:$REVIEW_SURFACES"
+      - name: Retain reviewed snapshot and submission receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-review
+          path: ${{ runner.temp }}/store-review.json
+          if-no-files-found: warn
+          retention-days: 30

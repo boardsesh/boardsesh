@@ -6,9 +6,9 @@ Boardsesh es compatible con Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone
 TU MURO DE SPRAY, TAMBIÉN
 ¿Un muro de casa, o un muro de spray en tu rocódromo? Fotografíalo y Boardsesh sugiere presas a partir de la foto. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el muro por enlace y tu equipo también podrá montar en él. ¿Has desmontado el muro? Resetéalo con una foto nueva y el muro anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado.
 
-HISTORIAL DEL MURO, SIEMPRE ACTIVO
+HISTORIAL DEL MURO
 Si compartes muro, enseguida pierdes la cuenta del último bloque, y siempre hay alguien que lo borra sin querer.
-En Boardsesh cada plafón al que te conectas tiene un feed en directo de lo que hay encendido en ese muro ahora mismo: el nombre del bloque, quién lo encendió, quién lo montó, el grado y el ángulo, y los encadenes recientes. Se actualiza según cambia el muro, así que siempre sabes qué hay puesto.
+Consulta los bloques iluminados con Boardsesh en ese plafón: el nombre, quién lo iluminó, quién lo montó, el grado y el ángulo, y los encadenes recientes.
 
 SESIONES CON TU EQUIPO
 Abre una sesión y tú y tu equipo compartís una cola que cualquiera puede llevar. Cualquiera enciende el siguiente bloque en el muro. Al terminar te llevas un resumen y el seguimiento: encadenes e intentos, reparto de grados, tu bloque más duro y el progreso a lo largo del tiempo.

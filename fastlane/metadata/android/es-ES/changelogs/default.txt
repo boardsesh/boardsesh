@@ -1,7 +1,6 @@
 Novedades de 2.6:
-- Muros de spray: fotografía tu muro, la app halla las presas y montas, pones en cola y registras bloques. No hacen falta LED.
-- Las sesiones de tu crew en Inicio y sus registros en cada bloque.
-- Temporizador de descanso que empieza al registrar un bloque y puede pasar la cola.
-- Poner a continuación: mantén pulsado un bloque para saltarte la cola.
-- Los demás plafones de tu rocódromo, a un toque en el panel del muro.
-- Los enlaces de bloques compartidos se abren en la app.
+- Añade un muro de spray desde una foto, revisa las presas, monta bloques y registra encadenes. Descárgalo para escalar sin cobertura.
+- Encuentra sesiones de tu crew y sus registros en cada bloque.
+- Temporizador de descanso con avance automático de la cola mientras la app esté abierta.
+- Elige los detalles bajo cada bloque. Añade playlists sin vaciar la cola.
+- MoonBoard usa su escala V. Importa logbooks en más formatos CSV.
