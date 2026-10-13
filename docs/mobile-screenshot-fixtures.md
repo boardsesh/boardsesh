@@ -271,6 +271,15 @@ enable general WebSocket recording or change ordinary record/replay behavior.
 Use [CPP bootstrap and capture](app-store-custom-product-pages.md#genuine-capture-data-comes-first)
 for the account, permanent-session, and scenario prerequisites.
 
+In CPP record mode, a genuine grade-count response can arrive after the phone's
+interactive request deadline. Once its exact recorded proof is available, a
+missing native subtitle allows at most three attempts to close and reopen the
+real Filters sheet through the existing `search-results` and `search-grade`
+commands. Each attempt checks the acknowledged route, selected grade bounds and
+fresh sequence-bound proof, then waits up to 30 seconds for the exact native
+count. A missing count or invalid proof still blocks capture. Replay flows keep
+their existing count gate and do not remount the sheet.
+
 An optional manifest `capture` object selects the existing Android campaign
 scenario automatically. The campaign bundle carries:
 

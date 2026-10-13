@@ -184,6 +184,161 @@ function readinessCommandTransport() {
 }
 
 describe('custom product page captures', () => {
+  it('recovers a missing recorded count through at most three real sheet remounts and fresh sequence-bound proof', () => {
+    for (const target of CPP_TARGETS) {
+      const { coverage } = selectedScenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const documents = parseAllDocuments(renderCppMaestroFlow(target, device, coverage, locale, true));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          const index = steps.findIndex(
+            (step) => (step.retry as { maxRetries?: number } | undefined)?.maxRetries === 2,
+          );
+          expect(index).toBeGreaterThan(0);
+          expect(JSON.stringify(steps[index - 1])).toContain('/grade-count?sequence=');
+          const recovery = steps[index].retry as {
+            maxRetries: number;
+            commands: [{ runFlow: { when: unknown; commands: Record<string, unknown>[] } }, unknown, unknown];
+          };
+          expect(recovery.maxRetries).toBe(2);
+          expect(recovery.commands[0].runFlow.when).toEqual({ notVisible: '${output.cppGradeCount.selector}' });
+          expect(recovery.commands[1]).toEqual({
+            assertTrue: `\${output.cppGradeCount.sequence == output.cppSequence && output.cppGradeCount.locale == '${locale}' && output.cppGradeCount.proof.totalCount > 0}`,
+          });
+          expect(recovery.commands[2]).toEqual({
+            extendedWaitUntil: { visible: '${output.cppGradeCount.selector}', timeout: 30000 },
+          });
+          const nativeSteps = recovery.commands[0].runFlow.commands;
+          const selectors = cppGradeFilterSelectors(coverage.scenes.search.gradeFilter!, locale);
+          expect(nativeSteps[0]).toEqual({
+            tapOn: { id: '^sheet-top-bar-leading$', text: selectors.close, enabled: true },
+          });
+          expect(nativeSteps[1]).toEqual({
+            extendedWaitUntil: { notVisible: { id: 'climb-filter-column' }, timeout: 60000 },
+          });
+          expect(requestedCppScenes(nativeSteps)).toEqual(['search-results', 'search-grade']);
+          for (const command of ['search-results', 'search-grade']) {
+            const routeIndex = nativeSteps.findIndex(
+              (step) => typeof step.evalScript === 'string' && step.evalScript.includes(`/set?scene=${command}'`),
+            );
+            expect(JSON.stringify(nativeSteps[routeIndex + 1])).toContain(
+              '${output.cppAcknowledged == output.cppSequence}',
+            );
+          }
+          const gradeIndex = nativeSteps.findIndex(
+            (step) => typeof step.evalScript === 'string' && step.evalScript.includes("/set?scene=search-grade'"),
+          );
+          expect(nativeSteps.slice(gradeIndex + 2)).toContainEqual({
+            extendedWaitUntil: { visible: { text: selectors.minSelected, selected: true }, timeout: 90000 },
+          });
+          expect(nativeSteps.slice(gradeIndex + 2)).toContainEqual({
+            extendedWaitUntil: { visible: { text: selectors.maxSelected, selected: true }, timeout: 90000 },
+          });
+          expect(nativeSteps.at(-1)).toEqual(steps[index - 1]);
+          expect(JSON.stringify(nativeSteps.at(-1))).toContain(`output.cppGradeCount.locale == '${locale}'`);
+          expect(JSON.stringify(nativeSteps.at(-1))).toContain('output.cppGradeCount.sequence == output.cppSequence');
+          expect(steps[index + 1]).toEqual({
+            extendedWaitUntil: { visible: '${output.cppGradeCount.selector}', timeout: 90000 },
+          });
+          expect(steps.slice(index + 2)).toContainEqual({ takeScreenshot: '02-search' });
+          const replay = renderCppMaestroFlow(target, device, coverage, locale, false);
+          expect(replay).not.toContain('maxRetries: 2');
+          expect(replay).not.toContain('/grade-count?');
+          expect(replay).toContain(`visible: ${JSON.stringify(selectors.count)}\n    timeout: 90000`);
+        }
+      }
+    }
+  });
+  it('skips count recovery when visible and blocks capture after exhausted remounts or stale proof', () => {
+    const { coverage } = selectedScenario('moonboard');
+    const steps = parseAllDocuments(
+      renderCppMaestroFlow('moonboard', IOS_SCREENSHOT_DEVICES[0], coverage, 'en-US', true),
+    )[1].toJS() as Record<string, unknown>[];
+    const index = steps.findIndex((step) => (step.retry as { maxRetries?: number } | undefined)?.maxRetries === 2);
+    expect(index).toBeGreaterThan(0);
+    const run = (visibleAfterRemounts: number, staleProof = false) => {
+      let remounts = 0;
+      let sequence = 1;
+      let countVisible = visibleAfterRemounts === 0;
+      let sheetVisible = true;
+      let captured = false;
+      const context = {
+        output: {
+          cppSequence: sequence,
+          cppAcknowledged: sequence,
+          cppGradeCount: { sequence, locale: 'en-US', proof: { totalCount: 14435 }, selector: '^14,435 climbs$' },
+        },
+        SCREENSHOT_CPP_URL: 'http://localhost/cpp',
+        http: {
+          get: (endpoint: string) => {
+            const url = new URL(endpoint);
+            if (url.pathname.endsWith('/set')) {
+              sequence += 1;
+              if (url.searchParams.get('scene') === 'search-grade') {
+                remounts += 1;
+                sheetVisible = true;
+                countVisible = remounts >= visibleAfterRemounts;
+              }
+              return { body: JSON.stringify({ sequence }) };
+            }
+            if (url.pathname.endsWith('/status')) return { body: JSON.stringify({ acknowledged: sequence }) };
+            return {
+              body: JSON.stringify({
+                sequence: staleProof ? sequence - 1 : sequence,
+                locale: 'en-US',
+                proof: { totalCount: 14435 },
+                selector: '^14,435 climbs$',
+              }),
+            };
+          },
+        },
+      };
+      const execute = (commands: Record<string, unknown>[]) => {
+        for (const command of commands) {
+          if (typeof command.evalScript === 'string') runInNewContext(command.evalScript.slice(2, -1), context);
+          if (typeof command.assertTrue === 'string' && !runInNewContext(command.assertTrue.slice(2, -1), context))
+            throw new Error('unverified proof');
+          if (command.tapOn) sheetVisible = false;
+          if (command.runFlow) {
+            const flow = command.runFlow as { when: { notVisible: string }; commands: Record<string, unknown>[] };
+            expect(flow.when.notVisible).toBe('${output.cppGradeCount.selector}');
+            if (!countVisible) execute(flow.commands);
+          }
+          if (command.retry) {
+            const retry = command.retry as { maxRetries: number; commands: Record<string, unknown>[] };
+            for (let attempt = 0; ; attempt += 1) {
+              try {
+                execute(retry.commands);
+                break;
+              } catch (error) {
+                if (attempt === retry.maxRetries) throw error;
+              }
+            }
+          }
+          if (command.extendedWaitUntil) {
+            const wait = command.extendedWaitUntil as { visible?: unknown; notVisible?: unknown };
+            if (wait.visible === '${output.cppGradeCount.selector}' && !countVisible) throw new Error('count absent');
+            if (wait.notVisible && sheetVisible) throw new Error('sheet still mounted');
+          }
+          if (command.takeScreenshot === '02-search') captured = true;
+        }
+      };
+      const captureIndex = steps.findIndex((step) => step.takeScreenshot === '02-search');
+      try {
+        execute(steps.slice(index, captureIndex + 1));
+      } catch {
+        captured = false;
+      }
+      return { remounts, captured, sequence, proofSequence: context.output.cppGradeCount.sequence };
+    };
+    expect(run(0)).toMatchObject({ remounts: 0, captured: true });
+    expect(run(1)).toMatchObject({ remounts: 1, captured: true, sequence: 3, proofSequence: 3 });
+    expect(run(2)).toMatchObject({ remounts: 2, captured: true, sequence: 5, proofSequence: 5 });
+    expect(run(3)).toMatchObject({ remounts: 3, captured: true, sequence: 7, proofSequence: 7 });
+    expect(run(4)).toMatchObject({ remounts: 3, captured: false });
+    expect(run(1, true)).toMatchObject({ captured: false });
+  });
   it('resets real filters, ACKs genuine grade setup, and verifies selection/count before capturing and resetting again', () => {
     for (const target of CPP_TARGETS) {
       const { coverage } = selectedScenario(target);

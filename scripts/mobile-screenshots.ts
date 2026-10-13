@@ -2358,10 +2358,41 @@ export function renderCppMaestroFlow(
         commands.push(
           `- extendedWaitUntil:\n    visible: ${JSON.stringify(gradeControl(gradeSelectors.maxSelected!, true))}\n    timeout: 90000`,
         );
-      if (recordGradeCount)
+      if (recordGradeCount) {
+        const proofCondition = `\${output.cppGradeCount.sequence == output.cppSequence && output.cppGradeCount.locale == '${locale}' && output.cppGradeCount.proof.totalCount > 0}`;
+        const recordedCountProof = `- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: \${output.cppGradeCount = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/grade-count?sequence=' + output.cppSequence + '&locale=${locale}').body)}\n      - assertTrue: ${proofCondition}`;
+        const commandAck =
+          "- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}";
+        const remountFilters = [
+          `- tapOn: ${JSON.stringify({ id: '^sheet-top-bar-leading$', text: gradeSelectors.close, enabled: true })}`,
+          '- extendedWaitUntil:\n    notVisible:\n      id: climb-filter-column\n    timeout: 60000',
+          "- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-results').body).sequence}",
+          commandAck,
+          "- evalScript: ${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=search-grade').body).sequence}",
+          commandAck,
+          '- extendedWaitUntil:\n    visible:\n      id: climb-filter-column\n    timeout: 90000',
+          `- extendedWaitUntil:\n    visible: ${JSON.stringify(gradeControl(gradeSelectors.minSelected, true))}\n    timeout: 90000`,
+          ...(gradeFilter?.maxLabel && gradeFilter.maxLabel !== gradeFilter.minLabel
+            ? [
+                `- extendedWaitUntil:\n    visible: ${JSON.stringify(gradeControl(gradeSelectors.maxSelected!, true))}\n    timeout: 90000`,
+              ]
+            : []),
+          recordedCountProof,
+        ].join('\n');
+        // Recording can finish a genuine upstream count after the phone's
+        // request expires. Remount only a missing native count; a 30s wait
+        // lets an initially pending query expire before the next mount refetches.
+        // Recheck proof even when a later attempt skips the remount branch.
         commands.push(
-          `- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: \${output.cppGradeCount = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/grade-count?sequence=' + output.cppSequence + '&locale=${locale}').body)}\n      - assertTrue: \${output.cppGradeCount.sequence == output.cppSequence && output.cppGradeCount.locale == '${locale}' && output.cppGradeCount.proof.totalCount > 0}`,
+          recordedCountProof,
+          `- retry:\n    maxRetries: 2\n    commands:\n      - runFlow:\n          when:\n            notVisible: \${output.cppGradeCount.selector}\n          commands:\n${remountFilters
+            .split('\n')
+            .map((line) => `            ${line}`)
+            .join(
+              '\n',
+            )}\n      - assertTrue: ${proofCondition}\n      - extendedWaitUntil:\n          visible: \${output.cppGradeCount.selector}\n          timeout: 30000`,
         );
+      }
       commands.push(
         recordGradeCount
           ? '- extendedWaitUntil:\n    visible: ${output.cppGradeCount.selector}\n    timeout: 90000'
