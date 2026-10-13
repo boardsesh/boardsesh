@@ -47,6 +47,8 @@ export interface QueryInvalidator {
     filters: {
       queryKey: readonly unknown[];
       exact?: boolean;
+      /** Mark stale without starting reads during background or account teardown. */
+      refetchType?: 'none';
       predicate?: (query: { queryKey: readonly unknown[] }) => boolean;
     },
     options?: { cancelRefetch?: boolean },

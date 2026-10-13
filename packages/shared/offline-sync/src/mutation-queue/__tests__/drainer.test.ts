@@ -23,7 +23,14 @@ vi.mock('../error-classification', () => ({
   isClimbReferenceToDeletedClimb: vi.fn().mockReturnValue(false),
 }));
 
-import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut, setBackgrounded } from '../drainer';
+import {
+  drainMutationQueue,
+  __resetDrainerStateForTests,
+  setSigningOut,
+  setBackgrounded,
+  isDraining,
+  beginGlobalPurge,
+} from '../drainer';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
 import {
@@ -548,6 +555,239 @@ describe('drainMutationQueue', () => {
     } finally {
       setBackgrounded(false);
     }
+  });
+
+  describe('one invalidation batch per drain (#6310)', () => {
+    beforeEach(() => {
+      mockPeekPending.mockReset().mockResolvedValue([]);
+      mockProcessMutation.mockReset().mockResolvedValue(undefined);
+      mockMarkCompleted.mockReset().mockResolvedValue(undefined);
+      mockRecordFailure.mockReset().mockResolvedValue({ status: 'pending', retryCount: 1 });
+      mockMarkDeadLetter.mockReset().mockResolvedValue(undefined);
+    });
+
+    function recordingQueryClient() {
+      return { invalidateQueries: vi.fn<QueryInvalidator['invalidateQueries']>() };
+    }
+
+    function expectFavoriteBatch(queryClient: ReturnType<typeof recordingQueryClient>, staleOnly = false) {
+      expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual(
+        ['searchClimbs', 'infiniteSearchClimbs', 'favoriteStatus'].map((head) =>
+          staleOnly ? { queryKey: [head], refetchType: 'none' } : { queryKey: [head] },
+        ),
+      );
+    }
+
+    it('refreshes twelve favorites once after both peeks while acknowledging each immediately', async () => {
+      const favorites = Array.from({ length: 12 }, (_, index) =>
+        makeMutation({ id: index + 1, table_name: 'user_favorites', idempotency_key: `favorite-${index}` }),
+      );
+      mockPeekPending.mockResolvedValueOnce(favorites.slice(0, 10)).mockResolvedValueOnce(favorites.slice(10));
+      const queryClient = recordingQueryClient();
+      const callbackSnapshots: { invalidations: number; completed: number }[] = [];
+      const onMutationStatus = vi.fn(() => {
+        callbackSnapshots.push({
+          invalidations: queryClient.invalidateQueries.mock.calls.length,
+          completed: mockMarkCompleted.mock.calls.length,
+        });
+      });
+      queryClient.invalidateQueries.mockImplementation(() => {
+        expect(onMutationStatus).toHaveBeenCalledTimes(12);
+        expect(mockPeekPending).toHaveBeenCalledTimes(3);
+      });
+
+      await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE, onMutationStatus });
+
+      expect(onMutationStatus).toHaveBeenCalledTimes(12);
+      expect(callbackSnapshots).toEqual(favorites.map((_, index) => ({ invalidations: 0, completed: index + 1 })));
+      expectFavoriteBatch(queryClient);
+    });
+
+    it('deduplicates overlapping tables across a retry pass without delaying delivery callbacks', async () => {
+      const favorite = makeMutation({ id: 1, table_name: 'user_favorites' });
+      const tick = makeMutation({ id: 2 });
+      const playlist = makeMutation({ id: 3, table_name: 'playlist_climbs' });
+      mockPeekPending.mockResolvedValueOnce([favorite, tick]).mockResolvedValueOnce([tick, playlist]);
+      mockProcessMutation.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('temporary'));
+      mockIsRetryable.mockReturnValue(true);
+      const queryClient = recordingQueryClient();
+      const onMutationStatus = vi.fn();
+      const sleep = vi.fn(async () => {
+        expect(onMutationStatus).toHaveBeenCalledTimes(1);
+        expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+      });
+
+      await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE, sleep, onMutationStatus });
+
+      const filters = queryClient.invalidateQueries.mock.calls.map(([filter]) => filter);
+      const heads = filters.map((filter) => filter.queryKey[0]);
+      expect(heads).toHaveLength(13);
+      expect(new Set(heads).size).toBe(13);
+      expect(heads).toContain('localTicks');
+      expect(heads).toContain('favoriteStatus');
+      expect(heads).toContain('playlistClimbs');
+      expect(filters.every((filter) => filter.refetchType === undefined && filter.predicate === undefined)).toBe(true);
+      expect(onMutationStatus).toHaveBeenCalledTimes(3);
+      expect(sleep).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['deleted-climb', 'retry-pending', 'retry-exhausted', 'permanent'] as const)(
+      'includes %s bookkeeping in the same batch as a completed row',
+      async (outcome) => {
+        const mutationRows = [makeMutation({ id: 1, table_name: 'user_favorites' }), makeMutation({ id: 2 })];
+        mockPeekPending.mockResolvedValueOnce(mutationRows);
+        mockProcessMutation.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('rejected'));
+        mockIsClimbReferenceToDeletedClimb.mockReturnValue(outcome === 'deleted-climb');
+        mockIsRetryable.mockReturnValue(outcome.startsWith('retry'));
+        mockRecordFailure.mockResolvedValue({
+          status: outcome === 'retry-exhausted' ? 'dead_letter' : 'pending',
+          retryCount: 2,
+        });
+        const queryClient = recordingQueryClient();
+        // Reporters intentionally swallow errors; record timing and assert outside
+        // them so a failed guard cannot be mistaken for a reporting failure.
+        const invalidationCountsAtDelivery: number[] = [];
+        const onMutationStatus = vi.fn(() => {
+          invalidationCountsAtDelivery.push(queryClient.invalidateQueries.mock.calls.length);
+        });
+        const onMutationDeadLettered = vi.fn(() => {
+          invalidationCountsAtDelivery.push(queryClient.invalidateQueries.mock.calls.length);
+        });
+
+        await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, {
+          ...ONLINE,
+          maxCycleAttempts: 0,
+          onMutationStatus,
+          onMutationDeadLettered,
+        });
+
+        const heads = queryClient.invalidateQueries.mock.calls.map(([filters]) => filters.queryKey[0]);
+        // The first favorite cannot supply tick-only keys: removing invalidation
+        // from any outcome branch must lose localTicks and fail this guard.
+        expect(heads).toContain('localTicks');
+        expect(heads).toContain('favoriteStatus');
+        expect(heads).toHaveLength(10);
+        expect(new Set(heads).size).toBe(10);
+        expect(heads.filter((head) => head === 'searchClimbs')).toHaveLength(1);
+        expect(heads.filter((head) => head === 'infiniteSearchClimbs')).toHaveLength(1);
+        expect(invalidationCountsAtDelivery.every((count) => count === 0)).toBe(true);
+        expect(mockMarkCompleted).toHaveBeenCalledTimes(outcome === 'deleted-climb' ? 2 : 1);
+        expect(mockRecordFailure).toHaveBeenCalledTimes(outcome.startsWith('retry') ? 1 : 0);
+        expect(mockMarkDeadLetter).toHaveBeenCalledTimes(outcome === 'permanent' ? 1 : 0);
+        expect(onMutationStatus).toHaveBeenCalledTimes(outcome === 'retry-pending' ? 1 : 2);
+        expect(onMutationDeadLettered).toHaveBeenCalledTimes(
+          outcome === 'retry-exhausted' || outcome === 'permanent' ? 1 : 0,
+        );
+      },
+    );
+
+    it.each(['network', 'peek', 'bookkeeping', 'sleep'] as const)(
+      'flushes earlier completed rows after a later %s failure',
+      async (failureLocation) => {
+        const completed = makeMutation({ id: 1, table_name: 'user_favorites' });
+        const interrupted = makeMutation({ id: 2 });
+        mockPeekPending.mockResolvedValueOnce(failureLocation === 'peek' ? [completed] : [completed, interrupted]);
+        const failure = new Error(`late ${failureLocation} failure`);
+        const queryClient = recordingQueryClient();
+        const sleep = vi.fn().mockRejectedValue(failure);
+        if (failureLocation === 'peek') mockPeekPending.mockRejectedValueOnce(failure);
+        else {
+          mockProcessMutation.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+          mockIsNetworkError.mockReturnValue(failureLocation === 'network');
+          mockIsRetryable.mockReturnValue(failureLocation === 'bookkeeping' || failureLocation === 'sleep');
+          if (failureLocation === 'bookkeeping') mockRecordFailure.mockRejectedValueOnce(failure);
+        }
+
+        const drain = drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE, sleep });
+        if (failureLocation === 'network') await drain;
+        else await expect(drain).rejects.toThrow(failure);
+
+        const heads = queryClient.invalidateQueries.mock.calls.map(([filters]) => filters.queryKey[0]);
+        expect(heads.filter((head) => head === 'searchClimbs')).toHaveLength(1);
+        expect(heads.filter((head) => head === 'infiniteSearchClimbs')).toHaveLength(1);
+        expect(heads.filter((head) => head === 'favoriteStatus')).toHaveLength(1);
+        // A retry recorded before the throwing sleep also reaches the UI.
+        expect(heads.includes('localTicks')).toBe(failureLocation === 'sleep');
+        expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
+        expect(isDraining()).toBe(false);
+      },
+    );
+
+    it.each(['background', 'sign-out', 'completed-wipe', 'global-purge'] as const)(
+      'marks earlier changes stale without reads after %s interrupts a later send',
+      async (interruption) => {
+        const favorites = [1, 2, 3].map((id) => makeMutation({ id, table_name: 'user_favorites' }));
+        mockPeekPending.mockResolvedValueOnce(favorites);
+        mockProcessMutation.mockResolvedValueOnce(undefined).mockImplementationOnce(async () => {
+          if (interruption === 'background') setBackgrounded(true);
+          else if (interruption === 'global-purge') beginGlobalPurge();
+          else {
+            setSigningOut(true);
+            if (interruption === 'completed-wipe') setSigningOut(false);
+          }
+        });
+        const queryClient = recordingQueryClient();
+
+        await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE);
+
+        expectFavoriteBatch(queryClient, true);
+        expect(mockProcessMutation).toHaveBeenCalledTimes(2);
+        expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
+        expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 1);
+        expect(mockRecordFailure).not.toHaveBeenCalled();
+        expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rechecks teardown for every filter in a flush', async () => {
+      mockPeekPending.mockResolvedValueOnce([makeMutation({ table_name: 'user_favorites' })]);
+      const queryClient = recordingQueryClient();
+      queryClient.invalidateQueries.mockImplementationOnce(() => setBackgrounded(true));
+
+      await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE);
+
+      expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual([
+        { queryKey: ['searchClimbs'] },
+        { queryKey: ['infiniteSearchClimbs'], refetchType: 'none' },
+        { queryKey: ['favoriteStatus'], refetchType: 'none' },
+      ]);
+    });
+
+    it('blocks concurrent and reentrant drains through a throwing flush, then releases the latch', async () => {
+      mockPeekPending.mockResolvedValueOnce([makeMutation({ table_name: 'user_favorites' })]);
+      const queryClient = recordingQueryClient();
+      const nestedDrains: Promise<void>[] = [];
+      const drainingSnapshots: boolean[] = [];
+      const failure = new Error('cache invalidator failed');
+      mockProcessMutation.mockImplementationOnce(async () => {
+        nestedDrains.push(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE));
+      });
+      queryClient.invalidateQueries.mockImplementation(() => {
+        drainingSnapshots.push(isDraining());
+        nestedDrains.push(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE));
+        if (queryClient.invalidateQueries.mock.calls.length === 1) throw failure;
+      });
+
+      await expect(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE)).rejects.toThrow(failure);
+      await Promise.all(nestedDrains);
+
+      expect(drainingSnapshots).toEqual([true, true, true]);
+      expectFavoriteBatch(queryClient);
+      expect(mockPeekPending).toHaveBeenCalledTimes(2);
+      expect(mockMarkCompleted).toHaveBeenCalledTimes(1);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(isDraining()).toBe(false);
+      await drainMutationQueue(mockDb, recordingQueryClient(), mockGraphqlFetch, ONLINE);
+      expect(mockPeekPending).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not invalidate an empty drain', async () => {
+      const queryClient = recordingQueryClient();
+      await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE);
+      expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+      expect(isDraining()).toBe(false);
+    });
   });
 
   it('invalidates correct query keys for boardsesh_ticks', async () => {

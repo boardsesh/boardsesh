@@ -14,6 +14,7 @@ import {
 import { isDatabaseLockedError } from '../db/lock-errors';
 import { runLocalWriteWithRetry } from '../db/write-retry';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
+import { createInvalidationBatch, type InvalidationBatch } from '../sync/invalidation-batch';
 import { parseQueueTimestamp } from './queue-timestamps';
 
 // Module-level singletons (drain flag, sign-out guard, wipe epoch): correct as
@@ -429,7 +430,7 @@ function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
   return Math.floor(Math.random() * exponential);
 }
 
-function invalidateForTable(queryClient: QueryInvalidator, tableName: string): void {
+function queueInvalidationForTable(invalidations: InvalidationBatch, tableName: string): void {
   const keys = invalidateKeysForTable(tableName);
   if (!keys) {
     // table_name is a plain string, so a NEW mutation type missing from the
@@ -443,9 +444,7 @@ function invalidateForTable(queryClient: QueryInvalidator, tableName: string): v
     }
     return;
   }
-  for (const key of keys) {
-    queryClient.invalidateQueries({ queryKey: key });
-  }
+  invalidations.add(keys);
 }
 
 function formatError(error: unknown): string {
@@ -494,6 +493,20 @@ export async function drainMutationQueue(
   // the CURRENT token per request — a drain tail that outlives the account
   // switch would post the old user's writes into the new user's account.
   const startEpoch = _globalWipeEpoch;
+  // Hold one batch for the whole invocation, including retry passes. Delivery
+  // callbacks still fire per row; query reads wait until bookkeeping settles.
+  const invalidations = createInvalidationBatch({
+    invalidateQueries(filters) {
+      // Earlier rows still need to be marked stale when a later send is
+      // interrupted, but teardown must not start new network or SQLite reads.
+      // Check each call: an invalidation callback can itself begin teardown.
+      return queryClient.invalidateQueries(
+        _isBackgrounded || _isSigningOut || _globalWipeEpoch !== startEpoch
+          ? { ...filters, refetchType: 'none' }
+          : filters,
+      );
+    },
+  });
 
   try {
     while (true) {
@@ -534,7 +547,7 @@ export async function drainMutationQueue(
           // skip the busy handler on. So the ladder below is a second chance
           // after a real wait, not the only one.
           await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
-          invalidateForTable(queryClient, mutation.table_name);
+          queueInvalidationForTable(invalidations, mutation.table_name);
           notifyMutationStatus(options, {
             tableName: mutation.table_name,
             operation: mutation.operation,
@@ -643,7 +656,7 @@ export async function drainMutationQueue(
             // retry" list with a Retry that can never work. The next pull drops
             // the local copy through the climb's tombstone.
             await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
-            invalidateForTable(queryClient, mutation.table_name);
+            queueInvalidationForTable(invalidations, mutation.table_name);
             notifyMutationStatus(options, {
               tableName: mutation.table_name,
               operation: mutation.operation,
@@ -658,9 +671,9 @@ export async function drainMutationQueue(
             // max_retries, flips to dead_letter — no window where the row is
             // exhausted-but-still-pending.
             const { status, retryCount } = await recordFailure(db, mutation.id, errorMessage);
-            // The row may have just flipped to dead_letter; refresh the pending
-            // badges either way (an extra COUNT requery is harmless).
-            invalidateForTable(queryClient, mutation.table_name);
+            // The row may have just flipped to dead_letter; queue the pending
+            // badges for refresh either way when this drain ends.
+            queueInvalidationForTable(invalidations, mutation.table_name);
             if (status === 'dead_letter') {
               notifyMutationStatus(options, {
                 tableName: mutation.table_name,
@@ -692,7 +705,7 @@ export async function drainMutationQueue(
             // deterministic key (favorites, follows) a dead letter owns that key
             // until something revives it (#4331).
             await markDeadLetter(db, mutation.id, errorMessage);
-            invalidateForTable(queryClient, mutation.table_name);
+            queueInvalidationForTable(invalidations, mutation.table_name);
             notifyMutationStatus(options, {
               tableName: mutation.table_name,
               operation: mutation.operation,
@@ -738,7 +751,14 @@ export async function drainMutationQueue(
       retryAttempts = 0;
     }
   } finally {
-    _isDraining = false;
+    try {
+      // Flush earlier bookkeeping even if a later send, peek, or write failed.
+      invalidations.flush();
+    } finally {
+      // Keep reentrant drain callbacks blocked throughout the flush, and always
+      // release the latch even if a cache invalidator throws synchronously.
+      _isDraining = false;
+    }
   }
 }
 

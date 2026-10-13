@@ -298,7 +298,9 @@ A scope that completes for the first time queues its board's keys even when the 
 
 What this gives up: a board that is not downloaded is read from the network, and a board pull or a board tombstone no longer refreshes its lists (the user tables still do, for every board). A climb deleted there stays in the list, and on its detail screen, until the query goes stale (5 minutes) and is next mounted or the app next comes to the front. Before, the tombstone refreshed it at the next sync. New and edited climbs on such a board never had a signal.
 
-The mutation drainer does not use the batch yet: it still invalidates once per drained mutation.
+The mutation drainer holds one `InvalidationBatch` for its entire invocation, including every ten-row queue peek and retry pass (#6310). Successful delivery, a deleted-climb acknowledgement, and retry or dead-letter bookkeeping queue the table's existing keys; delivery callbacks still fire immediately for each row. The drain's `finally` flushes each distinct key once, including when a later request or local write fails.
+
+If backgrounding, sign-out, or a completed account wipe interrupted the drain, that flush uses `refetchType: 'none'`: earlier changes mark queries stale without starting reads during teardown. The interrupted row stays pending for an idempotent resend. Later reads follow each query's existing refresh policy; queries that disable focus refresh, including the You-page stats, may wait for a mount, reconnect, or explicit refresh.
 
 ## Deliberately deferred
 
