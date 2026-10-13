@@ -117,11 +117,15 @@ instructions are in [fastlane/README.md](../../fastlane/README.md).
 Generate these separately from screenshots:
 
 ```bash
-vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-creatives/en-US --device iphone-16-pro --locale en-US
+vp run store:creatives -- --input <rawdevice> --output .boardsesh/app-store-creatives --device iphone-16-pro --locale en-US --variant default
 ```
 
 The command writes opaque `header.png` (3840 × 1646), `search-results.png`
-(3840 × 2560) and `creative-assets.json` provenance. Replace `<rawdevice>` with
+(3840 × 2560) and `creative-assets.json` provenance under
+`.boardsesh/app-store-creatives/default/en-US/`. The `--output` argument is the
+creative export root; the command adds `<variant>/<locale>/`. Choose `--variant
+kilter|tension|moonboard|spray` for a CPP and its own native capture inputs.
+Replace `<rawdevice>` with
 the matching locale/device directory of native captures. Repeat for `es`, `fr`
 and `de`; do not relabel English UI as a localized capture. These files stay
 outside the screenshot upload tree and are not uploaded by fastlane's screenshot
