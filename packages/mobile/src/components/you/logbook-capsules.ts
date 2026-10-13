@@ -349,15 +349,18 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
   const pinnedKinds = new Set(pinned);
   const activeCount = countLogbookFilters(filters, name);
   const label = (kind: LogbookPinnableChipKind, restingLabel: string) => activeLabelFor(kind, input, t) ?? restingLabel;
+  const filtersLabel =
+    activeCount > 0
+      ? t('mobile.logbook.capsules.filtersWithCount', { count: activeCount })
+      : t('mobile.logbook.capsules.filters');
 
   const capsules: Capsule[] = [
     {
       kind: 'sheet',
       key: 'filters',
-      label:
-        activeCount > 0
-          ? t('mobile.logbook.capsules.filtersWithCount', { count: activeCount })
-          : t('mobile.logbook.capsules.filters'),
+      label: filtersLabel,
+      accessibilityLabel: filtersLabel,
+      presentation: 'iconBadge',
       count: activeCount,
       icon: 'filters',
       onPress: onOpenFilters,

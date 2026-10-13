@@ -465,9 +465,15 @@ scroll-edge material, status area and action lenses above the supplementary cont
 The control block stays below the native bar as its title collapses. Opening the grade row does
 not reserve more list space; it remains inside the control block's touch surface. The block owns
 touches through the gaps between controls, so taps do not open climbs underneath.
-Disclosed grade and angle rails use a local `systemColors.background` backing: their flat
-grade chips have translucent fills, so the rail keeps labels readable over the list. This
-backing appears only while a rail is open; the filter capsule row stays transparent.
+Disclosed grade rails opt into individual regular native glass chips on the same capability
+and accessibility gate as floating header controls. Their rail has no continuous backing;
+neutral labels use the secondary theme label, selected/range labels the primary label.
+Selected endpoints retain the grade hue with a 35% tint and a selection ring; interior grades
+keep their 18% tint and grade-colour ring. Each native lens has its own rounded edge, with
+rings drawn separately, and a static carrier preserves the 44pt touch target and tap/hold behavior.
+Other grade pickers keep their existing flat chips. Older iOS, Material, Reduce Transparency
+and Increase Contrast keep the local opaque backing. Angle rails also retain their local
+`systemColors.background` backing; the filter capsule row stays transparent.
 
 Older iOS versions, Reduce Transparency, Increase Contrast and an explicit `opaqueControls`
 request retain the painted band in `systemColors.background`. The native glass path adds no
@@ -507,6 +513,12 @@ surface passes final, localised labels and bound handlers. Five kinds (`CapsuleR
   on every platform, the web included (Paper's selected chip would draw `secondaryContainer`).
   Never the text brand colour: in dark mode it is a light lavender that white text can't sit on
   (see "Brand colours").
+- **Compact Filters control.** Climbs and Logbook opt their Filters sheet capsule into
+  `presentation: 'iconBadge'`: only the filter glyph is visible when no filters are active;
+  an inline count badge appears above zero and grows for multiple digits (99+ ceiling).
+  The full localized Filters/count label remains available to assistive technology.
+  Active capsules retain the brand fill, with an inverse badge for contrast. Other sheet
+  capsules keep their labels; the badge adds no separate tap target or glass surface.
 - **Glass only where it is real.** Below iOS 26 `@expo/ui` turns the glass styles into plain text
   buttons, so the row draws `bordered` (resting, neutral) and `borderedProminent` (active) there,
   picked by `useGlassCapability()` as `Button` does.

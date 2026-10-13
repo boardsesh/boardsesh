@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
+vi.mock('../../../hooks/use-floating-header-controls', () => ({
+  useFloatingHeaderControls: () => nativeChrome.glassGradeRail && ctrl.variant === 'liquidGlass',
+}));
 vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({ scrollEdge }: { scrollEdge?: unknown }) => {
     nativeChrome.scrollEdge = scrollEdge;
@@ -36,7 +39,7 @@ type BluetoothCtx = {
 
 // The UIKit header path (iOS on Liquid Glass), off unless a test turns it on, and
 // the scroll-edge store the native header was handed.
-const nativeChrome = vi.hoisted(() => ({ enabled: false, scrollEdge: undefined as unknown }));
+const nativeChrome = vi.hoisted(() => ({ enabled: false, glassGradeRail: false, scrollEdge: undefined as unknown }));
 
 const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
@@ -339,8 +342,12 @@ vi.mock('../../SearchHeader', () => ({
 }));
 
 vi.mock('../../grade', () => ({
-  GradeRangeRail: ({ recenterKey }: { recenterKey?: number }) =>
-    createElement('div', { 'data-grade-rail': 'true', 'data-recenter-key': String(recenterKey) }),
+  GradeRangeRail: ({ recenterKey, glass }: { recenterKey?: number; glass?: boolean }) =>
+    createElement('div', {
+      'data-grade-rail': 'true',
+      'data-glass': String(glass),
+      'data-recenter-key': String(recenterKey),
+    }),
 }));
 
 type AngleSelectorMockProps = {
@@ -450,6 +457,7 @@ describe('ClimbTopChrome', () => {
     ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
     nativeChrome.enabled = false;
+    nativeChrome.glassGradeRail = false;
     nativeChrome.scrollEdge = undefined;
     haptics.light.mockClear();
     haptics.selection.mockClear();
@@ -671,6 +679,28 @@ describe('ClimbTopChrome', () => {
       expect(onHeightChange).not.toHaveBeenCalled();
     },
   );
+
+  it('removes only the grade panel backing when floating native glass is allowed', () => {
+    nativeChrome.glassGradeRail = true;
+    const props = makeProps({
+      gradeRailVisible: true,
+      gradeBound: { minGradeId: undefined, maxGradeId: undefined },
+      onGradeChange: vi.fn(),
+    });
+    const { container, rerender } = render(<ClimbTopChrome {...props} />);
+    expect(container.querySelector('[data-grade-rail]')?.getAttribute('data-glass')).toBe('true');
+    expect(
+      JSON.parse(container.querySelector('[data-testid="climb-grade-rail"]')?.getAttribute('data-style') ?? '{}')
+        .backgroundColor,
+    ).toBeUndefined();
+    nativeChrome.glassGradeRail = false;
+    rerender(<ClimbTopChrome {...props} gradeRecenterKey={1} />);
+    expect(container.querySelector('[data-grade-rail]')?.getAttribute('data-glass')).toBe('false');
+    expect(
+      JSON.parse(container.querySelector('[data-testid="climb-grade-rail"]')?.getAttribute('data-style') ?? '{}')
+        .backgroundColor,
+    ).toBe('#010203');
+  });
 
   it('renders the Material branch with the board switcher, search, and grade controls', () => {
     ctrl.variant = 'material';

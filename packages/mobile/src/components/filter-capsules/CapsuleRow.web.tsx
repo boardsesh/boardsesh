@@ -71,6 +71,8 @@ function CapsuleRowChip({ capsule }: { capsule: Capsule }) {
       selected={isCapsuleActive(capsule)}
       icon={capsule.kind === 'sheet' || capsule.kind === 'toggleMenu' ? paperIconFor(capsule.icon) : undefined}
       accessibilityLabel={capsule.kind === 'sheet' ? capsule.accessibilityLabel : undefined}
+      iconOnly={capsule.kind === 'sheet' && capsule.presentation === 'iconBadge'}
+      badgeCount={capsule.kind === 'sheet' ? capsule.count : undefined}
       onPress={capsule.onPress}
     />
   );

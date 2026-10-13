@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
 import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOGBOOK_FILTERS } from '@boardsesh/logbook';
 import type { GradeBound } from '@boardsesh/climb-filters';
+const capability = vi.hoisted(() => ({ floatingGlass: false }));
+vi.mock('../../../hooks/use-floating-header-controls', () => ({
+  useFloatingHeaderControls: () => capability.floatingGlass,
+}));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -22,8 +26,12 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8 } }));
 vi.mock('../../grade', () => ({
-  GradeRangeRail: ({ onChange }: { onChange: (bound: GradeBound) => void }) =>
-    createElement('button', { onClick: () => onChange({ minGradeId: 10, maxGradeId: 12 }) }, 'Grade range'),
+  GradeRangeRail: ({ onChange, glass }: { onChange: (bound: GradeBound) => void; glass?: boolean }) =>
+    createElement(
+      'button',
+      { 'data-glass': String(glass), onClick: () => onChange({ minGradeId: 10, maxGradeId: 12 }) },
+      'Grade range',
+    ),
 }));
 vi.mock('../../filter-sheet/AngleRangeRail', () => ({
   AngleRangeRail: ({ onChange }: { onChange: (range: [number, number]) => void }) =>
@@ -34,6 +42,28 @@ vi.mock('../../filter-sheet/AngleRangeRail', () => ({
 const { LogbookFacetRail } = await vi.importActual<typeof import('../LogbookFacetRail')>('../LogbookFacetRail.tsx');
 
 describe('LogbookFacetRail', () => {
+  beforeEach(() => {
+    capability.floatingGlass = false;
+  });
+  it('uses individual glass only for Grade and preserves the opaque Angle and accessibility fallback', () => {
+    capability.floatingGlass = true;
+    const props = { filters: DEFAULT_LOGBOOK_FILTERS, grades: [], onUpdateFilters: vi.fn() };
+    const { getByTestId, getByRole, rerender } = render(<LogbookFacetRail {...props} openRail="grade" />);
+    expect(getByRole('button').getAttribute('data-glass')).toBe('true');
+    expect(
+      JSON.parse(getByTestId('logbook-facet-rail').getAttribute('data-style') ?? '{}').backgroundColor,
+    ).toBeUndefined();
+    rerender(<LogbookFacetRail {...props} openRail="angle" />);
+    expect(JSON.parse(getByTestId('logbook-facet-rail').getAttribute('data-style') ?? '{}').backgroundColor).toBe(
+      'opaque-scene-background',
+    );
+    capability.floatingGlass = false;
+    rerender(<LogbookFacetRail {...props} openRail="grade" />);
+    expect(getByRole('button').getAttribute('data-glass')).toBe('false');
+    expect(JSON.parse(getByTestId('logbook-facet-rail').getAttribute('data-style') ?? '{}').backgroundColor).toBe(
+      'opaque-scene-background',
+    );
+  });
   it('backs only the open rail and keeps grade and angle selections live', () => {
     const onUpdateFilters = vi.fn();
     const props = { filters: DEFAULT_LOGBOOK_FILTERS, grades: [], onUpdateFilters };

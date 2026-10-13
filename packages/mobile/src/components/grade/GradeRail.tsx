@@ -28,6 +28,8 @@ export type GradeRailChange = RangeRailChange;
 const EMPTY_DIFFICULTY_IDS: readonly number[] = [];
 
 type GradeRangeRailProps = {
+  /** Individual native glass in floating expanded filters; other hosts stay flat. */
+  glass?: boolean;
   grades: readonly Grade[];
   bound: GradeBound;
   sendDifficultyIds?: readonly number[];
@@ -80,6 +82,7 @@ type GradeRangeRailProps = {
  * centre grade and the grade wording.
  */
 export function GradeRangeRail({
+  glass = false,
   grades: unsortedGrades,
   bound,
   sendDifficultyIds = EMPTY_DIFFICULTY_IDS,
@@ -122,6 +125,7 @@ export function GradeRangeRail({
 
   return (
     <RangeRail
+      glass={glass}
       stops={stops}
       bound={bound}
       centerStopId={centerStopId}

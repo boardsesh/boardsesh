@@ -16,6 +16,7 @@ import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
+import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
@@ -135,6 +136,7 @@ function ClimbTopChromeComponent({
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
+  const glassGradeRail = useFloatingHeaderControls();
   const insets = useSafeAreaInsets();
   const usesCustomSearch = searchMode === 'custom';
   // "On the wall" capsule: own the gate here so a falsy centre slot falls back to
@@ -171,6 +173,7 @@ function ClimbTopChromeComponent({
   const gradeRail =
     gradeRailVisible && gradeBound && onGradeChange ? (
       <GradeRangeRail
+        glass={glassGradeRail}
         grades={grades}
         bound={gradeBound}
         lastUsedGradeId={lastUsedGradeId}
@@ -355,7 +358,10 @@ function ClimbTopChromeComponent({
       scrollEdge={scrollEdge}
       floatingContent={
         gradeRail ? (
-          <View testID="climb-grade-rail" style={[styles.gradeRail, { backgroundColor: systemColors.background }]}>
+          <View
+            testID="climb-grade-rail"
+            style={[styles.gradeRail, glassGradeRail ? null : { backgroundColor: systemColors.background }]}
+          >
             {gradeRail}
           </View>
         ) : undefined

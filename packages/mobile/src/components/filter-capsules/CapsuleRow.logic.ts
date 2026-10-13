@@ -7,3 +7,9 @@ import type { Capsule } from './CapsuleRow.types';
 export function isCapsuleActive(capsule: Capsule): boolean {
   return capsule.kind === 'sheet' ? (capsule.count ?? 0) > 0 : capsule.active;
 }
+
+/** Count badges follow Badge's 99+ ceiling and disappear when no filter is active. */
+export function capsuleBadgeLabel(count: number | undefined): string | undefined {
+  if (count == null || count <= 0 || !Number.isFinite(count)) return undefined;
+  return count > 99 ? '99+' : String(count);
+}

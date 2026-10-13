@@ -7,9 +7,11 @@
 // would draw `secondaryContainer` (a pale brand wash) instead.
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import { Chip, Menu } from 'react-native-paper';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Badge, Chip, Icon, Menu } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
+import { spacing } from '../../theme/tokens';
+import { capsuleBadgeLabel } from './CapsuleRow.logic';
 
 type CapsuleChipProps = {
   label: string;
@@ -17,12 +19,23 @@ type CapsuleChipProps = {
   /** A Paper (MaterialCommunityIcons) icon name. */
   icon?: string;
   accessibilityLabel?: string;
+  iconOnly?: boolean;
+  badgeCount?: number;
   onPress: () => void;
 };
 
 /** One Paper chip in the capsule style. */
-export function CapsuleChip({ label, selected, icon, accessibilityLabel, onPress }: CapsuleChipProps) {
-  const { brandColors } = useTheme();
+export function CapsuleChip({
+  label,
+  selected,
+  icon,
+  accessibilityLabel,
+  iconOnly = false,
+  badgeCount,
+  onPress,
+}: CapsuleChipProps) {
+  const { brandColors, systemColors } = useTheme();
+  const badgeLabel = capsuleBadgeLabel(badgeCount);
   const activeStyle = useMemo<StyleProp<ViewStyle>>(
     () => [styles.chip, { backgroundColor: brandColors.primaryFill, borderColor: brandColors.primaryFill }],
     [brandColors.primaryFill],
@@ -31,15 +44,41 @@ export function CapsuleChip({ label, selected, icon, accessibilityLabel, onPress
     <Chip
       mode="outlined"
       selected={selected}
-      icon={icon}
+      icon={
+        iconOnly && icon
+          ? () => (
+              <View style={styles.iconBadge} accessible={false}>
+                <Icon
+                  source={icon}
+                  size={18}
+                  color={selected ? brandColors.onPrimary : (systemColors.secondaryLabel as string)}
+                />
+                {badgeLabel ? (
+                  <Badge
+                    size={18}
+                    accessible={false}
+                    style={{
+                      backgroundColor: selected ? brandColors.onPrimary : brandColors.primaryFill,
+                      color: selected ? brandColors.primaryFill : brandColors.onPrimary,
+                    }}
+                  >
+                    {badgeLabel}
+                  </Badge>
+                ) : null}
+              </View>
+            )
+          : icon
+      }
       onPress={onPress}
-      accessibilityLabel={accessibilityLabel}
+      accessibilityLabel={iconOnly ? (accessibilityLabel ?? label) : accessibilityLabel}
+      showSelectedCheck={iconOnly ? false : undefined}
+      textStyle={iconOnly ? styles.hiddenLabel : undefined}
       // Paper uses `selectedColor` for the label whenever it is set, selected or
       // not, so it is only passed while the chip is active.
       selectedColor={selected ? brandColors.onPrimary : undefined}
       style={selected ? activeStyle : styles.chip}
     >
-      {label}
+      {iconOnly ? '' : label}
     </Chip>
   );
 }
@@ -77,4 +116,7 @@ const styles = StyleSheet.create({
   chip: {
     marginEnd: 0,
   },
+  iconBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
+  // Keep only the native icon slot's trailing gutter, without a blank text label.
+  hiddenLabel: { width: 0, minHeight: 0, lineHeight: 0, marginLeft: 0, marginRight: spacing[2] },
 });

@@ -12,10 +12,13 @@
 
 import { useState, type ReactNode } from 'react';
 import type { ImageSourcePropType } from 'react-native';
-import { Text, Icon, FilterChip, DropdownMenu, DropdownMenuItem } from '@expo/ui/jetpack-compose';
+import { Text, Icon, Badge, Row, FilterChip, DropdownMenu, DropdownMenuItem } from '@expo/ui/jetpack-compose';
+import { semantics } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../../providers/theme-provider';
 import type { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
 import { CHECK_ICON_SOURCE } from './capsule-icons.android';
+import { capsuleBadgeLabel } from './CapsuleRow.logic';
+import { spacing } from '../../theme/tokens';
 
 // M3 chip / menu leading-icon size.
 const ICON_SIZE = 18;
@@ -43,17 +46,46 @@ export function ActionChip({
   selected,
   colors,
   iconSource,
+  iconOnly = false,
+  badgeCount,
+  accessibilityLabel,
   onPress,
 }: {
   label: string;
   selected: boolean;
   colors: CapsuleChipColors;
   iconSource?: ImageSourcePropType;
+  iconOnly?: boolean;
+  badgeCount?: number;
+  accessibilityLabel?: string;
   onPress: () => void;
 }) {
+  const { brandColors } = useTheme();
+  const badgeLabel = capsuleBadgeLabel(badgeCount);
   return (
-    <FilterChip selected={selected} colors={colors} onClick={onPress}>
-      <ChipContent label={label} iconSource={iconSource} />
+    <FilterChip
+      selected={selected}
+      colors={colors}
+      onClick={onPress}
+      modifiers={iconOnly ? [semantics({ contentDescription: accessibilityLabel ?? label })] : undefined}
+    >
+      {iconOnly ? (
+        <FilterChip.Label>
+          <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: spacing[1] }}>
+            {iconSource ? <Icon source={iconSource} size={ICON_SIZE} /> : null}
+            {badgeLabel ? (
+              <Badge
+                containerColor={selected ? brandColors.onPrimary : brandColors.primaryFill}
+                contentColor={selected ? brandColors.primaryFill : brandColors.onPrimary}
+              >
+                <Text color={selected ? brandColors.primaryFill : brandColors.onPrimary}>{badgeLabel}</Text>
+              </Badge>
+            ) : null}
+          </Row>
+        </FilterChip.Label>
+      ) : (
+        <ChipContent label={label} iconSource={iconSource} />
+      )}
     </FilterChip>
   );
 }

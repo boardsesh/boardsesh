@@ -123,6 +123,8 @@ describe('buildClimbCapsules: the resting row', () => {
     expect(filters.label).toBe('mobile.search.chips.filtersWithCount(3)');
     expect(filters.count).toBe(3);
     expect(filters.icon).toBe('filters');
+    expect(filters.presentation).toBe('iconBadge');
+    expect(filters.accessibilityLabel).toBe(filters.label);
     expect(isCapsuleActive(filters)).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
+import { GlassSurface } from '../GlassSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { withAlpha } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
@@ -50,6 +51,8 @@ export type GradeChipProps = {
   label: string;
   tone?: GradeChipTone;
   colorway?: GradeChipColorway;
+  /** Individual native glass for a floating rail; hosts gate capability/accessibility. */
+  glass?: boolean;
   /** The grade's colour. A `grade`-colorway chip that stands for no grade (the
    *  range rail's "Any") leaves it out: selected, it keeps the neutral fill and
    *  takes only the ring. */
@@ -69,6 +72,7 @@ export function GradeChip({
   label,
   tone = 'neutral',
   colorway = 'grade',
+  glass = false,
   gradeColor,
   onPress,
   onLongPress,
@@ -127,6 +131,57 @@ export function GradeChip({
     borderColor = withAlpha(accentColor, 0.55);
   }
 
+  if (glass) {
+    const tintColor =
+      backgroundColor === systemColors.fill
+        ? undefined
+        : typeof backgroundColor === 'string'
+          ? selected
+            ? withAlpha(backgroundColor, 0.35)
+            : backgroundColor
+          : undefined;
+    return (
+      <View onLayout={onLayout} style={style}>
+        <GlassSurface
+          glassEffectStyle="regular"
+          borderRadius={GRADE_CHIP_HEIGHT / 2}
+          tintColor={tintColor}
+          style={styles.glassSurface}
+        >
+          <PressableSurface
+            onPress={onPress}
+            onLongPress={onLongPress}
+            delayLongPress={delayLongPress}
+            feedback="none"
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityHint={accessibilityHint}
+            accessibilityState={accessibilityState}
+            style={[styles.pressable, styles.glassPressable]}
+          >
+            <View style={styles.content}>
+              <Text
+                variant="footnote"
+                // Glass tint remains translucent: its label follows the theme,
+                // rather than assuming the grade RGB is an opaque background.
+                color={tone === 'neutral' ? systemColors.secondaryLabel : systemColors.label}
+                numberOfLines={1}
+                style={styles.label}
+              >
+                {label}
+              </Text>
+            </View>
+          </PressableSurface>
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.glassRing, { borderColor, borderWidth }]}
+          />
+        </GlassSurface>
+      </View>
+    );
+  }
+
   return (
     <PressableSurface
       onPress={onPress}
@@ -153,6 +208,17 @@ export function GradeChip({
 }
 
 const styles = StyleSheet.create({
+  glassSurface: {
+    minHeight: GRADE_CHIP_HEIGHT,
+    minWidth: 52,
+  },
+  glassPressable: {
+    // Preserve the old border-box geometry without an RN border around the lens.
+    padding: CHIP_BORDER_WIDTH,
+  },
+  glassRing: {
+    borderRadius: GRADE_CHIP_HEIGHT / 2,
+  },
   pressable: {
     minHeight: GRADE_CHIP_HEIGHT,
     minWidth: 52,

@@ -37,6 +37,10 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => {
     accessibilityHidden: make('accessibilityHidden'),
     accessibilityLabel: make('accessibilityLabel'),
     accessibilityAddTraits: make('accessibilityAddTraits'),
+    font: make('font'),
+    frame: make('frame'),
+    background: (style: unknown, shape: unknown) => ({ modifier: 'background', arg: { style, shape } }),
+    shapes: { capsule: () => ({ type: 'capsule' }) },
   };
 });
 
@@ -164,6 +168,61 @@ describe('CapsuleRow.ios below iOS 26 (no Liquid Glass)', () => {
 });
 
 describe('CapsuleRow.ios', () => {
+  it.each([0, 1, 2, 12, 123])('renders an icon/count opener with its full spoken label (%s filters)', (count) => {
+    const onPress = vi.fn();
+    const label = count ? `Filters · ${count}` : 'Filters';
+    const { container } = render(
+      createElement(CapsuleRow, {
+        capsules: [
+          { kind: 'sheet', key: 'filters', label, count, icon: 'filters', presentation: 'iconBadge', onPress },
+        ],
+      }),
+    );
+    const button = viewsOf('Button').at(-1)!;
+    expect(button.label).toBeUndefined();
+    expect(button.systemImage).toBeUndefined();
+    expect(button.modifiers).toContainEqual({ modifier: 'accessibilityLabel', arg: label });
+    expect(viewsOf('Image').at(-1)).toMatchObject({ systemName: 'line.3.horizontal.decrease', size: 20 });
+    const countText = viewsOf('Text').at(-1);
+    if (count === 0) {
+      expect(countText).toBeUndefined();
+      expect(button.modifiers).toContainEqual(RESTING[2]);
+    } else {
+      expect(countText?.children).toBe(count > 99 ? '99+' : String(count));
+      expect(countText?.modifiers).toContainEqual({ modifier: 'frame', arg: { minWidth: 18, minHeight: 18 } });
+      expect(countText?.modifiers).toContainEqual({ modifier: 'foregroundColor', arg: '#7C3AED' });
+      expect(countText?.modifiers).toContainEqual({
+        modifier: 'background',
+        arg: { style: '#FFFFFF', shape: { type: 'capsule' } },
+      });
+      expect(countText?.modifiers).toContainEqual({ modifier: 'accessibilityHidden', arg: undefined });
+    }
+    expect(container.textContent).not.toContain('Filters');
+    fireEvent.click(container.querySelector('button')!);
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the compact icon/count opener bordered on older iOS', () => {
+    captured.supportsGlass = false;
+    render(
+      createElement(CapsuleRow, {
+        capsules: [
+          {
+            kind: 'sheet',
+            key: 'filters',
+            label: 'Filters · 2',
+            count: 2,
+            icon: 'filters',
+            presentation: 'iconBadge',
+            onPress: vi.fn(),
+          },
+        ],
+      }),
+    );
+    expect(viewsOf('Button').at(-1)?.modifiers?.[0]).toEqual({ modifier: 'buttonStyle', arg: 'borderedProminent' });
+    expect(viewsOf('Text').at(-1)?.children).toBe('2');
+  });
+
   it.each(['dark', 'light'] as const)('pins the SwiftUI host to the app resolved %s scheme', (scheme) => {
     captured.colorScheme = scheme;
     render(createElement(CapsuleRow, { capsules: [] }));

@@ -110,14 +110,17 @@ export function buildClimbCapsules(
     });
   }
 
-  // Filters · N → the long-tail sheet.
+  // The compact icon/count control retains its full localised spoken label.
+  const filtersLabel =
+    activeFilterCount > 0
+      ? t('mobile.search.chips.filtersWithCount', { count: activeFilterCount })
+      : t('mobile.filter.title');
   capsules.push({
     kind: 'sheet',
     key: 'filters',
-    label:
-      activeFilterCount > 0
-        ? t('mobile.search.chips.filtersWithCount', { count: activeFilterCount })
-        : t('mobile.filter.title'),
+    label: filtersLabel,
+    accessibilityLabel: filtersLabel,
+    presentation: 'iconBadge',
     count: activeFilterCount,
     icon: 'filters',
     onPress: onOpenFilters,

@@ -51,6 +51,8 @@ export type RangeRailChange = {
 export type RangeRailStopState = 'end' | 'inRange' | 'outside';
 
 export type RangeRailProps<Stop extends RangeRailStop> = {
+  /** Opt in only for native glass filter rails over scrolling content. */
+  glass?: boolean;
   /** The rail's chips, lowest first. Keep the array stable across renders. */
   stops: readonly Stop[];
   bound: GradeBound;
@@ -104,6 +106,7 @@ export type RangeRailProps<Stop extends RangeRailStop> = {
  * grade rail (difficulty ids) and the angle rail (degrees) share them.
  */
 export function RangeRail<Stop extends RangeRailStop>({
+  glass = false,
   stops,
   bound,
   centerStopId,
@@ -348,6 +351,7 @@ export function RangeRail<Stop extends RangeRailStop>({
         {/* Any is not a stop, so it passes no colour: selected (no filter set)
             it keeps the neutral fill and takes only the ring. */}
         <GradeChip
+          glass={glass}
           label={anyLabel}
           tone={anySelected ? 'selected' : 'neutral'}
           onPress={handleClear}
@@ -360,6 +364,7 @@ export function RangeRail<Stop extends RangeRailStop>({
           const tone = end ? 'selected' : insideRange ? 'range' : 'neutral';
           return (
             <GradeChip
+              glass={glass}
               key={stop.minGradeId}
               label={stop.label}
               tone={tone}

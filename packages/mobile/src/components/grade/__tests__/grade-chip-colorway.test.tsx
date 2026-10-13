@@ -15,7 +15,7 @@
 //      so a tone that changes `borderWidth` resizes the content box under the
 //      label — which is exactly what a 0pt selected border did.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type CapturedStyle = Record<string, unknown>;
@@ -25,24 +25,43 @@ const captured = vi.hoisted(() => ({
   frameStyles: [] as unknown[],
   textColors: [] as unknown[],
   viewStyles: [] as unknown[],
+  viewProps: [] as unknown[],
+  glassProps: [] as unknown[],
 }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+  View: (props: { children?: ReactNode; style?: unknown; onLayout?: unknown; pointerEvents?: string }) => {
+    const { children, style } = props;
+    captured.viewProps.push(props);
     captured.viewStyles.push(style);
     return createElement('div', { 'data-chip-view': 'true' }, children);
   },
 }));
 
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: (props: { children?: ReactNode; style?: unknown }) => {
+  PressableSurface: (props: {
+    children?: ReactNode;
+    style?: unknown;
+    onPress?: () => void;
+    onLongPress?: () => void;
+  }) => {
     captured.frameProps.push(props);
     captured.frameStyles.push(props.style);
-    return createElement('div', { 'data-chip-frame': 'true' }, props.children);
+    return createElement(
+      'button',
+      { 'data-chip-frame': 'true', onClick: props.onPress, onContextMenu: props.onLongPress },
+      props.children,
+    );
+  },
+}));
+vi.mock('../../GlassSurface', () => ({
+  GlassSurface: (props: { children?: ReactNode }) => {
+    captured.glassProps.push(props);
+    return createElement('div', { 'data-glass-chip': 'true' }, props.children);
   },
 }));
 
@@ -152,6 +171,82 @@ beforeEach(() => {
   captured.frameStyles = [];
   captured.textColors = [];
   captured.viewStyles = [];
+  captured.viewProps = [];
+  captured.glassProps = [];
+});
+
+describe('opt-in floating glass grade chips', () => {
+  it.each(ALL_TONES)('keeps the native %s lens unclipped and separate from its ring', (tone) => {
+    const { container } = render(
+      <GradeChip glass tone={tone} label="V6" gradeColor={GRADE_COLOR} onPress={vi.fn()} accessibilityLabel="V6" />,
+    );
+    expect(container.querySelectorAll('[data-glass-chip]')).toHaveLength(1);
+    expect(captured.glassProps[0]).toMatchObject({ glassEffectStyle: 'regular', borderRadius: 22 });
+    const surfaceStyle = flatten((captured.glassProps[0] as { style: unknown }).style);
+    const frameStyle = flatten(captured.frameStyles[0]);
+    for (const carrierStyle of [surfaceStyle, frameStyle, flatten(captured.viewStyles[0])]) {
+      expect(carrierStyle.backgroundColor).toBeUndefined();
+      expect(carrierStyle.borderWidth).toBeUndefined();
+      expect(carrierStyle.overflow).toBeUndefined();
+    }
+    expect(surfaceStyle).toMatchObject({ minHeight: 44, minWidth: 52 });
+    expect(frameStyle).toMatchObject({ minHeight: 44, padding: 1 });
+    expect(captured.textColors.at(-1)).toBe(tone === 'neutral' ? systemColors.secondaryLabel : systemColors.label);
+  });
+
+  it('preserves tint and rings for selected endpoints and interior range chips', () => {
+    for (const [tone, tintColor, borderColor] of [
+      ['selected', withAlpha(GRADE_COLOR, 0.35), SELECTED_RING],
+      ['range', withAlpha(GRADE_COLOR, 0.18), withAlpha(GRADE_COLOR, 0.75)],
+    ] as const) {
+      captured.glassProps = [];
+      captured.viewStyles = [];
+      render(
+        <GradeChip glass tone={tone} label="V6" gradeColor={GRADE_COLOR} onPress={vi.fn()} accessibilityLabel="V6" />,
+      );
+      expect(captured.glassProps[0]).toMatchObject({ tintColor });
+      expect(flatten(captured.viewStyles.at(-1))).toMatchObject({ borderColor, borderWidth: 1, borderRadius: 22 });
+    }
+  });
+
+  it.each(['#FFD400', '#FF0000'])('uses the theme label over a translucent selected %s tint', (gradeColor) => {
+    render(
+      <GradeChip glass tone="selected" label="V1" gradeColor={gradeColor} onPress={vi.fn()} accessibilityLabel="V1" />,
+    );
+    expect(captured.textColors.at(-1)).toBe(systemColors.label);
+  });
+
+  it('keeps Any neutral glass and forwards tap, hold, layout and accessibility', () => {
+    const onPress = vi.fn();
+    const onLongPress = vi.fn();
+    const onLayout = vi.fn();
+    const { container } = render(
+      <GradeChip
+        glass
+        tone="selected"
+        label="Any"
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onLayout={onLayout}
+        delayLongPress={400}
+        accessibilityLabel="Clear grade"
+        accessibilityState={{ selected: true }}
+      />,
+    );
+    expect((captured.glassProps[0] as { tintColor?: unknown }).tintColor).toBeUndefined();
+    expect(captured.frameProps.at(-1)).toMatchObject({
+      delayLongPress: 400,
+      accessibilityLabel: 'Clear grade',
+      accessibilityState: { selected: true },
+      feedback: 'none',
+      hitSlop: 4,
+    });
+    expect(captured.viewProps[0]).toMatchObject({ onLayout });
+    fireEvent.click(container.querySelector('button')!);
+    fireEvent.contextMenu(container.querySelector('button')!);
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(onLongPress).toHaveBeenCalledOnce();
+  });
 });
 
 describe('GradeChip colorway="grade"', () => {

@@ -96,6 +96,9 @@ function CapsuleChip({
       selected={isCapsuleActive(capsule)}
       colors={colors}
       iconSource={capsule.kind === 'sheet' || capsule.kind === 'toggleMenu' ? iconSourceFor(capsule.icon) : undefined}
+      iconOnly={capsule.kind === 'sheet' && capsule.presentation === 'iconBadge'}
+      badgeCount={capsule.kind === 'sheet' ? capsule.count : undefined}
+      accessibilityLabel={capsule.kind === 'sheet' ? capsule.accessibilityLabel : undefined}
       onPress={capsule.onPress}
     />
   );

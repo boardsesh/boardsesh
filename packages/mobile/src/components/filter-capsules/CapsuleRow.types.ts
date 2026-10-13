@@ -43,7 +43,7 @@ export type CapsuleMenuAction = {
 type CapsuleBase = {
   /** Stable React key, unique within the row (the pinnable kind works well). */
   key: string;
-  /** The visible text, localised and final ("Filters · 2", "V4–V6", "Sent"). */
+  /** Localised final text; icon badges retain it as their spoken label. */
   label: string;
 };
 
@@ -54,13 +54,12 @@ type CapsuleBase = {
  */
 export type SheetCapsule = CapsuleBase & {
   kind: 'sheet';
-  /** Active filters behind the sheet. Lights the capsule when above 0; the label carries the number. */
+  /** Active filters behind the sheet. Lights the capsule when above 0. */
   count?: number;
-  icon?: CapsuleIcon;
-  /** Read by VoiceOver and the web; Compose reads the visible label. */
+  /** Full spoken label, including the active count. */
   accessibilityLabel?: string;
   onPress: () => void;
-};
+} & ({ presentation?: 'label'; icon?: CapsuleIcon } | { presentation: 'iconBadge'; icon: CapsuleIcon });
 
 /**
  * Shows and hides an inline rail the screen renders under the row (the grade

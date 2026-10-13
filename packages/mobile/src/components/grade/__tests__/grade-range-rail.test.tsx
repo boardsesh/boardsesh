@@ -95,6 +95,7 @@ vi.mock('../GradeChip', async () => {
       tone = 'neutral',
       colorway = 'grade',
       gradeColor,
+      glass,
       onPress,
       onLongPress,
       delayLongPress,
@@ -107,6 +108,7 @@ vi.mock('../GradeChip', async () => {
       tone?: string;
       colorway?: string;
       gradeColor?: string;
+      glass?: boolean;
       onPress: () => void;
       onLongPress?: () => void;
       delayLongPress?: number;
@@ -135,6 +137,7 @@ vi.mock('../GradeChip', async () => {
           'data-colorway': colorway,
           'data-hint': accessibilityHint ?? '',
           'data-grade-color': gradeColor ?? '',
+          'data-glass': String(glass),
           'data-holdable': onLongPress ? 'true' : 'false',
           'data-hold-ms': String(delayLongPress),
         },
@@ -210,13 +213,14 @@ const HOLD_HINT = 'mobile.gradeRail.rangeHoldHint';
 const WINDOW_MS = 3000;
 const SESSION_START = new Date('2026-10-11T12:00:00Z').getTime();
 
-function renderRail(bound: GradeBound, props: { recenterKey?: number } = {}) {
+function renderRail(bound: GradeBound, props: { recenterKey?: number; glass?: boolean } = {}) {
   const onChange = vi.fn();
-  const rail = (shownBound: GradeBound, shownProps: { recenterKey?: number }) => (
+  const rail = (shownBound: GradeBound, shownProps: { recenterKey?: number; glass?: boolean }) => (
     <GradeRangeRail grades={RANGE_GRADES} bound={shownBound} onChange={onChange} {...shownProps} />
   );
   const view = render(rail(bound, props));
-  const show = (next: GradeBound, nextProps: { recenterKey?: number } = props) => view.rerender(rail(next, nextProps));
+  const show = (next: GradeBound, nextProps: { recenterKey?: number; glass?: boolean } = props) =>
+    view.rerender(rail(next, nextProps));
   return { ...view, onChange, show };
 }
 
@@ -272,6 +276,17 @@ afterEach(() => {
 });
 
 describe('GradeRangeRail', () => {
+  it('opts every grade and Any into glass while retaining tap and hold range gestures', () => {
+    const { container, getByText, onChange, show } = renderRail(ANY, { glass: true });
+    expect(
+      [...container.querySelectorAll('[data-chip]')].every((chip) => chip.getAttribute('data-glass') === 'true'),
+    ).toBe(true);
+    fireEvent.click(getByText('V0'));
+    const picked = onChange.mock.calls.at(-1)![0] as GradeBound;
+    show(picked);
+    fireEvent.contextMenu(getByText('V2'));
+    expect(onChange.mock.calls.at(-1)![1]).toMatchObject({ gesture: 'hold' });
+  });
   describe('stops', () => {
     it('draws grades that read the same as one chip under V grades', () => {
       const { container } = renderRail(ANY);

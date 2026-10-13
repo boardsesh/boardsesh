@@ -164,6 +164,8 @@ describe('Filters · N', () => {
     expect(filters.label).toBe('mobile.logbook.capsules.filters');
     expect(filters.count).toBe(0);
     expect(filters.icon).toBe('filters');
+    expect(filters.presentation).toBe('iconBadge');
+    expect(filters.accessibilityLabel).toBe(filters.label);
   });
 
   it('counts each active dimension once, plus the climb-name search', () => {
@@ -174,6 +176,7 @@ describe('Filters · N', () => {
     const filters = capsuleFor(buildLogbookCapsules(input, mockT), 'filters', 'sheet');
     expect(filters.count).toBe(3);
     expect(filters.label).toBe('mobile.logbook.capsules.filtersWithCount(3)');
+    expect(filters.accessibilityLabel).toBe(filters.label);
     expect(countLogbookFilters(input.filters, '   ')).toBe(2);
   });
 

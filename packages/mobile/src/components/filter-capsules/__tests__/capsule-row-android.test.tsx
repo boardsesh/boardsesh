@@ -21,7 +21,13 @@ vi.mock('@expo/ui/jetpack-compose', () => {
       selected,
       onClick,
       colors,
-    }: ChildrenProps & { selected: boolean; onClick?: () => void; colors?: Record<string, string> }) =>
+      modifiers,
+    }: ChildrenProps & {
+      selected: boolean;
+      onClick?: () => void;
+      colors?: Record<string, string>;
+      modifiers?: unknown;
+    }) =>
       createElement(
         'button',
         {
@@ -29,6 +35,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
           'data-selected': String(selected),
           'data-container': colors?.selectedContainerColor,
           'data-label-color': colors?.selectedLabelColor,
+          'data-modifiers': JSON.stringify(modifiers),
           onClick,
         },
         children,
@@ -53,6 +60,16 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     Text: ({ children, color }: ChildrenProps & { color?: string }) =>
       createElement('span', { 'data-text-color': color }, children),
     Icon: ({ source }: { source?: unknown }) => createElement('i', { 'data-icon': String(source) }),
+    Badge: ({
+      children,
+      containerColor,
+      contentColor,
+    }: ChildrenProps & { containerColor?: string; contentColor?: string }) =>
+      createElement(
+        'span',
+        { 'data-badge': true, 'data-background': containerColor, 'data-color': contentColor },
+        children,
+      ),
     HorizontalDivider: () => createElement('hr'),
   };
 });
@@ -60,6 +77,7 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   fillMaxWidth: () => ({}),
   horizontalScroll: () => ({}),
   padding: () => ({}),
+  semantics: (arg: unknown) => ({ modifier: 'semantics', arg }),
 }));
 vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
@@ -89,6 +107,34 @@ function chipLabel(chip: Element) {
 }
 
 describe('CapsuleRow.android', () => {
+  it.each([0, 1, 2, 12, 123])('uses a compact icon/count label with full TalkBack wording (%s filters)', (count) => {
+    const onPress = vi.fn();
+    const label = count ? `Filters · ${count}` : 'Filters';
+    const { container } = render(
+      createElement(CapsuleRow, {
+        capsules: [
+          { kind: 'sheet', key: 'filters', label, count, icon: 'filters', presentation: 'iconBadge', onPress },
+        ],
+      }),
+    );
+    const [chip] = chips(container);
+    expect(chip.querySelector('[data-leading-icon]')).toBeNull();
+    expect(chip.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('tune');
+    expect(JSON.parse(chip.getAttribute('data-modifiers') ?? '[]')).toEqual([
+      { modifier: 'semantics', arg: { contentDescription: label } },
+    ]);
+    const badge = chip.querySelector('[data-badge]');
+    if (count === 0) expect(badge).toBeNull();
+    else {
+      expect(badge?.textContent).toBe(count > 99 ? '99+' : String(count));
+      expect(badge?.getAttribute('data-background')).toBe('#FFFFFF');
+      expect(badge?.getAttribute('data-color')).toBe('#7C3AED');
+    }
+    expect(chip.textContent).not.toContain('Filters');
+    fireEvent.click(chip);
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
   it('maps every kind to a FilterChip in order, filled with primaryFill + onPrimary when active', () => {
     const capsules: Capsule[] = [
       { kind: 'sheet', key: 'angle', label: '40°', onPress: vi.fn() },
