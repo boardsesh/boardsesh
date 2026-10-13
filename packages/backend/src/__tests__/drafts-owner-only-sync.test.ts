@@ -171,53 +171,75 @@ describe('board sync for offline downloads: drafts go to their owner only', () =
   });
 });
 
-describe("publishing a draft re-sends its stats to other climbers' devices", () => {
-  it('re-stamps stats rows a device already walked past while the climb was a draft', async () => {
-    // A draft sent to a session and climbed there: its stats rows exist, and
-    // their cursor sits before every row other devices have already pulled.
+/**
+ * A draft whose stats and grade rows sit before every row other devices have
+ * already pulled: the sync hid them while it was a draft. A draft sent to a
+ * session and climbed there gets stats rows this way.
+ */
+async function seedDraftWithHiddenStatsAndGrades(): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climbs
+      (uuid, board_type, layout_id, name, user_id, is_draft, is_listed, angle, frames, frames_count,
+       compatible_size_ids, updated_at)
+    VALUES
+      ('publish-me', ${BOARD_TYPE}, ${LAYOUT_ID}, 'Publish me', ${OWNER_ID}, true, false, 40, 'p1145r12p1146r13', 1,
+       ${`{${SIZE_ID}}`}::int[], ${UPDATED_AT}::timestamp)
+  `);
+  for (const angle of [40, 50]) {
     await db.execute(sql`
-      INSERT INTO board_climbs
-        (uuid, board_type, layout_id, name, user_id, is_draft, is_listed, angle, frames, frames_count,
-         compatible_size_ids, updated_at)
-      VALUES
-        ('publish-me', ${BOARD_TYPE}, ${LAYOUT_ID}, 'Publish me', ${OWNER_ID}, true, false, 40, 'p1145r12p1146r13', 1,
-         ${`{${SIZE_ID}}`}::int[], ${UPDATED_AT}::timestamp)
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, updated_at)
+      VALUES (${BOARD_TYPE}, 'publish-me', ${angle}, 2, '2026-04-01T00:00:00Z'::timestamp)
     `);
-    for (const angle of [40, 50]) {
-      await db.execute(sql`
-        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, updated_at)
-        VALUES (${BOARD_TYPE}, 'publish-me', ${angle}, 2, '2026-04-01T00:00:00Z'::timestamp)
-      `);
+    await db.execute(sql`
+      INSERT INTO board_climb_grades
+        (board_type, climb_uuid, angle, local_grade, universal_grade, confidence, ascensionist_count,
+         model_version, coeff_version, computed_at)
+      VALUES (${BOARD_TYPE}, 'publish-me', ${angle}, 22, 22, 'low', 2, 'test-model', 'test-coeff',
+        '2026-04-01T00:00:00Z'::timestamp)
+    `);
+  }
+}
+
+/**
+ * Publish `publish-me` as its owner with migration 0270's membership trigger
+ * out of the way. That trigger re-stamps a climb's stats and grades when it
+ * crosses the publication line, but it belongs to #6339's reverted design and
+ * #6435 drops it. Where it is still installed it is switched off for the
+ * publish, so the tests prove updateClimb re-sends the rows on its own; where
+ * it is gone there is nothing to switch.
+ */
+async function publishWithoutMembershipTrigger(): Promise<void> {
+  const membershipTrigger = await db.execute(sql`
+    SELECT 1 FROM pg_trigger membership_trigger
+    JOIN pg_class climbs_table ON climbs_table.oid = membership_trigger.tgrelid
+    WHERE climbs_table.relname = 'board_climbs'
+      AND climbs_table.relnamespace = 'public'::regnamespace
+      AND membership_trigger.tgname = 'trg_board_climbs_reference_membership'
+  `);
+  const hasMembershipTrigger = rowsFromResult(membershipTrigger).length > 0;
+  if (hasMembershipTrigger) {
+    await db.execute(sql`ALTER TABLE board_climbs DISABLE TRIGGER trg_board_climbs_reference_membership`);
+  }
+  try {
+    await climbMutations.updateClimb(
+      null,
+      { input: { uuid: 'publish-me', boardType: BOARD_TYPE, isDraft: false } },
+      ctx(OWNER_ID),
+    );
+  } finally {
+    if (hasMembershipTrigger) {
+      await db.execute(sql`ALTER TABLE board_climbs ENABLE TRIGGER trg_board_climbs_reference_membership`);
     }
+  }
+}
+
+describe("publishing a draft re-sends its stats and grades to other climbers' devices", () => {
+  it('re-stamps stats rows a device already walked past while the climb was a draft', async () => {
+    await seedDraftWithHiddenStatsAndGrades();
     const strangerPage = await syncQueries.syncClimbStats(undefined, scope, ctx(STRANGER_ID));
     expect(documentField(strangerPage, 'climb_uuid')).toEqual(EVERYONE_SEES);
 
-    // Migration 0270's membership trigger re-stamps these rows on publish too,
-    // but it belongs to #6339's reverted design and a cleanup migration drops
-    // it. Where it is still installed, switch it off so this proves updateClimb
-    // re-sends the stats on its own; where it is gone there is nothing to switch.
-    const membershipTrigger = await db.execute(sql`
-      SELECT 1 FROM pg_trigger membership_trigger
-      JOIN pg_class climbs_table ON climbs_table.oid = membership_trigger.tgrelid
-      WHERE climbs_table.relname = 'board_climbs'
-        AND climbs_table.relnamespace = 'public'::regnamespace
-        AND membership_trigger.tgname = 'trg_board_climbs_reference_membership'
-    `);
-    const hasMembershipTrigger = rowsFromResult(membershipTrigger).length > 0;
-    if (hasMembershipTrigger) {
-      await db.execute(sql`ALTER TABLE board_climbs DISABLE TRIGGER trg_board_climbs_reference_membership`);
-    }
-    try {
-      await climbMutations.updateClimb(
-        null,
-        { input: { uuid: 'publish-me', boardType: BOARD_TYPE, isDraft: false } },
-        ctx(OWNER_ID),
-      );
-    } finally {
-      if (hasMembershipTrigger) {
-        await db.execute(sql`ALTER TABLE board_climbs ENABLE TRIGGER trg_board_climbs_reference_membership`);
-      }
-    }
+    await publishWithoutMembershipTrigger();
 
     const nextPage = await syncQueries.syncClimbStats(
       undefined,
@@ -231,6 +253,25 @@ describe("publishing a draft re-sends its stats to other climbers' devices", () 
       .sort();
     // Both angles, with the counts the sends wrote, not a fresh empty seed.
     expect(shipped).toEqual(['publish-me@40:2', 'publish-me@50:2']);
+  });
+
+  it('re-stamps grade rows a device already walked past while the climb was a draft', async () => {
+    await seedDraftWithHiddenStatsAndGrades();
+    const strangerPage = await syncQueries.syncClimbGrades(undefined, scope, ctx(STRANGER_ID));
+    expect(documentField(strangerPage, 'climb_uuid')).toEqual(EVERYONE_SEES);
+
+    await publishWithoutMembershipTrigger();
+
+    const nextPage = await syncQueries.syncClimbGrades(
+      undefined,
+      { ...scope, cursor: strangerPage.cursor },
+      ctx(STRANGER_ID),
+    );
+    const shipped = (nextPage.documents as Array<Record<string, unknown>>)
+      .map((document) => `${String(document.climb_uuid)}@${String(document.angle)}:${String(document.local_grade)}`)
+      .sort();
+    // The stored grade itself, unchanged: the publish moves the cursor, not the value.
+    expect(shipped).toEqual(['publish-me@40:22', 'publish-me@50:22']);
   });
 });
 

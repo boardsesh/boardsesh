@@ -1504,9 +1504,13 @@ describe('climb mutations', () => {
       makeCtx(),
     );
 
-    // The climb row, then the re-stamp that re-sends the draft's existing stats
-    // rows to other devices.
-    expect(mockDb.update.mock.calls.map(([table]) => table)).toEqual([dbSchema.boardClimbs, dbSchema.boardClimbStats]);
+    // The climb row, then the re-stamps that re-send the draft's existing stats
+    // and grade rows to other devices.
+    expect(mockDb.update.mock.calls.map(([table]) => table)).toEqual([
+      dbSchema.boardClimbs,
+      dbSchema.boardClimbStats,
+      dbSchema.boardClimbGrades,
+    ]);
     expect(mockPublishSocialEvent).toHaveBeenCalledTimes(1);
   });
 

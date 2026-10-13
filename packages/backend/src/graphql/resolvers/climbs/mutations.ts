@@ -1239,23 +1239,35 @@ export const climbMutations = {
         }
       }
 
-      // A draft can already have stats rows: any send logged on it (a draft sent
-      // to a session, say) writes one. The board sync sends a draft's stats only
-      // to its owner, so other devices walked their stats cursor past those rows
-      // and would only see them on the next send. Re-stamp them on publish, the
-      // way the 0144 cursor trigger would, so every device pulls them now. That
-      // trigger cannot do it: 0195 fires it only when a column the device stores
-      // changes, and publishing changes none of them. 0270's membership trigger
-      // also re-stamps them today, but it is left over from #6339's reverted
-      // design and is due to be dropped; this keeps publishing correct without it.
+      // A draft can already have stats rows (any send logged on it writes one, a
+      // draft sent to a session, say) and can carry Boardsesh grade rows. The
+      // board sync sends a draft's stats and grades only to its owner, so other
+      // devices walked both cursors past those rows. Nothing else moves them
+      // later: the stats cursor trigger (0144) fires only when a column the
+      // device stores changes (0195), and the grade jobs re-stamp `computed_at`
+      // only when a value moves. Re-stamp both on publish, so every device pulls
+      // them now. `DEFAULT` takes the next value of each table's sync_seq
+      // sequence, as an insert does. 0270's membership trigger re-stamps both
+      // today too, but it is left over from #6339's reverted design and is due
+      // to be dropped; this keeps publishing correct for stats and grades
+      // without it.
       if (transitioningToPublished) {
         await tx
           .update(dbSchema.boardClimbStats)
-          .set({ updatedAt: sql`now()`, syncSeq: sql`nextval('board_climb_stats_sync_seq_seq')` })
+          .set({ updatedAt: sql`now()`, syncSeq: sql`DEFAULT` })
           .where(
             and(
               eq(dbSchema.boardClimbStats.boardType, validated.boardType),
               eq(dbSchema.boardClimbStats.climbUuid, validated.uuid),
+            ),
+          );
+        await tx
+          .update(dbSchema.boardClimbGrades)
+          .set({ computedAt: sql`now()`, syncSeq: sql`DEFAULT` })
+          .where(
+            and(
+              eq(dbSchema.boardClimbGrades.boardType, validated.boardType),
+              eq(dbSchema.boardClimbGrades.climbUuid, validated.uuid),
             ),
           );
       }
