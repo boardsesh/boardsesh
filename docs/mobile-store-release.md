@@ -417,12 +417,48 @@ The audit fails when the expected release/build does not match. Missing locales,
 CPPs, device sets, checksums and unfinished screenshot processing appear as
 `readinessIssues`; a successful identity check does not certify those assets.
 Apple requests are GET-only. The audit changes no listings, assets, review
-submissions or rollout. Google Play is not queried: its read API requires an edit
-transaction that can invalidate another upload using the same service account;
-Play readback requires separate coordination with every Play writer.
+submissions or rollout. For Google Play, dispatch **Mobile Store Android Audit**
+(`mobile-store-android-audit.yml`) with the exact versionCode. Its GET-only
+production release summary checks release identity and lifecycle without opening
+an edit. It cannot verify localized release notes, screenshot contents, or managed
+publishing. Do not create an edit merely to audit: a new edit can invalidate an
+existing edit from the same service account.
 Review contact details, credentials and signed upload operations are excluded
 from the artifacts. A concurrent upload can change the observed assets; repeat
 the audit after all upload jobs finish.
+
+### Submit reviewed Apple content
+
+After screenshot upload, independent image review and metadata readback, dispatch
+**App Store Review Submission** (`mobile-store-review-submission.yml`) on `main`
+with `action=plan`, the exact version/build, and the selected comma-separated
+surfaces (`default,kilter,tension,moonboard,spray`). Download the `store-review`
+artifact and check its snapshot against the reviewed source images and copy.
+The default page requires 150 images; each CPP requires 180, across five locales
+and four device slots. Every image must have a source checksum and be fully
+processed. A valid snapshot does not substitute for visual review or comparison
+with the expected source checksums.
+
+Submit with the same selection and the artifact's `snapshotSha256`. The helper
+rechecks exact metadata, image order/checksums, attached build, current CPP versions,
+keyword membership and review membership before submitting. It requires the review
+submission's app-version context to match even for CPP-only submissions, preserves
+manual app release, and changes no CPP visibility or keywords. Stage CPP assets
+without assigning search terms that Apple has not approved.
+
+Afterward, read the receipt and repeat the independent audit to confirm actual
+review states and exact build identity. An ambiguous write is never blindly
+retried: plan again and inspect the existing submission. An exact submitted group
+returns a checked no-op; an existing nonempty compatible review draft can resume.
+Mixed groups, empty unowned drafts, and historical removed membership of a selected
+version stop for inspection. The helper never cancels another review.
+
+Android review remains a separate operation. Before sending a production release
+for review, verify managed publishing in Play Console and establish whether approval
+should publish immediately or wait. Existing metadata and draft lanes skip Android
+changelogs; deliver the reviewed notes explicitly. A release edit must coordinate
+with every Play writer and commit with `changesInReviewBehavior=ERROR_IF_IN_REVIEW`
+so it cannot cancel an existing review by default.
 
 The scheduled **Mobile Release Anchor** workflow queries each store for the exact
 accepted build and creates

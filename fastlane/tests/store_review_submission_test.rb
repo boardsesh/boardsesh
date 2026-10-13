@@ -8,7 +8,7 @@ require_relative "../lib/store_review_submission"
 class StoreReviewSubmissionTest < Minitest::Test
   class FakeApple
     attr_reader :writes, :submissions
-    attr_accessor :keywords, :context_version, :after_write
+    attr_accessor :keywords, :context_version, :after_write, :attached_build_id, :new_cpp_version
 
     def initialize(report)
       @report, @writes, @submissions, @keywords = report, [], {}, ["keyword-1"]
@@ -22,6 +22,11 @@ class StoreReviewSubmissionTest < Minitest::Test
       when %r{/reviewSubmissions/([^/]+)/items\?}
         @submissions.fetch(Regexp.last_match(1)).fetch("items")
       when /\/searchKeywords\?/ then @keywords.map { |id| { "id" => id } }
+      when %r{/appCustomProductPages/([^/]+)/appCustomProductPageVersions\?}
+        page = @report.fetch("customProductPages").find { |entry| entry.fetch("id") == Regexp.last_match(1) }
+        versions = page.fetch("versions").map { |version| { "id" => version.fetch("id"), "attributes" => version.slice("version", "state") } }
+        versions << { "id" => "newer-cpp-version", "attributes" => { "version" => "2", "state" => "PREPARE_FOR_SUBMISSION" } } if @new_cpp_version
+        versions
       else raise "Unexpected GET collection #{path}"
       end
     end
@@ -29,6 +34,11 @@ class StoreReviewSubmissionTest < Minitest::Test
     def request(method, path)
       raise "Only reads belong here" unless method == "GET"
       case path
+      when "/v1/appStoreVersions/app-version?include=app,build"
+        { "data" => { "id" => "app-version", "attributes" => @report.fetch("version").reject { |key, _entry| key == "id" }, "relationships" => {
+          "app" => { "data" => { "type" => "apps", "id" => "app" } },
+          "build" => { "data" => { "type" => "builds", "id" => @attached_build_id || @report.fetch("build").fetch("id") } }
+        } } }
       when %r{/reviewSubmissions/([^?]+)\?}
         id = Regexp.last_match(1)
         { "data" => { "id" => id, "attributes" => { "platform" => "IOS", "state" => @submissions.fetch(id).fetch("state") }, "relationships" => {
@@ -175,6 +185,66 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_equal 180, result.dig("snapshot", "surfaces", 0, "localizations").sum { |entry| entry.fetch("screenshotSets").sum { |set| set.fetch("count") } }
     @client.keywords = ["keyword-2"]
     assert_raises(BoardseshStoreReview::Error) { submit(result.fetch("snapshotSha256"), ["kilter"]) }
+    assert_empty @client.writes
+  end
+
+  def test_cpp_only_submission_and_retry_bind_exact_app_version
+    digest = plan(["kilter"]).fetch("snapshotSha256")
+    assert_equal "submitted", submit(digest, ["kilter"]).fetch("action")
+    writes = @client.writes.length
+    assert_equal "already-submitted", submit(digest, ["kilter"]).fetch("action")
+    assert_equal writes, @client.writes.length
+    @client.context_version = "old-2.5-version"
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_equal writes, @client.writes.length
+  end
+
+  def test_fresh_build_swap_after_asset_scan_blocks_submission
+    digest = plan.fetch("snapshotSha256")
+    @client.after_write = ->(_method, path) { @client.attached_build_id = "unexpected-build" if path == "/v1/reviewSubmissionItems" }
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+    assert_match(/Current release\/build binding/, error.message)
+    refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
+  end
+
+  def test_fresh_build_swap_prevents_successful_noop
+    digest = plan.fetch("snapshotSha256")
+    submit(digest)
+    writes = @client.writes.length
+    @client.attached_build_id = "unexpected-build"
+    assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+    assert_equal writes, @client.writes.length
+  end
+
+  def test_newer_cpp_after_asset_scan_blocks_submission
+    digest = plan(["kilter"]).fetch("snapshotSha256")
+    @client.after_write = ->(_method, path) { @client.new_cpp_version = true if path == "/v1/reviewSubmissionItems" }
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_match(/Current CPP version/, error.message)
+    refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
+  end
+
+  def test_newer_cpp_prevents_successful_noop
+    digest = plan(["kilter"]).fetch("snapshotSha256")
+    submit(digest, ["kilter"])
+    writes = @client.writes.length
+    @client.new_cpp_version = true
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_equal writes, @client.writes.length
+  end
+
+  def test_unrelated_historical_rejected_and_unknown_items_do_not_block
+    @client.submissions["old-app"] = { "state" => "COMPLETE", "items" => [@client.item("appStoreVersion", "old-version", "REJECTED")] }
+    @client.submissions["old-event"] = { "state" => "COMPLETE", "items" => [{ "id" => "old-event", "attributes" => { "state" => "REMOVED" }, "relationships" => { "appEvent" => { "data" => { "type" => "appEvents", "id" => "event" } } } }] }
+    digest = plan.fetch("snapshotSha256")
+    assert_equal "submitted", submit(digest).fetch("action")
+  end
+
+  def test_historical_removed_membership_of_selected_version_requires_inspection
+    @client.submissions["old-app"] = { "state" => "COMPLETE", "items" => [@client.item("appStoreVersion", "app-version", "REMOVED")] }
+    digest = plan.fetch("snapshotSha256")
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+    assert_match(/incompatible review submission/, error.message)
     assert_empty @client.writes
   end
 
