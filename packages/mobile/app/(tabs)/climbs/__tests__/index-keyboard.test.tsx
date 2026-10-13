@@ -486,6 +486,7 @@ vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
 
 vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
   const { NativeRootHeader } = await import('../../../../src/components/chrome/NativeRootHeader');
+  const { GradeRangeRail } = await import('../../../../src/components/grade');
   return {
     ClimbTopChrome: ({
       onHeightChange,
@@ -496,6 +497,8 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       onSearchFocus,
       onOpenFilters,
       gradeRailVisible,
+      onGradeChange,
+      gradeRecenterKey,
       scrollEdge,
     }: {
       scrollEdge?: ScrollEdgeBackdrop;
@@ -507,6 +510,8 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       onSearchFocus?: () => void;
       onOpenFilters?: () => void;
       gradeRailVisible?: boolean;
+      onGradeChange?: NonNullable<typeof mocks.changeGrade>;
+      gradeRecenterKey?: number;
     }) => {
       mocks.openGrade = onOpenGrade;
       mocks.closeGrade = onCloseGrade;
@@ -517,7 +522,21 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
       mocks.reportChromeHeight = onHeightChange;
       mocks.chromeScrollEdge = scrollEdge;
       mocks.chromeRenders += 1;
-      if (mocks.renderFilterChrome) return createElement('div', { 'data-testid': 'top-chrome' }, filterChrome);
+      if (mocks.renderFilterChrome) {
+        return createElement(
+          'div',
+          { 'data-testid': 'top-chrome' },
+          filterChrome,
+          !mocks.filtersInTopChrome && gradeRailVisible && onGradeChange
+            ? createElement(GradeRangeRail, {
+                grades: [],
+                bound: { minGradeId: undefined, maxGradeId: undefined },
+                onChange: onGradeChange,
+                recenterKey: gradeRecenterKey,
+              })
+            : null,
+        );
+      }
       return mocks.renderNativeChrome
         ? createElement(NativeRootHeader, {
             centerContent: createElement('button', null, 'Current climb'),
@@ -2161,8 +2180,7 @@ describe('ClimbList grade row', () => {
     expect(gradeRowToggles()).toEqual([['Grade Row Toggled', { shown: false }]]);
   });
 
-  // Each of these used to close the rail. It is no longer an overlay to get out
-  // of the way: once open, only the Grade chip hides it.
+  // The grade row stays open over the list: only the Grade chip hides it.
   it.each([
     ['the screen loses focus', () => mocks.dismissGradePopover?.()],
     ['search takes focus', () => mocks.focusSearch?.()],

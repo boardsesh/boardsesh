@@ -32,6 +32,8 @@ type CollapsingLargeTitleHeaderProps = {
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
+  /** Extra controls that overlay content without increasing the list inset. */
+  floatingContent?: ReactNode;
   /** Under the UIKit header, keep the painted band behind `children` instead of
    *  letting them float over the list (see `NativeRootHeader`). Nothing else
    *  reads it: the floating islands have always sat over the list. */
@@ -56,6 +58,7 @@ export function CollapsingLargeTitleHeader({
   leftActions,
   rightActions,
   children,
+  floatingContent,
   opaqueControls,
   scrollEdge,
 }: CollapsingLargeTitleHeaderProps) {
@@ -82,50 +85,61 @@ export function CollapsingLargeTitleHeader({
         opaqueControls={opaqueControls}
         scrollEdge={scrollEdge}
         onHeightChange={onHeightChange}
+        floatingContent={floatingContent}
       >
         {children}
       </NativeRootHeader>
     );
 
   return (
-    <View pointerEvents="box-none" style={[styles.container, { paddingTop: insets.top }]} onLayout={handleLayout}>
+    <View pointerEvents="box-none" style={styles.container}>
       {/* Always-on progressive glass: a blur from the top of the screen down to
           just below the islands, strongest up top and fading to clear, so content
           frosts out gradually and the status-bar strip reads as glass. */}
-      <ProgressiveBlur style={[styles.blur, { height: blurHeight }]} />
-      {/* A standard three-section nav row: left island, a flexible centre that
+      <ProgressiveBlur
+        style={[styles.blur, floatingContent != null ? { bottom: -spacing[6] } : { height: blurHeight }]}
+        fadeLength={floatingContent != null ? spacing[6] : undefined}
+      />
+      <View pointerEvents="box-none" style={{ paddingTop: insets.top }} onLayout={handleLayout}>
+        {/* A standard three-section nav row: left island, a flexible centre that
           holds the optional persistent title, right island. The flex centre keeps
           a long title from sliding under the islands — it ellipsizes in the gap
           rather than overlapping them. */}
-      <View pointerEvents="box-none" style={styles.row}>
-        {/* Left island. */}
-        {leftActions}
+        <View pointerEvents="box-none" style={styles.row}>
+          {/* Left island. */}
+          {leftActions}
 
-        {/* Flexible centre: an optional interactive element (Climbs "On the wall"
+          {/* Flexible centre: an optional interactive element (Climbs "On the wall"
             capsule) takes precedence; otherwise the optional persistent plain title
             (Climbs filter summary) — plain text over the progressive blur; otherwise
             the spacer that holds the right island to the edge. `box-none` so the
             capsule stays tappable while empty space falls through. */}
-        <View pointerEvents="box-none" style={styles.centerSection}>
-          {centerContent ??
-            (centerTitle != null ? (
-              <Text
-                variant="headline"
-                numberOfLines={1}
-                ellipsizeMode="tail"
-                color={systemColors.label}
-                style={styles.centerTitle}
-              >
-                {centerTitle}
-              </Text>
-            ) : null)}
+          <View pointerEvents="box-none" style={styles.centerSection}>
+            {centerContent ??
+              (centerTitle != null ? (
+                <Text
+                  variant="headline"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  color={systemColors.label}
+                  style={styles.centerTitle}
+                >
+                  {centerTitle}
+                </Text>
+              ) : null)}
+          </View>
+
+          {/* Right island. */}
+          {rightActions}
         </View>
 
-        {/* Right island. */}
-        {rightActions}
+        {children}
       </View>
-
-      {children}
+      {floatingContent != null ? (
+        <View pointerEvents="auto" style={{ backgroundColor: systemColors.background }}>
+          {floatingContent}
+        </View>
+      ) : null}
     </View>
   );
 }

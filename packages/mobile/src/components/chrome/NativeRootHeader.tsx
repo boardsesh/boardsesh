@@ -47,6 +47,7 @@ export function NativeRootHeader({
   rightItems,
   centerContent,
   children,
+  floatingContent,
   opaqueControls = false,
   scrollEdge,
   onHeightChange,
@@ -62,6 +63,8 @@ export function NativeRootHeader({
   centerContent?: ReactNode;
   /** Supplementary controls pinned under the bar; see `HeaderControls`. */
   children?: ReactNode;
+  /** Controls drawn below children without reserving additional list space. */
+  floatingContent?: ReactNode;
   /**
    * Keep the painted band behind `children` even where they could float. For a
    * block that carries bare text, which a blur alone does not keep readable.
@@ -86,11 +89,12 @@ export function NativeRootHeader({
   const glassCapability = useGlassCapability();
   const headerHeight = useHeaderHeight();
   const controlsHeight = useRef(0);
-  const hasControls = children != null;
+  const hasReservedControls = children != null;
+  const hasControls = hasReservedControls || floatingContent != null;
   useLayoutEffect(() => {
-    if (!hasControls) controlsHeight.current = 0;
+    if (!hasReservedControls) controlsHeight.current = 0;
     onHeightChange(controlsHeight.current);
-  }, [onHeightChange, hasControls]);
+  }, [onHeightChange, hasReservedControls]);
   const measureControls = useCallback(
     (event: LayoutChangeEvent) => {
       controlsHeight.current = event.nativeEvent.layout.height;
@@ -158,6 +162,7 @@ export function NativeRootHeader({
           opaque={opaqueControls}
           scrollEdge={scrollEdge}
           onLayout={measureControls}
+          floatingContent={floatingContent}
         >
           {children}
         </HeaderControls>
@@ -189,26 +194,33 @@ function HeaderControls({
   scrollEdge,
   onLayout,
   children,
+  floatingContent,
 }: {
   headerHeight: number;
   opaque: boolean;
   scrollEdge: ScrollEdgeBackdrop | undefined;
   onLayout: (event: LayoutChangeEvent) => void;
   children: ReactNode;
+  floatingContent: ReactNode;
 }) {
   const { systemColors } = useTheme();
   const canFloat = useFloatingHeaderControls();
   const floating = canFloat && !opaque;
   return (
     <View
-      onLayout={onLayout}
+      testID="header-controls"
       // NOT box-none, floating or not: a row the blur has smeared must not take a
       // tap through the gaps between the controls.
       pointerEvents="auto"
       style={[styles.controls, { top: headerHeight }, floating ? null : { backgroundColor: systemColors.background }]}
     >
-      {floating ? <ControlsBackdrop headerHeight={headerHeight} scrollEdge={scrollEdge} /> : null}
-      {children}
+      {floating ? (
+        <ControlsBackdrop headerHeight={headerHeight} scrollEdge={scrollEdge} forceVisible={floatingContent != null} />
+      ) : null}
+      <View pointerEvents="box-none" onLayout={onLayout}>
+        {children}
+      </View>
+      {floatingContent}
     </View>
   );
 }
@@ -216,15 +228,16 @@ function HeaderControls({
 /**
  * The blur behind floating controls, faded in while rows are under them.
  *
- * Absolutely positioned, so the block's measured height (the number the list pads
- * by) is the controls alone. It reaches up past the block's own top to the top of
+ * Absolutely positioned, so the list reserves only the inner persistent controls.
+ * It covers the full block, including floating content, and reaches up to the top of
  * the screen, under the native bar, and down past its bottom by the fade's
  * length: the blur holds full strength behind every control and fades out over
  * the rows just below, so a translucent control (the segmented control) never
  * has sharp text showing through its lower half. It stays mounted while hidden:
  * a view at zero opacity is not drawn, and the fade in has nothing to build.
  *
- * It is the one subscriber to `scrollEdge`. It tells the store that a blur is
+ * Floating content keeps it visible even at rest because it overlays the first
+ * rows. Otherwise it is the one subscriber to `scrollEdge`. It tells the store that a blur is
  * listening (only then does the screen give its list scroll listeners) and where
  * the block was drawn: the list rests at minus the bar's height, and a row is
  * under the block once the list is past that.
@@ -232,11 +245,14 @@ function HeaderControls({
 function ControlsBackdrop({
   headerHeight,
   scrollEdge,
+  forceVisible,
 }: {
   headerHeight: number;
   scrollEdge: ScrollEdgeBackdrop | undefined;
+  forceVisible: boolean;
 }) {
-  const visible = useScrolledUnder(scrollEdge);
+  const scrolledUnder = useScrolledUnder(scrollEdge);
+  const visible = forceVisible || scrolledUnder;
   useLayoutEffect(() => scrollEdge?.attachBackdrop(), [scrollEdge]);
   // A layout effect: the store hears the new top in the commit that moves the block.
   useLayoutEffect(() => {

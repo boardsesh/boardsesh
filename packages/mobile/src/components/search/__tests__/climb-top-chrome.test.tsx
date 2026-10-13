@@ -54,17 +54,19 @@ type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
   pointerEvents?: string;
+  testID?: string;
 };
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),
-  View: ({ children, onLayout, pointerEvents }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents, testID }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
+        'data-testid': testID,
         'data-pointer': pointerEvents ?? '',
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 88 } } }) : undefined,
       },
@@ -218,7 +220,7 @@ vi.mock('../../queue-control/use-wall-or-queue-climb', () => ({ useWallClimbIfDi
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
 vi.mock('../../../theme/tokens', () => ({
-  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
   shadows: { sm: {} },
 }));
 
@@ -614,7 +616,7 @@ describe('ClimbTopChrome', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    const materialContainer = container.querySelector('[data-has-layout="true"]') as HTMLElement;
+    const materialContainer = container.querySelector('[data-testid="climb-material-chrome"]') as HTMLElement;
     expect(materialContainer).not.toBeNull();
     expect(materialContainer.getAttribute('data-pointer')).toBe('auto');
   });
@@ -627,6 +629,37 @@ describe('ClimbTopChrome', () => {
     fireEvent.click(layoutView);
     expect(onHeightChange).toHaveBeenCalledWith(88);
   });
+
+  it.each(['material', 'liquidGlass'] as const)(
+    'keeps the grade row outside the reserved measurement on %s',
+    (variant) => {
+      ctrl.variant = variant;
+      const onHeightChange = vi.fn();
+      const props = makeProps({
+        onHeightChange,
+        gradeBound: { minGradeId: 10, maxGradeId: 12 },
+        onGradeChange: vi.fn(),
+        showPersistentChips: true,
+        filterChrome: <span>Persistent filter tokens</span>,
+      });
+      const { container, rerender, getByText } = render(<ClimbTopChrome {...props} />);
+      const measure = () => container.querySelector('[data-has-layout="true"]')!;
+      fireEvent.click(measure());
+      expect(onHeightChange).toHaveBeenLastCalledWith(88);
+      onHeightChange.mockClear();
+
+      rerender(<ClimbTopChrome {...props} gradeRailVisible />);
+      const rail = container.querySelector('[data-grade-rail="true"]')!;
+      expect(rail).not.toBeNull();
+      expect(measure().contains(rail)).toBe(false);
+      expect(measure().contains(getByText('Persistent filter tokens'))).toBe(true);
+      expect(onHeightChange).not.toHaveBeenCalled();
+
+      rerender(<ClimbTopChrome {...props} />);
+      expect(container.querySelector('[data-grade-rail="true"]')).toBeNull();
+      expect(onHeightChange).not.toHaveBeenCalled();
+    },
+  );
 
   it('renders the Material branch with the board switcher, search, and grade controls', () => {
     ctrl.variant = 'material';

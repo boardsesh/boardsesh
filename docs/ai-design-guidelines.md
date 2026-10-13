@@ -451,7 +451,9 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 
 Some root tabs pin a block of controls under the UIKit navigation bar: Climbs has its filter chips,
 the grade row and the removable filter tokens; Profile has its segmented control. `NativeRootHeader`
-draws that block (`HeaderControls`), and the list pads its top by the block's measured height.
+draws that block (`HeaderControls`), and the list pads its top by the persistent controls' measured
+height. The disclosed grade row is drawn below that measurement, inside the full background and
+touch surface, so showing or hiding it leaves the list's spacing and scroll position unchanged.
 
 **On iOS 26 the block floats.** It paints no background. The list scrolls behind the controls, and
 one blur runs from the top of the screen to one fade length (24pt) below the block: full strength
@@ -465,7 +467,9 @@ effect does: it blurs the content behind and reduces its opacity. Ours is `Progr
 `fadeLength`: a thin material, with a wash of the scene background over it. It is a material and
 never a `GlassSurface`, because the chips on it are glass already (see "Glass material").
 
-**The blur is there only while rows are under the controls.** At rest the page behind them is the
+**The blur is there while rows are under the controls.** An open grade row overlaps the first
+climbs even at rest, so it keeps the backdrop visible. With the grade row closed, the page behind
+the resting controls is the
 page: a material over an empty black page reads as a grey panel, which is the painted band again.
 Three parties meet in one small store (`src/hooks/use-scroll-edge-backdrop.ts`), and only the blur
 re-renders:
@@ -601,7 +605,10 @@ resizable sheets, and a glass capsule under a row of glass chips is glass on gla
 material" above). The row is the strip of chips and nothing else: no pinned control beside it.
 
 **Hidden until tapped, then it stays.** On Climbs the row is hidden by default and the Grade chip
-opens it, pushing the list down. Open is a persisted setting (`gradeRowShown`): the row stays across
+opens it over the list, including at the list's resting top. The persistent chip and token rows
+stay above it. On iOS 26 the backdrop covers the expanded controls while the grade row is open,
+even at rest; opaque layouts extend their existing background instead. Open is a persisted setting
+(`gradeRowShown`): the row stays across
 opening a climb, search focus, Filters and app launches, until the chip hides it. Nothing else
 closes it. On iOS the chip's chevron points up while the row is shown. The row is drawn only while
 the Grade chip is pinned: the chip is its one way out, so unpinning the chip takes the row with it,

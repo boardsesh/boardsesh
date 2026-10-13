@@ -5,10 +5,12 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
     children,
+    floatingContent,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     children?: ReactNode;
+    floatingContent?: ReactNode;
     scrollEdge?: unknown;
   }) => {
     ctrl.nativeScrollEdge = scrollEdge;
@@ -17,6 +19,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
       createElement('div', { 'data-native-controls': 'true' }, children),
+      createElement('div', { 'data-native-floating': 'true' }, floatingContent),
     );
   },
 }));
@@ -216,6 +219,17 @@ const board: BoardFields = {
 };
 
 describe('CollapsingTopChrome', () => {
+  it('passes floating content separately from the reserved native controls', () => {
+    ctrl.nativeHeader = true;
+    const { container } = render(
+      <CollapsingTopChrome {...makeProps({ floatingContent: <button>Grade row</button> })}>
+        <span>Persistent filters</span>
+      </CollapsingTopChrome>,
+    );
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filters');
+    expect(container.querySelector('[data-native-floating]')?.textContent).toBe('Grade row');
+  });
+
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;

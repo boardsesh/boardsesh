@@ -4,11 +4,13 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
     children,
+    floatingContent,
     opaqueControls,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     children?: ReactNode;
+    floatingContent?: ReactNode;
     opaqueControls?: boolean;
     scrollEdge?: unknown;
   }) => {
@@ -18,6 +20,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
       createElement('div', { 'data-native-controls': 'true', 'data-opaque': String(opaqueControls) }, children),
+      createElement('div', { 'data-native-floating': 'true' }, floatingContent),
     );
   },
 }));
@@ -35,14 +38,16 @@ type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
   pointerEvents?: string;
+  style?: unknown;
 };
 vi.mock('react-native', () => ({
-  View: ({ children, onLayout, pointerEvents }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents, style }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
         'data-pointer': pointerEvents ?? '',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 72 } } }) : undefined,
       },
       children,
@@ -73,7 +78,7 @@ vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false 
 // ProgressiveBlur renders the iOS blur path under this mode (short-circuits the
 // native a11y / glass-capability hooks it would otherwise pull in).
 vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
+vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16, 6: 24 }, shadows: { sm: {} } }));
 vi.mock('../GlassActionToolbar', () => ({ TOP_ACTION_SIZE: 48 }));
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
 vi.mock('../../PressableSurface', () => ({
@@ -102,6 +107,17 @@ function makeProps(over: Partial<Parameters<typeof CollapsingLargeTitleHeader>[0
 }
 
 describe('CollapsingLargeTitleHeader', () => {
+  it('passes floating content separately from the reserved native controls', () => {
+    controls.nativeHeader = true;
+    const { container } = render(
+      <CollapsingLargeTitleHeader {...makeProps({ floatingContent: <button>Grade row</button> })}>
+        <span>Persistent filters</span>
+      </CollapsingLargeTitleHeader>,
+    );
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filters');
+    expect(container.querySelector('[data-native-floating]')?.textContent).toBe('Grade row');
+  });
+
   beforeEach(() => {
     controls.nativeHeader = false;
     controls.nativeScrollEdge = undefined;
@@ -209,6 +225,31 @@ describe('CollapsingLargeTitleHeader', () => {
     // progressive-blur.test.tsx.
     expect(container.querySelector('[data-testid="masked-view"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="blur-view"]')).not.toBeNull();
+  });
+
+  it('excludes floating controls from fallback measurement without remounting persistent controls', () => {
+    const onHeightChange = vi.fn();
+    const props = makeProps({ onHeightChange });
+    const { container, rerender, getByText } = render(
+      <CollapsingLargeTitleHeader {...props}>
+        <input aria-label="Search" defaultValue="project" />
+      </CollapsingLargeTitleHeader>,
+    );
+    const search = container.querySelector('input')!;
+    const measure = () => container.querySelector('[data-has-layout="true"]')!;
+    fireEvent.click(measure());
+    onHeightChange.mockClear();
+    rerender(
+      <CollapsingLargeTitleHeader {...props} floatingContent={<button>Grade row</button>}>
+        <input aria-label="Search" defaultValue="project" />
+      </CollapsingLargeTitleHeader>,
+    );
+    expect(measure().contains(getByText('Grade row'))).toBe(false);
+    const floatingSurface = getByText('Grade row').parentElement!;
+    expect(floatingSurface.getAttribute('data-pointer')).toBe('auto');
+    expect(JSON.parse(floatingSurface.getAttribute('data-style')!)).toMatchObject({ backgroundColor: '#fff' });
+    expect(container.querySelector('input')).toBe(search);
+    expect(onHeightChange).not.toHaveBeenCalled();
   });
 
   it('reports its measured height through onHeightChange (container onLayout)', () => {

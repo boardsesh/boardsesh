@@ -171,6 +171,17 @@ function ClimbTopChromeComponent({
   }, [onSearchBlur]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const gradeRail =
+    gradeRailVisible && gradeBound && onGradeChange ? (
+      <GradeRangeRail
+        grades={grades}
+        bound={gradeBound}
+        lastUsedGradeId={lastUsedGradeId}
+        boardName={boardName}
+        onChange={onGradeChange}
+        recenterKey={gradeRecenterKey}
+      />
+    ) : null;
   if (isMaterial) {
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
@@ -194,139 +205,127 @@ function ClimbTopChromeComponent({
         // chrome. With `auto`, the container's background makes it the RNGH touch
         // target and the full DOWN…UP reaches the Compose chips natively.
         pointerEvents="auto"
+        testID="climb-material-chrome"
         style={[
           styles.materialContainer,
           {
-            paddingTop: insets.top,
             backgroundColor: systemColors.secondaryBackground,
             borderBottomColor: systemColors.separator,
           },
         ]}
-        onLayout={handleLayout}
       >
-        <Appbar.Header
-          statusBarHeight={0}
-          mode="small"
-          elevated
-          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
-        >
-          <UserAvatarToolbarAction variant="material" />
-          <BoardSwitcherButton
-            onPress={onOpenBoardDetail}
-            accessibilityHint={t('mobile.search.boardSwitcherHint')}
-            badge={showBoardBadge}
-            showcaseAnchor={anchorBoardButton}
-          />
-          {canCreate ? (
-            <Appbar.Action
-              icon={iconMap.plus.android}
-              color={systemColors.label as string}
-              onPress={onCreate}
-              accessibilityLabel={t('mobile.create.fab.ariaLabel')}
+        <View pointerEvents="box-none" style={{ paddingTop: insets.top }} onLayout={handleLayout}>
+          <Appbar.Header
+            statusBarHeight={0}
+            mode="small"
+            elevated
+            style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+          >
+            <UserAvatarToolbarAction variant="material" />
+            <BoardSwitcherButton
+              onPress={onOpenBoardDetail}
+              accessibilityHint={t('mobile.search.boardSwitcherHint')}
+              badge={showBoardBadge}
+              showcaseAnchor={anchorBoardButton}
             />
-          ) : null}
-          {/* Angle is a quick-row chip below (it re-grades the whole list — a list
+            {canCreate ? (
+              <Appbar.Action
+                icon={iconMap.plus.android}
+                color={systemColors.label as string}
+                onPress={onCreate}
+                accessibilityLabel={t('mobile.create.fab.ariaLabel')}
+              />
+            ) : null}
+            {/* Angle is a quick-row chip below (it re-grades the whole list — a list
               param, not an app-bar action). No toolbar lightbulb on the climbs tab
               either — board-LED control lives on the queue bar / current-climb pill
               (BoardControlIndicator), in step with the glass `hideLight`. */}
-        </Appbar.Header>
+          </Appbar.Header>
 
-        {/* "On the wall" status — a compact capsule in a slim centred row under the
+          {/* "On the wall" status — a compact capsule in a slim centred row under the
             app bar (M3 has no centre-slot in the bar), only when a board feed lights
             a climb that differs from the user's own queue head. */}
-        {wallCapsule ? (
-          <View pointerEvents="box-none" style={styles.materialWallStatusRow}>
-            {wallCapsule}
-          </View>
-        ) : null}
+          {wallCapsule ? (
+            <View pointerEvents="box-none" style={styles.materialWallStatusRow}>
+              {wallCapsule}
+            </View>
+          ) : null}
 
-        {/* Inner wrappers stay box-none: once the outer `auto` container claims the
+          {/* Inner wrappers stay box-none: once the outer `auto` container claims the
             RNGH pointer, only RN's own hit-testing runs inside, where box-none just
             means "let touches reach the controls". If an inner control ever adopts
             an RNGH gesture it needs no change — the outer container already stops
             the list's handlers from being recorded. */}
-        {usesCustomSearch ? (
-          <View pointerEvents="box-none" style={styles.materialSearchStack}>
-            <View pointerEvents="box-none" style={styles.materialSearchRow}>
-              <View pointerEvents="box-none" style={styles.materialSearchSlot}>
-                <SearchHeader
-                  ref={searchFieldRef}
-                  initialValue={searchInitialValue}
-                  placeholder={searchPlaceholder}
-                  onChangeText={onSearchChange}
-                  onFocus={handleFocus}
-                  onBlur={handleBlur}
-                  height={MATERIAL_SEARCH_HEIGHT}
-                />
+          {usesCustomSearch ? (
+            <View pointerEvents="box-none" style={styles.materialSearchStack}>
+              <View pointerEvents="box-none" style={styles.materialSearchRow}>
+                <View pointerEvents="box-none" style={styles.materialSearchSlot}>
+                  <SearchHeader
+                    ref={searchFieldRef}
+                    initialValue={searchInitialValue}
+                    placeholder={searchPlaceholder}
+                    onChangeText={onSearchChange}
+                    onFocus={handleFocus}
+                    onBlur={handleBlur}
+                    height={MATERIAL_SEARCH_HEIGHT}
+                  />
+                </View>
+                {showTopChromeFilters ? (
+                  <GradeFilterControl
+                    label={visibleGradeLabel}
+                    active={hasGradeFilter}
+                    expanded={gradeRailVisible}
+                    height={MATERIAL_SEARCH_HEIGHT}
+                    onPress={() => {
+                      if (gradeRailVisible) {
+                        onCloseGrade();
+                        return;
+                      }
+                      onOpenGrade?.();
+                    }}
+                    onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
+                    toggleAccessibilityLabel={t('mobile.search.gradeAction')}
+                    clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
+                    openHint={t('mobile.search.gradeOpenHint')}
+                    closeHint={t('mobile.search.gradeCloseHint')}
+                  />
+                ) : null}
+                {showTopChromeFilters && onOpenFilters ? (
+                  <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
+                ) : null}
               </View>
-              {showTopChromeFilters ? (
-                <GradeFilterControl
-                  label={visibleGradeLabel}
-                  active={hasGradeFilter}
-                  expanded={gradeRailVisible}
-                  height={MATERIAL_SEARCH_HEIGHT}
-                  onPress={() => {
-                    if (gradeRailVisible) {
-                      onCloseGrade();
-                      return;
-                    }
-                    onOpenGrade?.();
-                  }}
-                  onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
-                  toggleAccessibilityLabel={t('mobile.search.gradeAction')}
-                  clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
-                  openHint={t('mobile.search.gradeOpenHint')}
-                  closeHint={t('mobile.search.gradeCloseHint')}
-                />
-              ) : null}
-              {showTopChromeFilters && onOpenFilters ? (
-                <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
-              ) : null}
-            </View>
 
-            {/* The persistent native chip row owns filtering when the Material
+              {/* The persistent native chip row owns filtering when the Material
                 default; it sits directly under the search field, like Liquid Glass. */}
-            {showPersistentChips ? filterChrome : null}
+              {showPersistentChips ? filterChrome : null}
 
-            {/* The angle now rides as the first chip in the persistent chip row above
+              {/* The angle now rides as the first chip in the persistent chip row above
                 (FilterChipRow on Android); the quick row only carries the condensed filter
                 summary, which shows only when the top-chrome filters are active (i.e.
                 the persistent chip row is off). */}
-            {visibleFilterSummary ? (
-              <View pointerEvents="box-none" style={styles.materialQuickRow}>
-                <Chip
-                  compact
-                  mode="flat"
-                  icon={iconMap.filter.android}
-                  onPress={visibleFilterSummary.onClear}
-                  onClose={visibleFilterSummary.onClear}
-                  closeIcon={iconMap.close.android}
-                  accessibilityLabel={visibleFilterSummary.text}
-                  style={styles.materialChip}
-                  textStyle={styles.materialChipText}
-                >
-                  {visibleFilterSummary.text}
-                </Chip>
-              </View>
-            ) : null}
-
-            {/* The rail stays inside the stack's gutter like the chip row above it,
-                which pads its own chips a further 16pt. The rail's default insets
-                do the same, so the first grade chip rests under that row's first
-                chip and both strips clip on the same line. */}
-            {gradeRailVisible && gradeBound && onGradeChange ? (
-              <GradeRangeRail
-                grades={grades}
-                bound={gradeBound}
-                lastUsedGradeId={lastUsedGradeId}
-                boardName={boardName}
-                onChange={onGradeChange}
-                recenterKey={gradeRecenterKey}
-                style={styles.materialGradeRail}
-              />
-            ) : null}
-          </View>
-        ) : null}
+              {visibleFilterSummary ? (
+                <View pointerEvents="box-none" style={styles.materialQuickRow}>
+                  <Chip
+                    compact
+                    mode="flat"
+                    icon={iconMap.filter.android}
+                    onPress={visibleFilterSummary.onClear}
+                    onClose={visibleFilterSummary.onClear}
+                    closeIcon={iconMap.close.android}
+                    accessibilityLabel={visibleFilterSummary.text}
+                    style={styles.materialChip}
+                    textStyle={styles.materialChipText}
+                  >
+                    {visibleFilterSummary.text}
+                  </Chip>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+        {/* Inside the opaque touch surface, outside the reserved-height measurement.
+            Retain the search stack's gutter and the rail's own chip insets. */}
+        {usesCustomSearch && gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
       </View>
     );
   }
@@ -357,6 +356,7 @@ function ClimbTopChromeComponent({
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
+      floatingContent={gradeRail ? <View style={styles.gradeRail}>{gradeRail}</View> : undefined}
       hideLight
     >
       {usesCustomSearch ? (
@@ -453,6 +453,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   materialGradeRail: {
-    marginTop: spacing[1],
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[3],
+  },
+  gradeRail: {
+    paddingBottom: spacing[2],
   },
 });

@@ -469,9 +469,10 @@ function ClimbListInner() {
     onDismiss: finishFilterSession,
   });
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
-  // Measured height of the chrome the list has to clear: the whole floating glass
-  // chrome (incl. the top safe-area inset), or only the controls block under the
-  // bar when UIKit owns the header (the list's automatic inset covers the bar).
+  // Measured height of the persistent chrome the list has to clear: the floating
+  // controls (incl. the top safe-area inset), or only the controls under the bar
+  // when UIKit owns the header (the automatic inset covers the bar). The grade
+  // row overlays climbs and is excluded from this reserved spacing.
   // The list pads its top by this, so it is not a screen offset: never position
   // an overlay with it.
   const [searchBarHeight, setSearchBarHeight] = useState(() => insets.top + 60);
@@ -2072,37 +2073,17 @@ function ClimbListInner() {
           betaActive={!!filters.onlyWithBetaVideos}
           onToggleBeta={handleToggleBeta}
         />
-        {/* On Liquid Glass the grade row is a row of the chrome itself, so the
-            native header can never cover it and the list insets by the taller
-            chrome. The Grade chip opens it and it stays until the chip hides it.
-            (Material renders its own rail inside ClimbTopChrome; regular-width
-            iPad uses the chip's popover.) */}
-        {gradeRowVisible && !filterInTopChrome ? (
-          <View style={styles.chipGradeRail}>
-            <GradeRangeRail
-              grades={grades}
-              bound={gradeBound}
-              lastUsedGradeId={lastUsedGrade}
-              boardName={boardName}
-              onChange={handleGradeRailChange}
-              recenterKey={gradeRecenterKey}
-            />
-          </View>
-        ) : null}
         <FilterTokenRow tokens={sheetOnlyFilterTokens} />
       </>
     );
   }, [
     showFilterChips,
-    filterInTopChrome,
     gradeUsesPopover,
     grades,
     gradeBound,
     lastUsedGrade,
     boardName,
     handleGradeRailChange,
-    gradeRecenterKey,
-    gradeRowVisible,
     gradePopoverOpen,
     gradeRowShown,
     pinnedChips,
@@ -2767,12 +2748,6 @@ const styles = StyleSheet.create({
   // Background colour is themed at the call site; 0.4 of it dims the stale rows.
   placeholderTint: {
     opacity: 0.4,
-  },
-  // The grade rail the Grade chip discloses, in flow under the chip row. No side
-  // padding: the rail runs edge to edge and insets its own first and last chip to
-  // the 16pt gutter the chip row above rests on.
-  chipGradeRail: {
-    paddingBottom: spacing[2],
   },
   emptyContainer: {
     flex: 1,

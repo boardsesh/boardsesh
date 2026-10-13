@@ -16,6 +16,7 @@ const controls = vi.hoisted(() => ({
   backdropOpacity: undefined as { value: number } | undefined,
   backdropFades: [] as Array<{ to: number; duration: number }>,
   headerHeight: 148,
+  measuredControlsHeight: 36,
   focusedSegments: ['(tabs)', 'home'] as string[],
   options: [] as NativeStackNavigationOptions[],
   openUserDrawer: vi.fn(),
@@ -37,8 +38,11 @@ vi.mock('react-native', () => ({
         'data-testid': testID,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-pointer-events': pointerEvents,
-        'data-controls': onLayout ? 'true' : undefined,
-        onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 36 } } }) : undefined,
+        'data-controls': testID === 'header-controls' ? 'true' : undefined,
+        'data-measure-controls': onLayout ? 'true' : undefined,
+        onClick: onLayout
+          ? () => onLayout({ nativeEvent: { layout: { height: controls.measuredControlsHeight } } })
+          : undefined,
       },
       children,
     ),
@@ -185,6 +189,7 @@ describe('NativeRootHeader', () => {
     controls.backdropOpacity = undefined;
     controls.backdropFades.length = 0;
     controls.headerHeight = 148;
+    controls.measuredControlsHeight = 36;
     controls.focusedSegments = ['(tabs)', 'home'];
     controls.options.length = 0;
     controls.openUserDrawer.mockClear();
@@ -275,7 +280,7 @@ describe('NativeRootHeader', () => {
     const supplementaryControls = container.querySelector('[data-controls]');
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
     expect(readStyle(supplementaryControls).top).toBe(148);
-    fireEvent.click(supplementaryControls!);
+    fireEvent.click(container.querySelector('[data-measure-controls]')!);
     expect(onHeightChange).toHaveBeenLastCalledWith(36);
 
     controls.headerHeight = 100;
@@ -292,7 +297,7 @@ describe('NativeRootHeader', () => {
   });
 
   describe('supplementary controls under the bar', () => {
-    type ControlsProps = { opaqueControls?: boolean; scrollEdge?: ScrollEdgeBackdrop };
+    type ControlsProps = { opaqueControls?: boolean; scrollEdge?: ScrollEdgeBackdrop; floatingContent?: ReactNode };
     const header = (props: ControlsProps, onHeightChange: (height: number) => void) => (
       <NativeRootHeader onHeightChange={onHeightChange} {...props}>
         <span>Filter chips</span>
@@ -308,6 +313,53 @@ describe('NativeRootHeader', () => {
       const update = (next: ControlsProps) => view.rerender(header(next, onHeightChange));
       return { ...view, onHeightChange, block, backdrop, backdropFrame, update };
     };
+    it('keeps the reserved height when floating controls open, resize and close', () => {
+      controls.canFloat = true;
+      const { block, update, onHeightChange, getByText, queryByText } = renderControls();
+      fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
+      expect(onHeightChange).toHaveBeenLastCalledWith(36);
+      onHeightChange.mockClear();
+
+      update({ floatingContent: <button>Grade row</button> });
+      expect(block()!.contains(getByText('Grade row'))).toBe(true);
+      expect(block()!.querySelector('[data-measure-controls]')!.contains(getByText('Grade row'))).toBe(false);
+      expect(onHeightChange).not.toHaveBeenCalled();
+
+      // Real persistent-control resizing (rotation or text size) still measures.
+      controls.measuredControlsHeight = 52;
+      fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
+      expect(onHeightChange).toHaveBeenLastCalledWith(52);
+      onHeightChange.mockClear();
+      update({});
+      expect(queryByText('Grade row')).toBeNull();
+      expect(onHeightChange).not.toHaveBeenCalled();
+    });
+
+    it('covers rows at rest while floating controls are open, then restores the scroll backdrop', () => {
+      controls.canFloat = true;
+      const scrollEdge = createScrollEdgeBackdrop();
+      const { backdropFrame, update } = renderControls({ scrollEdge });
+      expect(readStyle(backdropFrame()).opacity).toBe(0);
+      update({ scrollEdge, floatingContent: <button>Grade row</button> });
+      expect(controls.backdropOpacity?.value).toBe(1);
+      update({ scrollEdge });
+      expect(controls.backdropOpacity?.value).toBe(0);
+    });
+
+    it('restores zero reserved height when only floating controls remain', () => {
+      const onHeightChange = vi.fn();
+      const { container, rerender, getByText } = render(
+        <NativeRootHeader onHeightChange={onHeightChange}>
+          <span>Search</span>
+        </NativeRootHeader>,
+      );
+      fireEvent.click(container.querySelector('[data-measure-controls]')!);
+      expect(onHeightChange).toHaveBeenLastCalledWith(36);
+      rerender(<NativeRootHeader onHeightChange={onHeightChange} floatingContent={<button>Grade row</button>} />);
+      expect(onHeightChange).toHaveBeenLastCalledWith(0);
+      expect(container.querySelector('[data-controls]')!.contains(getByText('Grade row'))).toBe(true);
+    });
+
     // The screen's list, reporting to the store the header was handed.
     const scrollListTo = (scrollEdge: ScrollEdgeBackdrop, offsetY: number) =>
       act(() =>
@@ -528,7 +580,7 @@ describe('NativeRootHeader', () => {
         controls.canFloat = canFloat;
         const { block, onHeightChange, unmount } = renderControls();
         expect(readStyle(block()).top).toBe(148);
-        fireEvent.click(block()!);
+        fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
         const reported = onHeightChange.mock.calls.at(-1);
         unmount();
         return reported;
@@ -607,7 +659,7 @@ describe('NativeRootHeader', () => {
 
     expect(getByText('Search')).toBeTruthy();
     expect(container.textContent).not.toContain('On the wall');
-    fireEvent.click(container.querySelector('[data-controls]')!);
+    fireEvent.click(container.querySelector('[data-measure-controls]')!);
     expect(onHeightChange).toHaveBeenLastCalledWith(36);
   });
 
