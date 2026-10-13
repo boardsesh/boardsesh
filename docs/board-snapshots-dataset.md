@@ -91,9 +91,10 @@ arrays), `hold_fingerprint`, `missing_hold_count` and `retired_by_reset` (spray 
 here), `revision_number` (the climb's current revision) and `holds_revision_number` (the revision at
 which its holds last changed), and sync bookkeeping (`updated_at`, `sync_seq`).
 
-Only imported climbs without a linked Boardsesh author are distributed. Personal climbs and beta
-are fetched through the viewer-authorized API, so account privacy changes can revoke access.
-Imported draft and listing flags retain their source values; filter them for a public-only browse. There is no size filter either: a layout's artifact spans every wall
+Only published imported climbs without a linked Boardsesh author are distributed: a draft is left
+out, with its stats, grades, beta links and aliases. Personal climbs and beta are fetched through
+the viewer-authorized API, so account privacy changes can revoke access. `is_draft` is therefore
+always false or NULL; `is_listed` keeps its source value, so filter on it for a public-only browse. There is no size filter either: a layout's artifact spans every wall
 size, so filter with `compatible_size_ids`.
 
 **`board_climb_stats`** — community stats per `(climb, angle)`: `ascensionist_count`,

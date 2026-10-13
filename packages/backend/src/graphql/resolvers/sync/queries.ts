@@ -1,4 +1,4 @@
-import { privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
 import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
@@ -279,11 +279,12 @@ async function runScopedBoardRefSyncPage(params: {
 
   // The reference row has no layout_id, so scope it to the climbs of that
   // (layout, size) via a correlated EXISTS on board_climbs, reusing the same
-  // shared conditions syncClimbs uses (bc.-qualified here). No scope → plain
-  // board_type filter.
+  // shared conditions syncClimbs uses (bc.-qualified here), and the same climb
+  // visibility: a draft's stats and grades go only to the draft's owner.
   const scopeConditions = [
     ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
     contentVisibilityCondition('climb', sql`bc.uuid`, sql`bc.user_id`, params.viewerUserId),
+    climbDraftVisibilityCondition({ isDraft: sql`bc.is_draft`, userId: sql`bc.user_id` }, params.viewerUserId),
   ];
   let scope: SQL = sql`board_type = ${boardType}`;
   if (scopeConditions.length > 0) {
@@ -569,12 +570,15 @@ export const syncQueries = {
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
 
-    // The board scope here is `board_type` + an optional `layout_id` and NOTHING
-    // else — no `is_listed`, no `is_draft` — because this is a full row mirror for
-    // the offline database. On the eight catalogue boards that is correct; on spray
-    // it is the highest-fidelity leak in the API, because one authenticated account
-    // could walk `layoutId` 1..N and pull every column of every private wall's
-    // climbs. An unreadable scope returns an ordinary empty page.
+    // The board scope here is `board_type` + an optional `layout_id`, the climb's
+    // audience, and the draft rule — no `is_listed` — because this is a full row
+    // mirror for the offline database: unlisted climbs ship and the device's lists
+    // hide them. A draft ships only to its owner (`user_id` = viewer); a draft with
+    // no Boardsesh owner, imported from a Kilter or Tension account, ships to
+    // nobody. On spray the layout scope is the highest-fidelity leak in the API,
+    // because one authenticated account could walk `layoutId` 1..N and pull every
+    // column of every private wall's climbs. An unreadable scope returns an
+    // ordinary empty page.
     if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
       return emptySyncPage(cursor);
     }
@@ -586,7 +590,7 @@ export const syncQueries = {
         characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
         updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
-      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${contentVisibilityCondition('climb', sql`board_climbs.uuid`, sql`board_climbs.user_id`, ctx.userId)}`,
+      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${contentVisibilityCondition('climb', sql`board_climbs.uuid`, sql`board_climbs.user_id`, ctx.userId)} AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id` }, ctx.userId)}`,
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,

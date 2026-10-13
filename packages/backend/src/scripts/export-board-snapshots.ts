@@ -505,6 +505,7 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
     WHERE ${boardCondition} AND ${layoutCondition} AND user_id IS NULL AND NOT is_boardsesh_authored
+      AND is_draft IS NOT TRUE
       AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
         WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
     ORDER BY board_type, layout_id
@@ -527,7 +528,13 @@ function assertSafeColumns(columns: readonly string[]): void {
 // Scope predicates matching the resolvers exactly. `now()` is transaction-start
 // time and constant across the whole export transaction, so the streamed rows and
 // the watermark query below apply the identical stability boundary.
+//
+// A draft is never published, nor its stats or grades: the board sync hands a
+// draft only to its owner (`climbDraftVisibilityCondition`), and every climb
+// here has no owner. Leaving rows out cannot strand one a viewer may read,
+// because a `privacyVersion: 1` import replays the live scope sync from epoch.
 const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND user_id IS NULL AND NOT is_boardsesh_authored
+    AND is_draft IS NOT TRUE
     AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
       WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
     AND updated_at < now() - make_interval(secs => $3)`;
@@ -536,7 +543,7 @@ const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND bc.is_draft IS NOT TRUE
         AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
           WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )
@@ -550,7 +557,7 @@ const GRADES_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored AND bc.is_draft IS NOT TRUE
         AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
           WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )

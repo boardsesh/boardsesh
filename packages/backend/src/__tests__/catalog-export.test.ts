@@ -120,6 +120,35 @@ describe('board catalogue export', () => {
     }
   });
 
+  it('publishes no beta link or alias that points at a draft', async () => {
+    await seedMinimalCatalog();
+    // A draft imported from a Kilter account: no Boardsesh owner.
+    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_draft, is_listed)
+      VALUES ('imported-draft', 'kilter', 1, 'Unfinished', true, false)`);
+    await db.execute(sql`INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('kilter', 'imported-draft-alias', 'imported-draft', 'backfill')`);
+    await db.execute(sql`INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('kilter', 'imported-draft', 'https://instagram.test/p/draft-beta', 'setter')`);
+    const workDir = mkdtempSync(join(tmpdir(), 'catalog-drafts-'));
+    const filePath = join(workDir, 'catalog.db');
+    try {
+      await buildCatalogArtifact({ sqlClient: createPool(), filePath, builtAt: BUILT_AT });
+      const artifact = new DatabaseSync(filePath, { readOnly: true });
+      try {
+        expect(artifact.prepare('SELECT link FROM board_beta_links').all()).toEqual([
+          { link: 'https://instagram.test/p/abc' },
+        ]);
+        expect(artifact.prepare('SELECT alias_uuid FROM board_climb_aliases').all()).toEqual([
+          { alias_uuid: 'climb-1' },
+        ]);
+      } finally {
+        artifact.close();
+      }
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
   it('parses its flags and rejects an unsafe key prefix', () => {
     expect(parseArgs([])).toEqual({ dryRun: false, keyPrefix: 'board-snapshots/v1-catalog' });
     expect(parseArgs(['--dry-run', '--key-prefix', 'board-snapshots/staging'])).toEqual({

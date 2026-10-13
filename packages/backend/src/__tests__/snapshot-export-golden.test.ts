@@ -501,11 +501,12 @@ describe('board-snapshot export ↔ live pull parity', () => {
       frames: 'p1145r12p1146r13',
       updatedAt: '2026-05-01T00:00:00Z',
     });
+    // Unlisted, not a draft: a draft is in neither path (drafts-owner-only-sync.test.ts).
     await insertClimb({
       uuid: 'c2',
-      name: 'Draft Problem',
+      name: 'Unlisted Problem',
       description: null,
-      isDraft: true,
+      isDraft: false,
       isListed: false,
       compatibleSizeIds: [5],
       requiredSetIds: null,

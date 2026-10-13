@@ -315,6 +315,30 @@ export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: Viewe
       )))`;
 }
 
+/**
+ * The draft rule: an unpublished climb is returned to its owner and to nobody
+ * else, whatever the owner's account or item audience says. The owner is the
+ * Boardsesh `user_id` on the climb, so a draft that has none (one imported from
+ * a Kilter or Tension account) is returned to no one. The board sync applies it
+ * to `board_climbs` and to the climb behind every stats and grades row; the
+ * public snapshot exports have no viewer and keep `is_draft IS NOT TRUE`.
+ *
+ * It narrows {@link contentVisibilityCondition} and never replaces it: that
+ * condition has no draft term, and on its own it shows a public account's draft
+ * to every viewer and an ownerless draft to everyone. AND the two.
+ *
+ * Both comparisons are NULL-safe. `is_draft` is nullable and NULL is not a
+ * draft; `user_id = viewer` is NULL for an ownerless row or an anonymous
+ * viewer, and the COALESCE keeps that a plain false so the condition can sit
+ * under a NOT.
+ */
+export function climbDraftVisibilityCondition(
+  climb: { isDraft: SQLWrapper; userId: SQLWrapper },
+  viewerId: ViewerId,
+): SQL {
+  return sql`(${climb.isDraft} IS NOT TRUE OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
+}
+
 /** Applies the authored climb policy to its stats, grades and other reference rows. */
 export function climbReferenceVisibilityCondition(
   reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },

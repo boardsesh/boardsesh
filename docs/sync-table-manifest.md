@@ -282,7 +282,10 @@ composite-keyed sync table must keep this true (or version the encoding).
 ### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?)` (board data, per-board)
 
 - Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
-  `sizeId` ignored for moonboard]. Seq: **`sync_seq`**. Hook: no.
+  `sizeId` ignored for moonboard], the climb's audience (`contentVisibilityCondition`) and the draft rule
+  (`climbDraftVisibilityCondition`): a draft (`is_draft IS TRUE`) only when `user_id = $viewer`, so a draft with no
+  Boardsesh owner (imported from a Kilter or Tension account) goes to nobody. Unlisted climbs ship; the device's lists
+  hide them. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
@@ -336,7 +339,8 @@ composite-keyed sync table must keep this true (or version the encoding).
 
 - Scope: `board_type = $boardType` [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId
 AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table has no `layout_id`, so it correlates
-  back to `board_climbs`, with fully-qualified cursor columns]. Seq: **`sync_seq`**. Hook: no.
+  back to `board_climbs`, with fully-qualified cursor columns]. The same EXISTS carries the climb's audience and the
+  draft rule, so a draft's stats go only to its owner. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`(board_type, climb_uuid, angle)`** (B9). table-config: change `['climb_uuid','angle']` →
   **`['board_type','climb_uuid','angle']`**.
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.
@@ -352,7 +356,7 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
 - The nightly data-science Boardsesh grade (docs/boardsesh-grade.md). Scope: `board_type = $boardType`
   [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId AND
 bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has no `layout_id`, so it correlates
-  back to `board_climbs`, identical to `board_climb_stats`]. Seq: **`sync_seq`**. **Cursor timestamp: `computed_at`**
+  back to `board_climbs`, identical to `board_climb_stats`, draft rule included]. Seq: **`sync_seq`**. **Cursor timestamp: `computed_at`**
   (this table has no `updated_at`). Hook: no.
 - Local PK: **`(board_type, climb_uuid, angle)`**. table-config: `['board_type','climb_uuid','angle']`.
 - Del: no deletion trigger today — grades are bulk-refreshed reference data (a full nightly recompute), not user

@@ -1885,8 +1885,10 @@ revert, no export change needed.
 
 ## Account privacy and snapshot rollout
 
-Public artifacts now contain only imported climbs with `user_id IS NULL`, their
-stats and grades, and imported beta without an account/tick/board association.
+Public artifacts now contain only published imported climbs with `user_id IS NULL`
+(never a draft: `is_draft IS NOT TRUE`), their stats and grades, and imported beta
+without an account/tick/board association. The catalogue artifact's beta links and
+aliases skip drafts the same way.
 Numeric aggregate stats still include every eligible tick. Manufacturer FA names
 remain intact; Boardsesh-owned climb FA is served by the authenticated live API.
 New manifests stamp `privacyVersion: 1` on layout and grades artifacts and use
@@ -1900,6 +1902,16 @@ are rebuilt and excluded from manifest merges until rebuilt. Clients reject olde
 artifacts and replay live scope sync from epoch after import so the snapshot
 watermark cannot skip older authorized authored climbs. This temporarily duplicates
 reference downloads; a separate authored-content cursor can optimize it later.
+
+Leaving drafts out (October 2026) kept `privacyVersion: 1` on purpose. Version 1
+already means "a subset of what the viewer may read; replay the live scope sync from
+epoch after import" (`replayFromEpoch` in `pull-client.ts`), so a narrower artifact
+cannot hide a row a viewer is allowed to have. An ownerless draft is a row no viewer
+is allowed to have: the board sync sends a draft only to its `user_id`. Bumping the
+version would make every shipped bundle (`snapshot-source.ts` accepts only `1`)
+refuse every artifact and crawl each board page by page. The next full nightly
+rebuilds every layout without drafts; superseded files are pruned after the 14-day
+grace window, and copies already downloaded cannot be recalled.
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.
