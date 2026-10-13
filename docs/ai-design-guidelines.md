@@ -455,98 +455,35 @@ draws that block (`HeaderControls`), and the list pads its top by the persistent
 height. The disclosed grade row is drawn below that measurement, inside the full background and
 touch surface, so showing or hiding it leaves the list's spacing and scroll position unchanged.
 
-**On iOS 26 the block floats.** It paints no background. The list scrolls behind the controls, and
-one blur runs from the top of the supplementary controls to one fade length (24pt) below the block:
-full strength behind every control, fading out over the rows just under them. With the fade inside the block, a
-translucent control (the segmented control) had sharp list text showing through its lower half.
-UIKit owns the navigation bar's scroll-edge material, status area and action lenses above this
-block. The custom blur starts at the block's own top (`top: 0`), so it never adds a second
-material behind the native bar's glass. Its mask fades from clear to full strength over the first
-8pt of the controls' top padding, avoiding a hard boundary while keeping the controls fully
-frosted. Both the filter capsule row and Profile's segmented control have this 8pt top padding.
-As the native title collapses, the block and its blur move together.
-[HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout): "Instead of
-applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to
-visually elevate controls above content." [HIG
-Materials](https://developer.apple.com/design/human-interface-guidelines/materials) says what that
-effect does: it blurs the content behind and reduces its opacity. Ours is `ProgressiveBlur` with a
-`fadeLength`: UIKit's chrome material, with no additional scene-background wash. It is a material and
-never a `GlassSurface`, because the chips on it are glass already (see "Glass material").
+**On iOS 26 the block floats without a continuous blur.** Individual filter capsules and
+Profile's segmented control keep their native glass surfaces. List content remains sharp between
+and beneath them, matching the GitHub app's floating filter row. UIKit owns the navigation bar's
+scroll-edge material, status area and action lenses above the supplementary controls.
 
-**The blur is there while rows are under the controls.** An open grade row overlaps the first
-climbs even at rest, so it keeps the backdrop visible. With the grade row closed, the page behind
-the resting controls is the
-page: a material over an empty black page reads as a grey panel, which is the painted band again.
-Three parties meet in one small store (`src/hooks/use-scroll-edge-backdrop.ts`), and only the blur
-re-renders:
+The control block stays below the native bar as its title collapses. Opening the grade row does
+not reserve more list space; it remains inside the control block's touch surface. The block owns
+touches through the gaps between controls, so taps do not open climbs underneath.
+Disclosed grade and angle rails use a local `systemColors.background` backing: their flat
+grade chips have translucent fills, so the rail keeps labels readable over the list. This
+backing appears only while a rail is open; the filter capsule row stays transparent.
 
-- The **screen** holds it: `const scrollEdge = useScrollEdgeBackdrop()`. It hands `scrollEdge.list`
-  to the list and `scrollEdge.backdrop` to its top chrome (`ClimbTopChrome`, `ProfileTopChrome`,
-  down to `NativeRootHeader`). The screen re-renders for neither a scroll nor a change in the bar's
-  height. A screen that read the header height itself would re-render every row under it on each
-  frame of a collapsing title.
-- The **list** spreads `scrollEdge.listProps` (five scroll listeners, none of which sets state) and
-  mounts `<ScrollEdgeListReset edge={scrollEdge} />` beside itself, in the branch that renders the
-  list. A list that mounts is at rest, and one that unmounts for a loading or offline branch, or
-  for another sub-tab, takes what it had scrolled under the controls with it.
-- The **blur** (`ControlsBackdrop`) subscribes with `useScrolledUnder`, tells the store where the
-  block was drawn (the list rests at minus the bar's height) and that a blur is listening.
-  `scrollEdge.list` is undefined until then, so a list under an opaque header carries no scroll
-  listeners.
+Older iOS versions, Reduce Transparency, Increase Contrast and an explicit `opaqueControls`
+request retain the painted band in `systemColors.background`. The native glass path adds no
+custom backdrop, fade, wash or list-scroll subscription. Existing scroll-edge wiring is accepted
+for caller compatibility without attaching a backdrop to the store.
 
-**The rule is geometry.** Rows are under the controls once the list's offset is more than 2pt past
-the top the block was drawn at. The rubber-band overscroll and a pull-to-refresh are more negative
-than that top, so they count as at rest. Each reading of the bar's height replaces the last, so
-nothing is remembered that can go stale (react-native-screens reports 0 while the bar is hidden).
-Two things bend the rule, both because JS hears the bar's height late, a frame or two on Profile
-and 100 ms after it stops on Climbs:
-
-- A bar that grows during a gesture never moves the top down. A held pull stretches the bar, and
-  JS can still hold that height after the list has snapped back.
-- A bar that shrinks during a gesture that began at rest is ignored until the list stops. Under a
-  collapsing large title the block trails the title, and rows that have left rest are under it. So
-  the blur is on as soon as such a drag leaves rest, and the settled height decides once it ends.
-
-The blur fades over `timing.fast` and switches without a fade under Reduce Motion.
-
-**Wire every list under a floating block.** Leave `scrollEdge` out and the blur stays on all the
-time. That is the safe default: a forgotten wire shows as a frost at rest, which anyone can see,
-where the other default would put bare controls over rows mid-scroll.
-
-**The look is a few numbers**, `CONTROLS_BACKDROP` in `NativeRootHeader.tsx`: `layers` (how heavily
-the list behind is frosted), `topFadeLength` (8pt of fade within the controls' top padding),
-`fadeLength` (points of fade below the block), `washOpacity` (a
-scene-background wash; 0, because chrome material supplies the navigation backdrop's tint)
-and `fadeDuration`. Tune them there, on a device. Filter capsules' SwiftUI Host follows the app's
-resolved light/dark scheme. The wall-status capsule carries one regular native `GlassSurface`
-with a 14% amber tint and a native rounded edge; its opaque amber-bordered fallback remains on
-older devices and with Reduce Transparency. Native glass does not enter through an opacity fade.
+Filter capsules' SwiftUI Host follows the app's resolved light/dark scheme. Resting native glass
+capsules use SwiftUI's secondary foreground style for muted grey labels, symbols and chevrons.
+Active capsules retain the brand fill and `onPrimary` label; older opaque capsules keep their
+existing neutral styling. The wall-status
+capsule carries one regular native `GlassSurface` with a 14% amber tint and a native rounded
+edge; its opaque amber-bordered fallback remains on older devices and with Reduce Transparency.
+Native glass does not enter through an opacity fade.
 Its custom native title is bounded by the navigation stack's measured local frame, horizontal
 safe-area insets, and the actual leading/trailing action widths plus capsule padding and gaps.
 Only the climb name shrinks; the avatar and grade retain their width. This keeps long names
 inside the title slot on narrow phones, after rotation, and in a tablet pane.
 
-**Everywhere else the block keeps its painted band**, in `systemColors.background`:
-`useFloatingHeaderControls` lets it float only when the surface mode is `glass` and Increase
-Contrast is known to be off. That leaves the band on iOS before 26, with Reduce Transparency or
-Increase Contrast on, and for a caller that passes `opaqueControls`. Material, Android and the web
-never reach this component and keep their own chrome.
-
-**What a control needs to sit on the blur.** Its own surface. Glass chips, the native segmented
-control and the grade row's `systemColors.fill` capsules have one. The filter tokens carry an
-opaque `systemColors.secondaryBackground` fill for this reason. The fill is on every path: on the
-Material band it is the band's own colour and does not show, and on the iOS band it shows as a
-quiet grey pill. Keep floating control labels on a control surface rather than adding a bare
-section heading above them. The native Profile Logbook's capsule row uses the selected tab as
-its heading.
-
-**It always swallows touches.** The block is `pointerEvents="auto"` whether it floats or not: a row
-the blur has smeared must not take a tap through the gap between two chips.
-
-**The blur is not measured.** It is absolutely positioned inside the block, so `onHeightChange`
-still reports the controls alone and the list's `paddingTop`, scroll-indicator inset and
-`useListTopOffset` are unchanged. The Climbs list also draws its pull-to-refresh spinner below the
-block (`progressViewOffset`).
 
 ### Quick filter capsules
 

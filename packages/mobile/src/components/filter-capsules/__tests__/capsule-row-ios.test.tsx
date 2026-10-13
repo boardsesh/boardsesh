@@ -29,6 +29,7 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => {
     controlSize: make('controlSize'),
     tint: make('tint'),
     foregroundColor: make('foregroundColor'),
+    foregroundStyle: make('foregroundStyle'),
     tag: make('tag'),
     padding: make('padding'),
     fixedSize: make('fixedSize'),
@@ -123,6 +124,7 @@ const ACTIVE = [
 const RESTING = [
   { modifier: 'buttonStyle', arg: 'glass' },
   { modifier: 'controlSize', arg: 'small' },
+  { modifier: 'foregroundStyle', arg: { type: 'hierarchical', style: 'secondary' } },
 ];
 
 describe('CapsuleRow.ios below iOS 26 (no Liquid Glass)', () => {
@@ -181,7 +183,10 @@ describe('CapsuleRow.ios', () => {
     expect(filters.systemImage).toBe('line.3.horizontal.decrease');
     expect(filters.modifiers).toEqual(ACTIVE);
     expect(JSON.stringify(captured.views.map((entry) => entry.props.modifiers))).not.toContain('#A78BFA');
-    expect(lastViewWithLabel('Button', 'Beta videos').modifiers?.slice(0, 2)).toEqual(RESTING);
+    expect(lastViewWithLabel('Button', 'Beta videos').modifiers).toEqual([
+      ...RESTING,
+      { modifier: 'accessibilityAddTraits', arg: ['isToggle'] },
+    ]);
   });
 
   it('renders capsules in order inside one Host', () => {

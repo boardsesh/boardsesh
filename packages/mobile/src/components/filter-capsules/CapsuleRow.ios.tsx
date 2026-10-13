@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     width: '100%',
     // A hosting view can paint a system background; on a plain toolbar that
     // shows as an opaque band. The row always sits on its container's surface
-    // (or the floating chrome's blur), so keep the Host see-through.
+    // (or directly over scrolling content), so keep the Host see-through.
     backgroundColor: 'transparent',
   },
   // The rail draws no frame of its own, so the popover gives it the room above

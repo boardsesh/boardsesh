@@ -6,11 +6,9 @@ type ProgressiveBlurProps = {
   style?: StyleProp<ViewStyle>;
   blurAmount?: number;
   layers?: number;
-  material?: 'thin' | 'chrome';
   // The native file's pinned-controls backdrop. The browser has no live blur and
   // no caller that asks for one, so it keeps its single fade.
   fadeLength?: number;
-  topFadeLength?: number;
   scrim?: boolean;
   washOpacity?: number;
 };

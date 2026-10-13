@@ -13,7 +13,8 @@ const MASK_COLORS = ['#000000', 'transparent'] as const;
 // opacity (uniform radius), which reads as an abrupt edge. Stacking N layers, each
 // fading out higher than the last, means the top is covered by every layer (max
 // blur) and the bottom by just one — so the effective blur radius ramps smoothly.
-// Fewer layers keep the ramp smooth without excessive work during scrolling.
+// Thin material accumulates with each layer; three layers keep the ramp smooth
+// without excessive work during scrolling.
 const DEFAULT_LAYERS = 3;
 // In dark mode the thin material frosts to a medium grey, so the status-bar /
 // dynamic-island band reads grey against the black island. A black wash, strongest
@@ -42,20 +43,15 @@ type ProgressiveBlurProps = {
   blurAmount?: number;
   /** Number of stacked blur layers — higher is a smoother ramp, more GPU work. */
   layers?: number;
-  /** UIKit material: thin for existing surfaces, chrome for navigation controls. */
-  material?: 'thin' | 'chrome';
   /**
-   * Hold full strength after any upper fade down to `fadeLength` points above the
-   * bottom edge, then fade out over that length. For a backdrop behind pinned controls:
+   * Hold full strength from the top down to `fadeLength` points above the bottom
+   * edge, then fade out over that length. For a backdrop behind pinned controls:
    * the default ramp is strongest at the very top and nearly clear where the
    * lowest control row sits. Omit for the default ramp across the whole height.
    *
-   * Live blur only. The one caller mounts it on iOS 26 glass and paints an opaque
-   * band everywhere else, so the no-blur fallback below keeps its single fade.
+   * Live blur only. The no-blur fallback below keeps its single fade.
    */
   fadeLength?: number;
-  /** With `fadeLength`: fade in over this many points at the top. Defaults to 0. */
-  topFadeLength?: number;
   /**
    * Dark mode's black wash under the status bar (see `DARK_SCRIM_COLORS`). Switch
    * it off where the blur is not the screen's own always-on top band.
@@ -71,29 +67,19 @@ type ProgressiveBlurProps = {
   washOpacity?: number;
 };
 
-/** Holds `colors[0]` between the optional upper fade and the lower fade. */
+/** Holds `colors[0]` down to `fadeLength` above the bottom, then runs the gradient. */
 function PlateauFade({
   colors,
   fadeLength,
-  topFadeLength = 0,
   fadeEnd = 1,
 }: {
   colors: readonly [string, string];
   fadeLength: number;
-  topFadeLength?: number;
   /** Fraction of `fadeLength` at which the gradient reaches `colors[1]`. */
   fadeEnd?: number;
 }) {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {topFadeLength > 0 ? (
-        <LinearGradient
-          colors={[colors[1], colors[0]]}
-          locations={[0, 1]}
-          pointerEvents="none"
-          style={{ height: topFadeLength }}
-        />
-      ) : null}
       <View style={[styles.plateau, { backgroundColor: colors[0] }]} />
       <LinearGradient colors={colors} locations={[0, fadeEnd]} pointerEvents="none" style={{ height: fadeLength }} />
     </View>
@@ -102,15 +88,13 @@ function PlateauFade({
 
 /**
  * A top-down progressive (gradient) blur for the floating header chrome: a few
- * material blur layers stacked so the blur radius ramps smoothly from strong at the
+ * thin blur layers stacked so the blur radius ramps smoothly from strong at the
  * top to nothing at the bottom (a true variable blur, not just a faded uniform
- * one). Navigation backdrops can select UIKit's chrome material. The blur tint
- * follows the app's resolved colour scheme, so it honours the in-app light/dark
- * override.
+ * one). Legacy custom headers use this thin material. The blur tint follows the app's resolved
+ * colour scheme, so it honours the in-app light/dark override.
  *
  * With `fadeLength` it becomes a backdrop for controls pinned under a bar: full
- * strength behind them, fading out along its lower edge. `topFadeLength` adds an
- * optional upper fade within the backdrop, before the controls begin.
+ * strength behind them, fading out only along its lower edge.
  *
  * Only renders a live blur on the iOS glass / blur paths. On Material (Android) or
  * with Reduce Transparency on, `@react-native-community/blur` can't honour the iOS
@@ -121,9 +105,7 @@ export function ProgressiveBlur({
   style,
   blurAmount = 16,
   layers = DEFAULT_LAYERS,
-  material = 'thin',
   fadeLength,
-  topFadeLength = 0,
   scrim = true,
   washOpacity = 0,
 }: ProgressiveBlurProps) {
@@ -145,14 +127,8 @@ export function ProgressiveBlur({
     );
   }
 
-  const blurType =
-    material === 'chrome'
-      ? isDark
-        ? 'chromeMaterialDark'
-        : 'chromeMaterialLight'
-      : isDark
-        ? 'thinMaterialDark'
-        : 'thinMaterialLight';
+  // Stacking thin material accumulates blur toward the top.
+  const blurType = isDark ? 'thinMaterialDark' : 'thinMaterialLight';
   const washRgb = isDark ? WASH_RGB_DARK : WASH_RGB_LIGHT;
 
   return (
@@ -171,12 +147,7 @@ export function ProgressiveBlur({
               fadeLength == null ? (
                 <LinearGradient colors={MASK_COLORS} locations={[0, fadeEnd]} style={StyleSheet.absoluteFill} />
               ) : (
-                <PlateauFade
-                  colors={MASK_COLORS}
-                  fadeLength={fadeLength}
-                  topFadeLength={topFadeLength}
-                  fadeEnd={fadeEnd}
-                />
+                <PlateauFade colors={MASK_COLORS} fadeLength={fadeLength} fadeEnd={fadeEnd} />
               )
             }
           >
@@ -185,11 +156,7 @@ export function ProgressiveBlur({
         );
       })}
       {fadeLength != null && washOpacity > 0 ? (
-        <PlateauFade
-          colors={[`rgba(${washRgb},${washOpacity})`, `rgba(${washRgb},0)`]}
-          fadeLength={fadeLength}
-          topFadeLength={topFadeLength}
-        />
+        <PlateauFade colors={[`rgba(${washRgb},${washOpacity})`, `rgba(${washRgb},0)`]} fadeLength={fadeLength} />
       ) : null}
       {/* Dark-mode only: a black wash over the blur, strongest at the top, so the
           dynamic-island / status-bar band reads black rather than grey. Sits above

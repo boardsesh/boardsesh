@@ -55,19 +55,21 @@ type ViewMockProps = {
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
   pointerEvents?: string;
   testID?: string;
+  style?: unknown;
 };
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),
-  View: ({ children, onLayout, pointerEvents, testID }: ViewMockProps) =>
+  View: ({ children, onLayout, pointerEvents, testID, style }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-has-layout': onLayout ? 'true' : 'false',
         'data-testid': testID,
         'data-pointer': pointerEvents ?? '',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 88 } } }) : undefined,
       },
       children,
@@ -179,6 +181,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: ctrl.variant,
     systemColors: {
+      background: '#010203',
       label: '#000',
       fill: '#eee',
       secondaryLabel: '#888',
@@ -654,6 +657,14 @@ describe('ClimbTopChrome', () => {
       expect(measure().contains(rail)).toBe(false);
       expect(measure().contains(getByText('Persistent filter tokens'))).toBe(true);
       expect(onHeightChange).not.toHaveBeenCalled();
+      if (variant === 'liquidGlass') {
+        const railCarrier = container.querySelector('[data-testid="climb-grade-rail"]');
+        expect(railCarrier?.contains(rail)).toBe(true);
+        expect(JSON.parse(railCarrier?.getAttribute('data-style') ?? '{}')).toMatchObject({
+          backgroundColor: '#010203',
+        });
+        expect(railCarrier?.contains(getByText('Persistent filter tokens'))).toBe(false);
+      }
 
       rerender(<ClimbTopChrome {...props} />);
       expect(container.querySelector('[data-grade-rail="true"]')).toBeNull();

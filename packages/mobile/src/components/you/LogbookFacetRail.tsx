@@ -13,6 +13,7 @@ import { GradeRangeRail } from '../grade';
 import { AngleRangeRail } from '../filter-sheet/AngleRangeRail';
 import { logbookAnglePatch, logbookAngleRailValue, type LogbookRailKind } from './logbook-capsules';
 import { spacing } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
 
 type LogbookFacetRailProps = {
   /** Which rail to show; null renders nothing. */
@@ -25,6 +26,7 @@ type LogbookFacetRailProps = {
 };
 
 function LogbookFacetRailComponent({ openRail, filters, grades, onUpdateFilters }: LogbookFacetRailProps) {
+  const { systemColors } = useTheme();
   const gradeBound = useMemo<GradeBound>(
     () => ({
       minGradeId: filters.minGrade === '' ? undefined : filters.minGrade,
@@ -49,7 +51,7 @@ function LogbookFacetRailComponent({ openRail, filters, grades, onUpdateFilters 
   // the rails' default insets do the same, so both strips start on one line
   // and scroll out to the column's edge.
   return (
-    <View style={styles.rail}>
+    <View testID="logbook-facet-rail" style={[styles.rail, { backgroundColor: systemColors.background }]}>
       {openRail === 'grade' ? (
         <GradeRangeRail grades={grades} bound={gradeBound} onChange={handleGradeChange} centerOnEmpty={false} />
       ) : (

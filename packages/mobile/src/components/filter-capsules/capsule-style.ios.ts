@@ -6,7 +6,8 @@
 // fill (docs/ai-design-guidelines.md, "Brand colours").
 //
 // Two drawings, picked by `useGlassCapability()` like Button.ios.tsx:
-//   iOS 26 Liquid Glass  resting = neutral glass (`glass`), active = prominent
+//   iOS 26 Liquid Glass  resting = neutral glass with secondary grey labels,
+//                        active = prominent
 //                        glass tinted with the fill (`glassProminent`). Not
 //                        `bordered` here: on iOS 26 it is a flat thin material,
 //                        too see-through.
@@ -18,7 +19,14 @@
 // to `.automatic` below iOS 26: a plain text button with no fill, where a white
 // active label would vanish on a light background.
 
-import { buttonStyle, controlSize, foregroundColor, tint, type ModifierConfig } from '@expo/ui/swift-ui/modifiers';
+import {
+  buttonStyle,
+  controlSize,
+  foregroundColor,
+  foregroundStyle,
+  tint,
+  type ModifierConfig,
+} from '@expo/ui/swift-ui/modifiers';
 import { brandAccentColor, type BrandControlColors } from '../../theme/expo-ui-modifiers';
 
 /** What the capsule look depends on. Build it once per row (`useMemo`). */
@@ -47,6 +55,6 @@ export function capsuleModifiers(
     ];
   }
   return supportsGlass
-    ? [buttonStyle('glass'), controlSize('small')]
+    ? [buttonStyle('glass'), controlSize('small'), foregroundStyle({ type: 'hierarchical', style: 'secondary' })]
     : [buttonStyle('bordered'), controlSize('small'), NEUTRAL_TINT];
 }

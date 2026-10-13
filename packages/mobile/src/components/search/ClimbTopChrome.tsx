@@ -96,10 +96,7 @@ type ClimbTopChromeProps = {
    *  the in-chrome grade rail stay. Always false on Liquid Glass (its own path renders
    *  `filterChrome`). */
   showPersistentChips?: boolean;
-  /** Liquid Glass under the UIKit header: the screen's
-   *  `useScrollEdgeBackdrop().backdrop`. The blur behind the filter rows shows only
-   *  while the list is scrolled under them. A stable store, so a row crossing under
-   *  the chips does not re-render this memoized chrome. */
+  /** Legacy native scroll-edge wiring. The filter row draws only its individual capsules. */
   scrollEdge?: ScrollEdgeBackdrop;
 };
 
@@ -356,7 +353,13 @@ function ClimbTopChromeComponent({
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
-      floatingContent={gradeRail ? <View style={styles.gradeRail}>{gradeRail}</View> : undefined}
+      floatingContent={
+        gradeRail ? (
+          <View testID="climb-grade-rail" style={[styles.gradeRail, { backgroundColor: systemColors.background }]}>
+            {gradeRail}
+          </View>
+        ) : undefined
+      }
       hideLight
     >
       {usesCustomSearch ? (

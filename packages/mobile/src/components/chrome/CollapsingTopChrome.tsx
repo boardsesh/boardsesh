@@ -69,8 +69,7 @@ type CollapsingTopChromeProps = {
   children?: ReactNode;
   /** Extra controls that overlay content without increasing the list inset. */
   floatingContent?: ReactNode;
-  /** Under the UIKit header, the screen's `useScrollEdgeBackdrop().backdrop`: the
-   *  blur behind `children` shows only while the list is scrolled under them. */
+  /** Legacy scroll-edge wiring. Native supplementary controls do not attach a backdrop. */
   scrollEdge?: ScrollEdgeBackdrop;
 };
 

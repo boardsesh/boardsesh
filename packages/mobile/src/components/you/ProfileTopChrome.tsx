@@ -27,13 +27,11 @@ export type ProfileTopChromeProps = {
   /**
    * Liquid Glass only: keep the painted band behind the header instead of letting
    * it float over the list. Logbook sets it: its `children` include a bare text
-   * heading, which a blur alone does not keep readable over scrolling rows.
+   * heading that needs an opaque background over scrolling rows.
    * Material's header is always opaque.
    */
   opaqueControls?: boolean;
-  /** Liquid Glass only: the screen's `useScrollEdgeBackdrop().backdrop`. The blur
-   *  behind a floating header shows only while the sub-tab's list is scrolled
-   *  under it. */
+  /** Legacy scroll-edge wiring. Native supplementary controls do not attach a backdrop. */
   scrollEdge?: ScrollEdgeBackdrop;
 };
 
