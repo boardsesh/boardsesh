@@ -1,0 +1,142 @@
+name: Stage Reviewed CPP Replay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mobile-cpp-retained-replay.yml'
+      - 'scripts/prepare-retained-cpp-replay.ts'
+      - 'scripts/__tests__/prepare-retained-cpp-replay.test.ts'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Verify and retain exact review bytes, or stage those reviewed bytes.'
+        type: choice
+        options: [verify, stage-assets]
+        default: verify
+      target:
+        description: 'One CPP from a complete successful 16-shard replay.'
+        type: choice
+        options: [kilter, tension, moonboard, spray]
+        required: true
+      replay_run_id:
+        description: 'Successful first-attempt mobile-screenshots-ios.yml capture-only replay run.'
+        type: string
+        required: true
+      fixture_snapshot:
+        description: 'Published immutable fixture reference used by that replay; empty uses the committed pin.'
+        type: string
+        default: ''
+      expected_receipt_sha256:
+        description: 'Required for stage-assets: receipt SHA256 from the exact images visually reviewed.'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+# Verification never enters the writer queue. Stage dispatches share the existing
+# writer mutex; dispatch only when its pending slot is empty (see the runbook).
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'stage-assets' && 'mobile-screenshots-ios' || format('mobile-cpp-retained-replay-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp test run scripts/__tests__/prepare-retained-cpp-replay.test.ts --reporter=agent
+
+  verify:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Verify retained native replay and unchanged image bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CPP_TARGET: ${{ inputs.target }}
+          CPP_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
+          CPP_REPLAY_MODE: verify
+          FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
+          EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
+        run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
+      - name: Retain exact images and native sources for visual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-retained-replay-${{ inputs.target }}
+          path: app-stores/apple/cpp/${{ inputs.target }}/**
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain receipt binding every reviewed byte
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-retained-replay-receipt
+          path: ${{ runner.temp }}/cpp-replay-receipt.json*
+          if-no-files-found: error
+          retention-days: 14
+
+  stage:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'stage-assets'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Reverify original artifacts against the reviewed receipt before Apple credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CPP_TARGET: ${{ inputs.target }}
+          CPP_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
+          CPP_REPLAY_MODE: stage-assets
+          FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
+          EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
+        run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
+      - name: Stage the unchanged reviewed files into existing CPP drafts
+        uses: ./.github/actions/asc-cpp
+        with:
+          target: ${{ inputs.target }}
+          action: stage-assets
+          keyword-ids: ''
+          key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      - name: Retain verified staging input receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-retained-replay-receipt
+          path: ${{ runner.temp }}/cpp-replay-receipt.json*
+          if-no-files-found: warn
+          retention-days: 14
