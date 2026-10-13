@@ -192,11 +192,19 @@ describe("publishing a draft re-sends its stats to other climbers' devices", () 
     const strangerPage = await syncQueries.syncClimbStats(undefined, scope, ctx(STRANGER_ID));
     expect(documentField(strangerPage, 'climb_uuid')).toEqual(EVERYONE_SEES);
 
-    await climbMutations.updateClimb(
-      null,
-      { input: { uuid: 'publish-me', boardType: BOARD_TYPE, isDraft: false } },
-      ctx(OWNER_ID),
-    );
+    // Migration 0270's membership trigger re-stamps these rows on publish too,
+    // but it belongs to #6339's reverted design and a cleanup PR drops it.
+    // Switch it off so this proves updateClimb re-sends the stats on its own.
+    await db.execute(sql`ALTER TABLE board_climbs DISABLE TRIGGER trg_board_climbs_reference_membership`);
+    try {
+      await climbMutations.updateClimb(
+        null,
+        { input: { uuid: 'publish-me', boardType: BOARD_TYPE, isDraft: false } },
+        ctx(OWNER_ID),
+      );
+    } finally {
+      await db.execute(sql`ALTER TABLE board_climbs ENABLE TRIGGER trg_board_climbs_reference_membership`);
+    }
 
     const nextPage = await syncQueries.syncClimbStats(
       undefined,

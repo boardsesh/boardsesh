@@ -1243,9 +1243,11 @@ export const climbMutations = {
       // to a session, say) writes one. The board sync sends a draft's stats only
       // to its owner, so other devices walked their stats cursor past those rows
       // and would only see them on the next send. Re-stamp them on publish, the
-      // way the 0144 cursor trigger would, so every device pulls them now. The
+      // way the 0144 cursor trigger would, so every device pulls them now. That
       // trigger cannot do it: 0195 fires it only when a column the device stores
-      // changes, and publishing changes none of them.
+      // changes, and publishing changes none of them. 0270's membership trigger
+      // also re-stamps them today, but it is left over from #6339's reverted
+      // design and is due to be dropped; this keeps publishing correct without it.
       if (transitioningToPublished) {
         await tx
           .update(dbSchema.boardClimbStats)
