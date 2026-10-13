@@ -2172,6 +2172,22 @@ export function renderCppMaestroFlow(
   const filterReset = { id: '^sheet-top-bar-trailing$', text: gradeSelectors?.reset };
   const resetFilters = `- tapOn: ${JSON.stringify({ ...filterReset, enabled: true })}\n- extendedWaitUntil:\n    visible: ${JSON.stringify({ ...filterReset, enabled: false })}\n    timeout: 90000\n- waitForAnimationToEnd:\n    timeout: 30000`;
   const dismiss = `- repeat:\n    times: 2\n    commands:\n      - runFlow:\n          when:\n            visible: \${SCREENSHOT_CLOSE_LABEL}\n          commands:\n            - tapOn: \${SCREENSHOT_CLOSE_LABEL}\n            - waitForAnimationToEnd`;
+  // Close only the real open-state control; a second tap would reopen it.
+  const openSidebar = 'id: "^ToggleSidebar$"\ntext: "^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$"';
+  const collapseSidebarCommands = [
+    `- repeat:\n    times: 3\n    while:\n      visible:\n${openSidebar
+      .split('\n')
+      .map((line) => `        ${line}`)
+      .join('\n')}\n    commands:\n      - tapOn:\n${openSidebar
+      .split('\n')
+      .map((line) => `          ${line}`)
+      .join('\n')}\n      - waitForAnimationToEnd:\n          timeout: 30000`,
+    `- extendedWaitUntil:\n    notVisible:\n${openSidebar
+      .split('\n')
+      .map((line) => `      ${line}`)
+      .join('\n')}\n    timeout: 15000`,
+    '- waitForAnimationToEnd:\n    timeout: 30000',
+  ];
   for (const scene of scenes) {
     const sceneCommands =
       scene.command === 'queue'
@@ -2348,6 +2364,13 @@ export function renderCppMaestroFlow(
       );
     if (scene.command === 'queue') {
       const selectors = cppQueueReadinessSelectors(scene.ready, locale);
+      // The modal removes sidebar controls from accessibility while leaving the
+      // floating sidebar drawn underneath. Verify it is closed before opening.
+      if (ipad)
+        commands.push(
+          ...collapseSidebarCommands,
+          '- extendedWaitUntil:\n    visible:\n      id: "^ToggleSideBar$"\n      text: "^${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}$"\n    timeout: 15000',
+        );
       commands.push(
         '- tapOn: ${SCREENSHOT_QUEUE_LABEL}',
         '- swipe:\n    start: "50%,54%"\n    end: "50%,15%"\n    duration: 700',
@@ -2364,28 +2387,7 @@ export function renderCppMaestroFlow(
         '- longPressOn:\n    point: "50%,3%"',
         '- extendedWaitUntil:\n    visible: "Next climb"\n    timeout: 15000',
       );
-    if (ipad) {
-      // UIKit can reopen its floating sidebar after navigation. Only its real
-      // open-state control may be tapped; the same ID also toggles a hidden
-      // sidebar open, so matching the Hide label is required on every capture.
-      // A native tap can finish without closing it. Recheck its real open state
-      // before each bounded retry, and stop as soon as the close takes effect.
-      const openSidebar = 'id: "^ToggleSidebar$"\ntext: "^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$"';
-      commands.push(
-        `- repeat:\n    times: 3\n    while:\n      visible:\n${openSidebar
-          .split('\n')
-          .map((line) => `        ${line}`)
-          .join('\n')}\n    commands:\n      - tapOn:\n${openSidebar
-          .split('\n')
-          .map((line) => `          ${line}`)
-          .join('\n')}\n      - waitForAnimationToEnd:\n          timeout: 30000`,
-        `- extendedWaitUntil:\n    notVisible:\n${openSidebar
-          .split('\n')
-          .map((line) => `      ${line}`)
-          .join('\n')}\n    timeout: 15000`,
-        '- waitForAnimationToEnd:\n    timeout: 30000',
-      );
-    }
+    if (ipad) commands.push(...collapseSidebarCommands);
     if (scene.filename) commands.push(`- takeScreenshot: ${scene.filename}`);
     if (mirrorSelectors && selectedHero)
       commands.push(

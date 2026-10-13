@@ -1458,6 +1458,35 @@ describe('custom product page captures', () => {
       }
     }
   });
+  it('requires the closed tablet sidebar before the queue modal can hide its controls', () => {
+    const openSidebar = { id: '^ToggleSidebar$', text: '^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$' };
+    // UIKit uses a distinct resource ID for the closed toggle in native hierarchies.
+    const closedSidebar = { id: '^ToggleSideBar$', text: '^${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}$' };
+    for (const target of CPP_TARGETS) {
+      const { coverage } = scenario(target);
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const steps = parseAllDocuments(renderCppMaestroFlow(target, device, coverage))[1].toJS() as Record<
+          string,
+          unknown
+        >[];
+        const queueTap = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}');
+        expect(queueTap).toBeGreaterThan(0);
+        if (!device.name.startsWith('iPad')) continue;
+        expect(steps.slice(queueTap - 4, queueTap)).toEqual([
+          {
+            repeat: {
+              times: 3,
+              while: { visible: openSidebar },
+              commands: [{ tapOn: openSidebar }, { waitForAnimationToEnd: { timeout: 30000 } }],
+            },
+          },
+          { extendedWaitUntil: { notVisible: openSidebar, timeout: 15000 } },
+          { waitForAnimationToEnd: { timeout: 30000 } },
+          { extendedWaitUntil: { visible: closedSidebar, timeout: 15000 } },
+        ]);
+      }
+    }
+  });
   it('prepares a genuine distinct primary accessory before search and proves its actual solo phone host', () => {
     for (const target of CPP_TARGETS) {
       const { page, boards, coverage, fixturesDir } = selectedScenario(target);
