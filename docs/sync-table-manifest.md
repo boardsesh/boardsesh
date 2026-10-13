@@ -173,8 +173,9 @@ Document pages additionally exclude rows younger than the **stability window**
 transaction start, so a long write transaction can commit a row _behind_ an already-advanced cursor — skips are
 permanent, a deferred row is just picked up next pull. Client-side, the pull applies **deletions first, then table
 upserts**, and a tombstone only deletes local rows with `updated_at <= deletedAt` (resurrection guard) — together
-these make server-side delete-then-recreate converge. Bulk board re-imports suppress the deletion triggers entirely
-via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`).
+these make server-side delete-then-recreate converge. Bulk board re-imports suppress the deletion triggers
+via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`); the direct-Aurora refresh then
+writes markers itself for the owned upstream climbs its dump did not restore (`settleClearedOwnedClimbs`).
 
 `syncDeletions` additionally fences active writer transactions. A DB-owned
 `stream_at` insertion timestamp orders new markers; historical NULLs use
@@ -321,8 +322,8 @@ composite-keyed sync table must keep this true (or version the encoding).
   **The publication rule:** no stream consults an account's privacy settings or an item audience. A draft or an
   unlisted climb is returned to its owner alone (`user_id` = the caller), with its stats and grades rows, and one
   with no owner to no one. The same argument applies to `syncClimbStats` and `syncClimbGrades`, where it selects the
-  rows of that stream's climbs. A stats row carries the stored `fa_username` and `fa_at` only when its climb has no
-  Boardsesh owner and never had a Boardsesh author; a `PROTECTED` stats row carries `NULL` for both. A published
+  rows of that stream's climbs. A stats row carries the stored `fa_username` and `fa_at` only when its climb was never
+  set in Boardsesh (an owned manufacturer climb still carries them); a `PROTECTED` stats row carries `NULL` for both. A published
   climb that becomes a draft or is unlisted gets a `board_climbs` row in `syncDeletions`. Full rule:
   [The publication rule](board-snapshots.md#the-publication-rule-6306).
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.

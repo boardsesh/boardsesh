@@ -103,9 +103,12 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
    the live sync resolvers use (`row-normalize.ts` + `toSqliteValue`), so an artifact row is byte-identical
    to what an incremental `syncClimbs`/`syncClimbStats` pull would have written. `snapshot-export-golden.test.ts`
    pins that equivalence by running both paths against the same seeded rows and diffing them.
-3. Excludes rows younger than `SYNC_STABILITY_WINDOW_SECONDS` (default 30s, same env var the resolvers
-   read) — a row still inside its write-transaction's commit window is left for the incremental pull rather
-   than risking a watermark that covers it before it's actually visible.
+3. Excludes rows younger than `SYNC_STABILITY_WINDOW_SECONDS` (default 30s), read through the resolvers' own
+   reader (`syncStabilityWindowSeconds`), so both apply the same value: at least two seconds (only a test
+   run may set exactly 0), and a blank value is the default. A row still inside its write-transaction's
+   commit window is left for the incremental pull rather than risking a watermark that covers it before it's
+   actually visible; a device resumes `REFERENCE` from that watermark, so a shorter export window than the
+   pulls' would lose the row for good.
 4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — **while
    streaming those rows**, so it covers exactly what the artifact holds and costs no extra query. The
    stream SELECT adds the cursor as integer microseconds for ordering (never a string compare of rendered
@@ -1990,8 +1993,10 @@ columns follow the rule below for every caller.
   the same by-layout gate as before.
 - **First-ascent credit.** One rule for the artifact, `REFERENCE` and the pull with
   no audience (`referenceFirstAscentSql`): a stats row ships the stored `fa_username`
-  and `fa_at` when its climb has no Boardsesh owner and never had a Boardsesh author,
-  and NULL for both otherwise. On a climb with a Boardsesh author the name would come
+  and `fa_at` when its climb was never set in Boardsesh (`boardseshAuthoredClimbSql`
+  in `climb-provenance.ts`), and NULL for both otherwise. A manufacturer climb an
+  account owns for visibility (an imported draft, or one the owner backfill
+  assigned) ships its stored credit like any other manufacturer climb. On a climb with a Boardsesh author the name would come
   from somebody's logbook, which stays under that person's privacy settings; an
   artifact has no viewer and a device keeps what it synced. `PROTECTED` ships NULL
   for both on every board type. No offline reader selects either column.
@@ -2037,7 +2042,11 @@ climb across the line, in either direction, whichever writer made it.
   every device applies it. No stream delivers the new row to anyone but its owner, and
   without the marker every other device would keep the published copy. Bulk imports
   that delete and recreate a board set `boardsesh.suppress_sync_tombstones`; the marker
-  honours it like the delete triggers do.
+  honours it like the delete triggers do. The direct-Aurora refresh then writes the
+  markers the suppression would hide: one for each upstream climb an account owned that
+  the dump did not restore (`settleClearedOwnedClimbs`; see
+  [aurora-sync.md](aurora-sync.md)). A climb nobody owned that drops out of the dump
+  still gets none.
 - **The marker is stamped one second before the new row.** A device deletes a
   row when `updated_at <= deletedAt`, so the marker removes every copy a device
   pulled (each is at least a stability window older, and deployed windows are at

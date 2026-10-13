@@ -124,7 +124,8 @@ stalls safely during a prepared transaction or loss of stats access; monitor
 paused polls and resolve that database condition.
 
 Deployed `SYNC_STABILITY_WINDOW_SECONDS` values are clamped to at least two
-seconds. Invalid settings
+seconds, for the pull resolvers and the snapshot exporter alike: both read it
+through `syncStabilityWindowSeconds`. Blank and invalid settings
 retain the 30-second default. Exact zero is permitted only in `NODE_ENV=test`
 for immediate real-database fixture reads. The timestamp helper still safely
 accepts any nonnegative bound; deployed pull resolvers supply the guarded one.
