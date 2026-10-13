@@ -1933,6 +1933,13 @@
       "when": 1791866109016,
       "tag": "0275_drop_sync_deletion_stream_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 276,
+      "version": "7",
+      "when": 1791884787776,
+      "tag": "0276_drop_climb_content_privacy",
+      "breakpoints": true
     }
   ]
 }
