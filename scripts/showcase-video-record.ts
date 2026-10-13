@@ -1045,7 +1045,9 @@ async function referenceDiff(
   firstFrame: string,
   args: ShowcaseRecordArgs,
 ): Promise<number | null> {
-  const reference = resolve(REFERENCE_DIR, args.platform, args.kind, args.locales[0], `${takeId}.jpg`);
+  const reference = args.nativeLocaleCapture
+    ? resolve(REFERENCE_DIR, args.platform, args.kind, args.locales[0], `${takeId}.jpg`)
+    : resolve(REFERENCE_DIR, args.platform, `${takeId}.jpg`);
   if (!existsSync(reference)) return null;
   const thumbnail = (file: string): Promise<Buffer> =>
     sharp(file).resize(100, 217, { fit: 'fill' }).removeAlpha().raw().toBuffer();
