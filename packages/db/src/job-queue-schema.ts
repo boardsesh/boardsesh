@@ -287,7 +287,9 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
     privileges: ['SELECT'],
     // `holds_revision_number`: unused since the holds-epoch rule was removed
     // (#6023), kept for a worker image from before that. Goes with the column.
-    columns: ['uuid', 'board_type', 'user_id', 'holds_revision_number'],
+    // `synced` and `setter_id`: the recompute's owned leg asks where a climb
+    // came from, not only whether it has an owner (`climb-provenance.ts`).
+    columns: ['uuid', 'board_type', 'user_id', 'synced', 'setter_id', 'holds_revision_number'],
   },
   { table: 'board_climb_stats', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
   // Pending keys a stopped worker left behind: read `FOR UPDATE SKIP LOCKED`
