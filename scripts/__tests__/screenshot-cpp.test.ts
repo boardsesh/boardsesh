@@ -936,6 +936,160 @@ describe('custom product page captures', () => {
       }
     }
   });
+  it('scrolls only selected manufacturer tablet trios within their exact board list before the final row gate', () => {
+    for (const target of CPP_TARGETS) {
+      const { page, coverage } = selectedScenario(target);
+      const variants = [...page.heroBoards, ...page.otherBoards];
+      for (const variant of variants) coverage.heroClimbs![variant.id].readyText += " 'literal'";
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+          const documents = parseAllDocuments(renderCppMaestroFlow(target, device, coverage, locale));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          const shouldScroll = target !== 'spray' && device.name.startsWith('iPad');
+          const heroScrolls = steps.filter((step) => {
+            const repeat = step.repeat as { commands?: { swipe?: unknown }[] } | undefined;
+            return repeat?.commands?.some((command) => command.swipe);
+          });
+          // Every flow retains its existing Logbook scroll; only the six
+          // selected manufacturer tablet trios gain this new bounded search.
+          expect(heroScrolls).toHaveLength(shouldScroll ? 7 : 1);
+          for (const [index, variant] of variants.entries()) {
+            const scene = `${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`;
+            const start = steps.findIndex(
+              (step) => typeof step.evalScript === 'string' && step.evalScript.includes(`/set?scene=${scene}'`),
+            );
+            const end = steps.findIndex((step) => step.takeScreenshot === scene);
+            const gates = steps.slice(start, end);
+            const hero = coverage.heroClimbs![variant.id];
+            const paintGate = {
+              extendedWaitUntil: {
+                visible: { id: `cpp-climb-painted-${hero.boardId}-${hero.climbId}` },
+                timeout: 90000,
+              },
+            };
+            expect(gates).toContainEqual(paintGate);
+            expect(gates).toContainEqual({
+              extendedWaitUntil: { visible: `^${hero.gradeLabel}$`, timeout: 90000 },
+            });
+            if (!shouldScroll) continue;
+            const listSelector = { id: `^cpp-climb-list-${hero.boardId}$` };
+            const rowSelector = { id: '^climb-row$', text: cppClimbRowReadinessSelector(hero.readyText, locale) };
+            const scrollIndex = gates.findIndex((step) => {
+              const repeat = step.repeat as { while?: { notVisible?: unknown } } | undefined;
+              return repeat?.while?.notVisible !== undefined;
+            });
+            expect(scrollIndex).toBeGreaterThan(1);
+            expect(gates[scrollIndex - 2]).toEqual({
+              extendedWaitUntil: { visible: listSelector, timeout: 90000 },
+            });
+            expect(gates[scrollIndex - 1]).toEqual({
+              extendedWaitUntil: { visible: cppBoardHeaderReadinessSelector(variant, coverage), timeout: 90000 },
+            });
+            expect(gates[scrollIndex]).toEqual({
+              repeat: {
+                times: 3,
+                while: { notVisible: rowSelector },
+                commands: [
+                  { swipe: { from: listSelector, direction: 'UP', duration: 700 } },
+                  { waitForAnimationToEnd: { timeout: 30000 } },
+                ],
+              },
+            });
+            expect(gates[scrollIndex + 1]).toEqual({
+              extendedWaitUntil: { visible: rowSelector, timeout: 90000 },
+            });
+            expect(gates[scrollIndex + 2]).toEqual({
+              extendedWaitUntil: { visible: { id: 'play-drawer-board-overlay' }, timeout: 60000 },
+            });
+            expect(gates.findIndex((step) => JSON.stringify(step) === JSON.stringify(paintGate))).toBeLessThan(
+              scrollIndex,
+            );
+            expect(new RegExp(listSelector.id).test(`cpp-climb-list-${hero.boardId}-other`)).toBe(false);
+            expect(new RegExp(rowSelector.id).test('board-sheet-climb-row')).toBe(false);
+            expect(new RegExp(rowSelector.id).test('climb-row-more-button')).toBe(false);
+            const rowText = new RegExp(rowSelector.text);
+            expect(rowText.test(`${hero.readyText}, rosette, V3`)).toBe(true);
+            expect(rowText.test(`${hero.readyText} Extended, rosette, V3`)).toBe(false);
+            expect(rowText.test(`${hero.readyText.replace('(left)+[1].', 'left1X')}, rosette, V3`)).toBe(false);
+          }
+        }
+      }
+    }
+  });
+  it('preserves literal replacement tokens in parsed CPP titles and native row selectors', () => {
+    const { page, coverage } = selectedScenario('moonboard');
+    const hero = coverage.heroClimbs![page.heroBoards[2].id];
+    hero.readyText = "DUNES (left)+[1]. $& $' $` $$ literal";
+    for (const device of IOS_SCREENSHOT_DEVICES) {
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+        const documents = parseAllDocuments(renderCppMaestroFlow('moonboard', device, coverage, locale));
+        expect(documents.flatMap((document) => document.errors)).toEqual([]);
+        const steps = documents[1].toJS() as Record<string, unknown>[];
+        expect(steps).toContainEqual({
+          extendedWaitUntil: { visible: cppReadinessSelector(hero.readyText), timeout: 90000 },
+        });
+        if (device.name.startsWith('iPad'))
+          expect(steps).toContainEqual({
+            extendedWaitUntil: {
+              visible: { id: '^climb-row$', text: cppClimbRowReadinessSelector(hero.readyText, locale) },
+              timeout: 90000,
+            },
+          });
+      }
+    }
+  });
+  it('stops a parsed tablet hero scroll when visible and fails closed on missing lists or rows after three swipes', () => {
+    const { page, coverage } = selectedScenario('moonboard');
+    const hero = coverage.heroClimbs![page.heroBoards[2].id];
+    hero.readyText = "DUNES (left)+[1]. $' literal";
+    const device = IOS_SCREENSHOT_DEVICES.find((device) => device.name === 'iPad Pro 13-inch (M5)')!;
+    const steps = parseAllDocuments(renderCppMaestroFlow('moonboard', device, coverage))[1].toJS() as Record<
+      string,
+      unknown
+    >[];
+    const start = steps.findIndex(
+      (step) => typeof step.evalScript === 'string' && step.evalScript.includes("/set?scene=hero-3'"),
+    );
+    const end = steps.findIndex((step) => step.takeScreenshot === 'hero-3');
+    const gates = steps.slice(start, end);
+    const scrollIndex = gates.findIndex((step) => {
+      const repeat = step.repeat as { while?: { notVisible?: unknown } } | undefined;
+      return repeat?.while?.notVisible !== undefined;
+    });
+    expect(scrollIndex).toBeGreaterThan(1);
+    const listGate = gates[scrollIndex - 2].extendedWaitUntil as { visible: { id: string } };
+    const scroll = gates[scrollIndex].repeat as {
+      times: number;
+      while: { notVisible: { id: string; text: string } };
+      commands: [{ swipe: { from: { id: string } } }, { waitForAnimationToEnd: { timeout: number } }];
+    };
+    const rowGate = gates[scrollIndex + 1].extendedWaitUntil as { visible: { id: string; text: string } };
+    const run = (visibleAfter: number, listId: string | undefined, rowId = 'climb-row', title = hero.readyText) => {
+      let swipes = 0;
+      const visible = (selector: { id: string; text?: string }) =>
+        swipes >= visibleAfter &&
+        new RegExp(selector.id).test(rowId) &&
+        (selector.text === undefined || new RegExp(selector.text).test(`${title}, rosette, V5`));
+      const listMatches = (selector: { id: string }) => listId !== undefined && new RegExp(selector.id).test(listId);
+      if (!listMatches(listGate.visible)) return { swipes, captured: false };
+      for (let attempt = 0; attempt < scroll.times && !visible(scroll.while.notVisible); attempt += 1) {
+        if (!listMatches(scroll.commands[0].swipe.from)) return { swipes, captured: false };
+        swipes += 1;
+      }
+      return { swipes, captured: visible(rowGate.visible) };
+    };
+    const listId = `cpp-climb-list-${hero.boardId}`;
+    expect(run(0, listId)).toEqual({ swipes: 0, captured: true });
+    expect(run(1, listId)).toEqual({ swipes: 1, captured: true });
+    expect(run(3, listId)).toEqual({ swipes: 3, captured: true });
+    expect(run(4, listId)).toEqual({ swipes: 3, captured: false });
+    expect(run(0, undefined)).toEqual({ swipes: 0, captured: false });
+    expect(run(0, `${listId}-other-board`)).toEqual({ swipes: 0, captured: false });
+    expect(run(0, listId, 'board-sheet-climb-row')).toEqual({ swipes: 3, captured: false });
+    expect(run(0, listId, 'climb-row', `${hero.readyText} Extended`)).toEqual({ swipes: 3, captured: false });
+    expect(run(0, listId, 'climb-row', 'DUNES left1X literal')).toEqual({ swipes: 3, captured: false });
+  });
   it('resolves all 128 legacy/selected CPP flows through the real Metro registry and strict readiness handler', () => {
     let checkedDocuments = 0;
     const readinessRequest = readinessCommandTransport();
@@ -1545,11 +1699,15 @@ describe('custom product page captures', () => {
     expect(cppNavigationCommands(page, coverage, boards, false)['hero-2'].route).toBe(
       '/climbs/create?screenshotCppScene=hero-2',
     );
-    const source = renderCppMaestroFlow('spray', IOS_SCREENSHOT_DEVICES[0], coverage, 'de');
-    const cherryCapture = source.slice(source.indexOf('scene=hero-2'), source.indexOf('takeScreenshot: hero-2'));
-    expect(cherryCapture).toContain('Bouldername');
-    expect(cherryCapture).toContain('create-climb-editor');
-    expect(cherryCapture).not.toContain('play-drawer-board-overlay');
+    for (const device of IOS_SCREENSHOT_DEVICES) {
+      const source = renderCppMaestroFlow('spray', device, coverage, 'de');
+      const cherryCapture = source.slice(source.indexOf('scene=hero-2'), source.indexOf('takeScreenshot: hero-2'));
+      expect(cherryCapture).toContain('Bouldername');
+      expect(cherryCapture).toContain('create-climb-editor');
+      expect(cherryCapture).not.toContain('play-drawer-board-overlay');
+      expect(cherryCapture).not.toContain('swipe:');
+      expect(parseAllDocuments(source).flatMap((document) => document.errors)).toEqual([]);
+    }
     expect(() =>
       assertCppCaptureReady('spray', page, { ...coverage, boardClimbCounts: { [cherry.id]: 1 } }, boards, fixturesDir),
     ).toThrow('explicit empty spray wall');

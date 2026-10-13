@@ -2297,10 +2297,29 @@ export function renderCppMaestroFlow(
     if (ipad && scene.variant && !scene.wallEditor) {
       const uuid = coverage.boardIds?.[scene.variant.id];
       if (!uuid?.trim()) throw new Error(`CPP ${scene.variant.id} lacks its genuine board UUID`);
+      const scrollSelectedHero =
+        target !== 'spray' &&
+        selectedHero !== undefined &&
+        (scene.command.startsWith('hero-') || scene.command.startsWith('other-'));
+      const listId = cppReadinessSelector(`cpp-climb-list-${uuid}`);
+      const listSelector = { id: scrollSelectedHero ? `^${listId}$` : listId };
+      const rowSelector = {
+        id: scrollSelectedHero ? '^climb-row$' : 'climb-row',
+        text: cppClimbRowReadinessSelector(scene.ready, locale),
+      };
       commands.push(
-        `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-climb-list-${uuid}`))}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(listSelector)}\n    timeout: 90000`,
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant, coverage))}\n    timeout: 90000`,
-        `- extendedWaitUntil:\n    visible:\n      id: climb-row\n      text: ${JSON.stringify(cppClimbRowReadinessSelector(scene.ready, locale))}\n    timeout: 90000`,
+      );
+      if (scrollSelectedHero)
+        // A genuine selected hero can be eighth in the first ten query rows,
+        // below the tablet viewport even after its detail has painted. Search
+        // only this owned board's FlashList and retain the final exact row gate.
+        commands.push(
+          `- repeat:\n    times: 3\n    while:\n      notVisible: ${JSON.stringify(rowSelector)}\n    commands:\n      - swipe:\n          from: ${JSON.stringify(listSelector)}\n          direction: UP\n          duration: 700\n      - waitForAnimationToEnd:\n          timeout: 30000`,
+        );
+      commands.push(
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(rowSelector)}\n    timeout: 90000`,
         '- extendedWaitUntil:\n    visible:\n      id: play-drawer-board-overlay\n    timeout: 60000',
         '- waitForAnimationToEnd:\n    timeout: 30000',
       );
@@ -2420,7 +2439,9 @@ export function renderCppMaestroFlow(
       );
     }
   }
-  return readFileSync(join(MAESTRO_DIR, 'app-store-cpp.yaml'), 'utf8').replace(/^CPP_COMMANDS$/m, commands.join('\n'));
+  return readFileSync(join(MAESTRO_DIR, 'app-store-cpp.yaml'), 'utf8').replace(/^CPP_COMMANDS$/m, () =>
+    commands.join('\n'),
+  );
 }
 
 export function rotationDegreesForIosOrientation(orientation: IosDeviceOrientation): number | null {
