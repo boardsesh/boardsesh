@@ -99,9 +99,14 @@ export function ScreenshotBoardAutoActivator(): null {
   const routeParams = useGlobalSearchParams();
   const [cppPending, setCppPending] = useState<{ sequence: number; route: string } | null>(null);
   const cppAckDiagnostic = useRef<string | null>(null);
+  // The regular campaign uses this transport without enabling CPP board-slot mapping.
+  const commandEndpoint =
+    process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL || process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL;
+  const commandConfiguration = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
+    ? process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS
+    : process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS;
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !cppPending || !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL)
-      return;
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !cppPending || !commandEndpoint) return;
     const destination = new URL(cppPending.route, 'http://localhost');
     const mismatchedKeys = [...destination.searchParams.entries()]
       .filter(([key, expected]) => routeParams[key] !== expected)
@@ -123,9 +128,7 @@ export function ScreenshotBoardAutoActivator(): null {
     void (async () => {
       try {
         console.log(`[screenshot] CPP ACK request start ${JSON.stringify({ sequence: cppPending.sequence })}`);
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL}/ack?sequence=${cppPending.sequence}`,
-        );
+        const response = await fetch(`${commandEndpoint}/ack?sequence=${cppPending.sequence}`);
         console.log(
           `[screenshot] CPP ACK response ${JSON.stringify({ sequence: cppPending.sequence, status: response.status })}`,
         );
@@ -139,20 +142,20 @@ export function ScreenshotBoardAutoActivator(): null {
         console.log(`[screenshot] CPP ACK request ${JSON.stringify({ sequence: cppPending.sequence, errorKind })}`);
       }
     })();
-  }, [cppPending, pathname, routeParams]);
+  }, [cppPending, pathname, routeParams, commandEndpoint]);
 
   // CPP commands carry navigation only. The real roster, search queries and native
   // screens supply all content; polling is sequential and each command runs once.
   useEffect(() => {
     if (
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' ||
-      !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL ||
+      !commandEndpoint ||
       !isAuthenticated ||
       !screenshotBoards.length
     )
       return;
-    const endpoint = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
-    const configuration = JSON.parse(process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS ?? '{}') as Record<
+    const endpoint = commandEndpoint;
+    const configuration = JSON.parse(commandConfiguration ?? '{}') as Record<
       string,
       { selector: string; identity: ScreenshotCppBoardIdentity; route: string }
     >;
@@ -197,7 +200,7 @@ export function ScreenshotBoardAutoActivator(): null {
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [isAuthenticated, screenshotBoards, setActiveBoard]);
+  }, [isAuthenticated, screenshotBoards, setActiveBoard, commandEndpoint, commandConfiguration]);
 
   // Logged once at boot so a screenshot run's Metro-teed output says whether
   // relative timestamps are pinned (EXPO_PUBLIC_SCREENSHOT_NOW parsed) or

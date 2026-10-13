@@ -209,6 +209,8 @@
     "__tests__/ios-profiling-tools.test.ts",
     "__tests__/mobile-ios-run.test.ts",
     "__tests__/mobile-screenshots.test.ts",
+    "__tests__/app-store-ipad-readiness.test.ts",
+    "__tests__/ios-campaign-primary.test.ts",
     "__tests__/ios-capture-diagnostics.test.ts",
     "lib/ios-capture-diagnostics.ts",
     "__tests__/mobile-profile-capture.test.ts",

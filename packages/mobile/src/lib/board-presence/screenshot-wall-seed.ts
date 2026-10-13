@@ -30,9 +30,10 @@ import type {
 } from '@boardsesh/shared-schema';
 import type { MobileBoardPresenceClient } from './board-presence-client';
 import { nowMs as currentNowMs } from '../clock';
+import { SCREENSHOT_WALL_SEED_COUNT } from '../screenshot-climb-selection';
 
 /** How many of the active board's climbs the wall kiosk history is seeded with. */
-export const SCREENSHOT_WALL_SEED_COUNT = 6;
+export { SCREENSHOT_WALL_SEED_COUNT } from '../screenshot-climb-selection';
 
 /**
  * Map the active board's real climbs (the first page of the default search) to

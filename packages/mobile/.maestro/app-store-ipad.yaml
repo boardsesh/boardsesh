@@ -19,14 +19,20 @@ name: app-store screenshots (iPad)
 # sidebar before capture so it cannot cover the screen content; reopen for navigation.
 # The orchestrator also rejects byte-identical captures of different scenes.
 #
-# The wall kiosk seed (the active board's real climbs) is published at the root by
-# ScreenshotBoardAutoActivator as soon as the board activates, so the wall shot no
-# longer depends on the Climbs screen mounting first. Climbs is still visited first:
-# it re-publishes the same seed (idempotent) and gives the wall panel time to render.
+# Activate the verified primary board through the local screenshot bridge and
+# require its exact route ACK. This transport leaves CPP capture flags disabled.
+# The root publishes the active board's real wall seed; native content and paint
+# gates below still prove the selected climb before taking either board image.
 # The build auto-signs-in and lands on home — the orchestrator gates on reach-home
 # before running this flow.
 - setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
 - waitForAnimationToEnd
+- evalScript: ${output.primaryBoardSequence = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/set?scene=hero-1').body).sequence}
+- retry:
+    maxRetries: 3
+    commands:
+      - evalScript: ${output.primaryBoardAcknowledged = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/status?waitFor=' + output.primaryBoardSequence).body).acknowledged}
+      - assertTrue: ${output.primaryBoardAcknowledged == output.primaryBoardSequence}
 # Each navigation also handles a sidebar left collapsed by a previous run.
 
 # Climbs — the browse list.
@@ -55,7 +61,17 @@ name: app-store screenshots (iPad)
     timeout: 15000
 - assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
-- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^climbs-screen$'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^climb-row$'
+      text: ${SCREENSHOT_PRIMARY_CLIMB_ROW}
+      childOf:
+        id: '^climb-list$'
+    timeout: 90000
 - takeScreenshot: 02-climbs
 
 # Home — the "Everyone" feed, with the persistent wall rail showing the lit climb.
@@ -127,7 +143,13 @@ name: app-store screenshots (iPad)
     timeout: 15000
 - assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
-- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: ${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}
+    timeout: 90000
 - takeScreenshot: 00-wall
 
 # Record — the workout generator (a workout is pre-selected in screenshot mode via

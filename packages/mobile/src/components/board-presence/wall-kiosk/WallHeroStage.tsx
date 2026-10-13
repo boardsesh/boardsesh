@@ -4,6 +4,8 @@ import type { BoardName, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../../BoardImageNative';
 import { useTheme } from '../../../providers/theme-provider';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
+import { screenshotWallKioskPaintedTestId } from '../../../lib/screenshot-climb-selection';
+import { screenshotPublishedBoardKey } from '../../../lib/board-presence/screenshot-wall-seed';
 
 type WallHeroStageProps = {
   /** The lit climb, the previewed climb, or null (idle → background-only render). */
@@ -53,6 +55,11 @@ function WallHeroStageComponent({
   return (
     <View style={[styles.root, { width: artWidth, height: artHeight, backgroundColor: systemColors.background }]}>
       <BoardImageNative
+        paintedTestID={
+          process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'
+            ? screenshotWallKioskPaintedTestId(true, screenshotPublishedBoardKey(), boardConfig, climb)
+            : undefined
+        }
         frames={climb?.frames ?? ''}
         boardName={boardConfig.boardName as BoardName}
         layoutId={boardConfig.layoutId}

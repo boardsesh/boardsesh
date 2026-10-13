@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -29,6 +29,9 @@ vi.mock('../../../BoardImageNative', () => ({
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#000' } }),
 }));
+vi.mock('../../../../lib/board-presence/screenshot-wall-seed', () => ({
+  screenshotPublishedBoardKey: () => 'owned-board',
+}));
 
 import { WallHeroStage } from '../WallHeroStage';
 
@@ -37,13 +40,17 @@ const boardConfig = {
   layoutId: 1,
   sizeId: 10,
   setIds: '1,20',
+  angle: 40,
 } as unknown as Parameters<typeof WallHeroStage>[0]['boardConfig'];
 
-function renderStage(artWidth: number): Record<string, unknown> {
+function renderStage(
+  artWidth: number,
+  climb: Parameters<typeof WallHeroStage>[0]['climb'] = null,
+): Record<string, unknown> {
   boardImageProps.calls.length = 0;
   render(
     createElement(WallHeroStage, {
-      climb: null,
+      climb,
       boardConfig,
       boardWidth: 1080,
       boardHeight: 1170,
@@ -57,8 +64,22 @@ function renderStage(artWidth: number): Record<string, unknown> {
 }
 
 describe('WallHeroStage board-art sizing', () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     pixelRatio.value = 2;
+  });
+
+  it('hands the genuine kiosk paint marker to the renderer only during screenshot capture', () => {
+    const climb = { climbUuid: 'real-climb', frames: 'p1r12', angle: 40, sentAt: '2026-10-13T12:00:00Z', seq: 1 };
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    expect(renderStage(600, climb).paintedTestID).toBe(
+      'store-kiosk-painted-owned-board-real-climb-kilter-1-10-1-20-40',
+    );
+    expect(renderStage(600).paintedTestID).toBeUndefined();
+    expect(renderStage(600, { ...climb, frames: null }).paintedTestID).toBeUndefined();
+    expect(renderStage(600, { ...climb, angle: 25 }).paintedTestID).toBeUndefined();
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    expect(renderStage(600, climb).paintedTestID).toBeUndefined();
   });
 
   it('keeps the board photo full-resolution', () => {

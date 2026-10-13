@@ -1215,6 +1215,25 @@ un-re-recorded shards' overlapping keys are still frozen at a stale instant).
 
 ### Campaign native session transport
 
+Regular iPad captures first select the exact primary board from the verified
+GetMyBoards roster through the local screenshot command bridge. Its separate
+`EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL` and `COMMANDS` keys leave CPP's six-board
+mapping disabled, preserving the regular campaign's seven named boards. The
+orchestrator resets the command sequence before each device, and the native flow
+requires the exact route acknowledgement before sidebar navigation.
+
+Climbs must show the real recorded primary row inside the current climb list.
+The Wall kiosk must show that climb's title and the exact painted marker bound
+to its published owned-board UUID, climb UUID and actual panel geometry. The
+board renderer exposes that marker only after its current background and lit
+overlay have displayed. A selected sidebar destination alone cannot pass these
+gates: an empty picker or idle wall now fails before its screenshot is taken.
+Legacy live iPad App Store capture fails before building or launching; use the
+verified campaign replay. The normal workflow's App Store replay already resolves
+to that campaign automatically. Legacy phone flows retain their existing path.
+Primary seed validation matches the production default SearchClimbs input,
+document and fixture index hashes; it never manufactures a missing climb.
+
 The iOS campaign replay adapts only the pinned native JoinSession and QueueUpdates
 selection sets. It projects fields already present in the recorded crew snapshot;
 missing fields, changed arguments, unknown documents and different board scopes

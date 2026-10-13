@@ -4,6 +4,7 @@ import {
   screenshotPaintedClimbTestId,
   screenshotLocalMirrorTestId,
   selectScreenshotGradeRange,
+  screenshotWallKioskPaintedTestId,
 } from '../screenshot-climb-selection';
 import { buildCountPreviewInput } from '../climb-count-preview-input';
 import { DEFAULT_FILTERS } from '../climb-filter-types';
@@ -20,6 +21,23 @@ const first = {
 const requested = { ...first, uuid: 'FC08DF05598B46BFB404BEDCA07685A2', compatibleSizeIds: [10] };
 
 describe('real screenshot climb selection', () => {
+  it('binds kiosk paint to the actual published board, presence climb and panel geometry', () => {
+    const presence = { climbUuid: requested.uuid, frames: requested.frames, angle: 40 };
+    const marker = screenshotWallKioskPaintedTestId(true, board.uuid, query, presence);
+    expect(marker).toBe(`store-kiosk-painted-owned-board-${requested.uuid}-kilter-1-10-1-20-40`);
+    expect(screenshotWallKioskPaintedTestId(false, board.uuid, query, presence)).toBeUndefined();
+    expect(screenshotWallKioskPaintedTestId(true, null, query, presence)).toBeUndefined();
+    expect(screenshotWallKioskPaintedTestId(true, board.uuid, query, null)).toBeUndefined();
+    expect(screenshotWallKioskPaintedTestId(true, board.uuid, query, { ...presence, frames: '' })).toBeUndefined();
+    expect(screenshotWallKioskPaintedTestId(true, board.uuid, query, { ...presence, angle: 25 })).toBeUndefined();
+    expect(screenshotWallKioskPaintedTestId(true, board.uuid, { ...query, setIds: '' }, presence)).toBeUndefined();
+    for (const changed of [{ boardName: 'tension' }, { layoutId: 2 }, { sizeId: 11 }, { setIds: '1' }])
+      expect(screenshotWallKioskPaintedTestId(true, board.uuid, { ...query, ...changed }, presence)).not.toBe(marker);
+    expect(screenshotWallKioskPaintedTestId(true, 'other-board', query, presence)).not.toBe(marker);
+    expect(screenshotWallKioskPaintedTestId(true, board.uuid, query, { ...presence, climbUuid: 'other' })).not.toBe(
+      marker,
+    );
+  });
   it('accepts only real grade-stop endpoints for the exact loaded board and uses the native count wire', () => {
     const grades = [{ difficultyId: 14 }, { difficultyId: 15 }, { difficultyId: 16 }];
     const stops = [

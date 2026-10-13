@@ -1,3 +1,6 @@
+/** Default-search rows used by the screenshot-only kiosk feed and its fixture verifier. */
+export const SCREENSHOT_WALL_SEED_COUNT = 6;
+
 type CaptureBoardConfig = { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number };
 type CaptureQueryConfig = { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
 function currentBoardQuery(board: CaptureBoardConfig, query: CaptureQueryConfig): boolean {
@@ -105,6 +108,36 @@ export function screenshotPaintedClimbTestId(
   )
     return undefined;
   return `cpp-climb-painted-${board.uuid}-${climb.uuid}${mirrored ? '-mirrored' : ''}`;
+}
+
+/** The kiosk marker binds displayed artwork to the published real board and climb. */
+export function screenshotWallKioskPaintedTestId(
+  enabled: boolean,
+  publishedBoardUuid: string | null,
+  panel: CaptureQueryConfig,
+  climb: { climbUuid: string; frames?: string | null; angle?: number | null } | null,
+): string | undefined {
+  if (
+    !enabled ||
+    !publishedBoardUuid?.trim() ||
+    !climb?.climbUuid.trim() ||
+    !climb.frames?.trim() ||
+    climb.angle !== panel.angle ||
+    !panel.boardName.trim() ||
+    !Number.isSafeInteger(panel.layoutId) ||
+    panel.layoutId <= 0 ||
+    !Number.isSafeInteger(panel.sizeId) ||
+    panel.sizeId <= 0 ||
+    !Number.isFinite(panel.angle) ||
+    !/^\d+(,\d+)*$/.test(panel.setIds)
+  )
+    return undefined;
+  const sets = panel.setIds
+    .split(',')
+    .map(Number)
+    .sort((left, right) => left - right)
+    .join('-');
+  return `store-kiosk-painted-${publishedBoardUuid}-${climb.climbUuid}-${panel.boardName}-${panel.layoutId}-${panel.sizeId}-${sets}-${panel.angle}`;
 }
 
 /** An actual shared-session wall must never be mirrored by marketing automation. */

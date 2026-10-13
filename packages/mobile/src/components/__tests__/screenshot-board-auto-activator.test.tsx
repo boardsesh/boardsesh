@@ -46,10 +46,49 @@ afterEach(() => {
   boards.replace.mockClear();
   boards.route = '/home';
   boards.params = {};
+  boards.active = { uuid: 'restored-spray', boardType: 'spray', layoutId: 47, sizeId: 47, setIds: '1', angle: 40 };
+  boards.pending = false;
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 describe('ScreenshotBoardAutoActivator', () => {
+  it('activates the genuine regular primary board without CPP mode and ACKs only its exact route', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', '');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL', 'http://localhost:19870/cpp');
+    vi.stubEnv(
+      'EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS',
+      JSON.stringify({
+        'hero-1': {
+          selector: boards.primary.name,
+          identity: { uuid: 'primary', boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26], angle: 35 },
+          route: '/climbs?screenshotBoardIndex=0',
+        },
+      }),
+    );
+    boards.active = boards.primary;
+    boards.pending = false;
+    boards.set.mockResolvedValueOnce(false).mockResolvedValue(true);
+    const fetchCommand = vi.fn(async (_endpoint: string) => ({
+      status: 200,
+      json: async () => ({ sequence: 17, scene: 'hero-1' }),
+    }));
+    vi.stubGlobal('fetch', fetchCommand);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { rerender, unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+    await waitFor(() => expect(boards.set).toHaveBeenCalledTimes(1));
+    expect(boards.replace).not.toHaveBeenCalled();
+    await waitFor(() => expect(boards.replace).toHaveBeenCalledWith('/climbs?screenshotBoardIndex=0'));
+    expect(boards.set).toHaveBeenCalledTimes(2);
+    boards.route = '/climbs';
+    boards.params = { screenshotBoardIndex: '1' };
+    rerender();
+    expect(fetchCommand.mock.calls.some(([endpoint]) => endpoint.includes('/ack'))).toBe(false);
+    boards.params = { screenshotBoardIndex: '0' };
+    rerender();
+    await waitFor(() => expect(fetchCommand).toHaveBeenCalledWith('http://localhost:19870/cpp/ack?sequence=17'));
+    unmount();
+  });
   it('logs only safe route identity and fixed mismatched key names while preserving all exact guards', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');

@@ -474,7 +474,7 @@ describe('iOS store capture content readiness', () => {
     expect(screenshotIndex).toBeGreaterThanOrEqual(0);
     const navigationIndex = commands
       .slice(0, screenshotIndex)
-      .reduce((lastIndex, command, index) => (command.openLink ? index : lastIndex), -1);
+      .reduce((lastIndex, command, index) => (command.openLink || command.takeScreenshot ? index : lastIndex), -1);
     return commands.slice(navigationIndex + 1, screenshotIndex);
   }
 
@@ -1052,7 +1052,9 @@ describe('renderMaestroFlowForIosDevice', () => {
       extendedWaitUntil?: { visible: string };
       assertNotVisible?: string;
     }>;
-    const navigation = commands.flatMap((command) => (command.retry ? [command.retry.commands] : []));
+    const navigation = commands.flatMap((command) =>
+      command.retry?.commands.some((nested) => nested.tapOn) ? [command.retry.commands] : [],
+    );
     expect(navigation).toHaveLength(6);
     for (const [index, segment] of ['CLIMBS', 'HOME', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
       const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
@@ -1079,7 +1081,7 @@ describe('renderMaestroFlowForIosDevice', () => {
     let collapsedControlVisible = false;
     let sidebarAbsent = false;
     for (const command of commands) {
-      if (command.retry) selectedDestination = true;
+      if (command.retry?.commands.some((nested) => nested.tapOn)) selectedDestination = true;
       if (command.tapOn === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') {
         expect(selectedDestination).toBe(true);
         collapseRequested = true;

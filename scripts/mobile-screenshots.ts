@@ -169,6 +169,7 @@ import {
 // layer can't own it because it shells out to gh/gradle.
 import { ensureAndroidApk } from './mobile-android-apk';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
+import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from './lib/ios-campaign-primary';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -413,6 +414,7 @@ export interface ScreenshotOptions {
   cppFixtureSha256?: string;
   cppScenarioFile?: string;
   cppCapturePage?: CppPage;
+  iosCampaignPrimaryCapture?: IosCampaignPrimaryCapture;
 }
 
 export function parseArgs(argv: readonly string[]): ScreenshotOptions {
@@ -759,6 +761,27 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
   if (options.flow === 'app-store-campaign' || options.cpp) env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
+  if (options.flow === 'app-store-campaign' && !options.cpp && options.iosCampaignPrimaryCapture) {
+    const { board } = options.iosCampaignPrimaryCapture;
+    // A regular seven-board capture must not enable CPP's six-slot board mapping.
+    delete env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+    delete env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
+    env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL = `http://localhost:${SCREENSHOT_READY_PORT}/cpp`;
+    env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS = JSON.stringify({
+      'hero-1': {
+        selector: board.name,
+        identity: {
+          uuid: board.uuid,
+          boardType: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds.split(',').map(Number),
+          angle: board.angle,
+        },
+        route: '/climbs?screenshotBoardIndex=0',
+      },
+    });
+  }
   if (options.cpp && options.cpp !== 'all') {
     env.EXPO_PUBLIC_SCREENSHOT_CPP_URL = `http://localhost:${SCREENSHOT_READY_PORT}/cpp`;
     if (!options.cppCoverage) throw new Error('CPP capture requires explicit fixture coverage');
@@ -2624,7 +2647,7 @@ function captureIosDevice(
     // INCREASE (not merely be present), or device 2+ would skip the readiness wait
     // on a stale marker and capture a blank/loading frame.
     const homeReadyBaseline = homeReadyMarkerCount();
-    if (options.cpp)
+    if (options.cpp || options.flow === 'app-store-campaign')
       runCapture('curl', ['--fail', '--silent', `http://localhost:${SCREENSHOT_READY_PORT}/cpp/set?scene=reset`]);
     const readinessBaseline = screenshotReadinessCount();
     // Snapshot before the app can talk to the backend, so the gate below judges
@@ -2753,7 +2776,11 @@ function captureIosDevice(
         `SCREENSHOT_USER_PASSWORD=${password}`,
         ...(options.cpp ? ['-e', `SCREENSHOT_CPP_URL=http://localhost:${SCREENSHOT_READY_PORT}/cpp`] : []),
         ...(['app-store', 'app-store-campaign'].includes(options.flow) || options.cpp
-          ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture)
+          ? buildIosCampaignMaestroEnv(
+              localeTarget.appLocale,
+              backendSession?.capture,
+              options.iosCampaignPrimaryCapture,
+            )
           : []),
         ...(isIpadScreenshotDevice(screenshotDevice) &&
         ['app-store', 'app-store-campaign', 'app-store-cpp'].includes(options.flow)
@@ -3022,7 +3049,7 @@ export function assertIosCampaignSources(capturedNames: readonly string[]): void
   }
 }
 
-export type IosCampaignBoard = { name: string; layoutName?: string | null; boardType: string };
+export type IosCampaignBoard = CppRecordedBoard & { layoutName?: string | null };
 
 export function readIosCampaignBoards(fixturesDir: string): IosCampaignBoard[] {
   const manifest = readScreenshotFixtureManifest(fixturesDir);
@@ -3067,7 +3094,7 @@ export function waitForCppRecordedRoster(
 export function assertIosCampaignCaptureReady(
   options: ScreenshotOptions,
   capture?: ScreenshotCaptureScenario,
-  recordedBoards: readonly IosCampaignBoard[] = [],
+  recordedBoards: readonly Pick<IosCampaignBoard, 'name' | 'layoutName' | 'boardType'>[] = [],
 ): void {
   const boards = (options.boards ?? capture?.boards.join('|') ?? '').split('|').filter((selector) => selector.trim());
   if (options.fixtures !== 'replay' || !capture?.sharedSessionId || boards.length < 7) {
@@ -3123,7 +3150,11 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
 }
 
 /** Read accessibility labels from the same catalog as the native UI for all four locales. */
-export function buildIosCampaignMaestroEnv(locale: Locale, capture?: ScreenshotCaptureScenario): string[] {
+export function buildIosCampaignMaestroEnv(
+  locale: Locale,
+  capture?: ScreenshotCaptureScenario,
+  primary?: IosCampaignPrimaryCapture,
+): string[] {
   const catalog = JSON.parse(
     readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
   ) as {
@@ -3133,6 +3164,14 @@ export function buildIosCampaignMaestroEnv(locale: Locale, capture?: ScreenshotC
     playView: { closeAria: string; actionBar: { queueCountAria: string } };
   };
   const labels = {
+    ...(primary
+      ? {
+          SCREENSHOT_PRIMARY_BOARD_URL: `http://localhost:${SCREENSHOT_READY_PORT}/cpp`,
+          SCREENSHOT_PRIMARY_CLIMB_ROW: cppClimbRowReadinessSelector(primary.climb.name, locale),
+          SCREENSHOT_PRIMARY_CLIMB_TITLE: cppReadinessSelector(primary.climb.name),
+          SCREENSHOT_PRIMARY_WALL_PAINTED_ID: `^${cppReadinessSelector(primary.paintedId)}$`,
+        }
+      : {}),
     SCREENSHOT_SHARED_SESSION_ID: capture?.sharedSessionId ?? '',
     SCREENSHOT_JOIN_LABEL: catalog.mobileJoin.join,
     SCREENSHOT_CLOSE_LABEL: catalog.playView.closeAria,
@@ -3576,6 +3615,17 @@ export function clearAndroidStatusBar(deviceId: string): void {
   ]);
 }
 
+/** The regular tablet flow needs verified campaign identities before building or launching. */
+export function assertIosRegularIpadCaptureFlow(
+  options: ScreenshotOptions,
+  devices: readonly IosScreenshotDevice[],
+): void {
+  if (!options.cpp && options.flow === 'app-store' && devices.some(isIpadScreenshotDevice))
+    throw new Error(
+      'Regular iPad captures require --flow app-store-campaign --fixtures replay with a verified campaign fixture',
+    );
+}
+
 function runIos(options: ScreenshotOptions): number {
   if (!commandExists('xcrun') || runCapture('xcrun', ['simctl', 'help']).status !== 0) {
     console.log(`${LOG} Skipped: iOS simulator tooling (xcrun simctl) not available.`);
@@ -3597,8 +3647,9 @@ function runIos(options: ScreenshotOptions): number {
     return 1;
   }
 
-  const appPath = resolveAppPath(options);
   const screenshotDevices = resolveIosScreenshotDevices(options.devices, options.orientation);
+  assertIosRegularIpadCaptureFlow(options, screenshotDevices);
+  const appPath = resolveAppPath(options);
   const localeTargets = resolveAppStoreLocaleTargets(options.appLocales);
 
   const readinessServer = startReadinessServer(
@@ -3658,12 +3709,19 @@ function runIos(options: ScreenshotOptions): number {
       }
       if (!options.cppCoverage) throw new Error('CPP recording needs --cpp-scenario with real seeded scene identities');
     }
-    if (options.flow === 'app-store-campaign')
+    if (options.flow === 'app-store-campaign') {
       assertIosCampaignCaptureReady(
         options,
         backendSession?.capture,
         backendSession ? readIosCampaignBoards(backendSession.fixturesDir) : [],
       );
+      if (!backendSession) throw new Error('Regular campaign requires a verified fixture backend');
+      options.iosCampaignPrimaryCapture = readIosCampaignPrimaryCapture(
+        backendSession.fixturesDir,
+        (options.boards?.split('|') ?? backendSession.capture?.boards)?.[0] ?? '',
+        readIosCampaignBoards(backendSession.fixturesDir),
+      );
+    }
     const status = runIosLocales(options, appPath, screenshotDevices, localeTargets, backendSession);
     if (status !== 0) return status;
     if (backendSession?.mode === 'record' && !reportRecordingSummary(backendSession)) return 1;
