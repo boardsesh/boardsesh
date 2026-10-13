@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -12,6 +13,7 @@ interface WorkflowStep {
   uses?: string;
   run?: string;
   env?: Record<string, string>;
+  if?: string;
 }
 interface WorkflowJob {
   steps: WorkflowStep[];
@@ -47,6 +49,12 @@ function compute(overrides: NodeJS.ProcessEnv = {}) {
       PUBLISH_BASELINE: 'false',
       FIXTURE_SNAPSHOT: '',
       CPP_SCENARIO: '',
+      CPP_RECORD_RUN_ID: '',
+      FLOW: 'app-store',
+      GATE: 'full',
+      RENDER_MODE: '',
+      BOARDS: '',
+      FROZEN_NOW: '',
       EVENT_NAME: 'workflow_dispatch',
       GITHUB_REF: 'refs/heads/main',
       GITHUB_OUTPUT: output,
@@ -57,6 +65,82 @@ function compute(overrides: NodeJS.ProcessEnv = {}) {
 }
 
 describe('CPP workflow isolation and matrix', () => {
+  it.each([
+    { recordRun: '123', setup: 'success', capture: 'skipped', expected: true },
+    { recordRun: '', setup: 'success', capture: 'success', expected: true },
+    { recordRun: '', setup: 'success', capture: 'failure', expected: false },
+    { recordRun: '123', setup: 'failure', capture: 'skipped', expected: false },
+  ])('evaluates the real candidate dependency condition %j', ({ recordRun, setup, capture, expected }) => {
+    const condition = workflow.jobs['cpp-prepare-record']
+      .if!.replace(/^\$\{\{\s*|\s*\}\}$/g, '')
+      .replaceAll('needs.cpp-capture.', 'needs.capture.');
+    expect(
+      runInNewContext(condition, {
+        cancelled: () => false,
+        needs: { setup: { result: setup }, capture: { result: capture } },
+        inputs: { cpp_record_run_id: recordRun, fixtures: 'record', cpp_target: 'moonboard' },
+      }),
+    ).toBe(expected);
+  });
+  it('reuses only one unchanged English record target and verifies sources before credentials', () => {
+    const result = compute({
+      CPP_TARGET: 'moonboard',
+      CPP_RECORD_RUN_ID: '38447346114',
+      CPP_ACTION: 'capture',
+      FIXTURES_MODE: 'record',
+      LOCALES: 'en-US',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(result.output, 'utf8').trim().slice('matrix='.length)).include).toHaveLength(4);
+    for (const name of ['ios-build', 'cpp-bootstrap', 'cpp-capture'])
+      expect(workflow.jobs[name].if).toContain("(inputs.cpp_record_run_id || '') == ''");
+    const steps = workflow.jobs['cpp-prepare-record'].steps;
+    const credentialIndex = steps.findIndex((step) => step.env?.SCREENSHOT_USER_PASSWORD !== undefined);
+    for (const name of [
+      'Verify and download retained native records before credentials',
+      'Merge immutable CPP recording shards',
+      'Validate retained newest merged source before credentials',
+    ])
+      expect(steps.findIndex((step) => step.name === name)).toBeLessThan(credentialIndex);
+    expect(workflow.jobs['cpp-prepare-record'].if).toContain("needs.setup.result == 'success'");
+    expect(workflow.jobs['cpp-prepare-record'].if).toContain("(inputs.cpp_record_run_id || '') != ''");
+    expect(workflow.jobs['cpp-finalize'].if).toContain("needs.cpp-capture.result == 'success'");
+    expect(steps.find((step) => step.name === 'Download real recorded CPP shards')?.if).toContain(
+      "(inputs.cpp_record_run_id || '') == ''",
+    );
+    expect(steps.find((step) => step.name === 'Prepare immutable CPP candidate')?.run).toContain(
+      '$CPP_TARGET.provenance.json',
+    );
+  });
+  it.each([
+    { CPP_RECORD_RUN_ID: '12; bad' },
+    { CPP_TARGET: 'all' },
+    { CPP_TARGET: 'none' },
+    { FIXTURES_MODE: 'replay' },
+    { CPP_ACTION: 'stage-assets' },
+    { EVENT_NAME: 'workflow_run' },
+    { LOCALES: '' },
+    { LOCALES: 'es' },
+    { FLOW: 'onboarding' },
+    { GATE: 'probe' },
+    { RENDER_MODE: 'aura' },
+    { BOARDS: 'MoonBoard' },
+    { FROZEN_NOW: '2026-10-01' },
+    { CPP_SCENARIO: '{}' },
+    { FIXTURE_SNAPSHOT: 'https://example.test' },
+    { UPLOAD_DEFAULT: 'true' },
+    { PUBLISH_BASELINE: 'true' },
+  ])('rejects contradictory retained-record input %j', (overrides) => {
+    const result = compute({
+      CPP_TARGET: 'moonboard',
+      CPP_RECORD_RUN_ID: '38447346114',
+      CPP_ACTION: 'capture',
+      FIXTURES_MODE: 'record',
+      LOCALES: 'en-US',
+      ...overrides,
+    });
+    expect(result.status).not.toBe(0);
+  });
   it('serializes only CPP record shards sharing an owned session and preserves eight parallel replay shards', () => {
     expect(workflow.jobs['cpp-capture'].strategy?.['max-parallel']).toBe(
       "${{ inputs.fixtures == 'record' && 1 || 8 }}",
@@ -91,7 +175,7 @@ describe('CPP workflow isolation and matrix', () => {
       mkdirSync(join(shard, 'nested', 'manifest.json'));
     }
     const script = workflow.jobs['cpp-prepare-record'].steps.find(
-      ({ name }) => name === 'Merge and prepare immutable CPP candidate',
+      ({ name }) => name === 'Merge immutable CPP recording shards',
     )?.run;
     if (!script) throw new Error('CPP preparation step missing');
     const env = {
@@ -116,7 +200,7 @@ describe('CPP workflow isolation and matrix', () => {
       .split('__CPP_CALL__\0')
       .slice(1)
       .map((call) => call.split('\0').slice(0, -1));
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual([
       'run',
       'mobile:screenshot-fixtures-merge',
@@ -127,9 +211,6 @@ describe('CPP workflow isolation and matrix', () => {
       'newest',
       ...expectedDirectories.sort(),
     ]);
-    expect(calls[1]).toContain('--cpp');
-    expect(calls[1]).toContain('--refresh-photo-urls');
-    expect(calls[3]).toContain('--archive');
     expect(result.stderr).not.toContain('command not found');
   });
   it('expands four targets, four app locales, and four devices into 64 unique capture shards', () => {
@@ -240,10 +321,11 @@ describe('CPP workflow isolation and matrix', () => {
     expect(candidate.needs).toEqual(['setup', 'cpp-capture']);
     expect(candidate.if).toContain("needs.cpp-capture.result == 'success'");
     expect(candidate.if).toContain("inputs.fixtures == 'record'");
-    const pack = candidate.steps.find(({ name }) => name === 'Merge and prepare immutable CPP candidate');
+    const pack = candidate.steps.find(({ name }) => name === 'Merge immutable CPP recording shards');
     expect(pack?.run).toContain('"${#manifests[@]}" -ne "$expected"');
-    expect(pack?.run).toContain('--cpp --refresh-photo-urls');
-    expect(pack?.run).toContain('screenshot-fixtures-publish.ts --archive');
+    const prepare = candidate.steps.find(({ name }) => name === 'Prepare immutable CPP candidate');
+    expect(prepare?.run).toContain('--cpp --refresh-photo-urls');
+    expect(prepare?.run).toContain('screenshot-fixtures-publish.ts --archive');
     expect(candidate.steps.some(({ uses }) => uses === './.github/actions/asc-cpp')).toBe(false);
     expect(candidate.environment).toBeUndefined();
   });

@@ -197,6 +197,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'cpp_target',
       'cpp_action',
       'cpp_keyword_ids',
+      'cpp_record_run_id',
       'cpp_scenario',
     ]);
     expect(dispatch.inputs?.gate.default).toBe('full');
@@ -596,7 +597,11 @@ describe('screenshot captures follow the native deploys', () => {
       guardStep,
       `${entry.path}'s ${entry.firstJob} job must guard against missing recording credentials`,
     ).toBeTruthy();
-    expect(flatten(guardStep?.if)).toBe("${{ (inputs.fixtures || 'replay') != 'replay' }}");
+    expect(flatten(guardStep?.if)).toBe(
+      entry.platform === 'ios'
+        ? "${{ (inputs.fixtures || 'replay') != 'replay' && (inputs.cpp_record_run_id || '') == '' }}"
+        : "${{ (inputs.fixtures || 'replay') != 'replay' }}",
+    );
     expect(guardStep?.env?.SCREENSHOT_USER_EMAIL).toBe('${{ secrets.SCREENSHOT_USER_EMAIL }}');
     expect(guardStep?.env?.SCREENSHOT_USER_PASSWORD).toBe('${{ secrets.SCREENSHOT_USER_PASSWORD }}');
     expect(guardStep?.run).toContain(

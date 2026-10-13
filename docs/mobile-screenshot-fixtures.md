@@ -41,6 +41,29 @@ and FullSync item, and canonical primary-board search evidence. Hero provenance
 is checked separately. Unrelated queue items never expand this scope.
 Explicitly empty spray wall editor scenes are skipped.
 
+To prepare a retained CPP recording without repeating valid native captures,
+dispatch `cpp_record_run_id` with one target, `cpp_action=capture`,
+`fixtures=record`, `locales=en-US`, `flow=app-store`, and `gate=full`.
+Upload and baseline flags must be false; scenario, fixture, board, render and
+clock overrides must be empty. This skips bootstrap, build and capture and uses
+the existing preparation job. The producer must be a completed first attempt
+of this repository's screenshot workflow, from an ancestor of the preparer,
+with all four native devices successful. An overall failure qualifies only when
+the old preparation job rejected the owned primary queue after those captures.
+
+Before screenshot credentials, the job verifies original artifact IDs, archive
+digests and job timestamps, native PNG inventory and hashes, bootstrap scenario,
+owner and canonical source checks, then checks the newest merged source again.
+Each shard's exact grade count proof stays mandatory; scene identity follows
+the merger's normalization of the changing count and its proof metadata.
+It authenticates genuine reads through the existing preparer and archives a
+candidate. The candidate's provenance receipt retains separate producer and
+preparer SHAs and artifact hashes, without account or session metadata.
+The candidate digest remains in its separate digest JSON; merge conflicts stay
+in the preparation job log.
+Original native pixels remain attributed to the producer. This path publishes
+no fixture or store assets; candidate QA and a full replay still follow.
+
 CPP recording shards run one at a time because they join the same private
 session; replay keeps eight parallel shards. Before authenticating or preparing
 manufacturer detail coverage, the recorded primary queue must satisfy the

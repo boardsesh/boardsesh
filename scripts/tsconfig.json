@@ -217,6 +217,8 @@
     "__tests__/mobile-android-apk.test.ts",
     "__tests__/with-android-dev-menu-defaults.test.ts",
     "prepare-ios-campaign-fixtures.ts",
+    "prepare-retained-cpp-record.ts",
+    "__tests__/prepare-retained-cpp-record.test.ts",
     "lib/screenshot-fixture-assets.ts",
     "__tests__/screenshot-fixture-assets.test.ts",
     "lib/screenshot-campaign-session.ts",
