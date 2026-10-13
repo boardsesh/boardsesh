@@ -2,14 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Stack, type NativeStackNavigationOptions } from 'expo-router';
-import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useFrameSize, useHeaderHeight } from 'expo-router/react-navigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useScrolledUnder, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { timing } from '../../theme/animations';
-import { glassSize } from '../../theme/layout';
+import { glassSize, TOOLBAR_GAP, TOOLBAR_SIDE_MARGIN } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 
 import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './native-header-action-context';
@@ -43,6 +45,7 @@ export function NativeRootHeader({
   rightActions,
   rightItems,
   centerContent,
+  centerActionWidths,
   children,
   floatingContent,
   opaqueControls = false,
@@ -58,6 +61,8 @@ export function NativeRootHeader({
   rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   /** Interactive content in the compact native bar, beside the action groups. */
   centerContent?: ReactNode;
+  /** Content widths of the native action groups flanking the custom title. */
+  centerActionWidths?: { leading: number; trailing: number };
   /** Supplementary controls pinned under the bar; see `HeaderControls`. */
   children?: ReactNode;
   /** Controls drawn below children without reserving additional list space. */
@@ -85,6 +90,21 @@ export function NativeRootHeader({
   const { systemColors } = useTheme();
   const glassCapability = useGlassCapability();
   const headerHeight = useHeaderHeight();
+  // The navigation stack's measured frame, including a tablet's local pane.
+  // UIKit adds space around shared bar-item backgrounds that Yoga does not see.
+  const frameWidth = useFrameSize((frame) => frame.width);
+  const insets = useSafeAreaInsets();
+  const centerMaxWidth = centerActionWidths
+    ? Math.max(
+        0,
+        frameWidth -
+          insets.left -
+          insets.right -
+          centerActionWidths.leading -
+          centerActionWidths.trailing -
+          2 * (TOOLBAR_SIDE_MARGIN + TOOLBAR_GAP + 2 * spacing[1]),
+      )
+    : undefined;
   const controlsHeight = useRef(0);
   const hasReservedControls = children != null;
   const hasControls = hasReservedControls || floatingContent != null;
@@ -117,7 +137,10 @@ export function NativeRootHeader({
             centerContent != null
               ? () => (
                   <NativeHeaderActionContext.Provider value={true}>
-                    <View pointerEvents="box-none" style={styles.centerContent}>
+                    <View
+                      pointerEvents="box-none"
+                      style={[styles.centerContent, centerMaxWidth == null ? null : { maxWidth: centerMaxWidth }]}
+                    >
                       {centerContent}
                     </View>
                   </NativeHeaderActionContext.Provider>

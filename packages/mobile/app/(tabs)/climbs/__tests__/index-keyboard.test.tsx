@@ -283,7 +283,12 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('expo-router/react-navigation', async () => {
   const { createContext } = await import('react');
-  return { useHeaderHeight: () => 100, HeaderHeightContext: createContext<number | undefined>(100) };
+  return {
+    useHeaderHeight: () => 100,
+    useFrameSize: (selector: (frame: { width: number; height: number }) => number) =>
+      selector({ width: 390, height: 844 }),
+    HeaderHeightContext: createContext<number | undefined>(100),
+  };
 });
 vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => mocks.nativeRootHeader }));
 vi.mock('../../../../src/hooks/use-glass-capability', () => ({ useGlassCapability: () => true }));

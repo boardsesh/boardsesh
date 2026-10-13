@@ -514,6 +514,10 @@ and `fadeDuration`. Tune them there, on a device. Filter capsules' SwiftUI Host 
 resolved light/dark scheme. The wall-status capsule carries one regular native `GlassSurface`
 with a 14% amber tint and a native rounded edge; its opaque amber-bordered fallback remains on
 older devices and with Reduce Transparency. Native glass does not enter through an opacity fade.
+Its custom native title is bounded by the navigation stack's measured local frame, horizontal
+safe-area insets, and the actual leading/trailing action widths plus capsule padding and gaps.
+Only the climb name shrinks; the avatar and grade retain their width. This keeps long names
+inside the title slot on narrow phones, after rotation, and in a tablet pane.
 
 **Everywhere else the block keeps its painted band**, in `systemColors.background`:
 `useFloatingHeaderControls` lets it float only when the surface mode is `glass` and Increase

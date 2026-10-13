@@ -178,7 +178,15 @@ vi.mock('../../../hooks/use-display-grade', () => ({
   }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
+  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement(
+      'span',
+      {
+        'data-text': 'true',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../LargeContentViewer', () => ({
@@ -200,6 +208,7 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
@@ -207,6 +216,7 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityHint?: string;
+    style?: unknown;
   }) =>
     createElement(
       'button',
@@ -217,6 +227,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-role': accessibilityRole,
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onPress,
       },
       children,
@@ -326,6 +337,36 @@ describe('WallStatusCapsule', () => {
     expect(container.querySelector('[data-animated]')).not.toBeNull();
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('scale');
     expect(spies.enterAnimation).toHaveBeenCalledWith(180);
+  });
+
+  it('lets a long native title shrink its name while retaining the avatar and grade', () => {
+    const { container, getByText } = render(
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={makeClimb({ name: 'Lightest Pair of Shorts' })} />
+      </NativeHeaderActionContext.Provider>,
+    );
+    for (const carrier of [
+      container.firstElementChild,
+      container.querySelector('[data-glass-surface]'),
+      container.querySelector('[data-pressable]'),
+      container.querySelector('[data-label-viewer]'),
+    ]) {
+      const carrierStyle = JSON.parse(carrier?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+      expect(carrierStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    }
+    const avatarStyle = JSON.parse(
+      container.querySelector('[data-driver-avatar]')?.parentElement?.getAttribute('data-style') ?? '{}',
+    ) as Record<string, unknown>;
+    const gradeStyle = JSON.parse(getByText('V5 6C').getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    const nameStyle = JSON.parse(getByText('Lightest Pair of Shorts').getAttribute('data-style') ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(avatarStyle.flexShrink).toBe(0);
+    expect(gradeStyle.flexShrink).toBe(0);
+    expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    fireEvent.click(getByText('Lightest Pair of Shorts'));
+    expect(spies.openWallPreview).toHaveBeenCalledOnce();
   });
 
   it('renders without the entering animation when Reduce Motion is on', () => {

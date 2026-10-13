@@ -16,6 +16,8 @@ const controls = vi.hoisted(() => ({
   backdropOpacity: undefined as { value: number } | undefined,
   backdropFades: [] as Array<{ to: number; duration: number }>,
   headerHeight: 148,
+  frameWidth: 390,
+  horizontalInsets: { left: 0, right: 0 },
   measuredControlsHeight: 36,
   focusedSegments: ['(tabs)', 'home'] as string[],
   options: [] as NativeStackNavigationOptions[],
@@ -87,7 +89,14 @@ vi.mock('expo-router', () => ({
     },
   },
 }));
-vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => controls.headerHeight }));
+vi.mock('expo-router/react-navigation', () => ({
+  useHeaderHeight: () => controls.headerHeight,
+  useFrameSize: (selector: (frame: { width: number; height: number }) => number) =>
+    selector({ width: controls.frameWidth, height: 844 }),
+}));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, bottom: 34, ...controls.horizontalInsets }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -132,7 +141,7 @@ vi.mock('../../ProgressiveBlur', () => ({
     }),
 }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
-vi.mock('../../../theme/tokens', () => ({ shadows: { sm: {} } }));
+vi.mock('../../../theme/tokens', () => ({ shadows: { sm: {} }, spacing: { 1: 4 } }));
 vi.mock('../../GlassSurface', () => ({
   GlassSurface: ({ borderRadius }: { borderRadius: number }) =>
     createElement('div', { 'data-glass-radius': borderRadius }),
@@ -192,6 +201,8 @@ describe('NativeRootHeader', () => {
     controls.backdropOpacity = undefined;
     controls.backdropFades.length = 0;
     controls.headerHeight = 148;
+    controls.frameWidth = 390;
+    controls.horizontalInsets = { left: 0, right: 0 };
     controls.measuredControlsHeight = 36;
     controls.focusedSegments = ['(tabs)', 'home'];
     controls.options.length = 0;
@@ -210,6 +221,56 @@ describe('NativeRootHeader', () => {
     expect(lastOptions()).not.toHaveProperty('title');
     expect(lastOptions().headerTitle).toBeUndefined();
     expect(lastOptions().headerBlurEffect).toBeUndefined();
+  });
+
+  it.each([390, 320, 600])('bounds long title content to the %spt local header frame between actions', (frameWidth) => {
+    controls.frameWidth = frameWidth;
+    render(
+      <NativeRootHeader
+        centerContent={<button>Lightest Pair of Shorts V4 6B</button>}
+        centerActionWidths={{ leading: 88, trailing: 44 }}
+        onHeightChange={vi.fn()}
+      />,
+    );
+    const headerTitle = lastOptions().headerTitle;
+    if (typeof headerTitle !== 'function') throw new Error('Expected a native center renderer');
+    const { getByRole } = render(headerTitle({ children: 'Climbs', tintColor: 'theme-label' }));
+    const centerStyle = readStyle(getByRole('button').parentElement);
+    // Raw action slots plus each side's gutter, native capsule outset and gap.
+    const reservedLeading = 88 + 16 + 8 + 8;
+    const reservedTrailing = 44 + 16 + 8 + 8;
+    expect(centerStyle.maxWidth).toBe(frameWidth - reservedLeading - reservedTrailing);
+    expect(Number(centerStyle.maxWidth) + reservedLeading + reservedTrailing).toBe(frameWidth);
+    expect(centerStyle).toMatchObject({ minWidth: 0, flexShrink: 1 });
+  });
+
+  it('recomputes the title bound when its local stack changes size or action count', () => {
+    const { rerender } = render(
+      <NativeRootHeader
+        centerContent={<span>Long title</span>}
+        centerActionWidths={{ leading: 88, trailing: 44 }}
+        onHeightChange={vi.fn()}
+      />,
+    );
+    const centerWidth = () => {
+      const headerTitle = lastOptions().headerTitle;
+      if (typeof headerTitle !== 'function') throw new Error('Expected a native center renderer');
+      const { getByText, unmount } = render(headerTitle({ children: 'Climbs', tintColor: 'theme-label' }));
+      const width = readStyle(getByText('Long title').parentElement).maxWidth;
+      unmount();
+      return width;
+    };
+    expect(centerWidth()).toBe(194);
+    controls.frameWidth = 600;
+    controls.horizontalInsets = { left: 59, right: 59 };
+    rerender(
+      <NativeRootHeader
+        centerContent={<span>Long title</span>}
+        centerActionWidths={{ leading: 44, trailing: 88 }}
+        onHeightChange={vi.fn()}
+      />,
+    );
+    expect(centerWidth()).toBe(286);
   });
 
   it('retains the underlying route title when the climb drawer opens and closes', () => {

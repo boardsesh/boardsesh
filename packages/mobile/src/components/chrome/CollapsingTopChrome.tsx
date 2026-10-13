@@ -15,7 +15,7 @@ import { GlassSurface } from '../GlassSurface';
 import { BoardToolbarAction } from './BoardToolbarAction';
 import { BoardSwitcherButton } from './BoardSwitcherButton';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
-import { GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from './GlassActionToolbar';
+import { GlassActionToolbar, GlassToolbarAction, NATIVE_ACTION_SIZE, TOP_ACTION_SIZE } from './GlassActionToolbar';
 import { AngleToolbarAction } from './AngleToolbarAction';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
@@ -243,6 +243,10 @@ export function CollapsingTopChrome({
         leftActions={leftActions}
         leftActionsStandalone={leftActionCount === 1}
         centerContent={centerContent}
+        centerActionWidths={{
+          leading: leftActionCount * NATIVE_ACTION_SIZE,
+          trailing: rightActionCount * NATIVE_ACTION_SIZE,
+        }}
         rightActions={
           rightActionCount > 0 ? (
             <GlassActionToolbar actionCount={rightActionCount}>

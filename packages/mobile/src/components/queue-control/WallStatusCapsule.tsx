@@ -234,7 +234,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
         style={styles.pressable}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={styles.capsuleAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {hasSenderIdentity ? (
             <BoardDriverAvatar
               uri={climb.sentByAvatarUrl}
@@ -310,10 +310,12 @@ const styles = StyleSheet.create({
   // --- Liquid Glass (iOS) ---
   glassWrapper: {
     flexShrink: 1,
+    minWidth: 0,
     maxWidth: '100%',
   },
   glassCapsule: {
     flexShrink: 1,
+    minWidth: 0,
     maxWidth: '100%',
     height: CAPSULE_HEIGHT,
   },
@@ -332,6 +334,9 @@ const styles = StyleSheet.create({
     height: glassSize.inline,
     borderRadius: glassSize.inline / 2,
   },
+  capsuleAvatar: {
+    flexShrink: 0,
+  },
   capsuleNameViewer: {
     // A flex:1 label has zero intrinsic width in a UIKit navigation title view.
     flexShrink: 1,
@@ -339,6 +344,7 @@ const styles = StyleSheet.create({
   },
   pressable: {
     flexShrink: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     height: '100%',
@@ -352,6 +358,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   grade: {
+    flexShrink: 0,
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
   },

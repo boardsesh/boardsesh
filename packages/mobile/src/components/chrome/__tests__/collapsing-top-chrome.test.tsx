@@ -4,16 +4,19 @@ vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: (
 vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
+    centerActionWidths,
     children,
     floatingContent,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
+    centerActionWidths?: { leading: number; trailing: number };
     children?: ReactNode;
     floatingContent?: ReactNode;
     scrollEdge?: unknown;
   }) => {
     ctrl.nativeScrollEdge = scrollEdge;
+    ctrl.nativeCenterActionWidths = centerActionWidths;
     return createElement(
       'div',
       null,
@@ -57,6 +60,7 @@ const ctrl = vi.hoisted(() => ({
   nativeHeader: false,
   // The scroll-edge store the native header was handed.
   nativeScrollEdge: undefined as unknown,
+  nativeCenterActionWidths: undefined as { leading: number; trailing: number } | undefined,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
 
@@ -148,7 +152,7 @@ vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false 
 vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: haptics.light }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44 } }));
+vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44, inline: 44 } }));
 
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
 
@@ -230,12 +234,22 @@ describe('CollapsingTopChrome', () => {
     expect(container.querySelector('[data-native-floating]')?.textContent).toBe('Grade row');
   });
 
+  it('reserves the actual native action widths as controls are added or removed', () => {
+    ctrl.nativeHeader = true;
+    const { rerender } = render(<CollapsingTopChrome {...makeProps()} />);
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 44, trailing: 0 });
+    ctrl.board = board;
+    rerender(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 88, trailing: 88 });
+  });
+
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
     ctrl.nativeHeader = false;
     ctrl.nativeScrollEdge = undefined;
+    ctrl.nativeCenterActionWidths = undefined;
     haptics.light.mockClear();
   });
 
