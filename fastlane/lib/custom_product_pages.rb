@@ -4,6 +4,7 @@ require "json"
 require "digest"
 require "net/http"
 require "uri"
+require "securerandom"
 
 # Wire shapes verified against Apple's App Store Connect OpenAPI (2026-10-06):
 # https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip
@@ -101,11 +102,12 @@ module BoardseshCPP
     end
 
     def run(target: "all", action: "plan")
-      raise Error, "CPP action must be plan, upload, or submit" unless %w[plan upload submit].include?(action)
+      raise Error, "CPP action must be plan, create, upload, or submit" unless %w[plan create upload submit].include?(action)
       targets = @manifest.fetch("targets")
       selected = target == "all" ? targets.keys : [target]
       raise Error, "Unknown CPP target #{target}" unless selected.all? { |name| targets.key?(name) }
       return read_only_plan(selected, targets) if action == "plan"
+      return create_drafts(selected, targets) if action == "create"
       # Validate every selected target and remote conflict before the first write.
       assets = selected.to_h { |name| [name, local_assets(name, targets.fetch(name))] }
       preflight = remote_preflight(selected, targets, assets, action)
@@ -115,6 +117,83 @@ module BoardseshCPP
     end
 
     private
+
+    # Create only the named page and its empty initial draft in one documented
+    # compound request. This never copies a template or writes listing metadata,
+    # screenshots, localizations, keywords, visibility, or review submissions.
+    # Existing pages are read and returned unchanged, including live pages.
+    def create_drafts(selected, targets)
+      names = selected.map { |name| targets.fetch(name).fetch("referenceName") }
+      raise Error, "CPP reference names must be nonempty and unique" unless names.all? { |name| name.is_a?(String) && !name.strip.empty? } && names.uniq.length == names.length
+      pages = @client.list("/v1/apps/#{@app_id}/appCustomProductPages?limit=200")
+      # Resolve every existing match before the first POST so an ambiguous or
+      # misbound existing page cannot leave an avoidable partial creation.
+      candidates = selected.zip(names).map do |target, name|
+        matches = pages.select { |page| page.dig("attributes", "name") == name }
+        raise Error, "Multiple CPPs named #{name}; resolve ownership before creation" if matches.length > 1
+        page = matches.first && verified_draft_page(matches.first.fetch("id"), name)
+        { "target" => target, "name" => name, "page" => page, "versions" => page && verified_page_versions(page) }
+      end
+      candidates.map do |candidate|
+        created = candidate["page"].nil?
+        if created
+          # Apple's inline ID identifies a resource within this one request;
+          # it is not an App Store Connect ID or an inferred keyword ID.
+          inline_version_id = SecureRandom.uuid
+          response = @client.request("POST", "/v1/appCustomProductPages", {
+            "data" => {
+              "type" => "appCustomProductPages",
+              "attributes" => { "name" => candidate.fetch("name") },
+              "relationships" => {
+                "app" => { "data" => { "type" => "apps", "id" => @app_id } },
+                "appCustomProductPageVersions" => { "data" => [{ "type" => "appCustomProductPageVersions", "id" => inline_version_id }] }
+              }
+            },
+            "included" => [{ "type" => "appCustomProductPageVersions", "id" => inline_version_id, "relationships" => { "appCustomProductPage" => {} } }]
+          })
+          page_id = response.fetch("data").fetch("id")
+          candidate["page"] = verified_draft_page(page_id, candidate.fetch("name"))
+          candidate["versions"] = verified_page_versions(candidate.fetch("page"))
+          unless candidate.fetch("versions").length == 1 && candidate.fetch("versions").first.dig("attributes", "state") == "PREPARE_FOR_SUBMISSION"
+            raise Error, "Created CPP #{candidate.fetch('name')} did not return one initial draft; inspect the page in App Store Connect before retrying"
+          end
+        end
+        page = candidate.fetch("page")
+        versions = candidate.fetch("versions")
+        current = versions.reject { |version| version.dig("attributes", "state") == "REPLACED_WITH_NEW_VERSION" }.max_by { |version| version.dig("attributes", "version").to_s.split(".").map(&:to_i) }
+        {
+          "target" => candidate.fetch("target"), "action" => created ? "created" : "reused",
+          "appId" => @app_id, "referenceName" => candidate.fetch("name"), "pageId" => page.fetch("id"),
+          "url" => page.dig("attributes", "url"), "visible" => page.dig("attributes", "visible"),
+          "versionId" => current && current["id"], "state" => current && current.dig("attributes", "state"),
+          "versions" => versions.map { |version| { "id" => version.fetch("id"), "version" => version.dig("attributes", "version"), "state" => version.dig("attributes", "state") } },
+          "publication" => created ? "Empty draft: screenshots and organic keywords remain pending; no review was submitted." : "Existing page reused without edits; no review submission was created."
+        }
+      end
+    end
+
+    def verified_draft_page(page_id, expected_name)
+      page = @client.request("GET", "/v1/appCustomProductPages/#{page_id}?include=app").fetch("data")
+      unless page["type"] == "appCustomProductPages" && page["id"] == page_id && page.dig("attributes", "name") == expected_name && page.dig("relationships", "app", "data", "type") == "apps" && page.dig("relationships", "app", "data", "id") == @app_id
+        raise Error, "CPP #{expected_name} has unexpected identity or app ownership; no further pages were created"
+      end
+      begin
+        url = URI(page.dig("attributes", "url").to_s)
+        valid_url = url.scheme == "https" && url.host == "apps.apple.com" && URI.decode_www_form(url.query.to_s).to_h["ppid"] == page_id
+      rescue URI::InvalidURIError, ArgumentError
+        valid_url = false
+      end
+      raise Error, "CPP #{expected_name} did not return its verified App Store page URL" unless valid_url
+      page
+    end
+
+    def verified_page_versions(page)
+      versions = @client.list("/v1/appCustomProductPages/#{page.fetch('id')}/appCustomProductPageVersions?include=appCustomProductPage&limit=200")
+      unless versions.all? { |version| version["type"] == "appCustomProductPageVersions" && version.dig("relationships", "appCustomProductPage", "data", "type") == "appCustomProductPages" && version.dig("relationships", "appCustomProductPage", "data", "id") == page.fetch("id") }
+        raise Error, "CPP #{page.dig('attributes', 'name')} version ownership verification failed"
+      end
+      versions
+    end
 
     # Planning needs credentials, not a native simulator or a completed capture.
     # Keep unresolved local inputs in the report while reading the real approved

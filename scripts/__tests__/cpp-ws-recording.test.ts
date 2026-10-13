@@ -95,13 +95,17 @@ describe('genuine scoped CPP WS recording', () => {
   let recorder: ScreenshotBackendServer | undefined;
   let recordingDir: string | undefined;
   let joinOverride: { id?: string; boardPath?: string; isPublic?: boolean } | undefined;
+  let presenceFailure: 'error' | 'public' | undefined;
   const persist = vi.fn();
   const request = vi.fn<typeof fetch>();
+  const diagnosticLog = vi.fn<(line: string) => void>();
   beforeEach(async () => {
     received.splice(0);
     persist.mockReset();
     request.mockReset();
+    diagnosticLog.mockReset();
     joinOverride = undefined;
+    presenceFailure = undefined;
     owner = {
       sessionStatus: 'active',
       profile: { id: ACCOUNT, displayName: 'Actual account name', avatarUrl: null },
@@ -130,6 +134,21 @@ describe('genuine scoped CPP WS recording', () => {
         received.push(frame);
         if (frame.type === 'connection_init') socket.send(JSON.stringify({ type: 'connection_ack' }));
         else if (frame.type === 'subscribe') {
+          if (frame.id === 'presence' && presenceFailure === 'error') {
+            socket.send(
+              JSON.stringify({
+                id: frame.id,
+                type: 'error',
+                payload: [
+                  {
+                    message: 'SECRET server body',
+                    extensions: { code: 'UNSAFE_SECRET', authToken: TOKEN, url: 'https://secret.example' },
+                  },
+                ],
+              }),
+            );
+            return;
+          }
           let data: unknown;
           if (frame.payload?.query === NATIVE_CAMPAIGN_JOIN_QUERY)
             data = { joinSession: { id: SESSION, clientId: 'actual-client' } };
@@ -143,6 +162,7 @@ describe('genuine scoped CPP WS recording', () => {
                 users: [{ id: ACCOUNT, username: owner.profile.displayName }],
                 queueState: { queue: [{ uuid: 'genuine-queue-item' }] },
                 ...(frame.id !== 'presence' ? joinOverride : {}),
+                ...(frame.id === 'presence' && presenceFailure === 'public' ? { isPublic: true } : {}),
               },
             };
           else if ([QUEUE_UPDATES_SUBSCRIPTION, NATIVE_IOS_QUEUE_UPDATES].includes(frame.payload?.query ?? ''))
@@ -195,6 +215,7 @@ describe('genuine scoped CPP WS recording', () => {
       authorizeToken: (token) => token === TOKEN,
       persist,
       request,
+      log: diagnosticLog,
     });
   });
   afterEach(async () => {
@@ -294,6 +315,142 @@ describe('genuine scoped CPP WS recording', () => {
         bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN),
       ).rejects.toThrow('validation failed');
       expect(received).toEqual([]);
+      const predicate = {
+        owner: 'session-owner',
+        private: 'session-private',
+        board: 'board-id',
+        geometry: 'board-path',
+        ended: 'session-active',
+        profile: 'profile-owner',
+      }[changed];
+      expect(diagnosticLog).toHaveBeenCalledWith(`[screenshot-backend] CPP-WS stage=owner predicate=${predicate}`);
+      expect(persist).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports safe owner fetch codes while keeping the same rejection and zero upstream joins', async () => {
+    const secret = 'Bearer private-token https://private.example/account private-session';
+    const error = Object.assign(new Error(secret), {
+      code: 'UNSAFE_' + secret,
+      cause: { code: 'ETIMEDOUT', message: secret, stack: secret, authToken: secret },
+    });
+    request.mockRejectedValue(error);
+    await expect(
+      bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN),
+    ).rejects.toThrow('CPP owned-session transport validation failed');
+    const text = diagnosticLog.mock.calls.map(([line]) => line).join('\n');
+    expect(text).toContain('operation=CppRecordingOwner phase=fetch-error');
+    expect(text).toContain('codes=ETIMEDOUT');
+    expect(text).not.toContain(secret);
+    for (const forbidden of [TOKEN, ACCOUNT, SESSION, PATH, origin, CPP_RECORDING_OWNER_QUERY, 'UNSAFE_'])
+      expect(text).not.toContain(forbidden);
+    expect(received).toEqual([]);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('reports body failures without logging response text or changing the error', async () => {
+    request.mockResolvedValue(new Response('private response with Bearer TOKEN', { status: 502 }));
+    await expect(
+      bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN),
+    ).rejects.toThrow('CPP owned-session transport validation failed');
+    const text = diagnosticLog.mock.calls.map(([line]) => line).join('\n');
+    expect(text).toContain('operation=CppRecordingOwner phase=body-error');
+    expect(text).toContain('status=502');
+    expect(text).not.toContain('private response');
+    expect(received).toEqual([]);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['http-status', { data: null }, 403],
+    ['graphql-errors', { errors: [{ message: 'SECRET upstream body' }], data: null }, 200],
+    ['owner-data', { data: null }, 200],
+    ['response-shape', { data: { mySessions: null, profile: { id: 'SECRET' } } }, 200],
+  ] as const)('identifies owner %s without persisting or exposing its payload', async (predicate, body, status) => {
+    request.mockResolvedValue(new Response(JSON.stringify(body), { status }));
+    await expect(
+      bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN),
+    ).rejects.toThrow('CPP owned-session transport validation failed');
+    expect(diagnosticLog).toHaveBeenCalledWith(`[screenshot-backend] CPP-WS stage=owner predicate=${predicate}`);
+    expect(diagnosticLog.mock.calls.map(([line]) => line).join('\n')).not.toContain('SECRET');
+    expect(received).toEqual([]);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('identifies operation scope before contacting upstream and retains inert passive streams', async () => {
+    await expect(
+      bridge!.subscribe(
+        'private-local-id',
+        {
+          query: JOIN_SESSION,
+          variables: { sessionId: 'private-session-id', boardPath: 'private-board-path' },
+        },
+        TOKEN,
+        () => {},
+      ),
+    ).rejects.toThrow('CPP owned-session transport validation failed');
+    expect(diagnosticLog).toHaveBeenCalledWith('[screenshot-backend] CPP-WS stage=operation predicate=session-id');
+    expect(diagnosticLog.mock.calls.map(([line]) => line).join('\n')).not.toContain('private-');
+    expect(request).not.toHaveBeenCalled();
+    expect(
+      await bridge!.subscribe('passive', { query: 'subscription PrivacyChanged { privacyChanged }' }, TOKEN, () => {}),
+    ).toBeNull();
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('keeps diagnostics non-fatal when a logger throws during a genuine owner preview', async () => {
+    diagnosticLog.mockImplementation(() => {
+      throw new Error('private logger failure');
+    });
+    await bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN);
+    expect(peers.size).toBe(1);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('labels an intentional close during a delayed WS upgrade as lifecycle cancellation', async () => {
+    const upgradeListeners = http.listeners('upgrade');
+    http.removeAllListeners('upgrade');
+    let destroyUpgrade = () => {};
+    try {
+      const upgradeReceived = new Promise<void>((resolve) => {
+        http.once('upgrade', (_incoming, socket) => {
+          destroyUpgrade = () => socket.destroy();
+          resolve();
+        });
+      });
+      const pending = bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN);
+      const rejection = expect(pending).rejects.toThrow('CPP owned-session transport validation failed');
+      await upgradeReceived;
+      bridge!.close();
+      await rejection;
+      expect(diagnosticLog).toHaveBeenCalledWith('[screenshot-backend] CPP-WS stage=lifecycle predicate=closed');
+      expect(diagnosticLog).not.toHaveBeenCalledWith(
+        '[screenshot-backend] CPP-WS stage=presence predicate=socket-error',
+      );
+      expect(persist).not.toHaveBeenCalled();
+      expect(received).toEqual([]);
+    } finally {
+      bridge!.close();
+      destroyUpgrade();
+      http.removeAllListeners('upgrade');
+      for (const listener of upgradeListeners) http.on('upgrade', listener);
+    }
+  });
+
+  it.each(['error', 'public'] as const)(
+    'reports a genuine presence %s failure without relaying or recording secrets',
+    async (failure) => {
+      presenceFailure = failure;
+      await expect(
+        bridge!.preparePreview({ query: GET_SESSION, variables: { sessionId: SESSION } }, TOKEN),
+      ).rejects.toThrow('CPP owned-session transport validation failed');
+      expect(diagnosticLog).toHaveBeenCalledWith(
+        `[screenshot-backend] CPP-WS stage=presence predicate=${failure === 'error' ? 'upstream-errors' : 'join-private'}`,
+      );
+      const text = diagnosticLog.mock.calls.map(([line]) => line).join('\n');
+      for (const forbidden of ['SECRET', TOKEN, ACCOUNT, SESSION, origin, PATH, owner.profile.displayName])
+        expect(text).not.toContain(forbidden);
+      expect(persist).not.toHaveBeenCalled();
     },
   );
 
@@ -502,7 +659,7 @@ describe('genuine scoped CPP WS recording', () => {
       upstreamUrl: origin,
       fresh: true,
       frozenNow: '2026-10-12T00:00:00Z',
-      log: () => {},
+      log: diagnosticLog,
     });
     const port = await recorder.listen(0, '127.0.0.1');
     const jwt = `${Buffer.from('{"alg":"HS256"}').toString('base64url')}.${Buffer.from(JSON.stringify({ sub: ACCOUNT })).toString('base64url')}.live-signature`;
@@ -547,6 +704,10 @@ describe('genuine scoped CPP WS recording', () => {
     const manifest = readScreenshotFixtureManifest(recordingDir)!;
     expect(manifest.graphql.filter((entry) => entry.operationName === 'JoinSession')).toHaveLength(1);
     expect(manifest.graphql.filter((entry) => entry.operationName === 'QueueUpdates')).toHaveLength(1);
+    expect(diagnosticLog).toHaveBeenCalledWith(
+      '[screenshot-backend] CPP-WS stage=presence predicate=snapshot-accepted',
+    );
+    expect(diagnosticLog).toHaveBeenCalledWith('[screenshot-backend] CPP-WS stage=operation predicate=first-snapshot');
     for (const file of listFixtureFiles(recordingDir))
       expect(readFileSync(join(recordingDir, file), 'utf8')).not.toContain(jwt);
     native.close();

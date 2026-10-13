@@ -96,9 +96,8 @@
     "emphasis": "Dynamic Island."
   },
   "cppOtherBoards": {
-    "headline": "Zwei Boards?\nEin Routenbuch",
-    "description": "Funktioniert mit 8 Board-Marken.",
-    "emphasis": "Ein Routenbuch"
+    "headline": "Eine App für alle deine Boards",
+    "description": "Alle deine Routenbücher an einem Ort"
   },
   "cppSearch": {
     "headline": "Finde dein\nnächstes Projekt",
@@ -133,8 +132,8 @@
     "description": "Wähle Grad und Winkel, dann beleuchte ihn."
   },
   "cppKilterLayouts": {
-    "headline": "Original\noder Homewall",
-    "description": "Für dein Kilter, zuhause oder in der Halle."
+    "headline": "Unterstützt Kilter",
+    "description": "Wir können auch dein bisheriges Routenbuch für dich importieren."
   },
   "cppKilterLogbookImport": {
     "headline": "Kilter-Verlauf\nimportieren",
@@ -149,8 +148,8 @@
     "description": "Hol dein Routenbuch per CSV-Export rein."
   },
   "cppMoonboardSets": {
-    "headline": "2016, 2024\noder Masters",
-    "description": "Masters 2017 und 2019, dazu 2010."
+    "headline": "Unterstützt MoonBoard",
+    "description": "Wir können dein bisheriges Routenbuch per CSV-Export importieren."
   },
   "cppSprayHolds": {
     "headline": "Griffe vom Foto\nvorgeschlagen",
@@ -171,16 +170,16 @@
     "emphasis": "Spraywall"
   },
   "cppSprayWalls": {
-    "headline": "Heimwand,\nHallenwand",
-    "description": "Richte jede mit ihrem Foto ein."
+    "headline": "Unterstützt Spraywalls",
+    "description": "Setze Boulder auf Fotos deiner eigenen Wände."
   },
   "cppSprayWorkout": {
     "headline": "Trainiere mit\neinem Plan",
     "description": "Sobald deine Wand Boulder mit Grad hat."
   },
   "cppTensionLayouts": {
-    "headline": "Original, Mirror\noder Spray",
-    "description": "Für Tension Board 1 und 2."
+    "headline": "Unterstützt Tension",
+    "description": "Wir können auch dein bisheriges Routenbuch für dich importieren."
   },
   "cppTensionLogbookImport": {
     "headline": "Tension-Verlauf\nimportieren",

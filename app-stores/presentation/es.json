@@ -96,9 +96,8 @@
     "emphasis": "Dynamic Island."
   },
   "cppOtherBoards": {
-    "headline": "¿Dos plafones?\nUn logbook",
-    "description": "Compatible con 8 marcas de plafones.",
-    "emphasis": "Un logbook"
+    "headline": "Una app para todos tus plafones",
+    "description": "Todos tus logbooks en un solo lugar"
   },
   "cppSearch": {
     "headline": "Encuentra tu\npróximo proyecto",
@@ -133,8 +132,8 @@
     "description": "Elige grado y ángulo, e ilumínalo."
   },
   "cppKilterLayouts": {
-    "headline": "Original\no Homewall",
-    "description": "Para tu Kilter, en casa o en el rocódromo."
+    "headline": "Compatible con Kilter",
+    "description": "También podemos importar tu logbook por ti."
   },
   "cppKilterLogbookImport": {
     "headline": "Trae tu logbook\nde Kilter",
@@ -149,8 +148,8 @@
     "description": "Trae tu logbook desde un CSV exportado."
   },
   "cppMoonboardSets": {
-    "headline": "2016, 2024\no Masters",
-    "description": "Masters 2017 y 2019, más 2010."
+    "headline": "Compatible con MoonBoard",
+    "description": "También podemos importar tu logbook desde un CSV exportado."
   },
   "cppSprayHolds": {
     "headline": "Presas sugeridas\ndesde una foto",
@@ -171,16 +170,16 @@
     "emphasis": "muro de spray"
   },
   "cppSprayWalls": {
-    "headline": "En casa o en\nel rocódromo",
-    "description": "Configura cada muro desde su foto."
+    "headline": "Compatible con muros de spray",
+    "description": "Monta bloques sobre las fotos de tus propios muros."
   },
   "cppSprayWorkout": {
     "headline": "Entrena con\nun plan",
     "description": "Cuando tu muro ya tenga bloques con grado."
   },
   "cppTensionLayouts": {
-    "headline": "Original, Mirror\no Spray",
-    "description": "Compatible con Tension Board 1 y 2."
+    "headline": "Compatible con Tension",
+    "description": "También podemos importar tu logbook por ti."
   },
   "cppTensionLogbookImport": {
     "headline": "Trae tu logbook\nde Tension",

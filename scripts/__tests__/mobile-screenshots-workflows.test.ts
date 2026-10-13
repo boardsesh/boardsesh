@@ -589,7 +589,7 @@ describe('screenshot captures follow the native deploys', () => {
       const writeCondition =
         entry.platform === 'ios'
           ? 'inputs.upload == true || inputs.publish_baseline == true || ' +
-            "((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit' || inputs.fixtures == 'record'))"
+            "((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'create' || inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit' || inputs.fixtures == 'record'))"
           : 'inputs.commit_to_main == true';
       expect(concurrency?.group).toBe(
         `\${{ (github.event_name == 'workflow_run' || ${writeCondition}) && 'mobile-screenshots-${entry.platform}' || ` +
@@ -601,6 +601,7 @@ describe('screenshot captures follow the native deploys', () => {
       if (entry.platform === 'ios') {
         expect(concurrency?.group).toContain('inputs.upload == true');
         expect(concurrency?.group).toContain('inputs.publish_baseline == true');
+        expect(concurrency?.group).toContain("inputs.cpp_action == 'create'");
         expect(concurrency?.group).toContain("inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit'");
       } else {
         expect(concurrency?.group).toContain('inputs.commit_to_main == true');
@@ -723,6 +724,28 @@ describe('iOS CPP capture and publication isolation', () => {
     expect(flatten(plan.if)).toContain("inputs.cpp_action == 'plan'");
     expect(flatten(workflow.jobs['ios-build'].if)).toContain("inputs.cpp_action == 'plan'");
     expect(plan.steps?.find((step) => step.uses === './.github/actions/asc-cpp')?.with?.action).toBe('plan');
+  });
+
+  it('creates empty drafts only from immutable main in Production without native capture', () => {
+    const create = workflow.jobs['cpp-create'];
+    expect(create.needs).toBe('setup');
+    expect(create.environment).toBe('Production');
+    expect(flatten(create.if)).toContain("github.event_name == 'workflow_dispatch'");
+    expect(flatten(create.if)).toContain("github.ref == 'refs/heads/main'");
+    expect(flatten(create.if)).toContain("inputs.cpp_action == 'create'");
+    const sourceGuard = create.steps?.find(({ name }) => name === 'Verify trusted source for empty CPP draft creation');
+    expect(sourceGuard?.env?.SOURCE_SHA).toBe('${{ needs.setup.outputs.source_sha }}');
+    expect(sourceGuard?.run).toContain('[ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]');
+    const publicationIndex = create.steps?.findIndex(({ uses }) => uses === './.github/actions/asc-cpp') ?? -1;
+    const guardIndex = create.steps?.indexOf(sourceGuard!) ?? -1;
+    expect(publicationIndex).toBeGreaterThan(guardIndex);
+    expect(guardIndex).toBeGreaterThanOrEqual(0);
+    expect(create.steps?.[publicationIndex].with?.action).toBe('create');
+    expect(flatten(workflow.jobs['ios-build'].if)).toContain("inputs.cpp_action == 'create'");
+    expect(flatten(workflow.jobs['cpp-capture'].if)).toContain("inputs.cpp_action != 'create'");
+    const selection = workflow.jobs.setup.steps?.find(({ id }) => id === 'cpp');
+    expect(selection?.run).toContain('CPP draft creation does not accept capture or fixture overrides.');
+    expect(selection?.run).toContain('CPP draft creation requires a manual dispatch from main.');
   });
 
   it('budgets serialized Apple processing for the complete CPP image matrix', () => {

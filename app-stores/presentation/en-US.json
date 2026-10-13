@@ -96,9 +96,8 @@
     "emphasis": "Dynamic Island."
   },
   "cppOtherBoards": {
-    "headline": "Two boards?\nOne logbook",
-    "description": "Works with 8 board brands.",
-    "emphasis": "One logbook"
+    "headline": "One app for all your boards",
+    "description": "All your logbooks in one place"
   },
   "cppSearch": {
     "headline": "Find your\nnext project",
@@ -133,8 +132,8 @@
     "description": "Pick a grade and angle, then light it."
   },
   "cppKilterLayouts": {
-    "headline": "Original\nor Homewall",
-    "description": "Works with your Kilter, home or gym."
+    "headline": "Supports Kilter",
+    "description": "We can also import your existing logbook for you"
   },
   "cppKilterLogbookImport": {
     "headline": "Bring your\nKilter logbook",
@@ -149,8 +148,8 @@
     "description": "Bring your log in from a CSV export."
   },
   "cppMoonboardSets": {
-    "headline": "2016, 2024\nor Masters",
-    "description": "Masters 2017 and 2019, plus 2010."
+    "headline": "Supports MoonBoard",
+    "description": "We can also import your existing logbook for you from a CSV export."
   },
   "cppSprayHolds": {
     "headline": "Holds suggested\nfrom a photo",
@@ -171,16 +170,16 @@
     "emphasis": "spray wall"
   },
   "cppSprayWalls": {
-    "headline": "Home wall,\ngym wall",
-    "description": "Set up each one from its photo."
+    "headline": "Supports spray walls",
+    "description": "Set climbs on photos of your own walls."
   },
   "cppSprayWorkout": {
     "headline": "Train with\na plan",
     "description": "Once your wall has graded climbs."
   },
   "cppTensionLayouts": {
-    "headline": "Original, Mirror\nor Spray",
-    "description": "Works with Tension Board 1 and 2."
+    "headline": "Supports Tension",
+    "description": "We can also import your existing logbook for you"
   },
   "cppTensionLogbookImport": {
     "headline": "Bring your\nTension logbook",

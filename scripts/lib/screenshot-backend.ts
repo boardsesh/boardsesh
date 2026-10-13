@@ -885,6 +885,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     isRecording && options.flow === 'app-store-cpp' && manifest.capture?.cpp
       ? createCppWsRecording({
           upstreamUrl: upstreamUrl!,
+          log,
           scope: () => {
             const coverage = manifest.capture?.cpp;
             if (

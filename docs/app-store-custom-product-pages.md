@@ -9,43 +9,40 @@ Caption copy lives in `app-stores/presentation/{en-US,es,fr,de}.json`.
 
 ## The nine-image story
 
-Each page leads with one large native capture and a board-specific reason to install.
-The `store-hero` layout uses the showcase headline size and dark palette. The first
-three images carry distinct benefits, since they also appear in search ads.
+Every CPP opens with two real board trios, in this order:
 
-| Target | First three images | Later target trio |
+1. **Supports Kilter**, **Supports Tension**, **Supports MoonBoard**, or
+   **Supports spray walls**, showing three configurations of that target.
+   Kilter and Tension say **We can also import your existing logbook for you**.
+   MoonBoard adds **from a CSV export**. Spray walls make no import claim.
+2. **One app for all your boards**, with **All your logbooks in one place**,
+   showing three other popular board families. The target family is excluded.
+
+| Target | First trio, in source order | Second trio, in source order |
 | --- | --- | --- |
-| Kilter | Climbs at your grade, Kilter logbook import, friends queue | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 |
-| Tension | Friends queue, Tension logbook import, Dynamic Island (iPad kiosk) | Original, Tension 2 Mirror, Tension 2 Spray |
-| MoonBoard | Climbs at your grade, friends queue, supported sets | 2016, Masters 2019, 2024 |
-| Spray wall | Set on your wall photo, friends queue, gym boards in one logbook | Liz's Wall, Cherry's Wall, The Bowlo |
+| Kilter | Homewall 7×10, Original 12×12 (centre), Homewall 10×10 | Tension Board 2 Mirror, MoonBoard 2024, Woods 12×12 |
+| Tension | Original, Tension Board 2 Mirror, Tension Board 2 Spray | Kilter Original 12×12, MoonBoard 2024, Woods 12×12 |
+| MoonBoard | 2016, Masters 2019, 2024 | Kilter Original 12×12, Tension Board 2 Mirror, Woods 12×12 |
+| Spray wall | Liz's Wall, Cherry's Wall, The Bowlo | Kilter Original 12×12, Tension Board 2 Mirror, MoonBoard 2024 |
 
-Kilter uses the import-led story: **Bring your Kilter logbook** is image two,
-and Dynamic Island (iPad kiosk) is image four. The owner confirmed that Kilter
-account linking is permanently enabled. Legacy Aurora export import also remains
-available. Tension's import is available without that flag; MoonBoard copy
-specifically describes a CSV export. Spray walls never promise
-logbook imports. The regular Apple page retains **One app for all your boards**
-and now says **One logbook for every board**.
+The remaining seven feature screenshots retain their existing relative order,
+native source captures, and style. They cover discovery/filtering, logbook,
+queue, workout, wall status and Dynamic Island (iPad kiosk), or spray setting,
+projects and hold review. The standalone **See your next move** image is absent.
+All nine outputs and promotional text are localized. The complete raw capture
+contract remains 13 scenes even when a presentation omits a source.
 
-Trio images remain later in the story, and Kilter Original remains the centre
-phone. Cross-board copy says **Two boards? One logbook**. Pricing appears only in
-promotional text: free, no ads, no paid upgrades. Screenshot descriptions mention
-suggested holds for review, rather than guaranteed recognition. Workout copy
-promises a plan, not automatic timer advancement.
+The owner confirmed that Kilter account linking is permanently enabled. Legacy
+Aurora export import also remains available. Tension import is available without
+that flag; MoonBoard copy specifically qualifies its CSV export. Spray walls
+never promise logbook imports. The regular Apple page retains **One app for all
+your boards** and **One logbook for every board**.
 
-All nine outputs and promotional text are localized. Raw capture remains the
-same complete 13-scene contract even when a presentation omits a source. Changed
-order never reduces data or native content checks. The standalone **See your next
-move** image is absent from CPP recipes.
-
-Benchmark-specific MoonBoard headlines, a mirrored Tension climb, Lock Screen,
-spray sharing and reset screenshots require new genuine captures. Until those
-exist, MoonBoard says **MoonBoard climbs at your grade** and the Tension image
-names the actual **Tension 2 Mirror** board. No screenshot may pretend an
-uncaptured state has been verified. Spray hold suggestions stay below the first
-three images. Existing public metadata describes compatibility without implying
-manufacturer affiliation or endorsement.
+Pricing appears only in promotional text: free, no ads, no paid upgrades. Hold
+suggestions require review; workout copy promises a plan. Benchmark-specific
+MoonBoard headlines, a mirrored Tension climb, Lock Screen, and shortcut claims
+need their own genuine native captures before use. Public metadata describes
+compatibility without manufacturer affiliation or endorsement.
 
 ## Genuine capture data comes first
 
@@ -169,6 +166,13 @@ initial snapshots; smaller ActivityKit replies are relayed and later replayed
 through strict projections of fields actually recorded in the full replies.
 The existing default-listing recorder retains its inert WebSocket behavior.
 
+The owner check and session transport log fixed stage and predicate labels, so
+an ownership mismatch can be distinguished from a fetch or presence failure.
+Owner HTTP diagnostics retain only phase, elapsed time, status and allowlisted
+network codes. They omit account/session IDs, variables, response bodies, tokens,
+URLs and exception messages. Diagnostics do not change validation, timeouts,
+retries or which genuine responses may enter the recording.
+
 Generated flows retain a separate Maestro command document. All 64 combinations
 of target, app language, and device were validated with the pinned Maestro 2.6.1
 parser before the native capture rerun.
@@ -227,6 +231,13 @@ On tablets, joining returns to the Session tab. Capture reopens UIKit's sidebar
 when collapsed, waits for its open state, then selects the existing localized
 Climbs tab and verifies its selected state before issuing the queue command;
 the exact route, sequence, private-session and content gates still apply.
+Before each tablet frame, capture closes only the exact open-state Hide Sidebar
+control. Up to three state-checked taps handle a native tap that finishes without
+closing; each tap settles, and the final closed-state assertion still must pass.
+Paint readiness requires genuine native display events for the current overlay
+and every mounted background layer. Unchanged image instances retain their display
+proof when capture metadata or additional background layers arrive; new layers,
+removed and re-added instances, and visibility epochs require fresh display proof.
 Screenshot wall readers also use the actual published owned-board UUID as their
 scope. Switching capture boards starts a new local history from that board's
 recorded climbs, so previous families do not remain in the status or kiosk list.

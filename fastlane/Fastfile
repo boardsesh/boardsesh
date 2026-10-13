@@ -219,19 +219,20 @@ rescue => error
 end
 
 platform :ios do
-  desc "Plan, upload, or submit board-specific custom product pages (separate from the default listing)"
+  desc "Plan, create empty drafts, upload, or submit board-specific custom product pages"
   lane :cpp do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "custom_product_pages")
     require "spaceship"
     action = (options[:action] || "plan").to_s
     target = (options[:target] || "all").to_s
-    UI.user_error!("CPP action must be plan, upload, or submit") unless %w[plan upload submit].include?(action)
+    UI.user_error!("CPP action must be plan, create, upload, or submit") unless %w[plan create upload submit].include?(action)
     manifest_bytes = File.read(File.join(REPO_ROOT, "app-stores", "apple", "custom-product-pages.json"))
     manifest = JSON.parse(manifest_bytes)
     asc_api_key
     app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
     UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
-    keyword_ids = JSON.parse(ENV.fetch("ASC_CPP_KEYWORD_IDS_JSON", "{}"))
+    keyword_mapping_json = ENV.fetch("ASC_CPP_KEYWORD_IDS_JSON", "{}").strip
+    keyword_ids = action == "create" ? {} : JSON.parse(keyword_mapping_json.empty? ? "{}" : keyword_mapping_json)
     client = BoardseshCPP::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
     results = BoardseshCPP::Runner.new(
       client: client, repo_root: REPO_ROOT, manifest: manifest, manifest_sha256: Digest::SHA256.hexdigest(manifest_bytes), app_id: app.id,
@@ -245,9 +246,15 @@ platform :ios do
         UI.message("CPP_PLAN_JSON #{JSON.generate(result)}")
         result.fetch("diagnostics").each { |diagnostic| emit_step_summary("- #{result.fetch('target')}: #{diagnostic}") }
       end
+      if action == "create"
+        UI.message("CPP_CREATE_JSON #{JSON.generate(result)}")
+        emit_step_summary("#{result.fetch('referenceName')} | app #{result.fetch('appId')} | page #{result.fetch('pageId')} | #{result.fetch('publication')}")
+      end
     end
     plan_output = ENV["ASC_CPP_PLAN_OUTPUT"]
     File.write(plan_output, JSON.pretty_generate(results) + "\n") if action == "plan" && plan_output && !plan_output.empty?
+    create_output = ENV["ASC_CPP_CREATE_OUTPUT"]
+    File.write(create_output, JSON.pretty_generate(results) + "\n") if action == "create" && create_output && !create_output.empty?
   rescue BoardseshCPP::Error, JSON::ParserError, KeyError => error
     UI.user_error!(error.message)
   end

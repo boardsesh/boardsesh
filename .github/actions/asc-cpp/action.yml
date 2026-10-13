@@ -6,7 +6,7 @@ inputs:
     description: 'CPP target or all.'
   action:
     required: true
-    description: 'plan, upload, or submit.'
+    description: 'plan, create empty drafts, upload, or submit.'
   keyword-ids:
     default: ''
     description: 'Verified locale -> keyword -> Apple resource ID JSON.'
@@ -45,9 +45,10 @@ runs:
       run: |
         set -euo pipefail
         case "$CPP_TARGET" in all|kilter|tension|moonboard|spray) ;; *) echo '::error::Invalid CPP target'; exit 1 ;; esac
-        case "$CPP_ACTION" in plan|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
+        case "$CPP_ACTION" in plan|create|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
         if [ -z "$ASC_CPP_KEYWORD_IDS_JSON" ]; then export ASC_CPP_KEYWORD_IDS_JSON='{}'; fi
         if [ "$CPP_ACTION" = plan ]; then export ASC_CPP_PLAN_OUTPUT="$RUNNER_TEMP/cpp-plan.json"; fi
+        if [ "$CPP_ACTION" = create ]; then export ASC_CPP_CREATE_OUTPUT="$RUNNER_TEMP/cpp-create.json"; fi
         [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$CPP_PRIVATE_KEY_BASE64" ] || { echo '::error::App Store Connect credentials are not configured'; exit 1; }
         ASC_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-cpp-key.XXXXXX.p8")
         export ASC_KEY_PATH
@@ -64,3 +65,11 @@ runs:
         path: ${{ runner.temp }}/cpp-plan.json
         if-no-files-found: error
         retention-days: 7
+    - name: Retain verified CPP draft identities
+      if: ${{ inputs.action == 'create' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: cpp-create
+        path: ${{ runner.temp }}/cpp-create.json
+        if-no-files-found: error
+        retention-days: 14

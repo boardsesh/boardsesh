@@ -96,9 +96,8 @@
     "emphasis": "Dynamic Island."
   },
   "cppOtherBoards": {
-    "headline": "Deux boards ?\nUn seul carnet",
-    "description": "Compatible avec 8 marques de boards.",
-    "emphasis": "Un seul carnet"
+    "headline": "Une app pour toutes tes boards",
+    "description": "Tous tes carnets au même endroit"
   },
   "cppSearch": {
     "headline": "Trouve ton\nprochain projet",
@@ -133,8 +132,8 @@
     "description": "Choisis cotation et inclinaison, puis allume."
   },
   "cppKilterLayouts": {
-    "headline": "Original\nou Homewall",
-    "description": "Pour ta Kilter, chez toi ou en salle."
+    "headline": "Compatible avec Kilter",
+    "description": "Nous pouvons aussi importer ton carnet pour toi."
   },
   "cppKilterLogbookImport": {
     "headline": "Importe ton\ncarnet Kilter",
@@ -149,8 +148,8 @@
     "description": "Importe ton carnet depuis un export CSV."
   },
   "cppMoonboardSets": {
-    "headline": "2016, 2024\nou Masters",
-    "description": "Masters 2017 et 2019, plus 2010."
+    "headline": "Compatible avec MoonBoard",
+    "description": "Nous pouvons aussi importer ton carnet depuis un export CSV."
   },
   "cppSprayHolds": {
     "headline": "Prises suggérées\npar la photo",
@@ -171,16 +170,16 @@
     "emphasis": "mur de spray"
   },
   "cppSprayWalls": {
-    "headline": "Mur perso,\nmur de salle",
-    "description": "Configure chacun depuis sa photo."
+    "headline": "Compatible avec les murs de spray",
+    "description": "Ouvre des blocs sur les photos de tes propres murs."
   },
   "cppSprayWorkout": {
     "headline": "Entraîne-toi\navec un plan",
     "description": "Dès que ton mur a des blocs cotés."
   },
   "cppTensionLayouts": {
-    "headline": "Original, Mirror\nou Spray",
-    "description": "Compatible Tension Board 1 et 2."
+    "headline": "Compatible avec Tension",
+    "description": "Nous pouvons aussi importer ton carnet pour toi."
   },
   "cppTensionLogbookImport": {
     "headline": "Importe ton\ncarnet Tension",

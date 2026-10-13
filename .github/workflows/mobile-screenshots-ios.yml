@@ -199,15 +199,15 @@ on:
         type: boolean
         default: false
       cpp_target:
-        description: 'Custom product page to capture. none keeps the default listing pipeline.'
+        description: 'Custom product page target. none keeps the default listing pipeline.'
         type: choice
         default: none
         options: [none, all, kilter, tension, moonboard, spray]
       cpp_action:
-        description: 'CPP action. plan inspects Apple keyword IDs without captures or store writes.'
+        description: 'CPP action. plan reads Apple; create creates empty drafts. Both skip native captures.'
         type: choice
         default: capture
-        options: [plan, capture, upload, submit]
+        options: [plan, create, capture, upload, submit]
       cpp_keyword_ids:
         description: 'Verified Apple keyword ID mapping JSON: locale -> keyword -> ID.'
         type: string
@@ -241,7 +241,7 @@ concurrency:
   # so `inputs.upload`/`inputs.publish_baseline` are compared explicitly
   # (never read bare) to stay null-tolerant on `workflow_run`, where `inputs`
   # is null and both comparisons read false.
-  group: ${{ (github.event_name == 'workflow_run' || inputs.upload == true || inputs.publish_baseline == true || ((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit' || inputs.fixtures == 'record'))) && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
+  group: ${{ (github.event_name == 'workflow_run' || inputs.upload == true || inputs.publish_baseline == true || ((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'create' || inputs.cpp_action == 'upload' || inputs.cpp_action == 'submit' || inputs.fixtures == 'record'))) && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:
@@ -301,15 +301,29 @@ jobs:
         run: |
           set -euo pipefail
           case "$CPP_TARGET" in
-            none) echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; exit 0 ;;
+            none)
+              [ "$CPP_ACTION" != create ] || { echo '::error::CPP draft creation requires a target or all.'; exit 1; }
+              echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; exit 0 ;;
             all) targets='["kilter","tension","moonboard","spray"]' ;;
             kilter|tension|moonboard|spray) targets=$(jq -cn --arg target "$CPP_TARGET" '[$target]') ;;
             *) echo '::error::Invalid CPP target'; exit 1 ;;
           esac
-          case "$CPP_ACTION" in plan|capture|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
+          case "$CPP_ACTION" in plan|create|capture|upload|submit) ;; *) echo '::error::Invalid CPP action'; exit 1 ;; esac
           if [ "$UPLOAD_DEFAULT" = true ] || [ "$PUBLISH_BASELINE" = true ]; then
             echo '::error::CPP runs use cpp_action; default listing upload/baseline flags must be false.'
             exit 1
+          fi
+          if [ "$CPP_ACTION" = create ]; then
+            if [ "$EVENT_NAME" != workflow_dispatch ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+              echo '::error::CPP draft creation requires a manual dispatch from main.'
+              exit 1
+            fi
+            if [ "$FIXTURES_MODE" != replay ] || [ -n "$FIXTURE_SNAPSHOT" ] || [ -n "$CPP_SCENARIO" ] || [ -n "$LOCALES" ]; then
+              echo '::error::CPP draft creation does not accept capture or fixture overrides.'
+              exit 1
+            fi
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "$CPP_ACTION" != capture ] && [ "$CPP_ACTION" != plan ] && { [ "$FIXTURES_MODE" != replay ] || [ -n "$LOCALES" ]; }; then
             echo '::error::CPP upload/submit requires replay and the full locale/device matrix.'
@@ -520,7 +534,7 @@ jobs:
     needs: setup
     # Nothing shipped, nothing to photograph — and this is the expensive one to
     # skip: a cache miss here is a ~30-min native build.
-    if: needs.setup.outputs.shipped == 'true' && !((inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'plan')
+    if: needs.setup.outputs.shipped == 'true' && !((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'plan' || inputs.cpp_action == 'create'))
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -1084,6 +1098,38 @@ jobs:
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
 
+  cpp-create:
+    needs: setup
+    environment: Production
+    if: ${{ needs.setup.result == 'success' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'create' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_sha }}
+      - name: Verify trusted source for empty CPP draft creation
+        env:
+          SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" = refs/heads/main ] || { echo '::error::CPP draft creation requires main.'; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || { echo '::error::CPP source SHA mismatch.'; exit 1; }
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - uses: ./.github/actions/asc-cpp
+        with:
+          target: ${{ inputs.cpp_target || 'none' }}
+          action: create
+          key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+
   cpp-bootstrap:
     needs: setup
     if: ${{ needs.setup.result == 'success' && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action == 'capture' && inputs.fixtures == 'record' && (inputs.cpp_scenario || '') == '' }}
@@ -1143,7 +1189,7 @@ jobs:
 
   cpp-capture:
     needs: [setup, ios-build, cpp-bootstrap]
-    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && (needs.cpp-bootstrap.result == 'success' || needs.cpp-bootstrap.result == 'skipped') && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action != 'plan' }}
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && (needs.cpp-bootstrap.result == 'success' || needs.cpp-bootstrap.result == 'skipped') && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action != 'plan' && inputs.cpp_action != 'create' }}
     runs-on: macos-26
     timeout-minutes: 65
     strategy:

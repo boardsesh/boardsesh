@@ -510,7 +510,13 @@ describe('custom product page captures', () => {
           for (const index of captures) {
             const preceding = steps.slice(index - 3, index);
             expect(preceding).toEqual([
-              { runFlow: { when: { visible: selector }, commands: [{ tapOn: selector }] } },
+              {
+                repeat: {
+                  times: 3,
+                  while: { visible: selector },
+                  commands: [{ tapOn: selector }, { waitForAnimationToEnd: { timeout: 30000 } }],
+                },
+              },
               { extendedWaitUntil: { notVisible: selector, timeout: 15000 } },
               { waitForAnimationToEnd: { timeout: 30000 } },
             ]);
@@ -532,6 +538,48 @@ describe('custom product page captures', () => {
         }
       }
     }
+  });
+  it('retries a missed real sidebar close and stops before reopening the closed sidebar', () => {
+    const { coverage } = scenario('kilter');
+    const device = IOS_SCREENSHOT_DEVICES.find((candidate) => candidate.name.startsWith('iPad'))!;
+    const steps = parseAllDocuments(renderCppMaestroFlow('kilter', device, coverage))[1].toJS() as Record<
+      string,
+      unknown
+    >[];
+    const firstCapture = steps.findIndex((step) => 'takeScreenshot' in step);
+    const close = steps[firstCapture - 3].repeat as {
+      times: number;
+      while: { visible: { id: string; text: string } };
+      commands: Array<{ tapOn?: { id: string; text: string }; waitForAnimationToEnd?: { timeout: number } }>;
+    };
+    const matches = (selector: { id: string; text: string }, opened: boolean) =>
+      new RegExp(selector.id).test('ToggleSidebar') &&
+      new RegExp(selector.text.replace('${SCREENSHOT_SIDEBAR_HIDE_LABEL}', 'Hide Sidebar')).test(
+        opened ? 'Hide Sidebar' : 'Toggle sidebar',
+      );
+    const execute = (initiallyOpen: boolean, missedTaps: number) => {
+      let opened = initiallyOpen;
+      let taps = 0;
+      let settled = 0;
+      for (let attempt = 0; attempt < close.times && matches(close.while.visible, opened); attempt += 1) {
+        for (const command of close.commands) {
+          if (command.tapOn) {
+            expect(matches(command.tapOn, opened)).toBe(true);
+            taps += 1;
+            if (taps > missedTaps) opened = false;
+          }
+          if (command.waitForAnimationToEnd) settled += 1;
+        }
+      }
+      return { opened, taps, settled };
+    };
+    expect(execute(true, 1)).toEqual({ opened: false, taps: 2, settled: 2 });
+    expect(execute(true, 0)).toEqual({ opened: false, taps: 1, settled: 1 });
+    expect(execute(false, 0)).toEqual({ opened: false, taps: 0, settled: 0 });
+    expect(execute(true, 3)).toEqual({ opened: true, taps: 3, settled: 3 });
+    expect(steps[firstCapture - 2]).toEqual({
+      extendedWaitUntil: { notVisible: close.while.visible, timeout: 15000 },
+    });
   });
   it('admits only native localized multiframe badge prefixes and queue suffixes in their real order', () => {
     const labels = {
@@ -1184,8 +1232,11 @@ describe('custom product page captures', () => {
         const names = cppCaptureNames(page, device);
         const recipes = resolveCppRecipes(page, device, names);
         expect(recipes).toHaveLength(9);
-        expect(recipes[0].layout).toBe('store-hero');
-        expect(recipes[0].sources).toHaveLength(1);
+        expect(recipes[0].layout).toBe('store-boards');
+        expect(recipes[0].sources).toHaveLength(3);
+        expect(recipes[1].layout).toBe('store-boards');
+        expect(recipes[1].caption).toBe('cppOtherBoards');
+        expect(recipes[1].sources).toEqual(['other-1.png', 'other-2.png', 'other-3.png']);
         const targetTrio = recipes.find(
           (recipe) => recipe.layout === 'store-boards' && recipe.sources.includes('hero-3.png'),
         )!;
@@ -1196,9 +1247,9 @@ describe('custom product page captures', () => {
         if (target === 'kilter') {
           const centerVariant = page.heroBoards[Number(targetTrio.sources[1].match(/hero-(\d+)/)?.[1]) - 1];
           expect(centerVariant.id).toBe('kilter-original-12x12');
-          expect(recipes[1].caption).toBe('cppKilterLogbookImport');
-          expect(recipes[3].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland');
-          expect(recipes[1].sources).toEqual(['03-logbook.png']);
+          expect(recipes[3].caption).toBe('cppKilterLogbookImport');
+          expect(recipes[5].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland');
+          expect(recipes[3].sources).toEqual(['03-logbook.png']);
         }
         expect(recipes.find((recipe) => recipe.sources.includes('other-1.png'))!.sources).toEqual([
           'other-1.png',

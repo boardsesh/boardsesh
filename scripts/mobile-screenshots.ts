@@ -2368,15 +2368,17 @@ export function renderCppMaestroFlow(
       // UIKit can reopen its floating sidebar after navigation. Only its real
       // open-state control may be tapped; the same ID also toggles a hidden
       // sidebar open, so matching the Hide label is required on every capture.
+      // A native tap can finish without closing it. Recheck its real open state
+      // before each bounded retry, and stop as soon as the close takes effect.
       const openSidebar = 'id: "^ToggleSidebar$"\ntext: "^${SCREENSHOT_SIDEBAR_HIDE_LABEL}$"';
       commands.push(
-        `- runFlow:\n    when:\n      visible:\n${openSidebar
+        `- repeat:\n    times: 3\n    while:\n      visible:\n${openSidebar
           .split('\n')
           .map((line) => `        ${line}`)
           .join('\n')}\n    commands:\n      - tapOn:\n${openSidebar
           .split('\n')
           .map((line) => `          ${line}`)
-          .join('\n')}`,
+          .join('\n')}\n      - waitForAnimationToEnd:\n          timeout: 30000`,
         `- extendedWaitUntil:\n    notVisible:\n${openSidebar
           .split('\n')
           .map((line) => `      ${line}`)

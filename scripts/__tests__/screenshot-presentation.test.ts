@@ -43,6 +43,128 @@ afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+describe('board-specific CPP openings', () => {
+  const devices = Object.keys(ACCEPTED_SIZES);
+  const headlineByTarget = {
+    kilter: 'Supports Kilter',
+    tension: 'Supports Tension',
+    moonboard: 'Supports MoonBoard',
+    spray: 'Supports spray walls',
+  };
+
+  it('leads every target and device with its own trio, then three other board families', () => {
+    for (const target of CPP_TARGETS) {
+      const page = readCppPage(target);
+      expect(page.heroBoards.every((board) => board.family === target)).toBe(true);
+      expect(new Set(page.otherBoards.map((board) => board.family)).size).toBe(3);
+      expect(page.otherBoards.every((board) => board.family !== target)).toBe(true);
+      for (const device of devices) {
+        const recipes = page.recipes[device.startsWith('ipad-') ? 'ipad' : 'phone'];
+        expect(recipes).toHaveLength(9);
+        expect(recipes.slice(0, 2).map((recipe) => recipe.layout)).toEqual(['store-boards', 'store-boards']);
+        expect(recipes[0].sources).toEqual(
+          target === 'kilter' ? ['hero-2.png', 'hero-1.png', 'hero-3.png'] : ['hero-1.png', 'hero-2.png', 'hero-3.png'],
+        );
+        expect(recipes[1].sources).toEqual(['other-1.png', 'other-2.png', 'other-3.png']);
+        expect(recipes[1].caption).toBe('cppOtherBoards');
+        const captions = readCaptionCatalog('en-US');
+        expect(captions[recipes[0].caption].headline).toBe(headlineByTarget[target]);
+        expect(captions[recipes[1].caption]).toEqual({
+          headline: 'One app for all your boards',
+          description: 'All your logbooks in one place',
+        });
+        expect(recipes.some((recipe) => recipe.caption === 'board')).toBe(false);
+      }
+    }
+    expect(readCppPage('spray').heroBoards.map((board) => board.selector)).toEqual([
+      "Liz's Wall",
+      "Cherry's Wall",
+      'The Bowlo',
+    ]);
+  });
+
+  it('keeps the existing seven feature scenes in order for phones and iPads', () => {
+    for (const device of devices) {
+      const island = device.startsWith('ipad-') ? 'cppKiosk' : 'cppIsland';
+      const expected = {
+        kilter: [
+          'cppKilterGrade',
+          'cppKilterLogbookImport',
+          'cppQueue',
+          island,
+          'cppSearch',
+          'cppWorkout',
+          'cppStatus',
+        ],
+        tension: [
+          'cppTensionQueue',
+          'cppTensionLogbookImport',
+          island,
+          'cppTensionSearch',
+          'cppTensionMirrorBoard',
+          'cppWorkout',
+          'cppStatus',
+        ],
+        moonboard: [
+          'cppMoonboardGrade',
+          'cppQueue',
+          island,
+          'cppSearch',
+          'cppMoonboardLogbook',
+          'cppWorkout',
+          'cppStatus',
+        ],
+        spray: [
+          'cppSpraySetting',
+          'cppQueue',
+          'cppSprayProjects',
+          'cppLogbook',
+          'cppSprayHolds',
+          'cppSearch',
+          'cppSprayWorkout',
+        ],
+      };
+      for (const target of CPP_TARGETS) {
+        const page = readCppPage(target);
+        const recipes = page.recipes[device.startsWith('ipad-') ? 'ipad' : 'phone'];
+        expect(recipes.slice(2).map((recipe) => recipe.caption)).toEqual(expected[target]);
+      }
+    }
+  });
+
+  it('localizes both opening captions, qualifies MoonBoard CSV import, and never promises spray imports', () => {
+    const otherHeadlines = {
+      'en-US': 'One app for all your boards',
+      es: 'Una app para todos tus plafones',
+      fr: 'Une app pour toutes tes boards',
+      de: 'Eine App für alle deine Boards',
+    };
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const catalog = readCaptionCatalog(locale);
+      for (const target of CPP_TARGETS) {
+        const page = readCppPage(target);
+        const first = catalog[page.recipes.phone[0].caption];
+        expect(first.headline.trim()).not.toBe('');
+        expect(first.description.trim()).not.toBe('');
+        expect(catalog[page.recipes.phone[1].caption].headline).toBe(otherHeadlines[locale]);
+        if (target === 'moonboard') expect(first.description).toContain('CSV');
+        if (target === 'spray') expect(first.description).not.toMatch(/import|CSV/i);
+        if (target === 'kilter' || target === 'tension') expect(first.description).toMatch(/import/i);
+      }
+    }
+    expect(readCaptionCatalog('en-US').cppKilterLayouts.description).toBe(
+      'We can also import your existing logbook for you',
+    );
+    expect(readCaptionCatalog('en-US').cppTensionLayouts.description).toBe(
+      'We can also import your existing logbook for you',
+    );
+    expect(readCaptionCatalog('en-US').storeBoards).toEqual({
+      headline: 'One app for all your boards',
+      description: 'One logbook for every board.',
+    });
+  });
+});
+
 describe('CPP trio board labels', () => {
   it('matches each label to its source slot and keeps Kilter Original in the center', () => {
     for (const target of CPP_TARGETS) {

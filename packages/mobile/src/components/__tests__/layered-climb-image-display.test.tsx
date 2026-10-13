@@ -32,6 +32,201 @@ describe('native artwork display handoff', () => {
     native.events.length = 0;
     native.hidden = false;
   });
+  it.each(['displayIdentity', 'paintedTestID', 'mirrored'] as const)(
+    'accepts the real queued overlay display after only %s changes and reports the current capture',
+    (metadata) => {
+      const originalDisplayed = vi.fn();
+      const currentDisplayed = vi.fn();
+      const initial = {
+        overlayUri: 'file:///holds.png',
+        overlayLoadKey: '1:0',
+        recyclingKey: 'same-native-image',
+        backgroundPaths: ['/board.webp'],
+        displayIdentity: 'opening-art',
+        paintedTestID: metadata === 'displayIdentity' ? undefined : 'cpp-climb-painted-old',
+        mirrored: false,
+        onArtDisplayed: originalDisplayed,
+      };
+      const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, initial));
+      const actualQueuedOverlay = latest(initial.overlayUri);
+      act(() => latest('file:///board.webp').display?.());
+      const selected = {
+        ...initial,
+        displayIdentity: metadata === 'displayIdentity' ? 'visible-art' : initial.displayIdentity,
+        paintedTestID: metadata === 'mirrored' ? 'cpp-climb-painted-current-mirrored' : 'cpp-climb-painted-current',
+        mirrored: metadata === 'mirrored',
+        onArtDisplayed: currentDisplayed,
+      };
+      rerender(createElement(LayeredClimbImage, selected));
+      expect(queryByTestId(selected.paintedTestID)).toBeNull();
+      act(() => actualQueuedOverlay.display?.());
+      expect(queryByTestId(selected.paintedTestID)).not.toBeNull();
+      expect(originalDisplayed).not.toHaveBeenCalled();
+      expect(currentDisplayed).toHaveBeenCalledExactlyOnceWith('1:0');
+    },
+  );
+  it('preserves genuine display of a still-mounted background when another required layer arrives', () => {
+    const displayed = vi.fn();
+    const initial = {
+      overlayUri: 'file:///holds.png',
+      overlayLoadKey: '1:0',
+      backgroundPaths: ['/board.webp'],
+      missingBackgroundCount: 1,
+      paintedTestID: 'cpp-climb-painted-complete',
+      onArtDisplayed: displayed,
+    };
+    const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, initial));
+    act(() => {
+      latest('file:///board.webp').display?.();
+      latest('file:///holds.png').display?.();
+    });
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    expect(displayed).not.toHaveBeenCalled();
+    rerender(
+      createElement(LayeredClimbImage, {
+        ...initial,
+        backgroundPaths: ['/board.webp', '/kick.webp'],
+        missingBackgroundCount: 0,
+      }),
+    );
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    act(() => latest('file:///kick.webp').load?.());
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    act(() => latest('file:///kick.webp').display?.());
+    expect(queryByTestId(initial.paintedTestID)).not.toBeNull();
+    expect(displayed).toHaveBeenCalledExactlyOnceWith('1:0');
+  });
+  it('accepts a queued background display from the same mounted image after the layer list expands', () => {
+    const displayed = vi.fn();
+    const initial = {
+      overlayUri: 'file:///holds.png',
+      overlayLoadKey: '1:0',
+      backgroundPaths: ['/board.webp'],
+      missingBackgroundCount: 1,
+      paintedTestID: 'cpp-climb-painted-late-background',
+      onArtDisplayed: displayed,
+    };
+    const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, initial));
+    const queuedBackground = latest('file:///board.webp');
+    act(() => latest('file:///holds.png').display?.());
+    rerender(
+      createElement(LayeredClimbImage, {
+        ...initial,
+        backgroundPaths: ['/board.webp', '/kick.webp'],
+        missingBackgroundCount: 0,
+      }),
+    );
+    act(() => latest('file:///kick.webp').display?.());
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    act(() => queuedBackground.display?.());
+    expect(queryByTestId(initial.paintedTestID)).not.toBeNull();
+    expect(displayed).toHaveBeenCalledExactlyOnceWith('1:0');
+  });
+  it('rejects removed/readded background callbacks and requires display of the newly mounted same path', () => {
+    const displayed = vi.fn();
+    const initial = {
+      overlayUri: 'file:///holds.png',
+      overlayLoadKey: '1:0',
+      backgroundPaths: ['/board.webp'],
+      paintedTestID: 'cpp-climb-painted-remounted-background',
+      onArtDisplayed: displayed,
+    };
+    const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, initial));
+    const removedBackground = latest('file:///board.webp');
+    act(() => {
+      removedBackground.display?.();
+      latest('file:///holds.png').display?.();
+    });
+    expect(queryByTestId(initial.paintedTestID)).not.toBeNull();
+    rerender(createElement(LayeredClimbImage, { ...initial, backgroundPaths: [], missingBackgroundCount: 1 }));
+    rerender(createElement(LayeredClimbImage, initial));
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    act(() => removedBackground.display?.());
+    expect(queryByTestId(initial.paintedTestID)).toBeNull();
+    expect(displayed).toHaveBeenCalledTimes(1);
+    act(() => latest('file:///board.webp').display?.());
+    expect(queryByTestId(initial.paintedTestID)).not.toBeNull();
+    expect(displayed).toHaveBeenCalledTimes(2);
+  });
+  it('requires a new actual overlay display after the same URI and load key unmount and remount', () => {
+    const displayed = vi.fn();
+    const props = {
+      overlayUri: 'file:///holds.png',
+      overlayLoadKey: '1:0',
+      backgroundPaths: ['/board.webp'],
+      paintedTestID: 'cpp-climb-painted-remounted-overlay',
+      onArtDisplayed: displayed,
+    };
+    const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, props));
+    const removedOverlay = latest(props.overlayUri);
+    act(() => {
+      latest('file:///board.webp').display?.();
+      removedOverlay.display?.();
+    });
+    expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+    rerender(createElement(LayeredClimbImage, { ...props, overlayUri: null }));
+    rerender(createElement(LayeredClimbImage, props));
+    expect(queryByTestId(props.paintedTestID)).toBeNull();
+    act(() => removedOverlay.display?.());
+    expect(queryByTestId(props.paintedTestID)).toBeNull();
+    expect(displayed).toHaveBeenCalledTimes(1);
+    act(() => latest(props.overlayUri).display?.());
+    expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+    expect(displayed).toHaveBeenCalledTimes(2);
+  });
+  it.each(['overlayLoadKey', 'recyclingKey'] as const)(
+    'rejects queued display after actual %s changes at the same URI',
+    (physicalIdentity) => {
+      const displayed = vi.fn();
+      const props = {
+        overlayUri: 'file:///holds.png',
+        overlayLoadKey: '1:0',
+        recyclingKey: 'first',
+        backgroundPaths: ['/board.webp'],
+        paintedTestID: 'cpp-climb-painted-new-attempt',
+        onArtDisplayed: displayed,
+      };
+      const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, props));
+      const staleOverlay = latest(props.overlayUri);
+      act(() => latest('file:///board.webp').display?.());
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...props,
+          [physicalIdentity]: physicalIdentity === 'overlayLoadKey' ? '2:0' : 'second',
+        }),
+      );
+      act(() => staleOverlay.display?.());
+      expect(queryByTestId(props.paintedTestID)).toBeNull();
+      expect(displayed).not.toHaveBeenCalled();
+      act(() => latest(props.overlayUri).display?.());
+      expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+      expect(displayed).toHaveBeenCalledExactlyOnceWith(physicalIdentity === 'overlayLoadKey' ? '2:0' : '1:0');
+    },
+  );
+  it('rechecks unchanged genuinely displayed images only when the missing-layer barrier clears', () => {
+    const displayed = vi.fn();
+    const props = {
+      overlayUri: 'file:///holds.png',
+      overlayLoadKey: '1:0',
+      backgroundPaths: ['/board.webp'],
+      paintedTestID: 'cpp-climb-painted-no-missing-layer',
+      onArtDisplayed: displayed,
+    };
+    const { rerender, queryByTestId } = render(
+      createElement(LayeredClimbImage, { ...props, missingBackgroundCount: 1 }),
+    );
+    act(() => {
+      latest('file:///board.webp').display?.();
+      latest(props.overlayUri).display?.();
+    });
+    expect(queryByTestId(props.paintedTestID)).toBeNull();
+    expect(displayed).not.toHaveBeenCalled();
+    rerender(createElement(LayeredClimbImage, { ...props, missingBackgroundCount: 0 }));
+    expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+    expect(displayed).toHaveBeenCalledExactlyOnceWith('1:0');
+    rerender(createElement(LayeredClimbImage, { ...props, missingBackgroundCount: 0 }));
+    expect(displayed).toHaveBeenCalledTimes(1);
+  });
   it('exposes a selected-climb marker only after every current native image displays, and rejects stale callbacks after replacement', () => {
     const initial = {
       overlayUri: 'file:///first.png',

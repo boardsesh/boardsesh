@@ -59,7 +59,7 @@ class CustomProductPagesTest < Minitest::Test
     end
 
     def request(method, path, body = nil)
-      _, type, id, *tail = path.split("/").reject(&:empty?)
+      _, type, id, *tail = path.split("?").first.split("/").reject(&:empty?)
       return { "data" => @resources.fetch(type).fetch(id) } if method == "GET"
       @writes << [method, path, body]
       raise "Deletion is prohibited" if method == "DELETE"
@@ -83,6 +83,13 @@ class CustomProductPagesTest < Minitest::Test
           attributes.merge!("assetDeliveryState" => { "state" => "AWAITING_UPLOAD" }, "uploadOperations" => [{ "url" => "https://upload.apple.com/secret", "offset" => 0, "length" => attributes.fetch("fileSize") }])
         end
         seed(type, id, attributes, payload.fetch("relationships", {}))
+        if type == "appCustomProductPages" && body["included"]
+          body.fetch("included").each do |inline|
+            raise "Only one empty initial version is permitted" unless inline.fetch("type") == "appCustomProductPageVersions" && !inline.key?("attributes") && inline.fetch("relationships") == { "appCustomProductPage" => {} }
+            version_id = "appCustomProductPageVersions-#{@resources['appCustomProductPageVersions'].length + 1}"
+            seed("appCustomProductPageVersions", version_id, { "version" => "1", "state" => "PREPARE_FOR_SUBMISSION" }, "appCustomProductPage" => link("appCustomProductPages", id))
+          end
+        end
       else
         resource = @resources.fetch(type).fetch(id)
         resource.fetch("attributes").merge!(payload.fetch("attributes"))
@@ -347,5 +354,133 @@ class CustomProductPagesTest < Minitest::Test
   def test_client_rejects_external_pagination_url_before_credentials_sent
     client = BoardseshCPP::Client.new(token: -> { flunk "token accessed" })
     assert_raises(BoardseshCPP::Error) { client.request("GET", "https://example.com/v1/apps") }
+  end
+
+  def create_runner
+    BoardseshCPP::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app")
+  end
+
+  def set_four_create_targets
+    @manifest["targets"] = %w[kilter tension moonboard spray].to_h do |target|
+      [target, { "referenceName" => "Boardsesh #{target}" }]
+    end
+  end
+
+  def test_create_four_empty_drafts_without_captures_keywords_or_approved_version
+    set_four_create_targets
+    FileUtils.remove_entry(File.join(@root, "app-stores"))
+    @client.resources["appStoreVersions"].clear
+    results = create_runner.run(action: "create")
+    assert_equal %w[kilter tension moonboard spray], results.map { |result| result.fetch("target") }
+    assert results.all? { |result| result.fetch("action") == "created" && result.fetch("state") == "PREPARE_FOR_SUBMISSION" && result.fetch("appId") == "app" }
+    assert results.all? { |result| result.fetch("url").include?("ppid=#{result.fetch('pageId')}") && result.fetch("versions").length == 1 }
+    assert_equal 4, @client.writes.length
+    assert @client.writes.all? { |method, path, _body| method == "POST" && path == "/v1/appCustomProductPages" }
+    @client.writes.each do |_method, _path, body|
+      assert_equal ["name"], body.fetch("data").fetch("attributes").keys
+      assert_equal "app", body.dig("data", "relationships", "app", "data", "id")
+      assert_equal ["app", "appCustomProductPageVersions"], body.fetch("data").fetch("relationships").keys
+      assert_equal 1, body.fetch("included").length
+      assert_equal body.dig("data", "relationships", "appCustomProductPageVersions", "data").first.fetch("id"), body.fetch("included").first.fetch("id")
+    end
+    assert_empty @client.resources["appCustomProductPageLocalizations"]
+    assert_empty @client.resources["appScreenshots"]
+    assert_empty @client.resources["reviewSubmissions"]
+    assert_empty @client.uploads
+  end
+
+  def test_create_reuses_all_four_page_names_without_writes
+    set_four_create_targets
+    create_runner.run(action: "create")
+    before = JSON.generate(@client.resources)
+    count = @client.writes.length
+    results = create_runner.run(action: "create")
+    assert results.all? { |result| result.fetch("action") == "reused" }
+    assert_equal count, @client.writes.length
+    assert_equal before, JSON.generate(@client.resources)
+  end
+
+  def test_create_reuses_live_invisible_page_without_changing_it
+    create_runner.run(action: "create")
+    page = @client.resources["appCustomProductPages"].values.first
+    page["attributes"]["visible"] = false
+    @client.resources["appCustomProductPageVersions"].values.first["attributes"]["state"] = "APPROVED"
+    before = JSON.generate(@client.resources)
+    count = @client.writes.length
+    result = create_runner.run(action: "create").first
+    assert_equal "reused", result.fetch("action")
+    assert_equal "APPROVED", result.fetch("state")
+    assert_equal false, result.fetch("visible")
+    assert_equal before, JSON.generate(@client.resources)
+    assert_equal count, @client.writes.length
+  end
+
+  def test_create_rejects_ambiguous_existing_name_before_creating_any_pages
+    set_four_create_targets
+    2.times { |index| @client.seed("appCustomProductPages", "duplicate-#{index}", { "name" => "Boardsesh tension" }, "app" => @client.link("apps", "app")) }
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_empty @client.writes
+  end
+
+  def test_create_rejects_duplicate_manifest_reference_names_before_writing
+    set_four_create_targets
+    @manifest.fetch("targets").fetch("spray")["referenceName"] = "Boardsesh kilter"
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_empty @client.writes
+  end
+
+  def test_create_rejects_wrong_app_identity_without_store_changes
+    @client.seed("appCustomProductPages", "existing", { "name" => "Boardsesh Kilter", "url" => "https://apps.apple.com/app/id1?ppid=existing" }, "app" => @client.link("apps", "app"))
+    original_request = @client.method(:request)
+    @client.define_singleton_method(:request) do |method, path, body = nil|
+      response = original_request.call(method, path, body)
+      if method == "GET" && path.start_with?("/v1/appCustomProductPages/")
+        response = Marshal.load(Marshal.dump(response))
+        response.fetch("data").fetch("relationships").fetch("app").fetch("data")["id"] = "different-app"
+      end
+      response
+    end
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_empty @client.writes
+  end
+
+  def test_create_does_not_retry_ambiguous_creation_and_rerun_reuses_created_page
+    original_request = @client.method(:request)
+    fail_once = true
+    @client.define_singleton_method(:request) do |method, path, body = nil|
+      response = original_request.call(method, path, body)
+      if fail_once && method == "POST" && path == "/v1/appCustomProductPages"
+        fail_once = false
+        raise BoardseshCPP::Error, "Creation response interrupted"
+      end
+      response
+    end
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_equal 1, @client.writes.length
+    assert_equal "reused", create_runner.run(action: "create").first.fetch("action")
+    assert_equal 1, @client.resources["appCustomProductPages"].length
+    assert_equal 1, @client.writes.length
+  end
+
+  def test_create_rejects_wrong_page_url_before_any_store_write
+    @client.seed("appCustomProductPages", "existing", { "name" => "Boardsesh Kilter", "url" => "https://apps.apple.com/app/id1?ppid=another-page" }, "app" => @client.link("apps", "app"))
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_empty @client.writes
+  end
+
+  def test_create_stops_after_unexpected_new_version_state_without_further_pages
+    set_four_create_targets
+    original_request = @client.method(:request)
+    @client.define_singleton_method(:request) do |method, path, body = nil|
+      response = original_request.call(method, path, body)
+      if method == "POST" && path == "/v1/appCustomProductPages"
+        @resources["appCustomProductPageVersions"].values.last["attributes"]["state"] = "APPROVED"
+      end
+      response
+    end
+    assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+    assert_equal 1, @client.writes.length
+    assert_equal 1, @client.resources["appCustomProductPages"].length
+    assert_empty @client.resources["reviewSubmissions"]
   end
 end

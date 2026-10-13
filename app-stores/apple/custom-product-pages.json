@@ -116,48 +116,48 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-grade.png",
-            "caption": "cppKilterGrade",
-            "layout": "store-hero",
-            "sources": ["hero-1.png"]
-          },
-          {
-            "output": "01-logbook.png",
-            "caption": "cppKilterLogbookImport",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "02-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "03-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
-          },
-          {
-            "output": "04-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "05-kilter-boards.png",
+            "output": "00-kilter-boards.png",
             "caption": "cppKilterLayouts",
             "layout": "store-boards",
             "sources": ["hero-2.png", "hero-1.png", "hero-3.png"],
             "boardLabels": ["Kilter Homewall 7x10", "Kilter Original 12x12", "Kilter Homewall 10x10"]
           },
           {
-            "output": "06-other-boards.png",
+            "output": "01-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
             "sources": ["other-1.png", "other-2.png", "other-3.png"],
             "boardLabels": ["Tension Board 2 Mirror", "MoonBoard 2024", "Woods 12x12"]
+          },
+          {
+            "output": "02-grade.png",
+            "caption": "cppKilterGrade",
+            "layout": "store-hero",
+            "sources": ["hero-1.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppKilterLogbookImport",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "05-island.png",
+            "caption": "cppIsland",
+            "layout": "store-island",
+            "sources": ["08-island.png"]
+          },
+          {
+            "output": "06-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
           },
           {
             "output": "07-workout.png",
@@ -174,48 +174,48 @@
         ],
         "ipad": [
           {
-            "output": "00-grade.png",
-            "caption": "cppKilterGrade",
-            "layout": "store-hero",
-            "sources": ["hero-1.png"]
-          },
-          {
-            "output": "01-logbook.png",
-            "caption": "cppKilterLogbookImport",
-            "layout": "screen",
-            "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "02-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "03-kiosk.png",
-            "caption": "cppKiosk",
-            "layout": "screen",
-            "sources": ["08-kiosk.png"]
-          },
-          {
-            "output": "04-search.png",
-            "caption": "cppSearch",
-            "layout": "screen",
-            "sources": ["02-search.png"]
-          },
-          {
-            "output": "05-kilter-boards.png",
+            "output": "00-kilter-boards.png",
             "caption": "cppKilterLayouts",
             "layout": "store-boards",
             "sources": ["hero-2.png", "hero-1.png", "hero-3.png"],
             "boardLabels": ["Kilter Homewall 7x10", "Kilter Original 12x12", "Kilter Homewall 10x10"]
           },
           {
-            "output": "06-other-boards.png",
+            "output": "01-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
             "sources": ["other-1.png", "other-2.png", "other-3.png"],
             "boardLabels": ["Tension Board 2 Mirror", "MoonBoard 2024", "Woods 12x12"]
+          },
+          {
+            "output": "02-grade.png",
+            "caption": "cppKilterGrade",
+            "layout": "store-hero",
+            "sources": ["hero-1.png"]
+          },
+          {
+            "output": "03-logbook.png",
+            "caption": "cppKilterLogbookImport",
+            "layout": "screen",
+            "sources": ["03-logbook.png"]
+          },
+          {
+            "output": "04-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "05-kiosk.png",
+            "caption": "cppKiosk",
+            "layout": "screen",
+            "sources": ["08-kiosk.png"]
+          },
+          {
+            "output": "06-search.png",
+            "caption": "cppSearch",
+            "layout": "screen",
+            "sources": ["02-search.png"]
           },
           {
             "output": "07-workout.png",
@@ -331,118 +331,118 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-queue.png",
+            "output": "00-tension-boards.png",
+            "caption": "cppTensionLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
+          },
+          {
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "MoonBoard 2024", "Woods 12x12"]
+          },
+          {
+            "output": "02-queue.png",
             "caption": "cppTensionQueue",
             "layout": "store-hero",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "01-logbook.png",
+            "output": "03-logbook.png",
             "caption": "cppTensionLogbookImport",
             "layout": "screen",
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "02-island.png",
+            "output": "04-island.png",
             "caption": "cppIsland",
             "layout": "store-island",
             "sources": ["08-island.png"]
           },
           {
-            "output": "03-search.png",
+            "output": "05-search.png",
             "caption": "cppTensionSearch",
             "layout": "screen",
             "sources": ["02-search.png"]
           },
           {
-            "output": "04-mirror.png",
+            "output": "06-mirror.png",
             "caption": "cppTensionMirrorBoard",
             "layout": "screen",
             "sources": ["hero-2.png"]
           },
           {
-            "output": "05-other-boards.png",
+            "output": "07-workout.png",
+            "caption": "cppWorkout",
+            "layout": "screen",
+            "sources": ["06-workout.png"]
+          },
+          {
+            "output": "08-status.png",
+            "caption": "cppStatus",
+            "layout": "store-wall",
+            "sources": ["07-status.png"]
+          }
+        ],
+        "ipad": [
+          {
+            "output": "00-tension-boards.png",
+            "caption": "cppTensionLayouts",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
+          },
+          {
+            "output": "01-other-boards.png",
             "caption": "cppOtherBoards",
             "layout": "store-boards",
             "sources": ["other-1.png", "other-2.png", "other-3.png"],
             "boardLabels": ["Kilter Original 12x12", "MoonBoard 2024", "Woods 12x12"]
           },
           {
-            "output": "06-workout.png",
-            "caption": "cppWorkout",
-            "layout": "screen",
-            "sources": ["06-workout.png"]
-          },
-          {
-            "output": "07-status.png",
-            "caption": "cppStatus",
-            "layout": "store-wall",
-            "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-tension-boards.png",
-            "caption": "cppTensionLayouts",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
-            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
-          }
-        ],
-        "ipad": [
-          {
-            "output": "00-queue.png",
+            "output": "02-queue.png",
             "caption": "cppTensionQueue",
             "layout": "store-hero",
             "sources": ["05-queue.png"]
           },
           {
-            "output": "01-logbook.png",
+            "output": "03-logbook.png",
             "caption": "cppTensionLogbookImport",
             "layout": "screen",
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "02-kiosk.png",
+            "output": "04-kiosk.png",
             "caption": "cppKiosk",
             "layout": "screen",
             "sources": ["08-kiosk.png"]
           },
           {
-            "output": "03-search.png",
+            "output": "05-search.png",
             "caption": "cppTensionSearch",
             "layout": "screen",
             "sources": ["02-search.png"]
           },
           {
-            "output": "04-mirror.png",
+            "output": "06-mirror.png",
             "caption": "cppTensionMirrorBoard",
             "layout": "screen",
             "sources": ["hero-2.png"]
           },
           {
-            "output": "05-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"],
-            "boardLabels": ["Kilter Original 12x12", "MoonBoard 2024", "Woods 12x12"]
-          },
-          {
-            "output": "06-workout.png",
+            "output": "07-workout.png",
             "caption": "cppWorkout",
             "layout": "screen",
             "sources": ["06-workout.png"]
           },
           {
-            "output": "07-status.png",
+            "output": "08-status.png",
             "caption": "cppStatus",
             "layout": "store-wall",
             "sources": ["07-status.png"]
-          },
-          {
-            "output": "08-tension-boards.png",
-            "caption": "cppTensionLayouts",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
-            "boardLabels": ["Tension Original", "Tension Board 2 Mirror", "Tension Board 2 Spray"]
           }
         ]
       },
@@ -546,48 +546,48 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-grade.png",
-            "caption": "cppMoonboardGrade",
-            "layout": "store-hero",
-            "sources": ["hero-3.png"]
-          },
-          {
-            "output": "01-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "02-sets.png",
+            "output": "00-moonboard-boards.png",
             "caption": "cppMoonboardSets",
             "layout": "store-boards",
             "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
             "boardLabels": ["MoonBoard 2016", "MoonBoard Masters 2019", "MoonBoard 2024"]
           },
           {
-            "output": "03-island.png",
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
+          },
+          {
+            "output": "02-grade.png",
+            "caption": "cppMoonboardGrade",
+            "layout": "store-hero",
+            "sources": ["hero-3.png"]
+          },
+          {
+            "output": "03-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "04-island.png",
             "caption": "cppIsland",
             "layout": "store-island",
             "sources": ["08-island.png"]
           },
           {
-            "output": "04-search.png",
+            "output": "05-search.png",
             "caption": "cppSearch",
             "layout": "screen",
             "sources": ["02-search.png"]
           },
           {
-            "output": "05-logbook.png",
+            "output": "06-logbook.png",
             "caption": "cppMoonboardLogbook",
             "layout": "screen",
             "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "06-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"],
-            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -604,48 +604,48 @@
         ],
         "ipad": [
           {
-            "output": "00-grade.png",
-            "caption": "cppMoonboardGrade",
-            "layout": "store-hero",
-            "sources": ["hero-3.png"]
-          },
-          {
-            "output": "01-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "02-sets.png",
+            "output": "00-moonboard-boards.png",
             "caption": "cppMoonboardSets",
             "layout": "store-boards",
             "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
             "boardLabels": ["MoonBoard 2016", "MoonBoard Masters 2019", "MoonBoard 2024"]
           },
           {
-            "output": "03-kiosk.png",
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
+            "layout": "store-boards",
+            "sources": ["other-1.png", "other-2.png", "other-3.png"],
+            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
+          },
+          {
+            "output": "02-grade.png",
+            "caption": "cppMoonboardGrade",
+            "layout": "store-hero",
+            "sources": ["hero-3.png"]
+          },
+          {
+            "output": "03-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "04-kiosk.png",
             "caption": "cppKiosk",
             "layout": "screen",
             "sources": ["08-kiosk.png"]
           },
           {
-            "output": "04-search.png",
+            "output": "05-search.png",
             "caption": "cppSearch",
             "layout": "screen",
             "sources": ["02-search.png"]
           },
           {
-            "output": "05-logbook.png",
+            "output": "06-logbook.png",
             "caption": "cppMoonboardLogbook",
             "layout": "screen",
             "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "06-other-boards.png",
-            "caption": "cppOtherBoards",
-            "layout": "store-boards",
-            "sources": ["other-1.png", "other-2.png", "other-3.png"],
-            "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "Woods 12x12"]
           },
           {
             "output": "07-workout.png",
@@ -749,42 +749,42 @@
       "recipes": {
         "phone": [
           {
-            "output": "00-set-climbs.png",
-            "caption": "cppSpraySetting",
-            "layout": "store-hero",
-            "sources": ["04-setting.png"]
+            "output": "00-spray-walls.png",
+            "caption": "cppSprayWalls",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
-            "output": "01-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "02-gym-boards.png",
-            "caption": "cppSprayOtherBoards",
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
             "layout": "store-boards",
             "sources": ["other-1.png", "other-2.png", "other-3.png"],
             "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "MoonBoard 2024"]
           },
           {
-            "output": "03-projects.png",
+            "output": "02-set-climbs.png",
+            "caption": "cppSpraySetting",
+            "layout": "store-hero",
+            "sources": ["04-setting.png"]
+          },
+          {
+            "output": "03-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "04-projects.png",
             "caption": "cppSprayProjects",
             "layout": "screen",
             "sources": ["07-playlist.png"]
           },
           {
-            "output": "04-logbook.png",
+            "output": "05-logbook.png",
             "caption": "cppLogbook",
             "layout": "screen",
             "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "05-walls.png",
-            "caption": "cppSprayWalls",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
-            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
             "output": "06-holds.png",
@@ -807,42 +807,42 @@
         ],
         "ipad": [
           {
-            "output": "00-set-climbs.png",
-            "caption": "cppSpraySetting",
-            "layout": "store-hero",
-            "sources": ["04-setting.png"]
+            "output": "00-spray-walls.png",
+            "caption": "cppSprayWalls",
+            "layout": "store-boards",
+            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
+            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
-            "output": "01-queue.png",
-            "caption": "cppQueue",
-            "layout": "store-queue",
-            "sources": ["05-queue.png"]
-          },
-          {
-            "output": "02-gym-boards.png",
-            "caption": "cppSprayOtherBoards",
+            "output": "01-other-boards.png",
+            "caption": "cppOtherBoards",
             "layout": "store-boards",
             "sources": ["other-1.png", "other-2.png", "other-3.png"],
             "boardLabels": ["Kilter Original 12x12", "Tension Board 2 Mirror", "MoonBoard 2024"]
           },
           {
-            "output": "03-projects.png",
+            "output": "02-set-climbs.png",
+            "caption": "cppSpraySetting",
+            "layout": "store-hero",
+            "sources": ["04-setting.png"]
+          },
+          {
+            "output": "03-queue.png",
+            "caption": "cppQueue",
+            "layout": "store-queue",
+            "sources": ["05-queue.png"]
+          },
+          {
+            "output": "04-projects.png",
             "caption": "cppSprayProjects",
             "layout": "screen",
             "sources": ["07-playlist.png"]
           },
           {
-            "output": "04-logbook.png",
+            "output": "05-logbook.png",
             "caption": "cppLogbook",
             "layout": "screen",
             "sources": ["03-logbook.png"]
-          },
-          {
-            "output": "05-walls.png",
-            "caption": "cppSprayWalls",
-            "layout": "store-boards",
-            "sources": ["hero-1.png", "hero-2.png", "hero-3.png"],
-            "boardLabels": ["Liz's Wall", "Cherry's Wall", "The Bowlo"]
           },
           {
             "output": "06-holds.png",

@@ -143,10 +143,14 @@ workflow_dispatch inputs still feed it.
 
 ## Custom product pages — `ios cpp`
 
-The CPP manifest is `app-stores/apple/custom-product-pages.json`. Capture and
-frame all locales and devices first:
+The CPP manifest is `app-stores/apple/custom-product-pages.json`. Create empty
+App Store Connect drafts first, then capture and frame the complete image sets
+before upload or submission:
 
 ```bash
+cd fastlane
+bundle exec fastlane ios cpp target:all action:create
+cd ..
 vp run mobile:screenshots -- --cpp all --platform ios --fixtures replay --theme dark --devices common --locales all
 cd fastlane
 bundle exec fastlane ios cpp target:all action:plan
@@ -160,6 +164,22 @@ writing, even before native captures or fixture pins exist. It reports unresolve
 local inputs and the approved keyword text, eligible opaque IDs, and existing
 page assignments as structured `CPP_PLAN_JSON` log entries. Set
 `ASC_CPP_PLAN_OUTPUT` to also write this report to a local JSON artifact.
+Create makes missing named pages with one empty initial draft version, without
+requiring captures or eligible organic keywords. It verifies the returned app
+ownership, exact name, App Store URL and version state. Repeated calls reuse
+existing pages without changing their content or visibility, including approved
+pages; ambiguous names or unexpected ownership fail before further creation.
+It never assigns keywords, uploads screenshots, or submits review. Drafts are
+visible in App Store Connect; customers can use them after later content approval.
+Set `ASC_CPP_CREATE_OUTPUT` to save verified identities as JSON.
+
+For CI, dispatch `mobile-screenshots-ios.yml` from `main` with `cpp_target: all`
+and `cpp_action: create`, keeping the default replay settings and no capture
+overrides. This Production job joins the existing store writer mutex, checks its
+source commit, skips native builds/captures, and retains the `cpp-create` artifact
+with page IDs, URLs, app ownership, and version states. Subsequent upload and
+submit still enforce the complete image and keyword gates below.
+
 Upload reconciles separate CPP drafts and uploads screenshots and
 localized promotional copy. Submit also creates or resumes a CPP-only review
 submission, checks its exact membership, enables page links, and submits it.
