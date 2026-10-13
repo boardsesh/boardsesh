@@ -219,6 +219,29 @@ rescue => error
 end
 
 platform :ios do
+  desc "Read Apple creative specs, plan, upload, or assign reviewed creative assets"
+  lane :creatives do |options|
+    require File.join(REPO_ROOT, "fastlane", "lib", "creative_assets")
+    require "spaceship"
+    action = (options[:action] || "plan").to_s
+    variant = (options[:variant] || "all").to_s
+    asc_api_key
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
+    client = BoardseshASC::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
+    results = BoardseshCreatives::Runner.new(
+      client: client, repo_root: REPO_ROOT, app_id: app.id,
+      manifest: JSON.parse(File.read(File.join(REPO_ROOT, "app-stores", "apple", "creative-assets.json"))),
+      cpp_manifest: JSON.parse(File.read(File.join(REPO_ROOT, "app-stores", "apple", "custom-product-pages.json")))
+    ).run(action: action, variant: variant, allow_live: options[:allow_live].to_s == "true", allow_replace: options[:allow_replace].to_s == "true")
+    UI.message(JSON.pretty_generate(results))
+    output = ENV["ASC_CREATIVES_OUTPUT"]
+    File.write(output, JSON.pretty_generate(results) + "\n") if output && !output.empty?
+    emit_step_summary("Creative assets: #{action}, #{variant}; asset review and ASC Preview remain required.")
+  rescue BoardseshCreatives::Error, JSON::ParserError, KeyError => error
+    UI.user_error!(error.message)
+  end
+
   desc "Plan, create empty drafts, stage assets, upload, or submit board-specific custom product pages"
   lane :cpp do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "custom_product_pages")

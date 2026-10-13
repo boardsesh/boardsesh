@@ -1,0 +1,95 @@
+name: App Store Creative Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        default: plan
+        options: [refdata, plan, upload, place]
+        description: 'Read specs, plan, upload to Asset Library, or assign placements.'
+      variant:
+        type: choice
+        default: all
+        options: [all, default, kilter, tension, moonboard, spray]
+        description: 'Page variant to reconcile.'
+      allow_live:
+        type: boolean
+        default: false
+        description: 'Allow assigning assets to a live page version.'
+      allow_replace:
+        type: boolean
+        default: false
+        description: 'Approved deletion and recreation of changed, owned placements.'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-store-creative-assets
+  cancel-in-progress: false
+
+jobs:
+  creatives:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Install video probe
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Test creative reconciliation
+        run: |
+          vp exec ruby fastlane/tests/custom_product_pages_test.rb
+          vp exec ruby fastlane/tests/creative_assets_test.rb
+      - name: Download finalized release assets
+        if: inputs.action != 'refdata'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CREATIVE_VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          vp exec ruby fastlane/download_creative_assets.rb
+      - name: Run creative lane with ephemeral API key
+        working-directory: fastlane
+        env:
+          CREATIVE_ACTION: ${{ inputs.action }}
+          CREATIVE_VARIANT: ${{ inputs.variant }}
+          ALLOW_LIVE: ${{ inputs.allow_live }}
+          ALLOW_REPLACE: ${{ inputs.allow_replace }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          ASC_CREATIVES_OUTPUT: ${{ runner.temp }}/creative-assets-report.json
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_API_KEY_ID" ] && [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && [ -n "$ASC_PRIVATE_KEY_BASE64" ] || { echo '::error::Missing ASC credentials'; exit 1; }
+          ASC_KEY_PATH=$(mktemp "$RUNNER_TEMP/boardsesh-creative-key.XXXXXX.p8")
+          export ASC_KEY_PATH
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          chmod 600 "$ASC_KEY_PATH"
+          printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$ASC_KEY_PATH"
+          bundle exec fastlane ios creatives "action:$CREATIVE_ACTION" "variant:$CREATIVE_VARIANT" "allow_live:$ALLOW_LIVE" "allow_replace:$ALLOW_REPLACE"
+      - name: Retain creative report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creative-assets-report
+          path: ${{ runner.temp }}/creative-assets-report.json
+          if-no-files-found: ignore
+          retention-days: 14

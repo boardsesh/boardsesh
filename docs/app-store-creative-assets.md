@@ -144,3 +144,72 @@ replacements can update a live version without a new binary. Follow Apple's
 [asset-management instructions](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-your-app-store-assets)
 for the current submission and publishing controls. Neither `store:creatives`
 nor the screenshot/metadata fastlane lanes publishes these placements.
+
+
+## Localized search videos and Asset Library automation
+
+Issue #6438 uses fresh iOS footage for every app locale (`en-US`, `es`, `fr`,
+`de`) and every page variant (`default`, `kilter`, `tension`, `moonboard`,
+`spray`). Spanish footage serves both `es-ES` and `es-MX`; no English footage is
+substituted beneath translated captions. The search export is 1920 × 1280,
+30 fps, H.264 High at level 5.0 or higher, with no audio. Default runs about
+20 seconds; CPP cuts run about 15 seconds. Frame zero carries the first caption,
+and the final 15 frames dissolve back to it.
+
+```sh
+vp run video:record -- --kind kilter --locales all --app-path <Boardsesh.app>
+vp run video:render -- --target store-search --variant kilter --locale all
+```
+
+Repeat for every variant. See [recording prerequisites](showcase-video.md).
+Keep each native locale's frames, marks and anchors together. Archive only these
+three directories for Linux rendering; exclude raw logs, Metro caches, private
+credential files and simulator app copies. Native source/frame hashes and the
+source commit are retained by `search-results.manifest.json`.
+
+Apple's 2026-10-07 OpenAPI lists `APP_STORE_SEARCH_RESULTS_ASSET`; the upload lane
+still requires the live `GET /v1/appAssetLibraryRefData` response to advertise it
+before any write. It also checks the selected placement group and spec IDs.
+
+```sh
+ASC_CREATIVES_OUTPUT=/tmp/creative-refdata.json vp exec bundle exec fastlane ios creatives action:refdata
+vp exec ruby fastlane/prepare_creative_manifest.rb --refdata /tmp/creative-refdata.json
+```
+
+Run fastlane from `fastlane/`; the manifest command runs from the repository root.
+If Apple advertises multiple groups, select the exact IDs from the report with
+`--header-group` and `--search-group`. The finalizer requires all four locale
+exports for each selected variant; it hashes the real files and their provenance
+reports. Empty asset arrays in `app-stores/apple/creative-assets.json` mean capture
+and review are pending, never a successfully published placement.
+
+Retain the files in the GitHub release `app-store-creatives`. Asset names are
+`<variant>-<placement>-<app-locale>-<sha12>.png|mp4`; the committed manifest carries
+the complete SHA256 and the original export path. Retain each provenance report as
+`<variant>-<placement>-<app-locale>-<provenanceSha12>.json` in the same release;
+CI downloads and verifies these reports alongside the media. `fastlane/download_creative_assets.rb`
+retrieves and verifies those files before CI runs the lane.
+
+The **App Store Creative Assets** workflow is dispatch-only, runs from `main`,
+and uses the Production environment. Its actions are `refdata`, `plan`, `upload`
+and `place`, with `variant:all` or one page name. `upload` reserves, transfers and
+commits assets without submitting review. `place` attaches uploaded assets to
+an existing version or CPP localization. Neither action creates a CPP, edits
+screenshot slots, submits asset review, or publishes a version.
+
+Live versions require `allow_live:true`. An identical placement is reused.
+Changing an owned placement requires explicit approval for its deletion and
+recreation (`allow_replace:true`); foreign placements are refused. This guard
+preserves the repository's no-deletion-without-approval rule.
+
+Manual fallback: Asset Library → upload → the version's or CPP's **Header and
+Search Results** tab → assign → Preview → submit for asset review. Inspect each
+locale on iPhone portrait and iPad portrait and landscape before publishing.
+The downloadable Apple Photoshop header template contains no numeric guides;
+the proposed overlay zones remain assumptions until ASC Preview confirms them.
+
+Roll out Kilter, spray, Tension, MoonBoard, then default, about 14 days apart.
+Compare tap-through per ad group and conversion with untreated groups; roll back
+a page if tap-through drops at least 10%. Confirm Apple Ads displays the intended
+CPP creative before using paid tap-through as the metric; otherwise use organic
+App Analytics per CPP. See [growth metrics](growth-metrics.md).

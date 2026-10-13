@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "release": "app-store-creatives",
+  "locales": {
+    "en-US": ["en-US"],
+    "es": ["es-ES", "es-MX"],
+    "fr": ["fr-FR"],
+    "de": ["de-DE"]
+  },
+  "variants": {
+    "default": {
+      "cpp": null,
+      "assets": []
+    },
+    "kilter": {
+      "cpp": "kilter",
+      "assets": []
+    },
+    "tension": {
+      "cpp": "tension",
+      "assets": []
+    },
+    "moonboard": {
+      "cpp": "moonboard",
+      "assets": []
+    },
+    "spray": {
+      "cpp": "spray",
+      "assets": []
+    }
+  }
+}
