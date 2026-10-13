@@ -25,19 +25,21 @@ import { getHttpClient } from '../client';
 import { CLIMB_LOGS_PREVIEW_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../query-keys';
 import { isOfflineEngineEnabled } from '../../offline-engine';
 import { updateUserFollowCaches } from './user-follow-cache';
+import { FOLLOWING_CATALOGUE_QUERY_KEYS, invalidateFollowingCatalogueQueries } from '../author-query-invalidation';
 
-export const AUTHOR_QUERY_KEYS = [
-  'followedAuthors',
+const AUTHOR_FEED_QUERY_KEYS = [
   'crewFeed',
-  'setterStats',
-  'searchClimbs',
-  'infiniteSearchClimbs',
-  'searchClimbsCount',
   // The play drawer's "Climber logs" card: who you follow decides whose logs it shows.
   FOLLOWING_CLIMB_LOGS_QUERY_KEY,
   // Its "Everyone" rows leave out the people you follow, so they move too.
   CLIMB_LOGS_QUERY_KEY,
   CLIMB_LOGS_PREVIEW_QUERY_KEY,
+] as const;
+
+export const AUTHOR_QUERY_KEYS = [
+  'followedAuthors',
+  ...FOLLOWING_CATALOGUE_QUERY_KEYS,
+  ...AUTHOR_FEED_QUERY_KEYS,
 ] as const;
 // One local database has one active owner. A newer load (including an account
 // switch) supersedes older loads across hook instances. Real-SQLite race tests
@@ -110,9 +112,8 @@ export function useFollowedAuthors() {
     // Mounting another follow button with cached authors must not refetch feeds.
     // A first completed sync still retries searches gated on missing local authors.
     if (!query.data || previousAuthors === query.data) return;
-    for (const key of AUTHOR_QUERY_KEYS) {
-      if (key !== 'followedAuthors') void queryClient.invalidateQueries({ queryKey: [key] });
-    }
+    invalidateFollowingCatalogueQueries(queryClient);
+    for (const key of AUTHOR_FEED_QUERY_KEYS) void queryClient.invalidateQueries({ queryKey: [key] });
   }, [query.data, queryClient]);
   const userIds = useMemo(() => new Set(query.data?.users.map((user) => user.userId)), [query.data]);
   return { ...query, setterNames, userIds };

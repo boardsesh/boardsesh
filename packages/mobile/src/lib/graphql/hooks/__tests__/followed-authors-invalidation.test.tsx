@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useFollowedAuthors, useFollowedAuthorsSnapshot, useToggleAuthorFollow } from '../use-followed-authors';
+import { FOLLOWING_CATALOGUE_QUERY_KEYS } from '../../author-query-invalidation';
+import { CLIMB_LOGS_PREVIEW_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../../query-keys';
 
 const request = vi.hoisted(() => vi.fn());
 const offline = vi.hoisted(() => ({ enabled: false, removedUserIds: [] as string[] }));
@@ -24,9 +26,12 @@ vi.mock('../../../../hooks/use-current-user-id', () => ({ useStoredUserId: () =>
 vi.mock('../../../../db', () => ({ getDatabaseHandle: () => (offline.enabled ? {} : null) }));
 vi.mock('../../../offline-engine', () => ({ isOfflineEngineEnabled: () => offline.enabled }));
 const authors = { setterUsernames: ['accountless'], users: [] };
+const queryClients: QueryClient[] = [];
+const observerCleanups: (() => void)[] = [];
 
 function createHarness() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClients.push(client);
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -34,11 +39,49 @@ function createHarness() {
   return { client, invalidate, wrapper };
 }
 
+function observeFreshQuery(client: QueryClient, queryKey: readonly unknown[]) {
+  const fetch = vi.fn(async () => 1);
+  const observer = new QueryObserver(client, { queryKey, queryFn: fetch, initialData: 0, staleTime: Infinity });
+  observerCleanups.push(observer.subscribe(() => {}));
+  return { queryKey, fetch };
+}
+
+function observeCatalogueQueries(client: QueryClient) {
+  return FOLLOWING_CATALOGUE_QUERY_KEYS.map((queryHead) => ({
+    following: observeFreshQuery(client, [queryHead, { boardName: 'kilter', onlyFollowedAuthors: true }, 'viewer']),
+    ordinary: observeFreshQuery(client, [queryHead, { boardName: 'kilter' }]),
+    explicitAll: observeFreshQuery(client, [queryHead, { boardName: 'kilter', onlyFollowedAuthors: false }]),
+  }));
+}
+
+function expectCatalogueFetches(
+  queries: ReturnType<typeof observeCatalogueQueries>,
+  { following, ordinary }: { following: number; ordinary: number },
+) {
+  for (const query of queries) {
+    expect(query.following.fetch).toHaveBeenCalledTimes(following);
+    expect(query.ordinary.fetch).toHaveBeenCalledTimes(ordinary);
+    expect(query.explicitAll.fetch).toHaveBeenCalledTimes(ordinary);
+  }
+}
+
+function expectOrdinaryQueriesFresh(client: QueryClient, queries: ReturnType<typeof observeCatalogueQueries>) {
+  for (const query of queries) {
+    expect(client.getQueryState(query.ordinary.queryKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(query.explicitAll.queryKey)?.isInvalidated).toBe(false);
+  }
+}
+
 beforeEach(() => {
   offline.enabled = false;
   offline.removedUserIds = [];
   request.mockReset();
   request.mockResolvedValue({ followedAuthors: authors });
+});
+
+afterEach(() => {
+  for (const unsubscribe of observerCleanups.splice(0)) unsubscribe();
+  for (const client of queryClients.splice(0)) client.clear();
 });
 
 describe('followed author invalidation', () => {
@@ -64,18 +107,76 @@ describe('followed author invalidation', () => {
   it('does not invalidate feeds when another button mounts with cached authors', () => {
     const { client, invalidate, wrapper } = createHarness();
     client.setQueryData(['followedAuthors', 'viewer'], authors);
+    const queries = observeCatalogueQueries(client);
     renderHook(() => useFollowedAuthors(), { wrapper });
     renderHook(() => useFollowedAuthors(), { wrapper });
     expect(invalidate).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
+    expectCatalogueFetches(queries, { following: 0, ordinary: 0 });
+    expectOrdinaryQueriesFresh(client, queries);
   });
 
-  it('retries gated searches after the first author snapshot becomes available', async () => {
-    const { invalidate, wrapper } = createHarness();
+  it('retries only Following catalogue queries after the first author snapshot becomes available', async () => {
+    const { client, wrapper } = createHarness();
+    const queries = observeCatalogueQueries(client);
+    const feeds = ['crewFeed', FOLLOWING_CLIMB_LOGS_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, CLIMB_LOGS_PREVIEW_QUERY_KEY].map(
+      (queryHead) => observeFreshQuery(client, [queryHead, 'viewer']),
+    );
     const { result } = renderHook(() => useFollowedAuthors(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['crewFeed'] });
+    await waitFor(() => expectCatalogueFetches(queries, { following: 1, ordinary: 0 }));
+    expectOrdinaryQueriesFresh(client, queries);
+    for (const feed of feeds) expect(feed.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes only Following catalogue queries and feeds when authors change', async () => {
+    const { client, wrapper } = createHarness();
+    client.setQueryData(['followedAuthors', 'viewer'], authors);
+    const queries = observeCatalogueQueries(client);
+    const feeds = ['crewFeed', FOLLOWING_CLIMB_LOGS_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, CLIMB_LOGS_PREVIEW_QUERY_KEY].map(
+      (queryHead) => observeFreshQuery(client, [queryHead, 'viewer']),
+    );
+    const { result } = renderHook(() => useFollowedAuthors(), { wrapper });
+    request.mockResolvedValue({ followedAuthors: { setterUsernames: ['accountless', 'new-setter'], users: [] } });
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expectCatalogueFetches(queries, { following: 1, ordinary: 0 }));
+    expectOrdinaryQueriesFresh(client, queries);
+    for (const feed of feeds) expect(feed.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps queries fresh when a refetch returns structurally equal authors', async () => {
+    const { client, invalidate, wrapper } = createHarness();
+    client.setQueryData(['followedAuthors', 'viewer'], authors);
+    const queries = observeCatalogueQueries(client);
+    const { result } = renderHook(() => useFollowedAuthors(), { wrapper });
+    const previousAuthors = result.current.data;
+    request.mockResolvedValue({ followedAuthors: { setterUsernames: [...authors.setterUsernames], users: [] } });
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toBe(previousAuthors);
+    expect(invalidate).not.toHaveBeenCalled();
+    expectCatalogueFetches(queries, { following: 0, ordinary: 0 });
+    expectOrdinaryQueriesFresh(client, queries);
+  });
+
+  it.each([true, false])('retains broad catalogue refresh after a setter toggle to %s', async (follow) => {
+    const { client, wrapper } = createHarness();
+    const queries = observeCatalogueQueries(client);
+    const { result } = renderHook(() => useToggleAuthorFollow(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ kind: 'setter', identifier: 'accountless', follow });
+    });
+
+    await waitFor(() => expectCatalogueFetches(queries, { following: 1, ordinary: 1 }));
   });
 
   describe('the read-only snapshot the play drawer mounts', () => {

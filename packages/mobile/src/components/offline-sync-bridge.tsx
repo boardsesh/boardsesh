@@ -29,7 +29,8 @@ import { clearUserData } from '../db/connection';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
-import { AUTHOR_QUERY_KEYS, loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
+import { loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
+import { invalidateFollowingCatalogueQueries } from '../lib/graphql/author-query-invalidation';
 
 /**
  * Publishes the permanently enabled native offline engine to the module-level
@@ -143,9 +144,10 @@ export function OfflineSyncBridge() {
         const authors = await loadFollowedAuthors(localUserId);
         if (!cancelled) {
           queryClient.setQueryData(['followedAuthors', localUserId], authors);
-          for (const key of AUTHOR_QUERY_KEYS) {
-            if (key !== 'followedAuthors') void queryClient.invalidateQueries({ queryKey: [key] });
-          }
+          // Equal cached authors can still predate SQLite readiness. Retry the
+          // local Following reads now that their snapshot is usable; ordinary
+          // lists and network feeds do not depend on this owner warm-up.
+          invalidateFollowingCatalogueQueries(queryClient);
         }
       } catch (error) {
         if (__DEV__) {

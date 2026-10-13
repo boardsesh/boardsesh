@@ -124,7 +124,21 @@ server and require both a matching signed-in owner and complete author metadata.
 An unknown Boardsesh user can be followed offline, but following-only search
 asks for a sync until that user's linked accounts are known.
 The boot warm-up runs after schema readiness and owner stamping, even if a
-screen already fetched authors before SQLite was ready. Queued user unfollows
+screen already fetched authors before SQLite was ready. Its completion retries
+only catalogue queries whose input has `onlyFollowedAuthors: true`, including
+search pages, infinite searches, counts, and setter lists. This readiness retry
+also runs when the authors are unchanged: a cached answer can predate SQLite
+ownership and schema readiness. Ordinary catalogue queries keep their fresh
+results during warm-up.
+
+The author observer similarly refreshes only Following catalogue queries when
+its snapshot first arrives or changes, together with Crew and climber logs.
+Equal responses retain their identity through React Query's structural sharing,
+and mounting an observer with cached authors does not refresh these queries.
+Explicit follow/unfollow mutations and offline drain/pull invalidations retain
+their broader refresh behavior.
+
+Queued user unfollows
 remove the person from the viewer's cached Following list and update their
 following count without waiting for connectivity; other users' lists keep their
 membership.
