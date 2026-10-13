@@ -193,9 +193,20 @@ describe("publishing a draft re-sends its stats to other climbers' devices", () 
     expect(documentField(strangerPage, 'climb_uuid')).toEqual(EVERYONE_SEES);
 
     // Migration 0270's membership trigger re-stamps these rows on publish too,
-    // but it belongs to #6339's reverted design and a cleanup PR drops it.
-    // Switch it off so this proves updateClimb re-sends the stats on its own.
-    await db.execute(sql`ALTER TABLE board_climbs DISABLE TRIGGER trg_board_climbs_reference_membership`);
+    // but it belongs to #6339's reverted design and a cleanup migration drops
+    // it. Where it is still installed, switch it off so this proves updateClimb
+    // re-sends the stats on its own; where it is gone there is nothing to switch.
+    const membershipTrigger = await db.execute(sql`
+      SELECT 1 FROM pg_trigger membership_trigger
+      JOIN pg_class climbs_table ON climbs_table.oid = membership_trigger.tgrelid
+      WHERE climbs_table.relname = 'board_climbs'
+        AND climbs_table.relnamespace = 'public'::regnamespace
+        AND membership_trigger.tgname = 'trg_board_climbs_reference_membership'
+    `);
+    const hasMembershipTrigger = rowsFromResult(membershipTrigger).length > 0;
+    if (hasMembershipTrigger) {
+      await db.execute(sql`ALTER TABLE board_climbs DISABLE TRIGGER trg_board_climbs_reference_membership`);
+    }
     try {
       await climbMutations.updateClimb(
         null,
@@ -203,7 +214,9 @@ describe("publishing a draft re-sends its stats to other climbers' devices", () 
         ctx(OWNER_ID),
       );
     } finally {
-      await db.execute(sql`ALTER TABLE board_climbs ENABLE TRIGGER trg_board_climbs_reference_membership`);
+      if (hasMembershipTrigger) {
+        await db.execute(sql`ALTER TABLE board_climbs ENABLE TRIGGER trg_board_climbs_reference_membership`);
+      }
     }
 
     const nextPage = await syncQueries.syncClimbStats(
