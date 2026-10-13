@@ -93,6 +93,11 @@ name: app-store screenshots (iPad)
     id: 'live-sessions-error'
 - assertNotVisible:
     id: 'live-sessions-offline'
+# The live rail can succeed while Recent sessions renders an error or skeleton.
+- extendedWaitUntil:
+    visible:
+      id: 'session-feed-card'
+    timeout: 90000
 - takeScreenshot: 01-home
 
 # On the Wall — the wall-mounted kiosk HERO: the lit board + the current climb big

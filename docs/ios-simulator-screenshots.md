@@ -210,6 +210,14 @@ controls (`Hide Sidebar` / `Toggle sidebar`) follow the simulator system languag
 not the app catalog locale: use English-system simulators for all four app locales.
 Missing native controls fail the capture rather than leave the overlay visible.
 
+Store Home captures require a visible recent-session card as well as a settled
+live-session rail. A loaded rail does not prove that the separate recent-session
+request succeeded. Phone board-view sources require the screenshot-mode painted
+marker: every physical background layer and the current holds overlay must have
+received native `onDisplay`. The flow dismisses the previous player before
+switching boards so an earlier board cannot satisfy that marker. These checks
+stop incomplete captures; the resulting images still need visual review.
+
 ## The `help` flow — captures for the boardsesh.com help pages
 
 `packages/mobile/.maestro/help.yaml` captures the fourteen screens the `/help` topic

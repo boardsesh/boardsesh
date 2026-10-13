@@ -15,6 +15,14 @@ module BoardseshCPP
   # Apple's resources before creating anything else.
   class Client
     ORIGIN = "https://api.appstoreconnect.apple.com"
+    SAFE_ERROR_CODE = /\A[A-Z0-9_]+(?:\.[A-Z0-9_]+)*\z/.freeze
+    ERROR_RELATIONSHIPS = %w[
+      app appCustomProductPageVersions appCustomProductPage appStoreVersionTemplate
+      customProductPageTemplate appCustomProductPageLocalizations appCustomProductPageVersion
+      appCustomProductPageLocalization appScreenshotSet appScreenshots searchKeywords
+      reviewSubmission appStoreVersion
+    ].freeze
+    SAFE_ERROR_POINTER = %r{\A/(?:data|included/(?:0|[1-9][0-9]{0,2}))/relationships/(?:#{ERROR_RELATIONSHIPS.join("|")})(?:/data(?:/(?:0|[1-9][0-9]{0,2}))?(?:/(?:id|type))?)?\z}.freeze
 
     def initialize(token:, sleeper: ->(seconds) { sleep(seconds) }, transport: ->(uri) { Net::HTTP.new(uri.host, uri.port) })
       @token = token
@@ -53,6 +61,24 @@ module BoardseshCPP
 
     private
 
+    def error_diagnostics(response_body)
+      document = JSON.parse(response_body)
+      return "malformed error response" unless document.is_a?(Hash)
+      errors = document.fetch("errors", [])
+      return "malformed error response" unless errors.is_a?(Array) && errors.all? { |error| error.is_a?(Hash) }
+      diagnostics = errors.first(10).map do |error|
+        error_code = error["code"]
+        safe_code = error_code.is_a?(String) && error_code.bytesize <= 128 && SAFE_ERROR_CODE.match?(error_code) ? error_code : "UNKNOWN_ERROR"
+        source = error["source"]
+        pointer = source.is_a?(Hash) && source["pointer"]
+        safe_pointer = pointer.is_a?(String) && pointer.bytesize <= 256 && SAFE_ERROR_POINTER.match?(pointer)
+        safe_pointer ? "#{safe_code} at #{pointer}" : safe_code
+      end
+      diagnostics.empty? ? "UNKNOWN_ERROR" : diagnostics.uniq.join(", ")
+    rescue JSON::ParserError
+      "non-JSON response"
+    end
+
     def perform(method, uri, body, headers)
       attempts = 0
       begin
@@ -67,13 +93,9 @@ module BoardseshCPP
         code = response.code.to_i
         return response if code >= 200 && code < 300
         raise Net::ReadTimeout if method != "POST" && (code == 429 || code >= 500) && attempts < 3
-        # Apple's error detail can include signed asset URLs; retain safe codes only.
-        codes = begin
-          JSON.parse(response.body).fetch("errors", []).map { |error| error["code"] }.compact.join(", ")
-        rescue JSON::ParserError
-          "non-JSON response"
-        end
-        raise Error, "Apple API #{method} failed (HTTP #{code}; #{codes}). Re-run to reconcile after checking App Store Connect."
+        # Error details can contain signed asset URLs. Retain only bounded codes
+        # and allowlisted structural relationship pointers, never IDs or details.
+        raise Error, "Apple API #{method} failed (HTTP #{code}; #{error_diagnostics(response.body)}). Re-run to reconcile after checking App Store Connect."
       rescue Net::OpenTimeout, Net::ReadTimeout, IOError, SystemCallError => error
         if method != "POST" && attempts < 3
           @sleeper.call(attempts * 5)

@@ -2649,7 +2649,7 @@ function captureIosDevice(
         '-e',
         `SCREENSHOT_USER_PASSWORD=${password}`,
         ...(options.cpp ? ['-e', `SCREENSHOT_CPP_URL=http://localhost:${SCREENSHOT_READY_PORT}/cpp`] : []),
-        ...(options.flow === 'app-store-campaign' || options.cpp
+        ...(['app-store', 'app-store-campaign'].includes(options.flow) || options.cpp
           ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture)
           : []),
         ...(isIpadScreenshotDevice(screenshotDevice) &&

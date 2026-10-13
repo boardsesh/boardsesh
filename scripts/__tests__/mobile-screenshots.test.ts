@@ -433,6 +433,66 @@ describe('iOS campaign capture', () => {
   });
 });
 
+describe('iOS store capture content readiness', () => {
+  type CaptureCommand = {
+    openLink?: string;
+    takeScreenshot?: string;
+    extendedWaitUntil?: {
+      visible?: { id: string };
+      notVisible?: { id: string };
+      optional?: boolean;
+    };
+  };
+
+  function prerequisitesFor(flow: string, screenshot: string): CaptureCommand[] {
+    const documents = parseAllDocuments(readFileSync(`packages/mobile/.maestro/${flow}.yaml`, 'utf8'));
+    for (const document of documents) expect(document.errors).toEqual([]);
+    const commands = documents[1].toJS() as CaptureCommand[];
+    const screenshotIndex = commands.findIndex((command) => command.takeScreenshot === screenshot);
+    expect(screenshotIndex).toBeGreaterThanOrEqual(0);
+    const navigationIndex = commands
+      .slice(0, screenshotIndex)
+      .reduce((lastIndex, command, index) => (command.openLink ? index : lastIndex), -1);
+    return commands.slice(navigationIndex + 1, screenshotIndex);
+  }
+
+  function canCapture(commands: CaptureCommand[], visibleIds: string[]): boolean {
+    return commands.every((command) => {
+      const wait = command.extendedWaitUntil;
+      if (!wait || wait.optional) return true;
+      const selector = wait.visible?.id ?? wait.notVisible?.id;
+      if (!selector) return true;
+      const found = visibleIds.some((id) => new RegExp(`^(?:${selector})$`).test(id));
+      return wait.visible ? found : !found;
+    });
+  }
+
+  it.each([
+    ['app-store', '02-home'],
+    ['app-store-ipad', '01-home'],
+  ])('blocks %s Home when the live rail loaded but the recent feed failed', (flow, screenshot) => {
+    const prerequisites = prerequisitesFor(flow, screenshot);
+    expect(canCapture(prerequisites, ['home-screen', 'live-session-card'])).toBe(false);
+    expect(canCapture(prerequisites, ['home-screen', 'live-session-card', 'session-feed-card'])).toBe(true);
+  });
+
+  it.each([
+    ['app-store', '00-board-view'],
+    ['app-store', '01-board-view-2'],
+    ['app-store-campaign', '10-moonboard-board-view'],
+    ['app-store-campaign', '11-woods-board-view'],
+    ['app-store-campaign', '12-decoy-board-view'],
+    ['app-store-campaign', '13-grasshopper-board-view'],
+    ['app-store-campaign', '14-spray-board-view'],
+  ])('blocks %s %s until physical backgrounds and the holds have displayed', (flow, screenshot) => {
+    const prerequisites = prerequisitesFor(flow, screenshot);
+    expect(canCapture(prerequisites, ['play-drawer-board-overlay'])).toBe(false);
+    expect(canCapture(prerequisites, ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'])).toBe(
+      true,
+    );
+  });
+});
+
 describe('buildAndroidMaestroArgs', () => {
   const context = {
     deviceId: 'emulator-5554',

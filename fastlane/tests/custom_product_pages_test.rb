@@ -359,6 +359,92 @@ class CustomProductPagesTest < Minitest::Test
     assert_equal 1, transport.requests.length
   end
 
+  def test_client_retains_required_relationship_code_and_known_source_pointer
+    response_body = JSON.generate("errors" => [{ "code" => "ENTITY_ERROR.RELATIONSHIP.REQUIRED", "source" => { "pointer" => "/data/relationships/appStoreVersionTemplate" }, "detail" => "Do not log this detail" }])
+    error = apple_response_error(response_body)
+    assert_equal "Apple API POST failed (HTTP 409; ENTITY_ERROR.RELATIONSHIP.REQUIRED at /data/relationships/appStoreVersionTemplate). Re-run to reconcile after checking App Store Connect.", error.message
+  end
+
+  def test_client_retains_only_known_structural_relationship_pointer_shapes
+    pointers = [
+      "/data/relationships/app",
+      "/data/relationships/customProductPageTemplate/data/id",
+      "/data/relationships/appCustomProductPageVersions/data/0/type",
+      "/included/0/relationships/appCustomProductPage",
+      "/included/0/relationships/appCustomProductPageLocalizations/data/0/id",
+      "/included/999/relationships/appCustomProductPageVersion/data/999/type"
+    ]
+    pointers.each do |pointer|
+      error = apple_response_error(JSON.generate("errors" => [{ "code" => "ENTITY_ERROR.RELATIONSHIP.REQUIRED", "source" => { "pointer" => pointer } }]))
+      assert_includes error.message, "ENTITY_ERROR.RELATIONSHIP.REQUIRED at #{pointer}"
+    end
+  end
+
+  def test_client_redacts_urls_credentials_and_ids_in_error_codes
+    unsafe_codes = [
+      "https://upload.apple.com/private?signature=credential",
+      "12345678-1234-1234-1234-123456789abc",
+      "ENTITY_ERROR.RELATIONSHIP.REQUIRED\nAuthorization: Bearer credential",
+      "ENTITY_ERROR.AUTH_TOKEN=credential",
+      "A" * 129,
+      { "token" => "credential" },
+      123,
+      nil
+    ]
+    unsafe_codes.each do |unsafe_code|
+      response_body = JSON.generate("errors" => [{ "code" => unsafe_code, "source" => { "pointer" => "/data/relationships/credential" }, "detail" => "Authorization: Bearer credential https://upload.apple.com/private?signature=credential", "id" => "private-resource-id", "links" => { "about" => "https://private.example" } }])
+      error = apple_response_error(response_body)
+      assert_equal "Apple API POST failed (HTTP 409; UNKNOWN_ERROR). Re-run to reconcile after checking App Store Connect.", error.message
+    end
+  end
+
+  def test_client_redacts_unknown_relationships_resource_ids_and_unbounded_indexes
+    unsafe_pointers = [
+      "https://upload.apple.com/private?signature=credential",
+      "/data/relationships/credential",
+      "/data/relationships/appCustomProductPageVersions/data/private-resource-id/id",
+      "/data/relationships/appCustomProductPageVersions/data/1000/id",
+      "/data/relationships/appCustomProductPageVersions/data/00/id",
+      "/included/1000/relationships/appCustomProductPage",
+      "/included/-1/relationships/appCustomProductPage",
+      "/included/00/relationships/appCustomProductPage",
+      "/included/0/relationships/appCustomProductPage/data/id/private-resource-id",
+      "/included/0/relationships/appCustomProductPage~1credential",
+      "/included/0/relationships/appCustomProductPage\ncredential",
+      { "token" => "credential" },
+      123,
+      nil
+    ]
+    unsafe_pointers.each do |unsafe_pointer|
+      error = apple_response_error(JSON.generate("errors" => [{ "code" => "ENTITY_ERROR.RELATIONSHIP.REQUIRED", "source" => { "pointer" => unsafe_pointer }, "detail" => "Authorization: Bearer credential" }]))
+      assert_equal "Apple API POST failed (HTTP 409; ENTITY_ERROR.RELATIONSHIP.REQUIRED). Re-run to reconcile after checking App Store Connect.", error.message
+    end
+  end
+
+  def test_client_handles_malformed_error_shapes_without_logging_the_body
+    malformed_documents = [nil, [], "credential", { "errors" => "credential" }, { "errors" => [nil] }, { "errors" => ["credential"] }]
+    malformed_documents.each do |document|
+      error = apple_response_error(JSON.generate(document))
+      assert_equal "Apple API POST failed (HTTP 409; malformed error response). Re-run to reconcile after checking App Store Connect.", error.message
+    end
+    error = apple_response_error(JSON.generate("errors" => [{ "code" => "ENTITY_ERROR.RELATIONSHIP.REQUIRED", "source" => "credential" }]))
+    refute_includes error.message, "credential"
+    assert_includes error.message, "ENTITY_ERROR.RELATIONSHIP.REQUIRED"
+  end
+
+  def test_client_retains_safe_non_json_response_diagnostics
+    error = apple_response_error("<html>Authorization: Bearer credential https://upload.apple.com/private</html>")
+    assert_equal "Apple API POST failed (HTTP 409; non-JSON response). Re-run to reconcile after checking App Store Connect.", error.message
+  end
+
+  def apple_response_error(response_body)
+    transport = FakeTransport.new([FakeTransport::Response.new("409", response_body)])
+    client = BoardseshCPP::Client.new(token: -> { "test" }, transport: ->(_uri) { transport }, sleeper: ->(_seconds) { flunk "POST retried" })
+    error = assert_raises(BoardseshCPP::Error) { client.request("POST", "/v1/appCustomProductPages", {}) }
+    assert_equal 1, transport.requests.length
+    error
+  end
+
   def test_client_rejects_external_pagination_url_before_credentials_sent
     client = BoardseshCPP::Client.new(token: -> { flunk "token accessed" })
     assert_raises(BoardseshCPP::Error) { client.request("GET", "https://example.com/v1/apps") }

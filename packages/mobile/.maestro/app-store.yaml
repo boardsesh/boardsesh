@@ -95,6 +95,11 @@ name: app-store screenshots
     id: 'live-sessions-error'
 - assertNotVisible:
     id: 'live-sessions-offline'
+# The live rail can succeed while Recent sessions renders an error or skeleton.
+- extendedWaitUntil:
+    visible:
+      id: 'session-feed-card'
+    timeout: 90000
 - takeScreenshot: 02-home
 
 # Discover — the playlist library (smart "Your Picks" + saved playlists). The dialog was
@@ -206,6 +211,10 @@ name: app-store screenshots
     optional: true
 - waitForAnimationToEnd
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
 - takeScreenshot: 00-board-view
 
 # Board view on the second pinned wall (SCREENSHOT_BOARDS[1], the Tension Board 2) — a
@@ -213,10 +222,32 @@ name: app-store screenshots
 # screenshotBoardIndex=1 switches the active board to that wall before opening its first
 # climb. LAST too (also opens the play drawer). Slot 03 was the reserved party shot,
 # which the main flow never captured.
+# Dismiss the first player so its painted marker cannot satisfy the next capture.
+- repeat:
+    times: 2
+    commands:
+      - runFlow:
+          when:
+            visible: ${SCREENSHOT_CLOSE_LABEL}
+          commands:
+            - tapOn: ${SCREENSHOT_CLOSE_LABEL}
+            - waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 60000
+- extendedWaitUntil:
+    notVisible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
 - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
 - tapOn:
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
 - takeScreenshot: 01-board-view-2

@@ -1657,9 +1657,7 @@ export function PlayCore({
                         {boardRenderData ? (
                           <DeferredBoard
                             capturePaintedTestID={screenshotPaintedClimbTestId(
-                              process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-                                process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') ===
-                                  true,
+                              process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
                               activeBoardForNavigation,
                               renderBoardConfig,
                               displayedClimb,
