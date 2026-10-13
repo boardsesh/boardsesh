@@ -464,7 +464,7 @@ applying a solid or semi-opaque background color beneath controls, use a scroll 
 visually elevate controls above content." [HIG
 Materials](https://developer.apple.com/design/human-interface-guidelines/materials) says what that
 effect does: it blurs the content behind and reduces its opacity. Ours is `ProgressiveBlur` with a
-`fadeLength`: a thin material, with a wash of the scene background over it. It is a material and
+`fadeLength`: UIKit's chrome material, with no additional scene-background wash. It is a material and
 never a `GlassSurface`, because the chips on it are glass already (see "Glass material").
 
 **The blur is there while rows are under the controls.** An open grade row overlaps the first
@@ -509,9 +509,11 @@ where the other default would put bare controls over rows mid-scroll.
 
 **The look is a few numbers**, `CONTROLS_BACKDROP` in `NativeRootHeader.tsx`: `layers` (how heavily
 the list behind is frosted), `fadeLength` (points of fade below the block), `washOpacity` (a
-scene-background wash that fades the list behind toward the page colour; 0.5, because thin material
-alone still frosted grey over a black page, and at half strength rows still show passing under the
-controls) and `fadeDuration`. Tune them there, on a device.
+scene-background wash; 0, because chrome material supplies the navigation backdrop's tint)
+and `fadeDuration`. Tune them there, on a device. Filter capsules' SwiftUI Host follows the app's
+resolved light/dark scheme. The wall-status capsule carries one regular native `GlassSurface`
+with a 14% amber tint and a native rounded edge; its opaque amber-bordered fallback remains on
+older devices and with Reduce Transparency. Native glass does not enter through an opacity fade.
 
 **Everywhere else the block keeps its painted band**, in `systemColors.background`:
 `useFloatingHeaderControls` lets it float only when the surface mode is `glass` and Increase

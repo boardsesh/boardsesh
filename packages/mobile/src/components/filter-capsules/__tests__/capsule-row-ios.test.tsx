@@ -13,6 +13,7 @@ type RecordedProps = Record<string, unknown> & { children?: ReactNode; modifiers
 
 const captured = vi.hoisted(() => ({
   supportsGlass: true,
+  colorScheme: 'dark' as 'dark' | 'light',
   views: [] as {
     view: string;
     props: Record<string, unknown> & { modifiers?: { modifier: string; arg?: unknown }[] };
@@ -83,7 +84,10 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF' } }),
+  useTheme: () => ({
+    colorScheme: captured.colorScheme,
+    brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF' },
+  }),
 }));
 
 vi.mock('../../../hooks/use-glass-capability', () => ({
@@ -96,6 +100,7 @@ const { CapsuleRow } = await import('../CapsuleRow.ios');
 beforeEach(() => {
   captured.views = [];
   captured.supportsGlass = true;
+  captured.colorScheme = 'dark';
 });
 
 function viewsOf(name: string) {
@@ -157,6 +162,12 @@ describe('CapsuleRow.ios below iOS 26 (no Liquid Glass)', () => {
 });
 
 describe('CapsuleRow.ios', () => {
+  it.each(['dark', 'light'] as const)('pins the SwiftUI host to the app resolved %s scheme', (scheme) => {
+    captured.colorScheme = scheme;
+    render(createElement(CapsuleRow, { capsules: [] }));
+    expect(viewsOf('Host').at(-1)?.colorScheme).toBe(scheme);
+  });
+
   it('fills an active capsule with primaryFill + onPrimary, never the text tint', () => {
     render(
       createElement(CapsuleRow, {

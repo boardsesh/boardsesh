@@ -231,11 +231,11 @@ function CapsuleControl({ capsule, look }: { capsule: Capsule; look: CapsuleStyl
 }
 
 function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const supportsGlass = useGlassCapability();
   const look = useMemo<CapsuleStyleContext>(() => ({ brandColors, supportsGlass }), [brandColors, supportsGlass]);
   return (
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
         {/* Vertical slack lets a pressed capsule's Liquid Glass lens expand without the host's fixed height clipping it.
             `fixedSize(horizontal)` is what keeps the labels whole: a horizontal ScrollView still proposes its own

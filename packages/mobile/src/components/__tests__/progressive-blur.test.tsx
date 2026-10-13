@@ -88,6 +88,15 @@ describe('ProgressiveBlur', () => {
     );
   });
 
+  it.each(['dark', 'light'] as const)('uses chrome material for navigation in the resolved %s scheme', (scheme) => {
+    themeMock.colorScheme = scheme;
+    const { container } = render(<ProgressiveBlur material="chrome" fadeLength={24} scrim={false} />);
+    const blurTypes = Array.from(container.querySelectorAll('[data-testid="blur-view"]')).map((blur) =>
+      blur.getAttribute('data-blur-type'),
+    );
+    expect(blurTypes).toEqual(Array(3).fill(scheme === 'dark' ? 'chromeMaterialDark' : 'chromeMaterialLight'));
+  });
+
   const hasDarkScrim = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-testid="mask-gradient"]')).some((gradient) =>
       (gradient.getAttribute('data-colors') ?? '').includes('rgba(0,0,0'),
@@ -192,16 +201,22 @@ describe('ProgressiveBlur', () => {
 
     // The one caller mounts this on iOS 26 glass only, and paints a band where
     // there is no live blur. So the fallback has no plateau to draw.
-    it('keeps the single scene-background fade where there is no live blur', () => {
-      surfaceMock.mode = 'solid';
-      themeMock.colorScheme = 'light';
-      const { container } = render(<ProgressiveBlur fadeLength={24} washOpacity={0.5} scrim={false} />);
+    it.each(['dark', 'light'] as const)(
+      'keeps the opaque %s fade with chrome material and Reduce Transparency',
+      (scheme) => {
+        surfaceMock.mode = 'solid';
+        themeMock.colorScheme = scheme;
+        const { container } = render(
+          <ProgressiveBlur material="chrome" fadeLength={24} washOpacity={0.5} scrim={false} />,
+        );
 
-      expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
-      const fades = gradients(container);
-      expect(fades).toHaveLength(1);
-      expect(fades[0].colors).toEqual(['#FFFFFF', '#FFFFFF', 'transparent']);
-      expect(fades[0].height).toBe('');
-    });
+        expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
+        const fades = gradients(container);
+        expect(fades).toHaveLength(1);
+        const background = scheme === 'dark' ? '#000000' : '#FFFFFF';
+        expect(fades[0].colors).toEqual([background, background, 'transparent']);
+        expect(fades[0].height).toBe('');
+      },
+    );
   });
 });

@@ -15,6 +15,7 @@ const spies = vi.hoisted(() => ({
   reduceMotion: false,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   colorScheme: 'dark' as 'dark' | 'light',
+  nativeGlass: true,
   enterAnimation: vi.fn(() => ({})),
 }));
 
@@ -92,6 +93,33 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
 }));
 
 vi.mock('../use-open-wall-preview', () => ({ useOpenWallPreview: () => spies.openWallPreview }));
+vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => spies.nativeGlass }));
+vi.mock('../../GlassSurface', () => ({
+  GlassSurface: ({
+    children,
+    style,
+    borderRadius,
+    glassEffectStyle,
+    tintColor,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    borderRadius?: number;
+    glassEffectStyle?: string;
+    tintColor?: string;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-glass-surface': 'true',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-glass-radius': borderRadius,
+        'data-glass-style': glassEffectStyle,
+        'data-glass-tint': tintColor,
+      },
+      children,
+    ),
+}));
 vi.mock('../../../lib/board-presence/presence-climb', () => ({
   boardPresenceClimbToClimb: (c: { climbUuid: string }) => ({ uuid: c.climbUuid, _converted: true }),
 }));
@@ -199,7 +227,7 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { none: 0, sm: 4, md: 8, lg: 12, xl: 16, full: 9999 },
 }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
+vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}:${alpha}` }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { WallStatusCapsule } from '../WallStatusCapsule';
@@ -230,6 +258,7 @@ describe('WallStatusCapsule', () => {
     spies.reduceMotion = false;
     spies.variant = 'liquidGlass';
     spies.colorScheme = 'dark';
+    spies.nativeGlass = true;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -240,54 +269,58 @@ describe('WallStatusCapsule', () => {
     );
     const nameViewer = container.querySelector('[data-label-viewer]');
     const nameStyle = JSON.parse(nameViewer?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
-    const capsuleStyle = JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}') as Record<
-      string,
-      unknown
-    >;
+    const glassSurface = container.querySelector('[data-glass-surface]');
+    const capsuleStyle = JSON.parse(glassSurface?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 
     expect(getByText('Wax On')).toBeTruthy();
     expect(getByText('V5 6C')).toBeTruthy();
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
     expect(nameStyle.flex).toBeUndefined();
-    expect(capsuleStyle).toMatchObject({ height: 44, borderRadius: 22 });
+    expect(capsuleStyle).toMatchObject({ height: 44 });
+    expect(glassSurface?.getAttribute('data-glass-radius')).toBe('22');
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('none');
     expect(container.querySelector('[data-animated]')).toBeNull();
     expect(spies.enterAnimation).not.toHaveBeenCalled();
   });
 
-  it('retains its native title view while the wall climb changes and opens the latest preview once', () => {
-    const { container, rerender } = render(
-      <NativeHeaderActionContext.Provider value={true}>
-        <WallStatusCapsule climb={makeClimb()} />
-      </NativeHeaderActionContext.Provider>,
-    );
-    const originalTitleView = container.firstElementChild;
-    rerender(
-      <NativeHeaderActionContext.Provider value={true}>
-        <WallStatusCapsule
-          climb={makeClimb({
-            climbUuid: 'wall-2',
-            name: 'The next long climb on the wall',
-            sentByDisplayName: 'Alex',
-            sentByAvatarUrl: 'https://example.com/alex.jpg',
-            sentByUserId: 'u-alex',
-          })}
-        />
-      </NativeHeaderActionContext.Provider>,
-    );
+  it.each([true, false])(
+    'retains its native title view while the wall climb changes (native glass: %s)',
+    (nativeGlass) => {
+      spies.nativeGlass = nativeGlass;
+      const { container, rerender } = render(
+        <NativeHeaderActionContext.Provider value={true}>
+          <WallStatusCapsule climb={makeClimb()} />
+        </NativeHeaderActionContext.Provider>,
+      );
+      const originalTitleView = container.firstElementChild;
+      rerender(
+        <NativeHeaderActionContext.Provider value={true}>
+          <WallStatusCapsule
+            climb={makeClimb({
+              climbUuid: 'wall-2',
+              name: 'The next long climb on the wall',
+              sentByDisplayName: 'Alex',
+              sentByAvatarUrl: 'https://example.com/alex.jpg',
+              sentByUserId: 'u-alex',
+            })}
+          />
+        </NativeHeaderActionContext.Provider>,
+      );
 
-    expect(container.firstElementChild).toBe(originalTitleView);
-    expect(container.textContent).toContain('The next long climb on the wall');
-    const avatar = container.querySelector('[data-driver-avatar]')!;
-    expect(avatar.getAttribute('data-name')).toBe('Alex');
-    expect(avatar.getAttribute('data-uri')).toBe('https://example.com/alex.jpg');
-    fireEvent.click(avatar);
-    expect(spies.openWallPreview).toHaveBeenCalledOnce();
-    expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-2', _converted: true });
-    expect(spies.enterAnimation).not.toHaveBeenCalled();
-  });
+      expect(container.firstElementChild).toBe(originalTitleView);
+      expect(container.textContent).toContain('The next long climb on the wall');
+      const avatar = container.querySelector('[data-driver-avatar]')!;
+      expect(avatar.getAttribute('data-name')).toBe('Alex');
+      expect(avatar.getAttribute('data-uri')).toBe('https://example.com/alex.jpg');
+      fireEvent.click(avatar);
+      expect(spies.openWallPreview).toHaveBeenCalledOnce();
+      expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-2', _converted: true });
+      expect(spies.enterAnimation).not.toHaveBeenCalled();
+    },
+  );
 
-  it('preserves the floating capsule entering animation outside a native header', () => {
+  it('preserves the fallback capsule entering animation outside a native header', () => {
+    spies.nativeGlass = false;
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
 
     expect(container.querySelector('[data-animated]')).not.toBeNull();
@@ -296,10 +329,71 @@ describe('WallStatusCapsule', () => {
   });
 
   it('renders without the entering animation when Reduce Motion is on', () => {
+    spies.nativeGlass = false;
     spies.reduceMotion = true;
     const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(getByText('Wax On')).not.toBeNull();
+    expect(spies.enterAnimation).not.toHaveBeenCalled();
+  });
+
+  it('keeps floating native glass static instead of entering through an opacity fade', () => {
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-radius')).toBe('16');
+    expect(container.querySelector('[data-animated]')).toBeNull();
+    expect(spies.enterAnimation).not.toHaveBeenCalled();
+  });
+
+  it.each(['dark', 'light'] as const)(
+    'uses one regular amber-tinted glass surface in %s mode without painting over it',
+    (scheme) => {
+      spies.colorScheme = scheme;
+      const { container } = render(
+        <NativeHeaderActionContext.Provider value={true}>
+          <WallStatusCapsule climb={makeClimb()} />
+        </NativeHeaderActionContext.Provider>,
+      );
+      const surfaces = container.querySelectorAll('[data-glass-surface]');
+      expect(surfaces).toHaveLength(1);
+      expect(surfaces[0].getAttribute('data-glass-style')).toBe('regular');
+      expect(surfaces[0].getAttribute('data-glass-tint')).toBe('#FBBF24:0.14');
+      // No parent or surface paint/clip can cover the native refractive lens.
+      for (const carrier of [container.firstElementChild, surfaces[0]]) {
+        const carrierStyle = JSON.parse(carrier?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+        expect(carrierStyle.backgroundColor).toBeUndefined();
+        expect(carrierStyle.borderColor).toBeUndefined();
+        expect(carrierStyle.borderWidth).toBeUndefined();
+        expect(carrierStyle.overflow).toBeUndefined();
+      }
+      expect(surfaces[0].querySelector('[data-style*="backgroundColor"]')).toBeNull();
+      fireEvent.click(container.querySelector('[data-pressable]') as Element);
+      expect(spies.openWallPreview).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('preserves the opaque amber fallback when native glass is unavailable or transparency is reduced', () => {
+    spies.nativeGlass = false;
+    const { container } = render(
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={makeClimb()} />
+      </NativeHeaderActionContext.Provider>,
+    );
+    expect(container.querySelector('[data-glass-surface]')).toBeNull();
+    const capsuleStyle = JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(capsuleStyle).toMatchObject({
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: '#222',
+      borderColor: '#FBBF24:0.35',
+      borderWidth: 1,
+      overflow: 'hidden',
+    });
+    expect(container.querySelector('[data-style*="#FBBF24:0.14"]')).not.toBeNull();
+    fireEvent.click(container.querySelector('[data-pressable]') as Element);
+    expect(spies.openWallPreview).toHaveBeenCalledOnce();
   });
 
   it('renders the wall climb name and grade', () => {

@@ -13,8 +13,7 @@ const MASK_COLORS = ['#000000', 'transparent'] as const;
 // opacity (uniform radius), which reads as an abrupt edge. Stacking N layers, each
 // fading out higher than the last, means the top is covered by every layer (max
 // blur) and the bottom by just one — so the effective blur radius ramps smoothly.
-// Thin material is heavier than ultra-thin (closer to the native tab bar's chrome
-// glass), so fewer layers reach the target darkness — which also helps scroll perf.
+// Fewer layers keep the ramp smooth without excessive work during scrolling.
 const DEFAULT_LAYERS = 3;
 // In dark mode the thin material frosts to a medium grey, so the status-bar /
 // dynamic-island band reads grey against the black island. A black wash, strongest
@@ -43,6 +42,8 @@ type ProgressiveBlurProps = {
   blurAmount?: number;
   /** Number of stacked blur layers — higher is a smoother ramp, more GPU work. */
   layers?: number;
+  /** UIKit material: thin for existing surfaces, chrome for navigation controls. */
+  material?: 'thin' | 'chrome';
   /**
    * Hold full strength from the top down to `fadeLength` points above the bottom
    * edge, then fade out over that length. For a backdrop behind pinned controls:
@@ -89,11 +90,11 @@ function PlateauFade({
 
 /**
  * A top-down progressive (gradient) blur for the floating header chrome: a few
- * thin blur layers stacked so the blur radius ramps smoothly from strong at the
+ * material blur layers stacked so the blur radius ramps smoothly from strong at the
  * top to nothing at the bottom (a true variable blur, not just a faded uniform
- * one). The thin material matches the native tab bar's heavier glass so the header
- * and tab bar read as the same surface. The blur tint follows the app's resolved
- * colour scheme, so it honours the in-app light/dark override.
+ * one). Navigation backdrops can select UIKit's chrome material. The blur tint
+ * follows the app's resolved colour scheme, so it honours the in-app light/dark
+ * override.
  *
  * With `fadeLength` it becomes a backdrop for controls pinned under a bar: full
  * strength behind them, fading out only along its lower edge.
@@ -107,6 +108,7 @@ export function ProgressiveBlur({
   style,
   blurAmount = 16,
   layers = DEFAULT_LAYERS,
+  material = 'thin',
   fadeLength,
   scrim = true,
   washOpacity = 0,
@@ -129,9 +131,14 @@ export function ProgressiveBlur({
     );
   }
 
-  // Thin material: heavier than ultra-thin, so it reads like the native tab bar's
-  // chrome glass rather than a light grey. Stacking accumulates it toward the top.
-  const blurType = isDark ? 'thinMaterialDark' : 'thinMaterialLight';
+  const blurType =
+    material === 'chrome'
+      ? isDark
+        ? 'chromeMaterialDark'
+        : 'chromeMaterialLight'
+      : isDark
+        ? 'thinMaterialDark'
+        : 'thinMaterialLight';
   const washRgb = isDark ? WASH_RGB_DARK : WASH_RGB_LIGHT;
 
   return (

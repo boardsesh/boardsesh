@@ -19,7 +19,7 @@ import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './n
  * them here and nowhere else.
  */
 export const CONTROLS_BACKDROP = {
-  /** Stacked thin-material layers: each one frosts the list behind more heavily. */
+  /** Stacked chrome-material layers: each one frosts the list behind more heavily. */
   layers: 1,
   /**
    * Points over which the blur fades out. The fade sits below the block's bottom
@@ -27,13 +27,10 @@ export const CONTROLS_BACKDROP = {
    */
   fadeLength: 24,
   /**
-   * Scene-background wash over the blur, 0 to 1: how far the list behind fades
-   * toward the page colour. Thin material alone frosts grey over a black page
-   * and reads as a band; at half strength the rows still show passing under the
-   * controls and the region stays close to the page. Tuned on a simulator in
-   * dark mode.
+   * Scene-background wash over the blur, 0 to 1. Chrome material supplies the
+   * navigation backdrop's tint, so no additional colour wash is needed.
    */
-  washOpacity: 0.5,
+  washOpacity: 0,
   /** Milliseconds the blur takes to fade in or out as rows pass under the block. */
   fadeDuration: timing.fast,
 } as const;
@@ -272,6 +269,7 @@ function ControlsBackdrop({
     >
       <ProgressiveBlur
         style={StyleSheet.absoluteFill}
+        material="chrome"
         layers={CONTROLS_BACKDROP.layers}
         fadeLength={CONTROLS_BACKDROP.fadeLength}
         washOpacity={CONTROLS_BACKDROP.washOpacity}

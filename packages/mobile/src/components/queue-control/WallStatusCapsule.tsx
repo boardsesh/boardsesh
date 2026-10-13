@@ -8,8 +8,8 @@
 // which retains the sender profile affordance. Anonymous senders use a person glyph.
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
-//   - Liquid Glass (iOS): a NON-glass pill (HIG: no glass-on-glass over the
-//     header's progressive blur) with a warm "lit" amber border + tint.
+//   - Liquid Glass (iOS): one regular native-glass pill with a warm "lit" amber
+//     tint. Older devices and Reduce Transparency retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider. No floating pill,
@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
+import { useNativeGlass } from '../../hooks/use-native-glass';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
@@ -35,6 +36,7 @@ import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
+import { GlassSurface } from '../GlassSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
 import { NativeHeaderActionContext } from '../chrome/native-header-action-context';
@@ -69,6 +71,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const nativeHeader = useContext(NativeHeaderActionContext);
+  const nativeGlass = useNativeGlass();
 
   const name = climb.name ?? '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
@@ -221,7 +224,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   ];
   const capsuleContent = (
     <>
-      <View pointerEvents="none" style={glassTintStyle} />
+      {nativeGlass ? null : <View pointerEvents="none" style={glassTintStyle} />}
       <PressableSurface
         onPress={handlePress}
         feedback={nativeHeader ? 'none' : 'scale'}
@@ -270,11 +273,29 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
     </>
   );
 
+  // The native glass draws its own rounded edge. Opaque fills, RN borders and
+  // clipping would cover or cut that lens, and opacity entry animations flatten it.
+  const capsuleRadius = (nativeHeader ? glassSize.inline : CAPSULE_HEIGHT) / 2;
+  const surface = nativeGlass ? (
+    <GlassSurface
+      glassEffectStyle="regular"
+      tintColor={withAlpha(brandColors.warning, 0.14)}
+      borderRadius={capsuleRadius}
+      style={[styles.glassCapsule, nativeHeader ? styles.nativeGlassCapsule : null]}
+    >
+      {capsuleContent}
+    </GlassSurface>
+  ) : (
+    capsuleContent
+  );
+
   // UIKit owns this title view's layout and navigation transitions. A keyed
   // Reanimated entering transition can mutate it while the bar is laying out.
   if (nativeHeader) {
-    return <View style={[capsuleStyle, styles.nativeCapsule]}>{capsuleContent}</View>;
+    return <View style={nativeGlass ? styles.glassWrapper : [capsuleStyle, styles.nativeCapsule]}>{surface}</View>;
   }
+
+  if (nativeGlass) return <View style={styles.glassWrapper}>{surface}</View>;
 
   return (
     <Animated.View key={climbUuid} entering={reduceMotion ? undefined : FadeIn.duration(180)} style={capsuleStyle}>
@@ -287,6 +308,18 @@ export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 
 const styles = StyleSheet.create({
   // --- Liquid Glass (iOS) ---
+  glassWrapper: {
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+  glassCapsule: {
+    flexShrink: 1,
+    maxWidth: '100%',
+    height: CAPSULE_HEIGHT,
+  },
+  nativeGlassCapsule: {
+    height: glassSize.inline,
+  },
   capsule: {
     flexShrink: 1,
     maxWidth: '100%',

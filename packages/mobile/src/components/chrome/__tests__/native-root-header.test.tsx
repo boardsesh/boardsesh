@@ -109,12 +109,14 @@ vi.mock('../../ProgressiveBlur', () => ({
   ProgressiveBlur: ({
     style,
     layers,
+    material,
     fadeLength,
     washOpacity,
     scrim,
   }: {
     style?: unknown;
     layers?: number;
+    material?: 'thin' | 'chrome';
     fadeLength?: number;
     washOpacity?: number;
     scrim?: boolean;
@@ -123,6 +125,7 @@ vi.mock('../../ProgressiveBlur', () => ({
       'data-backdrop': 'true',
       'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
       'data-layers': layers,
+      'data-material': material,
       'data-fade-length': fadeLength,
       'data-wash-opacity': washOpacity,
       'data-scrim': String(scrim),
@@ -390,6 +393,8 @@ describe('NativeRootHeader', () => {
       expect(backdrop()?.getAttribute('data-layers')).toBe(String(CONTROLS_BACKDROP.layers));
       expect(backdrop()?.getAttribute('data-fade-length')).toBe(String(CONTROLS_BACKDROP.fadeLength));
       expect(backdrop()?.getAttribute('data-wash-opacity')).toBe(String(CONTROLS_BACKDROP.washOpacity));
+      expect(backdrop()?.getAttribute('data-material')).toBe('chrome');
+      expect(backdrop()?.getAttribute('data-wash-opacity')).toBe('0');
       // The dark status-bar scrim belongs to the old floating chrome's own band.
       expect(backdrop()?.getAttribute('data-scrim')).toBe('false');
     });
