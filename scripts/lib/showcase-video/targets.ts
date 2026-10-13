@@ -1,3 +1,9 @@
+import {
+  STORE_SEARCH_CROSSFADE_FRAMES,
+  storeSearchPlan,
+  type StoreSearchLocale,
+  type StoreSearchVariant,
+} from './store-search';
 import { resolve } from 'node:path';
 import {
   SHOWCASE_FPS,
@@ -29,7 +35,7 @@ import { SHOWCASE_FULL_PLAN, planFrames, type ShowcaseScenePlan } from './timeli
  * These cut the iOS recording. The Android recording has its own registry
  * (`SHOWCASE_ANDROID_TARGETS`), picked with `--platform android`.
  */
-export const SHOWCASE_TARGET_NAMES = ['homepage', 'social', 'reel', 'app-store', 'play-promo'] as const;
+export const SHOWCASE_TARGET_NAMES = ['homepage', 'social', 'reel', 'app-store', 'play-promo', 'store-search'] as const;
 export type ShowcaseTargetName = (typeof SHOWCASE_TARGET_NAMES)[number];
 
 /** What `vp run video:render` renders without `--target`. */
@@ -145,6 +151,7 @@ export type ShowcaseTarget<Name extends AnyShowcaseTargetName = ShowcaseTargetNa
   /** Whose recording it cuts. Absent: iOS (every entry of `SHOWCASE_TARGETS`). */
   platform?: ShowcasePlatform;
   summary: string;
+  storeSearch?: Readonly<{ locale: StoreSearchLocale; variant: StoreSearchVariant; crossfadeFrames: number }>;
   layout: ShowcaseLayoutStyle;
   /** Motion layout: the storyboard scenes, in order, with any length changes. */
   scenes: readonly ShowcaseScenePlan[];
@@ -225,7 +232,45 @@ const SILENT_AAC: ShowcaseAudio = { kind: 'silent-aac', kbps: 256, sampleRate: 4
 /** No donation line: the outro's reading budget needs 129 frames, not 192. */
 const SHORT_OUTRO: ShowcaseScenePlan = { id: 'outro', frames: 129 };
 
+/** Apple search creative per localization and keyword-matched product page. */
+export function storeSearchTarget(
+  locale: StoreSearchLocale = 'en-US',
+  variant: StoreSearchVariant = 'default',
+): ShowcaseTarget {
+  const directory = resolve(REPO_CREATIVE_OUT, variant, locale);
+  return {
+    name: 'store-search',
+    summary: `Localized ${variant} search-result creative (${locale})`,
+    storeSearch: { locale, variant, crossfadeFrames: STORE_SEARCH_CROSSFADE_FRAMES },
+    layout: 'motion',
+    scenes: storeSearchPlan(variant),
+    clips: [],
+    minSeconds: 5,
+    maxSeconds: 30,
+    donationLine: false,
+    audio: { kind: 'none' },
+    writesPublic: false,
+    renditions: [
+      {
+        id: '3x2',
+        format: '3x2',
+        size: { width: 1920, height: 1280 },
+        stage: standardStage('3x2'),
+        safeArea: { top: 120, bottom: 120, left: 120, right: 120 },
+        deliverable: {
+          kind: 'master',
+          video: resolve(directory, 'search-results.mp4'),
+          still: resolve(directory, 'search-results-poster.jpg'),
+          shareCopy: null,
+        },
+      },
+    ],
+  };
+}
+const REPO_CREATIVE_OUT = resolve(SHOWCASE_OUT_DIR, '../../app-store-creatives');
+
 export const SHOWCASE_TARGETS: Record<ShowcaseTargetName, ShowcaseTarget> = {
+  'store-search': storeSearchTarget(),
   homepage: {
     name: 'homepage',
     summary: 'The homepage hero: lite 9:16 web encodes opening on the boards scene, and its poster',
@@ -708,28 +753,63 @@ export function parseStreamProbe(json: string): ProbedMedia {
   };
 }
 
+export const APPLE_CREATIVE_SPEC = {
+  search: { width: 1920, height: 1280 },
+  minSeconds: 5,
+  maxSeconds: 30,
+  fps: 30,
+  h264: { profile: 'high', minLevel: 50 },
+} as const;
+
+/** The codec, dimensions and runtime checks shared by both Apple video families. */
+function appleVideoProblems(
+  media: ProbedMedia,
+  size: Readonly<{ width: number; height: number }>,
+  minSeconds: number,
+  maxSeconds: number,
+): string[] {
+  const problems: string[] = [];
+  const { video } = media;
+  if (!video) return ['no video stream'];
+  if (video.codec !== 'h264') problems.push(`video codec ${video.codec}, not h264`);
+  if (video.profile.toLowerCase() !== 'high') problems.push(`H.264 profile ${video.profile}, not High`);
+  if (video.width !== size.width || video.height !== size.height)
+    problems.push(`${video.width}x${video.height}, not ${size.width}x${size.height}`);
+  if (
+    !Number.isFinite(media.durationSeconds) ||
+    media.durationSeconds < minSeconds ||
+    media.durationSeconds > maxSeconds
+  )
+    problems.push(`${media.durationSeconds.toFixed(2)} s, outside ${minSeconds}–${maxSeconds} s`);
+  return problems;
+}
+
+/** Search videos stay muted and carry no audio track. */
+export function creativeVideoProblems(media: ProbedMedia): string[] {
+  const spec = APPLE_CREATIVE_SPEC;
+  const problems = appleVideoProblems(media, spec.search, spec.minSeconds, spec.maxSeconds);
+  if (media.video) {
+    if (media.video.level < spec.h264.minLevel) problems.push(`H.264 level ${media.video.level / 10}, below 5.0`);
+    if (Math.abs(media.video.fps - spec.fps) > 0.001) problems.push(`${media.video.fps} fps, not ${spec.fps}`);
+  }
+  if (media.audio) problems.push('search creative must have no audio track');
+  return problems;
+}
+
 /**
  * Where an encode misses `APPLE_APP_PREVIEW_SPEC` at a device size, one line
  * each; empty when it meets it. The renderer fails the app-store target on any.
  */
 export function appPreviewProblems(media: ProbedMedia, size: Readonly<{ width: number; height: number }>): string[] {
   const spec = APPLE_APP_PREVIEW_SPEC;
-  const problems: string[] = [];
+  const problems = appleVideoProblems(media, size, spec.minSeconds, spec.maxSeconds);
   const { video, audio } = media;
   if (!video) return ['no video stream'];
-  if (video.codec !== 'h264') problems.push(`video codec ${video.codec}, not h264`);
-  if (video.profile.toLowerCase() !== spec.h264.profile) problems.push(`H.264 profile ${video.profile}, not High`);
   if (video.level > 40) problems.push(`H.264 level ${video.level / 10}, above ${spec.h264.level}`);
-  if (video.width !== size.width || video.height !== size.height) {
-    problems.push(`${video.width}x${video.height}, not ${size.width}x${size.height}`);
-  }
   if (video.fps > spec.maxFps || video.fps <= 0) problems.push(`${video.fps} fps, above ${spec.maxFps}`);
   // x264's CBR lands a little either side of its target: allow 3% past the window.
   if (video.kbps < spec.videoKbps.min * 0.97 || video.kbps > spec.videoKbps.max * 1.03) {
     problems.push(`video ${Math.round(video.kbps)} kbit/s, outside ${spec.videoKbps.min}–${spec.videoKbps.max}`);
-  }
-  if (media.durationSeconds < spec.minSeconds || media.durationSeconds > spec.maxSeconds) {
-    problems.push(`${media.durationSeconds.toFixed(2)} s, outside ${spec.minSeconds}–${spec.maxSeconds} s`);
   }
   if (media.sizeBytes > spec.maxBytes) problems.push(`${media.sizeBytes} bytes, over ${spec.maxBytes}`);
   if (!audio) problems.push('no audio track (Apple requires stereo AAC)');

@@ -416,6 +416,7 @@ const wordsOut = (scene, local) => {
 
 export function init(input) {
   data = input;
+  if (data.storeSearch) return initSearchStage();
   layout = LAYOUT[data.format];
   const stage = document.getElementById('stage');
   stage.dataset.format = data.format;
@@ -649,6 +650,112 @@ export function init(input) {
     }
   }
   return true;
+}
+
+// The Apple creative is intentionally separate from the hero's choreography:
+// captions hard-cut, phones stay upright, and only the final 15 frames dissolve.
+function initSearchStage() {
+  const stage = document.getElementById('stage');
+  ui.stage = stage;
+  stage.dataset.format = '3x2';
+  document.documentElement.lang = data.storeSearch.locale;
+  const phone = data.phone;
+  stage.dataset.platform = phone.platform;
+  setVars(stage, {
+    'phone-w': phone.width,
+    'phone-h': phone.height,
+    'screen-w': phone.screenWidth,
+    'screen-h': phone.screenHeight,
+    'phone-r': phone.bodyRadius,
+    rim: phone.rim,
+    bezel: phone.screenInset - phone.rim,
+    'bg-from': data.palette.stageDark,
+    'bg-to': data.palette.stageDark,
+    'light-mix': 0,
+  });
+  ui.searchScenes = data.scenes.map((scene, index) => {
+    const layer = el('div', { class: 'search-layer' }, document.getElementById('phones'));
+    layer.style.zIndex = String(index + 1);
+    const caption = el('div', { class: 'headline search-caption', 'data-scene': scene.id }, layer);
+    const words = buildWords(caption, data.storeSearch.captions[scene.caption]);
+    // All lines fit at >=80px; reduce only when a locale needs more room.
+    const naturalWidth = Math.max(
+      ...[...caption.querySelectorAll('.line')].map((line) => line.getBoundingClientRect().width),
+    );
+    // Inline spans measure the actual text rather than their containing block.
+    const textWidth = Math.max(
+      ...[...caption.querySelectorAll('.line')].map((line) => {
+        const range = document.createRange();
+        range.selectNodeContents(line);
+        return range.getBoundingClientRect().width;
+      }),
+      naturalWidth > 740 ? naturalWidth : 0,
+    );
+    if (textWidth > 740) {
+      const scale = 740 / textWidth;
+      const fontSize = 132 * scale;
+      if (fontSize < 80) throw new Error(`Search caption too long: ${scene.caption}`);
+      caption.style.fontSize = `${fontSize}px`;
+      words.words
+        .filter((word) => word.accent)
+        .forEach((word) => {
+          word.node.style.fontSize = `${152 * scale}px`;
+        });
+    }
+    const phones = scene.takes.map((takeId, phoneIndex) => ({
+      takeId,
+      ...buildPhone(layer, phoneIndex + 1),
+    }));
+    return { scene, layer, caption, phones };
+  });
+  renderSearchAt(0);
+}
+
+function paintSearchScene(entry, frame) {
+  const { scene, phones } = entry;
+  const local = frame - scene.startFrame;
+  phones.forEach((phone, index) => {
+    const take = data.takes[phone.takeId];
+    const count = phones.length;
+    const single = count === 1;
+    // Multi-board shots are a centred trio; all subsequent single phones zoom.
+    const centre = single ? 1420 : 1390 + (index - (count - 1) / 2) * 240;
+    const pose = {
+      cx: centre,
+      cy: single ? (scene.id === 'lock-screen' ? 925 : 910) : 820,
+      scale: single ? 1.6 : index === Math.floor(count / 2) ? 1.12 : 0.92,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+    };
+    setVars(phone.rig, { cx: pose.cx, cy: pose.cy, s: pose.scale, rx: 0, ry: 0, rz: 0 });
+    setVars(phone.shadow, { cx: -1000, cy: -1000 });
+    const footage = footageAt(take.segments, local, take.frameCount);
+    phone.img.src = frameUrl(take, footage);
+    visible.push(phone.img);
+  });
+}
+
+function renderSearchAt(frame) {
+  visible = [];
+  ui.searchScenes.forEach((entry) => {
+    entry.layer.style.opacity = '0';
+  });
+  const activeIndex = sceneIndexAt(frame);
+  const active = ui.searchScenes[activeIndex];
+  active.layer.style.opacity = '1';
+  paintSearchScene(active, frame);
+  const start = data.totalFrames - data.storeSearch.crossfadeFrames;
+  if (frame >= start) {
+    const opening = ui.searchScenes[0];
+    // Last frame is exactly frame 0, including its native footage and caption.
+    const amount = (frame - start) / (data.storeSearch.crossfadeFrames - 1);
+    active.layer.style.opacity = String(1 - amount);
+    opening.layer.style.opacity = String(amount);
+    opening.layer.style.zIndex = String(ui.searchScenes.length + 1);
+    paintSearchScene(opening, 0);
+  }
+  return frame;
 }
 
 // --- per-frame -----------------------------------------------------------------------------------
@@ -995,6 +1102,7 @@ function renderMeasure(frame, sceneIndex, mainPose, boardPoses) {
 
 export function renderAt(frame) {
   if (!data) throw new Error('showcaseInit(data) must run before renderAt');
+  if (data.storeSearch) return renderSearchAt(frame);
   visible = [];
   const sceneIndex = sceneIndexAt(frame);
   const lightMix = lightMixAt(frame);

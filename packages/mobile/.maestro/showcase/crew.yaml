@@ -55,7 +55,7 @@ name: showcase take - a friend adds a climb
     point: '40%,88%'
 - waitForAnimationToEnd
 
-- tapOn: 'Queue, .* climbs'
+- tapOn: '${SHOWCASE_QUEUE_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/queue-open')}
 

@@ -790,3 +790,47 @@ svg.layer {
 #stage[data-format='9x16'] .outro .tagline .w.accent {
   font-size: 80px;
 }
+
+/* Apple search card: a fixed caption column and large, upright native footage. */
+#stage[data-format='3x2'] {
+  --w: 1920;
+  --h: 1280;
+  background: var(--stage-dark);
+}
+#stage[data-format='3x2'] .phones {
+  perspective: none;
+}
+#stage[data-format='3x2'] .search-layer {
+  position: absolute;
+  inset: 0;
+}
+#stage[data-format='3x2'] .search-caption {
+  position: absolute;
+  left: 120px;
+  top: 140px;
+  width: 740px;
+  font-size: 132px;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-weight: 800;
+  color: var(--ink-on-dark);
+  text-align: left;
+  transform: none;
+  opacity: 1;
+}
+#stage[data-format='3x2'] .search-caption .line {
+  display: block;
+  white-space: nowrap;
+}
+#stage[data-format='3x2'] .search-caption .w {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+#stage[data-format='3x2'] .search-caption .w.accent {
+  color: var(--accent-on-dark);
+  font-size: 152px;
+}
+#stage[data-format='3x2'] .phone-rig {
+  transform: scale(var(--s));
+}

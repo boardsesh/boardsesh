@@ -73,13 +73,17 @@ describe('showcase timeline', () => {
     expect(backgrounds).toEqual(new Set(['dark', 'light']));
     const takes = SHOWCASE_SCENES.flatMap((scene) => scene.takes);
     expect(new Set(takes).size).toBe(takes.length);
-    expect(new Set(takes)).toEqual(new Set(SHOWCASE_TAKE_IDS));
+    expect(new Set(takes)).toEqual(new Set(SHOWCASE_TAKE_IDS.filter((takeId) => !takeId.startsWith('moonboard-'))));
     for (const scene of SHOWCASE_SCENES) expect(scene.callouts.length).toBeLessThanOrEqual(3);
   });
 
   it('lets only board phones and the island take go missing', () => {
-    expect(SHOWCASE_OPTIONAL_TAKES.filter((takeId) => !takeId.startsWith('boards-'))).toEqual(['lock-screen']);
-    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(10);
+    expect(SHOWCASE_OPTIONAL_TAKES.filter((takeId) => !takeId.startsWith('boards-'))).toEqual([
+      'moonboard-import',
+      'moonboard-filter',
+      'lock-screen',
+    ]);
+    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(12);
     // The spray scene is not skippable: its take is required.
     expect(SHOWCASE_OPTIONAL_TAKES).not.toContain('spray');
     expect(SHOWCASE_SKIPPABLE_SCENES).toEqual(['lock-screen']);

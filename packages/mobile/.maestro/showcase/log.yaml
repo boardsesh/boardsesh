@@ -41,12 +41,10 @@ name: showcase take - the logbook fills itself
 
 # Kilter.
 - tapOn:
-    point: '90%,28%'
+    id: 'profile-progress-filter'
 - waitForAnimationToEnd
-- tapOn:
-    point: '50%,74%'
-- tapOn:
-    point: '12%,89%'
+- tapOn: Kilter
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
 - extendedWaitUntil:
@@ -56,12 +54,10 @@ name: showcase take - the logbook fills itself
 
 # Tension.
 - tapOn:
-    point: '90%,28%'
+    id: 'profile-progress-filter'
 - waitForAnimationToEnd
-- tapOn:
-    point: '50%,79%'
-- tapOn:
-    point: '12%,89%'
+- tapOn: Tension
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-tension')}
 - extendedWaitUntil:

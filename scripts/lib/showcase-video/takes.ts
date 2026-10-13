@@ -9,8 +9,10 @@ import {
   type ShowcasePlatform,
   type ShowcaseStaticAnchorName,
   type ShowcaseTakeId,
+  type ShowcaseVariantKind,
 } from './contract';
 import { SHOWCASE_SCENES, requiredTakeSeconds } from './timeline';
+import { storeSearchTakeIds } from './store-search';
 
 /**
  * How each take is captured: which deep link sets it up, which Maestro flow
@@ -373,6 +375,23 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
     },
   }),
   take({
+    id: 'moonboard-import',
+    summary: 'The native MoonBoard CSV import entry; no fabricated import results.',
+    primeLinks: ['home', 'climbs?screenshotBoardIndex=2', 'settings/integrations'],
+    flow: 'moonboard-import.yaml',
+    setupFlows: ['moonboard-import-setup.yaml'],
+    trimSeconds: 6,
+    board: { slot: 2, kind: 'moonboard' },
+  }),
+  take({
+    id: 'moonboard-filter',
+    summary: 'The native grade filter on MoonBoard, showing its real loaded grade controls.',
+    primeLinks: ['home', 'climbs?screenshotBoardIndex=2&screenshotOpenFilters=1'],
+    flow: 'moonboard-filter.yaml',
+    trimSeconds: 6,
+    board: { slot: 2, kind: 'moonboard' },
+  }),
+  take({
     id: 'log',
     summary: 'Profile progress with the activity calendar, filtered to one board and then another.',
     primeLinks: ['home', 'profile'],
@@ -381,6 +400,44 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
     board: null,
   }),
 ];
+
+/** Wall, crew, and workouts must use the selected board, including their validation. */
+export function takeForBoard(take: ShowcaseTake, kind: ShowcaseVariantKind): ShowcaseTake {
+  if (kind === 'default') return take;
+  if (take.id === 'log') return { ...take, flow: `log-${kind}.yaml` };
+  if (!['wall', 'crew', 'workouts'].includes(take.id)) return take;
+  const slot = SHOWCASE_BOARD_SLOTS.indexOf(kind);
+  if (slot < 0) throw new Error(`No screenshot board slot for ${kind}`);
+  return {
+    ...take,
+    board: { slot, kind },
+    primeLinks: take.id === 'wall' ? ['home', `climbs?screenshotBoardIndex=${slot}`] : sessionPrime(slot),
+    ...(kind === 'spray'
+      ? { primeSettleMs: SPRAY_PRIME_SETTLE_MS, unavailable: { ...take.unavailable, local: NO_LOCAL_WALL } }
+      : {}),
+  };
+}
+
+/** Optional MoonBoard beats are recorded only on its explicit variant. */
+export function recordingTakes(
+  args: Readonly<{ kind: ShowcaseVariantKind; only: readonly ShowcaseTakeId[] | null; platform: ShowcasePlatform }>,
+): ShowcaseTake[] {
+  const selected =
+    args.only ??
+    (args.kind === 'default'
+      ? SHOWCASE_TAKE_IDS.filter((takeId) => !takeId.startsWith('moonboard-'))
+      : storeSearchTakeIds(args.kind));
+  if (args.kind !== 'default') {
+    const permittedBoardTakes = storeSearchTakeIds(args.kind).filter((takeId) => takeId.startsWith('boards-'));
+    const wrongBoard = selected.find((takeId) => takeId.startsWith('boards-') && !permittedBoardTakes.includes(takeId));
+    if (wrongBoard) throw new Error(`--kind ${args.kind} cannot record ${wrongBoard}`);
+    if (args.kind !== 'moonboard' && selected.some((takeId) => takeId.startsWith('moonboard-')))
+      throw new Error('MoonBoard takes require --kind moonboard');
+  }
+  return SHOWCASE_TAKES.filter((take) => selected.includes(take.id)).map((take) =>
+    takeForBoard(takeForPlatform(take, args.platform), args.kind),
+  );
+}
 
 export function findShowcaseTake(takeId: ShowcaseTakeId): ShowcaseTake {
   const found = SHOWCASE_TAKES.find((candidate) => candidate.id === takeId);

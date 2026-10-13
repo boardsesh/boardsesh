@@ -27,7 +27,8 @@ the moment the app changes.
 - `ffmpeg` (`brew install ffmpeg`, or `FFMPEG_BIN`).
 - The screenshot dev-client `.app`. `--app-path` takes a built one; without it
   the recorder builds one into `packages/mobile/.app-cache/` (about 30 min, once).
-- Port 8081 free: the dev-client loads its bundle from `localhost:8081`.
+- One free Metro port: the recorder tries 8081, then 8090–8099. An existing
+  Metro stays running; the recorder patches a temporary app copy for its port.
 - A few GB of free disk. Raw recordings, Metro caches and Maestro's debug output
   all land on it; a full disk shows up as Postgres or Maestro failing, not as a
   clear error.
@@ -71,10 +72,17 @@ content is fixture data.
 ## Re-record everything
 
 ```sh
-SCREENSHOT_USER_PASSWORD=... vp run video:record -- --app-path <Boardsesh.app>
+vp run video:record -- --app-path <Boardsesh.app>
 ```
 
-One command, no manual steps. It:
+Without `--kind` or a locale selector, recording retains the original English
+`work/footage` paths used by `vp run video` and the homepage renderer. For store
+creatives use the locale command in the next section.
+
+Every requested locale gets a new recorder process, Metro bundle, native take,
+and validation. The cached native app is reusable; its JS is regenerated with
+`EXPO_PUBLIC_SCREENSHOT_LOCALE` for each capture. There is no English footage
+fallback. It:
 
 1. creates (once) and boots two dedicated simulators, "Boardsesh Showcase" and,
    for the crew take, "Boardsesh Showcase 2" (iPhone 16 Pro Max, status bar at
@@ -87,16 +95,49 @@ One command, no manual steps. It:
    opens the take's deep links, starts `simctl io recordVideo`, runs the take's
    Maestro flow while collecting `[showcase-anchor]` lines from Metro's output,
    stops the recording with SIGINT, and cuts Maestro's attach time off the head;
-4. writes `.boardsesh/showcase-video/work/footage/<take>/%05d.jpg` (800 px wide,
-   constant 30 fps) and `.boardsesh/showcase-video/work/anchors/<take>.json`;
+4. writes `.boardsesh/showcase-video/work/boards/default/<locale>/footage/<take>/%05d.jpg`
+   (800 px wide, constant 30 fps), with sibling `anchors/` and `marks/`;
 5. checks every take (below), prints a summary, and tears everything down:
    the crew take's live session is ended, Metro, the backend it started and the
    simulators are stopped. Ctrl-C does the same.
+
+### Board-specific store footage
+
+```sh
+vp run video:record -- --kind tension --locales all --app-path <Boardsesh.app> --dry-run
+vp run video:record -- --kind tension --locales all --app-path <Boardsesh.app> --keep-raw
+vp run video:record -- --kind moonboard --locales all --app-path <Boardsesh.app> --keep-raw
+```
+
+`--kind kilter|tension|moonboard|spray` records that store cut's required source
+takes, including its named log flow. Kilter and spray also record the mixed
+board pile; Tension and MoonBoard keep their own opening board. Feature takes
+selected with `--only wall,crew,workouts` activate the named screenshot slot
+and verify the actual resolved board type.
+The session prime opens a real climb on that board before navigating to Record.
+Variant footage lives in `work/boards/<kind>/<locale>/{raw,footage,anchors,marks}`;
+Android adds `/android` before those directories. Marks record `takeId`,
+`locale`, `kind`, `platform`, capture timestamp, and validation status. Previous
+success is invalidated before each attempt; a failed re-record cannot reuse it. A store renderer must
+verify this provenance rather than substitute legacy recordings.
+
+The optional `moonboard-import` take shows the native CSV import entry card;
+it does not prove a completed import. A genuine MoonBoard CSV export is required
+before recording a parsed preview or import completion. `moonboard-filter`
+shows the native filter sheet and real loaded grade controls. Neither take
+fabricates logbook rows, benchmark status, or result counts.
+
+Plan for 10–20 minutes per locale for a full showcase and 4–8 minutes per locale
+for one board variant, plus the first native build if no cached app is available.
+These estimates include Metro warmup and two-phone crew setup, not rendering.
+A dry run takes approximately 10 seconds and captures nothing.
 
 Useful flags:
 
 | Flag | What it does |
 | --- | --- |
+| `--locale fr` / `--locales all` | Record native UI for one locale or en-US, es, fr, and de. Comma-separated locales are supported. |
+| `--kind tension` | Record the sources used by that board's store cut. `--only wall,crew,workouts` activates that board for those feature takes. |
 | `--only crew` | Record one take (repeat or comma-separate for more). Other takes' footage is left alone. |
 | `--backend local` | Seeded dev DB: runs `vp run db:up`, starts a backend of its own on 8180+, seeds a MoonBoard and a crew account. `SHOWCASE_LOCAL_BACKEND_URL` reuses a running backend. |
 | `--boards "A\|B\|…"` | The seven walls by name, in slot order: kilter, tension, moonboard, woods, decoy, grasshopper, spray. |
@@ -592,7 +633,7 @@ Nothing uploads automatically. After `vp run video:render -- --target all`:
    and pure logic.
 
 To pin a take's opening screen, drop its first frame at
-`marketing/showcase-video/reference/<platform>/<take>.jpg` (`ios` or `android`:
+`marketing/showcase-video/reference/<platform>/<kind>/<locale>/<take>.jpg` (`ios` or `android`:
 the two never open on the same pixels); the recorder then fails a take whose
 first frame differs in more than 35% of thumbnail pixels.
 
@@ -612,7 +653,7 @@ Each failure names the take. The fixes:
 | `"Show this session live" was not switched off` | The switch tap missed, or a session was already running. | End any running session on the account; check the point in `session-private.yaml`. |
 | `could not confirm the live session ended` | The end tap missed or the backend refused. Teardown retries once on exit. | `vp run video:record -- --end-session <id>` with the id from `hidden session <id> started`. "Session not found" there means the backend already closed it. |
 | `never reached home` | Sign-in failed or the bundle did not load. | Read `work/logs/metro-<phone>.log`: a wrong password shows as `auto sign-in FAILED`. |
-| `Port 8081 is taken` | Another Metro is running. | Stop it; the dev-client only loads from 8081. |
+| `No free primary Metro port` | All recorder ports are occupied. | Free one of 8081 or 8090–8099; existing servers are never stopped. |
 
 ## Where things live
 
@@ -624,7 +665,7 @@ Each failure names the take. The fixes:
 | `scripts/lib/showcase-video/android.ts` | The emulator spec and the adb / emulator / screenrecord argument vectors. |
 | `packages/mobile/.maestro/showcase/` | One flow per take, plus the crew setup/teardown flows. |
 | `packages/mobile/.maestro/showcase/android/` | The Android flows (same names; they replace the shared ones on Android). |
-| `.boardsesh/showcase-video/work/` | Footage, anchors, raw recordings, logs (gitignored). Android's under `work/android/`. |
+| `.boardsesh/showcase-video/work/boards/<kind>/<locale>/` | Fresh native footage, anchors, marks, and raw recordings (gitignored). Android adds `/android/`. Shared logs remain under `work/logs/`. |
 
 ## Web delivery
 

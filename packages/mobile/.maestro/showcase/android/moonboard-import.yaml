@@ -1,0 +1,12 @@
+appId: com.boardsesh.app.dev
+name: showcase take - native MoonBoard CSV import entry
+---
+# This captures the existing CSV entry card only. A real export is required
+# before recording the parsed preview or completed import; no synthetic data.
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+- assertVisible: 'MoonBoard'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/csv-import-entry')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 8000
+    optional: true

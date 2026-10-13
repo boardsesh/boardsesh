@@ -7,6 +7,13 @@ import {
   SHOWCASE_FPS,
   SHOWCASE_PLATFORMS,
   SHOWCASE_TAKE_IDS,
+  SHOWCASE_LOCALES,
+  SHOWCASE_VARIANT_KINDS,
+  type ShowcaseLocale,
+  type ShowcaseVariantKind,
+  showcaseWorkDirs,
+  showcaseVariantWorkDirs,
+  type ShowcaseWorkDirs,
   isShowcasePlatform,
   type ShowcasePlatform,
   parseShowcaseAnchorLine,
@@ -67,6 +74,10 @@ export const SHOWCASE_DEFAULT_ENV_FILE = join(homedir(), '.config', 'boardsesh',
 export type ShowcaseRecordArgs = Readonly<{
   /** The phone the takes are filmed on (default iOS). */
   platform: ShowcasePlatform;
+  kind: ShowcaseVariantKind;
+  /** Explicit locale or variant opts into separated native store captures. */
+  nativeLocaleCapture: boolean;
+  locales: readonly ShowcaseLocale[];
   /** Set the devices up, then hold them (and Metro) until Ctrl-C, recording nothing: for calibrating flows. */
   hold: boolean;
   only: readonly ShowcaseTakeId[] | null;
@@ -127,6 +138,10 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   const args = argv.filter((argument) => argument !== '--');
   let only: ShowcaseTakeId[] | null = null;
   let platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM;
+  let kind: ShowcaseVariantKind = 'default';
+  let locales: ShowcaseLocale[] = ['en-US'];
+  let localeFlagSeen = false;
+  let kindFlagSeen = false;
   let hold = false;
   let dryRun = false;
   let keepRaw = false;
@@ -140,6 +155,28 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
     const flag = args[index];
     const value = args[index + 1];
     switch (flag) {
+      case '--wall':
+      case '--kind': {
+        kindFlagSeen = true;
+        const chosen = expectValue(flag, value);
+        if (!(SHOWCASE_VARIANT_KINDS as readonly string[]).includes(chosen))
+          throw new Error(`--kind must be one of ${SHOWCASE_VARIANT_KINDS.join(', ')}`);
+        kind = chosen as ShowcaseVariantKind;
+        index++;
+        break;
+      }
+      case '--locale':
+      case '--locales': {
+        if (localeFlagSeen) throw new Error('Use --locale or --locales once per run');
+        localeFlagSeen = true;
+        const chosen = expectValue(flag, value);
+        const requested = chosen === 'all' ? [...SHOWCASE_LOCALES] : chosen.split(',').map((entry) => entry.trim());
+        if (!requested.length || requested.some((entry) => !(SHOWCASE_LOCALES as readonly string[]).includes(entry)))
+          throw new Error(`--locale/--locales must be ${SHOWCASE_LOCALES.join(', ')} or all`);
+        locales = [...new Set(requested)] as ShowcaseLocale[];
+        index++;
+        break;
+      }
       case '--only':
         only = [...(only ?? []), ...parseTakeIds(expectValue(flag, value))];
         index++;
@@ -197,8 +234,12 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
     }
   }
   if (only && only.length === 0) throw new Error('--only needs at least one take');
+  if ((hold || endSession) && locales.length > 1) throw new Error('--hold and --end-session require one locale');
   return {
     platform,
+    kind,
+    nativeLocaleCapture: kindFlagSeen || localeFlagSeen,
+    locales,
     hold,
     only: only ? [...new Set(only)] : null,
     dryRun,
@@ -210,6 +251,28 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
     skipAnchorCheck,
     endSession,
   };
+}
+
+/** Preserve the original English homepage workflow unless the caller selects a store variant or locale. */
+export function recordingWorkDirs(
+  args: Pick<ShowcaseRecordArgs, 'platform' | 'kind' | 'locales' | 'nativeLocaleCapture'>,
+): ShowcaseWorkDirs {
+  return args.nativeLocaleCapture
+    ? showcaseVariantWorkDirs(args.kind, args.locales[0], args.platform)
+    : showcaseWorkDirs(args.platform);
+}
+
+/** Replace the locale selector when launching one clean recorder process per locale. */
+export function recordLocaleArgs(argv: readonly string[], locale: ShowcaseLocale): string[] {
+  const forwarded: string[] = [];
+  for (let index = 0; index < argv.length; index++) {
+    if (argv[index] === '--locale' || argv[index] === '--locales') {
+      index++;
+      continue;
+    }
+    if (argv[index] !== '--') forwarded.push(argv[index]);
+  }
+  return [...forwarded, '--locale', locale];
 }
 
 /**

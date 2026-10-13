@@ -45,11 +45,32 @@ export function isShowcasePlatform(value: unknown): value is ShowcasePlatform {
   return (SHOWCASE_PLATFORMS as readonly unknown[]).includes(value);
 }
 
+/** Native footage variants for localized store creatives. */
+export const SHOWCASE_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+export type ShowcaseLocale = (typeof SHOWCASE_LOCALES)[number];
+export const SHOWCASE_VARIANT_KINDS = ['default', 'kilter', 'tension', 'moonboard', 'spray'] as const;
+export type ShowcaseVariantKind = (typeof SHOWCASE_VARIANT_KINDS)[number];
+
 export type ShowcaseWorkDirs = Readonly<{ raw: string; footage: string; anchors: string; marks: string }>;
 
 /** Where one platform's recording lives. iOS: `work/footage`; Android: `work/android/footage`. */
 export function showcaseWorkDirs(platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM): ShowcaseWorkDirs {
   const base = platform === 'ios' ? resolve(SHOWCASE_WORK_ROOT, 'work') : resolve(SHOWCASE_WORK_ROOT, 'work', platform);
+  return {
+    raw: resolve(base, 'raw'),
+    footage: resolve(base, 'footage'),
+    anchors: resolve(base, 'anchors'),
+    marks: resolve(base, 'marks'),
+  };
+}
+
+/** Every locale is recorded separately; reading these paths never falls back to English. */
+export function showcaseVariantWorkDirs(
+  kind: ShowcaseVariantKind,
+  locale: ShowcaseLocale,
+  platform: ShowcasePlatform = DEFAULT_SHOWCASE_PLATFORM,
+): ShowcaseWorkDirs {
+  const base = resolve(SHOWCASE_WORK_ROOT, 'work', 'boards', kind, locale, ...(platform === 'ios' ? [] : [platform]));
   return {
     raw: resolve(base, 'raw'),
     footage: resolve(base, 'footage'),
@@ -93,6 +114,8 @@ export const SHOWCASE_TAKE_IDS = [
   'crew',
   'workouts',
   'lock-screen',
+  'moonboard-import',
+  'moonboard-filter',
   'log',
 ] as const;
 export type ShowcaseTakeId = (typeof SHOWCASE_TAKE_IDS)[number];
@@ -175,6 +198,14 @@ export type ShowcaseAnchorsFile = Readonly<{
  */
 export type ShowcaseMarksFile = Readonly<{
   takeId: ShowcaseTakeId;
+  /** Absent on legacy footage. Store creatives require this native-capture provenance. */
+  locale?: ShowcaseLocale;
+  kind?: ShowcaseVariantKind;
+  platform?: ShowcasePlatform;
+  recordedAt?: string;
+  /** False if the flow, content, board, or anchor self-check failed. */
+  validated?: boolean;
+  boardKind?: string;
   marks: Readonly<Record<string, number>>;
 }>;
 

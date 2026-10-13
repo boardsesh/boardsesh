@@ -1,0 +1,9 @@
+appId: com.boardsesh.app.dev
+name: showcase setup - native MoonBoard CSV import entry
+---
+- scrollUntilVisible:
+    element: 'MoonBoard'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- waitForAnimationToEnd

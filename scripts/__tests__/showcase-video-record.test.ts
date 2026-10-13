@@ -1,6 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SHOWCASE_TAKE_IDS, type ShowcaseAnchorsFile, type ShowcaseMarksFile } from '../lib/showcase-video/contract';
+import {
+  SHOWCASE_TAKE_IDS,
+  SHOWCASE_LOCALES,
+  SHOWCASE_VARIANT_KINDS,
+  showcaseVariantWorkDirs,
+  type ShowcaseAnchorsFile,
+  type ShowcaseMarksFile,
+} from '../lib/showcase-video/contract';
 import {
   BLANK_FRAME_MAX_STDEV,
   REFERENCE_MAX_DIFF_RATIO,
@@ -21,6 +28,8 @@ import {
   isRecordingStartedLine,
   parseEnvFile,
   parseRecordArgs,
+  recordLocaleArgs,
+  recordingWorkDirs,
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
   resolveTrimSeconds,
@@ -40,6 +49,7 @@ import {
   isShowcaseFlow,
   showcaseFlowPath,
   findShowcaseTake,
+  recordingTakes,
 } from '../lib/showcase-video/takes';
 import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 
@@ -59,6 +69,9 @@ describe('parseRecordArgs', () => {
       skipAnchorCheck: false,
       endSession: null,
       platform: 'ios',
+      kind: 'default',
+      nativeLocaleCapture: false,
+      locales: ['en-US'],
       hold: false,
     });
   });
@@ -98,6 +111,9 @@ describe('parseRecordArgs', () => {
       skipAnchorCheck: true,
       endSession: '667186b5-f0e5-4f56-92bf-8646f87d3f81',
       platform: 'android',
+      kind: 'default',
+      nativeLocaleCapture: false,
+      locales: ['en-US'],
       hold: true,
     });
   });
@@ -112,6 +128,87 @@ describe('parseRecordArgs', () => {
     expect(() => parseRecordArgs(['--only'])).toThrow(/requires a value/);
     expect(() => parseRecordArgs(['--end-session', 'abc'])).toThrow(/UUID/);
     expect(() => parseRecordArgs(['--platform', 'windows'])).toThrow(/--platform must be one of ios, android/);
+  });
+});
+
+describe('native locale and board recordings', () => {
+  it('preserves legacy homepage paths until a locale or kind is explicitly selected', () => {
+    expect(recordingWorkDirs(parseRecordArgs([])).footage).toMatch(/work\/footage$/);
+    expect(recordingWorkDirs(parseRecordArgs(['--platform', 'android'])).footage).toMatch(/work\/android\/footage$/);
+    expect(recordingWorkDirs(parseRecordArgs(['--locale', 'en-US'])).footage).toMatch(
+      /work\/boards\/default\/en-US\/footage$/,
+    );
+    expect(recordingWorkDirs(parseRecordArgs(['--kind', 'default'])).footage).toMatch(
+      /work\/boards\/default\/en-US\/footage$/,
+    );
+  });
+
+  it('records each supported locale explicitly and rejects ambiguous selectors', () => {
+    expect(parseRecordArgs(['--locales', 'all']).locales).toEqual(SHOWCASE_LOCALES);
+    expect(parseRecordArgs(['--locales', 'fr,de,fr']).locales).toEqual(['fr', 'de']);
+    expect(() => parseRecordArgs(['--locale', 'en'])).toThrow(/--locale/);
+    expect(() => parseRecordArgs(['--locale', 'es', '--locales', 'all'])).toThrow(/once/);
+    expect(() => parseRecordArgs(['--hold', '--locales', 'all'])).toThrow(/one locale/);
+    expect(recordLocaleArgs(['--only', 'wall', '--locales', 'all', '--'], 'de')).toEqual([
+      '--only',
+      'wall',
+      '--locale',
+      'de',
+    ]);
+  });
+
+  it('uses separate footage, raw, marks, and anchor directories for every board and locale', () => {
+    const paths = SHOWCASE_VARIANT_KINDS.flatMap((kind) =>
+      SHOWCASE_LOCALES.flatMap((locale) =>
+        ['ios', 'android'].flatMap((platform) =>
+          Object.values(showcaseVariantWorkDirs(kind, locale, platform as 'ios' | 'android')),
+        ),
+      ),
+    );
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(showcaseVariantWorkDirs('moonboard', 'fr').footage).toMatch(/work\/boards\/moonboard\/fr\/footage$/);
+  });
+
+  it.each([
+    ['kilter', 0],
+    ['tension', 1],
+    ['moonboard', 2],
+    ['spray', 6],
+  ] as const)('primes and verifies %s for wall, crew, and workouts', (kind, slot) => {
+    const takes = recordingTakes(parseRecordArgs(['--kind', kind, '--only', 'wall,crew,workouts']));
+    expect(takes).toHaveLength(3);
+    for (const take of takes) {
+      expect(take.board).toEqual({ kind, slot });
+      expect(take.primeLinks.some((link) => link.includes(`screenshotBoardIndex=${slot}`))).toBe(true);
+      if (take.id !== 'wall') expect(take.primeLinks.at(-1)).toBe('record');
+    }
+  });
+
+  it('records every source used by named store cuts, including permitted board piles', () => {
+    const kilter = recordingTakes(parseRecordArgs(['--kind', 'kilter']));
+    expect(kilter.map((take) => take.id)).toEqual(
+      expect.arrayContaining(['boards-kilter', 'boards-spray', 'boards-moonboard', 'log', 'crew']),
+    );
+    expect(kilter.find((take) => take.id === 'log')?.flow).toBe('log-kilter.yaml');
+    const spray = recordingTakes(parseRecordArgs(['--kind', 'spray']));
+    expect(spray.map((take) => take.id)).toEqual(
+      expect.arrayContaining(['spray', 'log', 'boards-spray', 'boards-kilter', 'boards-moonboard']),
+    );
+    expect(recordingTakes(parseRecordArgs(['--kind', 'tension'])).find((take) => take.id === 'log')?.flow).toBe(
+      'log-tension.yaml',
+    );
+    expect(() => recordingTakes(parseRecordArgs(['--kind', 'spray', '--only', 'boards-kilter']))).not.toThrow();
+  });
+
+  it('keeps default footage separate and records MoonBoard beats only on its variant', () => {
+    expect(recordingTakes(parseRecordArgs([])).some((take) => take.id.startsWith('moonboard-'))).toBe(false);
+    expect(recordingTakes(parseRecordArgs(['--kind', 'moonboard'])).map((take) => take.id)).toContain(
+      'moonboard-filter',
+    );
+    expect(() => recordingTakes(parseRecordArgs(['--kind', 'tension', '--only', 'boards-kilter']))).toThrow(
+      /cannot record/,
+    );
+    expect(() => parseRecordArgs(['--kind', '../kilter'])).toThrow(/--kind/);
   });
 });
 

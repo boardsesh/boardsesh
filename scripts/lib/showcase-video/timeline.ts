@@ -15,6 +15,8 @@ export type ShowcaseSceneId = 'boards' | 'spray' | 'wall' | 'crew' | 'workouts' 
 
 export type ShowcaseScene = Readonly<{
   id: ShowcaseSceneId;
+  /** Store-search caption key, resolved per locale. */
+  caption?: string;
   startFrame: number;
   endFrame: number;
   background: 'dark' | 'light';
@@ -103,9 +105,13 @@ export const SHOWCASE_SKIPPABLE_SCENES: readonly ShowcaseSceneId[] = ['lock-scre
  * Takes the render can do without: any board phone (the pile-up uses however
  * many arrived, at least one) and the takes of a skippable scene.
  */
-export const SHOWCASE_OPTIONAL_TAKES: readonly ShowcaseTakeId[] = SHOWCASE_SCENES.filter(
-  (scene) => scene.id === 'boards' || SHOWCASE_SKIPPABLE_SCENES.includes(scene.id),
-).flatMap((scene) => scene.takes);
+export const SHOWCASE_OPTIONAL_TAKES: readonly ShowcaseTakeId[] = [
+  'moonboard-import',
+  'moonboard-filter',
+  ...SHOWCASE_SCENES.filter((scene) => scene.id === 'boards' || SHOWCASE_SKIPPABLE_SCENES.includes(scene.id)).flatMap(
+    (scene) => scene.takes,
+  ),
+];
 
 export type ShowcaseTimeline = Readonly<{
   scenes: readonly ShowcaseScene[];
@@ -118,7 +124,16 @@ export type ShowcaseTimeline = Readonly<{
  * different length (frames) than the storyboard's. A render target
  * (`targets.ts`) is a list of these.
  */
-export type ShowcaseScenePlan = Readonly<{ id: ShowcaseSceneId; frames?: number }>;
+export type ShowcaseScenePlan = Readonly<{
+  id: ShowcaseSceneId;
+  frames?: number;
+  takes?: readonly ShowcaseTakeId[];
+  caption?: string;
+  /** Drop an unavailable NEW beat; never borrow another board's recording. */
+  optional?: boolean;
+  /** Search cuts use only a headline and never legacy callouts. */
+  plain?: boolean;
+}>;
 
 /** The storyboard as a plan: every scene, in order, at its own length. */
 export const SHOWCASE_FULL_PLAN: readonly ShowcaseScenePlan[] = SHOWCASE_SCENES.map((scene) => ({ id: scene.id }));
@@ -149,17 +164,40 @@ export function resolveTimeline(
   plan: readonly ShowcaseScenePlan[] = SHOWCASE_FULL_PLAN,
 ): ShowcaseTimeline {
   const skipped: ShowcaseSceneId[] = [];
-  const planned = plan.map((step) => ({ scene: storyboardScene(step.id), frames: step.frames }));
-  const kept = planned.filter(({ scene }) => {
-    const missing = SHOWCASE_SKIPPABLE_SCENES.includes(scene.id) && scene.takes.some((take) => !available.has(take));
+  const planned = plan.map((step) => ({
+    scene: {
+      ...storyboardScene(step.id),
+      ...(step.takes ? { takes: step.takes } : {}),
+      ...(step.caption ? { caption: step.caption } : {}),
+      ...(step.plain ? { callouts: [], background: 'dark' as const } : {}),
+    },
+    frames: step.frames,
+    optional: step.optional,
+    plain: step.plain,
+  }));
+  const kept = planned.filter(({ scene, optional }) => {
+    const missing =
+      (optional || SHOWCASE_SKIPPABLE_SCENES.includes(scene.id)) && scene.takes.some((take) => !available.has(take));
     if (missing) skipped.push(scene.id);
     return !missing;
   });
   let frame = 0;
-  const scenes = kept.map(({ scene, frames }, index): ShowcaseScene => {
+  const scenes = kept.map(({ scene, frames, plain }, index): ShowcaseScene => {
     const length = frames ?? scene.endFrame - scene.startFrame;
-    const background = index === kept.length - 1 ? scene.background : index % 2 === 0 ? 'dark' : 'light';
-    const moved = { ...scene, startFrame: frame, endFrame: frame + length, background };
+    const background = plain
+      ? 'dark'
+      : index === kept.length - 1
+        ? scene.background
+        : index % 2 === 0
+          ? 'dark'
+          : 'light';
+    const moved = {
+      ...scene,
+      ...(plain ? { takes: scene.takes.filter((take) => available.has(take)) } : {}),
+      startFrame: frame,
+      endFrame: frame + length,
+      background,
+    };
     frame += length;
     return moved;
   });

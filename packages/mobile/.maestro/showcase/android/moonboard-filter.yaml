@@ -1,0 +1,13 @@
+appId: com.boardsesh.app.dev
+name: showcase take - native MoonBoard grade filter
+---
+# The deep link opens the native filter sheet on the selected MoonBoard.
+# Show its loaded grade controls; do not invent a result count or benchmark.
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+- assertVisible:
+    id: 'climb-filter-column'
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/grade-filter-shown')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 8000
+    optional: true

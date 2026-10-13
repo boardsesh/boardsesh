@@ -50,14 +50,13 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { formatBoardDisplayName } from '../packages/shared/board-config/src/board-name';
 import { resolveMediaBinary } from './lib/help-clips';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   SHOWCASE_STAGE_DIR,
-  SHOWCASE_TAKE_IDS,
   SHOWCASE_WORK_ROOT,
-  showcaseWorkDirs,
   type ShowcaseAnchorsFile,
   type ShowcasePlatform,
   type ShowcaseTakeId,
@@ -110,6 +109,8 @@ import {
   parseEnvFile,
   macOsOnlyMessage,
   parseRecordArgs,
+  recordLocaleArgs,
+  recordingWorkDirs,
   recordRunMode,
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
@@ -129,7 +130,7 @@ import {
   isShowcaseFlow,
   assertShowcaseTakesComplete,
   showcaseFlowPathFor,
-  takeForPlatform,
+  recordingTakes,
   type ShowcaseTake,
 } from './lib/showcase-video/takes';
 import {
@@ -163,7 +164,7 @@ const APP_SCHEME = 'com.boardsesh.app';
 // The cached dev-client bakes DEV_CLIENT_DEFAULT_LAUNCHER_URL=http://localhost:8081
 // (packages/mobile/plugins/with-screenshot-dev-menu.js); the secondary gets a
 // patched copy pointing at its own Metro.
-const PRIMARY_METRO_PORT = 8081;
+const PRIMARY_METRO_PORTS = [8081, 8090, 8091, 8092, 8093, 8094, 8095, 8096, 8097, 8098, 8099] as const;
 const SECONDARY_METRO_PORTS = [8082, 8083, 8084, 8085, 8086, 8087, 8088, 8089] as const;
 const LOCAL_BACKEND_PORTS = [8180, 8181, 8182, 8183, 8184, 8185] as const;
 const SAFE_ROUTE = /^[A-Za-z0-9?=&_.:/%-]+$/;
@@ -542,7 +543,7 @@ function metroEnv(
   if (backendUrl) base.EXPO_PUBLIC_BACKEND_URL = backendUrl;
   base.SCREENSHOT_USER_EMAIL = credentials.email;
   base.SCREENSHOT_USER_PASSWORD = credentials.password;
-  const env = buildScreenshotEnv(screenshotOptions(args, null), base);
+  const env = buildScreenshotEnv(screenshotOptions(args, null), base, args.locales[0]);
   env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
   return env;
 }
@@ -600,14 +601,15 @@ async function prewarmBundle(port: number, platform: ShowcasePlatform = 'ios'): 
 }
 
 /** A copy of the dev-client whose baked launcher URL points at another Metro port. */
-function patchedSecondaryApp(appPath: string, port: number): string {
-  rmSync(SECONDARY_APP_DIR, { recursive: true, force: true });
-  mkdirSync(SECONDARY_APP_DIR, { recursive: true });
-  const target = resolve(SECONDARY_APP_DIR, 'Boardsesh.app');
+function patchedRecorderApp(appPath: string, port: number, role: 'primary' | 'secondary'): string {
+  const copyDir = role === 'secondary' ? SECONDARY_APP_DIR : resolve(WORK_DIR, 'primary-app');
+  rmSync(copyDir, { recursive: true, force: true });
+  mkdirSync(copyDir, { recursive: true });
+  const target = resolve(copyDir, 'Boardsesh.app');
   // `cp -c` clones on APFS: the 190 MB bundle costs no disk until a file in it
   // changes (only Info.plist and the signature do).
   if (spawnSync('cp', ['-cR', appPath, target]).status !== 0) cpSync(appPath, target, { recursive: true });
-  onCleanup('second phone app copy', () => rmSync(SECONDARY_APP_DIR, { recursive: true, force: true }));
+  onCleanup(`${role} phone app copy`, () => rmSync(copyDir, { recursive: true, force: true }));
   const plist = resolve(target, 'Info.plist');
   const replaced = spawnSync('plutil', [
     '-replace',
@@ -1041,9 +1043,9 @@ async function frameStdevs(file: string): Promise<number[]> {
 async function referenceDiff(
   takeId: ShowcaseTakeId,
   firstFrame: string,
-  platform: ShowcasePlatform,
+  args: ShowcaseRecordArgs,
 ): Promise<number | null> {
-  const reference = resolve(REFERENCE_DIR, platform, `${takeId}.jpg`);
+  const reference = resolve(REFERENCE_DIR, args.platform, args.kind, args.locales[0], `${takeId}.jpg`);
   if (!existsSync(reference)) return null;
   const thumbnail = (file: string): Promise<Buffer> =>
     sharp(file).resize(100, 217, { fit: 'fill' }).removeAlpha().raw().toBuffer();
@@ -1098,7 +1100,7 @@ async function processTake(
   const seconds = frames / 30;
   const firstFrame = resolve(footageDir, '00001.jpg');
   const firstFrameBlank = frames > 0 ? isBlankFrame(await frameStdevs(firstFrame)) : true;
-  const referenceDiffRatio = frames > 0 ? await referenceDiff(take.id, firstFrame, args.platform) : null;
+  const referenceDiffRatio = frames > 0 ? await referenceDiff(take.id, firstFrame, args) : null;
 
   const staticAnchors = take.staticAnchors.flatMap((staticAnchor) => {
     const markMs = options.marks.get(staticAnchor.fromMark);
@@ -1124,8 +1126,6 @@ async function processTake(
     trimSeconds,
     durationSeconds: seconds,
   });
-  mkdirSync(dirs.marks, { recursive: true });
-  writeFileSync(resolve(dirs.marks, `${take.id}.json`), `${JSON.stringify(marksFile, null, 2)}\n`);
 
   let boardProblem: string | null = null;
   if (take.board?.slot !== undefined && take.board.slot !== null) {
@@ -1150,6 +1150,23 @@ async function processTake(
       skipAnchorCheck: args.skipAnchorCheck,
     }),
   ];
+  mkdirSync(dirs.marks, { recursive: true });
+  writeFileSync(
+    resolve(dirs.marks, `${take.id}.json`),
+    `${JSON.stringify(
+      {
+        ...marksFile,
+        locale: args.locales[0],
+        kind: args.kind,
+        platform: args.platform,
+        recordedAt: new Date(options.recordStartMs).toISOString(),
+        boardKind: take.board?.kind,
+        validated: problems.length === 0 && !args.skipAnchorCheck,
+      },
+      null,
+      2,
+    )}\n`,
+  );
   console.log(
     `${LOG} [${take.id}] trim ${trimSeconds.toFixed(2)}s -> ${frames} frames (${seconds.toFixed(2)}s), ` +
       `anchors: ${Object.keys(anchors.anchors).join(', ') || 'none'}; ` +
@@ -1198,18 +1215,53 @@ function noteSessionStarted(context: RunContext, logText: string): void {
   }
 }
 
+function showcaseQueueLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as {
+    playView: { actionBar: { queueCountAria: string } };
+  };
+  return catalog.playView.actionBar.queueCountAria.replace('{{count}}', '.*');
+}
+
+function showcaseCloseLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'common.json'), 'utf8'),
+  ) as { ariaLabels: { close: string } };
+  return catalog.ariaLabels.close;
+}
+
 async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
   return runMaestro({
     udid: context.primary.device.udid,
     flowFile: showcaseFlowPathFor(flow, context.primary.platform),
     label,
     signalUrl: context.signal.url,
+    env: {
+      SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
+      SHOWCASE_CLOSE_LABEL: showcaseCloseLabel(context.args.locales[0]),
+      SHOWCASE_LOG_BOARD_LABEL: formatBoardDisplayName(context.args.kind),
+    },
   });
 }
 
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
   const { primary, signal } = context;
   console.log(`\n${LOG} === ${take.id}: ${take.summary}`);
+  // Invalidate old success before setup so a failed re-record cannot publish stale footage.
+  mkdirSync(context.dirs.marks, { recursive: true });
+  writeFileSync(
+    resolve(context.dirs.marks, `${take.id}.json`),
+    JSON.stringify({
+      takeId: take.id,
+      locale: context.args.locales[0],
+      kind: context.args.kind,
+      platform: context.args.platform,
+      recordedAt: new Date().toISOString(),
+      validated: false,
+      marks: {},
+    }),
+  );
   signal.reset();
   let window = await relaunch(primary);
   if (primary.platform === 'android') cleanAndroidStatusBar(primary.device.udid);
@@ -1636,9 +1688,9 @@ function resolveCredentials(
 }
 
 function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], envFileFound: boolean): void {
-  const dirs = showcaseWorkDirs(args.platform);
+  const dirs = recordingWorkDirs(args);
   console.log(
-    `${LOG} platform: ${args.platform}; backend: ${args.backend}; boards: ${args.boards ?? SHOWCASE_DEFAULT_BOARDS[args.backend]}`,
+    `${LOG} platform: ${args.platform}; locale: ${args.locales[0]}; kind: ${args.kind}; backend: ${args.backend}; boards: ${args.boards ?? SHOWCASE_DEFAULT_BOARDS[args.backend]}`,
   );
   console.log(`${LOG} env file: ${args.envFile} (${envFileFound ? 'found' : 'not found'})`);
   for (const key of ENV_FILE_KEYS) console.log(`${LOG}   ${key}: ${process.env[key] ? 'set' : 'unset'}`);
@@ -1693,10 +1745,38 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
-  const selected = args.only ?? SHOWCASE_TAKE_IDS;
-  const wanted = SHOWCASE_TAKES.filter((take) => selected.includes(take.id)).map((take) =>
-    takeForPlatform(take, args.platform),
-  );
+  if (args.locales.length > 1) {
+    for (const locale of args.locales) {
+      console.log(`${LOG} fresh native capture: ${locale} (${args.kind})`);
+      const status = await new Promise<number>((resolveStatus) => {
+        const child = spawn(
+          process.execPath,
+          [...process.execArgv, process.argv[1], ...recordLocaleArgs(argv, locale)],
+          { stdio: 'inherit' },
+        );
+        const interrupt = (): void => {
+          child.kill('SIGINT');
+        };
+        process.once('SIGINT', interrupt);
+        process.once('SIGTERM', interrupt);
+        child.once('error', () => resolveStatus(1));
+        child.once('exit', (code) => {
+          process.removeListener('SIGINT', interrupt);
+          process.removeListener('SIGTERM', interrupt);
+          resolveStatus(code ?? 1);
+        });
+      });
+      if (status !== 0) return status;
+    }
+    return 0;
+  }
+  let wanted: ShowcaseTake[];
+  try {
+    wanted = recordingTakes(args);
+  } catch (error) {
+    console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
   const takes = wanted.filter((take) => !take.unavailable[args.backend]);
   for (const take of wanted) {
     const reason = take.unavailable[args.backend];
@@ -1729,12 +1809,9 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const signal = await startSignalServer();
     onCleanup('signal server', () => signal.close());
 
-    if (portInUse(PRIMARY_METRO_PORT)) {
-      throw new Error(
-        `Port ${PRIMARY_METRO_PORT} is taken (another Metro?). The dev-client .app loads its bundle from ` +
-          `localhost:${PRIMARY_METRO_PORT}, so stop that one first.`,
-      );
-    }
+    const primaryMetroPort = PRIMARY_METRO_PORTS.find((port) => !portInUse(port));
+    if (!primaryMetroPort) throw new Error(`No free primary Metro port among ${PRIMARY_METRO_PORTS.join(', ')}`);
+    console.log(`${LOG} primary Metro port: ${primaryMetroPort}`);
     // The iOS dev-client: the primary phone on iOS, and the crew take's second
     // phone on either platform (see "Android" in docs/showcase-video.md).
     const needsIosApp = args.platform === 'ios' || Boolean(credentials.secondary);
@@ -1742,7 +1819,16 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const cachedApp = resolve(MOBILE_DIR, '.app-cache', 'Boardsesh.app');
     const requestedApp =
       args.appPath && args.platform === 'ios' ? resolve(args.appPath) : existsSync(cachedApp) ? cachedApp : null;
-    const appPath = needsIosApp ? resolveAppPath(screenshotOptions(args, requestedApp)) : '';
+    let appPath = '';
+    if (needsIosApp) {
+      if (requestedApp) {
+        if (!existsSync(requestedApp)) throw new Error(`--app-path not found: ${requestedApp}`);
+        const launcherUrl = readPlistString(resolve(requestedApp, 'Info.plist'), 'DEV_CLIENT_DEFAULT_LAUNCHER_URL');
+        if (!launcherUrl || !/^http:\/\/localhost:\d+$/.test(launcherUrl))
+          throw new Error(`--app-path must be a simulator dev-client with a localhost Metro launcher`);
+        appPath = requestedApp;
+      } else appPath = resolveAppPath(screenshotOptions(args, null));
+    }
     if (args.platform === 'ios') {
       const keychainProblem = findKeychainTeamProblem(
         readPlistString(resolve(appPath, 'Info.plist'), 'BoardseshKeychainAccessGroup'),
@@ -1758,8 +1844,17 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const primaryEnv = metroEnv(args, credentials.primary, backendUrl);
     const primary =
       args.platform === 'android'
-        ? await prepareAndroidPhone(args, PRIMARY_METRO_PORT, primaryEnv, backendUrl)
-        : await preparePhone('primary', appPath, PRIMARY_METRO_PORT, primaryEnv, signal);
+        ? await prepareAndroidPhone(args, primaryMetroPort, primaryEnv, backendUrl)
+        : await preparePhone(
+            'primary',
+            readPlistString(resolve(appPath, 'Info.plist'), 'DEV_CLIENT_DEFAULT_LAUNCHER_URL') ===
+              `http://localhost:${primaryMetroPort}`
+              ? appPath
+              : patchedRecorderApp(appPath, primaryMetroPort, 'primary'),
+            primaryMetroPort,
+            primaryEnv,
+            signal,
+          );
 
     let secondary: Phone | null = null;
     if (credentials.secondary) {
@@ -1771,7 +1866,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       onCleanup('second phone bundle cache', () => rmSync(SECONDARY_METRO_TMP, { recursive: true, force: true }));
       secondary = await preparePhone(
         'secondary',
-        patchedSecondaryApp(appPath, port),
+        patchedRecorderApp(appPath, port, 'secondary'),
         port,
         metroEnv(args, credentials.secondary, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
         signal,
@@ -1785,7 +1880,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 
     const context: RunContext = {
       args,
-      dirs: showcaseWorkDirs(args.platform),
+      dirs: recordingWorkDirs(args),
       primary,
       secondary,
       signal,
@@ -1841,8 +1936,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     for (const problem of problems) console.error(`${LOG}   ${problem}`);
     return 1;
   }
-  console.log(`${LOG} Footage: ${showcaseWorkDirs(args.platform).footage}`);
-  console.log(`${LOG} Next: vp run video:render${args.platform === 'ios' ? '' : ` -- --platform ${args.platform}`}`);
+  console.log(`${LOG} Footage: ${recordingWorkDirs(args).footage}`);
+  console.log(
+    args.nativeLocaleCapture
+      ? `${LOG} Next: vp run video:render -- --locale ${args.locales[0]} --target store-search --variant ${args.kind}${args.platform === 'ios' ? '' : ` --platform ${args.platform}`}`
+      : `${LOG} Next: vp run video:render${args.platform === 'ios' ? '' : ` -- --platform ${args.platform}`}`,
+  );
   return 0;
 }
 

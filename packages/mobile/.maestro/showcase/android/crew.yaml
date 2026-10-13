@@ -35,7 +35,7 @@ name: showcase take - a friend adds a climb (Android)
     point: '40%,86%'
 - waitForAnimationToEnd
 
-- tapOn: 'Queue, .* climbs'
+- tapOn: '${SHOWCASE_QUEUE_LABEL}'
 - waitForAnimationToEnd
 # The queue sheet opens at half height, where the history rows above the
 # current climb can push the new row below the fold: drag it to full height.

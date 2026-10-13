@@ -1,0 +1,25 @@
+appId: com.boardsesh.app
+name: showcase take - spray progress
+---
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+- scrollUntilVisible:
+    element:
+      id: 'profile-progress-filter'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: 'profile-progress-filter'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: '${SHOWCASE_LOG_BOARD_LABEL}'
+    direction: DOWN
+    timeout: 15000
+- tapOn: '${SHOWCASE_LOG_BOARD_LABEL}'
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 10000
+    optional: true

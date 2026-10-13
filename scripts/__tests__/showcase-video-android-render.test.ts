@@ -111,7 +111,7 @@ describe('--platform and --work-dir', () => {
 });
 
 describe('the Android target registry', () => {
-  it('has an Android variant of every motion target, and none of the App Preview', () => {
+  it('has Android variants for public cuts, and no Apple store targets', () => {
     expect(SHOWCASE_ANDROID_TARGET_NAMES).toEqual([
       'homepage-android',
       'social-android',
@@ -124,8 +124,8 @@ describe('the Android target registry', () => {
       expect(target.platform, target.name).toBe('android');
       expect(target.layout, target.name).toBe('motion');
     }
-    // The iOS registry is unchanged and carries no platform field.
-    expect(SHOWCASE_TARGET_NAMES).toEqual(['homepage', 'social', 'reel', 'app-store', 'play-promo']);
+    // Apple creatives remain in the iOS registry.
+    expect(SHOWCASE_TARGET_NAMES).toEqual(['homepage', 'social', 'reel', 'app-store', 'play-promo', 'store-search']);
     for (const name of SHOWCASE_TARGET_NAMES) expect(SHOWCASE_TARGETS[name].platform, name).toBeUndefined();
   });
 
@@ -433,7 +433,7 @@ describe('Android cuts', () => {
     let checked = 0;
     for (const scene of timeline.scenes) {
       if (scene.callouts.length === 0) continue;
-      const file = placeholderAnchorsFile(scene.takes[0], SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]]);
+      const file = placeholderAnchorsFile(scene.takes[0], SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]]!);
       expect(file.screen).toEqual(PLACEHOLDER_SCREEN);
       const callouts = layoutSceneCallouts(
         '9x16',

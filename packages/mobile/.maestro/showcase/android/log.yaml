@@ -29,12 +29,10 @@ name: showcase take - the logbook fills itself (Android)
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/scrolled')}
 
 - tapOn:
-    point: '86%,30%'
+    id: 'profile-progress-filter'
 - waitForAnimationToEnd
-- tapOn:
-    point: '50%,48%'
-- tapOn:
-    point: '12%,91%'
+- tapOn: Kilter
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
 - extendedWaitUntil:
@@ -43,12 +41,10 @@ name: showcase take - the logbook fills itself (Android)
     optional: true
 
 - tapOn:
-    point: '86%,30%'
+    id: 'profile-progress-filter'
 - waitForAnimationToEnd
-- tapOn:
-    point: '50%,53%'
-- tapOn:
-    point: '12%,91%'
+- tapOn: Tension
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-tension')}
 - extendedWaitUntil:

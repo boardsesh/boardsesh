@@ -1,0 +1,20 @@
+{
+  "boards": "Chaque board.\nUne *app.*",
+  "spray": "Ton mur spray\n*aussi.*",
+  "crew": "Ton crew.\nUne *file.*",
+  "island": "Bloc suivant.\nDepuis l’*île.*",
+  "outro": "Moins d’écran.\nPlus de *mur.*",
+  "kilter": "Compatible avec\n*Kilter.*",
+  "kilterLog": "Importe ton\n*carnet.*",
+  "friends": "Ton crew choisit\nle prochain *bloc.*",
+  "tension": "Compatible avec\n*Tension.*",
+  "tensionLog": "Importe ton\n*carnet.*",
+  "tensionFriends": "Tension avec\nton *crew.*",
+  "moonboard": "Compatible avec\n*MoonBoard.*",
+  "moonboardLog": "Importe ton\n*carnet.*",
+  "grade": "Des blocs à\nta *cotation.*",
+  "spraySet": "Ouvre sur ton\n*mur spray.*",
+  "photo": "Des prises sur\nta *photo.*",
+  "sends": "Garde chaque\n*croix.*",
+  "gymBoards": "Les boards en\n*salle aussi.*"
+}

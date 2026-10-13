@@ -307,7 +307,7 @@ describe('callout layout', () => {
       for (const scene of SHOWCASE_SCENES) {
         if (scene.callouts.length === 0) continue;
         const take = scene.takes[0];
-        const file = placeholderAnchorsFile(take, SHOWCASE_PLACEHOLDER_TAKES[take]);
+        const file = placeholderAnchorsFile(take, SHOWCASE_PLACEHOLDER_TAKES[take]!);
         const labels = sceneCalloutCopy(copy, scene.id);
         const callouts = layoutSceneCallouts(format, scene, scene.callouts, file, labels);
         expect(callouts.map((callout) => callout.role)).toEqual(['start', 'hand', 'finish'].slice(0, callouts.length));
@@ -371,7 +371,7 @@ describe('every render target on the recorded takes', () => {
   it('meets the reading budget in every motion target, callouts included, at its own scene lengths', () => {
     for (const name of SHOWCASE_TARGET_NAMES) {
       const target = SHOWCASE_TARGETS[name];
-      if (target.layout !== 'motion') continue;
+      if (target.layout !== 'motion' || target.storeSearch) continue;
       const timeline = resolveTimeline(available, target.scenes);
       const targetCopy = target.donationLine ? copy : withoutDonationLine(copy);
       for (const report of readingBudgetReport(targetCopy, timeline.scenes, editsFor(timeline.scenes))) {
@@ -573,10 +573,13 @@ describe('encoding', () => {
 
 describe('placeholder footage', () => {
   it('covers every take and every callout anchor the storyboard asks for', () => {
-    for (const takeId of SHOWCASE_TAKE_IDS) expect(SHOWCASE_PLACEHOLDER_TAKES[takeId]).toBeDefined();
+    for (const takeId of SHOWCASE_SCENES.flatMap((scene) => scene.takes))
+      expect(SHOWCASE_PLACEHOLDER_TAKES[takeId]).toBeDefined();
+    expect(SHOWCASE_PLACEHOLDER_TAKES['moonboard-import']).toBeUndefined();
+    expect(SHOWCASE_PLACEHOLDER_TAKES['moonboard-filter']).toBeUndefined();
     for (const scene of SHOWCASE_SCENES) {
       for (const name of scene.callouts) {
-        const rect = SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]].anchors[name];
+        const rect = SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]]!.anchors[name];
         expect(anchorOnScreen(rect ?? null, PLACEHOLDER_SCREEN), `${scene.id}/${name}`).toBe(true);
       }
     }
@@ -613,7 +616,7 @@ describe('CLI', () => {
       measure: true,
       fromFrame: 120,
       placeholderFootage: true,
-      formats: ['16x9', '9x16'],
+      formats: ['16x9', '9x16', '3x2'],
     });
     expect(() => parseRenderArgs(['--format', '4x3'])).toThrow(/--format/);
     expect(() => parseRenderArgs(['--from-frame', '-2'])).toThrow();
@@ -779,7 +782,7 @@ describe('island placeholder', () => {
 describe('board placeholders', () => {
   it('never draws a board phone: every one is a recording, a store still or a real render', () => {
     for (const takeId of sceneOf('boards').takes) {
-      expect(['still', 'render'], takeId).toContain(SHOWCASE_PLACEHOLDER_TAKES[takeId].source.kind);
+      expect(['still', 'render'], takeId).toContain(SHOWCASE_PLACEHOLDER_TAKES[takeId]!.source.kind);
     }
     expect(SHOWCASE_PLACEHOLDER_TAKES['boards-woods'].source.kind).toBe('render');
   });

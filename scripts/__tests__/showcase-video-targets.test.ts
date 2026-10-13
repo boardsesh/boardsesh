@@ -200,7 +200,10 @@ describe('which targets a render covers', () => {
     expect(skipped.notes).toEqual(['homepage left out (--no-donation-line: its files always carry the donation line)']);
     const portrait = selectTargets({ ...flags, targets: ['all'], formats: ['9x16'] });
     expect(names(portrait)).toEqual(['homepage', 'social', 'reel', 'app-store']);
-    expect(portrait.notes).toEqual(['play-promo left out (--format 9x16; it renders 16x9)']);
+    expect(portrait.notes).toEqual([
+      'play-promo left out (--format 9x16; it renders 16x9)',
+      'store-search left out (--format 9x16; it renders 3x2)',
+    ]);
   });
 });
 
@@ -291,7 +294,13 @@ describe('where targets write', () => {
       } else {
         expect(target.writesPublic, target.name).toBe(false);
         expect(inPublic, target.name).toEqual([]);
-        for (const path of outputs) expect(path.startsWith(`${SHOWCASE_OUT_DIR}/`), path).toBe(true);
+        for (const path of outputs)
+          expect(
+            path.startsWith(
+              target.storeSearch ? resolve(SHOWCASE_OUT_DIR, '../../app-store-creatives') : `${SHOWCASE_OUT_DIR}/`,
+            ),
+            path,
+          ).toBe(true);
       }
     }
   });
@@ -492,7 +501,7 @@ describe('the reel safe area', () => {
     let checked = 0;
     for (const scene of timeline.scenes) {
       if (scene.callouts.length === 0) continue;
-      const file = placeholderAnchorsFile(scene.takes[0], SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]]);
+      const file = placeholderAnchorsFile(scene.takes[0], SHOWCASE_PLACEHOLDER_TAKES[scene.takes[0]]!);
       expect(file.screen).toEqual(PLACEHOLDER_SCREEN);
       const callouts = layoutSceneCallouts(
         '9x16',

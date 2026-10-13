@@ -1,3 +1,9 @@
+import {
+  STORE_SEARCH_LOCALES,
+  STORE_SEARCH_VARIANTS,
+  type StoreSearchLocale,
+  type StoreSearchVariant,
+} from './store-search';
 import { resolve } from 'node:path';
 import {
   DEFAULT_SHOWCASE_PLATFORM,
@@ -34,11 +40,12 @@ import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES, requiredTakeSeconds, type Showc
 
 // --- formats and paths ---------------------------------------------------
 
-export const SHOWCASE_FORMATS = ['16x9', '9x16'] as const;
+export const SHOWCASE_FORMATS = ['16x9', '9x16', '3x2'] as const;
 export type ShowcaseFormat = (typeof SHOWCASE_FORMATS)[number];
 
 export const SHOWCASE_CANVAS: Record<ShowcaseFormat, Readonly<{ width: number; height: number }>> = {
   '16x9': { width: 1920, height: 1080 },
+  '3x2': { width: 1920, height: 1280 },
   '9x16': { width: 1080, height: 1920 },
 };
 
@@ -200,6 +207,16 @@ const pose = (cx: number, cy: number, scale = 1, rx = 0, ry = 0, rz = 0): Showca
 });
 
 export const SHOWCASE_POSES: Record<ShowcaseFormat, Record<ShowcasePoseName, ShowcasePose>> = {
+  '3x2': {
+    OFF_RIGHT: pose(1420, 880, 1.6),
+    CALLOUT: pose(1420, 880, 1.6),
+    HERO_TILT: pose(1420, 880, 1.6),
+    BOARDS_MID: pose(1420, 800, 1.12),
+    BOARDS_LEFT: pose(1130, 845, 0.9),
+    BOARDS_RIGHT: pose(1690, 845, 0.9),
+    OFF_BOTTOM: pose(1420, 880, 1.6),
+    ISLAND: pose(1420, 900, 1.6),
+  },
   '16x9': {
     OFF_RIGHT: pose(2350, 560, 1, 4, -28, 6),
     CALLOUT: pose(1090, 540),
@@ -1558,6 +1575,18 @@ export type StageBoards = Readonly<{
 /** Everything `window.showcaseInit(data)` receives; the page reads nothing else. */
 export type ShowcaseStageData = Readonly<{
   format: ShowcaseFormat;
+  storeSearch?: Readonly<{
+    locale: string;
+    variant: string;
+    crossfadeFrames: number;
+    captions: Readonly<Record<string, string>>;
+    sources?: readonly Readonly<{
+      takeId: ShowcaseTakeId;
+      footage: string;
+      framesSha256: string;
+      marksSha256: string;
+    }>[];
+  }>;
   width: number;
   height: number;
   fps: number;
@@ -1575,6 +1604,7 @@ export type ShowcaseStageData = Readonly<{
   scenes: ReadonlyArray<
     Readonly<{
       id: ShowcaseScene['id'];
+      caption?: string;
       startFrame: number;
       endFrame: number;
       background: ShowcaseScene['background'];
@@ -2064,6 +2094,13 @@ export function buildMasterArgs(input: string, output: string, audio: MasterAudi
   ];
 }
 
+/** Search-result creative: 1920×1280 exceeds H.264 level 4.0's frame limit. */
+export function buildStoreSearchArgs(input: string, output: string): string[] {
+  const args = buildMasterArgs(input, output);
+  args.splice(args.length - 1, 0, '-profile:v', 'high', '-level:v', '5.0', '-r', String(SHOWCASE_FPS));
+  return args;
+}
+
 /**
  * An Apple App Preview: H.264 High profile level 4.0, constant bitrate inside
  * Apple's 10–12 Mbps window, 30 fps progressive, BT.709, with the stereo AAC
@@ -2489,7 +2526,11 @@ export const SHOWCASE_DRAWN_PLACEHOLDER_MARKER = 'DRAWN-PLACEHOLDER';
  * activity calendar on the profile still) the anchor borrows a nearby element
  * so the callout layout can still be judged.
  */
-export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake> = {
+export const SHOWCASE_PLACEHOLDER_TAKES: Record<
+  Exclude<ShowcaseTakeId, 'moonboard-import' | 'moonboard-filter'>,
+  PlaceholderTake
+> &
+  Partial<Record<'moonboard-import' | 'moonboard-filter', PlaceholderTake>> = {
   'boards-kilter': { source: { kind: 'still', file: 'kilter.webp' }, anchors: {} },
   'boards-tension': { source: { kind: 'still', file: 'tension.webp' }, anchors: {} },
   'boards-spray': { source: { kind: 'still', file: 'spray-wall.webp' }, anchors: {} },
@@ -2663,6 +2704,8 @@ export type RenderArgs = Readonly<{
   platform: ShowcasePlatform;
   /** `--work-dir`: read footage/, anchors/ and marks/ from here instead of the platform's work dir. */
   workDir: string | null;
+  locales: readonly StoreSearchLocale[];
+  variant: StoreSearchVariant;
   help: boolean;
 }>;
 
@@ -2682,6 +2725,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
   let fromFrame = 0;
   let formats: ShowcaseFormat[] = [...SHOWCASE_FORMATS];
   const targets: string[] = [];
+  let locales: StoreSearchLocale[] = ['en-US'];
+  let variant: StoreSearchVariant = 'default';
   let placeholderFootage = false;
   let skipWeb = false;
   let donationLine = true;
@@ -2700,6 +2745,8 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
     donationLine,
     platform,
     workDir,
+    locales,
+    variant,
     help,
   });
   for (let index = 0; index < argv.length; index += 1) {
@@ -2718,7 +2765,10 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       argument === '--poster-frame' ||
       argument === '--target' ||
       argument === '--platform' ||
-      argument === '--work-dir'
+      argument === '--work-dir' ||
+      argument === '--variant' ||
+      argument === '--locale' ||
+      argument === '--locales'
     ) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} needs a value`);
@@ -2728,7 +2778,16 @@ export function parseRenderArgs(argv: readonly string[]): RenderArgs {
       else if (argument === '--poster-frame') posterFrame = parseFrameNumber(argument, value);
       else if (argument === '--target') targets.push(...value.split(','));
       else if (argument === '--work-dir') workDir = value;
-      else if (argument === '--platform') {
+      else if (argument === '--variant') {
+        if (!(STORE_SEARCH_VARIANTS as readonly string[]).includes(value))
+          throw new Error(`--variant must be ${STORE_SEARCH_VARIANTS.join(', ')}`);
+        variant = value as StoreSearchVariant;
+      } else if (argument === '--locale' || argument === '--locales') {
+        const requested = value === 'all' ? [...STORE_SEARCH_LOCALES] : value.split(',');
+        if (requested.some((locale) => !(STORE_SEARCH_LOCALES as readonly string[]).includes(locale)))
+          throw new Error(`--locale must be ${STORE_SEARCH_LOCALES.join(', ')} or all`);
+        locales = [...new Set(requested)] as StoreSearchLocale[];
+      } else if (argument === '--platform') {
         if (!isShowcasePlatform(value)) throw new Error(`--platform must be one of ${SHOWCASE_PLATFORMS.join(', ')}`);
         platform = value;
       } else {

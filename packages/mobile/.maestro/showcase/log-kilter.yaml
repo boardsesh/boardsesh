@@ -1,0 +1,25 @@
+appId: com.boardsesh.app
+name: showcase take - kilter progress
+---
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
+- scrollUntilVisible:
+    element:
+      id: 'profile-progress-filter'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: 'profile-progress-filter'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: Kilter
+    direction: DOWN
+    timeout: 15000
+- tapOn: Kilter
+- tapOn: '${SHOWCASE_CLOSE_LABEL}'
+- waitForAnimationToEnd
+- evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/filter-kilter')}
+- extendedWaitUntil:
+    visible: 'zzz-showcase-pause'
+    timeout: 10000
+    optional: true

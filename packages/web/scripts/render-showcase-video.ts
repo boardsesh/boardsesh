@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import {
+  storeSearchCopyPath,
+  storeSearchCopyProblems,
+  storeSearchRecordingProblems,
+  storeSearchTakeIds,
+  type StoreSearchCopy,
+} from '../../../scripts/lib/showcase-video/store-search';
 /**
  * Renders the homepage showcase video from the stage in marketing/showcase-video/.
  *
@@ -43,6 +50,7 @@ import {
 import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens } from '../app/theme/theme-config';
 import {
+  showcaseVariantWorkDirs,
   SHOWCASE_FPS,
   SHOWCASE_OUT_DIR,
   SHOWCASE_TAKE_IDS,
@@ -94,6 +102,7 @@ import {
   buildDurationProbeArgs,
   buildFramePngArgs,
   buildMasterArgs,
+  buildStoreSearchArgs,
   buildStreamProbeArgs,
   cutIntermediates,
   fullBleedStillFrames,
@@ -144,6 +153,8 @@ import {
   SHOWCASE_ANDROID_TARGET_NAMES,
   SHOWCASE_TARGET_NAMES,
   appPreviewProblems,
+  creativeVideoProblems,
+  storeSearchTarget,
   assertTargetLength,
   parseStreamProbe,
   selectTargets,
@@ -175,6 +186,8 @@ Renders the showcase video's targets from marketing/showcase-video/ and the reco
                            android: ${SHOWCASE_ANDROID_TARGET_NAMES.join(', ')}
                                     (default homepage-android + social-android)
                          Outputs: docs/showcase-video.md, "Targets" and "Android cuts (renderer)"
+  --variant <name>       Search creative: default|kilter|tension|moonboard|spray
+  --locale <locale|all>  Native recordings and captions for en-US|es|fr|de
   --stills               Contact sheets only (settled + mid-transition frames per scene)
                          → ${relative(REPO_ROOT, SHOWCASE_STILLS_DIR)}/
   --poster-frame <n>     Frame the web cut opens on and its poster shows (default ${SHOWCASE_WEB_POSTER_FRAME}; brag.* keep frame 0)
@@ -309,6 +322,7 @@ const PLACEHOLDER_MARKER = 'PLACEHOLDER';
 async function buildPlaceholderFootage(dirs: ShowcaseWorkDirs): Promise<void> {
   for (const takeId of SHOWCASE_TAKE_IDS) {
     const take = SHOWCASE_PLACEHOLDER_TAKES[takeId];
+    if (!take) continue;
     const dir = footageTakeDir(takeId, dirs);
     // Never overwrite a recording: only a directory this flag made is rebuilt.
     if (countFrames(dir) > 0 && !existsSync(resolve(dir, PLACEHOLDER_MARKER))) {
@@ -513,6 +527,7 @@ type Prepared = Readonly<{
   edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
   /** The cut for the footage at hand (a skippable scene without its take is dropped). */
   timeline: ShowcaseTimeline;
+  storeSearch?: ShowcaseStageData['storeSearch'];
 }>;
 
 async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSource): Promise<Footage> {
@@ -528,6 +543,51 @@ async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSourc
       `screen ${phone.screenWidth}x${phone.screenHeight}`,
   );
   return { source, copy, phone, takes, anchors };
+}
+
+/** Only native takes from this exact variant and locale may feed an Apple creative. */
+async function loadSearchFootage(source: FootageSource, target: ShowcaseTarget): Promise<Footage> {
+  const search = target.storeSearch;
+  if (!search) throw new Error('Missing store-search configuration');
+  const shared = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
+  const takes: Footage['takes'] = {};
+  for (const takeId of storeSearchTakeIds(search.variant)) {
+    const directory = footageTakeDir(takeId, source.dirs);
+    const frameCount = countFrames(directory);
+    if (!frameCount) continue;
+    if (isPlaceholder(takeId, source.dirs) || existsSync(resolve(directory, SHOWCASE_DRAWN_PLACEHOLDER_MARKER)))
+      throw new Error(`${takeId}: search creatives require fresh native recordings`);
+    const marks = JSON.parse(readFileSync(marksFilePath(takeId, source.dirs), 'utf8')) as ShowcaseMarksFile;
+    const problems = storeSearchRecordingProblems(marks, takeId, search.locale, search.variant);
+    if (problems.length) throw new Error(`${takeId}: ${problems.join('; ')}. Re-record this locale and board.`);
+    const { width, height } = await sharp(resolve(directory, '00001.jpg')).metadata();
+    if (!width || !height) throw new Error(`${takeId}: unreadable first native frame`);
+    takes[takeId] = {
+      frameUrlBase: `${pathToFileURL(directory).href}/`,
+      frameCount,
+      segments: [[SHOWCASE_FPS, frameCount]],
+      screen: { width, height },
+      anchors: {},
+    };
+  }
+  const available = new Set(Object.keys(takes) as ShowcaseTakeId[]);
+  for (const step of target.scenes) {
+    if (step.optional || step.id === 'lock-screen' || step.id === 'outro') continue;
+    const required = step.takes ?? [step.id as ShowcaseTakeId];
+    if (step.id === 'boards' && required.length > 1 && required.some((takeId) => available.has(takeId))) continue;
+    const missing = required.filter((takeId) => !available.has(takeId));
+    if (missing.length)
+      throw new Error(
+        `No native ${search.locale}/${search.variant} footage for ${missing.join(', ')}. Re-record; no locale or board fallback is allowed.`,
+      );
+  }
+  return {
+    source,
+    copy: shared,
+    phone: showcasePhone('ios', await footageAspect([...available], source.dirs)),
+    takes,
+    anchors: {},
+  };
 }
 
 /**
@@ -546,6 +606,77 @@ async function footageAspect(takeIds: readonly ShowcaseTakeId[], dirs: ShowcaseW
 /** The motion cut a target asks for: its scenes and lengths, its copy, the edits resolved at those lengths. */
 function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: boolean): Prepared {
   const copy = donationLine ? footage.copy : withoutDonationLine(footage.copy);
+  if (target.storeSearch) {
+    const search = target.storeSearch;
+    const captions = JSON.parse(readFileSync(storeSearchCopyPath(search.locale), 'utf8')) as StoreSearchCopy;
+    const copyProblems = storeSearchCopyProblems(captions);
+    if (copyProblems.length) throw new Error(copyProblems.join('\n'));
+    const available = new Set(Object.keys(footage.takes) as ShowcaseTakeId[]);
+    const timeline = resolveTimeline(available, target.scenes);
+    for (const sceneId of timeline.skipped)
+      warn(`${search.variant}/${search.locale}: ${sceneId} unavailable; beat omitted`);
+    const takes: Prepared['takes'] = { ...footage.takes };
+    for (const scene of timeline.scenes) {
+      if (!scene.caption || !captions[scene.caption])
+        throw new Error(`Missing ${search.locale} caption ${scene.caption}`);
+      for (const takeId of scene.takes) {
+        const take = takes[takeId];
+        if (!take) continue;
+        const marks = readMarks(takeId, footage.source.dirs);
+        let mark: string | undefined;
+        if (takeId === 'log')
+          mark =
+            search.variant === 'kilter'
+              ? 'filter-kilter'
+              : search.variant === 'tension'
+                ? 'filter-tension'
+                : 'scrolled';
+        if (takeId === 'lock-screen') mark = 'island-expanded';
+        if (takeId === 'crew') mark = 'row-landed';
+        if (takeId === 'spray') mark = 'next-1';
+        if (takeId === 'moonboard-import') mark = 'csv-import-entry';
+        if (takeId === 'moonboard-filter') mark = 'grade-filter-shown';
+        if (mark && typeof marks?.[mark] !== 'number')
+          throw new Error(`${takeId}: missing ${mark}; re-record ${search.variant}/${search.locale}`);
+        const from = mark && marks ? Math.max(0, Math.round((marks[mark] - 0.4) * SHOWCASE_FPS)) : SHOWCASE_FPS;
+        takes[takeId] = { ...take, segments: [[from, take.frameCount]] };
+      }
+    }
+    assertTargetLength(target, timeline.totalFrames);
+    const usedTakeIds = [...new Set(timeline.scenes.flatMap((scene) => scene.takes))];
+    const sources = usedTakeIds.map((takeId) => {
+      const directory = footageTakeDir(takeId, footage.source.dirs);
+      const framesHash = createHash('sha256');
+      for (const name of readdirSync(directory)
+        .filter((name) => /^\d{5}\.jpg$/.test(name))
+        .sort()) {
+        framesHash.update(name).update(readFileSync(resolve(directory, name)));
+      }
+      return {
+        takeId,
+        footage: relative(REPO_ROOT, directory),
+        framesSha256: framesHash.digest('hex'),
+        marksSha256: createHash('sha256')
+          .update(readFileSync(marksFilePath(takeId, footage.source.dirs)))
+          .digest('hex'),
+      };
+    });
+    const boards = planBoards(
+      Object.keys(takes).filter((takeId) => takeId.startsWith('boards-')) as ShowcaseTakeId[],
+      available,
+    );
+    return {
+      copy,
+      phone: footage.phone,
+      takes,
+      anchors: {},
+      callouts: {},
+      boards,
+      edits: {},
+      timeline,
+      storeSearch: { ...search, captions, sources },
+    };
+  }
   const timeline = resolveTimeline(new Set(Object.keys(footage.takes) as ShowcaseTakeId[]), target.scenes);
   for (const sceneId of timeline.skipped)
     warn(`${target.name}: scene "${sceneId}" has no footage; the cut runs without it`);
@@ -626,6 +757,7 @@ function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: bo
   };
   return {
     format,
+    ...(prepared.storeSearch ? { storeSearch: prepared.storeSearch } : {}),
     width,
     height,
     fps: SHOWCASE_FPS,
@@ -756,7 +888,11 @@ async function planCuts(footage: Footage, picks: TargetSelection['picks'], args:
       cuts.set(key, {
         key,
         label: `${target.name}/${rendition.id}`,
-        stillsDir: resolve(SHOWCASE_STILLS_DIR, target.name),
+        stillsDir: resolve(
+          SHOWCASE_STILLS_DIR,
+          target.name,
+          ...(target.storeSearch ? [target.storeSearch.variant, target.storeSearch.locale] : []),
+        ),
         html: target.layout === 'motion' ? SHOWCASE_STAGE_HTML : SHOWCASE_FULL_BLEED_HTML,
         size: rendition.size,
         data,
@@ -791,12 +927,6 @@ async function openStage(cut: Cut) {
         timeout: 10_000,
       },
     );
-    await page.evaluate(
-      (input) => {
-        (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
-      },
-      cut.data as unknown as Record<string, unknown>,
-    );
     const fonts = await page.evaluate(async () => {
       await Promise.all([
         document.fonts.load('800 104px "Inter Tight"'),
@@ -812,6 +942,12 @@ async function openStage(cut: Cut) {
         throw new Error(`Font "${family}" did not load: ${JSON.stringify(fonts)}`);
       }
     }
+    await page.evaluate(
+      (input) => {
+        (window as unknown as { showcaseInit: (value: unknown) => void }).showcaseInit(input);
+      },
+      cut.data as unknown as Record<string, unknown>,
+    );
     if (errors.length > 0) throw new Error(`Stage errors:\n${errors.join('\n')}`);
     const client = await page.context().newCDPSession(page);
     return { browser, page, client, errors };
@@ -869,6 +1005,15 @@ function cutStills(cut: Cut): ReadonlyArray<Readonly<{ group: string; frames: St
   }
   const data = cut.data as ShowcaseStageData;
   const timeline = cut.timeline;
+  if (data.storeSearch)
+    return timeline.scenes.map((scene, index) => ({
+      group: `${index}-${scene.caption}`,
+      frames: [
+        { frame: scene.startFrame, label: 'caption settled' },
+        { frame: Math.min(scene.endFrame - 1, scene.startFrame + 10), label: 'native footage' },
+        { frame: scene.endFrame - 1, label: 'cut or loop seam' },
+      ],
+    }));
   return timeline.scenes.map((scene) => {
     const stageScene = data.scenes.find((candidate) => candidate.id === scene.id);
     return { group: scene.id, frames: stillFramesForScene(scene, timeline.totalFrames, stageScene?.callouts ?? []) };
@@ -1075,9 +1220,43 @@ async function encodeWeb(
   log(`${relative(REPO_ROOT, deliverable.poster)}: ${kb(statSync(deliverable.poster).size)} (frame ${posterFrame})`);
 }
 
-async function encodeMaster(deliverable: Master, target: ShowcaseTarget, mezzanine: string): Promise<void> {
+async function encodeMaster(
+  deliverable: Master,
+  target: ShowcaseTarget,
+  mezzanine: string,
+  stage: ShowcaseStageData | FullBleedStageData,
+): Promise<void> {
   mkdirSync(dirname(deliverable.video), { recursive: true });
-  await execFileAsync(FFMPEG_BIN, buildMasterArgs(mezzanine, deliverable.video, target.audio));
+  await execFileAsync(
+    FFMPEG_BIN,
+    target.storeSearch
+      ? buildStoreSearchArgs(mezzanine, deliverable.video)
+      : buildMasterArgs(mezzanine, deliverable.video, target.audio),
+  );
+  if (target.storeSearch) {
+    const media = await probeStreams(deliverable.video);
+    const problems = creativeVideoProblems(media);
+    if (problems.length) throw new Error(`${deliverable.video} misses Apple's creative spec: ${problems.join('; ')}`);
+    writeFileSync(
+      resolve(dirname(deliverable.video), 'search-results.manifest.json'),
+      `${JSON.stringify(
+        {
+          version: 1,
+          variant: target.storeSearch.variant,
+          locale: target.storeSearch.locale,
+          media,
+          sourceCommit: (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT })).stdout.trim(),
+          sources: 'storeSearch' in stage ? stage.storeSearch?.sources : [],
+          video: {
+            file: 'search-results.mp4',
+            sha256: createHash('sha256').update(readFileSync(deliverable.video)).digest('hex'),
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
   log(
     `${relative(REPO_ROOT, deliverable.video)}: ${kb(statSync(deliverable.video).size)} (${await probe(deliverable.video)})`,
   );
@@ -1140,7 +1319,7 @@ async function renderCut(cut: Cut, args: RenderArgs): Promise<void> {
       const { deliverable } = rendition;
       if (deliverable.kind === 'web-lite') {
         await encodeWeb(deliverable, mezzanine, intermediates.passLog, cut.totalFrames, args.posterFrame);
-      } else if (deliverable.kind === 'master') await encodeMaster(deliverable, target, mezzanine);
+      } else if (deliverable.kind === 'master') await encodeMaster(deliverable, target, mezzanine, cut.data);
       else await encodeAppPreview(deliverable, target, rendition, mezzanine);
     }
   } finally {
@@ -1169,6 +1348,10 @@ async function main(): Promise<void> {
     return;
   }
   const { picks, notes } = selectTargets(args);
+  const hasSearch = picks.some(({ target }) => target.storeSearch);
+  if (hasSearch && args.placeholderFootage)
+    throw new Error('Search creatives require native recordings; --placeholder-footage is prohibited');
+  if (hasSearch && args.platform !== 'ios') throw new Error('Apple search creatives require native iOS footage');
   notes.forEach(warn);
   if (picks.length === 0) throw new Error('Nothing to render: the flags left out every target');
   log(`${args.platform} targets: ${picks.map(({ target }) => target.name).join(', ')}`);
@@ -1176,8 +1359,20 @@ async function main(): Promise<void> {
   mkdirSync(SHOWCASE_FRAMES_DIR, { recursive: true });
   if (args.placeholderFootage) await buildPlaceholderFootage(source.dirs);
   writeTokens();
-  const footage = await loadFootage(args.placeholderFootage, source);
-  const cuts = await planCuts(footage, picks, args);
+  const cuts: Cut[] = [];
+  const legacy = picks.filter(({ target }) => !target.storeSearch);
+  if (legacy.length) cuts.push(...(await planCuts(await loadFootage(args.placeholderFootage, source), legacy, args)));
+  if (hasSearch) {
+    for (const locale of args.locales) {
+      const target = storeSearchTarget(locale, args.variant);
+      const searchSource: FootageSource = {
+        platform: 'ios',
+        dirs: args.workDir ? renderWorkDirs('ios', args.workDir) : showcaseVariantWorkDirs(args.variant, locale),
+      };
+      const footage = await loadSearchFootage(searchSource, target);
+      cuts.push(...(await planCuts(footage, [{ target, renditions: target.renditions }], args)));
+    }
+  }
   for (const cut of cuts) {
     log(
       `cut ${cut.label}: ${cut.size.width}x${cut.size.height}, ${cut.totalFrames} frames, for ${cut.uses.map(({ target, rendition }) => `${target.name}/${rendition.id}`).join(' + ')}`,
