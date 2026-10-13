@@ -212,7 +212,16 @@ void describe('reroute pass — a candidate that cannot be ingested', () => {
         board_climbs: [
           [], // the source layout's own catalogue
           // …and the candidate, found on a layout that is neither source nor target.
-          [{ uuid: 'MISTAGGED', layoutId: 99, fingerprint: null, isListed: true, userId: null, isDraft: false }],
+          [
+            {
+              uuid: 'MISTAGGED',
+              layoutId: 99,
+              fingerprint: null,
+              isListed: true,
+              setInBoardsesh: false,
+              isDraft: false,
+            },
+          ],
           [], // fingerprint matches on the target layout
         ],
         board_climb_aliases: [[], []],
@@ -271,7 +280,7 @@ void describe('a failed /delteduuids fetch', () => {
               layoutId: SOURCE_LAYOUT_ID,
               fingerprint: 'fp',
               isListed: false,
-              userId: null,
+              setInBoardsesh: false,
               isDraft: false,
             },
           ],

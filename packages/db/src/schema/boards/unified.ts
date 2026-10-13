@@ -754,9 +754,11 @@ export const boardClimbStats = pgTable(
     //                       THEN upstream_ascensionist_count END, 0)
     //         + COALESCE(boardsesh_quality_count, 0), 0)
     //   → NULL when both sides are absent.
-    // Boardsesh-OWNED climbs (board_climbs.user_id IS NOT NULL) have no upstream
-    // side: there quality_average stays a plain AVG over ticks (recompute's
-    // owned branch) and the three columns below are informational only.
+    // Climbs set in Boardsesh (an owner, and not a manufacturer climb:
+    // `boardseshSetClimbSql`) have no upstream side: there quality_average stays
+    // a plain AVG over ticks (recompute's owned branch) and the three columns
+    // below are informational only. A manufacturer climb with an owner is
+    // blended like any other.
     qualityAverage: doublePrecision('quality_average'),
     // The upstream (manufacturer) quality average, 1-5 normalized — the blend's
     // first term. Nullable: null means no upstream source ever supplied a

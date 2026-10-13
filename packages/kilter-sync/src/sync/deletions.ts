@@ -1,10 +1,20 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { boardClimbs, boardClimbAliases } from '@boardsesh/db/schema';
+import { boardseshSetClimbSql } from '@boardsesh/db/queries';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 const KILTER = 'kilter';
+
+/**
+ * Where a climb came from, on `board_climbs` as the queries below name it. The
+ * catalog sync only ever writes Kilter's climbs: a climb set in Boardsesh is
+ * protected, and a Kilter climb an account owns for visibility (the owner
+ * backfill assigns unlisted ones) is still Kilter's to unlist.
+ */
+const setInBoardseshColumn = sql<boolean>`${sql.raw(boardseshSetClimbSql('board_climbs'))}`;
+const kilterCatalogClimb = sql.raw(`NOT ${boardseshSetClimbSql('board_climbs')}`);
 
 // Apply at most this many changes (alias drops + soft-deletes) per run. Kilter's
 // /delteduuids is a full history of server-side deletions, so the first reconcile
@@ -22,9 +32,9 @@ export type DeletionReport = {
   reported: number;
   /** Pure-alias rows (alias_uuid ≠ canonical), source='kilter', eligible to drop. */
   aliasDeletes: number;
-  /** Lone synced (userId null) self-canonicals still listed — eligible to unlist. */
+  /** Lone Kilter self-canonicals still listed — eligible to unlist. */
   softDeletes: number;
-  /** Canonical is user-authored (userId set) — never touched by the catalog sync. */
+  /** Canonical was set in Boardsesh — never touched by the catalog sync. */
   protectedUserAuthored: number;
   /** Pure alias whose source ≠ 'kilter' (backfill/aurora) — not ours to drop. */
   skippedForeignSource: number;
@@ -56,7 +66,12 @@ export type AliasClassificationRow = {
   aliasUuid: string;
   canonicalUuid: string;
   source: string;
-  canonicalUserId: string | null;
+  /**
+   * The canonical climb was set in Boardsesh (`boardseshSetClimbSql`). Owning a
+   * Kilter climb for visibility, as the owner backfill assigns, does not make
+   * it Boardsesh's.
+   */
+  canonicalSetInBoardsesh: boolean;
   canonicalIsListed: boolean | null;
 };
 
@@ -80,8 +95,8 @@ export type DeletionClassification = {
  *    'kilter' — i.e. the catalog sync created it. 'backfill'/'aurora' alias rows
  *    are never dropped by this pass.
  *  - A self-canonical is soft-deleted ONLY when the underlying climb is
- *    Kilter-synced (`userId` is null), still listed, and no other live alias
- *    backs it. A climb with a `userId` is user-authored and is always protected.
+ *    Kilter's (not set in Boardsesh), still listed, and no other live alias
+ *    backs it. A climb set in Boardsesh is always protected.
  */
 export function classifyKilterDeletions(input: {
   loweredUuids: string[];
@@ -115,8 +130,8 @@ export function classifyKilterDeletions(input: {
     }
 
     // Self-canonical → decide whether to unlist the underlying climb.
-    if (row.canonicalUserId != null) {
-      // User-authored climb. Off-limits to the catalog sync, full stop.
+    if (row.canonicalSetInBoardsesh) {
+      // Set in Boardsesh. Off-limits to the catalog sync, full stop.
       protectedUserAuthored += 1;
       continue;
     }
@@ -186,7 +201,7 @@ export function isAnomalousDeletionBacklog(softDeleteCount: number, liveListedCo
  * Reconcile Kilter's server-side deletions (GET /climbs/delteduuids) against
  * board_*. Only ever touches climbs the Kilter catalog sync itself owns:
  *
- *  - user-authored climbs (board_climbs.user_id set) are never modified;
+ *  - climbs set in Boardsesh (`boardseshSetClimbSql`) are never modified;
  *  - only 'kilter'-sourced pure-alias rows are hard-deleted (canonical survives);
  *  - a lone synced self-canonical is soft-deleted (`is_listed = false`), which is
  *    reversible and preserves its holds/stats/history.
@@ -232,14 +247,15 @@ export async function reconcileDeletions(
   const lowered = deletedUuids.map((uuid) => uuid.toLowerCase());
 
   // Resolve each deleted uuid against the alias graph, carrying the canonical
-  // climb's provenance (userId) and listing state so the classifier can protect
-  // user content and skip already-drained rows.
+  // climb's provenance and listing state so the classifier can protect climbs
+  // set in Boardsesh and skip already-drained rows. A canonical with no climb
+  // row reads as not set in Boardsesh, as it did when this read the owner.
   const aliasRows: AliasClassificationRow[] = await db
     .select({
       aliasUuid: boardClimbAliases.aliasUuid,
       canonicalUuid: boardClimbAliases.canonicalUuid,
       source: boardClimbAliases.source,
-      canonicalUserId: boardClimbs.userId,
+      canonicalSetInBoardsesh: setInBoardseshColumn,
       canonicalIsListed: boardClimbs.isListed,
     })
     .from(boardClimbAliases)
@@ -275,22 +291,22 @@ export async function reconcileDeletions(
   // not just the actionable ones — so a row drained on a prior run is reported
   // as alreadyUnlisted instead of being re-counted as "never-imported (unknown)"
   // on every subsequent cycle:
-  //   - synced (user_id NULL), is_listed true OR NULL → soft-delete, exactly
+  //   - Kilter's, is_listed true OR NULL → soft-delete, exactly
   //     like a lone self-canonical. NULL is invisible in search but has never
   //     been written explicitly — Kilter reporting it deleted must still write
   //     is_listed = false so the 0144/0146 sync trigger fires and offline
   //     clients receive the removal (the reverse of the IS NOT TRUE re-list
   //     rule; the alias-graph classifier likewise only short-circuits on an
   //     explicit false);
-  //   - synced + explicitly unlisted (false) → alreadyUnlisted (drained);
-  //   - user-authored → protectedUserAuthored (never touched, mirrors the
+  //   - Kilter's + explicitly unlisted (false) → alreadyUnlisted (drained);
+  //   - set in Boardsesh → protectedUserAuthored (never touched, mirrors the
   //     alias-graph protection).
   // Only uuids matched by NEITHER path remain unknown (truly never imported).
   const directSoftDeletes: string[] = [];
   let directResolved = 0;
   if (classification.unknownLoweredUuids.length > 0) {
     const directRows = await db
-      .select({ uuid: boardClimbs.uuid, isListed: boardClimbs.isListed, userId: boardClimbs.userId })
+      .select({ uuid: boardClimbs.uuid, isListed: boardClimbs.isListed, setInBoardsesh: setInBoardseshColumn })
       .from(boardClimbs)
       .where(
         and(
@@ -300,7 +316,7 @@ export async function reconcileDeletions(
       );
     directResolved = directRows.length;
     for (const row of directRows) {
-      if (row.userId != null) {
+      if (row.setInBoardsesh) {
         report.protectedUserAuthored += 1;
       } else if (row.isListed !== false) {
         directSoftDeletes.push(row.uuid);
@@ -347,7 +363,7 @@ export async function reconcileDeletions(
     const [liveRow] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(boardClimbs)
-      .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.isListed, true), isNull(boardClimbs.userId)));
+      .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.isListed, true), kilterCatalogClimb));
     const liveListedCount = liveRow?.count ?? 0;
     if (isAnomalousDeletionBacklog(totalSoftDeletes, liveListedCount)) {
       report.refused = true;
@@ -379,14 +395,13 @@ export async function reconcileDeletions(
         );
     }
     if (softBatch.length > 0) {
-      // isNull(userId) guard ensures we never flip a user-authored climb, even if
-      // classification and apply somehow raced against a concurrent write.
+      // The provenance guard ensures we never flip a climb set in Boardsesh,
+      // even if classification and apply somehow raced against a concurrent
+      // write.
       await tx
         .update(boardClimbs)
         .set({ isListed: false })
-        .where(
-          and(eq(boardClimbs.boardType, KILTER), isNull(boardClimbs.userId), inArray(boardClimbs.uuid, softBatch)),
-        );
+        .where(and(eq(boardClimbs.boardType, KILTER), kilterCatalogClimb, inArray(boardClimbs.uuid, softBatch)));
     }
   });
   report.applied = true;

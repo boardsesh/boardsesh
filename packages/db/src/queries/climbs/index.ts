@@ -1,5 +1,6 @@
 export { searchClimbs, MAX_SEARCH_PAGE, clampSearchPage } from './search-climbs';
 export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
+export { boardseshAuthoredClimbSql, boardseshSetClimbSql, manufacturerClimbSql } from './climb-provenance';
 export {
   createClimbFilters,
   gradeValueSql,

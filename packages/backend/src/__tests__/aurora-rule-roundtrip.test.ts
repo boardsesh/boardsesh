@@ -1,6 +1,6 @@
 import { test, expect } from 'vite-plus/test';
 import { sql, eq } from 'drizzle-orm';
-import { pgTable, text, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, integer } from 'drizzle-orm/pg-core';
 import { climbCharacteristicsConflictSql } from '@boardsesh/aurora-sync/sync';
 import { isNoMatchClimb, withNoMatch } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -11,6 +11,8 @@ const temporaryClimbs = pgTable('board_climbs', {
   description: text(),
   characteristics: text().array(),
   isDraft: boolean('is_draft'),
+  synced: boolean('synced').notNull(),
+  setterId: integer('setter_id'),
 });
 
 test('Aurora round trips preserve explicit false without freezing upstream rule changes', async () => {
@@ -71,20 +73,39 @@ test('Aurora round trips preserve explicit false without freezing upstream rule 
     // Prose that merely ends with the phrase is not a declaration, so nothing
     // is derived from it either way.
     { before: null, description: 'Campus, no match', incoming: 'Campus, no match', expected: null, authored: true },
+    // An Aurora draft the linked-account import stamped with its owner: owning
+    // it saved no rules here, so Aurora's description is read again, as for
+    // any catalogue climb.
+    { before: [], description: prose, incoming: prose, expected: ['no_match'], authored: false, imported: true },
+    {
+      before: [],
+      description: prose,
+      incoming: prose,
+      expected: ['no_match'],
+      authored: false,
+      imported: true,
+      published: true,
+    },
   ];
   await db.transaction(async (transaction) => {
     await transaction.execute(sql`CREATE TEMP TABLE board_climbs (
-      uuid text PRIMARY KEY, user_id text, description text, characteristics text[], is_draft boolean
+      uuid text PRIMARY KEY, user_id text, description text, characteristics text[], is_draft boolean,
+      synced boolean NOT NULL DEFAULT false, setter_id integer
     ) ON COMMIT DROP`);
 
     for (const [index, example] of cases.entries()) {
       const uuid = `aurora-rules-${index}`;
+      const imported = 'imported' in example && example.imported === true;
+      // A climb set in Boardsesh is written `synced = false` with no setter id;
+      // an Aurora climb is `synced` with its Aurora setter, owner or not.
       await transaction.insert(temporaryClimbs).values({
         uuid,
-        userId: example.authored ? 'author' : null,
+        userId: example.authored || imported ? 'author' : null,
         description: example.description,
         characteristics: example.before,
         isDraft: !example.published,
+        synced: !example.authored,
+        setterId: example.authored ? null : 7,
       });
       // Repeating the actual conflict expression catches [] becoming NULL on
       // the first echo, then being reinterpreted as no_match on the second.
@@ -95,6 +116,7 @@ test('Aurora round trips preserve explicit false without freezing upstream rule 
             uuid,
             description: example.incoming,
             characteristics: isNoMatchClimb(example.incoming) ? ['no_match'] : null,
+            synced: true,
           })
           .onConflictDoUpdate({
             target: temporaryClimbs.uuid,

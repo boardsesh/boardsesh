@@ -60,7 +60,7 @@ function catalogClimb(overrides: Partial<KilterCatalogClimb> = {}): KilterCatalo
 }
 
 function catalogRow(overrides: Partial<LayoutCatalogClimbRow> & Pick<LayoutCatalogClimbRow, 'uuid'>) {
-  return { fingerprint: null, isListed: true, userId: null, isDraft: false, ...overrides };
+  return { fingerprint: null, isListed: true, setInBoardsesh: false, isDraft: false, ...overrides };
 }
 
 /** The fingerprint the staging path derives for a concat on a given layout. */

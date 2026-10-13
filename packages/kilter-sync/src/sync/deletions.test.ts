@@ -16,7 +16,7 @@ function aliasRow(
   return {
     canonicalUuid: overrides.aliasUuid,
     source: 'kilter',
-    canonicalUserId: null,
+    canonicalSetInBoardsesh: false,
     canonicalIsListed: true,
     ...overrides,
   };
@@ -41,7 +41,7 @@ describe('classifyKilterDeletions', () => {
   it('protects a user-authored self-canonical', () => {
     const result = classifyKilterDeletions({
       loweredUuids: ['mine'],
-      aliasRows: [aliasRow({ aliasUuid: 'mine', canonicalUserId: 'user-1' })],
+      aliasRows: [aliasRow({ aliasUuid: 'mine', canonicalSetInBoardsesh: true })],
       aliasCounts: noCounts,
     });
     expect(result.canonicalsToSoftDelete).toEqual([]);
@@ -162,7 +162,15 @@ function mockDb(selectResults: Rows[]) {
 describe('reconcileDeletions', () => {
   it('reports only when applyDeletions is false', async () => {
     const { db, deletes, updates } = mockDb([
-      [{ aliasUuid: 'dup', canonicalUuid: 'canon', source: 'kilter', canonicalUserId: null, canonicalIsListed: true }],
+      [
+        {
+          aliasUuid: 'dup',
+          canonicalUuid: 'canon',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
+      ],
       [{ canonicalUuid: 'canon', count: 2 }],
     ]);
     const report = await reconcileDeletions(db, ['dup'], false, noop);
@@ -176,8 +184,20 @@ describe('reconcileDeletions', () => {
   it('applies a pure alias drop and a lone soft-delete', async () => {
     const { db, deletes, updates } = mockDb([
       [
-        { aliasUuid: 'dup', canonicalUuid: 'canon', source: 'kilter', canonicalUserId: null, canonicalIsListed: true },
-        { aliasUuid: 'solo', canonicalUuid: 'solo', source: 'kilter', canonicalUserId: null, canonicalIsListed: true },
+        {
+          aliasUuid: 'dup',
+          canonicalUuid: 'canon',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
+        {
+          aliasUuid: 'solo',
+          canonicalUuid: 'solo',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
       ],
       [
         { canonicalUuid: 'canon', count: 2 },
@@ -202,7 +222,7 @@ describe('reconcileDeletions', () => {
           aliasUuid: 'mine',
           canonicalUuid: 'mine',
           source: 'kilter',
-          canonicalUserId: 'user-1',
+          canonicalSetInBoardsesh: true,
           canonicalIsListed: true,
         },
       ],
@@ -217,7 +237,15 @@ describe('reconcileDeletions', () => {
 
   it('refuses an anomalous backlog and applies nothing', async () => {
     const { db, deletes, updates } = mockDb([
-      [{ aliasUuid: 'solo', canonicalUuid: 'solo', source: 'kilter', canonicalUserId: null, canonicalIsListed: true }],
+      [
+        {
+          aliasUuid: 'solo',
+          canonicalUuid: 'solo',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
+      ],
       [{ canonicalUuid: 'solo', count: 1 }],
       [{ count: 1 }], // 1 candidate vs 1 live climb → over the 25% guard.
     ]);
@@ -234,8 +262,20 @@ describe('reconcileDeletions', () => {
     // query is issued (softDeletes === 0 short-circuits the guard).
     const { db, deletes, updates } = mockDb([
       [
-        { aliasUuid: 'd1', canonicalUuid: 'c1', source: 'kilter', canonicalUserId: null, canonicalIsListed: true },
-        { aliasUuid: 'd2', canonicalUuid: 'c2', source: 'kilter', canonicalUserId: null, canonicalIsListed: true },
+        {
+          aliasUuid: 'd1',
+          canonicalUuid: 'c1',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
+        {
+          aliasUuid: 'd2',
+          canonicalUuid: 'c2',
+          source: 'kilter',
+          canonicalSetInBoardsesh: false,
+          canonicalIsListed: true,
+        },
       ],
       [
         { canonicalUuid: 'c1', count: 2 },
@@ -264,7 +304,7 @@ describe('reconcileDeletions', () => {
     // (empty), (2) direct-uuid match, (3) live-listed count.
     const { db, deletes, updates } = mockDb([
       [], // no alias rows for 'ghost'
-      [{ uuid: 'ghost', isListed: true, userId: null }], // direct board_climbs match
+      [{ uuid: 'ghost', isListed: true, setInBoardsesh: false }], // direct board_climbs match
       [{ count: 1000 }], // live listed count (guard)
     ]);
     const report = await reconcileDeletions(db, ['ghost'], true, noop);
@@ -284,7 +324,7 @@ describe('reconcileDeletions', () => {
     // would misreport it as "never imported" in the log on every subsequent run.
     const { db, updates } = mockDb([
       [], // no alias rows
-      [{ uuid: 'ghost', isListed: false, userId: null }], // direct match, drained
+      [{ uuid: 'ghost', isListed: false, setInBoardsesh: false }], // direct match, drained
     ]);
     const report = await reconcileDeletions(db, ['ghost'], true, noop);
     expect(report.directUuidSoftDeletes).toBe(0);
@@ -297,7 +337,7 @@ describe('reconcileDeletions', () => {
   it('direct-uuid fallback: a user-authored match is protected, never soft-deleted', async () => {
     const { db, updates } = mockDb([
       [], // no alias rows
-      [{ uuid: 'mine', isListed: true, userId: 'user-1' }], // direct match, user-owned
+      [{ uuid: 'mine', isListed: true, setInBoardsesh: true }], // direct match, user-owned
     ]);
     const report = await reconcileDeletions(db, ['mine'], true, noop);
     expect(report.directUuidSoftDeletes).toBe(0);
@@ -312,7 +352,7 @@ describe('reconcileDeletions', () => {
     // so the sync trigger fires and offline clients receive the removal.
     const { db, updates } = mockDb([
       [], // no alias rows
-      [{ uuid: 'ghost', isListed: null, userId: null }], // direct match, never-written flag
+      [{ uuid: 'ghost', isListed: null, setInBoardsesh: false }], // direct match, never-written flag
       [{ count: 1000 }], // live listed count (guard)
     ]);
     const report = await reconcileDeletions(db, ['ghost'], true, noop);

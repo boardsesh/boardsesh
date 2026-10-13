@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { boardseshSetClimbSql } from '../climbs/climb-provenance';
 
 /**
  * `tableAlias` is a SQL identifier and is interpolated raw, because a parameter
@@ -49,10 +50,12 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
 /**
  * "This climb is Boardsesh-owned AND its GRADE is ours to re-derive from ticks."
  *
- * The owned leg of the recompute (`board_climbs.user_id IS NOT NULL`) is the other
- * half of the grade decision beside {@link deriveGradeFromTicksSql}: a climb a
- * Boardsesh setter created has no upstream grade to protect, so its grade is the
- * average of its ticks.
+ * The owned leg of the recompute (`boardseshSetClimbSql`: an owner, and not a
+ * manufacturer climb) is the other half of the grade decision beside
+ * {@link deriveGradeFromTicksSql}: a climb a Boardsesh setter created has no
+ * upstream grade to protect, so its grade is the average of its ticks. A
+ * manufacturer climb with an owner (an imported draft, or one the owner
+ * backfill assigned) keeps upstream's grade like any other catalogue climb.
  *
  * Spray walls break that. A spray climb is an ordinary `board_climbs` row with a
  * non-null `user_id` (the wall's setter), so the owned leg matched it — and
@@ -75,5 +78,5 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
  */
 export function ownedGradeIsOursSql(climbTableAlias: string): SQL {
   const alias = sql.raw(climbTableAlias);
-  return sql`(${alias}.user_id IS NOT NULL AND ${alias}.board_type <> 'spray')`;
+  return sql`(${sql.raw(boardseshSetClimbSql(climbTableAlias))} AND ${alias}.board_type <> 'spray')`;
 }

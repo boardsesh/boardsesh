@@ -374,18 +374,18 @@ describe('shouldSkipEmptyCatalogStat — phantom (climb, angle) stat row guard (
 
 describe('shouldRelistFoldedCanonical — re-list fold decision', () => {
   it('re-lists a synced (non-user) canonical that is currently unlisted', () => {
-    expect(shouldRelistFoldedCanonical({ isListed: false, userId: null })).toBe(true);
+    expect(shouldRelistFoldedCanonical({ isListed: false, setInBoardsesh: false })).toBe(true);
     // is_listed can be stored as NULL (never-listed synced row) — still re-list.
-    expect(shouldRelistFoldedCanonical({ isListed: null, userId: null })).toBe(true);
+    expect(shouldRelistFoldedCanonical({ isListed: null, setInBoardsesh: false })).toBe(true);
   });
 
   it('leaves an already-listed canonical untouched', () => {
-    expect(shouldRelistFoldedCanonical({ isListed: true, userId: null })).toBe(false);
+    expect(shouldRelistFoldedCanonical({ isListed: true, setInBoardsesh: false })).toBe(false);
   });
 
   it('never re-lists a user-authored canonical, listed or not', () => {
-    expect(shouldRelistFoldedCanonical({ isListed: false, userId: 'user-1' })).toBe(false);
-    expect(shouldRelistFoldedCanonical({ isListed: true, userId: 'user-1' })).toBe(false);
+    expect(shouldRelistFoldedCanonical({ isListed: false, setInBoardsesh: true })).toBe(false);
+    expect(shouldRelistFoldedCanonical({ isListed: true, setInBoardsesh: true })).toBe(false);
   });
 
   it('is a no-op for a canonical created this run (no DB meta entry)', () => {
@@ -409,7 +409,7 @@ describe('buildDeletedLowerUuidSet — the run-wide /delteduuids set', () => {
 
 describe('decideIdentityRelist — re-listing a climb Kilter still lists', () => {
   function meta(overrides: Partial<ExistingClimbMeta> = {}): ExistingClimbMeta {
-    return { isListed: false, userId: null, isDraft: false, ...overrides };
+    return { isListed: false, setInBoardsesh: false, isDraft: false, ...overrides };
   }
   const otherDeletions = new Set<string>(['something-else']);
 
@@ -434,7 +434,7 @@ describe('decideIdentityRelist — re-listing a climb Kilter still lists', () =>
 
   it('never re-lists a draft or a user-authored canonical', () => {
     expect(decideIdentityRelist(meta({ isDraft: true }), 'climb-1', otherDeletions)).toBe('not_needed');
-    expect(decideIdentityRelist(meta({ userId: 'user-1' }), 'climb-1', otherDeletions)).toBe('not_needed');
+    expect(decideIdentityRelist(meta({ setInBoardsesh: true }), 'climb-1', otherDeletions)).toBe('not_needed');
   });
 
   it('reports not_needed — not blocked — for a climb that needs nothing, even with no list', () => {

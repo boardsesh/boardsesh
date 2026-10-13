@@ -25,6 +25,7 @@ import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
 import {
+  boardseshSetClimbSql,
   mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
   blendedQualityAverageSql,
@@ -111,16 +112,14 @@ async function processBatches<T>(data: T[], processor: (batch: T[]) => Promise<v
  * (published → draft) must propagate so the climb leaves search. For user
  * climbs (Boardsesh-created) the stored flags are preserved.
  *
- * "User climb" means minted in Boardsesh, and `synced` is what says so:
- * Boardsesh writes `synced = false` on every climb it mints on a board this
- * sync covers and nothing flips it, while every Aurora import writes `true`
- * (`clear-aurora-board.ts` relies on the same marker). An Aurora climb can
- * have an owner too: a draft the user sync imported from a linked account is
- * stamped with that account, because a draft is returned to its owner alone,
- * and the owner backfill assigns older ones. It is still Aurora's climb, so its
- * flags follow upstream like any catalogue row's. Without that an imported
- * draft could never be published here, and an upstream delist of a climb that
- * has an owner would never arrive.
+ * "User climb" means set in Boardsesh (`boardseshSetClimbSql`), which is not
+ * the same as having an owner. An Aurora climb can have an owner too: a draft
+ * the user sync imported from a linked account is stamped with that account,
+ * because a draft is returned to its owner alone, and the owner backfill
+ * assigns older ones. It is still Aurora's climb (`synced`, with the Aurora
+ * setter id), so its flags follow upstream like any catalogue row's. Without
+ * that an imported draft could never be published here, and an upstream delist
+ * of a climb that has an owner would never arrive.
  *
  * `user_id` is not in this policy, so nothing here can clear an owner. An
  * imported draft keeps its owner when upstream publishes it: a published,
@@ -128,7 +127,7 @@ async function processBatches<T>(data: T[], processor: (batch: T[]) => Promise<v
  */
 export function climbListingConflictSet() {
   const climbsSchema = UNIFIED_TABLES.climbs;
-  const upstreamOwnsFlags = sql`(${climbsSchema.userId} IS NULL OR ${climbsSchema.synced})`;
+  const upstreamOwnsFlags = sql.raw(`NOT ${boardseshSetClimbSql('board_climbs')}`);
   return {
     isDraft: sql`CASE WHEN ${upstreamOwnsFlags} THEN excluded.is_draft ELSE ${climbsSchema.isDraft} END`,
     isListed: sql`CASE WHEN ${upstreamOwnsFlags} THEN excluded.is_listed ELSE ${climbsSchema.isListed} END`,
@@ -145,7 +144,10 @@ export function climbCharacteristicsConflictSql() {
   // prefix, but must not reinterpret the rules explicitly saved in Boardsesh.
   // Drafts can change upstream; preserve explicit false only on an unchanged
   // echo, where the legacy fuzzy parser could mistake setter prose for a rule.
-  return sql`CASE WHEN ${climbsSchema.userId} IS NOT NULL
+  // Only a climb set in Boardsesh has rules saved here: an Aurora climb with an
+  // owner (an imported draft) took its rules from Aurora's description, so the
+  // refresh reads them again like any catalogue row's.
+  return sql`CASE WHEN ${sql.raw(boardseshSetClimbSql('board_climbs'))}
     AND ${climbsSchema.characteristics} IS NOT NULL
     AND (${climbsSchema.isDraft} IS FALSE OR (
       ${climbsSchema.description} IS NOT DISTINCT FROM excluded.description
@@ -1005,13 +1007,14 @@ export async function healRequiredSetIds(db: DrizzleDb, board: AuroraBoardName, 
     .where(
       and(
         eq(climbsSchema.boardType, board),
-        // Synced catalog rows only (user_id IS NULL): the shared sync owns their
-        // denormalization. User-authored climbs are populated by their creation
-        // path; an un-healable one (frames referencing another layout's
-        // placements) would otherwise squat in the drain cap on every run.
-        // Prod 2026-07-08: 0 user-authored listed rows with NULL required_set_ids,
-        // so this changes no current behaviour — it fences the future.
-        isNull(climbsSchema.userId),
+        // Aurora's rows only, whoever owns them: the shared sync owns their
+        // denormalization. Climbs set in Boardsesh are populated by their
+        // creation path; an un-healable one (frames referencing another
+        // layout's placements) would otherwise squat in the drain cap on every
+        // run. Prod 2026-07-08: 0 user-authored listed rows with NULL
+        // required_set_ids, so this changes no current behaviour — it fences
+        // the future.
+        sql.raw(`NOT ${boardseshSetClimbSql('board_climbs')}`),
         eq(climbsSchema.isListed, true),
         isNull(climbsSchema.requiredSetIds),
         isNotNull(climbsSchema.frames),

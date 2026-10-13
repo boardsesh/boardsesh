@@ -60,8 +60,17 @@ void describe('referenceFirstAscentSql', () => {
   void it('ships the stored credit of a manufacturer climb and NULL for a Boardsesh one', () => {
     assert.equal(
       referenceFirstAscentSql('board_climb_stats', 'fa_username'),
-      '(SELECT board_climb_stats.fa_username FROM board_climbs fa_reference_climb WHERE fa_reference_climb.uuid = board_climb_stats.climb_uuid AND fa_reference_climb.board_type = board_climb_stats.board_type AND fa_reference_climb.user_id IS NULL AND NOT fa_reference_climb.is_boardsesh_authored) AS fa_username',
+      '(SELECT board_climb_stats.fa_username FROM board_climbs fa_reference_climb WHERE fa_reference_climb.uuid = board_climb_stats.climb_uuid AND fa_reference_climb.board_type = board_climb_stats.board_type AND NOT (fa_reference_climb.is_boardsesh_authored OR (fa_reference_climb.user_id IS NOT NULL AND NOT (fa_reference_climb.synced AND fa_reference_climb.setter_id IS NOT NULL)))) AS fa_username',
     );
+  });
+
+  // An owner decides who may see a climb, not where its credit came from: an
+  // imported draft is stamped with its importing account, and the owner
+  // backfill assigns older ones, but upstream still set them.
+  void it('asks where the climb came from, so an owned manufacturer climb keeps its credit', () => {
+    const predicate = referenceFirstAscentSql('board_climb_stats', 'fa_username');
+    assert.match(predicate, /fa_reference_climb\.synced AND fa_reference_climb\.setter_id IS NOT NULL/);
+    assert.doesNotMatch(predicate, /user_id IS NULL/);
   });
 
   void it('applies the same test to the date, and has no viewer in it', () => {

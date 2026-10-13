@@ -1919,6 +1919,13 @@
       "when": 1791848889615,
       "tag": "0273_climb_membership_withdrawal_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 274,
+      "version": "7",
+      "when": 1791853729096,
+      "tag": "0274_manufacturer_climb_first_ascent_repair",
+      "breakpoints": true
     }
   ]
 }

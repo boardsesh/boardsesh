@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   boardClimbs,
@@ -9,7 +9,12 @@ import {
   boardPlacements,
   type NewBoardClimb,
 } from '@boardsesh/db/schema';
-import { isSyncFenceError, populateDenormalizedColumns, mergeCatalogCharacteristicsSql } from '@boardsesh/db/queries';
+import {
+  boardseshSetClimbSql,
+  isSyncFenceError,
+  populateDenormalizedColumns,
+  mergeCatalogCharacteristicsSql,
+} from '@boardsesh/db/queries';
 import { isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 
 import type { KilterTokenProvider } from '../api/token-provider';
@@ -78,7 +83,7 @@ export type SyncKilterCatalogArgs = {
   /**
    * Apply /delteduuids reconciliation. Default false = classify + report only.
    * Deleting catalog rows is data deletion (see CLAUDE.md) — opt in explicitly.
-   * Only ever touches Kilter-synced climbs (never user-authored). See deletions.ts.
+   * Only ever touches Kilter's climbs (never one set in Boardsesh). See deletions.ts.
    */
   applyDeletions?: boolean;
   /** Max deletion changes to apply per run; the backlog drains over cycles. */
@@ -237,17 +242,16 @@ export function createGroupResult(): GroupResult {
  * LISTED Grips climb just folded onto it. Every climb that reaches the fold has
  * already passed the `isListed && !isDraft && !isDeleted` gate upstream, so the
  * incoming alias demonstrably exists on the wall again. If the canonical is a
- * synced (non-user) row we'd previously unlisted, re-list it so it stops being
- * invisible in search. User-authored canonicals are never touched, and a
- * canonical created earlier this run (no meta entry → `undefined`) is already
- * listed. Pure + exported for unit testing.
+ * Kilter climb we'd previously unlisted, re-list it so it stops being invisible
+ * in search, whether or not an account owns it for visibility. Climbs set in
+ * Boardsesh are never touched, and a canonical created earlier this run (no meta
+ * entry → `undefined`) is already listed. Pure + exported for unit testing.
  */
 export function shouldRelistFoldedCanonical(
-  canonicalMeta: { isListed: boolean | null; userId: string | null } | undefined,
+  canonicalMeta: { isListed: boolean | null; setInBoardsesh: boolean } | undefined,
 ): boolean {
-  // Map.get yields `undefined` for a canonical created this run; the userId
-  // column is `string | null` (never undefined), so both checks are exact.
-  return canonicalMeta !== undefined && canonicalMeta.userId === null && canonicalMeta.isListed !== true;
+  // Map.get yields `undefined` for a canonical created this run.
+  return canonicalMeta !== undefined && !canonicalMeta.setInBoardsesh && canonicalMeta.isListed !== true;
 }
 
 export type IdentityRelistDecision = 'relist' | 'not_needed' | 'blocked_deleted_upstream' | 'blocked_no_deletion_list';
@@ -288,7 +292,7 @@ export function decideIdentityRelist(
   // A draft is deliberately invisible; the catalog sync doesn't publish it.
   if (canonicalMeta?.isDraft === true) return 'not_needed';
   // Reuses the fold path's classifier: undefined (created this run), a
-  // user-authored row, and an already-listed row all need nothing.
+  // climb set in Boardsesh, and an already-listed row all need nothing.
   if (!shouldRelistFoldedCanonical(canonicalMeta)) return 'not_needed';
   if (deletedLowerUuids === null) return 'blocked_no_deletion_list';
   if (deletedLowerUuids.has(lowerUuid.toLowerCase())) return 'blocked_deleted_upstream';
@@ -540,9 +544,10 @@ export async function flushKilterLayoutBatch(
           .values(chunk)
           .onConflictDoUpdate({
             target: [boardClimbs.uuid],
-            // Never overwrite a user-authored climb on a UUID collision — the
-            // catalog sync only owns Kilter-synced rows (user_id IS NULL).
-            setWhere: isNull(boardClimbs.userId),
+            // Never overwrite a climb set in Boardsesh on a UUID collision —
+            // the catalog sync owns Kilter's rows, whoever owns them for
+            // visibility.
+            setWhere: kilterCatalogClimb,
             set: {
               holdFingerprint: sql`COALESCE(${boardClimbs.holdFingerprint}, excluded.hold_fingerprint)`,
               frames: sql`COALESCE(${boardClimbs.frames}, excluded.frames)`,
@@ -590,8 +595,19 @@ export async function flushKilterLayoutBatch(
   });
 }
 
-/** Listing, ownership and draft state of a climb already in board_climbs. */
-export type ExistingClimbMeta = { isListed: boolean | null; userId: string | null; isDraft: boolean | null };
+/**
+ * Listing, provenance and draft state of a climb already in board_climbs.
+ * `setInBoardsesh` is provenance, not ownership (`boardseshSetClimbSql`): a
+ * Kilter climb the owner backfill assigned to an account is still Kilter's.
+ */
+export type ExistingClimbMeta = { isListed: boolean | null; setInBoardsesh: boolean; isDraft: boolean | null };
+
+/**
+ * The catalog sync's provenance test, on the unaliased `board_climbs` table.
+ * Kilter's climbs are its to write; a climb set in Boardsesh is not.
+ */
+const setInBoardseshColumn = sql<boolean>`${sql.raw(boardseshSetClimbSql('board_climbs'))}`;
+const kilterCatalogClimb = sql.raw(`NOT ${boardseshSetClimbSql('board_climbs')}`);
 
 /** One board_climbs row as the layout index loads it. */
 export type LayoutCatalogClimbRow = ExistingClimbMeta & { uuid: string; fingerprint: string | null };
@@ -635,7 +651,11 @@ export function buildLayoutCatalogIndex(input: {
   const existingCanonicalMeta = new Map<string, ExistingClimbMeta>();
   for (const row of input.climbRows) {
     existingByLowerUuid.set(row.uuid.toLowerCase(), row.uuid);
-    existingCanonicalMeta.set(row.uuid, { isListed: row.isListed, userId: row.userId, isDraft: row.isDraft });
+    existingCanonicalMeta.set(row.uuid, {
+      isListed: row.isListed,
+      setInBoardsesh: row.setInBoardsesh,
+      isDraft: row.isDraft,
+    });
     if (row.fingerprint && !fingerprintToCanonical.has(row.fingerprint)) {
       fingerprintToCanonical.set(row.fingerprint, row.uuid);
     }
@@ -707,7 +727,7 @@ async function loadLayoutCatalogIndex(
       uuid: boardClimbs.uuid,
       fingerprint: boardClimbs.holdFingerprint,
       isListed: boardClimbs.isListed,
-      userId: boardClimbs.userId,
+      setInBoardsesh: setInBoardseshColumn,
       isDraft: boardClimbs.isDraft,
     })
     .from(boardClimbs)
@@ -973,9 +993,9 @@ export function stageCatalogClimb(
 }
 
 /**
- * Re-list synced canonicals that the current catalog pull proves are on the
- * wall. The isNull(userId) + is_listed guards belt-and-suspenders the
- * classifier, so a user-authored or already-listed row is never touched.
+ * Re-list Kilter canonicals that the current catalog pull proves are on the
+ * wall. The provenance + is_listed guards belt-and-suspenders the classifier,
+ * so a climb set in Boardsesh or an already-listed row is never touched.
  * Returns how many canonicals were requested.
  */
 async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promise<number> {
@@ -986,7 +1006,7 @@ async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promis
       .where(
         and(
           eq(boardClimbs.boardType, KILTER),
-          isNull(boardClimbs.userId),
+          kilterCatalogClimb,
           // IS NOT TRUE, not `= false`: is_listed is nullable and search filters
           // on `is_listed = true`, so a NULL row is just as invisible as a false
           // one. shouldRelistFoldedCanonical classifies NULL as re-listable; a
@@ -1354,7 +1374,7 @@ async function ingestRerouteCandidatesForLayout(input: {
     layoutId: boardClimbs.layoutId,
     fingerprint: boardClimbs.holdFingerprint,
     isListed: boardClimbs.isListed,
-    userId: boardClimbs.userId,
+    setInBoardsesh: setInBoardseshColumn,
     isDraft: boardClimbs.isDraft,
   };
   const uuidRows = await db

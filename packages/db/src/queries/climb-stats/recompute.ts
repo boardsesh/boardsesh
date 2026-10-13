@@ -4,6 +4,7 @@ import { rowsOf } from '../util/rows';
 import { setSerialPlan } from '../util/serial-plan';
 import { blendedQualityAverageSql } from './quality-blend';
 import { deriveGradeFromTicksSql, ownedGradeIsOursSql } from './real-catalog-data';
+import { boardseshSetClimbSql } from '../climbs/climb-provenance';
 import { climberVoteGradeArms } from './climber-vote-grade';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
@@ -45,10 +46,13 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * replace it.
  *
  * FA (fa_username / fa_at):
- *   - Boardsesh-owned climbs (board_climbs.user_id IS NOT NULL): re-derive from
- *     the earliest flash/send tick of ANY origin, every pass (a deleted/
- *     downgraded FA tick demotes to the next sender or NULL).
- *   - Non-owned climbs (user_id IS NULL / no row): the manufacturer owns the
+ *   - Boardsesh-owned climbs (set in Boardsesh by an account that still exists,
+ *     `boardseshSetClimbSql`): re-derive from the earliest flash/send tick of
+ *     ANY origin, every pass (a deleted/downgraded FA tick demotes to the next
+ *     sender or NULL).
+ *   - Non-owned climbs (no owner, no row, or a manufacturer climb that has an
+ *     owner only for visibility: an imported draft, or a climb the owner
+ *     backfill assigned): the manufacturer owns the
  *     authoritative FA and the recompute NEVER derives or fills it from ticks —
  *     the stored value is preserved verbatim. A Boardsesh tick (native OR
  *     imported) must never crown a manufacturer climb the user merely logged.
@@ -337,7 +341,7 @@ export async function recomputeClimbStats(
           ) latest
       ),
       owner AS (
-        SELECT bc.user_id IS NOT NULL AS boardsesh_owned,
+        SELECT ${sql.raw(boardseshSetClimbSql('bc'))} AS boardsesh_owned,
                ${ownedGradeIsOursSql('bc')} AS boardsesh_graded
           FROM board_climbs bc
          WHERE bc.board_type = ${boardType}
@@ -676,7 +680,7 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
           ON bq.board_type = k.board_type AND bq.climb_uuid = k.climb_uuid AND bq.angle = k.angle
         LEFT JOIN LATERAL (
           SELECT COALESCE(
-                   (SELECT bc.user_id IS NOT NULL
+                   (SELECT ${sql.raw(boardseshSetClimbSql('bc'))}
                       FROM board_climbs bc
                      WHERE bc.board_type = k.board_type AND bc.uuid = k.climb_uuid),
                    FALSE) AS boardsesh_owned,

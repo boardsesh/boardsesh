@@ -1218,7 +1218,10 @@ describe('climb conflict policies (SQL)', () => {
     const [climbConflict] = shimConflictSets.filter((set) => 'characteristics' in set) as Array<Record<string, SQL>>;
     expect(climbConflict).toBeDefined();
     const ruleSql = render(climbConflict.characteristics);
-    expect(ruleSql).toContain('"user_id" is not null');
+    // Only a climb set in Boardsesh keeps rules saved here; owning it is not enough.
+    expect(ruleSql).toContain(
+      'case when (board_climbs.user_id is not null and not (board_climbs.synced and board_climbs.setter_id is not null))',
+    );
     expect(ruleSql).toContain('"characteristics" is not null');
     expect(ruleSql).toContain('"is_draft" is false');
     expect(ruleSql).toContain('is not distinct from excluded.description');
@@ -1229,9 +1232,9 @@ describe('climb conflict policies (SQL)', () => {
     const { isListed, isDraft } = climbListingConflictSet();
     const listedSql = render(isListed);
     const draftSql = render(isDraft);
-    // Ownership gate + verbatim incoming for catalog rows.
+    // Provenance gate + verbatim incoming for catalog rows.
     expect(listedSql).toContain('user_id');
-    expect(listedSql).toContain('is null');
+    expect(listedSql).toContain('synced');
     expect(listedSql).toContain('excluded.is_listed');
     expect(draftSql).toContain('excluded.is_draft');
     // The user branch keeps the stored value (never flips a Boardsesh climb).
@@ -1243,9 +1246,10 @@ describe('climb conflict policies (SQL)', () => {
 
   it('is_listed / is_draft: an Aurora climb that has an owner still follows upstream, so an imported draft can be published', () => {
     const { isListed, isDraft } = climbListingConflictSet();
-    // `synced` is the provenance marker: true on every Aurora import, false on
-    // every climb minted in Boardsesh.
-    const upstreamOwnsFlags = '("board_climbs"."user_id" is null or "board_climbs"."synced")';
+    // Provenance, not ownership: every Aurora import writes `synced` and the
+    // Aurora setter id; a climb set in Boardsesh has neither.
+    const upstreamOwnsFlags =
+      'not (board_climbs.user_id is not null and not (board_climbs.synced and board_climbs.setter_id is not null))';
     expect(render(isDraft)).toBe(
       `case when ${upstreamOwnsFlags} then excluded.is_draft else "board_climbs"."is_draft" end`,
     );
@@ -1430,13 +1434,15 @@ describe('healRequiredSetIds (drain)', () => {
     expect(logs).toEqual([]);
   });
 
-  it('selects only synced, listed rows missing set ids (user-authored climbs excluded)', async () => {
+  it('selects only Aurora rows that are listed and missing set ids (climbs set in Boardsesh excluded)', async () => {
     const { db, captured } = mockDrainDb([]);
     await healRequiredSetIds(db, 'tension', () => {});
     // Render the REAL where condition the drain issued — the assertion fails if
     // someone drops the ownership fence (or any other predicate) from the query.
     const whereSql = dialect.sqlToQuery(captured.where as Parameters<typeof dialect.sqlToQuery>[0]).sql.toLowerCase();
-    expect(whereSql).toContain('"user_id" is null');
+    expect(whereSql).toContain(
+      'not (board_climbs.user_id is not null and not (board_climbs.synced and board_climbs.setter_id is not null))',
+    );
     expect(whereSql).toContain('"is_listed" =');
     expect(whereSql).toContain('"required_set_ids" is null');
     expect(whereSql).toContain('"frames" is not null');

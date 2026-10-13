@@ -1,6 +1,6 @@
 import { and, eq, exists, not, or, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
-import { contentVisibilityCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, manufacturerClimbSql } from '@boardsesh/db/queries';
 import type { Database } from '../../../db/client';
 import { GraphQLError } from 'graphql';
 import { getPostgresErrorCode } from '../../../utils/postgres-errors';
@@ -28,7 +28,13 @@ export async function withdrawDeletedAccountContent(tx: Transaction, userId: str
   // Called after spray/account locks. This is the same user lock acquired by
   // account audience changes and explicit publication writes.
   await tx.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, userId)).for('update');
-  await tx.update(schema.boardClimbs).set({ isBoardseshAuthored: true }).where(eq(schema.boardClimbs.userId, userId));
+  // Only a climb set in Boardsesh had a Boardsesh author. A manufacturer climb
+  // this account owned for visibility (an imported draft, or one the owner
+  // backfill assigned) keeps its manufacturer first ascent once it has no owner.
+  await tx
+    .update(schema.boardClimbs)
+    .set({ isBoardseshAuthored: true })
+    .where(and(eq(schema.boardClimbs.userId, userId), sql.raw(`NOT ${manufacturerClimbSql('board_climbs')}`)));
 
   await tx
     .insert(schema.contentPrivacy)

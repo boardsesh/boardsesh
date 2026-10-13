@@ -1,4 +1,5 @@
 import { playlists } from '../schema/app/playlists';
+import { boardseshAuthoredClimbSql } from './climbs/climb-provenance';
 import { Column, getTableName, is, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 type ViewerId = string | null | undefined;
 type PrivacyResourceKind = 'board' | 'session';
@@ -410,7 +411,11 @@ export function referenceBoardTypeSql(alias: string): string {
 /**
  * One first-ascent column of a stats row, as every board sync stream and the
  * snapshot artifact ship it: the stored value for a manufacturer climb, NULL for
- * a climb that has, or once had, a Boardsesh author.
+ * a climb that has, or once had, a Boardsesh author
+ * ({@link boardseshAuthoredClimbSql}). A manufacturer climb with an owner, a
+ * draft the import stamped or a climb the owner backfill assigned, is still a
+ * manufacturer climb: its owner decides who may see it, not where its credit
+ * came from.
  *
  * The stored credit of a manufacturer climb is upstream catalogue data. On a
  * Boardsesh climb the name comes from a Boardsesh tick, and a tick stays under
@@ -436,7 +441,7 @@ export function referenceBoardTypeSql(alias: string): string {
 export function referenceFirstAscentSql(statsAlias: string, column: 'fa_username' | 'fa_at'): string {
   const stats = safeSqlAlias(statsAlias);
   const climb = FIRST_ASCENT_CLIMB_ALIAS;
-  return `(SELECT ${stats}.${column} FROM board_climbs ${climb} WHERE ${climb}.uuid = ${stats}.climb_uuid AND ${climb}.board_type = ${stats}.board_type AND ${climb}.user_id IS NULL AND NOT ${climb}.is_boardsesh_authored) AS ${column}`;
+  return `(SELECT ${stats}.${column} FROM board_climbs ${climb} WHERE ${climb}.uuid = ${stats}.climb_uuid AND ${climb}.board_type = ${stats}.board_type AND NOT ${boardseshAuthoredClimbSql(climb)}) AS ${column}`;
 }
 
 /**
@@ -514,7 +519,7 @@ export function privateSafeFirstAscentName(
   return sql<string | null>`CASE WHEN EXISTS (
     SELECT 1 FROM board_climbs privacy_fa_owned WHERE privacy_fa_owned.board_type = ${correlated.boardType}
       AND privacy_fa_owned.uuid = ${correlated.climbUuid}
-      AND (privacy_fa_owned.user_id IS NOT NULL OR privacy_fa_owned.is_boardsesh_authored)
+      AND ${sql.raw(boardseshAuthoredClimbSql('privacy_fa_owned'))}
   ) THEN (
     SELECT CASE WHEN ${tickVisible} THEN COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name) ELSE NULL END
     FROM boardsesh_ticks privacy_fa_tick
