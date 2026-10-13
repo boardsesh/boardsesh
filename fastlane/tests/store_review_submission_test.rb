@@ -248,6 +248,32 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_empty @client.writes
   end
 
+  def test_rejected_app_versions_require_resolution_before_any_write
+    digest = plan.fetch("snapshotSha256")
+    %w[REJECTED METADATA_REJECTED DEVELOPER_REJECTED].each do |state|
+      @report["version"]["appStoreState"] = state
+      error = assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+      assert_match(/requires rejection resolution in App Store Connect/, error.message)
+      assert_empty @client.writes
+    end
+  end
+
+  def test_rejected_cpp_requires_resolution_before_any_write
+    digest = plan(["kilter"]).fetch("snapshotSha256")
+    @report.fetch("customProductPages").first.fetch("versions").first["state"] = "REJECTED"
+    @client.submissions["rejected"] = { "state" => "UNRESOLVED_ISSUES", "items" => [@client.item("appCustomProductPageVersion", "version-kilter", "REJECTED")] }
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_match(/requires rejection resolution in App Store Connect/, error.message)
+    assert_empty @client.writes
+  end
+
+  def test_selected_membership_with_unresolved_issues_cannot_create_a_new_draft
+    digest = plan.fetch("snapshotSha256")
+    @client.submissions["unresolved"] = { "state" => "UNRESOLVED_ISSUES", "items" => [@client.item("appStoreVersion", "app-version", "REJECTED")] }
+    assert_raises(BoardseshStoreReview::Error) { submit(digest) }
+    assert_empty @client.writes
+  end
+
   def test_changed_text_or_unfinished_screenshot_prevents_all_writes
     digest = plan.fetch("snapshotSha256")
     @report.dig("localizations", 0, "metadata", "whatsNew")["text"] = "Old notes"

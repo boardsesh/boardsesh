@@ -1,6 +1,10 @@
 name: Mobile Store Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mobile-store-audit.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -19,12 +23,26 @@ permissions:
 
 # Serializing with draft preparation keeps the attached build stable while read.
 concurrency:
-  group: mobile-store-draft
+  group: ${{ github.event_name == 'workflow_dispatch' && 'mobile-store-draft' || format('mobile-store-audit-validation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - name: Test audit without store credentials
+        run: vp exec ruby fastlane/tests/store_audit_test.rb
   audit:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
     timeout-minutes: 20

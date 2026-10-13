@@ -6,7 +6,8 @@ require_relative "custom_product_pages"
 module BoardseshStoreReview
   Error = BoardseshStoreAudit::Error
   DEFAULT_COUNTS = { "APP_IPHONE_67" => 9, "APP_IPHONE_61" => 9, "APP_IPAD_PRO_3GEN_129" => 6, "APP_IPAD_PRO_3GEN_11" => 6 }.freeze
-  EDITABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW REJECTED METADATA_REJECTED DEVELOPER_REJECTED].freeze
+  EDITABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW].freeze
+  REQUIRES_RESOLUTION = %w[REJECTED METADATA_REJECTED DEVELOPER_REJECTED].freeze
   SUBMITTED = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED APPROVED PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION READY_FOR_SALE].freeze
   REVIEW_ACTIVE = %w[WAITING_FOR_REVIEW IN_REVIEW COMPLETING COMPLETE].freeze
   METADATA_FILES = { "description" => "description.txt", "keywords" => "keywords.txt", "marketingUrl" => "marketing_url.txt", "promotionalText" => "promotional_text.txt", "supportUrl" => "support_url.txt", "whatsNew" => "release_notes.txt" }.freeze
@@ -153,6 +154,9 @@ module BoardseshStoreReview
             "visible" => page.fetch("visible"), "version" => current.fetch("version"), "deepLink" => remote_version.dig("attributes", "deepLink"),
             "localizations" => normalized_localizations(current.fetch("localizations"), target, DEFAULT_COUNTS.transform_values { 9 })
           }
+        end
+        if REQUIRES_RESOLUTION.include?(state)
+          raise Error, "Selected surface #{target} requires rejection resolution in App Store Connect; this helper only submits initial or ready drafts"
         end
         raise Error, "Selected surface #{target} is not editable or submitted (#{state})" unless (EDITABLE + SUBMITTED).include?(state)
         states[item_key(item)] = state

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Plan a snapshot or submit the exact reviewed snapshot'
+        description: 'Plan or submit initial/ready drafts; resolve rejections in App Store Connect'
         type: choice
         options: [plan, submit]
         default: plan

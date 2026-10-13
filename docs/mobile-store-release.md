@@ -451,7 +451,10 @@ review states and exact build identity. An ambiguous write is never blindly
 retried: plan again and inspect the existing submission. An exact submitted group
 returns a checked no-op; an existing nonempty compatible review draft can resume.
 Mixed groups, empty unowned drafts, and historical removed membership of a selected
-version stop for inspection. The helper never cancels another review.
+version stop for inspection. Rejection recovery is intentionally unsupported:
+resolve rejected items through their existing submission in App Store Connect.
+The helper submits only initial `PREPARE_FOR_SUBMISSION` or resumable
+`READY_FOR_REVIEW` drafts and never cancels another review.
 
 Android review remains a separate operation. Before sending a production release
 for review, verify managed publishing in Play Console and establish whether approval
