@@ -23,7 +23,7 @@ import { requireAuthenticated } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import { syncClimbDocuments } from './saved-climb';
-import { resolveSyncStabilityWindowSeconds } from './stability-window';
+import { syncStabilityWindowSeconds } from './stability-window';
 import {
   validateInput,
   SyncCursorInputSchema,
@@ -68,11 +68,9 @@ const EPOCH_SEQ = '0';
 // (0270_climb_reference_membership),
 // which covers every copy a device pulled only while this window stays above
 // one second.
-// Invalid values use the default; only exact-zero test fixtures bypass it.
-const STABILITY_WINDOW_SECONDS = resolveSyncStabilityWindowSeconds(
-  process.env.SYNC_STABILITY_WINDOW_SECONDS,
-  process.env.NODE_ENV,
-);
+// Invalid values use the default; only exact-zero test fixtures bypass it. The
+// snapshot exporter reads the same value through the same function.
+const STABILITY_WINDOW_SECONDS = syncStabilityWindowSeconds();
 
 /**
  * Resolve the incoming cursor into the two bound comparison values. Null/absent

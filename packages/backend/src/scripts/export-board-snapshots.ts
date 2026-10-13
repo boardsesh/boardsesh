@@ -66,6 +66,10 @@ import {
   referenceFirstAscentSql,
 } from '@boardsesh/db/queries';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
+// Rows younger than the stability window are left for a live incremental pull,
+// so the watermark never covers a still-in-flight write. The resolvers' own
+// reader, clamp included: see stability-window.ts.
+import { syncStabilityWindowSeconds } from '../graphql/resolvers/sync/stability-window';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
 
@@ -108,15 +112,6 @@ export function publicUrlForKey(key: string): string {
 // but a client may hold a fetched manifest much longer before starting the
 // download — 14 days is a generous grace window.
 const PRUNE_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
-
-// Matches the resolvers' stability window: rows younger than this are left for a
-// live incremental pull so the watermark never covers a still-in-flight write.
-// Reads the SAME env var the sync resolvers read so both stay in lockstep. A
-// blank value (e.g. an unset GitHub Actions `vars.*` passthrough) means unset —
-// Number('') would otherwise silently zero the window.
-const rawStabilityWindow = process.env.SYNC_STABILITY_WINDOW_SECONDS?.trim();
-const parsedStabilityWindow = rawStabilityWindow ? Number(rawStabilityWindow) : 30;
-const DEFAULT_STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
 
 // The keyset epoch a client resumes from when a table's snapshot is empty — the
 // same sentinel the resolvers echo on a first (cursorless) pull.
@@ -639,7 +634,7 @@ async function hasDeltaAtThreshold(params: {
     [
       pair.boardType,
       pair.layoutId,
-      DEFAULT_STABILITY_WINDOW_SECONDS,
+      syncStabilityWindowSeconds(),
       watermark.watermarkUpdatedAt,
       watermark.watermarkSyncSeq,
       threshold,
@@ -702,7 +697,7 @@ async function hasSmallLayoutDeltaAtThreshold(params: {
     [
       pair.boardType,
       climbUuids,
-      DEFAULT_STABILITY_WINDOW_SECONDS,
+      syncStabilityWindowSeconds(),
       watermark.watermarkUpdatedAt,
       watermark.watermarkSyncSeq,
       threshold,
@@ -1231,7 +1226,7 @@ export async function exportLayoutSnapshot(params: {
   artifactShape?: SnapshotArtifactShape;
 }): Promise<LayoutSnapshotResult> {
   const { sqlClient, boardType, layoutId, filePath, builtAt, gradesFilePath } = params;
-  const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
+  const stabilityWindowSeconds = params.stabilityWindowSeconds ?? syncStabilityWindowSeconds();
   const streamBatchSize = params.streamBatchSize ?? 5000;
   const artifactShape = params.artifactShape ?? configuredSnapshotArtifactShape();
   const scopeParams: (string | number)[] = [boardType, layoutId, stabilityWindowSeconds];
@@ -1817,7 +1812,7 @@ export async function runExportWithOptions(
       pairs: discoveredPairs.length,
       refreshThreshold: options.refreshThreshold ?? null,
       builtAt,
-      stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
+      stabilityWindowSeconds: syncStabilityWindowSeconds(),
     });
 
     // Fetch the previous manifest BEFORE any upload: if it is unreadable the

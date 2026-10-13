@@ -855,6 +855,57 @@ describe('board-snapshot export ↔ live pull parity', () => {
     });
   });
 
+  // The exporter reads SYNC_STABILITY_WINDOW_SECONDS through the live pulls'
+  // reader, clamp included. A deployed process has no NODE_ENV (Railway sets
+  // none), so a configured 0 or 1 is two seconds there, never the raw value: a
+  // shorter export window could stamp a watermark past a row an older
+  // transaction is still writing, and REFERENCE would resume past it for good.
+  describe('with no window passed, as the nightly run calls it', () => {
+    const configuredWindow = process.env.SYNC_STABILITY_WINDOW_SECONDS;
+    const runtime = process.env.NODE_ENV;
+    const setEnvironmentVariable = (name: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    };
+    afterEach(() => {
+      setEnvironmentVariable('SYNC_STABILITY_WINDOW_SECONDS', configuredWindow);
+      setEnvironmentVariable('NODE_ENV', runtime);
+    });
+
+    it.each(['0', '1'])('applies the live pulls’ two-second floor to a configured %s', async (rawWindow) => {
+      setEnvironmentVariable('SYNC_STABILITY_WINDOW_SECONDS', rawWindow);
+      setEnvironmentVariable('NODE_ENV', undefined);
+      await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+      const clampedWindowSeconds = 2;
+      const beforeRow = (
+        await db.execute(sql`
+          SELECT clock_timestamp() AS built_at,
+                 clock_timestamp() - (${clampedWindowSeconds} * INTERVAL '1 second') AS replay_from
+        `)
+      )[0] as { built_at: unknown; replay_from: unknown };
+
+      const filePath = join(workDir, `artifact-configured-window-${rawWindow}.db`);
+      await exportLayoutSnapshot({
+        sqlClient: createPool(),
+        boardType: BOARD_TYPE,
+        layoutId: LAYOUT_ID,
+        filePath,
+        builtAt: toIso(beforeRow.built_at),
+      });
+
+      const afterRow = (
+        await db.execute(sql`
+          SELECT clock_timestamp() - (${clampedWindowSeconds} * INTERVAL '1 second') AS replay_from
+        `)
+      )[0] as { replay_from: unknown };
+      // The replay boundary is the export transaction's clock minus the window
+      // it applied, the same window its row scope and watermark use.
+      const replayFromMs = Date.parse(String(readArtifactMeta(filePath, 'sync_deletions')!.watermark_updated_at));
+      expect(replayFromMs).toBeGreaterThanOrEqual(Date.parse(toIso(beforeRow.replay_from)));
+      expect(replayFromMs).toBeLessThanOrEqual(Date.parse(toIso(afterRow.replay_from)));
+    });
+  });
+
   it('excludes a row inside the stability window from both the artifact and its watermark', async () => {
     // Old rows are well outside any window; the recent row is inside a 30s window.
     await insertClimb({ uuid: 'old-1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
