@@ -37,7 +37,7 @@ import {
   GET_SPRAY_DETECTION,
   REQUEST_SPRAY_DETECTION,
 } from '../packages/shared/graphql/src/operations/spray-detection';
-import { GET_PRIVACY_SETTINGS } from '../packages/shared/graphql/src/operations/privacy';
+import { GET_CONTENT_AUDIENCE, GET_PRIVACY_SETTINGS } from '../packages/shared/graphql/src/operations/privacy';
 import { GET_SMART_PLAYLIST } from '../packages/shared/graphql/src/operations/playlists';
 import { mapPhotoHoldToCanonical } from '../packages/mobile/src/lib/spray/spray-hold-canonical';
 import { BACKEND_URL } from '../packages/mobile/src/lib/env';
@@ -62,6 +62,7 @@ import {
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+const MAX_PRIVACY_REVISION = 2_147_483_647; // GraphQL Int input limit.
 export const CPP_BOOTSTRAP_PROFILE_QUERY = 'query CppBootstrapProfile { profile { id displayName avatarUrl } }';
 const SESSION_STATUS_QUERY = `query CppBootstrapSessionStatus($sessionId: ID!) { sessionStatus(sessionId: $sessionId) }`;
 const OWNED_SESSIONS_QUERY = `query CppBootstrapOwnedSessions { mySessions { id boardPath createdByUserId isActive isPublic isPermanent } }`;
@@ -597,6 +598,22 @@ async function readCppLogbookAscent(options: BootstrapOptions, board: BootstrapB
       .flatMap((group) => group.items)
       .filter((item) => ascentMatchesPrimaryGeometry(item, board)),
   };
+}
+
+async function demoTickPrivacyVerified(options: BootstrapOptions, tickUuid: string): Promise<boolean> {
+  try {
+    const result = await options.transport.request<{
+      contentAudience?: { audience?: unknown; isExplicit?: unknown; canEdit?: unknown } | null;
+    }>(GET_CONTENT_AUDIENCE, { entityType: 'tick', entityId: tickUuid });
+    return (
+      result.contentAudience?.audience === 'only_me' &&
+      result.contentAudience.isExplicit === true &&
+      result.contentAudience.canEdit === true
+    );
+  } catch {
+    // A failed policy read never authorizes replaying the owner-visible tick.
+    return false;
+  }
 }
 
 /** JPEG generations differ; compare oriented, downsized real pixels rather than pretending byte hashes match. */
@@ -1178,12 +1195,23 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
     const climbs = climbsByBoard.get(primary.uuid)!;
     let logbook = await readCppLogbookAscent(options, primary);
     let ascent = logbook.ascent;
+    const loadedDemoTick = options.checkpoint.demoTicks?.[options.target];
+    if (ascent && ascent.uuid === loadedDemoTick && !(await demoTickPrivacyVerified(options, loadedDemoTick)))
+      blockers.push(`${options.target}: private demo tick policy could not be verified; checkpoint retained`);
     if (!ascent && options.apply && options.seedDemoContent && logbook.primaryEntries.length === 0) {
       const privacy = await options.transport.request<{
-        privacySettings: { enabled: boolean; privacyRevision: number };
+        privacySettings?: { privacyRevision?: unknown } | null;
       }>(GET_PRIVACY_SETTINGS);
-      if (!privacy.privacySettings.enabled)
-        blockers.push(`${options.target}: private demo tick requires backend publication privacy support`);
+      const privacyRevision = privacy.privacySettings?.privacyRevision;
+      // enabled only gates UI controls. Explicit publication inputs still carry
+      // their audience during rollback, and require a verified stored policy.
+      if (
+        typeof privacyRevision !== 'number' ||
+        !Number.isSafeInteger(privacyRevision) ||
+        privacyRevision < 0 ||
+        privacyRevision > MAX_PRIVACY_REVISION
+      )
+        blockers.push(`${options.target}: invalid privacy revision; no demo tick was saved`);
       else {
         const previousDemoTick = options.checkpoint.demoTicks?.[options.target];
         const tickUuid = previousDemoTick ?? randomUUID();
@@ -1205,16 +1233,20 @@ export async function bootstrapCppScenario(options: BootstrapOptions): Promise<B
             layoutId: primary.layoutId,
             sizeId: primary.sizeId,
             setIds: primary.setIds,
-            privacy: { audience: 'only_me', privacyRevision: privacy.privacySettings.privacyRevision },
+            privacy: { audience: 'only_me', privacyRevision },
           },
         });
-        logbook = await readCppLogbookAscent(options, primary);
-        ascent = logbook.ascent;
-        actions.push(
-          previousDemoTick
-            ? `${options.target}: resumed checkpointed private example attempt ${tickUuid} through UUID-idempotent SaveTick`
-            : `${options.target}: created one explicitly private illustrative attempt through SaveTick`,
-        );
+        if (!(await demoTickPrivacyVerified(options, tickUuid)))
+          blockers.push(`${options.target}: private demo tick policy could not be verified; checkpoint retained`);
+        else {
+          logbook = await readCppLogbookAscent(options, primary);
+          ascent = logbook.ascent;
+          actions.push(
+            previousDemoTick
+              ? `${options.target}: resumed checkpointed private example attempt ${tickUuid} through UUID-idempotent SaveTick`
+              : `${options.target}: created one explicitly private illustrative attempt through SaveTick`,
+          );
+        }
       }
     }
     if (!ascent) {

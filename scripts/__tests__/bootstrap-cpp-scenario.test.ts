@@ -283,6 +283,9 @@ function manufacturerHarness(): {
         case 'PrivacySettings':
           response = { privacySettings: { enabled: true, privacyRevision: 7 } };
           break;
+        case 'ContentAudience':
+          response = { contentAudience: { audience: 'only_me', isExplicit: true, canEdit: true } };
+          break;
         case 'SaveTick':
           recordedAscent = true;
           recordedAscentId = (variables.input as { uuid: string }).uuid;
@@ -1796,6 +1799,179 @@ describe('CPP account/bootstrap safety', () => {
     });
     expect(result.blockers).toEqual([]);
     expect(result.scenario?.cpp?.scenes.logbook.ascentId).toBe((tick.variables.input as { uuid: string }).uuid);
+    const tickIndex = harness.operations.indexOf(tick);
+    expect(harness.operations[tickIndex + 1]).toEqual({
+      name: 'ContentAudience',
+      variables: { entityType: 'tick', entityId: (tick.variables.input as { uuid: string }).uuid },
+    });
+    expect(harness.operations[tickIndex + 2].name).toBe('GetUserGroupedAscentsFeed');
+  });
+
+  it('saves and verifies an explicit only-me attempt while privacy controls are disabled', async () => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { apply: true, seedDemoContent: true, testRecordedAscent: false });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'PrivacySettings')
+        return { privacySettings: { enabled: false, privacyRevision: 0 } } as T;
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    const tick = harness.operations.find((operation) => operation.name === 'SaveTick')!;
+    expect(tick.variables.input).toMatchObject({ privacy: { audience: 'only_me', privacyRevision: 0 } });
+    expect(harness.operations.some((operation) => operation.name === 'ContentAudience')).toBe(true);
+    expect(result.scenario?.cpp?.scenes.logbook.ascentId).toBe((tick.variables.input as { uuid: string }).uuid);
+  });
+
+  it.each([
+    undefined,
+    null,
+    -1,
+    0.5,
+    '7',
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    2_147_483_648,
+    Number.MAX_SAFE_INTEGER,
+  ])('rejects invalid privacy revision %s before saving a demo tick', async (privacyRevision) => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { apply: true, seedDemoContent: true, testRecordedAscent: false });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'PrivacySettings')
+        return { privacySettings: { enabled: false, privacyRevision } } as T;
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('invalid privacy revision'));
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+    expect(harness.options.checkpoint.demoTicks).toBeUndefined();
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it.each([
+    { audience: 'public', isExplicit: true, canEdit: true },
+    { audience: 'followers', isExplicit: true, canEdit: true },
+    { audience: 'only_me', isExplicit: false, canEdit: true },
+    { audience: 'only_me', isExplicit: true, canEdit: false },
+    { audience: 'only_me', canEdit: true },
+    { audience: 'only_me', isExplicit: true },
+    null,
+    undefined,
+  ])('blocks a demo tick whose stored policy is not explicitly owned only-me: %j', async (contentAudience) => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { apply: true, seedDemoContent: true, testRecordedAscent: false });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'ContentAudience') return { contentAudience } as T;
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('private demo tick policy could not be verified'));
+    const tick = harness.operations.find((operation) => operation.name === 'SaveTick')!;
+    expect(harness.options.checkpoint.demoTicks?.kilter).toBe((tick.variables.input as { uuid: string }).uuid);
+    expect(harness.save).toHaveBeenCalled();
+    expect(harness.operations.filter((operation) => operation.name === 'GetUserGroupedAscentsFeed')).toHaveLength(1);
+    expect(result.actions.some((action) => action.includes('private illustrative attempt'))).toBe(false);
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it('retains the demo checkpoint when the stored-policy read fails', async () => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { apply: true, seedDemoContent: true, testRecordedAscent: false });
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      if (getOperationAST(parse(query))?.name?.value === 'ContentAudience') throw new Error('Policy read unavailable');
+      return request<T>(query, variables);
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('private demo tick policy could not be verified'));
+    expect(harness.options.checkpoint.demoTicks?.kilter).toBeDefined();
+    expect(harness.operations.filter((operation) => operation.name === 'SaveTick')).toHaveLength(1);
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it('blocks an idempotently resumed demo UUID whose stored policy is public', async () => {
+    const harness = manufacturerHarness();
+    Object.assign(harness.options, { apply: true, seedDemoContent: true, testRecordedAscent: false });
+    const demoId = testUuid(926);
+    harness.options.checkpoint.demoTicks = { kilter: demoId };
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'ContentAudience')
+        return { contentAudience: { audience: 'public', isExplicit: true, canEdit: true } } as T;
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('private demo tick policy could not be verified'));
+    expect(harness.operations.find((operation) => operation.name === 'SaveTick')?.variables.input).toMatchObject({
+      uuid: demoId,
+      privacy: { audience: 'only_me', privacyRevision: 7 },
+    });
+    expect(harness.options.checkpoint.demoTicks.kilter).toBe(demoId);
+    expect(result.actions.some((action) => action.includes('resumed checkpointed private'))).toBe(false);
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it('checks a checkpointed demo ascent policy even when the owner logbook already returns it', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const demoId = genuineAscent(harness.owned[0]).uuid;
+    harness.options.checkpoint.demoTicks = { kilter: demoId };
+    const request = harness.options.transport.request;
+    harness.options.transport.request = async <T>(
+      query: string,
+      variables: Record<string, unknown> = {},
+    ): Promise<T> => {
+      const response = await request<T>(query, variables);
+      if (getOperationAST(parse(query))?.name?.value === 'ContentAudience')
+        return { contentAudience: { audience: 'public', isExplicit: true, canEdit: true } } as T;
+      return response;
+    };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toContainEqual(expect.stringContaining('private demo tick policy could not be verified'));
+    expect(harness.operations).toContainEqual({
+      name: 'ContentAudience',
+      variables: { entityType: 'tick', entityId: demoId },
+    });
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+    expect(harness.options.checkpoint.demoTicks.kilter).toBe(demoId);
+    expect(result.scenario).toBeUndefined();
+  });
+
+  it('reuses an already loaded checkpointed demo ascent only after verifying its policy', async () => {
+    const harness = manufacturerHarness();
+    harness.options.apply = true;
+    const demoId = genuineAscent(harness.owned[0]).uuid;
+    harness.options.checkpoint.demoTicks = { kilter: demoId };
+    const result = await bootstrapCppScenario(harness.options);
+    expect(result.blockers).toEqual([]);
+    expect(harness.operations).toContainEqual({
+      name: 'ContentAudience',
+      variables: { entityType: 'tick', entityId: demoId },
+    });
+    expect(harness.operations.some((operation) => operation.name === 'SaveTick')).toBe(false);
+    expect(result.scenario?.cpp?.scenes.logbook.ascentId).toBe(demoId);
   });
 
   it('refuses to invent fields missing from the real queue climb', () => {
