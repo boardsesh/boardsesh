@@ -181,6 +181,7 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
       uuid: '50000000-0000-4000-8000-000000000001',
       climb: {
         uuid: hero.climbId,
+        name: hero.readyText,
         boardType: board.boardType,
         layoutId: board.layoutId,
         angle: board.angle,
@@ -213,6 +214,45 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
     append(QUEUE_UPDATES_SUBSCRIPTION, { sessionId }, { data: { queueUpdates: { __typename: 'FullSync', state } } });
   }
   return { manifest, fixtures, boards, append };
+}
+
+function withSeparateStatusScene(useAccessory = false) {
+  const source = sample('moonboard');
+  const coverage = source.manifest.capture!.cpp!;
+  const primary = readCppPage('moonboard').primaryBoard;
+  const board = source.boards.find((candidate) => candidate.uuid === coverage.boardIds![primary.id])!;
+  const status = {
+    uuid: useAccessory ? coverage.accessoryClimb!.climbId : '60000000-0000-4000-8000-000000000001',
+    name: useAccessory ? coverage.accessoryClimb!.readyText : 'MOON GIRL',
+    boardType: board.boardType,
+    layoutId: board.layoutId,
+    angle: board.angle,
+    frames: useAccessory ? 'p1r12p2r13p3r14' : 'p16r42p48r42p108r43',
+    statsAngle: board.angle,
+  };
+  for (const fixture of source.fixtures) {
+    const body = (fixture.response as { data: Record<string, unknown> }).data;
+    if (
+      fixture.operationName === 'SearchClimbs' &&
+      (fixture.variables as { input: { layoutId: number } }).input.layoutId === board.layoutId
+    ) {
+      if (!useAccessory) (body.searchClimbs as { climbs: Record<string, unknown>[] }).climbs.push({ ...status });
+    }
+    if (fixture.operationName === 'JoinSession' || fixture.operationName === 'QueueUpdates') {
+      const state = (
+        fixture.operationName === 'JoinSession'
+          ? (body.joinSession as { queueState: unknown }).queueState
+          : (body.queueUpdates as { state: unknown }).state
+      ) as { queue: { climb: Record<string, unknown> }[]; currentClimbQueueItem: { climb: Record<string, unknown> } };
+      Object.assign(state.queue[0].climb, status);
+      Object.assign(state.currentClimbQueueItem.climb, status);
+    }
+  }
+  coverage.scenes.status.climbId = status.uuid;
+  coverage.scenes.status.readyText = status.name;
+  coverage.scenes.island.readyText = status.name;
+  coverage.scenes.queue.readyText = status.name;
+  return source;
 }
 
 function save(source: ReturnType<typeof sample>, upstream?: string) {
@@ -336,6 +376,32 @@ async function upstream(
 }
 
 describe('CPP selected detail source evidence', () => {
+  it('includes only the explicit distinct primary status scene within eight identities and24native reads', () => {
+    const source = withSeparateStatusScene();
+    const queue = source.fixtures.find((fixture) => fixture.operationName === 'QueueUpdates')!;
+    const state = (queue.response as { data: { queueUpdates: { state: { queue: Record<string, unknown>[] } } } }).data
+      .queueUpdates.state;
+    const unrelatedId = '70000000-0000-4000-8000-000000000001';
+    state.queue.push({
+      uuid: '70000000-0000-4000-8000-000000000002',
+      climb: { uuid: unrelatedId, boardType: 'moonboard', layoutId: 3, angle: 40, frames: 'p9r42' },
+    });
+    const reads = resolveCppDetailReads(source.manifest, source.fixtures);
+    expect(reads).toHaveLength(24);
+    expect(reads.some((request) => JSON.stringify(request.variables).includes(unrelatedId))).toBe(false);
+    const currentReads = reads.filter((request) =>
+      JSON.stringify(request.variables).includes('60000000-0000-4000-8000-000000000001'),
+    );
+    expect(currentReads.map((request) => request.operationName)).toEqual([
+      'GetBetaLinks',
+      'GetClimbProposals',
+      'ClimbStatsHistory',
+    ]);
+  });
+  it('deduplicates a status scene already selected as the primary accessory', () => {
+    const source = withSeparateStatusScene(true);
+    expect(resolveCppDetailReads(source.manifest, source.fixtures)).toHaveLength(21);
+  });
   it.each(['kilter', 'tension', 'moonboard', 'spray'] as const)(
     'binds at most21 exact native reads to every %s hero plus accessory',
     (target) => {
@@ -467,6 +533,65 @@ describe('CPP selected detail source evidence', () => {
 });
 
 describe('CPP genuine detail recording and candidate preparation', () => {
+  it.each([
+    'status board',
+    'status UUID',
+    'status title',
+    'island title',
+    'current frames',
+    'current angle',
+    'join leader',
+    'participant leader',
+    'source upstream',
+  ])('rejects a distinct current scene with tampered %s before authentication or candidate output', async (change) => {
+    const api = await upstream();
+    const source = withSeparateStatusScene();
+    const coverage = source.manifest.capture!.cpp!;
+    const joinedFixture = source.fixtures.find((fixture) => fixture.operationName === 'JoinSession')!;
+    const joined = (
+      joinedFixture.response as { data: { joinSession: { isLeader: boolean; users: { isLeader: boolean }[] } } }
+    ).data.joinSession;
+    const queuedFixture = source.fixtures.find((fixture) => fixture.operationName === 'QueueUpdates')!;
+    const current = (
+      queuedFixture.response as {
+        data: { queueUpdates: { state: { currentClimbQueueItem: { climb: { frames: string; angle: number } } } } };
+      }
+    ).data.queueUpdates.state.currentClimbQueueItem.climb;
+    if (change === 'status board') coverage.scenes.status.boardId = '70000000-0000-4000-8000-000000000001';
+    if (change === 'status UUID') coverage.scenes.status.climbId = '70000000-0000-4000-8000-000000000001';
+    if (change === 'status title') coverage.scenes.status.readyText = 'Unknown title';
+    if (change === 'island title') coverage.scenes.island.readyText = 'Unknown title';
+    if (change === 'current frames') current.frames = 'p9r42';
+    if (change === 'current angle') current.angle = 35;
+    if (change === 'join leader') joined.isLeader = false;
+    if (change === 'participant leader') joined.users[0].isLeader = false;
+    const { input, output } = save(source, api.origin);
+    if (change === 'source upstream') {
+      joinedFixture.upstream = 'https://foreign.example';
+      const entry = source.manifest.graphql.find((candidate) => candidate.operationName === 'JoinSession')!;
+      writeFileSync(join(input, entry.file), JSON.stringify(joinedFixture));
+    }
+    const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'CPP detail',
+    );
+    expect(api.authRequests).toBe(0);
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
+  });
+  it('records24genuine reads for a distinct status/current scene without repairing original hero or fixture bytes', async () => {
+    const api = await upstream();
+    const source = withSeparateStatusScene();
+    const { input, output } = save(source, api.origin);
+    const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(24);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(output, entry.file)))).toEqual(before);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
+    const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    expect(manifest.capture).toEqual(source.manifest.capture);
+  });
   it('rejects the newest negative JoinSession kept by the real merge before authentication and candidate output', async () => {
     const api = await upstream();
     const older = sample('kilter');

@@ -33,8 +33,13 @@ Videos and Community and request `GetBetaLinks`, `GetClimbProposals`, and
 `cpp-prepare-record` authenticates the same screenshot account and fetches those
 exact documents and variables through the existing recording proxy on loopback.
 The source roster and search responses must prove each selected board and climb.
-The scope is six selected hero climbs plus the optional distinct accessory:
-at most 21 detail queries. Explicitly empty spray wall editor scenes are skipped.
+The scope is six selected hero climbs, the optional distinct accessory, and the
+explicit manufacturer primary status/current scene: at most eight identities
+and 24 detail queries after deduplication. The genuine status/current climb can
+differ from the hero; it must match the recorded scene title, current JoinSession
+and FullSync item, and canonical primary-board search evidence. Hero provenance
+is checked separately. Unrelated queue items never expand this scope.
+Explicitly empty spray wall editor scenes are skipped.
 
 CPP recording shards run one at a time because they join the same private
 session; replay keeps eight parallel shards. Before authenticating or preparing

@@ -26,7 +26,7 @@ const disabledResponse = {
 };
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
-function sample(target: 'kilter' | 'tension' = 'kilter') {
+function sample(target: 'kilter' | 'tension' | 'moonboard' = 'kilter') {
   const primary = readCppPage(target).primaryBoard;
   const board = {
     uuid: boardId,
@@ -42,6 +42,7 @@ function sample(target: 'kilter' | 'tension' = 'kilter') {
   };
   const climb = {
     uuid: climbId,
+    name: 'Recorded climb',
     boardType: board.boardType,
     layoutId: board.layoutId,
     angle: board.angle,
@@ -160,6 +161,25 @@ function sample(target: 'kilter' | 'tension' = 'kilter') {
   };
 }
 
+function separateStatusScene() {
+  const evidence = sample('moonboard');
+  const current = {
+    ...evidence.climb,
+    uuid: '62f43f16-9ac8-59d7-8803-794268fec151',
+    name: 'MOON GIRL',
+    frames: 'p16r42p48r42p108r43',
+  };
+  Object.assign(evidence.queuedItem.climb, current);
+  Object.assign(evidence.joinedItem.climb, current);
+  evidence.searchResponse.data.searchClimbs.climbs.push({ ...current });
+  const scenes = evidence.manifest.capture!.cpp!.scenes;
+  scenes.status.climbId = current.uuid;
+  scenes.status.readyText = current.name;
+  scenes.island.readyText = current.name;
+  scenes.queue.readyText = current.name;
+  return evidence;
+}
+
 const temporaryDirectories: string[] = [];
 const runningBackends: ScreenshotBackendServer[] = [];
 afterEach(async () => {
@@ -192,6 +212,21 @@ async function startReplay(evidence: ReturnType<typeof sample>) {
 }
 
 describe('CPP local hardware confirmation replay', () => {
+  it('keeps physical confirmation disabled when the genuine Moon status/current scene differs from its hero', async () => {
+    const evidence = separateStatusScene();
+    const { origin, logLines } = await startReplay(evidence);
+    const response = await fetch(`${origin}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query: CONFIRM_CLIMB_ON_WALL,
+        variables: { climbUuid: evidence.queuedItem.climb.uuid, queueItemUuid: queueItemId },
+      }),
+    });
+    expect(await response.json()).toEqual(disabledResponse);
+    expect(logLines.some((line) => line.includes('MISS'))).toBe(false);
+    expect(evidence.manifest.capture!.cpp!.heroClimbs![evidence.primary.id].climbId).toBe(climbId);
+  });
   it.each(['kilter', 'tension'] as const)(
     'refuses physical confirmation for the proven %s primary without a replay miss',
     async (target) => {
@@ -285,6 +320,43 @@ const rehash = (evidence: WallEvidence) => {
 };
 
 describe('CPP wall-confirmation source bounds', () => {
+  it('binds a distinct status/current scene while retaining its original independently proven hero', () => {
+    const evidence = separateStatusScene();
+    expect(recognizes(evidence, { climbUuid: evidence.queuedItem.climb.uuid, queueItemUuid: queueItemId })).toBe(true);
+    expect(recognizes(evidence, { climbUuid: climbId })).toBe(false);
+    expect(recognizes(evidence, { climbUuid: evidence.queuedItem.climb.uuid, queueItemUuid: 'foreign' })).toBe(false);
+  });
+  it.each([
+    'status UUID',
+    'status title',
+    'island title',
+    'hero UUID',
+    'hero title',
+    'hero source geometry',
+    'contradicting hero frames',
+    'current frames',
+    'current geometry',
+    'join leader',
+    'participant leader',
+    'source upstream',
+  ])('rejects tampered %s on a distinct status/current scene', (change) => {
+    const evidence = separateStatusScene();
+    const coverage = evidence.manifest.capture!.cpp!;
+    if (change === 'status UUID') coverage.scenes.status.climbId = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    if (change === 'status title') coverage.scenes.status.readyText = 'Changed status';
+    if (change === 'island title') coverage.scenes.island.readyText = 'Changed island';
+    if (change === 'hero UUID') coverage.heroClimbs![evidence.primary.id].climbId = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    if (change === 'hero title') coverage.heroClimbs![evidence.primary.id].readyText = 'Changed hero';
+    if (change === 'hero source geometry') evidence.searchResponse.data.searchClimbs.climbs[0].angle = 35;
+    if (change === 'contradicting hero frames')
+      evidence.searchResponse.data.searchClimbs.climbs.push({ ...evidence.climb, frames: 'p9r42' });
+    if (change === 'current frames') evidence.queuedItem.climb.frames = 'p9r42';
+    if (change === 'current geometry') evidence.queuedItem.climb.angle = 35;
+    if (change === 'join leader') evidence.joinResponse.data.joinSession.isLeader = false;
+    if (change === 'participant leader') evidence.joinResponse.data.joinSession.users[0].isLeader = false;
+    if (change === 'source upstream') evidence.joined.upstream = 'https://foreign.example';
+    expect(recognizes(evidence, { climbUuid: evidence.queuedItem.climb.uuid })).toBe(false);
+  });
   it.each(['kilter', 'tension'] as const)(
     'accepts only the current recorded %s climb, including its optional item identity',
     (target) => {

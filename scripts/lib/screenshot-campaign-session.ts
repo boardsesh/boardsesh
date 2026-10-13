@@ -243,6 +243,8 @@ export function isCppWallConfirmation(
     const primary = readCppPage(coverage.target).primaryBoard;
     const boardId = coverage.boardIds?.[primary.id];
     const hero = coverage.heroClimbs?.[primary.id];
+    const status = coverage.scenes.status;
+    const statusTitle = typeof status?.readyText === 'string' ? status.readyText.trim() : '';
     if (
       !isCppAscentId(boardId) ||
       !hero ||
@@ -251,9 +253,11 @@ export function isCppWallConfirmation(
       hero.statsAngle !== primary.angle ||
       ['search', 'queue', 'status', 'island'].some((scene) => coverage.scenes[scene]?.boardId !== boardId) ||
       coverage.scenes.queue.sessionId !== sessionId ||
-      coverage.scenes.status.climbId !== hero.climbId ||
+      !isCppClimbId(status?.climbId) ||
+      !statusTitle ||
+      coverage.scenes.island?.readyText.trim() !== statusTitle ||
       !record(variables) ||
-      variables.climbUuid !== hero.climbId
+      variables.climbUuid !== status.climbId
     )
       return false;
 
@@ -410,13 +414,16 @@ export function isCppWallConfirmation(
       !syncedCurrent ||
       joinedCurrent.uuid !== syncedCurrent.uuid ||
       !record(syncedCurrent.climb) ||
-      syncedCurrent.climb.uuid !== hero.climbId ||
+      syncedCurrent.climb.uuid !== status.climbId ||
+      typeof syncedCurrent.climb.name !== 'string' ||
+      syncedCurrent.climb.name.trim() !== statusTitle ||
       !sameClimb(joinedCurrent.climb, syncedCurrent.climb) ||
       (variables.queueItemUuid != null && variables.queueItemUuid !== syncedCurrent.uuid)
     )
       return false;
 
     const searchedClimbs: unknown[] = [];
+    const searchedHeroes: unknown[] = [];
     for (const fixture of evidence.filter((fixture) => fixture.operationName === 'SearchClimbs')) {
       if (
         !record(fixture.variables) ||
@@ -426,9 +433,32 @@ export function isCppWallConfirmation(
         continue;
       const search = responseField(fixture, 'searchClimbs');
       if (!search || !Array.isArray(search.climbs)) return false;
-      searchedClimbs.push(...search.climbs.filter((climb) => record(climb) && climb.uuid === hero.climbId));
+      searchedClimbs.push(...search.climbs.filter((climb) => record(climb) && climb.uuid === status.climbId));
+      searchedHeroes.push(...search.climbs.filter((climb) => record(climb) && climb.uuid === hero.climbId));
     }
-    return searchedClimbs.length > 0 && searchedClimbs.every((climb) => sameClimb(climb, syncedCurrent.climb));
+    return (
+      searchedClimbs.length > 0 &&
+      searchedClimbs.every(
+        (climb) =>
+          record(climb) &&
+          sameClimb(climb, syncedCurrent.climb) &&
+          typeof climb.name === 'string' &&
+          climb.name.trim() === statusTitle,
+      ) &&
+      searchedHeroes.length > 0 &&
+      searchedHeroes.every(
+        (climb) =>
+          record(climb) &&
+          sameClimb(climb, searchedHeroes[0]) &&
+          climb.boardType === primary.boardType &&
+          climb.layoutId === primary.layoutId &&
+          climb.angle === primary.angle &&
+          typeof climb.name === 'string' &&
+          climb.name.trim() === hero.readyText.trim() &&
+          typeof climb.frames === 'string' &&
+          !!climb.frames.trim(),
+      )
+    );
   } catch {
     return false;
   }

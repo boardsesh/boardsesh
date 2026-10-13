@@ -295,9 +295,24 @@ export function resolveCppDetailReads(
     const selected = [
       hero,
       ...(variant.id === page.primaryBoard.id && coverage.accessoryClimb ? [coverage.accessoryClimb] : []),
+      ...(variant.id === page.primaryBoard.id && coverage.target !== 'spray'
+        ? [
+            {
+              boardId: coverage.scenes.status?.boardId,
+              climbId: coverage.scenes.status?.climbId,
+              readyText: coverage.scenes.status?.readyText,
+            },
+          ]
+        : []),
     ];
     for (const climb of selected) {
-      if (!climb || climb.boardId !== board.uuid || !isCppClimbId(climb.climbId))
+      if (
+        !climb ||
+        climb.boardId !== board.uuid ||
+        !isCppClimbId(climb.climbId) ||
+        typeof climb.readyText !== 'string' ||
+        !climb.readyText.trim()
+      )
         throw new Error('CPP detail climb is not bound to its recorded board');
       const searches = fixtures.filter((fixture) => fixture.operationName === 'SearchClimbs');
       const found = searches.some((fixture) => {
@@ -323,7 +338,7 @@ export function resolveCppDetailReads(
         reads.set(`${request.operationName}\n${request.variablesHash}`, request);
     }
   }
-  if (!reads.size || reads.size > 21) throw new Error('CPP detail reads exceed the selected scene scope');
+  if (!reads.size || reads.size > 24) throw new Error('CPP detail reads exceed the selected scene scope');
   if (coverage.target !== 'spray') {
     const sessionId = manifest.capture.sharedSessionId;
     const queue = fixtures.find(
