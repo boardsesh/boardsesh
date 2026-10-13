@@ -78,7 +78,7 @@ export function ReportSprayWallSheet({
         finished
           ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
           : {
-              kind: 'send',
+              kind: 'confirm',
               label: t('sprayModeration.submit'),
               onPress: submit,
               disabled: submitDisabled,

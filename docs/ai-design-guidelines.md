@@ -693,6 +693,10 @@ Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant,
 
 - **A Done with nothing to commit** (a filter sheet that applies live, a read-only summary) is no
   trailing action at all: the leading X closes it.
+- **Feedback and report submits** (bug report, rating, QA verdict, climb report and wall report)
+  use `kind: 'confirm'` for compact sheet headers: a ✓ in the brand circle on Liquid Glass,
+  short localized Send text on Material. Send remains the spoken label; other send actions keep
+  the `send` presentation above. Dismissal rules stay in `docs/mobile-sheets-vs-routes.md`.
 - **Native headers on iOS 26** (`useHeaderActions`, gated on `useGlassCapability()`): the trailing side
   is native bar items. An idle confirm is the prominent (brand-tinted glass) item with the ✓ SF Symbol;
   a send or prominent action the prominent item with its label; a plain or destructive one plain text.

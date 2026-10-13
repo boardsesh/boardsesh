@@ -210,7 +210,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
           title={title}
           leading={{ kind: 'close', onPress: () => sheetRef.current?.dismiss() }}
           trailing={{
-            kind: 'send',
+            kind: 'confirm',
             label: t('qa.verdict.submitLabel'),
             onPress: () => {
               void handleSubmit();
