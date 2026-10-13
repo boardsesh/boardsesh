@@ -53,6 +53,7 @@ describe('Migrate OTA Storage to R2 workflow', () => {
       'mobile-ota-preview.yml',
       'mobile-ota-preview-prompt.yml',
       'mobile-ota-preview-sweep.yml',
+      'mobile-ota-promote-staged.yml',
       'production-deploy.yml',
     ]) {
       expect(apiGuard?.run).toContain(workflowFile);
@@ -63,17 +64,19 @@ describe('Migrate OTA Storage to R2 workflow', () => {
     expect(apiGuard?.run?.match(/for workflow in "\$\{ota_writer_workflows\[@\]\}"; do/g)).toHaveLength(2);
   });
 
-  it('blocks copy or verification while production-deploy is active and direct OTA writers are idle', () => {
-    const apiGuard = workflow.jobs.migrate.steps.find(({ name }) => name?.includes('writer is disabled'));
-    const guardScript = apiGuard?.run;
-    expect(guardScript).toBeDefined();
+  it.each(['production-deploy.yml', 'mobile-ota-promote-staged.yml'])(
+    'blocks copy or verification while %s is active and other OTA writers are idle',
+    (activeWorkflow) => {
+      const apiGuard = workflow.jobs.migrate.steps.find(({ name }) => name?.includes('writer is disabled'));
+      const guardScript = apiGuard?.run;
+      expect(guardScript).toBeDefined();
 
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'ota-writer-freeze-'));
-    const ghMockPath = join(temporaryDirectory, 'gh');
-    const requestLogPath = join(temporaryDirectory, 'requests.log');
-    writeFileSync(
-      ghMockPath,
-      `#!/usr/bin/env bash
+      const temporaryDirectory = mkdtempSync(join(tmpdir(), 'ota-writer-freeze-'));
+      const ghMockPath = join(temporaryDirectory, 'gh');
+      const requestLogPath = join(temporaryDirectory, 'requests.log');
+      writeFileSync(
+        ghMockPath,
+        `#!/usr/bin/env bash
 set -euo pipefail
 endpointPath=''
 requestedStatus=state
@@ -88,44 +91,47 @@ workflowFile="\${endpointPath%/runs}"
 printf '%s\\t%s\\n' "$workflowFile" "$requestedStatus" >> "$OTA_WRITER_TEST_LOG"
 if [[ "$endpointPath" != */runs ]]; then
   echo disabled_manually
-elif [ "$workflowFile" = production-deploy.yml ] && [ "$requestedStatus" = in_progress ]; then
+elif [ "$workflowFile" = "$OTA_ACTIVE_WRITER" ] && [ "$requestedStatus" = in_progress ]; then
   echo 1
 else
   echo 0
 fi
 `,
-    );
-    chmodSync(ghMockPath, 0o755);
+      );
+      chmodSync(ghMockPath, 0o755);
 
-    try {
-      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', guardScript ?? ''], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${temporaryDirectory}:${process.env.PATH ?? ''}`,
-          GITHUB_REPOSITORY: 'boardsesh/boardsesh',
-          GH_TOKEN: 'fixture-token',
-          OTA_WRITER_TEST_LOG: requestLogPath,
-        },
-      });
-      expect(result.status).toBe(1);
-      expect(`${result.stdout}${result.stderr}`).toContain('production-deploy.yml still has 1 in_progress run(s).');
+      try {
+        const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', guardScript ?? ''], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${temporaryDirectory}:${process.env.PATH ?? ''}`,
+            GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+            GH_TOKEN: 'fixture-token',
+            OTA_WRITER_TEST_LOG: requestLogPath,
+            OTA_ACTIVE_WRITER: activeWorkflow,
+          },
+        });
+        expect(result.status).toBe(1);
+        expect(`${result.stdout}${result.stderr}`).toContain(`${activeWorkflow} still has 1 in_progress run(s).`);
 
-      const requests = readFileSync(requestLogPath, 'utf8');
-      for (const workflowFile of [
-        'mobile-ota-production.yml',
-        'mobile-ota-backport.yml',
-        'mobile-ota-preview.yml',
-        'mobile-ota-preview-prompt.yml',
-        'mobile-ota-preview-sweep.yml',
-      ]) {
-        expect(requests).toContain(`${workflowFile}\tin_progress`);
+        const requests = readFileSync(requestLogPath, 'utf8');
+        for (const workflowFile of [
+          'mobile-ota-production.yml',
+          'mobile-ota-backport.yml',
+          'mobile-ota-preview.yml',
+          'mobile-ota-preview-prompt.yml',
+          'mobile-ota-preview-sweep.yml',
+          'mobile-ota-promote-staged.yml',
+        ]) {
+          expect(requests).toContain(`${workflowFile}\tin_progress`);
+        }
+        expect(requests).toContain(`${activeWorkflow}\tin_progress`);
+      } finally {
+        rmSync(temporaryDirectory, { recursive: true, force: true });
       }
-      expect(requests).toContain('production-deploy.yml\tin_progress');
-    } finally {
-      rmSync(temporaryDirectory, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it('exposes credentials only to the migration step under dedicated OTA_R2 names', () => {
     const credentialSteps = workflow.jobs.migrate.steps.filter(({ env }) => env?.OTA_R2_AWS_SECRET_ACCESS_KEY);

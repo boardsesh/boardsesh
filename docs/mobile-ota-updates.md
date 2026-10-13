@@ -2167,13 +2167,13 @@ Run the gate in this order:
    stops the Tigris-copy workflow without writing.
 2. Freeze every OTA writer: disable `production-deploy.yml` first, then disable
    `mobile-ota-production.yml`, `mobile-ota-backport.yml`, `mobile-ota-preview.yml`,
-   `mobile-ota-preview-prompt.yml` and `mobile-ota-preview-sweep.yml`. The production deploy workflow can call the
+   `mobile-ota-preview-prompt.yml`, `mobile-ota-preview-sweep.yml` and `mobile-ota-promote-staged.yml`. The production deploy workflow can call the
    production OTA publisher through `workflow_call` and promote its staged update; GitHub records that run under
    the caller, so the callee's run list alone misses it. Disabling it also pauses web and backend production deploys
-   until it is re-enabled. Confirm all six are idle with
+   until it is re-enabled. Confirm all seven are idle with
    `gh run list --workflow <file> --status <status>` for `requested`, `waiting`, `pending`, `queued` and `in_progress`.
-   The migration workflow first verifies all six are `disabled_manually`, then refuses copy/verify while any has a
-   nonterminal run. Keep all six disabled through copy, final verification and Railway credential rotation; their
+   The migration workflow first verifies all seven are `disabled_manually`, then refuses copy/verify while any has a
+   nonterminal run. Keep all seven disabled through copy, final verification and Railway credential rotation; their
    normal concurrency groups do not exclude one another.
 3. Dispatch the same workflow with `mode=copy` and `ota_publishes_frozen=true`. It refuses destination-only keys
    before its first PUT. Existing same-key objects must match the source by full size, SHA-256 and portable metadata,
@@ -2189,14 +2189,14 @@ Run the gate in this order:
    `AWS_SECRET_ACCESS_KEY` together with the scoped R2 values. Do not change `S3_BUCKET_NAME`. This repository does
    not perform that credential rotation.
 6. Verify `/hc` and `/ready`, publish one test update, and install/download it from a production-configured client
-   before unfreezing OTA writers. Re-enable the five direct publisher files first, then re-enable
+   before unfreezing OTA writers. Re-enable the six direct publisher files first, then re-enable
    `production-deploy.yml` with `gh workflow enable <file>` so its caller resumes only after its OTA callee is
    enabled. Keep the Tigris bucket and its credentials intact as the rollback source. If the migration is abandoned
-   before rotation, re-enable the same five direct publishers, then `production-deploy.yml`; no reader or source
+   before rotation, re-enable the same six direct publishers, then `production-deploy.yml`; no reader or source
    object changed.
 
 **Rollback after new R2 publishes:** restoring the endpoint alone strands updates added to the shared database
-after cutover. Freeze and drain the same six workflows, manual publishers, server cleanup and lifecycle mutations.
+after cutover. Freeze and drain the same seven workflows, manual publishers, server cleanup and lifecycle mutations.
 Retain the previous Tigris credentials securely and supply `OTA_LEGACY_AWS_ENDPOINT_URL`,
 `OTA_LEGACY_AWS_ACCESS_KEY_ID`, `OTA_LEGACY_AWS_SECRET_ACCESS_KEY`, and optionally `OTA_LEGACY_AWS_REGION`
 and `OTA_LEGACY_S3_FORCE_PATH_STYLE`. Run `vp run storage:migrate-ota -- --reverse --apply`, then
