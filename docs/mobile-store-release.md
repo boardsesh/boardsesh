@@ -429,6 +429,16 @@ the audit after all upload jobs finish.
 
 ### Submit reviewed Apple content
 
+If the independent audit reports `AFTER_APPROVAL`, dispatch **Apple Manual Release
+Control** (`mobile-store-release-control.yml`) on `main` with the exact version and
+attached build before submission. It changes only `releaseType` to `MANUAL`, after
+fresh app/version/build and editable-state checks, and retains a verified readback
+in the `store-release-control` artifact. An existing `MANUAL` setting is a checked
+no-op. Scheduled releases and noneditable versions stop for inspection. Ambiguous
+writes are not retried; run the GET-only audit before deciding whether to rerun.
+This workflow never submits or publishes the app. Its automatic push job runs
+credential-free tests only.
+
 After screenshot upload, independent image review and metadata readback, dispatch
 **App Store Review Submission** (`mobile-store-review-submission.yml`) on `main`
 with `action=plan`, the exact version/build, and the selected comma-separated
