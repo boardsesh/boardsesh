@@ -507,3 +507,50 @@ after the shipped fingerprint moves on.
 - Review submission, phased/staged rollout, and the iOS App Store icon upload are
   intentionally manual. The iOS icon comes from the uploaded binary.
 - Android build and signing background: `docs/android-sideload-build.md`.
+
+### Stage the exact reviewed CPP replay
+
+`mobile-cpp-retained-replay.yml` reuses the original native replay artifacts. It
+never builds, captures, frames, publishes fixtures, edits keywords, or submits
+review. Use one target per run. The producer must be a successful first-attempt,
+manual, capture-only run of `mobile-screenshots-ios.yml` in this repository, with
+all 16 locale/device replay jobs successful. Its source must be an ancestor of
+main with the same capture contract, including capture libraries, Maestro flows,
+presentation/caption/font assets, mobile app/runtime source, and shared renderer
+dependencies. Native build scripts/configuration, task commands and dependency
+lockfiles are bound too. UI or capture/build configuration changes require fresh
+replay; adding importer tooling alone does not invalidate prior captures. Current fixture
+scene readiness, grade-count proofs, and every required detail response are also
+checked again. Recording runs, partial matrices, reruns,
+expired or ambiguous artifacts, and changed capture code fail closed.
+
+1. Publish the sanitized immutable fixture and complete the normal full replay.
+   Dispatch **Stage Reviewed CPP Replay** from `main` with `mode: verify`, its
+   `replay_run_id`, target, and the same `fixture_snapshot` reference URL (or the
+   matching committed pin). This read-only mode has a separate concurrency group.
+2. Download `cpp-retained-replay-<target>` and inspect all five locales/four devices.
+   Retain `cpp-retained-replay-receipt`, including its SHA256 file. The receipt
+   binds the original run, commit, jobs, artifact IDs/digests, fixture, CPP manifest,
+   native sources, and all 180 ordered recipe images. Failed verification preserves
+   the prior fixture pin. Structural validity alone
+   is not proof of a successful native replay or visual approval.
+3. Refresh the existing screenshot writer queue. **Do not dispatch staging while
+   another writer is pending:** GitHub keeps only one pending run in
+   `mobile-screenshots-ios`, even with cancellation disabled. When the pending
+   slot is empty, dispatch `mode: stage-assets` with the same inputs and the
+   visually reviewed `expected_receipt_sha256`. It redownloads the original
+   artifacts, rechecks every binding and byte, then calls the existing Fastlane
+   `stage-assets` action with unchanged keyword safeguards.
+4. Run the independent Apple audit and compare ordered source MD5, file sizes,
+   dimensions and COMPLETE states with the retained images. A staging receipt
+   proves its input bytes; it does not replace store readback or review-state proof.
+
+For retry, preserve the same producer, fixture and reviewed receipt. After a
+failed staging attempt, audit Apple first. The existing lane can resume compatible
+partial assets or return unchanged for identical complete assets; conflicting
+assets fail without deletion. Never rerun the producer to repair an upload: a
+producer rerun is deliberately ineligible. A different capture or changed fixture,
+CPP manifest, or capture contract needs a new verification and visual review.
+Expired producer artifacts also require a fresh complete capture. This path stages
+screenshots and promotional text only; approved keyword assignment and review
+submission remain separate operations.

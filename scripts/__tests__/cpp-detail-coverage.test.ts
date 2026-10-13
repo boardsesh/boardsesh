@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -11,6 +12,8 @@ import {
   QUEUE_UPDATES_SUBSCRIPTION,
 } from '../../packages/mobile/src/lib/graphql/operations';
 import { JOIN_SESSION } from '../../packages/shared/graphql/src/operations/queue-session';
+import { GET_USER_GROUPED_ASCENTS_FEED } from '../../packages/shared/graphql/src/operations/ticks';
+import { assertCppLogbookAttemptsReady, resolveCppLogbookRead } from '../lib/cpp-logbook-coverage';
 import { resolveCppDetailReads, withCppDetailCoverage } from '../lib/cpp-detail-coverage';
 import { readCppPage, type CppTarget } from '../lib/screenshot-cpp';
 import { prepareCppCampaignFixtures } from '../prepare-ios-campaign-fixtures';
@@ -43,6 +46,62 @@ afterEach(async () => {
   );
   directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true }));
 });
+
+const moonAscentId = 'a4aae9ee-67d3-4a4f-aa5b-a467966ea274';
+function moonLogbookResponse(attempts = true) {
+  const item = {
+    uuid: moonAscentId,
+    climbUuid: '62f43f16-9ac8-59d7-8803-794268fec151',
+    climbName: 'MOON GIRL',
+    boardType: 'moonboard',
+    boardId: 1426893,
+    boardDisplayName: 'MoonBoard 2024',
+    layoutId: 3,
+    renderBoard: { layoutId: 3, sizeId: 1, setIds: [5, 6, 7, 8, 9, 10] },
+    angle: 40,
+    isMirror: false,
+    status: 'attempt',
+    attemptCount: 1,
+    difficulty: null,
+    comment: 'Original genuine note',
+    frames: 'p16r42p48r42p108r43',
+    climbedAt: '2026-10-11 09:15:56.92',
+  };
+  const groups = [
+    {
+      key: `${item.climbUuid}-2026-10-11`,
+      climbUuid: item.climbUuid,
+      climbName: item.climbName,
+      boardType: item.boardType,
+      layoutId: item.layoutId,
+      angle: item.angle,
+      flashCount: 0,
+      sendCount: 0,
+      attemptCount: 1,
+      items: [item],
+    },
+  ];
+  if (!attempts)
+    groups.push({
+      ...groups[0],
+      key: 'another-climb-2026-08-25',
+      climbUuid: '597462c7-a684-5b65-a989-6b2f718d32c9',
+      climbName: 'An easy problem',
+      sendCount: 1,
+      attemptCount: 0,
+      items: [
+        {
+          ...item,
+          uuid: 'e1981968-540b-4cfc-a355-b937666ec8f9',
+          climbUuid: '597462c7-a684-5b65-a989-6b2f718d32c9',
+          climbName: 'An easy problem',
+          status: 'send',
+          comment: 'Unrelated note',
+        },
+      ],
+    });
+  return { userGroupedAscentsFeed: { groups, totalCount: groups.length, hasMore: false } };
+}
 
 function sample(target: CppTarget = 'tension', emptySpray = false) {
   const page = readCppPage(target);
@@ -213,6 +272,27 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
     );
     append(QUEUE_UPDATES_SUBSCRIPTION, { sessionId }, { data: { queueUpdates: { __typename: 'FullSync', state } } });
   }
+  if (target === 'moonboard') {
+    Object.assign(coverage.scenes, {
+      logbook: { boardId: coverage.boardIds[page.primaryBoard.id], readyText: 'MOON GIRL', ascentId: moonAscentId },
+    });
+    append(
+      GET_USER_GROUPED_ASCENTS_FEED,
+      {
+        userId: owner,
+        input: {
+          boardType: 'moonboard',
+          statusMode: 'both',
+          flashOnly: false,
+          sortBy: 'recent',
+          sortOrder: 'desc',
+          limit: 20,
+          offset: 0,
+        },
+      },
+      { data: moonLogbookResponse(false) },
+    );
+  }
   return { manifest, fixtures, boards, append };
 }
 
@@ -273,6 +353,7 @@ function save(source: ReturnType<typeof sample>, upstream?: string) {
 }
 
 function reply(operationName: string, variables: Record<string, unknown>): Record<string, unknown> {
+  if (operationName === 'GetUserGroupedAscentsFeed') return moonLogbookResponse();
   if (operationName === 'GetBetaLinks')
     return {
       betaLinks: [
@@ -586,7 +667,11 @@ describe('CPP genuine detail recording and candidate preparation', () => {
     const { input, output } = save(source, api.origin);
     const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
     await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
-    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(24);
+    expect(
+      api.requests.filter(
+        (request) => !['CppBootstrapProfile', 'GetUserGroupedAscentsFeed'].includes(request.operationName),
+      ),
+    ).toHaveLength(24);
     expect(source.manifest.graphql.map((entry) => readFileSync(join(output, entry.file)))).toEqual(before);
     expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
     const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
@@ -1249,5 +1334,226 @@ describe('CPP genuine detail recording and candidate preparation', () => {
     ).toHaveLength(9);
     expect(existsSync(scratch)).toBe(false);
     expect(existsSync(input)).toBe(true);
+  });
+});
+
+describe('MoonBoard exact native Attempts preparation', () => {
+  it('records one genuine filtered page, preserves every original byte and leaves the selected scene untouched', async () => {
+    const api = await upstream();
+    const source = sample('moonboard');
+    const { input, output } = save(source, api.origin);
+    const before = new Map(
+      ['manifest.json', ...source.manifest.graphql.map((entry) => entry.file)].map((file) => [
+        file,
+        readFileSync(join(input, file)),
+      ]),
+    );
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    const fixtures = manifest.graphql.map(
+      (entry) => JSON.parse(readFileSync(join(output, entry.file), 'utf8')) as GraphqlFixtureFile,
+    );
+    expect(assertCppLogbookAttemptsReady(manifest, fixtures)).toMatchObject({
+      target: 'moonboard',
+      ascentId: moonAscentId,
+    });
+    expect(manifest.capture).toEqual(source.manifest.capture);
+    for (const [file, bytes] of before) {
+      expect(readFileSync(join(input, file))).toEqual(bytes);
+      if (file !== 'manifest.json') expect(readFileSync(join(output, file))).toEqual(bytes);
+    }
+    const reads = api.requests.filter((entry) => entry.operationName === 'GetUserGroupedAscentsFeed');
+    expect(reads).toHaveLength(1);
+    expect(reads[0].variables).toEqual({
+      userId: owner,
+      input: {
+        boardType: 'moonboard',
+        statusMode: 'attempt',
+        flashOnly: false,
+        sortBy: 'recent',
+        sortOrder: 'desc',
+        limit: 20,
+        offset: 0,
+      },
+    });
+    expect(api.requests.filter((entry) => entry.operationName !== 'CppBootstrapProfile')).toHaveLength(22);
+    expect(getOperationAST(parse(reads[0].query))!.operation).toBe('query');
+    const filtered = fixtures.find(
+      (entry) => entry.variablesHash === resolveCppLogbookRead(manifest, fixtures)!.variablesHash,
+    )!;
+    expect(filtered.response).toEqual({ data: moonLogbookResponse() });
+  });
+
+  it.each([
+    'missing primary',
+    'changed primary',
+    'send primary',
+    'foreign board',
+    'duplicate primary',
+    'changed group winner',
+    'split group winner',
+    'credential',
+    'wrong page shape',
+  ])('rejects %s from the real recording proxy without changing source or producing a candidate', async (reason) => {
+    const api = await upstream({
+      response: (operationName, variables) => {
+        if (operationName !== 'GetUserGroupedAscentsFeed') return { body: { data: reply(operationName, variables) } };
+        const response = moonLogbookResponse();
+        const feed = response.userGroupedAscentsFeed;
+        const item = feed.groups[0].items[0];
+        if (reason === 'missing primary') item.uuid = 'ffffffff-1111-4444-8888-111111111111';
+        if (reason === 'changed primary') item.comment = 'Edited live note';
+        if (reason === 'send primary') item.status = 'send';
+        if (reason === 'foreign board') item.boardType = 'kilter';
+        if (reason === 'duplicate primary') feed.groups[0].items.push({ ...item });
+        if (reason === 'changed group winner') {
+          feed.groups[0].items.push({
+            ...item,
+            uuid: 'ffffffff-1111-4444-8888-111111111111',
+            climbedAt: '2026-10-11 10:00:00.00',
+          });
+          feed.groups[0].attemptCount = 2;
+        }
+        if (reason === 'split group winner') {
+          feed.groups.push({
+            ...feed.groups[0],
+            key: 'split-server-group',
+            items: [{ ...item, uuid: 'ffffffff-1111-4444-8888-111111111111', climbedAt: '2026-10-11 10:00:00.00' }],
+          });
+          feed.totalCount = 2;
+        }
+        if (reason === 'credential') Object.assign(item, { accessToken: 'must-never-be-logged' });
+        if (reason === 'wrong page shape') feed.totalCount = -1;
+        return { body: { data: response } };
+      },
+    });
+    const source = sample('moonboard');
+    const { input, output } = save(source, api.origin);
+    const before = readFileSync(join(input, 'manifest.json'));
+    const logs: string[] = [];
+    await expect(
+      prepareCppCampaignFixtures(input, output, {
+        upstream: api.origin,
+        email,
+        password,
+        log: (line) => logs.push(line),
+      }),
+    ).rejects.toThrow();
+    expect(existsSync(output)).toBe(false);
+    expect(readFileSync(join(input, 'manifest.json'))).toEqual(before);
+    expect(logs.join('\n')).not.toContain('must-never-be-logged');
+  });
+
+  it('resumes a complete prepared page with a fresh owner check and identical bytes/clock', async () => {
+    const api = await upstream();
+    const source = sample('moonboard');
+    for (const request of [
+      ...resolveCppDetailReads(source.manifest, source.fixtures),
+      resolveCppLogbookRead(source.manifest, source.fixtures)!,
+    ])
+      source.append(
+        request.query,
+        request.variables,
+        pseudonymiseResponse({ data: reply(request.operationName, request.variables) }, { ownUserId: owner }).response,
+      );
+    const { input, output } = save(source, api.origin);
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.requests.map((entry) => entry.operationName)).toEqual(['CppBootstrapProfile']);
+    for (const file of ['manifest.json', ...source.manifest.graphql.map((entry) => entry.file)])
+      expect(readFileSync(join(output, file))).toEqual(readFileSync(join(input, file)));
+  });
+
+  it.each([
+    'wrong owner',
+    'wrong board',
+    'send source',
+    'missing ascent',
+    'query collision',
+    'wrong upstream',
+    'duplicate manifest entry',
+    'missing filtered',
+    'filtered credential',
+  ])('fails closed on %s before native replay', (reason) => {
+    const source = sample('moonboard');
+    const request = resolveCppLogbookRead(source.manifest, source.fixtures)!;
+    const filtered =
+      reason === 'missing filtered'
+        ? undefined
+        : source.append(request.query, request.variables, { data: moonLogbookResponse() });
+    if (filtered)
+      expect(assertCppLogbookAttemptsReady(source.manifest, source.fixtures)).toMatchObject({ ascentId: moonAscentId });
+    const original = source.fixtures.find((entry) => entry.operationName === 'GetUserGroupedAscentsFeed')!;
+    const body = original.response as { data: ReturnType<typeof moonLogbookResponse> };
+    if (reason === 'wrong owner') (original.variables as { userId: string }).userId = 'different-owner';
+    if (reason === 'wrong board') body.data.userGroupedAscentsFeed.groups[0].items[0].boardType = 'tension';
+    if (reason === 'send source') body.data.userGroupedAscentsFeed.groups[0].items[0].status = 'send';
+    if (reason === 'missing ascent')
+      body.data.userGroupedAscentsFeed.groups[0].items[0].uuid = 'ffffffff-1111-4444-8888-111111111111';
+    if (reason === 'query collision') original.query = original.query.replace('totalCount', 'aliased: totalCount');
+    if (reason === 'wrong upstream') filtered!.upstream = 'https://different.example.test';
+    if (reason === 'duplicate manifest entry') source.manifest.graphql.push({ ...source.manifest.graphql.at(-1)! });
+    if (reason === 'filtered credential') Object.assign(filtered!.response as object, { jwt: 'never-log-this' });
+    expect(() => assertCppLogbookAttemptsReady(source.manifest, source.fixtures)).toThrow('MoonBoard logbook');
+  });
+
+  it('rejects a newer UTC-day winner even when preparation runs across Sydney midnight', () => {
+    const source = sample('moonboard');
+    const expected = resolveCppLogbookRead(source.manifest, source.fixtures)!;
+    const response = moonLogbookResponse();
+    const feed = response.userGroupedAscentsFeed;
+    feed.groups.push({
+      ...feed.groups[0],
+      key: 'split-group',
+      items: [
+        {
+          ...feed.groups[0].items[0],
+          uuid: 'ffffffff-1111-4444-8888-111111111111',
+          climbedAt: '2026-10-11 13:30:00.00',
+        },
+      ],
+    });
+    feed.totalCount = 2;
+    source.append(expected.query, expected.variables, { data: response });
+    const { input } = save(source);
+    const code = `const fs = require('node:fs'); const { assertCppLogbookAttemptsReady } = require('./scripts/lib/cpp-logbook-coverage.ts'); const root = ${JSON.stringify(input)}; const manifest = JSON.parse(fs.readFileSync(root + '/manifest.json')); const fixtures = manifest.graphql.map(entry => JSON.parse(fs.readFileSync(root + '/' + entry.file))); try { assertCppLogbookAttemptsReady(manifest, fixtures); process.stdout.write('accepted'); } catch { process.stdout.write('rejected'); }`;
+    for (const timezone of ['Australia/Sydney', 'UTC'])
+      expect(
+        execFileSync(process.execPath, ['--import', 'tsx', '-e', code], {
+          cwd: process.cwd(),
+          env: { ...process.env, TZ: timezone },
+          encoding: 'utf8',
+        }),
+      ).toBe('rejected');
+  });
+
+  it.each(['angle', 'mirror', 'day'])('keeps a genuine separate %s bucket from replacing the primary', (difference) => {
+    const source = sample('moonboard');
+    const expected = resolveCppLogbookRead(source.manifest, source.fixtures)!;
+    const response = moonLogbookResponse();
+    const feed = response.userGroupedAscentsFeed;
+    const other = {
+      ...feed.groups[0].items[0],
+      uuid: 'ffffffff-1111-4444-8888-111111111111',
+      climbedAt: '2026-10-11 10:00:00.00',
+    };
+    if (difference === 'angle') other.angle = 50;
+    if (difference === 'mirror') other.isMirror = true;
+    if (difference === 'day') other.climbedAt = '2026-10-09 10:00:00.00';
+    feed.groups.push({ ...feed.groups[0], key: 'another-native-bucket', items: [other] });
+    feed.totalCount = 2;
+    source.append(expected.query, expected.variables, { data: response });
+    expect(assertCppLogbookAttemptsReady(source.manifest, source.fixtures)).toMatchObject({ ascentId: moonAscentId });
+  });
+
+  it('keeps unrelated targets and the source detail-only contract unchanged', () => {
+    for (const target of ['kilter', 'tension', 'spray'] as const) {
+      const source = sample(target);
+      expect(resolveCppLogbookRead(source.manifest, source.fixtures)).toBeUndefined();
+      expect(assertCppLogbookAttemptsReady(source.manifest, source.fixtures)).toBeUndefined();
+      expect(resolveCppDetailReads(source.manifest, source.fixtures)).toHaveLength(21);
+    }
+    const moon = sample('moonboard');
+    expect(resolveCppDetailReads(moon.manifest, moon.fixtures)).toHaveLength(21);
+    expect(() => assertCppLogbookAttemptsReady(moon.manifest, moon.fixtures)).toThrow();
   });
 });

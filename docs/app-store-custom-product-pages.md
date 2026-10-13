@@ -342,6 +342,16 @@ and does not publish a pin. The `cpp-prepare-record` job requires every requeste
 shard and emits `cpp-fixture-candidate-<target>`, containing `<target>.json.gz` and
 `<target>.digest.json`. A partial record matrix is diagnostic; successful archive
 preparation alone does not prove full replay coverage.
+For MoonBoard, preparation reads the existing native **Status → Attempts** page
+through the authenticated recording proxy and requires its selected primary
+ascent to remain unchanged. Original native records and their receipt stay
+unfiltered and immutable. Only a prepared candidate with this exact genuine
+response may drive the native menu interaction during replay; the final ascent
+UUID/text visibility gate stays mandatory. See the
+[bounded preparation contract](mobile-screenshot-fixtures.md) before reusing a
+retained record. A full replay and image review still determine whether the
+logbook frame is suitable for the CSV-import caption.
+
 
 Spray CPP replay requires three distinct bundled wall images and validates every
 asset before launching.
