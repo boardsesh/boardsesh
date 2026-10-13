@@ -18,12 +18,70 @@ import {
   emptyManifest,
   pseudonymDisplayName,
   pseudonymHandle,
+  pseudonymiseResponse,
+  findUnpseudonymisedPersonFields,
   type GraphqlFixtureFile,
   type ScreenshotFixtureManifest,
 } from '../lib/screenshot-fixtures';
 
 const ACCOUNT_USER_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_USER_ID = '22222222-2222-2222-2222-222222222222';
+
+describe('canonical climb proposal person fields', () => {
+  const proposal = (proposerId: string) => ({
+    uuid: 'proposal-identity-must-stay',
+    proposerId,
+    proposerDisplayName: 'Private proposer name',
+    proposerAvatarUrl: 'https://cdn/private-proposer.jpg',
+    climbUuid: 'climb-identity-must-stay',
+  });
+
+  it('redacts stranger proposal names and avatars consistently with the same user elsewhere', () => {
+    const source = {
+      data: { climbProposals: { proposals: [proposal(OTHER_USER_ID)] } },
+      participant: { userId: OTHER_USER_ID, displayName: 'Same person', avatarUrl: 'https://cdn/same-person.jpg' },
+    };
+    expect(findUnpseudonymisedPersonFields(source, { ownUserId: ACCOUNT_USER_ID })).toHaveLength(4);
+    const rewritten = pseudonymiseResponse(source, { ownUserId: ACCOUNT_USER_ID });
+    expect(rewritten.response).toMatchObject({
+      data: {
+        climbProposals: {
+          proposals: [
+            {
+              uuid: 'proposal-identity-must-stay',
+              proposerId: OTHER_USER_ID,
+              proposerDisplayName: pseudonymDisplayName(OTHER_USER_ID),
+              proposerAvatarUrl: null,
+              climbUuid: 'climb-identity-must-stay',
+            },
+          ],
+        },
+      },
+      participant: { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID), avatarUrl: null },
+    });
+    expect(findUnpseudonymisedPersonFields(rewritten.response, { ownUserId: ACCOUNT_USER_ID })).toEqual([]);
+    expect(JSON.stringify(source)).toContain('Private proposer name');
+  });
+
+  it('preserves the recording owner and explicitly approved proposer identities', () => {
+    const source = { data: { climbProposals: { proposals: [proposal(ACCOUNT_USER_ID), proposal(OTHER_USER_ID)] } } };
+    const options = { ownUserId: ACCOUNT_USER_ID, approvedTestUserIds: [OTHER_USER_ID] };
+    expect(pseudonymiseResponse(source, options).response).toEqual(source);
+    expect(findUnpseudonymisedPersonFields(source, options)).toEqual([]);
+  });
+
+  it('is idempotent and rejects both raw stranger fields during verification', () => {
+    const source = { data: { climbProposals: { proposals: [proposal(OTHER_USER_ID)] } } };
+    expect(findUnpseudonymisedPersonFields(source, { ownUserId: ACCOUNT_USER_ID })).toEqual([
+      expect.stringContaining('proposerDisplayName'),
+      expect.stringContaining('proposerAvatarUrl'),
+    ]);
+    const first = pseudonymiseResponse(source, { ownUserId: ACCOUNT_USER_ID });
+    const second = pseudonymiseResponse(first.response, { ownUserId: ACCOUNT_USER_ID });
+    expect(second.response).toEqual(first.response);
+    expect(second.fields).toBe(0);
+  });
+});
 
 const FEED_FIXTURE: GraphqlFixtureFile = {
   formatVersion: 1,

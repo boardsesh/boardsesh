@@ -482,6 +482,13 @@ export const PSEUDONYMISED_PERSON_FIELDS: readonly PersonFieldGroup[] = [
     emailKeys: ['email', 'userEmail'],
   },
   {
+    idKey: 'proposerId',
+    displayNameKeys: ['proposerDisplayName'],
+    handleKeys: [],
+    avatarKeys: ['proposerAvatarUrl'],
+    emailKeys: [],
+  },
+  {
     idKey: 'sentByUserId',
     displayNameKeys: ['sentByDisplayName'],
     handleKeys: [],

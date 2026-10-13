@@ -1,0 +1,850 @@
+import { createHash } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse, getOperationAST } from 'graphql';
+import { GET_MY_BOARDS, SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
+import { resolveCppDetailReads, withCppDetailCoverage } from '../lib/cpp-detail-coverage';
+import { readCppPage, type CppTarget } from '../lib/screenshot-cpp';
+import { prepareCppCampaignFixtures } from '../prepare-ios-campaign-fixtures';
+import {
+  graphqlFixtureKey,
+  finalizeRecordingFrozenNow,
+  pseudonymiseResponse,
+  type GraphqlFixtureFile,
+  type ScreenshotFixtureManifest,
+} from '../lib/screenshot-fixtures';
+
+const owner = '11111111-2222-3333-4444-555555555555';
+const email = 'shots@example.test';
+const password = 'test-password-do-not-log';
+const sha256 = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
+const directories: string[] = [];
+const servers: Server[] = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  await Promise.all(
+    servers.splice(0).map(
+      (server) =>
+        new Promise<void>((done) => {
+          server.closeAllConnections();
+          server.close(() => done());
+        }),
+    ),
+  );
+  directories.splice(0).forEach((directory) => rmSync(directory, { recursive: true, force: true }));
+});
+
+function sample(target: CppTarget = 'tension', emptySpray = false) {
+  const page = readCppPage(target);
+  const variants = [...page.heroBoards, ...page.otherBoards];
+  const boards = variants.map((variant, index) => ({
+    uuid: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    name: `${variant.selector} owned`,
+    ownerId: owner,
+    canEdit: true,
+    isPublic: false,
+    boardType: variant.boardType,
+    layoutId: variant.layoutId ?? index + 100,
+    sizeId: variant.sizeId ?? 1,
+    setIds: (variant.setIds ?? [1]).join(','),
+    angle: variant.angle ?? 40,
+  }));
+  const coverage = {
+    target,
+    boardReadyText: Object.fromEntries(variants.map((variant, index) => [variant.id, `Scene ${index + 1}`])),
+    boardIds: Object.fromEntries(variants.map((variant, index) => [variant.id, boards[index].uuid])),
+    boardNames: Object.fromEntries(variants.map((variant, index) => [variant.id, boards[index].name])),
+    boardHeroModes: Object.fromEntries(
+      variants.map((variant) => [variant.id, emptySpray && variant.family === 'spray' ? 'wall-editor' : 'climb']),
+    ) as Record<string, 'wall-editor' | 'climb'>,
+    boardClimbCounts: Object.fromEntries(
+      variants.map((variant) => [variant.id, emptySpray && variant.family === 'spray' ? 0 : 10]),
+    ),
+    heroClimbs: Object.fromEntries(
+      variants
+        .filter((variant) => !(emptySpray && variant.family === 'spray'))
+        .map((variant) => {
+          const index = variants.indexOf(variant);
+          return [
+            variant.id,
+            {
+              boardId: boards[index].uuid,
+              climbId:
+                index === 1 && target === 'tension'
+                  ? '18E0834CBBB64952AE12BB7DD7F56E28'
+                  : `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+              readyText: `Scene ${index + 1}`,
+              gradeLabel: 'V3',
+            },
+          ];
+        }),
+    ),
+    scenes: {},
+    ...(!(emptySpray && page.primaryBoard.family === 'spray')
+      ? {
+          accessoryClimb: {
+            boardId: boards[variants.findIndex((variant) => variant.id === page.primaryBoard.id)].uuid,
+            climbId: '30000000-0000-4000-8000-000000000001',
+            readyText: 'Accessory',
+            gradeLabel: 'V2',
+          },
+        }
+      : {}),
+  };
+  const manifest: ScreenshotFixtureManifest = {
+    formatVersion: 1,
+    flow: 'app-store-cpp',
+    accountUserId: owner,
+    accountEmail: email,
+    upstream: 'http://127.0.0.1:1',
+    recordedAt: '2026-10-12T00:00:00Z',
+    frozenNow: '2026-10-12T00:00:01Z',
+    graphql: [],
+    static: [],
+    capture: {
+      sharedSessionId: '40000000-0000-4000-8000-000000000001',
+      boards: boards.map((board) => board.name),
+      cpp: coverage,
+    },
+  };
+  const fixtures: GraphqlFixtureFile[] = [];
+  const append = (query: string, variables: Record<string, unknown>, response: unknown) => {
+    const operationName = getOperationAST(parse(query))!.name!.value;
+    const key = graphqlFixtureKey({ operationName, query, variables }, sha256);
+    const fixture: GraphqlFixtureFile = {
+      formatVersion: 1,
+      ...key,
+      query,
+      variables,
+      response,
+      status: 200,
+      upstream: manifest.upstream,
+      recordedAt: manifest.recordedAt,
+    };
+    manifest.graphql.push({ ...key, file: `graphql/${operationName}/${key.variablesHash.slice(0, 16)}.json` });
+    fixtures.push(fixture);
+    return fixture;
+  };
+  append(GET_MY_BOARDS, {}, { data: { myBoards: { boards } } });
+  for (const board of boards) {
+    const selected = [
+      ...Object.values(coverage.heroClimbs),
+      ...(coverage.accessoryClimb ? [coverage.accessoryClimb] : []),
+    ].filter((climb) => climb.boardId === board.uuid);
+    append(
+      SEARCH_CLIMBS,
+      {
+        input: {
+          boardName: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds,
+          angle: board.angle,
+          page: 0,
+          pageSize: 10,
+        },
+      },
+      {
+        data: {
+          searchClimbs: {
+            climbs: selected.map((climb) => ({
+              uuid: climb.climbId,
+              name: climb.readyText,
+              frames: 'p1r12p2r13p3r14',
+              statsAngle: board.angle,
+            })),
+          },
+        },
+      },
+    );
+  }
+  return { manifest, fixtures, boards, append };
+}
+
+function save(source: ReturnType<typeof sample>, upstream?: string) {
+  if (upstream) {
+    source.manifest.upstream = upstream;
+    for (const fixture of source.fixtures) fixture.upstream = upstream;
+  }
+  const parent = mkdtempSync(join(tmpdir(), 'cpp-detail-test-'));
+  directories.push(parent);
+  const input = join(parent, 'input');
+  mkdirSync(input);
+  for (const [index, entry] of source.manifest.graphql.entries()) {
+    mkdirSync(dirname(join(input, entry.file)), { recursive: true });
+    writeFileSync(join(input, entry.file), JSON.stringify(source.fixtures[index]));
+  }
+  writeFileSync(join(input, 'manifest.json'), JSON.stringify(source.manifest));
+  return { input, output: join(parent, 'candidate') };
+}
+
+function reply(operationName: string, variables: Record<string, unknown>): Record<string, unknown> {
+  if (operationName === 'GetBetaLinks')
+    return {
+      betaLinks: [
+        {
+          climbUuid: variables.climbUuid,
+          link: 'https://example.test/video',
+          foreignUsername: 'stranger_handle',
+          angle: 40,
+          thumbnail: null,
+          isListed: true,
+          createdAt: '2026-10-12T00:00:00Z',
+          tickUuid: null,
+          boardId: null,
+        },
+      ],
+    };
+  if (operationName === 'GetClimbProposals')
+    return { climbProposals: { proposals: [], totalCount: 0, hasMore: false } };
+  if (operationName === 'ClimbStatsHistory') return { climbStatsHistory: [] };
+  return { profile: { id: owner, displayName: 'Liz', avatarUrl: null } };
+}
+
+async function upstream(
+  options: {
+    subject?: string;
+    profileId?: string;
+    hangOperation?: string;
+    response?: (operationName: string, variables: Record<string, unknown>) => { status?: number; body: unknown };
+  } = {},
+) {
+  const requests: Array<{ query: string; operationName: string; variables: Record<string, unknown> }> = [];
+  let authRequests = 0;
+  const token = `header.${Buffer.from(JSON.stringify({ sub: options.subject ?? owner })).toString('base64url')}.secret-native-jwt`;
+  const server = createServer((request, response) => {
+    void (async () => {
+      let raw = '';
+      for await (const chunk of request) raw += String(chunk);
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/auth/native/credentials') {
+        authRequests += 1;
+        response.end(JSON.stringify({ jwt: token, refreshToken: 'never-persist-refresh-token' }));
+        return;
+      }
+      const body = JSON.parse(raw) as { query: string; variables: Record<string, unknown> };
+      const operationName = getOperationAST(parse(body.query))!.name!.value;
+      requests.push({ ...body, operationName });
+      if (options.hangOperation === operationName) return;
+      const custom = options.response?.(operationName, body.variables);
+      response.statusCode = custom?.status ?? 200;
+      response.end(
+        JSON.stringify(
+          custom?.body ?? {
+            data:
+              operationName === 'CppBootstrapProfile'
+                ? {
+                    profile: { id: options.profileId ?? options.subject ?? owner, displayName: 'Liz', avatarUrl: null },
+                  }
+                : reply(operationName, body.variables),
+          },
+        ),
+      );
+    })();
+  });
+  servers.push(server);
+  const port = await new Promise<number>((done) =>
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      done(typeof address === 'object' && address ? address.port : 0);
+    }),
+  );
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    requests,
+    token,
+    get authRequests() {
+      return authRequests;
+    },
+  };
+}
+
+describe('CPP selected detail source evidence', () => {
+  it.each(['kilter', 'tension', 'moonboard', 'spray'] as const)(
+    'binds at most21 exact native reads to every %s hero plus accessory',
+    (target) => {
+      const source = sample(target);
+      const reads = resolveCppDetailReads(source.manifest, source.fixtures);
+      expect(reads).toHaveLength(21);
+      expect(
+        reads
+          .filter((request) => request.operationName === 'GetClimbProposals')
+          .every(
+            (request) =>
+              Object.keys(request.variables).join() === 'input' &&
+              Object.keys(request.variables.input as object)
+                .sort()
+                .join() === 'boardType,climbUuid,limit',
+          ),
+      ).toBe(true);
+      expect(new Set(reads.map((request) => request.variablesHash)).size).toBe(21);
+    },
+  );
+  it('matches the exact observed Masquerade replay misses without changing UUIDcase', () => {
+    const source = sample();
+    const reads = resolveCppDetailReads(source.manifest, source.fixtures).filter((request) =>
+      JSON.stringify(request.variables).includes('18E0834CBBB64952AE12BB7DD7F56E28'),
+    );
+    expect(reads.map((request) => request.variablesHash)).toEqual([
+      '75dea9cfae7bd7b2dfb108c1ed12a8f84be07a866116d6917b432b0ef471e168',
+      '6a03aa7fb538da695fef31ec6b62a5676439f1f5fd0a1780a5855bb449325473',
+      'cf674193689d8a15e0955b9160ed62aadade5d4f2651f9aa99b5edacc68c37d9',
+    ]);
+  });
+  it('skips only explicitly empty spray editor walls while retaining other three genuine heroes', () => {
+    const source = sample('spray', true);
+    expect(resolveCppDetailReads(source.manifest, source.fixtures)).toHaveLength(9);
+    source.manifest.capture!.cpp!.boardClimbCounts!['spray-liz'] = 1;
+    expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('explicitly empty');
+  });
+  it.each([
+    [
+      'owner',
+      (source: ReturnType<typeof sample>) => {
+        source.boards[0].ownerId = 'another-owner';
+      },
+    ],
+    [
+      'geometry',
+      (source: ReturnType<typeof sample>) => {
+        source.boards[0].layoutId += 1;
+      },
+    ],
+    [
+      'climb',
+      (source: ReturnType<typeof sample>) => {
+        source.manifest.capture!.cpp!.heroClimbs!['tension-original'].climbId = 'ffffffff-0000-4000-8000-000000000001';
+      },
+    ],
+    [
+      'upstream',
+      (source: ReturnType<typeof sample>) => {
+        source.fixtures[0].upstream = 'https://foreign.example';
+      },
+    ],
+    [
+      'timestamp',
+      (source: ReturnType<typeof sample>) => {
+        source.fixtures[0].recordedAt = '2030-01-01T00:00:00Z';
+      },
+    ],
+    [
+      'status',
+      (source: ReturnType<typeof sample>) => {
+        source.fixtures[0].status = 500;
+      },
+    ],
+    [
+      'hash',
+      (source: ReturnType<typeof sample>) => {
+        source.fixtures[0].documentHash = '0'.repeat(64);
+      },
+    ],
+    [
+      'index',
+      (source: ReturnType<typeof sample>) => {
+        source.manifest.graphql[0].file = 'graphql/other.json';
+      },
+    ],
+    [
+      'duplicate',
+      (source: ReturnType<typeof sample>) => {
+        source.manifest.graphql.push(source.manifest.graphql[0]);
+        source.fixtures.push(source.fixtures[0]);
+      },
+    ],
+    [
+      'board order',
+      (source: ReturnType<typeof sample>) => {
+        source.manifest.capture!.boards.reverse();
+      },
+    ],
+    [
+      'unknown hero',
+      (source: ReturnType<typeof sample>) => {
+        source.manifest.capture!.cpp!.heroClimbs!.foreign =
+          source.manifest.capture!.cpp!.heroClimbs!['tension-original'];
+      },
+    ],
+  ])('rejects tampered %s before authorizing reads', (_label, change) => {
+    const source = sample();
+    (change as (source: ReturnType<typeof sample>) => void)(source);
+    expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow();
+  });
+  it('rejects a different native document even when its canonical hash was recomputed', () => {
+    const source = sample();
+    source.fixtures[0].query = 'query GetMyBoards { myBoards { boards { uuid } } }';
+    const key = graphqlFixtureKey(source.fixtures[0], sha256);
+    Object.assign(source.fixtures[0], key);
+    Object.assign(source.manifest.graphql[0], key);
+    expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('native document');
+  });
+  it('rejects conflicting ownership in paginated roster evidence', () => {
+    const source = sample();
+    source.append(
+      GET_MY_BOARDS,
+      { offset: 6 },
+      { data: { myBoards: { boards: [{ ...source.boards[0], ownerId: 'foreign' }] } } },
+    );
+    expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('unique recorded owner');
+  });
+});
+
+describe('CPP genuine detail recording and candidate preparation', () => {
+  it.each(['manifest', 'fixture', 'ambient scenario'])(
+    'refuses malformed %s with a bounded error before authentication',
+    async (kind) => {
+      const api = await upstream();
+      const source = sample();
+      const { input, output } = save(source, api.origin);
+      const invalidContents = 'historical-sensitive-parse-secret';
+      if (kind === 'ambient scenario') vi.stubEnv('BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO', invalidContents);
+      else
+        writeFileSync(
+          join(input, kind === 'manifest' ? 'manifest.json' : source.manifest.graphql[0].file),
+          invalidContents,
+        );
+      const failure: unknown = await prepareCppCampaignFixtures(input, output, {
+        upstream: api.origin,
+        email,
+        password,
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toMatch(/^CPP detail/);
+      expect((failure as Error).message).not.toContain(invalidContents);
+      expect(api.authRequests).toBe(0);
+      expect(api.requests).toHaveLength(0);
+      expect(existsSync(output)).toBe(false);
+    },
+  );
+  it.each(['jwt', 'refreshToken', 'access_token', 'password', 'auth_token'])(
+    'rejects an existing response credential field %s before authentication without rewriting source',
+    async (credentialKey) => {
+      const api = await upstream();
+      const source = sample();
+      (source.fixtures[0].response as { data: Record<string, unknown> }).data.review = [
+        { [credentialKey]: 'historical-source-secret' },
+      ];
+      const { input, output } = save(source, api.origin);
+      const fixturePath = join(input, source.manifest.graphql[0].file);
+      const before = readFileSync(fixturePath);
+      const logs: string[] = [];
+      await expect(
+        prepareCppCampaignFixtures(input, output, {
+          upstream: api.origin,
+          email,
+          password,
+          log: (line) => logs.push(line),
+        }),
+      ).rejects.toThrow('provenance');
+      expect(api.authRequests).toBe(0);
+      expect(api.requests).toHaveLength(0);
+      expect(existsSync(output)).toBe(false);
+      expect(readFileSync(fixturePath)).toEqual(before);
+      expect(logs.join('\n')).not.toContain('historical-source-secret');
+    },
+  );
+  it('accepts response metadata counters without treating them as credentials', () => {
+    const source = sample();
+    (source.fixtures[0].response as { data: Record<string, unknown> }).data.review = {
+      tokenCount: 5,
+      credentialsExpiry: '2030-01-01T00:00:00Z',
+    };
+    expect(resolveCppDetailReads(source.manifest, source.fixtures)).toHaveLength(21);
+  });
+  it('rejects an accessory on the explicitly empty primary spray editor before authentication', async () => {
+    const api = await upstream();
+    const source = sample('spray', true);
+    const primaryId = readCppPage('spray').primaryBoard.id;
+    source.manifest.capture!.cpp!.accessoryClimb = {
+      boardId: source.manifest.capture!.cpp!.boardIds![primaryId],
+      climbId: '30000000-0000-4000-8000-000000000001',
+      readyText: 'Contradictory accessory',
+      gradeLabel: 'V2',
+    };
+    const { input, output } = save(source, api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'explicitly empty',
+    );
+    expect(api.authRequests).toBe(0);
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+  });
+  it('records all21real reads through the proxy and keeps source/static/metadata immutable', async () => {
+    const api = await upstream();
+    const source = sample();
+    const { input, output } = save(source, api.origin);
+    mkdirSync(join(input, 'static'));
+    writeFileSync(join(input, 'static/photo.bin'), 'actual-static-bytes');
+    source.manifest.static.push({
+      path: '/static/photo',
+      query: '',
+      file: 'static/photo.bin',
+      contentType: 'application/octet-stream',
+      bytes: 19,
+    });
+    writeFileSync(join(input, 'manifest.json'), JSON.stringify(source.manifest));
+    const before = sha256(readFileSync(join(input, 'manifest.json')));
+    const logs: string[] = [];
+    await prepareCppCampaignFixtures(input, output, {
+      upstream: api.origin,
+      email,
+      password,
+      log: (line) => logs.push(line),
+    });
+    const result = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    expect(result.accountUserId).toBe(owner);
+    expect(result.accountEmail).toBe(email);
+    expect(result.capture).toEqual(source.manifest.capture);
+    expect(result.flow).toBe(source.manifest.flow);
+    expect(result.static).toEqual(source.manifest.static);
+    expect(sha256(readFileSync(join(input, 'manifest.json')))).toBe(before);
+    expect(readFileSync(join(output, 'static/photo.bin'), 'utf8')).toBe('actual-static-bytes');
+    for (const entry of source.manifest.graphql)
+      expect(readFileSync(join(output, entry.file))).toEqual(readFileSync(join(input, entry.file)));
+    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(21);
+    expect(api.requests.every((request) => getOperationAST(parse(request.query))!.operation === 'query')).toBe(true);
+    const created = result.graphql
+      .filter((entry) => !source.manifest.graphql.some((previous) => previous.file === entry.file))
+      .map((entry) => JSON.parse(readFileSync(join(output, entry.file), 'utf8')) as GraphqlFixtureFile);
+    expect(result.frozenNow).toBe(
+      finalizeRecordingFrozenNow(
+        source.manifest.frozenNow,
+        created.map((fixture) => fixture.recordedAt),
+      ),
+    );
+    expect(created.find((fixture) => fixture.operationName === 'GetBetaLinks')!.response).toMatchObject({
+      data: { betaLinks: [{ foreignUsername: expect.stringMatching(/^climber_/) }] },
+    });
+    expect(JSON.stringify(created)).not.toContain(api.token);
+    expect(JSON.stringify(created)).not.toContain('never-persist-refresh-token');
+    expect(logs.join('\n')).not.toContain(password);
+    expect(logs.join('\n')).not.toContain(api.token);
+    expect(logs.join('\n')).not.toContain('stranger_handle');
+  });
+  it('authenticates a complete resumed recording while skipping all existing detail reads and preserving its clock', async () => {
+    const api = await upstream();
+    const source = sample();
+    for (const request of resolveCppDetailReads(source.manifest, source.fixtures))
+      source.append(
+        request.query,
+        request.variables,
+        pseudonymiseResponse({ data: reply(request.operationName, request.variables) }, { ownUserId: owner }).response,
+      );
+    const { input, output } = save(source, api.origin);
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.requests.map((request) => request.operationName)).toEqual(['CppBootstrapProfile']);
+    expect(readFileSync(join(output, 'manifest.json'))).toEqual(readFileSync(join(input, 'manifest.json')));
+  });
+  it.each(['wrong token owner', 'wrong fresh profile'])(
+    'blocks %s with no detail requests or candidate',
+    async (reason) => {
+      const api = await upstream(
+        reason === 'wrong token owner' ? { subject: 'different-owner' } : { profileId: 'different-owner' },
+      );
+      const source = sample();
+      const { input, output } = save(source, api.origin);
+      await expect(
+        prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password }),
+      ).rejects.toThrow('authentication');
+      expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(0);
+      expect(existsSync(output)).toBe(false);
+    },
+  );
+  it.each([
+    'HTTP error',
+    'GraphQL error',
+    'missing data',
+    'malformed beta',
+    'malformed proposals',
+    'malformed history',
+    'live credential',
+    'untracked credential field',
+  ])('blocks %s and keeps output absent', async (reason) => {
+    const api = await upstream({
+      response: (operationName, variables) => {
+        if (operationName === 'CppBootstrapProfile') return { body: { data: reply(operationName, variables) } };
+        if (reason === 'HTTP error') return { status: 503, body: { data: {} } };
+        if (reason === 'GraphQL error')
+          return {
+            body: {
+              data: reply(operationName, variables),
+              errors: [{ message: 'sensitive upstream text do not log' }],
+            },
+          };
+        if (reason === 'missing data') return { body: {} };
+        if (reason === 'untracked credential field')
+          return { body: { data: { ...reply(operationName, variables), jwt: 'historical-source-secret' } } };
+        if (reason === 'malformed beta' && operationName === 'GetBetaLinks')
+          return { body: { data: { betaLinks: null } } };
+        if (reason === 'malformed proposals' && operationName === 'GetClimbProposals')
+          return { body: { data: { climbProposals: { proposals: [], totalCount: -1, hasMore: 'yes' } } } };
+        if (reason === 'malformed history' && operationName === 'ClimbStatsHistory')
+          return { body: { data: { climbStatsHistory: {} } } };
+        if (reason === 'live credential')
+          return {
+            body: {
+              data: {
+                betaLinks: [
+                  {
+                    link: `header.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.secret-native-jwt`,
+                  },
+                ],
+              },
+            },
+          };
+        return { body: { data: reply(operationName, variables) } };
+      },
+    });
+    const source = sample();
+    const { input, output } = save(source, api.origin);
+    const before = readFileSync(join(input, 'manifest.json'));
+    const logs: string[] = [];
+    await expect(
+      prepareCppCampaignFixtures(input, output, {
+        upstream: api.origin,
+        email,
+        password,
+        log: (line) => logs.push(line),
+      }),
+    ).rejects.toThrow('CPP detail');
+    expect(existsSync(output)).toBe(false);
+    expect(readFileSync(join(input, 'manifest.json'))).toEqual(before);
+    expect(logs.join('\n')).not.toContain('sensitive upstream text');
+  });
+  it('rejects an invalid existing detail collision before any authentication request', async () => {
+    const api = await upstream();
+    const source = sample();
+    const expected = resolveCppDetailReads(source.manifest, source.fixtures)[0];
+    source.append(expected.query, expected.variables, { data: { betaLinks: null } });
+    const { input, output } = save(source, api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'native collection',
+    );
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+  });
+  it('rejects an existing detail document collision even when the source hashes are internally consistent', async () => {
+    const api = await upstream();
+    const source = sample();
+    const expected = resolveCppDetailReads(source.manifest, source.fixtures)[0];
+    source.append(
+      'query GetBetaLinks($boardType: String!, $climbUuid: String!) { betaLinks(boardType: $boardType, climbUuid: $climbUuid) { link } }',
+      expected.variables,
+      { data: { betaLinks: [] } },
+    );
+    const { input, output } = save(source, api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'collides',
+    );
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+  });
+  it('refuses an unsanitized existing proposer response without rewriting it or authenticating', async () => {
+    const api = await upstream();
+    const source = sample();
+    const expected = resolveCppDetailReads(source.manifest, source.fixtures).find(
+      (request) => request.operationName === 'GetClimbProposals',
+    )!;
+    source.append(expected.query, expected.variables, {
+      data: {
+        climbProposals: {
+          proposals: [
+            {
+              proposerId: '55555555-6666-4777-8888-999999999999',
+              proposerDisplayName: 'Private proposer',
+              proposerAvatarUrl: 'https://cdn/private-proposer.jpg',
+            },
+          ],
+          totalCount: 1,
+          hasMore: false,
+        },
+      },
+    });
+    const { input, output } = save(source, api.origin);
+    const before = readFileSync(join(input, 'manifest.json'));
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'provenance',
+    );
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+    expect(readFileSync(join(input, 'manifest.json'))).toEqual(before);
+  });
+  it('rejects malformed items inside a present native collection', async () => {
+    const api = await upstream({
+      response: (operationName, variables) => ({
+        body: {
+          data: operationName === 'GetBetaLinks' ? { betaLinks: ['malformed-row'] } : reply(operationName, variables),
+        },
+      }),
+    });
+    const { input, output } = save(sample(), api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'native collection',
+    );
+    expect(existsSync(output)).toBe(false);
+  });
+  it('does not accept another selected climb UUID in a genuine response collection', async () => {
+    const api = await upstream({
+      response: (operationName, variables) => ({
+        body: {
+          data:
+            operationName === 'GetBetaLinks'
+              ? reply(operationName, { climbUuid: 'foreign-climb' })
+              : reply(operationName, variables),
+        },
+      }),
+    });
+    const { input, output } = save(sample(), api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'native collection',
+    );
+    expect(existsSync(output)).toBe(false);
+  });
+  it('only fetches missing exact responses on a partial resume and preserves the valid existing entry bytes', async () => {
+    const api = await upstream();
+    const source = sample();
+    const expected = resolveCppDetailReads(source.manifest, source.fixtures)[0];
+    const already = source.append(expected.query, expected.variables, { data: { betaLinks: [] } });
+    const { input, output } = save(source, api.origin);
+    const file = source.manifest.graphql.find(
+      (entry) => entry.operationName === already.operationName && entry.variablesHash === already.variablesHash,
+    )!.file;
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(20);
+    expect(readFileSync(join(output, file))).toEqual(readFileSync(join(input, file)));
+  });
+  it('fails closed when the authenticated detail request times out and returns without awaiting the stuck response', async () => {
+    const api = await upstream({ hangOperation: 'GetBetaLinks' });
+    const { input, output } = save(sample(), api.origin);
+    const networkFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((request, init) => {
+      const address = typeof request === 'string' ? request : request instanceof URL ? request.href : request.url;
+      // Shorten only the transport's existing deadline on its loopback request.
+      if (
+        address !== `${api.origin}/graphql` &&
+        address.endsWith('/graphql') &&
+        typeof init?.body === 'string' &&
+        init.body.includes('query GetBetaLinks')
+      )
+        return networkFetch(request, { ...init, signal: AbortSignal.timeout(30) });
+      return networkFetch(request, init);
+    });
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'GetBetaLinks read failed',
+    );
+    expect(existsSync(output)).toBe(false);
+    expect(api.requests.filter((request) => request.operationName === 'GetBetaLinks')).toHaveLength(1);
+  });
+  it('pseudonymizes genuine nonempty proposal responses before candidate bytes are emitted', async () => {
+    const stranger = '55555555-6666-4777-8888-999999999999';
+    const api = await upstream({
+      response: (operationName, variables) => {
+        if (operationName !== 'GetClimbProposals') return { body: { data: reply(operationName, variables) } };
+        const input = variables.input as { boardType: string; climbUuid: string };
+        return {
+          body: {
+            data: {
+              climbProposals: {
+                proposals: [
+                  {
+                    uuid: 'real-proposal',
+                    climbUuid: input.climbUuid,
+                    boardType: input.boardType,
+                    proposerId: stranger,
+                    proposerDisplayName: 'Private proposer',
+                    proposerAvatarUrl: 'https://cdn/private-proposer.jpg',
+                  },
+                ],
+                totalCount: 1,
+                hasMore: false,
+              },
+            },
+          },
+        };
+      },
+    });
+    const { input, output } = save(sample(), api.origin);
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    for (const entry of manifest.graphql.filter((entry) => entry.operationName === 'GetClimbProposals')) {
+      const serialized = readFileSync(join(output, entry.file), 'utf8');
+      expect(serialized).not.toContain('Private proposer');
+      expect(serialized).not.toContain('private-proposer.jpg');
+      expect(JSON.parse(serialized).response.data.climbProposals.proposals[0]).toMatchObject({
+        proposerId: stranger,
+        proposerAvatarUrl: null,
+      });
+    }
+  });
+  it.each(['foreign upstream', 'wrong email', 'ambient scenario', 'source symlink', 'static size'])(
+    'rejects %s before any network request',
+    async (reason) => {
+      const api = await upstream();
+      const source = sample();
+      const { input, output } = save(source, api.origin);
+      if (reason === 'ambient scenario')
+        vi.stubEnv('BOARDSESH_SCREENSHOT_CAPTURE_SCENARIO', JSON.stringify({ different: true }));
+      if (reason === 'source symlink') symlinkSync(join(input, 'manifest.json'), join(input, 'linked.json'));
+      if (reason === 'static size') {
+        mkdirSync(join(input, 'static'));
+        writeFileSync(join(input, 'static/asset.bin'), 'a');
+        source.manifest.static.push({
+          file: 'static/asset.bin',
+          path: '/asset',
+          query: '',
+          contentType: 'image/png',
+          bytes: 2,
+        });
+        writeFileSync(join(input, 'manifest.json'), JSON.stringify(source.manifest));
+      }
+      await expect(
+        prepareCppCampaignFixtures(input, output, {
+          upstream: reason === 'foreign upstream' ? 'https://foreign.example' : api.origin,
+          email: reason === 'wrong email' ? 'other@example.test' : email,
+          password,
+        }),
+      ).rejects.toThrow('CPP detail');
+      expect(api.requests).toHaveLength(0);
+      expect(existsSync(output)).toBe(false);
+    },
+  );
+  it('leaves an existing output untouched and makes no request', async () => {
+    const api = await upstream();
+    const { input, output } = save(sample(), api.origin);
+    mkdirSync(output);
+    writeFileSync(join(output, 'keep'), 'preserve');
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'already exists',
+    );
+    expect(readFileSync(join(output, 'keep'), 'utf8')).toBe('preserve');
+    expect(api.requests).toHaveLength(0);
+  });
+  it('hands prepared coverage to the existing callback and removes only its owned scratch copy', async () => {
+    const api = await upstream();
+    const { input } = save(sample('spray', true), api.origin);
+    let scratch = '';
+    const observed = await withCppDetailCoverage(
+      input,
+      { upstream: api.origin, email, password },
+      async (recording) => {
+        scratch = recording;
+        return JSON.parse(readFileSync(join(recording, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+      },
+    );
+    expect(
+      observed.graphql.filter((entry) =>
+        ['GetBetaLinks', 'GetClimbProposals', 'ClimbStatsHistory'].includes(entry.operationName),
+      ),
+    ).toHaveLength(9);
+    expect(existsSync(scratch)).toBe(false);
+    expect(existsSync(input)).toBe(true);
+  });
+});

@@ -14,6 +14,7 @@ import { readCppPage, isCppTarget } from './lib/screenshot-cpp';
 import { createCppPhotoRefreshDownloader } from './lib/cpp-photo-refresh';
 import { createTransport, resolveBootstrapUpstream } from './bootstrap-cpp-scenario';
 import { assertCppGradeCountProof } from './lib/cpp-grade-count';
+import { withCppDetailCoverage, type CppDetailRecordingOptions } from './lib/cpp-detail-coverage';
 
 export interface AuthorizedCampaignWall {
   wallUuid: string;
@@ -244,6 +245,42 @@ export function authorizedCppWallsFromRecording(
   });
 }
 
+/** Complete genuine native detail reads before either manufacturer copying or spray photo preparation. */
+export async function prepareCppCampaignFixtures(
+  input: string,
+  output: string,
+  options: CppDetailRecordingOptions,
+  refreshPhotos = false,
+): Promise<void> {
+  if (existsSync(output)) throw new Error('Candidate output already exists; choose a new directory');
+  await withCppDetailCoverage(input, options, async (recording) => {
+    const manifest = readScreenshotFixtureManifest(recording);
+    if (!manifest) throw new Error('CPP candidate recording manifest is missing');
+    const fixtures = manifest.graphql.map(
+      (entry) => JSON.parse(readFileSync(join(recording, entry.file), 'utf8')) as GraphqlFixtureFile,
+    );
+    assertCppGradeCountProof(manifest, fixtures);
+    const authorizedWalls = authorizedCppWallsFromRecording(manifest, fixtures);
+    if (authorizedWalls.length === 0) {
+      cpSync(recording, output, { recursive: true, errorOnExist: true, force: false });
+      console.log('Prepared manufacturer CPP candidate with verified native detail responses.');
+      return;
+    }
+    let download: typeof fetch = fetch;
+    if (refreshPhotos) {
+      const { transport, accountUserId } = await createTransport(options.upstream, options.email, options.password);
+      download = await createCppPhotoRefreshDownloader({
+        accountUserId: manifest.accountUserId,
+        authenticatedAccountUserId: accountUserId,
+        authorizedWalls,
+        recordedFixtures: fixtures,
+        transport,
+      });
+    }
+    await prepareIosCampaignFixturesForWalls(recording, output, authorizedWalls, download);
+  });
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((argument) => argument !== '--');
   const refresh = args.includes('--refresh-photo-urls');
@@ -257,6 +294,24 @@ async function main(): Promise<void> {
   const source = resolve(input);
   const destination = resolve(output);
   if (existsSync(destination)) throw new Error('Candidate output already exists; choose a new directory');
+  if (cpp) {
+    const email = process.env.SCREENSHOT_USER_EMAIL;
+    const password = process.env.SCREENSHOT_USER_PASSWORD;
+    if (!email || !password)
+      throw new Error('CPP detail preparation requires the dedicated screenshot account credentials');
+    await prepareCppCampaignFixtures(
+      source,
+      destination,
+      {
+        upstream: resolveBootstrapUpstream(),
+        email,
+        password,
+        log: console.log,
+      },
+      refresh,
+    );
+    return;
+  }
   const manifest = readScreenshotFixtureManifest(source);
   if (!manifest) throw new Error('Recording manifest is missing');
   const fixtures = manifest.graphql.map(
@@ -264,8 +319,7 @@ async function main(): Promise<void> {
   );
   assertCppGradeCountProof(manifest, fixtures);
   let authorizedWalls: AuthorizedCampaignWall[];
-  if (cpp) authorizedWalls = authorizedCppWallsFromRecording(manifest, fixtures);
-  else if (wallSelection === '--walls') {
+  if (wallSelection === '--walls') {
     const parsed: unknown = JSON.parse(readFileSync(resolve(layoutOrFile), 'utf8'));
     if (
       !Array.isArray(parsed) ||
@@ -285,13 +339,6 @@ async function main(): Promise<void> {
     if (!wallSelection || !/^\d+$/.test(layoutOrFile ?? ''))
       throw new Error('Authorized wall UUID and numeric layout ID required');
     authorizedWalls = [{ wallUuid: wallSelection, layoutId: Number(layoutOrFile) }];
-  }
-  if (cpp && authorizedWalls.length === 0) {
-    // Manufacture-board CPPs have no private wall images to import. The archive
-    // publisher still validates every copied response and static asset.
-    cpSync(source, destination, { recursive: true, errorOnExist: true, force: false });
-    console.log('Prepared manufacturer CPP candidate from unchanged real recordings.');
-    return;
   }
   let download: typeof fetch = fetch;
   if (refresh) {

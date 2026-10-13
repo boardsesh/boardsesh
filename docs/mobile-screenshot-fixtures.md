@@ -26,6 +26,28 @@ The default publisher writes `app-stores/screenshot-fixtures.json`; do not use
 its upload mode for CPPs. CPP archive export and target-reference installation
 leave both that shared pin and `app-stores/apple/campaign-fixtures.json` intact.
 
+CPP candidate preparation also records the native player's deferred detail reads.
+The screenshot flow stays above the fold, while a real scroll can mount Beta
+Videos and Community and request `GetBetaLinks`, `GetClimbProposals`, and
+`ClimbStatsHistory`. After every native recording shard succeeds,
+`cpp-prepare-record` authenticates the same screenshot account and fetches those
+exact documents and variables through the existing recording proxy on loopback.
+The source roster and search responses must prove each selected board and climb.
+The scope is six selected hero climbs plus the optional distinct accessory:
+at most 21 detail queries. Explicitly empty spray wall editor scenes are skipped.
+
+The recorder extends a temporary copy, preserves the original fixture and static
+bytes, and advances `frozenNow` using actual response timestamps. Existing exact
+responses are retained; collisions, missing responses, malformed data, changed
+owners or upstreams, explicit credential fields in response bodies, and newly
+received live tokens block candidate output.
+Other climbers' beta handles and proposal names and avatars use the same
+pseudonymization rules as native recording. Manufacturer pages require this
+authenticated coverage check even when they have no private photos to refresh.
+This preparation creates no app content and leaves native captures, lazy-query
+behavior, fixture pins, and store resources unchanged. A full native replay must
+still verify the resulting candidate before its screenshots are staged.
+
 The Apple campaign archive and reference are hash-named assets on the existing
 `screenshots-baseline` GitHub prerelease. They leave its screenshot ZIPs and
 baseline manifest unchanged. Adding these fixture assets does not promote a
