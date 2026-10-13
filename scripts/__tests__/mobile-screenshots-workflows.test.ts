@@ -428,10 +428,57 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const finalize = workflow.jobs['ios-finalize'];
     const uploadStep = (finalize.steps ?? []).find((step) => step.name === 'Upload screenshots to App Store Connect');
     expect(flatten(uploadStep?.if)).toBe(
-      "${{ success() && (env.MANUAL_UPLOAD_RUN == 'true' || " +
-        "(github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}",
+      "${{ success() && env.FULL_SET_CAPTURED == 'true' && " +
+        "(env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}",
     );
   });
+
+  it.each([
+    ['manual failed capture', 'workflow_dispatch', 'failure', 'app-store', '', true, true, false],
+    ['manual cancelled capture', 'workflow_dispatch', 'cancelled', 'app-store', '', true, true, false],
+    ['manual skipped capture', 'workflow_dispatch', 'skipped', 'app-store', '', true, true, false],
+    ['manual full successful capture', 'workflow_dispatch', 'success', 'app-store', '', true, true, true],
+    ['manual narrowed capture', 'workflow_dispatch', 'success', 'app-store', 'en-US', true, true, false],
+    ['manual onboarding capture', 'workflow_dispatch', 'success', 'onboarding', '', true, true, false],
+    ['manual capture-only', 'workflow_dispatch', 'success', 'app-store', '', false, true, false],
+    ['automatic full capture', 'workflow_run', 'success', null, null, false, true, true],
+    ['automatic failed capture', 'workflow_run', 'failure', null, null, false, true, false],
+    ['failed finalizer content gate', 'workflow_dispatch', 'success', 'app-store', '', true, false, false],
+  ])(
+    'gates every regular ASC preparation/upload step for %s',
+    (_label, eventName, captureResult, flow, locales, upload, priorStepsSucceeded, expected) => {
+      const finalize = workflow.jobs['ios-finalize'];
+      const evaluate = (expression: string | undefined, context: Record<string, unknown>): unknown =>
+        runInNewContext(
+          flatten(expression)
+            .replace(/^\$\{\{\s*/, '')
+            .replace(/\s*\}\}$/, '')
+            .replaceAll('needs.ios-capture', "needs['ios-capture']"),
+          context,
+        );
+      const context = {
+        github: { event_name: eventName },
+        inputs: { flow, locales, upload },
+        needs: { 'ios-capture': { result: captureResult } },
+        // Successful dimension/content steps can exist beside a failed native
+        // capture and its always-retained images; capture status must still gate ASC.
+        success: () => priorStepsSucceeded,
+      };
+      const env = {
+        MANUAL_UPLOAD_RUN: String(evaluate(finalize.env?.MANUAL_UPLOAD_RUN, context)),
+        FULL_SET_CAPTURED: String(evaluate(finalize.env?.FULL_SET_CAPTURED, context)),
+      };
+      for (const name of [
+        'Set up Ruby + fastlane',
+        'Decode App Store Connect API key',
+        'Upload screenshots to App Store Connect',
+      ]) {
+        const step = finalize.steps?.find((candidate) => candidate.name === name);
+        expect(step, name).toBeDefined();
+        expect(evaluate(step?.if, { ...context, env }), name).toBe(expected);
+      }
+    },
+  );
 
   it('keeps the pinned simulator-app cache key in ios-build', () => {
     // scripts/mobile-ci-env-parity.test.ts asserts the shape of this line; it must

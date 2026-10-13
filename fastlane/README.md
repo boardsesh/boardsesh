@@ -52,7 +52,10 @@ record/live captures are diagnostic; the iOS workflow requires replay for store
 upload and baseline publication.
 
 The `Mobile Screenshots (iOS)` manual workflow dispatch uploads only with
-`upload = true`; capture-only defaults leave the store unchanged. Qualifying
+`upload = true` and all 16 native shards successful for the complete App Store
+locale/device set. Failed captures still retain diagnostics and run image gates,
+but cannot prepare Apple credentials or upload. Capture-only defaults leave the
+store unchanged. Qualifying
 automatic release-train runs can also upload a complete verified set. The Android
 workflow is separate. See [mobile store release](../docs/mobile-store-release.md)
 for the trigger and review sequence.
