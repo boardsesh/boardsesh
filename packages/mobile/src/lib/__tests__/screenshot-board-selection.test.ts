@@ -6,6 +6,7 @@ import {
   screenshotCppWallHeroTestId,
   type ScreenshotSelectableBoard,
 } from '../screenshot-board-selection';
+import { matchScreenshotBoardCandidates, parseScreenshotBoardSelectors } from '../screenshot-board-matching';
 
 describe('genuine CPP surface readiness', () => {
   const activeBoard = {
@@ -120,6 +121,17 @@ describe('matchScreenshotBoard', () => {
     expect(matchScreenshotBoard(roster, 'Tension Board 2')?.name).toBe('The Cellar');
   });
 
+  it('keeps the first native board when the winning name tier has several matches', () => {
+    const first = board({ name: 'Marco’s Kilter Board' });
+    const second = board({ name: 'Marcos Kilterboard' });
+    expect(matchScreenshotBoard([first, second], 'Marco-s Kilterboard')).toBe(first);
+  });
+
+  it('prefers an exact name over an earlier exact layout', () => {
+    const earlierLayout = board({ name: 'Other wall', layoutName: 'The Cellar' });
+    expect(matchScreenshotBoard([earlierLayout, ...roster], 'The Cellar')).toBe(roster[2]);
+  });
+
   it('prefers an exact layout-name match over a longer name that merely contains the selector', () => {
     const withDecoyName = [board({ name: 'Tension Board 2 (old garage)' }), ...roster];
     expect(matchScreenshotBoard(withDecoyName, 'Tension Board 2')?.name).toBe('The Cellar');
@@ -132,6 +144,54 @@ describe('matchScreenshotBoard', () => {
   it('returns null for a selector nothing matches, and for an empty selector', () => {
     expect(matchScreenshotBoard(roster, 'Grasshopper Wall')).toBeNull();
     expect(matchScreenshotBoard(roster, '   ')).toBeNull();
+  });
+});
+
+describe('matchScreenshotBoardCandidates', () => {
+  it('returns all normalized exact names in roster order, excluding weaker matches', () => {
+    const layoutMatch = { name: 'Other wall', layoutName: 'Marcos Board' };
+    const substringMatch = { name: 'Marco’s Board in the shed' };
+    const first = { name: "Marco's Board", layoutName: null };
+    const second = { name: 'Marcos Board' };
+    expect(matchScreenshotBoardCandidates([layoutMatch, substringMatch, first, second], '  MARCO’S Board ')).toEqual([
+      first,
+      second,
+    ]);
+  });
+
+  it('returns all exact layouts ahead of name substrings', () => {
+    const substringMatch = { name: 'Kilter Board Homewall in the shed' };
+    const first = { name: 'Primary', layoutName: 'Kilter Board Homewall' };
+    const second = { name: 'Other primary', layoutName: 'Kilter-Board Homewall' };
+    expect(matchScreenshotBoardCandidates([substringMatch, first, second], 'Kilter Board Homewall')).toEqual([
+      first,
+      second,
+    ]);
+  });
+
+  it('returns all name substrings ahead of layout substrings', () => {
+    const layoutMatch = { name: 'Other wall', layoutName: 'A Marco wall' };
+    const first = { name: "Marco's Board" };
+    const second = { name: 'Garage Marco wall' };
+    expect(matchScreenshotBoardCandidates([layoutMatch, first, second], 'Marco')).toEqual([first, second]);
+  });
+
+  it('returns all layout substrings when no stronger tier matches', () => {
+    const first = { name: 'Primary', layoutName: 'Kilter Board Homewall' };
+    const second = { name: 'Other primary', layoutName: 'Tension Homewall' };
+    expect(matchScreenshotBoardCandidates([first, second], 'Homewall')).toEqual([first, second]);
+  });
+
+  it.each(['', '  ', '!!!', 'Missing wall'])('returns no candidates for %s', (selector) => {
+    expect(matchScreenshotBoardCandidates([{ name: 'Primary', layoutName: null }], selector)).toEqual([]);
+  });
+
+  it('trims and removes blank selector slots while preserving the remaining order', () => {
+    expect(parseScreenshotBoardSelectors(' |  Marco’s Board  || Kilter Board Homewall | ')).toEqual([
+      'Marco’s Board',
+      'Kilter Board Homewall',
+    ]);
+    expect(parseScreenshotBoardSelectors(' | | ')).toEqual([]);
   });
 });
 

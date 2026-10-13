@@ -170,6 +170,10 @@ import {
 import { ensureAndroidApk } from './mobile-android-apk';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
 import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from './lib/ios-campaign-primary';
+import {
+  matchScreenshotBoardCandidates,
+  parseScreenshotBoardSelectors,
+} from '../packages/mobile/src/lib/screenshot-board-matching';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -3096,7 +3100,7 @@ export function assertIosCampaignCaptureReady(
   capture?: ScreenshotCaptureScenario,
   recordedBoards: readonly Pick<IosCampaignBoard, 'name' | 'layoutName' | 'boardType'>[] = [],
 ): void {
-  const boards = (options.boards ?? capture?.boards.join('|') ?? '').split('|').filter((selector) => selector.trim());
+  const boards = parseScreenshotBoardSelectors(options.boards ?? capture?.boards.join('|') ?? '');
   if (options.fixtures !== 'replay' || !capture?.sharedSessionId || boards.length < 7) {
     throw new Error(
       'app-store-campaign needs a verified replay campaign fixture with a shared crew session and seven board selectors ' +
@@ -3104,16 +3108,10 @@ export function assertIosCampaignCaptureReady(
         'The previous fixture lacks Decoy/spray captures; record and sanitize the missing sources before running this flow.',
     );
   }
-  const normalize = (name: string | null | undefined) => (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const expectedTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
   for (const [index, expectedType] of expectedTypes.entries()) {
-    const selector = normalize(boards[index]);
     // Same precedence as the app's matchScreenshotBoard, without positional fallback.
-    const recorded =
-      recordedBoards.find((board) => normalize(board.name) === selector) ??
-      recordedBoards.find((board) => normalize(board.layoutName) === selector) ??
-      recordedBoards.find((board) => normalize(board.name).includes(selector)) ??
-      recordedBoards.find((board) => normalize(board.layoutName).includes(selector));
+    const recorded = matchScreenshotBoardCandidates(recordedBoards, boards[index])[0];
     if (recorded?.boardType !== expectedType) {
       throw new Error(
         `app-store-campaign board[${index}] "${boards[index]}" must resolve to ${expectedType} in recorded GetMyBoards responses; found ${recorded?.boardType ?? 'no recorded board'}. Record and sanitize the missing campaign fixture.`,
@@ -3718,7 +3716,7 @@ function runIos(options: ScreenshotOptions): number {
       if (!backendSession) throw new Error('Regular campaign requires a verified fixture backend');
       options.iosCampaignPrimaryCapture = readIosCampaignPrimaryCapture(
         backendSession.fixturesDir,
-        (options.boards?.split('|') ?? backendSession.capture?.boards)?.[0] ?? '',
+        parseScreenshotBoardSelectors(options.boards ?? backendSession.capture?.boards.join('|') ?? '')[0] ?? '',
         readIosCampaignBoards(backendSession.fixturesDir),
       );
     }

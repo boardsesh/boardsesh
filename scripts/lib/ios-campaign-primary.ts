@@ -10,6 +10,10 @@ import {
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../../packages/shared/climb-filters/src/filter-state';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
 import { canonicalJson, graphqlFixtureKey, normalizeDocument } from './screenshot-fixtures';
+import {
+  matchScreenshotBoardCandidates,
+  type ScreenshotBoardMatchingFields,
+} from '../../packages/mobile/src/lib/screenshot-board-matching';
 
 export interface IosCampaignPrimaryCapture {
   board: CppRecordedBoard & { setIds: string };
@@ -21,7 +25,7 @@ export interface IosCampaignPrimaryCapture {
 export function readIosCampaignPrimaryCapture(
   fixturesDir: string,
   selector: string,
-  recordedBoards: readonly CppRecordedBoard[],
+  recordedBoards: readonly (CppRecordedBoard & ScreenshotBoardMatchingFields)[],
 ): IosCampaignPrimaryCapture {
   const canonicalSets = (setIds: string) =>
     setIds
@@ -29,7 +33,7 @@ export function readIosCampaignPrimaryCapture(
       .map(Number)
       .sort((left, right) => left - right)
       .join(',');
-  const matches = recordedBoards.filter((board) => board.name === selector);
+  const matches = matchScreenshotBoardCandidates(recordedBoards, selector);
   if (
     !matches.length ||
     matches.some(

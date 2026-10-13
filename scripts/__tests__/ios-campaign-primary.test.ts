@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readIosCampaignPrimaryCapture } from '../lib/ios-campaign-primary';
 import {
+  assertIosCampaignCaptureReady,
   assertIosRegularIpadCaptureFlow,
   buildIosCampaignMaestroEnv,
   buildScreenshotEnv,
   parseArgs,
   resolveIosScreenshotDevices,
 } from '../mobile-screenshots';
+import { parseScreenshotBoardSelectors } from '../../packages/mobile/src/lib/screenshot-board-matching';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
 import { createHash } from 'node:crypto';
 import { graphqlFixtureKey } from '../lib/screenshot-fixtures';
@@ -27,6 +29,7 @@ afterEach(() => {
 });
 const board = {
   name: "Marco's Board",
+  layoutName: 'Kilter Board Homewall',
   uuid: 'dcb443be-aaea-4637-8bf8-b20cbe031192',
   boardType: 'kilter',
   layoutId: 8,
@@ -69,6 +72,70 @@ function fixture(query = input, rows = [climb]): string {
 }
 
 describe('regular primary capture identity', () => {
+  it('shares native selector tiers and filtered slot order with campaign preflight', () => {
+    const otherTypes = ['tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
+    const otherBoards = otherTypes.map((boardType) => ({ name: `Actual ${boardType}`, boardType }));
+    const capture = { sharedSessionId: 'crew', boards: [board.name, ...otherBoards.map((board) => board.name)] };
+    const options = parseArgs(['--flow', 'app-store-campaign']);
+    for (const primarySelector of ['  marcos BOARD ', 'Kilter Board Homewall', 'Homewall']) {
+      const rawSelectors = ` | ${primarySelector} || ${otherBoards.map((board) => board.name).join(' | ')} | `;
+      const broaderName =
+        primarySelector === 'Homewall' ? [] : [{ name: 'Kilter Board Homewall in the shed', boardType: 'tension' }];
+      expect(() =>
+        assertIosCampaignCaptureReady({ ...options, boards: rawSelectors }, capture, [
+          ...broaderName,
+          board,
+          ...otherBoards,
+        ]),
+      ).not.toThrow();
+      const primary = readIosCampaignPrimaryCapture(fixture(), parseScreenshotBoardSelectors(rawSelectors)[0], [board]);
+      expect(primary.board.uuid).toBe(board.uuid);
+    }
+    const emptyPrimary = ['!!!', ...otherBoards.map((board) => board.name)].join('|');
+    expect(() =>
+      assertIosCampaignCaptureReady({ ...options, boards: emptyPrimary }, capture, [board, ...otherBoards]),
+    ).toThrow(/no recorded board/);
+    const wrongExactType = { ...board, name: 'Kilter Board Homewall', boardType: 'tension' };
+    expect(() =>
+      assertIosCampaignCaptureReady(
+        { ...options, boards: ['Kilter Board Homewall', ...otherBoards.map((board) => board.name)].join('|') },
+        capture,
+        [board, wrongExactType, ...otherBoards],
+      ),
+    ).toThrow(/must resolve to kilter/);
+  });
+  it.each(['  marco’S  BOARD  ', 'MarcosBoard', 'marco', '  kilter Board HOMEWALL ', 'Kilter Board'])(
+    'accepts the native primary selector form %s',
+    (selector) => {
+      expect(readIosCampaignPrimaryCapture(fixture(), selector, [board]).board.uuid).toBe(board.uuid);
+    },
+  );
+  it('ignores lower matching tiers while validating every identity in the winning tier', () => {
+    const broaderName = { ...board, uuid: 'invalid', name: "Marco's Board in the shed", boardType: 'tension' };
+    expect(readIosCampaignPrimaryCapture(fixture(), "Marco's Board", [broaderName, board]).board.uuid).toBe(board.uuid);
+    const broaderLayoutName = {
+      ...broaderName,
+      name: 'Kilter Board Homewall in the shed',
+      layoutName: 'Kilter Board Homewall in the shed',
+    };
+    expect(
+      readIosCampaignPrimaryCapture(fixture(), 'Kilter Board Homewall', [broaderLayoutName, board]).board.uuid,
+    ).toBe(board.uuid);
+    const broaderLayout = { ...broaderName, name: 'Unrelated', layoutName: 'A Marco wall' };
+    expect(readIosCampaignPrimaryCapture(fixture(), 'Marco', [broaderLayout, board]).board.uuid).toBe(board.uuid);
+    const invalidExactLayout = { ...broaderLayout, layoutName: 'Marco' };
+    expect(() => readIosCampaignPrimaryCapture(fixture(), 'Marco', [board, invalidExactLayout])).toThrow(/genuine/);
+  });
+  it.each(['Marcos Board', 'Kilter Board Homewall', 'Marco', 'Homewall'])(
+    'rejects distinct identities selected in the same winning tier: %s',
+    (selector) => {
+      const another = { ...board, name: 'Marco’s Board', uuid: '11111111-1111-4111-8111-111111111111' };
+      expect(() => readIosCampaignPrimaryCapture(fixture(), selector, [board, another])).toThrow(/ambiguous/);
+    },
+  );
+  it.each(['', '   ', '!!!', 'Missing layout'])('rejects selectors without native candidates: %s', (selector) => {
+    expect(() => readIosCampaignPrimaryCapture(fixture(), selector, [board])).toThrow(/genuine/);
+  });
   it('fails legacy iPad capture before building, retaining campaign, CPP and phone paths', () => {
     const ipads = resolveIosScreenshotDevices(parseArgs(['--devices', 'ipads']).devices);
     for (const fixtures of ['off', 'replay'] as const)

@@ -1,5 +1,6 @@
 import { SCREENSHOT_BOARDS } from './screenshot-mode';
 import { resolveScreenshotCppBoard, type ScreenshotCppBoardIdentity } from './screenshot-cpp-board-identity';
+import { matchScreenshotBoardCandidates } from './screenshot-board-matching';
 
 /**
  * Which of the account's boards a screenshot slot renders.
@@ -32,18 +33,6 @@ export type ScreenshotSelectableBoard = {
 };
 
 /**
- * Letters and digits only, lowercased.
- *
- * A selector is typed by a human into a workflow input or a constant, and the
- * name it has to hit was typed by a human into the app. "Marco's Board",
- * "Marcos Board" and a curly apostrophe all name the same wall, and a capture
- * that fails over the punctuation helps nobody.
- */
-function looseKey(value: string | null | undefined): string {
-  return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-
-/**
  * Match one selector against the roster.
  *
  * Name first so a personal wall ("Marco's Board") wins over a stock layout that
@@ -56,15 +45,7 @@ export function matchScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   boards: readonly Board[],
   selector: string,
 ): Board | null {
-  const wanted = looseKey(selector);
-  if (!wanted) return null;
-  return (
-    boards.find((board) => looseKey(board.name) === wanted) ??
-    boards.find((board) => looseKey(board.layoutName) === wanted) ??
-    boards.find((board) => looseKey(board.name).includes(wanted)) ??
-    boards.find((board) => looseKey(board.layoutName).includes(wanted)) ??
-    null
-  );
+  return matchScreenshotBoardCandidates(boards, selector)[0] ?? null;
 }
 
 /**
