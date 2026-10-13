@@ -91,7 +91,12 @@ export function readinessServerReachable(): boolean {
 }
 
 /** The exact detached child script, also exercised without opening a socket in tests. */
-export function buildReadinessServerScript(): string {
+export function buildReadinessServerScript(cppCountBackendPort?: number): string {
+  if (
+    cppCountBackendPort !== undefined &&
+    (!Number.isSafeInteger(cppCountBackendPort) || cppCountBackendPort < 1 || cppCountBackendPort > 65535)
+  )
+    throw new Error('CPP count backend requires a real local port');
   return [
     `const http = require('http');`,
     `const fs = require('fs');`,
@@ -102,6 +107,19 @@ export function buildReadinessServerScript(): string {
     `  const url = new URL(request.url || '/', 'http://localhost');`,
     `  if (url.pathname.startsWith('/cpp/')) {`,
     `    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress)) { response.writeHead(403); response.end(); return; }`,
+    ...(cppCountBackendPort === undefined
+      ? []
+      : [
+          `    if (url.pathname === '/cpp/grade-count') {`,
+          `      const sequence = Number(url.searchParams.get('sequence')); const locale = url.searchParams.get('locale');`,
+          `      const valid = () => Number.isSafeInteger(sequence) && sequence > 0 && sequence === cppCommand.sequence && sequence === cppAcknowledged && cppCommand.scene === 'search-grade' && ['en-US', 'es', 'fr', 'de'].includes(locale);`,
+          `      const sendCount = (status, body) => { if (!response.destroyed) { response.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}); response.end(JSON.stringify(body)); } };`,
+          `      if (!valid()) { sendCount(409, {error:'CPP grade count scene, sequence or locale differs'}); return; }`,
+          `      const deadline = Date.now() + 8000;`,
+          `      const poll = async () => { try { if (!valid()) { sendCount(409, {error:'CPP grade count scene changed'}); return; } const upstream = await fetch('http://127.0.0.1:${cppCountBackendPort}/__screenshot-backend/cpp-grade-count?locale=' + encodeURIComponent(locale), {signal:AbortSignal.timeout(2000)}); if (upstream.ok) { const body = await upstream.json(); if (!valid()) { sendCount(409, {error:'CPP grade count scene changed'}); return; } sendCount(200, {...body, sequence, locale}); return; } } catch {} if (response.destroyed) return; if (Date.now() >= deadline) { sendCount(409, {error:'CPP exact grade count proof unavailable'}); return; } setTimeout(poll, 100); };`,
+          `      void poll(); return;`,
+          `    }`,
+        ]),
     `    if (url.pathname === '/cpp/set') {`,
     `      const scene = url.searchParams.get('scene');`,
     `      if (!cppScenes.has(scene)) { response.writeHead(400); response.end(); return; }`,
@@ -137,10 +155,10 @@ export function buildReadinessServerScript(): string {
  * 0.0.0.0 so the simulator reaches it over IPv4 the same way it reaches Metro.
  * Truncates the log first; kill the returned process in a finally.
  */
-export function startReadinessServer(): ChildProcess {
+export function startReadinessServer(cppCountBackendPort?: number): ChildProcess {
   writeFileSync(READINESS_LOG_PATH, '');
   writeFileSync(SMOKE_PING_LOG_PATH, '');
-  const serverCode = buildReadinessServerScript();
+  const serverCode = buildReadinessServerScript(cppCountBackendPort);
   const server = spawn(process.execPath, ['-e', serverCode], { stdio: 'ignore', detached: true });
   // Don't let the child keep the orchestrator's event loop alive at exit.
   server.unref();

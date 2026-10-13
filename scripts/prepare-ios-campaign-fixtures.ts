@@ -13,6 +13,7 @@ import {
 import { readCppPage, isCppTarget } from './lib/screenshot-cpp';
 import { createCppPhotoRefreshDownloader } from './lib/cpp-photo-refresh';
 import { createTransport, resolveBootstrapUpstream } from './bootstrap-cpp-scenario';
+import { assertCppGradeCountProof } from './lib/cpp-grade-count';
 
 export interface AuthorizedCampaignWall {
   wallUuid: string;
@@ -261,6 +262,7 @@ async function main(): Promise<void> {
   const fixtures = manifest.graphql.map(
     (entry) => JSON.parse(readFileSync(join(source, entry.file), 'utf8')) as GraphqlFixtureFile,
   );
+  assertCppGradeCountProof(manifest, fixtures);
   let authorizedWalls: AuthorizedCampaignWall[];
   if (cpp) authorizedWalls = authorizedCppWallsFromRecording(manifest, fixtures);
   else if (wallSelection === '--walls') {

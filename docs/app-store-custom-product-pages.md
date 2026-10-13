@@ -49,6 +49,17 @@ manufacturer affiliation or endorsement.
 
 ## Genuine capture data comes first
 
+The catalogue count can change after bootstrap. Recording derives the grade-filter
+count from the actual recorded response to the exact native query and variables,
+then waits for that literal localized count and the selected grade controls. Its
+response key, hashes, timestamp and count proof stay with the recording, raw
+capture and prepared candidate. Replay verifies that immutable proof and waits
+for its fixed count. A changed count for the same query within one recording
+fails capture; other queries retain the existing first-response rule. When
+shards disagree, `--on-conflict newest` derives only the count and its proof from
+the genuine winning response. Every other capture and provenance field must
+still agree.
+
 The current default-listing campaign fixture contains seven board families; it
 does not prove the three variants required by each CPP. No CPP fixture reference
 is pinned until its actual recorded data has been verified. Missing coverage

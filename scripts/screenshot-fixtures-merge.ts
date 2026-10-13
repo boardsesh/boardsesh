@@ -38,6 +38,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { listFixtureFiles, readScreenshotFixtureManifest, MANIFEST_FILENAME } from './lib/screenshot-backend';
+import { assertCppGradeCountProof, bindCppGradeCountProof } from './lib/cpp-grade-count';
 import {
   DEFAULT_SCREENSHOT_FIXTURES_DIR,
   canonicalJson,
@@ -77,6 +78,8 @@ export interface FixtureSetForMerge {
    * test that doesn't care about it) can omit it.
    */
   graphqlRecordedAt?: ReadonlyMap<string, string>;
+  /** Actual count/roster documents for narrowly verified CPP count reconciliation. */
+  cppCountFixtures?: readonly GraphqlFixtureFile[];
 }
 
 /**
@@ -286,10 +289,25 @@ export function mergeFixtureSets(
   assertProvenanceAgrees(fixtureSets);
   const onConflict = options.onConflict ?? 'fail';
   const capture = fixtureSets.find((fixtureSet) => fixtureSet.manifest.capture)?.manifest.capture;
+  const captureIdentity = (scenario: ScreenshotFixtureManifest['capture']) => {
+    if (!scenario?.cpp?.scenes.search?.gradeFilter) return scenario;
+    const normalized = structuredClone(scenario);
+    normalized.cpp!.scenes.search.gradeFilter = {
+      ...normalized.cpp!.scenes.search.gradeFilter!,
+      expectedCount: 0,
+      proof: undefined,
+    };
+    return normalized;
+  };
   const approvedTestUserIds = fixtureSets.find((fixtureSet) => fixtureSet.manifest.approvedTestUserIds?.length)
     ?.manifest.approvedTestUserIds;
   for (const fixtureSet of fixtureSets) {
-    if (fixtureSet.manifest.capture && canonicalJson(fixtureSet.manifest.capture) !== canonicalJson(capture)) {
+    if (fixtureSet.manifest.capture?.cpp?.scenes.search?.gradeFilter)
+      assertCppGradeCountProof(fixtureSet.manifest, fixtureSet.cppCountFixtures ?? []);
+    if (
+      fixtureSet.manifest.capture &&
+      canonicalJson(captureIdentity(fixtureSet.manifest.capture)) !== canonicalJson(captureIdentity(capture))
+    ) {
       throw new Error(`fixture sets have conflicting capture scenarios (${fixtureSet.label}).`);
     }
     if (
@@ -354,6 +372,27 @@ export function mergeFixtureSets(
 
   const sources = new Map<string, string>();
   for (const [file, { label }] of [...graphqlEntries, ...staticEntries]) sources.set(file, label);
+  let mergedCapture = capture;
+  if (capture?.cpp?.scenes.search?.gradeFilter) {
+    const mergedCountFixtures = [...graphqlEntries.values()]
+      .filter(({ entry }) => ['GetMyBoards', 'SearchClimbsCount'].includes(entry.operationName))
+      .map(({ entry, label }) => {
+        const source = fixtureSets.find((fixtureSet) => fixtureSet.label === label);
+        const fixture = source?.cppCountFixtures?.find(
+          (candidate) =>
+            candidate.operationName === entry.operationName &&
+            candidate.variablesHash === entry.variablesHash &&
+            candidate.documentHash === entry.documentHash,
+        );
+        if (!fixture || graphqlFixtureContentHash(fixture) !== source?.contentHashes.get(entry.file))
+          throw new Error('Merged CPP grade count fixture differs from its genuine source');
+        return fixture;
+      });
+    mergedCapture = bindCppGradeCountProof(
+      { ...firstSet, capture, graphql: [...graphqlEntries.values()].map(({ entry }) => entry) },
+      mergedCountFixtures,
+    ).capture;
+  }
 
   return {
     manifest: sortManifestEntries({
@@ -365,7 +404,7 @@ export function mergeFixtureSets(
       accountUserId: firstSet.accountUserId,
       ...(approvedTestUserIds ? { approvedTestUserIds: [...approvedTestUserIds].sort() } : {}),
       flow: firstSet.flow,
-      ...(capture ? { capture } : {}),
+      ...(mergedCapture ? { capture: mergedCapture } : {}),
       graphql: [...graphqlEntries.values()].map(({ entry }) => entry),
       static: [...staticEntries.values()].map(({ entry }) => entry),
     }),
@@ -494,10 +533,12 @@ function readFixtureSet(dir: string): FixtureSetForMerge {
   if (!manifest) throw new Error(`${dir} holds no ${MANIFEST_FILENAME} — it is not a recorded fixture set.`);
   const contentHashes = new Map<string, string>();
   const graphqlRecordedAt = new Map<string, string>();
+  const cppCountFixtures: GraphqlFixtureFile[] = [];
   for (const file of listFixtureFiles(dir)) {
     if (file === MANIFEST_FILENAME) continue;
     if (file.startsWith('graphql/')) {
       const fixture = JSON.parse(readFileSync(join(dir, file), 'utf8')) as GraphqlFixtureFile;
+      if (['GetMyBoards', 'SearchClimbsCount'].includes(fixture.operationName)) cppCountFixtures.push(fixture);
       // Each graphql fixture's own recordedAt, for the belt-and-braces
       // frozenNow re-check in mergeFixtureSets AND for --on-conflict newest —
       // not in the manifest entry itself, only the file.
@@ -512,7 +553,7 @@ function readFixtureSet(dir: string): FixtureSetForMerge {
       contentHashes.set(file, sha256File(join(dir, file)));
     }
   }
-  return { label: dir, manifest, contentHashes, graphqlRecordedAt };
+  return { label: dir, manifest, contentHashes, graphqlRecordedAt, cppCountFixtures };
 }
 
 export function main(argv: readonly string[] = process.argv.slice(2)): number {

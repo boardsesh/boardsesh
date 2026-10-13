@@ -32,6 +32,15 @@ import { Kind, parse } from 'graphql';
 import { createCppWsRecording, type CppWsOperation } from './cpp-ws-recording';
 import { isCppTarget, readCppPage } from './screenshot-cpp';
 import {
+  assertCppGradeCountProof,
+  bindCppGradeCountProof,
+  cppGradeCountKey,
+  cppRecordedCountSelector,
+  readCppCountFixtures,
+  resolveCppGradeCountProof,
+} from './cpp-grade-count';
+import { formatCppUpstreamDiagnostic } from './cpp-upstream-diagnostics';
+import {
   isCampaignPushRegistration,
   isCampaignWallConfirmation,
   replayCampaignSessionResponse,
@@ -579,25 +588,65 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       sendJson(response, 200, { errors: [{ message: 'Screenshot recording is bound to a different account' }] });
       return;
     }
-    const upstreamResponse = await fetch(`${upstreamUrl}/graphql`, {
-      method: 'POST',
-      headers: { ...forwardableHeaders(request.headers), 'content-type': 'application/json' },
-      // Sent as text, not the Buffer: both bodies here are JSON, and `fetch`'s
-      // BodyInit does not accept a Node Buffer under the DOM lib.
-      body: rawBody.toString('utf8'),
-    });
-    const responseText = await upstreamResponse.text();
-    const contentType = upstreamResponse.headers.get('content-type') ?? 'application/json; charset=utf-8';
-    response.writeHead(upstreamResponse.status, {
-      'content-type': contentType,
-      'content-length': Buffer.byteLength(responseText),
-    });
-    response.end(responseText);
-
-    persistRecordedResponse(parsedBody, responseText, upstreamResponse.status, bearerToken);
+    const diagnosticKey =
+      manifest.flow === 'app-store-cpp'
+        ? graphqlFixtureKey(
+            {
+              operationName: resolveOperationName(parsedBody) ?? 'anonymous',
+              query: typeof parsedBody.query === 'string' ? parsedBody.query : '',
+              variables: parsedBody.variables,
+            },
+            sha256Hex,
+          )
+        : null;
+    const startedAt = Date.now();
+    const diagnose = (
+      phase: 'fetch-error' | 'body-error' | 'client-closed' | 'response',
+      status?: number,
+      error?: unknown,
+    ): void => {
+      if (diagnosticKey)
+        log(formatCppUpstreamDiagnostic({ ...diagnosticKey, phase, elapsedMs: Date.now() - startedAt, status, error }));
+    };
+    const clientClosed = (): void => {
+      if (!response.writableFinished) diagnose('client-closed');
+    };
+    if (diagnosticKey) response.on('close', clientClosed);
+    try {
+      let upstreamResponse: Response;
+      try {
+        upstreamResponse = await fetch(`${upstreamUrl}/graphql`, {
+          method: 'POST',
+          headers: { ...forwardableHeaders(request.headers), 'content-type': 'application/json' },
+          // Sent as text, not the Buffer: fetch's DOM BodyInit excludes Buffer.
+          body: rawBody.toString('utf8'),
+        });
+      } catch (error: unknown) {
+        diagnose('fetch-error', undefined, error);
+        throw error;
+      }
+      let responseText: string;
+      try {
+        responseText = await upstreamResponse.text();
+      } catch (error: unknown) {
+        diagnose('body-error', upstreamResponse.status, error);
+        throw error;
+      }
+      diagnose('response', upstreamResponse.status);
+      const contentType = upstreamResponse.headers.get('content-type') ?? 'application/json; charset=utf-8';
+      response.writeHead(upstreamResponse.status, {
+        'content-type': contentType,
+        'content-length': Buffer.byteLength(responseText),
+      });
+      response.end(responseText);
+      persistRecordedResponse(parsedBody, responseText, upstreamResponse.status, bearerToken);
+    } finally {
+      if (diagnosticKey) response.off('close', clientClosed);
+    }
   };
 
   /** HTTP and CPP WS share every credential, identity, privacy and provenance guard. */
+  let cppGradeCountFailed = false;
   const persistRecordedResponse = (
     parsedBody: Record<string, unknown>,
     responseText: string,
@@ -667,6 +716,64 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     const key = graphqlFixtureKey({ operationName, query, variables: parsedBody.variables }, sha256Hex);
     const indexKey = `${key.operationName}\n${key.variablesHash}`;
+    let exactCppGradeCount = false;
+    const incomingCountInput = (
+      parsedBody.variables as { input?: { minGrade?: unknown; maxGrade?: unknown } } | undefined
+    )?.input;
+    const selectedGradeRange = manifest.capture?.cpp?.scenes.search?.gradeFilter;
+    if (
+      key.operationName === 'SearchClimbsCount' &&
+      manifest.flow === 'app-store-cpp' &&
+      selectedGradeRange &&
+      incomingCountInput?.minGrade === selectedGradeRange.minGradeId &&
+      incomingCountInput?.maxGrade === selectedGradeRange.maxGradeId
+    ) {
+      try {
+        const countFixtures = readCppCountFixtures(fixturesDir, manifest);
+        const expected = cppGradeCountKey(manifest, countFixtures);
+        exactCppGradeCount = expected.variablesHash === key.variablesHash;
+        if (exactCppGradeCount) {
+          const candidate: GraphqlFixtureFile = {
+            formatVersion: SCREENSHOT_FIXTURE_FORMAT_VERSION,
+            ...key,
+            query,
+            variables: parsedBody.variables ?? {},
+            response: responseBody,
+            status,
+            recordedAt: new Date().toISOString(),
+            upstream: upstreamUrl!,
+          };
+          const prospective = {
+            ...manifest,
+            graphql: [
+              ...manifest.graphql.filter(
+                (entry) => entry.operationName !== key.operationName || entry.variablesHash !== key.variablesHash,
+              ),
+              { ...key, file: graphqlFixturePath(key.operationName, key.variablesHash) },
+            ],
+          };
+          const proof = resolveCppGradeCountProof(prospective, [
+            ...countFixtures.filter(
+              (fixture) => fixture.variablesHash !== key.variablesHash || fixture.operationName !== key.operationName,
+            ),
+            candidate,
+          ]);
+          if (
+            graphqlIndex.has(indexKey) &&
+            resolveCppGradeCountProof(manifest, countFixtures).totalCount !== proof.totalCount
+          )
+            throw new Error('changed exact count');
+        }
+      } catch {
+        cppGradeCountFailed = true;
+        emit({
+          event: 'upstream-error',
+          operationName: key.operationName,
+          detail: 'cpp-exact-grade-count-provenance-or-count-changed',
+        });
+        return;
+      }
+    }
     if (graphqlIndex.has(indexKey)) {
       // FIRST WINS. A capture calls the same query many times; re-recording on
       // every call would make the fixture set depend on scroll timing.
@@ -754,6 +861,8 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     };
     manifest.graphql.push(entry);
     graphqlIndex.set(indexKey, entry);
+    if (exactCppGradeCount)
+      manifest.capture = bindCppGradeCountProof(manifest, readCppCountFixtures(fixturesDir, manifest)).capture;
     recordedAtInstants.push(fixture.recordedAt);
     recorded += 1;
     emit({
@@ -1354,6 +1463,25 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     if (method === 'GET' && pathname === '/__screenshot-backend/status') {
       sendJson(response, 200, currentStats());
+      return;
+    }
+    if (method === 'GET' && pathname === '/__screenshot-backend/cpp-grade-count') {
+      if (!isRecording || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? '')) {
+        sendJson(response, 403, { error: 'CPP grade count is restricted to local recording' });
+        return;
+      }
+      try {
+        if (cppGradeCountFailed) throw new Error('Count changed during recording');
+        const fixtures = readCppCountFixtures(fixturesDir, manifest);
+        assertCppGradeCountProof(manifest, fixtures);
+        const proof = resolveCppGradeCountProof(manifest, fixtures);
+        sendJson(response, 200, {
+          proof,
+          selector: cppRecordedCountSelector(proof.totalCount, requestUrl.searchParams.get('locale') ?? ''),
+        });
+      } catch {
+        sendJson(response, 409, { error: 'CPP exact grade count proof is unavailable' });
+      }
       return;
     }
 

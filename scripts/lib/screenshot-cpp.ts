@@ -56,7 +56,16 @@ export interface CppSceneCoverage {
     minGradeId: number;
     maxGradeId: number;
     expectedCount: number;
+    proof?: CppGradeCountProof;
   };
+}
+export interface CppGradeCountProof {
+  file: string;
+  documentHash: string;
+  variablesHash: string;
+  recordedAt: string;
+  responseSha256: string;
+  totalCount: number;
 }
 export interface CppHeroClimb {
   boardId: string;
