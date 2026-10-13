@@ -29,7 +29,8 @@ import {
   cppGradeFilterSelectors,
   cppMirrorSelectors,
   cppClimbListErrorSelectors,
-  renderCppMaestroFlow,
+  renderCppMaestroFlow as renderCppMaestroFlowWithoutProof,
+  cppLogbookAttemptsCommands,
   renderMaestroFlowForIosDevice,
   deviceSlug,
   IOS_SCREENSHOT_DEVICES,
@@ -38,6 +39,19 @@ import {
 } from '../mobile-screenshots';
 import { parseFrameArguments } from '../frame-screenshots';
 import { buildReadinessServerScript } from '../lib/metro-dev-server';
+
+function logbookProof(coverage: CppCaptureCoverage) {
+  return {
+    target: 'moonboard' as const,
+    ascentId: coverage.scenes.logbook.ascentId!,
+    variablesHash: 'a'.repeat(64),
+    responseSha256: 'b'.repeat(64),
+  };
+}
+function renderCppMaestroFlow(...args: Parameters<typeof renderCppMaestroFlowWithoutProof>) {
+  if (args[0] === 'moonboard' && !args[4] && args[2]) args[5] ??= logbookProof(args[2]);
+  return renderCppMaestroFlowWithoutProof(...args);
+}
 
 const directories: string[] = [];
 const LOGBOOK_ASCENT_ID = '543c1c0c-3a22-4640-b30d-6cab80738bc3';
@@ -1072,7 +1086,9 @@ describe('custom product page captures', () => {
             return repeat?.times === 5;
           });
           expect(scrollIndex).toBeGreaterThan(0);
-          expect(steps[scrollIndex - 1]).toEqual({
+          expect(
+            steps[scrollIndex - (target === 'moonboard' ? cppLogbookAttemptsCommands(locale).length + 1 : 1)],
+          ).toEqual({
             extendedWaitUntil: { visible: { id: 'logbook-screen' }, timeout: 90000 },
           });
           expect(steps[scrollIndex]).toEqual({
@@ -2060,5 +2076,63 @@ describe('custom product page captures', () => {
         '/tmp/framed',
       ]),
     ).toThrow('iOS target');
+  });
+});
+
+describe('prepared MoonBoard native Attempts scene', () => {
+  it('requires a proof bound to the original ascent in replay, while original record scenes stay unfiltered', () => {
+    const { coverage } = scenario('moonboard');
+    expect(() => renderCppMaestroFlowWithoutProof('moonboard', IOS_SCREENSHOT_DEVICES[0], coverage)).toThrow(
+      'prepared genuine Attempts',
+    );
+    expect(() =>
+      renderCppMaestroFlowWithoutProof('moonboard', IOS_SCREENSHOT_DEVICES[0], coverage, 'en-US', false, {
+        ...logbookProof(coverage),
+        ascentId: 'another-ascent',
+      }),
+    ).toThrow();
+    const record = renderCppMaestroFlowWithoutProof('moonboard', IOS_SCREENSHOT_DEVICES[0], coverage, 'en-US', true);
+    expect(record).not.toContain(cppLogbookAttemptsCommands('en-US')[2]);
+  });
+  it('preserves an already-selected Attempts capsule on simulator retry without reopening its menu', () => {
+    const labels = { 'en-US': 'Attempts', es: 'Intentos', fr: 'Essais', de: 'Versuche' };
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const commands = parseAllDocuments(
+        `appId: test\n---\n${cppLogbookAttemptsCommands(locale).join('\n')}`,
+      )[1].toJS() as Record<string, unknown>[];
+      const first = commands[0].extendedWaitUntil as { visible: string };
+      const conditional = commands[2].runFlow as { when: { visible: string }; commands: unknown[] };
+      const final = commands.at(-1)!.extendedWaitUntil as { visible: string };
+      expect(new RegExp(first.visible).test(labels[locale])).toBe(true);
+      expect(new RegExp(conditional.when.visible).test(labels[locale])).toBe(false);
+      expect(new RegExp(final.visible).test(labels[locale])).toBe(true);
+      expect(commands.filter((command) => command.tapOn)).toEqual([]);
+      expect(commands[1]).toHaveProperty('extendedWaitUntil.notVisible');
+      expect(commands.at(-2)).toHaveProperty('extendedWaitUntil.notVisible');
+    }
+  });
+  it('uses actual localized native menu labels on every device and keeps the exact ascent gate afterward', () => {
+    const { coverage } = scenario('moonboard');
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const)
+      for (const device of IOS_SCREENSHOT_DEVICES) {
+        const source = renderCppMaestroFlow('moonboard', device, coverage, locale);
+        const commands = cppLogbookAttemptsCommands(locale);
+        const row = cppLogbookReadinessSelector(
+          coverage.scenes.logbook.readyText,
+          locale,
+          coverage.scenes.logbook.ascentId,
+        );
+        const logbookStart = source.indexOf('id: logbook-screen');
+        const gate = source.indexOf(JSON.stringify(row.id), logbookStart);
+        for (const command of commands) {
+          expect(source.indexOf(command, logbookStart)).toBeGreaterThan(logbookStart);
+          expect(source.indexOf(command, logbookStart)).toBeLessThan(gate);
+        }
+        const steps = parseAllDocuments(source)[1].toJS() as Record<string, unknown>[];
+        expect(steps).toContainEqual({
+          extendedWaitUntil: { visible: { id: row.id, text: row.text }, timeout: 90000 },
+        });
+        expect(source.indexOf('takeScreenshot: 03-logbook', gate)).toBeGreaterThan(gate);
+      }
   });
 });

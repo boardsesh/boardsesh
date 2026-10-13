@@ -11,6 +11,7 @@ import { CPP_BOOTSTRAP_PROFILE_QUERY, createTransport, resolveBootstrapUpstream 
 import { createScreenshotBackend, readScreenshotFixtureManifest } from './screenshot-backend';
 import { isCppClimbId, isCppTarget, readCppPage, type CppBoard } from './screenshot-cpp';
 import { assertCppGradeCountProof } from './cpp-grade-count';
+import { resolveCppLogbookRead, assertCppLogbookResponse, assertCppLogbookAttemptsReady } from './cpp-logbook-coverage';
 import { isCppWallConfirmation } from './screenshot-campaign-session';
 import {
   canonicalJson,
@@ -442,7 +443,16 @@ export async function withCppDetailCoverage<T>(
   const manifest = readManifest(input);
   if (!manifest) throw new Error('CPP detail recording manifest is missing');
   const fixtures = readFixtures(input, manifest);
-  const reads = resolveCppDetailReads(manifest, fixtures);
+  const detailReads = resolveCppDetailReads(manifest, fixtures);
+  const logbookRead = resolveCppLogbookRead(manifest, fixtures);
+  const reads = [...detailReads, ...(logbookRead ? [logbookRead] : [])];
+  const existingLogbook =
+    logbookRead &&
+    fixtures.find(
+      (fixture) =>
+        fixture.operationName === logbookRead.operationName && fixture.variablesHash === logbookRead.variablesHash,
+    );
+  if (existingLogbook) assertCppLogbookResponse(manifest, fixtures, existingLogbook);
   if (manifest.static.some((entry) => lstatSync(join(input, entry.file)).size !== entry.bytes))
     throw new Error('CPP detail source static bytes differ from their manifest');
   const upstream = resolveBootstrapUpstream(options.upstream);
@@ -522,8 +532,11 @@ export async function withCppDetailCoverage<T>(
           candidate.operationName === expected.operationName && candidate.variablesHash === expected.variablesHash,
       );
       if (!fixture) throw new Error('CPP detail response was not recorded');
-      assertDetailResponse(fixture, expected);
+      if (expected.operationName === 'GetUserGroupedAscentsFeed')
+        assertCppLogbookResponse(completed, completedFixtures, fixture);
+      else assertDetailResponse(fixture, expected);
     }
+    assertCppLogbookAttemptsReady(completed, completedFixtures);
     const {
       graphql: _originalGraphql,
       recordedAt: _originalAt,
@@ -571,7 +584,9 @@ export async function withCppDetailCoverage<T>(
     )
       throw new Error('CPP detail recorder changed source identity, scope or clock provenance');
     assertOriginalFiles(input, recording, originalHashes);
-    options.log?.(`CPP detail coverage verified: ${reads.length} exact native reads.`);
+    options.log?.(
+      `CPP detail coverage verified: ${detailReads.length} exact native reads${logbookRead ? ' plus one genuine MoonBoard Attempts page' : ''}.`,
+    );
     return await prepare(recording);
   } finally {
     try {

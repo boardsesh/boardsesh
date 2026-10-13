@@ -11,6 +11,7 @@ import * as snapshots from '../lib/screenshot-fixture-snapshot';
 import * as records from '../prepare-retained-cpp-record';
 import * as readiness from '../lib/screenshot-cpp';
 import * as detailCoverage from '../lib/cpp-detail-coverage';
+import * as logbookCoverage from '../lib/cpp-logbook-coverage';
 import * as capture from '../mobile-screenshots';
 import {
   createReplayClient,
@@ -435,6 +436,7 @@ describe('replay pixels and reviewed byte binding', () => {
     vi.spyOn(snapshots, 'ensureScreenshotFixtures').mockResolvedValue(fixtureRoot);
     vi.spyOn(records, 'verifyRetainedCppSource').mockReturnValue(manifest);
     vi.spyOn(detailCoverage, 'resolveCppDetailReads').mockReturnValue([]);
+    vi.spyOn(logbookCoverage, 'assertCppLogbookAttemptsReady').mockReturnValue(undefined);
     vi.spyOn(capture, 'readIosCampaignBoards').mockReturnValue([]);
     vi.spyOn(readiness, 'assertCppCaptureReady').mockImplementation(() => {});
     for (const artifact of source.artifacts)
@@ -509,6 +511,12 @@ describe('replay pixels and reviewed byte binding', () => {
     vi.spyOn(records, 'verifyRetainedCppSource').mockReturnValue(completeManifest);
     vi.spyOn(detailCoverage, 'resolveCppDetailReads').mockReturnValue(reads);
     expect(() => verifyReplayFixture(fixtureRoot, target)).toThrow('failed source, native replay');
+    expect(readiness.assertCppCaptureReady).not.toHaveBeenCalled();
+  });
+  it('requires current genuine MoonBoard Attempts coverage before accepting retained replay bytes', () => {
+    const source = preparedSource();
+    vi.mocked(logbookCoverage.assertCppLogbookAttemptsReady).mockRestore();
+    expect(() => verifyReplayFixture(join(source.options.repoRoot, 'fixtures'), target)).toThrow('MoonBoard logbook');
     expect(readiness.assertCppCaptureReady).not.toHaveBeenCalled();
   });
   it('runs current board/scene readiness even after structural fixture verification succeeds', () => {

@@ -10,6 +10,7 @@ import { assertCppScreenshots } from './assert-cpp-screenshots';
 import { readIosCampaignBoards } from './mobile-screenshots';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
 import { resolveCppDetailReads } from './lib/cpp-detail-coverage';
+import { assertCppLogbookAttemptsReady } from './lib/cpp-logbook-coverage';
 import { extractArtifactZip } from './mobile-ota-stable-artifacts';
 import { RETAINED_CPP_DEVICES, verifyRetainedCppSource } from './prepare-retained-cpp-record';
 import { listFixtureFiles } from './lib/screenshot-backend';
@@ -310,6 +311,7 @@ export function verifyReplayFixture(directory: string, target: CppTarget): Scree
     );
     if (matches.length !== 1) return fail();
   }
+  assertCppLogbookAttemptsReady(manifest, fixtures);
   assertCppGradeCountProof(manifest, readCppCountFixtures(directory, manifest));
   const page = readCppPage(target);
   const selectors = manifest.capture?.boards;

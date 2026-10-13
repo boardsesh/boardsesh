@@ -52,6 +52,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { assertCppLogbookAttemptsReady, type CppLogbookAttemptsProof } from './lib/cpp-logbook-coverage';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
@@ -414,6 +415,7 @@ export interface ScreenshotOptions {
   shutdown: boolean;
   cpp?: CppSelection | null;
   cppCoverage?: CppCaptureCoverage;
+  cppLogbookAttempts?: CppLogbookAttemptsProof;
   cppRecordedBoards?: CppRecordedBoard[];
   cppFixtureSha256?: string;
   cppScenarioFile?: string;
@@ -2023,6 +2025,29 @@ export function cppLogbookReadinessSelector(
   };
 }
 
+/** Select the real native menu; the original row gate still follows these steps. */
+export function cppLogbookAttemptsCommands(locale: Locale): string[] {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'you.json'), 'utf8'),
+  ) as {
+    mobile: { logbook: { capsules: { status: string }; status: { attempts: string; all: string } } };
+  };
+  const labels = catalog.mobile.logbook;
+  const status = `^${cppReadinessSelector(labels.capsules.status)}$`;
+  const attempts = `^${cppReadinessSelector(labels.status.attempts)}$`;
+  const all = `^${cppReadinessSelector(labels.status.all)}$`;
+  const restingOrAttempts = `^(?:${cppReadinessSelector(labels.capsules.status)}|${cppReadinessSelector(labels.status.attempts)})$`;
+  // The simulator preserves logbook preferences between retries/locales. An
+  // already selected Attempts capsule needs no tap; never toggle back to All.
+  return [
+    `- extendedWaitUntil:\n    visible: ${JSON.stringify(restingOrAttempts)}\n    timeout: 30000`,
+    `- extendedWaitUntil:\n    notVisible: ${JSON.stringify(all)}\n    timeout: 30000`,
+    `- runFlow:\n    when:\n      visible: ${JSON.stringify(status)}\n    commands:\n      - tapOn: ${JSON.stringify(status)}\n      - extendedWaitUntil:\n          visible: ${JSON.stringify(all)}\n          timeout: 30000\n      - tapOn: ${JSON.stringify(attempts)}`,
+    `- extendedWaitUntil:\n    notVisible: ${JSON.stringify(all)}\n    timeout: 30000`,
+    `- extendedWaitUntil:\n    visible: ${JSON.stringify(attempts)}\n    timeout: 30000`,
+  ];
+}
+
 /** The native badge exists only for integer counts above one. */
 function cppFrameCountReadinessSelector(locale: Locale): string {
   const catalog = JSON.parse(
@@ -2151,8 +2176,19 @@ export function renderCppMaestroFlow(
   coverage?: CppCaptureCoverage,
   locale: Locale = 'en-US',
   recordFixtures = false,
+  logbookAttempts?: CppLogbookAttemptsProof,
 ): string {
   if (!coverage || coverage.target !== target) throw new Error(`Missing CPP content gates for ${target}`);
+  if (
+    target === 'moonboard' &&
+    !recordFixtures &&
+    (!logbookAttempts ||
+      logbookAttempts.target !== target ||
+      logbookAttempts.ascentId !== coverage.scenes.logbook.ascentId ||
+      !/^[a-f0-9]{64}$/.test(logbookAttempts.variablesHash) ||
+      !/^[a-f0-9]{64}$/.test(logbookAttempts.responseSha256))
+  )
+    throw new Error('MoonBoard replay requires the prepared genuine Attempts page');
   const page = readCppPage(target);
   const ipad = isIpadScreenshotDevice(device);
   const navigation = cppRuntimeNavigationCommands(page, coverage, []);
@@ -2309,6 +2345,7 @@ export function renderCppMaestroFlow(
       const rowSelector = cppLogbookReadinessSelector(scene.ready, locale, coverage.scenes.logbook.ascentId);
       commands.push(
         '- extendedWaitUntil:\n    visible:\n      id: logbook-screen\n    timeout: 90000',
+        ...(target === 'moonboard' && !recordFixtures ? cppLogbookAttemptsCommands(locale) : []),
         // Maestro 2.6.1 has no scrollUntilVisible parent/max-swipes options.
         // A bounded loop swipes only from the real FlashList and stops once
         // this verified ascent's composite accessibility row is visible.
@@ -2576,6 +2613,7 @@ export function renderedFlowFileForIosDevice(
       options.cppCoverage,
       locale,
       options.fixtures === 'record',
+      options.cppLogbookAttempts,
     );
   writeFileSync(renderedFlowFile, renderMaestroFlowForIosDevice(source, screenshotDevice));
   return renderedFlowFile;
@@ -3689,8 +3727,18 @@ function runIos(options: ScreenshotOptions): number {
       };
       options.boards = selectors.join('|');
       options.cppRecordedBoards = readIosCampaignBoards(fixturesDir) as CppRecordedBoard[];
-      if (options.fixtures === 'replay' && manifest)
+      if (options.fixtures === 'replay' && manifest) {
         assertCppGradeCountProof(manifest, readCppCountFixtures(fixturesDir, manifest));
+        options.cppLogbookAttempts = assertCppLogbookAttemptsReady(
+          manifest,
+          manifest.graphql.map(
+            (entry) =>
+              JSON.parse(
+                readFileSync(join(fixturesDir, entry.file), 'utf8'),
+              ) as import('./lib/screenshot-fixtures').GraphqlFixtureFile,
+          ),
+        );
+      }
       if (options.fixtures === 'replay')
         assertCppCaptureReady(
           options.cpp,

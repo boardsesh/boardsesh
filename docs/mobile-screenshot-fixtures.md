@@ -41,6 +41,26 @@ and FullSync item, and canonical primary-board search evidence. Hero provenance
 is checked separately. Unrelated queue items never expand this scope.
 Explicitly empty spray wall editor scenes are skipped.
 
+MoonBoard preparation also records exactly one native grouped-logbook query for
+**Status → Attempts**: the same screenshot account, `boardType: moonboard`,
+`statusMode: attempt`, `flashOnly: false`, recent descending, limit 20, offset 0.
+The original both-status response must already contain the selected primary
+attempt. The returned primary ascent must remain identical, with the same UUID,
+climb, board geometry, timestamp, status and note. The entire filtered page comes
+from the authenticated server through the recorder; preparation never filters or
+constructs its rows. Wrong accounts, changed primary entries, malformed pages,
+credentials and collisions block the new candidate. Other CPP targets receive
+no logbook read.
+
+The original four-device native records remain unfiltered and retain their
+original attribution. A prepared MoonBoard replay requires the exact validated
+Attempts response before it can use the native localized Status menu. It selects
+Attempts, waits for the menu to close, and then uses the unchanged exact primary
+ascent row gate. The prepared proof is derived from the recorded response, outside
+the unchanged capture scenario and retained receipt. It does not authorize a
+record-mode image upload: all 16 native replay shards and independent image review
+still follow, including review of any other genuine attempt notes in the page.
+
 To prepare a retained CPP recording without repeating valid native captures,
 dispatch `cpp_record_run_id` with one target, `cpp_action=capture`,
 `fixtures=record`, `locales=en-US`, `flow=app-store`, and `gate=full`.
