@@ -6,7 +6,7 @@ import {
   type AuroraBoardName,
   USER_TABLES,
 } from '../../api-wrappers/aurora/types';
-import { eq, and, inArray, asc, sql } from 'drizzle-orm';
+import { eq, and, inArray, asc } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
 import { resolveUpstreamPlaylistWrite, upstreamPlaylistSkipLogLine } from '@boardsesh/sync-runtime';
@@ -218,18 +218,10 @@ export async function upsertTableData(
             isDraft: true,
             isListed: false,
             createdAt: item.created_at || new Date().toISOString(),
-            // A draft is returned to its owner alone, so the import stamps the
-            // Boardsesh account it runs for and never replaces an owner already
-            // on the row. Same policy as the daemon's draft import.
-            userId: nextAuthUserId || null,
           })
           .onConflictDoUpdate({
             target: climbsSchema.uuid,
-            // Only a stored draft is written over: a published climb is never
-            // taken back to a draft by this page.
-            setWhere: sql`${climbsSchema.isDraft} IS TRUE`,
             set: {
-              userId: sql`COALESCE(${climbsSchema.userId}, excluded.user_id)`,
               layoutId: Number(item.layout_id),
               setterId: Number(auroraUserId),
               setterUsername: item.setter_username || '',

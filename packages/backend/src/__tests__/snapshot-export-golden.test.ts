@@ -50,7 +50,6 @@ import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import {
-  discoverLayoutPairs,
   exportLayoutSnapshot,
   selectDeletionReplayBoundary,
   vacuumArtifactFile,
@@ -504,36 +503,15 @@ describe('board-snapshot export ↔ live pull parity', () => {
     });
     await insertClimb({
       uuid: 'c2',
-      name: 'Plain Problem',
+      name: 'Draft Problem',
       description: null,
-      isDraft: false,
-      isListed: true,
+      isDraft: true,
+      isListed: false,
       compatibleSizeIds: [5],
       requiredSetIds: null,
       characteristics: null,
       frames: null,
       updatedAt: '2026-05-01T00:00:01.5Z', // fractional seconds
-    });
-    // A draft and an unlisted climb nobody owns. Each has one reader, its
-    // owner, and has none: so both are in neither path, and neither are their
-    // stats rows.
-    await insertClimb({
-      uuid: 'c-draft',
-      name: 'Draft Problem',
-      isDraft: true,
-      isListed: false,
-      compatibleSizeIds: [5],
-      frames: 'p901r15',
-      updatedAt: '2026-05-01T00:00:03Z',
-    });
-    await insertClimb({
-      uuid: 'c-unlisted',
-      name: 'Unlisted Problem',
-      isDraft: false,
-      isListed: false,
-      compatibleSizeIds: [5],
-      frames: 'p902r15',
-      updatedAt: '2026-05-01T00:00:03.5Z',
     });
     await insertClimb({
       uuid: 'c3',
@@ -572,15 +550,6 @@ describe('board-snapshot export ↔ live pull parity', () => {
       ascensionistCount: null,
       updatedAt: '2026-05-01T00:00:02Z',
     });
-    for (const climbUuid of ['c-draft', 'c-unlisted']) {
-      await insertStat({
-        climbUuid,
-        angle: 40,
-        displayDifficulty: 18,
-        ascensionistCount: 0,
-        updatedAt: '2026-05-01T00:00:04Z',
-      });
-    }
     // c3 deliberately has no stats — the stats table must still round-trip cleanly.
 
     // --- Path A: export core → SQLite artifact ---
@@ -611,26 +580,15 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(artifactClimbs).toEqual(pulledClimbs);
     expect(artifactStats).toEqual(pulledStats);
 
-    // Sanity: they actually carry the seeded data (not both empty), and the
-    // draft and the unlisted climb are in neither.
+    // Sanity: they actually carry the seeded data (not both empty).
     expect(artifactClimbs.map((row) => row.uuid)).toEqual(['c1', 'c2', 'c3']);
-    expect(artifactStats.map((row) => `${String(row.climb_uuid)}@${String(row.angle)}`)).toEqual([
-      'c1@40',
-      'c1@50',
-      'c2@40',
-    ]);
+    expect(artifactStats).toHaveLength(3);
     // Spot-check the tricky coercions landed as the manifest dictates.
     const c1 = artifactClimbs.find((row) => row.uuid === 'c1')!;
     expect(c1.is_draft).toBe(0);
     expect(c1.is_listed).toBe(1);
     expect(c1.is_hidden).toBe(1);
     expect(artifactClimbs.find((row) => row.uuid === 'c2')?.is_hidden).toBe(0);
-    // Every row an artifact carries is published and listed.
-    expect(artifactClimbs.map((row) => [row.is_draft, row.is_listed])).toEqual([
-      [0, 1],
-      [0, 1],
-      [0, 1],
-    ]);
     expect(c1.compatible_size_ids).toBe(JSON.stringify([5, 6]));
     expect(c1.characteristics).toBe(JSON.stringify(['crimpy', 'powerful']));
     expect(c1.updated_at).toBe('2026-05-01T00:00:00Z');
@@ -639,43 +597,41 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(c2.updated_at).toBe('2026-05-01T00:00:01.5Z');
   });
 
-  // Publication alone decides. An account's privacy settings, an item
-  // audience and a deleted account do not take a published, listed climb out
-  // of an artifact. What an artifact never carries is a name taken from
-  // somebody's logbook: the first-ascent pair is the stored upstream credit of
-  // a climb that never had a Boardsesh author, and NULL for every other climb.
-  it('carries every published, listed climb whoever set it, with first-ascent credit only for a climb with no Boardsesh author', async () => {
+  it('withholds authored climbs, FA names and grades from immutable public artifacts', async () => {
     await db.execute(
       sql`INSERT INTO users (id, name, email) VALUES (${USER_ID}, 'Private author', 'snapshot-private@example.test') ON CONFLICT DO NOTHING`,
     );
-    await db.execute(
-      sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${USER_ID}, true)
-          ON CONFLICT (user_id) DO UPDATE SET is_private = true`,
-    );
-    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
-    const climbUuids = ['imported-catalog', 'private-account', 'narrowed-audience', 'deleted-account'];
-    for (const uuid of climbUuids) {
-      await insertClimb({ uuid, compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
-      await insertStat({
-        climbUuid: uuid,
-        angle: 40,
-        faUsername: `Stored FA ${uuid}`,
-        faAt: '2023-01-01T00:00:00Z',
-        updatedAt: '2026-05-01T00:00:00Z',
-      });
-      await insertGrade({ climbUuid: uuid, angle: 40, computedAt: '2026-05-01T00:00:00Z' });
-    }
-    await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'private-account'`);
-    await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = 'deleted-account'`);
-    await db.execute(sql`
-      INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience) VALUES
-        ('climb', 'private-account', ${USER_ID}, 'only_me'),
-        ('climb', 'narrowed-audience', NULL, 'only_me')
-    `);
-
+    await insertClimb({ uuid: 'imported-catalog', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'authored-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'authored-private'`);
+    await insertClimb({ uuid: 'deleted-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'deleted-public', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = 'deleted-public'`);
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+      VALUES ('climb', 'deleted-private', NULL, 'only_me')`);
+    await insertStat({
+      climbUuid: 'imported-catalog',
+      angle: 40,
+      faUsername: 'Manufacturer FA',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertStat({
+      climbUuid: 'authored-private',
+      angle: 40,
+      faUsername: 'Private author',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertGrade({ climbUuid: 'authored-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
+    await insertStat({
+      climbUuid: 'deleted-private',
+      angle: 40,
+      faUsername: 'Deleted private author',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertGrade({ climbUuid: 'deleted-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
     const filePath = join(workDir, 'privacy-artifact.db');
     const gradesFilePath = join(workDir, 'privacy-grades.db');
-    await exportLayoutSnapshot({
+    const result = await exportLayoutSnapshot({
       sqlClient: createPool(),
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
@@ -684,25 +640,13 @@ describe('board-snapshot export ↔ live pull parity', () => {
       builtAt: BUILT_AT,
       stabilityWindowSeconds: 0,
     });
-    const sortedUuids = [...climbUuids].sort();
-    expect(readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS).map((row) => row.uuid)).toEqual(sortedUuids);
-    expect(readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS).map((row) => row.climb_uuid)).toEqual(
-      sortedUuids,
-    );
-    expect(
-      readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS).map((row) => [
-        row.climb_uuid,
-        row.fa_username,
-        row.fa_at,
-      ]),
-    ).toEqual([
-      // The account is gone and the climb remembers it had one.
-      ['deleted-account', null, null],
-      ['imported-catalog', 'Stored FA imported-catalog', '2023-01-01T00:00:00Z'],
-      // No owner and never authored here: the stored credit is the upstream one.
-      ['narrowed-audience', 'Stored FA narrowed-audience', '2023-01-01T00:00:00Z'],
-      ['private-account', null, null],
+    expect(readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS).map((row) => row.uuid)).toEqual([
+      'imported-catalog',
     ]);
+    expect(readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS).map((row) => row.fa_username)).toEqual([
+      'Manufacturer FA',
+    ]);
+    expect(result.grades).toBeUndefined();
   });
 
   it('records snapshot_meta watermarks equal to the max keyset cursor of the exported rows', async () => {
@@ -861,8 +805,8 @@ describe('board-snapshot export ↔ live pull parity', () => {
     await insertClimb({ uuid: 'old-2', compatibleSizeIds: [5], updatedAt: '2026-05-02T00:00:00Z' });
     // updated_at = now() → inside a 30s stability window.
     await db.execute(sql`
-      INSERT INTO board_climbs (uuid, board_type, layout_id, is_listed, compatible_size_ids, updated_at)
-      VALUES ('recent', ${BOARD_TYPE}, ${LAYOUT_ID}, true, '{5}'::int[], now())
+      INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, updated_at)
+      VALUES ('recent', ${BOARD_TYPE}, ${LAYOUT_ID}, '{5}'::int[], now())
     `);
 
     const filePath = join(workDir, 'artifact.db');
@@ -895,230 +839,6 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(climbMeta.row_count).toBe(2);
     expect(climbMeta.watermark_sync_seq).toBe(String(stableWatermarkRow.sync_seq));
     expect(Number(climbMeta.watermark_sync_seq)).toBeLessThan(Number(recentRow.sync_seq));
-  });
-});
-
-// The REFERENCE sync stream (#6306) is what a phone resumes from an artifact's
-// watermark. A row at or below the watermark that the stream carries and the
-// artifact does not is never delivered, and one the artifact carries and the
-// stream does not is never corrected. So the two must select the same rows —
-// they share one predicate (`publicReferenceClimbSql`), and this is the test
-// that fails if either side stops using it.
-describe('board-snapshot export ↔ REFERENCE stream', () => {
-  const OTHER_AUTHOR_ID = 'snapshot-export-other-author';
-
-  // The real resolvers again, asked for the REFERENCE stream only.
-  const referenceGraphqlFetch: typeof graphqlFetch = (query, variables) =>
-    graphqlFetch(query, { ...variables, audience: 'REFERENCE' });
-
-  async function pullInto(fetchPage: typeof graphqlFetch) {
-    const clientDb = createTestDatabase();
-    await runMigrations(clientDb);
-    await pullSync(clientDb, noopQueryClient(), fetchPage, { enabledBoards: [SCOPE_KEY] });
-    return {
-      climbs: await clientDb.getAllAsync<Record<string, unknown>>(
-        `SELECT ${CLIMB_COLUMNS.join(', ')} FROM board_climbs ORDER BY uuid`,
-      ),
-      stats: await clientDb.getAllAsync<Record<string, unknown>>(
-        `SELECT ${STATS_COLUMNS.join(', ')} FROM board_climb_stats ORDER BY climb_uuid, angle`,
-      ),
-      grades: await clientDb.getAllAsync<Record<string, unknown>>(
-        `SELECT ${GRADES_COLUMNS.join(', ')} FROM board_climb_grades ORDER BY climb_uuid, angle`,
-      ),
-    };
-  }
-
-  async function seedAuthors(): Promise<void> {
-    await db.execute(sql`
-      INSERT INTO users (id, name, email) VALUES
-        (${USER_ID}, 'Viewer', 'snapshot-viewer@example.test'),
-        (${OTHER_AUTHOR_ID}, 'Other author', 'snapshot-other-author@example.test')
-      ON CONFLICT DO NOTHING
-    `);
-    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
-  }
-
-  async function exportArtifact(artifactShape: SnapshotArtifactShape) {
-    const filePath = join(workDir, `reference-artifact-${artifactShape}.db`);
-    const gradesFilePath = join(workDir, `reference-grades-${artifactShape}.db`);
-    await exportLayoutSnapshot({
-      sqlClient: createPool(),
-      boardType: BOARD_TYPE,
-      layoutId: LAYOUT_ID,
-      filePath,
-      gradesFilePath,
-      builtAt: BUILT_AT,
-      stabilityWindowSeconds: 0,
-      artifactShape,
-    });
-    return {
-      climbs: readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS),
-      stats: readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS),
-      grades: readArtifactRows(gradesFilePath, 'board_climb_grades', GRADES_COLUMNS),
-    };
-  }
-
-  it.each([1, 2] as const)(
-    'carries exactly the rows a REFERENCE pull returns, column for column (artifact shape %i)',
-    async (artifactShape) => {
-      await seedAuthors();
-
-      // Every published, listed climb is a reference row, whoever set it. The
-      // first-ascent pair differs by class, so the fixture has one of each.
-      const climbUuids = [
-        'imported-a',
-        'imported-b',
-        'authored-by-viewer',
-        'authored-by-other',
-        'deleted-account',
-        'narrowed-audience',
-      ];
-      for (const uuid of climbUuids) {
-        await insertClimb({ uuid, name: uuid, compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
-        await insertStat({
-          climbUuid: uuid,
-          angle: 40,
-          displayDifficulty: 21.5,
-          ascensionistCount: 7,
-          faUsername: `Stored FA ${uuid}`,
-          faAt: '2023-01-01T00:00:00Z',
-          updatedAt: '2026-05-01T00:00:00Z',
-        });
-        await insertGrade({ climbUuid: uuid, angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
-      }
-      await insertStat({ climbUuid: 'imported-a', angle: 45, updatedAt: '2026-05-01T00:00:01.5Z' });
-      await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'authored-by-viewer'`);
-      await db.execute(sql`UPDATE board_climbs SET user_id = ${OTHER_AUTHOR_ID} WHERE uuid = 'authored-by-other'`);
-      await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = 'deleted-account'`);
-      await db.execute(sql`
-        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience) VALUES
-          ('climb', 'authored-by-other', ${OTHER_AUTHOR_ID}, 'only_me'),
-          ('climb', 'narrowed-audience', NULL, 'only_me')
-      `);
-
-      const artifact = await exportArtifact(artifactShape);
-      const reference = await pullInto(referenceGraphqlFetch);
-      expect(artifact.climbs).toEqual(reference.climbs);
-      expect(artifact.stats).toEqual(reference.stats);
-      expect(artifact.grades).toEqual(reference.grades);
-
-      const sortedUuids = [...climbUuids].sort();
-      expect(artifact.climbs.map((row) => row.uuid)).toEqual(sortedUuids);
-      expect(artifact.grades.map((row) => row.climb_uuid)).toEqual(sortedUuids);
-      // The whole first-ascent rule, on both paths at once: the stored credit
-      // of a climb that never had a Boardsesh author, and NULL for the rest.
-      expect(
-        reference.stats.map((row) => [`${String(row.climb_uuid)}@${String(row.angle)}`, row.fa_username, row.fa_at]),
-      ).toEqual([
-        ['authored-by-other@40', null, null],
-        ['authored-by-viewer@40', null, null],
-        ['deleted-account@40', null, null],
-        ['imported-a@40', 'Stored FA imported-a', '2023-01-01T00:00:00Z'],
-        ['imported-a@45', null, null],
-        ['imported-b@40', 'Stored FA imported-b', '2023-01-01T00:00:00Z'],
-        ['narrowed-audience@40', 'Stored FA narrowed-audience', '2023-01-01T00:00:00Z'],
-      ]);
-
-      // Nothing here is the viewer's alone, so the single-stream pull holds
-      // the same rows with the same values.
-      const singleStream = await pullInto(graphqlFetch);
-      expect(singleStream.climbs).toEqual(artifact.climbs);
-      expect(singleStream.stats).toEqual(artifact.stats);
-      expect(singleStream.grades).toEqual(artifact.grades);
-    },
-  );
-
-  // An artifact is a public file under a guessable key, read by anyone and kept
-  // by whoever downloaded it. A draft and an unlisted climb go to their owner
-  // alone, so neither may reach one, whoever set it and whatever else is true
-  // of the row.
-  it.each([1, 2] as const)(
-    'carries no draft and no unlisted climb, whoever set it: not the climb, not its stats, not its grades (artifact shape %i)',
-    async (artifactShape) => {
-      await seedAuthors();
-
-      const withheld: Array<{ uuid: string; isDraft: boolean; isListed: boolean; ownerId?: string; authored?: true }> =
-        [
-          // No owner. A manufacturer draft imported before the import stamped an
-          // owner looks like this.
-          { uuid: 'draft-no-owner', isDraft: true, isListed: false },
-          // Listed, as an upstream row can be while it is still a draft.
-          { uuid: 'draft-no-owner-listed', isDraft: true, isListed: true },
-          { uuid: 'draft-by-viewer', isDraft: true, isListed: false, ownerId: USER_ID },
-          { uuid: 'draft-by-other', isDraft: true, isListed: false, ownerId: OTHER_AUTHOR_ID },
-          { uuid: 'draft-deleted-account', isDraft: true, isListed: false, authored: true },
-          { uuid: 'unlisted-no-owner', isDraft: false, isListed: false },
-          { uuid: 'unlisted-by-viewer', isDraft: false, isListed: false, ownerId: USER_ID },
-          { uuid: 'unlisted-by-other', isDraft: false, isListed: false, ownerId: OTHER_AUTHOR_ID },
-          { uuid: 'unlisted-deleted-account', isDraft: false, isListed: false, authored: true },
-        ];
-      for (const climb of [{ uuid: 'published', isDraft: false, isListed: true }, ...withheld]) {
-        await insertClimb({
-          uuid: climb.uuid,
-          name: climb.uuid,
-          isDraft: climb.isDraft,
-          isListed: climb.isListed,
-          setterId: 42,
-          compatibleSizeIds: [5],
-          frames: 'p900r15',
-          updatedAt: '2026-05-01T00:00:00Z',
-        });
-        await insertStat({
-          climbUuid: climb.uuid,
-          angle: 40,
-          displayDifficulty: 21.5,
-          ascensionistCount: 3,
-          faUsername: `Stored FA ${climb.uuid}`,
-          updatedAt: '2026-05-01T00:00:00Z',
-        });
-        await insertGrade({ climbUuid: climb.uuid, angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
-      }
-      for (const climb of withheld) {
-        if (climb.ownerId) {
-          await db.execute(sql`UPDATE board_climbs SET user_id = ${climb.ownerId} WHERE uuid = ${climb.uuid}`);
-        }
-        if (climb.authored) {
-          await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = ${climb.uuid}`);
-        }
-      }
-
-      const artifact = await exportArtifact(artifactShape);
-      expect(artifact.climbs.map((row) => row.uuid)).toEqual(['published']);
-      expect(artifact.climbs.map((row) => [row.is_draft, row.is_listed])).toEqual([[0, 1]]);
-      expect(artifact.stats.map((row) => row.climb_uuid)).toEqual(['published']);
-      expect(artifact.grades.map((row) => row.climb_uuid)).toEqual(['published']);
-
-      // The stream a phone resumes from the artifact's watermark agrees, row for row.
-      const reference = await pullInto(referenceGraphqlFetch);
-      expect(reference.climbs).toEqual(artifact.climbs);
-      expect(reference.stats).toEqual(artifact.stats);
-      expect(reference.grades).toEqual(artifact.grades);
-
-      // And the fixture can tell: the viewer's own pull does hold their own
-      // draft and their own unlisted climb, and only theirs.
-      const ownAndPublished = ['draft-by-viewer', 'published', 'unlisted-by-viewer'];
-      const singleStream = await pullInto(graphqlFetch);
-      expect(singleStream.climbs.map((row) => row.uuid)).toEqual(ownAndPublished);
-      expect(singleStream.stats.map((row) => row.climb_uuid)).toEqual(ownAndPublished);
-      expect(singleStream.grades.map((row) => row.climb_uuid)).toEqual(ownAndPublished);
-    },
-  );
-
-  it.each([
-    { what: 'drafts', isDraft: true, isListed: true },
-    { what: 'unlisted climbs', isDraft: false, isListed: false },
-  ])('builds no artifact for a layout that holds nothing but $what', async ({ isDraft, isListed }) => {
-    await insertClimb({
-      uuid: 'the-only-climb',
-      isDraft,
-      isListed,
-      compatibleSizeIds: [5],
-      updatedAt: '2026-05-01T00:00:00Z',
-    });
-    // The layout is discovered through the same predicate the rows are read
-    // with, so a layout whose every climb is withheld is not a layout to export.
-    const pairs = await discoverLayoutPairs(createPool(), { boardType: BOARD_TYPE, layoutId: LAYOUT_ID });
-    expect(pairs).toEqual([]);
   });
 });
 
@@ -1311,8 +1031,8 @@ describe('board_climb_grades snapshot artifact', () => {
   it('scopes grades to the layout’s climbs — a grade for another layout never lands', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await db.execute(sql`
-      INSERT INTO board_climbs (uuid, board_type, layout_id, is_listed, compatible_size_ids, updated_at)
-      VALUES ('other-layout', ${BOARD_TYPE}, 99, true, '{5}'::int[], '2026-05-01T00:00:00Z'::timestamp)
+      INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, updated_at)
+      VALUES ('other-layout', ${BOARD_TYPE}, 99, '{5}'::int[], '2026-05-01T00:00:00Z'::timestamp)
     `);
     await insertGrade({ climbUuid: 'c1', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });
     await insertGrade({ climbUuid: 'other-layout', angle: 40, localGrade: 20, computedAt: '2026-05-01T00:00:00Z' });

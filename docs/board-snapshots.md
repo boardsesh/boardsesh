@@ -1885,199 +1885,21 @@ revert, no export change needed.
 
 ## Account privacy and snapshot rollout
 
-Public artifacts contain the published, listed climbs of every board type but spray,
-whoever set them, with their stats and grades, and imported beta without an
-account/tick/board association. No draft and no unlisted climb reaches an artifact:
-see [The publication rule](#the-publication-rule-6306) below.
-Numeric aggregate stats still include every eligible tick. First-ascent credit in an
-artifact is the stored upstream credit of a climb that never had a Boardsesh author,
-and NULL for every other climb; the authenticated live API serves the rest.
-Manifests use `formatVersion: 2` (including SQLite `snapshot_meta.format_version`;
-`snapshot_meta` has no privacy marker of its own). The URL namespace stays unchanged
-so installed format-1 clients see an unsupported contract and use their existing
-paged-sync fallback without an app update. The separate reference catalog manifest
-retains its own format version.
-
-Two stamps on every layout entry and grades block, in both artifact shapes, say
-different things:
-
-| Stamp | Says | Who reads it |
-| --- | --- | --- |
-| `publicationRule: 2` | The rows follow the publication rule. Absent on an artifact built before it, which left out every climb with a Boardsesh owner and could hold drafts and unlisted climbs that had none. | The export job only. An entry without it is rebuilt on the next run (`stale-privacy`), whatever its delta, and is never merged forward. |
-| `privacyVersion` | Which app builds may install the file. | Clients. Every shipped bundle installs `1` only and replays its sync from epoch after the import; the two-stream client (#6329) installs `2` only and resumes `REFERENCE` from the artifact's watermark. Either one takes the paged crawl for an entry it does not accept. |
-
-`privacyVersion` changes no row. The job stamps `1` unless `SNAPSHOT_PRIVACY_VERSION=2`
-is set on it, so shipped bundles keep installing artifacts, built under the rule,
-while #6329 rolls out. A file stamped `1` is safe for them: every row in it is a
-published, listed climb, which the live sync they replay hands every caller anyway.
-Set `SNAPSHOT_PRIVACY_VERSION=2` on the worker that runs the export family once
-#6329 is on the fleet; the next run rebuilds every entry with the new stamp, and
-the older bundles still in use take the paged crawl from then on. Anything but `1`,
-`2` or blank fails the run before it reads anything.
-
-### The publication rule (#6306)
-
-A climb that is published and listed is public. Sync and export give it to every
-caller, whoever set it: no account privacy setting, item audience, follow or
-deleted-account record is consulted. A draft goes to its owner alone, and so does an
-unlisted climb. The owner is the Boardsesh `user_id` on the row, so a draft or an
-unlisted climb with no owner goes to no one.
-
-"Published" is `is_draft IS NOT TRUE` and "listed" is `is_listed IS TRUE`. Both
-columns are nullable in the schema: NULL is not a draft, and only TRUE is listed.
-Written that way the test is never NULL, so its negation is its exact complement.
-One function holds it, `publicReferenceClimbSql` in
-`packages/db/src/queries/privacy.ts`, and four readers build their SQL from it: the
-per-layout export, the catalogue export (the aliases and beta links of a climb), the
-`REFERENCE` sync stream, and the trigger that tells devices a climb left the set. All
-of them take spray from `REFERENCE_EXCLUDED_BOARD_TYPES` in the same file.
-
-The rule covers sync and export. Search, climb pages, feeds and the other online
-reads still apply the account and item audience to a published climb; see
-[privacy.md](privacy.md#drafts).
-
-#### Sync audiences
-
-`syncClimbs`, `syncClimbStats` and `syncClimbGrades` take an optional
-`audience: SyncAudience` argument that splits a board's pull into two streams, each
-with its own cursor:
-
-| Audience | Rows | Depends on the viewer |
-| --- | --- | --- |
-| `REFERENCE` | Published, listed climbs, plus their stats and grades. Exactly the rows an artifact carries. | No |
-| `PROTECTED` | The caller's own climbs that are not published and listed (their drafts and their unlisted climbs), plus their stats and grades. | Yes |
-| omitted | Both, in one stream. What every client older than the split sends. | Yes |
-
-A climb hidden by moderation is still published and listed, so it is in `REFERENCE`
-with its `is_hidden` flag, as it is in the artifact.
-
-The partition rule: the two streams are disjoint, and together they are exactly the
-rows the same request returns with no audience. It holds by construction. With R the
-reference test and O "the caller owns the row", `PROTECTED` is `O AND NOT R` and the
-pull with no audience is `R OR O`. R is never NULL, and a NULL O (a row nobody owns)
-is selected by neither. `sync-publication-rule.test.ts` checks it for every viewer
-class, all three tables, and several scopes and page sizes.
-
-That is also what lets a phone resume `REFERENCE` from an artifact's watermark: a row
-at or below the watermark that the stream carried and the artifact did not would
-never be delivered. `snapshot-export-golden.test.ts` compares an artifact against a
-`REFERENCE` pull row for row and column for column, in both artifact shapes.
-
-Which of a caller's rows count as their own is decided in one function,
-`viewerEntitlementCondition` in the sync resolvers. `PROTECTED` and the pull with no
-audience both ask it, so a further entitlement is one more `OR` arm there.
-
-#### What a request with no audience returns now
-
-Every shipped client sends no audience. The request is unchanged and so is the shape
-of each document; which climbs it returns changed in two ways
-(`privacy-backwards-compatibility.test.ts` states both, per climb):
-
-- **Regained.** Published, listed climbs the earlier privacy check withheld from the
-  caller: those set by a private account the caller does not follow, and those
-  carrying a narrowed item audience. Their stats and grades come with them.
-- **Lost.** Drafts and unlisted climbs the caller does not own, including the ones
-  nobody owns. Their stats and grades go with them.
-
-The caller's own drafts and unlisted climbs are still returned. The first-ascent
-columns follow the rule below for every caller.
-
-#### Details that differ by stream
-
-- **Spray walls have no reference set.** `REFERENCE` answers an empty page for any
-  spray layout without checking who is asking, so it cannot reveal which walls exist.
-  `PROTECTED` on a wall is every climb the caller gets with no audience there, behind
-  the same by-layout gate as before.
-- **First-ascent credit.** One rule for the artifact, `REFERENCE` and the pull with
-  no audience (`referenceFirstAscentSql`): a stats row ships the stored `fa_username`
-  and `fa_at` when its climb has no Boardsesh owner and never had a Boardsesh author,
-  and NULL for both otherwise. On a climb with a Boardsesh author the name would come
-  from somebody's logbook, which stays under that person's privacy settings; an
-  artifact has no viewer and a device keeps what it synced. `PROTECTED` ships NULL
-  for both on every board type. No offline reader selects either column.
-- **Index.** `PROTECTED` finds the caller's climbs through
-  `board_climbs_user_export_idx (user_id, board_type) WHERE user_id IS NOT NULL`
-  (migration 0247). No index was added for it.
-- **Stats and grades.** A `PROTECTED` page is driven from the caller's own climbs:
-  collect them through the owner index, probe the reference table by primary key once
-  per climb, then sort and limit. The query fences that order with two `OFFSET 0`
-  subqueries, the second `LATERAL` to the first, so the planner is not left to find
-  it: walking the board's stats cursor index to return a caller's few rows passes the
-  whole board, and does so on every pull, because an empty page echoes its cursor and
-  a sparse stream's cursor therefore does not follow the table. On a spray wall, where
-  `PROTECTED` is dense, the page walks the cursor index like the other streams. Every
-  shape runs under the serial-plan guard.
-- **Cost.** The other two streams read the flags and the owner off the row they
-  already hold. No page looks anything up in the privacy tables.
-  `sync-audience-plan.test.ts` reads the plans of the statements the resolvers send,
-  and `sync-board-statements.test.ts` pins their text.
-
-#### What moves a climb between streams
-
-| Change | Row bumped | How it reaches a device |
-| --- | --- | --- |
-| Account made private or public, follow approved or removed, item audience changed | No | Nothing to deliver: no stream depends on any of them |
-| Published climb edited, or hidden by moderation | Yes | The ordinary delta of `REFERENCE` |
-| Draft published, or unlisted climb listed (here or upstream) | Yes | It enters `REFERENCE`, whose delta delivers it to everyone. Its stats and grades rows are moved to the climb's new cursor position, so they follow. The next artifact carries it |
-| Published climb becomes a draft or is unlisted (upstream, or a catalogue pass) | Yes | A `board_climbs` deletion marker for every device. Its owner's `PROTECTED` stream then delivers the row again, with its stats and grades. With no owner, nobody is sent it |
-| Draft or unlisted climb given an owner (the draft import, or the owner backfill) | Yes | It enters `PROTECTED` for its owner; its stats and grades move past their cursors too. Nobody else is sent it |
-| Published climb whose account is deleted | Yes | It stays in `REFERENCE`; the delta delivers the row with no owner |
-| Draft or unlisted climb whose account is deleted | Draft: deleted. Unlisted: yes | The draft is hard-deleted with the account. The unlisted climb has no owner left, so no stream carries it |
-| Climb hard-deleted | Tombstone | `syncDeletions`, whichever stream held it |
-
-A climb that gains or loses an owner while it stays published and listed changes
-nothing about who gets it.
-
-#### Leaving the reference set
-
-`trg_board_climbs_reference_membership` (migration `0270_climb_reference_membership`) fires when an update changes a protected owner or moves a
-climb across the line, in either direction, whichever writer made it.
-
-- **Leaving** writes one `sync_deletions` row for `board_climbs` with no user, so
-  every device applies it. No stream delivers the new row to anyone but its owner, and
-  without the marker every other device would keep the published copy. Bulk imports
-  that delete and recreate a board set `boardsesh.suppress_sync_tombstones`; the marker
-  honours it like the delete triggers do.
-- **The marker is stamped one second before the new row.** A device deletes a
-  row when `updated_at <= deletedAt`, so the marker removes every copy a device
-  pulled (each is at least a stability window older, and deployed windows are at
-  least two seconds) and never the owner's re-delivered row, even when a replay
-  of the deletion stream hands it over again. A copy read through MVCC while the
-  privatizing transaction is still open can be newer than that; the guard
-  migration that covers it ships one release later, together with the
-  `is_membership_withdrawal` flag it sets. This release adds the flag column and
-  the filter that omits a flagged marker for a viewer who can still read the
-  climb, before anything flags one. See
-  [sync-deletions-cutoff.md](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later).
-- **Losing access to a spray wall writes no marker.** A phone keeps the wall's
-  climbs it already synced until sign-out or an account switch: the app stopped
-  reacting to `privacyChanged` in #6411, and the server only stops sending that
-  wall anything new. Hard-delete markers retain their original delivery
-  behavior.
-- **Either direction** moves the climb's stats and grades rows to the climb's new
-  cursor position (`updated_at` / `computed_at` and a new `sync_seq`). They changed
-  stream with the climb and did not change themselves, so they sit behind every
-  cursor of the stream they are now in: behind the owner's when the climb leaves,
-  behind everyone's when it is published again. Both streams scope stats and grades
-  through the climb, so only callers who get the climb get them.
-- **No marker is written for the stats or grades rows.** `board_climb_grades` has none
-  anywhere, and a device applies one with no newer-row guard, so a late marker would
-  delete the owner's re-delivered grade. A device that applies the climb's marker
-  drops the climb and its holds-index entry. The climb's stats and grades rows stay
-  on the device with no climb to show them against, until the client in #6329
-  removes them with the climb.
-
-An ownerless climb gaining an owner writes no marker. When a protected climb loses or changes its owner, a marker is scoped to the former owner, and its stats and grades move to the new cursor position. `climb-reference-membership.test.ts` runs the real
-client engine against the real resolvers: other devices drop the climb, its owner
-keeps it on a device that had it and on a fresh install, a replay of the deletion
-stream does not remove it, and publishing it again delivers it to everyone.
-
-A device that pulled before the rule existed may hold drafts and unlisted climbs it
-does not own. The server cannot recall them; the client removes them once. An
-artifact built before the rule may hold such climbs where they had no owner. Those
-entries carry no `publicationRule`, so the first export after this ships rebuilds
-every one of them; the old files still have to be withdrawn from storage and
-caches (#6273).
+Public artifacts now contain only imported climbs with `user_id IS NULL`, their
+stats and grades, and imported beta without an account/tick/board association.
+Numeric aggregate stats still include every eligible tick. Manufacturer FA names
+remain intact; Boardsesh-owned climb FA is served by the authenticated live API.
+New manifests stamp `privacyVersion: 1` on layout and grades artifacts and use
+`formatVersion: 2` (including SQLite `snapshot_meta.format_version`). The URL
+namespace stays unchanged so installed format-1 clients see an unsupported
+contract and use their existing paged-sync fallback without an app update. They
+must not import the filtered dataset with their old high-watermark logic: that
+would permanently skip older authorized authored rows. The separate reference
+catalog manifest retains its own format version. Old entries
+are rebuilt and excluded from manifest merges until rebuilt. Clients reject older
+artifacts and replay live scope sync from epoch after import so the snapshot
+watermark cannot skip older authorized authored climbs. This temporarily duplicates
+reference downloads; a separate authored-content cursor can optimize it later.
 
 Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
 expire previously published layout, grades and catalog artifacts plus CDN copies.

@@ -1,9 +1,5 @@
-import {
-  climbReferenceVisibilityCondition,
-  climbVisibilityCondition,
-  privateSafeFirstAscentName,
-} from '@boardsesh/db/queries';
-import { canViewContent } from '../../../services/privacy';
+import { climbReferenceVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, canViewContent } from '../../../services/privacy';
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
 import { eq, and, gt, asc, inArray, sql } from 'drizzle-orm';
@@ -272,16 +268,7 @@ export const climbQueries = {
           and(
             eq(dbSchema.boardClimbs.boardType, boardType),
             eq(dbSchema.boardClimbs.uuid, validated.climbUuid),
-            // A draft target is readable by its owner alone: its neighbours and
-            // hold counts describe the draft.
-            climbVisibilityCondition(
-              {
-                uuid: dbSchema.boardClimbs.uuid,
-                userId: dbSchema.boardClimbs.userId,
-                isDraft: dbSchema.boardClimbs.isDraft,
-              },
-              ctx.userId,
-            ),
+            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId),
           ),
         )
         .limit(1);
@@ -597,13 +584,11 @@ export const climbQueries = {
       climb_uuid: climbUuid,
     });
 
-    const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
-    // A draft is returned to its owner alone, and a draft with no owner to no
-    // one. Checked before the audience: that check passes a public account's
-    // draft, and is skipped altogether for a climb nobody owns. `!climb.userId`
-    // first, so an anonymous viewer never "equals" a missing owner.
-    if (climb?.is_draft && (!climb.userId || climb.userId !== viewerUserId)) return null;
-    if (climb?.userId && !(await canViewContent(viewerUserId, 'climb', climbUuid, climb.userId))) return null;
+    if (
+      climb?.userId &&
+      !(await canViewContent(ctx.isAuthenticated ? ctx.userId : null, 'climb', climbUuid, climb.userId))
+    )
+      return null;
     return climb;
   },
 

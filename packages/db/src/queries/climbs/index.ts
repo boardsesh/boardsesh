@@ -87,20 +87,3 @@ export {
   type ClimbPopularityDb,
   type ClimbPopularityRefreshOptions,
 } from './climb-popularity';
-export {
-  CLIMB_OWNER_BACKFILL_BATCH_SIZE,
-  CLIMB_OWNER_BACKFILL_KINDS,
-  applyClimbOwnerAssignments,
-  backfillClimbOwners,
-  planClimbOwnerBackfill,
-  selectClimbOwnerAssignments,
-} from './climb-owner-backfill';
-export type {
-  ClimbOwnerAssignment,
-  ClimbOwnerBackfillCounts,
-  ClimbOwnerBackfillEvidence,
-  ClimbOwnerBackfillKind,
-  ClimbOwnerBackfillPlan,
-  ClimbOwnerBackfillResult,
-  ClimbOwnerBackfillScope,
-} from './climb-owner-backfill';

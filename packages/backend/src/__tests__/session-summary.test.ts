@@ -5,7 +5,7 @@ import { generateSessionHealthExport, generateSessionSummary } from '../graphql/
 // access predicates; the mock rows below represent their authorized results.
 vi.mock('../services/privacy', () => ({
   canAccessResource: vi.fn().mockResolvedValue(true),
-  climbVisibilityCondition: () => ({}),
+  contentVisibilityCondition: () => ({}),
 }));
 vi.mock('../graphql/resolvers/shared/activity-privacy', () => ({ tickPrivacyCondition: () => ({}) }));
 

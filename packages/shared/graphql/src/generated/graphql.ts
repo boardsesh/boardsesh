@@ -7155,24 +7155,17 @@ export type Query = {
   /**
    * Pull Boardsesh grades for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
-   * Optional audience returns the grades of that half of the climbs (see syncClimbs).
    */
   syncClimbGrades: SyncResult;
   /**
    * Pull board climb stats for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope stats to the climbs of that layout/size via board_climbs.
-   * Optional audience returns the stats of that half of the climbs (see syncClimbs).
    */
   syncClimbStats: SyncResult;
   /**
    * Pull board climbs for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a
    * downloaded board stays a fixed, cacheable superset. sizeId is ignored for moonboard.
-   *
-   * Optional audience splits the pull into two streams, each with its own cursor:
-   * REFERENCE and PROTECTED (see SyncAudience). Omit it for both in one stream,
-   * which is what clients older than the split send: every published, listed
-   * climb, plus the caller's own drafts and unlisted climbs.
    */
   syncClimbs: SyncResult;
   /** Pull hard deletions (user-scoped + reference data) since the cursor. */
@@ -7984,7 +7977,6 @@ export type QuerySyncClimbDocumentsArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbGradesArgs = {
-  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
@@ -7994,7 +7986,6 @@ export type QuerySyncClimbGradesArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbStatsArgs = {
-  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
@@ -8004,7 +7995,6 @@ export type QuerySyncClimbStatsArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbsArgs = {
-  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
@@ -10487,31 +10477,6 @@ export type SubscriptionQueueUpdatesArgs = {
 export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
-
-/**
- * Which half of a board's climbs a per-board pull returns. The two halves are
- * disjoint, and together they are exactly the rows the same pull returns with no
- * audience at all.
- *
- * Whichever way a pull asks, a published, listed climb is returned to every
- * caller, whoever set it. A draft or an unlisted climb is returned to its owner
- * alone, with its stats and grades, and one with no owner to no one.
- */
-export type SyncAudience =
-  /**
-   * The caller's own climbs that are not published and listed: their drafts and
-   * their unlisted climbs, plus their stats and grades. Stats rows carry no
-   * first-ascent name or date. For spray walls this is every climb the pull
-   * returns for the wall with no audience.
-   */
-  | 'PROTECTED'
-  /**
-   * The published, listed climbs, plus their stats and grades. The same rows for
-   * every caller, and the same rows the offline snapshot artifact carries. No
-   * account privacy setting or item audience applies. A climb hidden by
-   * moderation is included, with its flag. Always empty for spray walls.
-   */
-  | 'REFERENCE';
 
 /** Canonical saved-climb documents from one snapshot, without changing a pull cursor. */
 export type SyncClimbDocuments = {

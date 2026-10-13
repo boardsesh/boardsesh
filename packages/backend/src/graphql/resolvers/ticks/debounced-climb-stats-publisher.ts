@@ -155,9 +155,6 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
                 eq(dbSchema.boardClimbStats.boardType, boardType),
                 eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
                 eq(dbSchema.boardClimbStats.angle, angle),
-                // A draft's stats are its owner's alone, and this event goes to
-                // every subscriber of the layout. So a draft never broadcasts.
-                sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
               ),
             )
             .limit(1);

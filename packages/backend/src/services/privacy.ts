@@ -11,8 +11,6 @@ export {
   userActivityVisibilityCondition,
   contentVisibilityCondition,
   entityOwnerCondition,
-  climbDraftVisibilityCondition,
-  climbVisibilityCondition,
   resourceAccessCondition,
   resourceLocationCondition,
   sessionBoardLocationCondition,

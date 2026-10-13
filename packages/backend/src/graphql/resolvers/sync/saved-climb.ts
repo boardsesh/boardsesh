@@ -1,6 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
-import { referenceFirstAscentSql, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type { ConnectionContext, SyncClimbDocuments } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { requireAuthenticated } from '../shared/helpers';
@@ -58,8 +58,8 @@ const statsColumns = {
   ascensionist_count: sql<string | null>`${boardClimbStats.ascensionistCount}::text`,
   difficulty_average: boardClimbStats.difficultyAverage,
   quality_average: boardClimbStats.qualityAverage,
-  fa_username: sql.raw(referenceFirstAscentSql('board_climb_stats', 'fa_username')),
-  fa_at: sql.raw(referenceFirstAscentSql('board_climb_stats', 'fa_at')),
+  fa_username: boardClimbStats.faUsername,
+  fa_at: boardClimbStats.faAt,
   updated_at: sql<string>`${boardClimbStats.updatedAt}::text`,
   sync_seq: sql<string>`${boardClimbStats.syncSeq}::text`,
 };

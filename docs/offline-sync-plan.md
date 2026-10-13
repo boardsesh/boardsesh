@@ -503,47 +503,6 @@ type Query {
 }
 ```
 
-The block above is the original design. The per-board pulls have since gained
-arguments: `layoutId` and `sizeId` (see **Per-board selective sync** below),
-`syncClimbGrades`, and an optional `audience: SyncAudience` on `syncClimbs`,
-`syncClimbStats` and `syncClimbGrades`. The current signatures are in
-[`sync-table-manifest.md`](sync-table-manifest.md).
-
-`audience` splits a board's pull into two streams with separate cursors (#6306).
-Which climbs each carries follows the publication rule: a published, listed climb
-is public, and a draft or an unlisted climb goes to its owner alone.
-
-- `REFERENCE`: the published, listed climbs, plus their stats and grades. The
-  same rows for every viewer, and exactly the rows a snapshot artifact carries.
-  Whoever set the climb, and whatever that account's privacy settings are.
-  Always empty for spray walls.
-- `PROTECTED`: the caller's own climbs that are not published and listed (their
-  drafts and their unlisted climbs), plus their stats and grades. On a spray
-  wall, every climb the caller gets there with no audience.
-- omitted: both in one stream, which is what every client older than the split
-  sends.
-
-A draft or an unlisted climb with no owner is in no stream. So a device receives
-every published climb, its own account's drafts and unlisted climbs, and nobody
-else's.
-
-The partition rule is that the two streams are disjoint and together equal the
-pull with no audience. See
-[The publication rule](board-snapshots.md#the-publication-rule-6306) for the
-shared predicate and the query shapes.
-
-When a published climb becomes a draft or is unlisted, the server writes a
-global `board_climbs` deletion marker and moves the climb's stats and grades
-rows to the climb's new cursor position. The marker is stamped one second
-before the climb's new row, so every device drops the copies it pulled and the
-owner's device keeps the changed row it receives, on a replay too. Other
-devices delete their old copies. The server writes no marker for the stats or
-grades rows. An installed device drops the climb and its holds-index entry when
-it applies the marker; the climb's stats and grades rows stay on the device
-with no climb to show them against until the client in #6329 removes them with
-the climb. See
-[Leaving the reference set](board-snapshots.md#leaving-the-reference-set).
-
 Each resolver queries Postgres using the composite cursor:
 
 ```sql
@@ -774,7 +733,7 @@ Both manual entry points (**More → Sign out** and the user drawer's **Log out*
 
 ### Per-board selective sync
 
-User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. They and `syncClimbGrades` also take an optional `audience` (`REFERENCE` or `PROTECTED`) that splits the scope's rows into two disjoint streams; the client does not send it yet (see **Pull queries** above). Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
+User data (ticks, playlists, favorites, follows) syncs on native with no per-board opt-in. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor. They survive a forced sign-out (the rows do too) so the next sign-in doesn't re-crawl; an explicit sign-out deletes both (see **Sign-out and queued writes** above).
 
 **Turning the toggle off does not delete anything** — the rows and checkpoints are the expensive shared cache, so re-enabling resumes from the checkpoint instead of re-crawling. Reclaiming that disk space is a separate, explicit action: **More → Storage** (`StorageSettingsScreen`), which lists every scope that has rows (not just the enabled ones — a forced sign-out clears `syncEnabledBoards` while deliberately keeping the rows, and a kill-switch rollback leaves rows with the toggle unavailable, so "has rows, not enabled" is a real state, never an orphan to auto-reap). Removal goes through `removeOfflineBoard` (`packages/mobile/src/offline/remove-offline-board.ts`) → `removeBoardScopeData` (`@boardsesh/offline-sync`'s `sync/scope-teardown.ts`), which drops the scope's rows **and every `sync_meta` marker describing them in one exclusive transaction**: a surviving checkpoint would make the strict-`>` delta pull resume past the deleted rows and never revisit them, permanently gutting the catalog while `scope-complete:` still advertised it as whole. See that module's header for the full hazard list. A full `VACUUM` afterwards is what actually returns the pages to the filesystem (`db/vacuum.ts`).
 

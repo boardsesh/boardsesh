@@ -111,9 +111,6 @@ async function fetchClimbFromDb(
           AND climb_stats.board_type = ${boardName}
         WHERE climbs.board_type = ${boardName}
         AND climbs.layout_id = ${layoutId}
-        -- A draft is its owner's alone, and this read has no viewer: it backs
-        -- public pages and a cache keyed on the uuid. NULL is not a draft.
-        AND climbs.is_draft IS NOT TRUE
         limit 1
       `,
       remainingReadBudgetMs(),
@@ -248,14 +245,6 @@ async function fetchClimbStatsForAllAnglesFromDb(
     FROM board_climb_stats climb_stats
     WHERE climb_stats.board_type = ${boardName}
     AND climb_stats.climb_uuid = ${climbUuid}
-    -- A draft's stats are its owner's alone, like the draft, and this read has
-    -- no viewer. A stats row with no climb row is unaffected.
-    AND NOT EXISTS (
-      SELECT 1 FROM board_climbs draft_climb
-      WHERE draft_climb.board_type = climb_stats.board_type
-        AND draft_climb.uuid = climb_stats.climb_uuid
-        AND draft_climb.is_draft IS TRUE
-    )
     ORDER BY climb_stats.angle ASC
   `,
       remainingReadBudgetMs(),

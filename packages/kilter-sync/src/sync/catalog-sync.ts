@@ -299,19 +299,6 @@ export function decideIdentityRelist(
 // a systemic mapping break can't balloon the log.
 const UNMAPPED_SAMPLE_LIMIT = 10;
 
-/**
- * Whether a climb Kilter served on `/climbs/all` is catalogue data at all: on
- * the wall's list, published, and not deleted. Everything else is dropped before
- * it is staged, so the catalog sync never writes a draft: a draft is returned to
- * its owner alone, and a row written here has none (`user_id` is never set by
- * this sync). Pure + exported for unit testing.
- */
-export function isPublishedCatalogClimb(
-  climb: Pick<KilterCatalogClimb, 'isListed' | 'isDraft' | 'isDeleted'>,
-): boolean {
-  return climb.isListed && !climb.isDraft && !climb.isDeleted;
-}
-
 // A newly-ingested climb only fires "your setter posted a new climb" if it was
 // actually created upstream recently. Without this, any ingest that recovers a
 // backlog — like the multi-frame decoder landing in #3523, which picks up
@@ -1073,7 +1060,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
       now: groupStartedAt,
     };
     for (const climb of climbs) {
-      if (!isPublishedCatalogClimb(climb)) continue;
+      if (!climb.isListed || climb.isDraft || climb.isDeleted) continue;
       result.climbsSeen += 1;
       stageCatalogClimb(climb, context);
     }

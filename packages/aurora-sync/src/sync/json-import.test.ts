@@ -272,12 +272,10 @@ describe('buildImportedClimbRow', () => {
     expect(row.uuid.startsWith('json-import-climb-')).toBe(true);
   });
 
-  it('imports a draft as unlisted and draft, owned by the importing account', () => {
+  it('imports a draft as unlisted and draft', () => {
     const row = buildImportedClimbRow({ ...base, isDraft: true });
     expect(row.isListed).toBe(false);
     expect(row.isDraft).toBe(true);
-    // A draft is returned to its owner alone, so it must never be written without one.
-    expect(row.userId).toBe(USER_ID);
   });
 
   it('derives the no_match characteristic from an Aurora "No match" description', () => {

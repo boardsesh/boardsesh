@@ -57,23 +57,8 @@ export type SnapshotTableStats = {
  * checkpoints past rows it never imported.
  */
 export type SnapshotGradesArtifact = {
-  /**
-   * The marker a client filters artifacts on: each client build accepts exactly
-   * one value. Shipped bundles accept 1 and replay their sync from epoch after
-   * the import; the two-stream client (#6329) accepts 2 and resumes its
-   * `REFERENCE` stream from the artifact's watermark. The export job writes 1
-   * until `SNAPSHOT_PRIVACY_VERSION=2` is set on it, after that client is on the
-   * fleet. Which rows the file holds is `publicationRule`'s to say, not this.
-   */
-  privacyVersion?: 1 | 2;
-  /**
-   * Which rule the artifact's rows follow. 2 is the publication rule (#6306):
-   * published, listed climbs whoever set them, and no draft or unlisted climb.
-   * Absent on an artifact built before it, which held climbs with no Boardsesh
-   * owner, drafts and unlisted ones included. Export-job bookkeeping: it is
-   * how the job finds the files to rebuild. A client does not read it.
-   */
-  publicationRule?: number;
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
   key: string;
   url: string;
@@ -92,23 +77,8 @@ export type SnapshotGradesArtifact = {
 };
 
 export type SnapshotManifestEntry = {
-  /**
-   * The marker a client filters artifacts on: each client build accepts exactly
-   * one value. Shipped bundles accept 1 and replay their sync from epoch after
-   * the import; the two-stream client (#6329) accepts 2 and resumes its
-   * `REFERENCE` stream from the artifact's watermark. The export job writes 1
-   * until `SNAPSHOT_PRIVACY_VERSION=2` is set on it, after that client is on the
-   * fleet. Which rows the file holds is `publicationRule`'s to say, not this.
-   */
-  privacyVersion?: 1 | 2;
-  /**
-   * Which rule the artifact's rows follow. 2 is the publication rule (#6306):
-   * published, listed climbs whoever set them, and no draft or unlisted climb.
-   * Absent on an artifact built before it, which held climbs with no Boardsesh
-   * owner, drafts and unlisted ones included. Export-job bookkeeping: it is
-   * how the job finds the files to rebuild. A client does not read it.
-   */
-  publicationRule?: number;
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   /**
    * How this entry's SQLite files are laid out on disk, the layout artifact and
    * its grades sibling alike. Absent is shape 1: rowid tables in arrival order,

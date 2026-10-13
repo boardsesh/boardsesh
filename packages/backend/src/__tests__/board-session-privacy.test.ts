@@ -178,31 +178,6 @@ describe('board history identity', () => {
       hardestSend: { climbUuid: 'climb-1', grade: 'V8', sentByUserId: null, sentByDisplayName: null },
     });
   });
-  it('does not name a draft as the hardest send to anyone but its owner, and keeps every aggregate', async () => {
-    const stats: BoardPresenceStats = {
-      climbsSentCount: 20,
-      distinctClimbersCount: 4,
-      hardestGrade: 'V8',
-      hardestSend: {
-        climbUuid: 'climb-1',
-        grade: 'V8',
-        climbOwnerId: 'setter',
-        sentByUserId: null,
-        sentAt: display.sentAt,
-      },
-    };
-    // The account audience says yes (a public account), and it is still a draft.
-    readable.climbs = [{ uuid: 'climb-1', userId: 'setter', isListed: false, isDraft: true }];
-    expect(await redactBoardStats(stats, 'viewer', BOARD_ID)).toEqual({ ...stats, hardestSend: null });
-    expect(await redactBoardStats(stats, null, BOARD_ID)).toEqual({ ...stats, hardestSend: null });
-    expect((await redactBoardStats(stats, 'setter', BOARD_ID)).hardestSend?.climbUuid).toBe('climb-1');
-
-    // A draft nobody owns is nobody's, an anonymous viewer included.
-    readable.climbs = [{ uuid: 'climb-1', userId: null, isListed: false, isDraft: true }];
-    expect(
-      await redactBoardStats({ ...stats, hardestSend: { ...stats.hardestSend!, climbOwnerId: null } }, null, BOARD_ID),
-    ).toMatchObject({ climbsSentCount: 20, distinctClimbersCount: 4, hardestGrade: 'V8', hardestSend: null });
-  });
   it('hides retained private climb metadata after its author account is deleted', async () => {
     privacy.canViewContent.mockResolvedValue(false);
     const stats: BoardPresenceStats = {

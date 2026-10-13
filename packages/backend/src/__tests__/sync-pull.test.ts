@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
+import { toIso } from '../graphql/resolvers/sync/row-normalize';
 
 const USER_ID = 'sync-pull-user';
 const OTHER_USER_ID = 'sync-pull-other';
@@ -169,6 +171,105 @@ describe('syncDeletions — record_id encoding', () => {
     const otherResult = await callSyncDeletions(null, 500, OTHER_USER_ID);
     const leaked = otherResult.deletions.find((d) => d.recordId === 'kilter:scoped-del:40');
     expect(leaked).toBeUndefined();
+  });
+});
+
+// #6339's code was reverted but its migrations stay applied in production:
+// 0270's reference-membership trigger and 0272's stream_at stamp still fire
+// underneath these resolvers, and nothing reads stream_at or the 0273 flag.
+describe('syncDeletions with the applied #6339 migrations underneath it', () => {
+  const layoutId = 96339;
+
+  type MarkerRow = {
+    id: string;
+    user_id: string | null;
+    deleted_at: string;
+    stream_at: string | null;
+    is_membership_withdrawal: boolean;
+  };
+
+  const climbMarkers = async (climbUuid: string) =>
+    rowsFromResult<MarkerRow>(
+      await db.execute(sql`
+        SELECT id, user_id, deleted_at, stream_at, is_membership_withdrawal
+        FROM sync_deletions
+        WHERE table_name = 'board_climbs' AND record_id = ${climbUuid}
+        ORDER BY id
+      `),
+    );
+
+  // An hour old, like any copy a device has had time to pull.
+  const insertPublishedClimb = (climbUuid: string, ownerId: string | null, isDraft = false, isListed = true) =>
+    db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, user_id, updated_at)
+      VALUES (${climbUuid}, 'kilter', ${layoutId}, 'Reverted 6339', ${isListed}, ${isDraft}, ${ownerId},
+              now() - interval '1 hour')
+    `);
+
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM board_climbs WHERE board_type = 'kilter' AND layout_id = ${layoutId}`);
+  });
+
+  it('delivers an unlisting marker as an ordinary deletion and pages it on deleted_at', async () => {
+    const climbUuid = 'reverted-6339-unlisted';
+    await insertPublishedClimb(climbUuid, USER_ID);
+    await db.execute(sql`UPDATE board_climbs SET is_listed = false WHERE uuid = ${climbUuid}`);
+
+    const [marker] = await climbMarkers(climbUuid);
+    expect(marker.user_id).toBeNull();
+    expect(marker.is_membership_withdrawal).toBe(false);
+    expect(marker.stream_at).not.toBeNull();
+    // The two cursors disagree by at least the one-second backdate, so the
+    // assertion on the returned cursor below tells them apart.
+    expect(Date.parse(toIso(marker.stream_at)) - Date.parse(toIso(marker.deleted_at))).toBeGreaterThanOrEqual(1000);
+
+    const deletions = await callSyncDeletions(null, 500, OTHER_USER_ID);
+    expect(deletions.deletions).toEqual([
+      { tableName: 'board_climbs', recordId: climbUuid, deletedAt: toIso(marker.deleted_at) },
+    ]);
+    expect(deletions.cursor).toEqual({ updatedAt: toIso(marker.deleted_at), syncSeq: String(marker.id) });
+
+    // The owner's device drops its old copy, then pulls the new row back: it
+    // is newer than the marker, so the resurrection guard keeps it.
+    const climbs = (await syncQueries.syncClimbs(
+      undefined,
+      { boardType: 'kilter', layoutId, cursor: null, limit: 500 },
+      ctx(USER_ID),
+    )) as SyncResult;
+    const climb = (climbs.documents as Array<Record<string, unknown>>).find((document) => document.uuid === climbUuid);
+    expect(climb?.is_listed).toBe(false);
+    expect(Date.parse(String(climb?.updated_at))).toBeGreaterThan(Date.parse(toIso(marker.deleted_at)));
+  });
+
+  it('writes an owner-scoped marker when an unlisted climb changes owner, and the write still succeeds', async () => {
+    const climbUuid = 'reverted-6339-owner-change';
+    await insertPublishedClimb(climbUuid, USER_ID, false, false);
+    await db.execute(sql`UPDATE board_climbs SET user_id = ${OTHER_USER_ID} WHERE uuid = ${climbUuid}`);
+
+    const [marker] = await climbMarkers(climbUuid);
+    expect(marker.user_id).toBe(USER_ID);
+
+    const formerOwner = await callSyncDeletions(null, 500, USER_ID);
+    expect(formerOwner.deletions.map((deletion) => deletion.recordId)).toEqual([climbUuid]);
+    const newOwner = await callSyncDeletions(null, 500, OTHER_USER_ID);
+    expect(newOwner.deletions).toEqual([]);
+  });
+
+  it("continues from a cursor #6339's backend built from stream_at, without redelivering", async () => {
+    for (const climbUuid of ['stream-cursor-a', 'stream-cursor-b']) {
+      await db.execute(sql`
+        INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at, updated_at)
+        VALUES (${USER_ID}, 'kilter', ${climbUuid}, 40, now(), now())
+      `);
+      await db.execute(sql`DELETE FROM user_favorites WHERE user_id = ${USER_ID} AND climb_uuid = ${climbUuid}`);
+    }
+    const [first] = rowsFromResult<MarkerRow>(
+      await db.execute(sql`SELECT id, stream_at FROM sync_deletions ORDER BY id LIMIT 1`),
+    );
+    expect(first.stream_at).not.toBeNull();
+
+    const result = await callSyncDeletions({ updatedAt: toIso(first.stream_at), syncSeq: String(first.id) }, 500);
+    expect(result.deletions.map((deletion) => deletion.recordId)).toEqual(['kilter:stream-cursor-b:40']);
   });
 });
 

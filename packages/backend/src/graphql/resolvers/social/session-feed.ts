@@ -7,10 +7,10 @@ import {
   visibleActivityUserIdsByBoard,
   visibleBoardIdentityIds,
 } from '../../../services/privacy';
-import { eq, and, desc, sql, count as drizzleCount, isNull, isNotNull, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -251,13 +251,9 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
-          LEFT JOIN board_climbs cf_daily
-            ON cf_daily.uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
-            AND cf_daily.board_type = t.board_type
-            AND ${climbDraftVisibilityCondition({ isDraft: sql`cf_daily.is_draft`, userId: sql`cf_daily.user_id` }, viewerUserId)}
           LEFT JOIN board_climb_stats bcs
-            ON bcs.climb_uuid = cf_daily.uuid
-            AND bcs.board_type = cf_daily.board_type
+            ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
+            AND bcs.board_type = t.board_type
             AND bcs.angle = t.angle
           -- Logs outside any session the viewer can open, each one its author's
           -- to show: a log in somebody else's restricted session lands here too.
@@ -515,7 +511,7 @@ export async function getSessionFeed(
   ] = await Promise.all([
     fetchParticipantsBatch(sessionIds, filterOptions, viewerUserId),
     fetchDailyParticipantsBatch(dailyHighlightKeys, filterOptions, viewerUserId),
-    fetchGradeDistributionBatch(sessionIds, filterOptions, viewerUserId),
+    fetchGradeDistributionBatch(sessionIds, filterOptions),
     fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions, viewerUserId),
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
@@ -741,7 +737,6 @@ export const sessionFeedQueries = {
         and(
           sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
           eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
-          climbDraftVisibilityCondition(dbSchema.boardClimbs, viewerUserId),
         ),
       )
       .leftJoin(
@@ -754,8 +749,8 @@ export const sessionFeedQueries = {
       .leftJoin(
         dbSchema.boardClimbStats,
         and(
-          eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbStats.climbUuid),
-          eq(dbSchema.boardClimbs.boardType, dbSchema.boardClimbStats.boardType),
+          sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
+          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
           eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
         ),
       )
@@ -764,14 +759,11 @@ export const sessionFeedQueries = {
       // Tables are unaliased here, so pass their real names to the shared join.
       .leftJoin(
         dbSchema.boardClimbGrades,
-        and(
-          boardseshGradeTickJoin({
-            ticks: 'boardsesh_ticks',
-            grades: 'board_climb_grades',
-            aliases: 'board_climb_aliases',
-          }),
-          isNotNull(dbSchema.boardClimbs.uuid),
-        ),
+        boardseshGradeTickJoin({
+          ticks: 'boardsesh_ticks',
+          grades: 'board_climb_grades',
+          aliases: 'board_climb_aliases',
+        }),
       )
       .where(
         and(
@@ -1298,7 +1290,6 @@ function foldGradeDistributionRows(rows: GradeDistributionRow[]): Map<string, Se
 async function fetchGradeDistributionBatch(
   sessionIds: string[],
   { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
-  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (sessionIds.length === 0) return new Map();
 
@@ -1320,11 +1311,7 @@ async function fetchGradeDistributionBatch(
     -- Resolve a tick on a deduped-away alias UUID to the canonical, where its
     -- board_climb_stats row lives, so the consensus-grade fallback below works.
     LEFT JOIN board_climb_aliases bca ON bca.board_type = t.board_type AND bca.alias_uuid = t.climb_uuid
-    LEFT JOIN board_climbs cf_dist
-      ON cf_dist.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
-      AND cf_dist.board_type = t.board_type
-      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf_dist.is_draft`, userId: sql`cf_dist.user_id` }, viewerUserId)}
-    LEFT JOIN board_climb_stats bcs ON bcs.climb_uuid = cf_dist.uuid AND bcs.board_type = cf_dist.board_type AND bcs.angle = t.angle
+    LEFT JOIN board_climb_stats bcs ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid) AND bcs.board_type = t.board_type AND bcs.angle = t.angle
     WHERE t.session_id IN ${sql`(${sql.join(
       sessionIds.map((id) => sql`${id}`),
       sql`, `,
@@ -1581,15 +1568,12 @@ async function fetchTickHighlightsByUuid(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
-      -- A draft is its owner's alone. Same shape as the spray rule above: for
-      -- anyone else the climb's name, frames and setter come back NULL.
-      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf.is_draft`, userId: sql`cf.user_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
     LEFT JOIN board_climb_stats bcs
-      ON bcs.climb_uuid = cf.uuid
-      AND bcs.board_type = cf.board_type
+      ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
+      AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
     -- The board the tick was logged against, so renderBoard can draw the climb
     -- on the wall it was actually climbed on.
@@ -1598,7 +1582,6 @@ async function fetchTickHighlightsByUuid(
     -- ../shared/sql-expressions.ts, given this query's short aliases (t/bcg/bca).
     LEFT JOIN board_climb_grades bcg
       ON ${boardseshGradeTickJoin({ ticks: 't', grades: 'bcg', aliases: 'bca' })}
-      AND cf.uuid IS NOT NULL
     WHERE t.uuid IN ${sql`(${sql.join(
       tickUuids.map((uuid) => sql`${uuid}`),
       sql`, `,
@@ -1636,12 +1619,9 @@ async function fetchHardestSendsBatch(
         ) AS rank
       FROM boardsesh_ticks t
       LEFT JOIN board_climb_aliases bca_rank ON bca_rank.board_type = t.board_type AND bca_rank.alias_uuid = t.climb_uuid
-      LEFT JOIN board_climbs cf_rank
-        ON cf_rank.uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
-        AND cf_rank.board_type = t.board_type
       LEFT JOIN board_climb_stats bcs_rank
-        ON bcs_rank.climb_uuid = cf_rank.uuid
-        AND bcs_rank.board_type = cf_rank.board_type
+        ON bcs_rank.climb_uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
+        AND bcs_rank.board_type = t.board_type
         AND bcs_rank.angle = t.angle
       WHERE t.session_id IN ${sql`(${sql.join(
         sessionIds.map((id) => sql`${id}`),
@@ -1650,7 +1630,6 @@ async function fetchHardestSendsBatch(
         ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
-        AND (cf_rank.uuid IS NULL OR ${climbDraftVisibilityCondition({ isDraft: sql`cf_rank.is_draft`, userId: sql`cf_rank.user_id` }, viewerUserId)})
         -- In the ranking, not only in the hydrating join below: that join nulls
         -- the CLIMB's columns, and the tick row itself carries its uuid, climb
         -- uuid and comment. A send on a spray climb the viewer cannot see is not
@@ -1669,15 +1648,12 @@ async function fetchHardestSendsBatch(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
-      -- A draft is its owner's alone. Same shape as the spray rule above: for
-      -- anyone else the climb's name, frames and setter come back NULL.
-      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf.is_draft`, userId: sql`cf.user_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
     LEFT JOIN board_climb_stats bcs
-      ON bcs.climb_uuid = cf.uuid
-      AND bcs.board_type = cf.board_type
+      ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
+      AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
     -- The board the tick was logged against, so renderBoard can draw the climb
     -- on the wall it was actually climbed on.
@@ -1686,7 +1662,6 @@ async function fetchHardestSendsBatch(
     -- ../shared/sql-expressions.ts, given this query's short aliases (t/bcg/bca).
     LEFT JOIN board_climb_grades bcg
       ON ${boardseshGradeTickJoin({ ticks: 't', grades: 'bcg', aliases: 'bca' })}
-      AND cf.uuid IS NOT NULL
     WHERE ranked.rank = 1
   `);
 
@@ -1734,11 +1709,10 @@ async function fetchDailyGradeDistributionBatch(
       AND t.climbed_at::date = keys.day
       AND ${dailyCardTickSql('t', viewerUserId)}
     LEFT JOIN board_climb_aliases bca ON bca.board_type = t.board_type AND bca.alias_uuid = t.climb_uuid
-    LEFT JOIN board_climbs cf_dist
-      ON cf_dist.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
-      AND cf_dist.board_type = t.board_type
-      AND ${climbDraftVisibilityCondition({ isDraft: sql`cf_dist.is_draft`, userId: sql`cf_dist.user_id` }, viewerUserId)}
-    LEFT JOIN board_climb_stats bcs ON bcs.climb_uuid = cf_dist.uuid AND bcs.board_type = cf_dist.board_type AND bcs.angle = t.angle
+    LEFT JOIN board_climb_stats bcs
+      ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
+      AND bcs.board_type = t.board_type
+      AND bcs.angle = t.angle
     WHERE COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
       ${batchTickFilter}
     GROUP BY keys.session_id, t.board_type, diff_num

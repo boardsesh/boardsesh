@@ -39,30 +39,6 @@ beforeEach(async () => {
 });
 
 describe('saved climb canonical mirror', () => {
-  it.each(['current author', 'deleted author'] as const)(
-    'withholds stored first-ascent identity and date for a Boardsesh climb (%s)',
-    async (authorState) => {
-      await db.execute(sql`UPDATE board_climb_stats SET fa_username = 'Private first sender', fa_at = '2026-01-02'
-        WHERE climb_uuid = ${CLIMB_UUID}`);
-      if (authorState === 'deleted author') {
-        await db.execute(sql`UPDATE board_climbs SET user_id = NULL, is_boardsesh_authored = true
-          WHERE uuid = ${CLIMB_UUID}`);
-      }
-      const result = await syncClimbDocuments({}, scope, context(OWNER));
-      expect(result?.stats).toMatchObject([{ fa_username: null, fa_at: null }]);
-    },
-  );
-
-  it('keeps imported first-ascent credits for an unowned external climb', async () => {
-    await db.execute(sql`UPDATE board_climbs SET user_id = NULL, is_boardsesh_authored = false
-      WHERE uuid = ${CLIMB_UUID}`);
-    await db.execute(sql`UPDATE board_climb_stats SET fa_username = 'External first sender', fa_at = '2026-01-02'
-      WHERE climb_uuid = ${CLIMB_UUID}`);
-    const result = await syncClimbDocuments({}, scope, context(OWNER));
-    expect(result?.stats).toMatchObject([{ fa_username: 'External first sender' }]);
-    expect(result?.stats).toMatchObject([{ fa_at: expect.stringMatching(/^2026-01-02/) }]);
-  });
-
   it('returns fresh canonical climb and stats while an ordinary stable pull defers them', async () => {
     const page = await syncQueries.syncClimbs({}, { ...scope, limit: 500 }, context(SETTER));
     expect(page.documents).toEqual([]);

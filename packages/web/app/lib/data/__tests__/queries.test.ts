@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { getClimb, getClimbStatsForAllAngles } from '../queries';
+import { getClimb } from '../queries';
 import type { Climb } from '@/app/lib/types';
 
 /** `getClimb` resolves `null` for a genuinely missing row; these cases all expect a hit. */
@@ -268,47 +268,5 @@ describe('getClimb', () => {
     // rejection means "could not read" (500). Before this, dereferencing the
     // undefined row threw, and the page turned that throw into a 404 as well.
     expect(climb).toBeNull();
-  });
-
-  it('never selects a draft: the read has no viewer, so no owner to return one to', async () => {
-    mockSqlTag.mockResolvedValueOnce([{ ...canonicalRow9, uuid: 'published-uuid' }]);
-
-    await getClimb({
-      board_name: 'moonboard',
-      layout_id: 3,
-      size_id: 1,
-      set_ids: [1],
-      angle: 40,
-      climb_uuid: 'published-uuid',
-    });
-
-    const [queryStrings] = mockSqlTag.mock.calls[0];
-    const climbQueryText = Array.from(queryStrings as TemplateStringsArray).join(' ');
-    // On the selected row, after the alias hop, so an alias cannot lead to a
-    // draft either. NULL-safe: a NULL flag is not a draft and still resolves.
-    const selectedRowScope = climbQueryText.slice(climbQueryText.indexOf('INNER JOIN board_climbs climbs'));
-    expect(selectedRowScope).toContain('AND climbs.is_draft IS NOT TRUE');
-  });
-});
-
-describe('getClimbStatsForAllAngles', () => {
-  beforeEach(() => {
-    mockSqlTag.mockReset();
-  });
-
-  it('returns no stats for a draft climb, and still returns a stats row that has no climb row', async () => {
-    mockSqlTag.mockResolvedValueOnce([]);
-
-    await getClimbStatsForAllAngles('kilter', 'some-climb-uuid');
-
-    const [queryStrings] = mockSqlTag.mock.calls[0];
-    const statsQueryText = Array.from(queryStrings as TemplateStringsArray)
-      .join(' ')
-      .replace(/\s+/g, ' ');
-    // NOT EXISTS rather than a join: only a climb row that IS a draft removes
-    // the stats, so stats whose climb row is missing read as they did.
-    expect(statsQueryText).toContain(
-      'AND NOT EXISTS ( SELECT 1 FROM board_climbs draft_climb WHERE draft_climb.board_type = climb_stats.board_type AND draft_climb.uuid = climb_stats.climb_uuid AND draft_climb.is_draft IS TRUE )',
-    );
   });
 });

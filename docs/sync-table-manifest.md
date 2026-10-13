@@ -100,19 +100,11 @@ type Query {
   syncUserFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncSetterFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
-  syncClimbs(
-    boardType: String!
-    layoutId: Int
-    sizeId: Int
-    audience: SyncAudience
-    cursor: SyncCursorInput
-    limit: Int! = 500
-  ): SyncResult!
+  syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncClimbStats(
     boardType: String!
     layoutId: Int
     sizeId: Int
-    audience: SyncAudience
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
@@ -120,7 +112,6 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
-    audience: SyncAudience
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
@@ -168,7 +159,7 @@ Returned `cursor.syncSeq` is that value **stringified**. First call: `cursor` is
 `('1970-01-01T00:00:00.000Z', 0)` (a value the cursor validator accepts back — `'epoch'` would be rejected on replay).
 `hasMore = (rows.length === limit)`. The cursor `updatedAt` is the last row's `updated_at` ISO string.
 
-Document pages additionally exclude rows younger than the **stability window**
+Every page additionally excludes rows younger than the **stability window**
 (`updated_at < now() - 30s`, `SYNC_STABILITY_WINDOW_SECONDS`, tests set it to 0): `updated_at` is stamped at
 transaction start, so a long write transaction can commit a row _behind_ an already-advanced cursor — skips are
 permanent, a deferred row is just picked up next pull. Client-side, the pull applies **deletions first, then table
@@ -176,29 +167,9 @@ upserts**, and a tombstone only deletes local rows with `updated_at <= deletedAt
 these make server-side delete-then-recreate converge. Bulk board re-imports suppress the deletion triggers entirely
 via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`).
 
-`syncDeletions` additionally fences active writer transactions. A DB-owned
-`stream_at` insertion timestamp orders new markers; historical NULLs use
-`COALESCE(stream_at, deleted_at)` so installed cursors replay unchanged. The wire
-`deletedAt` carries the resurrection guard, never `stream_at`. A membership
-withdrawal is stamped one second before the climb's new row
-(`0270_climb_reference_membership`):
-it covers every copy a device pulled and never the owner's re-delivered row,
-so owners and republished climbs survive a replay. The internal
-`is_membership_withdrawal` flag and the page filter that reads it ship in the
-same release, with nothing flagged yet: a flagged withdrawal is omitted for a
-viewer who can currently read the climb, in the page's snapshot and before
-pagination, so installed clients never receive an empty filtered page hiding
-later markers. The guard migration that flags withdrawals ships one release
-later ([sync-deletions-cutoff.md](sync-deletions-cutoff.md#the-withdrawal-guard-one-release-later)).
-Hard-delete delivery and climb document timestamps retain their existing
-behavior.
-
-The resolver first reads a safe cutoff
-from a narrow primary helper, then runs a separate fresh READ COMMITTED page
-below it. The oldest active writer bounds the cutoff even with a zero-second
-stability window. Prepared writers, unavailable metadata, or missing helper
-privileges pause the poll with an unchanged cursor. See
-[deployment prerequisite and restore contract](sync-deletions-cutoff.md).
+Two triggers from #6339 still fire even though its code was reverted: a climb that stops being published and
+listed gets a NULL-scoped `board_climbs` marker one second before its new `updated_at`, and every marker gets a
+`stream_at` the resolver ignores. See [sync-deletions-cutoff.md](sync-deletions-cutoff.md).
 
 ## Idempotency contract
 
@@ -308,23 +279,10 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Del: `record_id = OLD.playlist_uuid` (1 seg).
 - Columns: `playlist_uuid`, `follower_id`, `created_at`, `updated_at`.
 
-### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
+### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?)` (board data, per-board)
 
 - Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
-  `sizeId` ignored for moonboard], limited to the published, listed climbs and the caller's own. Seq: **`sync_seq`**. Hook: no.
-- `audience` (`enum SyncAudience { REFERENCE PROTECTED }`, optional) picks one of two disjoint streams that together
-  equal the scope above. `REFERENCE` is the published, listed climbs (`is_draft IS NOT TRUE AND is_listed IS TRUE`),
-  whoever set them; the same for every viewer and empty for spray. `PROTECTED` is the caller's own climbs that are
-  not published and listed, which is their drafts and their unlisted climbs; on a spray wall it is every climb the
-  caller gets with no audience. Each stream has its own cursor. Omitted, the pull is the single stream every client
-  older than the split sends: `REFERENCE` plus the caller's `PROTECTED`.
-  **The publication rule:** no stream consults an account's privacy settings or an item audience. A draft or an
-  unlisted climb is returned to its owner alone (`user_id` = the caller), with its stats and grades rows, and one
-  with no owner to no one. The same argument applies to `syncClimbStats` and `syncClimbGrades`, where it selects the
-  rows of that stream's climbs. A stats row carries the stored `fa_username` and `fa_at` only when its climb has no
-  Boardsesh owner and never had a Boardsesh author; a `PROTECTED` stats row carries `NULL` for both. A published
-  climb that becomes a draft or is unlisted gets a `board_climbs` row in `syncDeletions`. Full rule:
-  [The publication rule](board-snapshots.md#the-publication-rule-6306).
+  `sizeId` ignored for moonboard]. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
@@ -374,7 +332,7 @@ composite-keyed sync table must keep this true (or version the encoding).
   (`search-climbs-local.ts` / `get-climb-local.ts`) even while online, for speed, with the background sync keeping
   them fresh. Default `syncEnabledBoards` is `[]` so nothing downloads until a board is enabled.
 
-### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
+### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?)` (board data, per-board)
 
 - Scope: `board_type = $boardType` [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId
 AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table has no `layout_id`, so it correlates
@@ -389,7 +347,7 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side
   writer may touch a column, so shipping it would grow every stats row for nothing.
 
-### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?, audience?)` (board data, per-board)
+### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 
 - The nightly data-science Boardsesh grade (docs/boardsesh-grade.md). Scope: `board_type = $boardType`
   [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId AND
@@ -457,9 +415,8 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   `photo_key` is the identity that survives — a stored signature would be stale, useless, and briefly live. Declaring
   it is not cosmetic: without it every pulled page would report schema drift for a column the resolver emits on
   purpose.
-- Snapshots stay excluded. `REFERENCE_EXCLUDED_BOARD_TYPES` in `packages/db/src/queries/privacy.ts` withholds
-  `spray`, so no wall is ever baked into a nightly artifact and a manifest miss falls through to the paged crawl.
-  The `REFERENCE` sync stream reads the same set, so it is empty for every wall.
+- Snapshots stay excluded. `SNAPSHOT_EXCLUDED_BOARD_TYPES` in `export-board-snapshots.ts` withholds `spray`, so no
+  wall is ever baked into a nightly artifact and a manifest miss falls through to the paged crawl.
 - Sign-out clears this table: `spray_walls` is the one entry in `USER_DATA_TABLES_TO_CLEAR` that is board reference
   data, and the photographs are wiped with it. See the spray-wall subsection of the auth-scoping contract in
   [`offline-reads.md`](offline-reads.md).

@@ -107,16 +107,17 @@ const boardShareLinksSchema = readFileSync(
 );
 // The trigger that tells devices a climb changed side of the publication rule,
 // from the migration itself so every test runs against the function production
-// has. It writes `sync_deletions`, `board_climb_stats` and `board_climb_grades`,
+// has. #6339's code was reverted but its migrations stayed applied, so the
+// pre-#6339 resolvers must keep working with this trigger and the deletion
+// stream stamping below firing underneath them. It writes `sync_deletions`, `board_climb_stats` and `board_climb_grades`,
 // so it installs after all three exist.
 const referenceMembershipSchema = readFileSync(
   new URL('../../../db/drizzle/0270_climb_reference_membership.sql', import.meta.url),
   'utf8',
 );
 // The generated discriminator column, replayed instead of a separate fixture
-// copy. Nothing in this release writes it as true: the trigger that flags a
-// withdrawal ships one release later, once every backend serving sync filters
-// flagged markers.
+// copy. Nothing writes it as true and, since #6339's code was reverted, nothing
+// reads it. It mirrors production until the cleanup migration drops it.
 const membershipWithdrawalSchema = readFileSync(
   new URL('../../../db/drizzle/0273_climb_membership_withdrawal_flag.sql', import.meta.url),
   'utf8',
@@ -1657,9 +1658,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- the daily prune's DELETE WHERE deleted_at < cutoff.
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");
   CREATE INDEX IF NOT EXISTS "board_climbs_sync_cursor_idx" ON "board_climbs" ("board_type", "updated_at", "sync_seq");
-  -- Mirrors migration 0247. The PROTECTED sync stream finds a caller's own
-  -- climbs through it, and the plan tests explain against it.
-  CREATE INDEX IF NOT EXISTS "board_climbs_user_export_idx" ON "board_climbs" ("user_id", "board_type") WHERE "user_id" IS NOT NULL;
   CREATE INDEX IF NOT EXISTS "board_climb_stats_sync_cursor_idx" ON "board_climb_stats" ("board_type", "updated_at", "sync_seq");
   CREATE INDEX IF NOT EXISTS "board_climb_grades_sync_cursor_idx" ON "board_climb_grades" ("board_type", "computed_at", "sync_seq");
 

@@ -1,11 +1,7 @@
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
-import {
-  contentVisibilityCondition,
-  publicReferenceClimbSql,
-  sprayClimbVisibilityCondition,
-} from '@boardsesh/db/queries';
+import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
@@ -374,19 +370,6 @@ async function holdsDeletedBoard(
   return !!grant;
 }
 
-/**
- * Published and listed, or the viewer's own: the publication test the board
- * sync uses (`publicReferenceClimbSql`), so a climb every device holds is not
- * blanked in a live session. That test is two-valued. `is_draft` is nullable
- * and NULL is not a draft, where `is_draft = false` would read NULL as one.
- *
- * Both queries below select from `board_climbs` unaliased, which is the name
- * the predicate is built for.
- */
-function publishedOrOwnClimb(viewerId: string | null | undefined) {
-  return or(viewerId ? eq(boardClimbs.userId, viewerId) : undefined, sql.raw(publicReferenceClimbSql('board_climbs')));
-}
-
 export async function canReadClimbContent(
   climbUuid: string,
   viewerId: string | null | undefined,
@@ -404,7 +387,10 @@ export async function canReadClimbContent(
           viewerId,
           wallUuid,
         ),
-        publishedOrOwnClimb(viewerId),
+        or(
+          viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
+          and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
+        ),
       ),
     )
     .limit(1);
@@ -490,7 +476,10 @@ export async function redactBoardClimbs(
                 viewerId,
                 wallUuid,
               ),
-              publishedOrOwnClimb(viewerId),
+              or(
+                viewerId ? eq(boardClimbs.userId, viewerId) : undefined,
+                and(eq(boardClimbs.isDraft, false), eq(boardClimbs.isListed, true)),
+              ),
             ),
           );
   const readableUuids = new Set(readableClimbs.map((climb) => climb.uuid));
@@ -548,19 +537,6 @@ export async function canViewBoardHardestSendIdentity(
   return canViewActivityIdentity(userId, viewerId, { entityType: 'tick', entityId: send.tickUuid });
 }
 
-/**
- * Whether the climb is a draft this viewer does not own. A missing row is not a
- * draft, and a draft with no owner is nobody's: `!climb.userId` first, so an
- * anonymous viewer never "equals" a missing owner.
- */
-async function isForeignDraft(climbUuid: string, viewerId: string | null | undefined): Promise<boolean> {
-  const [climb] = await db
-    .select({ userId: boardClimbs.userId, isDraft: boardClimbs.isDraft })
-    .from(boardClimbs)
-    .where(eq(boardClimbs.uuid, climbUuid));
-  return climb?.isDraft === true && (!climb.userId || climb.userId !== viewerId);
-}
-
 export async function redactBoardStats(
   stats: BoardPresenceStats,
   viewerId: string | null | undefined,
@@ -569,13 +545,9 @@ export async function redactBoardStats(
 ): Promise<BoardPresenceStats> {
   const hardest = stats.hardestSend;
   if (!hardest) return stats;
-  // A restricted user-created climb is never featured publicly, and neither is
-  // a draft: it is named to its owner alone. Aggregate grades and counts above
-  // remain unchanged.
-  if (
-    !(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null)) ||
-    (await isForeignDraft(hardest.climbUuid, viewerId))
-  ) {
+  // A restricted user-created climb is never featured publicly. Aggregate
+  // grades and counts above remain unchanged.
+  if (!(await canViewContent(viewerId, 'climb', hardest.climbUuid, hardest.climbOwnerId ?? null))) {
     return { ...stats, hardestSend: null };
   }
   // Cached metadata may predate a draft, audience or wall-policy change.

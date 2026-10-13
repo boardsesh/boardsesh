@@ -5,7 +5,6 @@ import {
   buildSelfAliasLowerSet,
   createGroupResult,
   createStagingBatch,
-  isPublishedCatalogClimb,
   stageCatalogClimb,
   type LayoutCatalogClimbRow,
   type RerouteContext,
@@ -382,25 +381,5 @@ void describe('stageCatalogClimb — reroute candidates', () => {
     expect(stageCatalogClimb(unparsable, context)).toBe('skipped');
     expect(reroute.candidates.size).toBe(0);
     expect(context.result.skips[0]).toMatchObject({ reason: 'unparsable_concat' });
-  });
-});
-
-// A draft climb is returned to its owner alone, and a row this sync writes has
-// no owner. So the gate in front of staging is what keeps Kilter drafts out of
-// the catalogue entirely: nothing upstream marks as a draft, unlisted or
-// deleted is ever staged.
-describe('isPublishedCatalogClimb', () => {
-  it('stages a listed, published, undeleted climb', () => {
-    expect(isPublishedCatalogClimb(catalogClimb())).toBe(true);
-  });
-
-  it('drops a draft whatever its other flags say', () => {
-    expect(isPublishedCatalogClimb(catalogClimb({ isDraft: true }))).toBe(false);
-    expect(isPublishedCatalogClimb(catalogClimb({ isDraft: true, isListed: true, isDeleted: false }))).toBe(false);
-  });
-
-  it('drops an unlisted or a deleted climb', () => {
-    expect(isPublishedCatalogClimb(catalogClimb({ isListed: false }))).toBe(false);
-    expect(isPublishedCatalogClimb(catalogClimb({ isDeleted: true }))).toBe(false);
   });
 });

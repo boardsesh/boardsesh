@@ -32,32 +32,6 @@ export const syncTypeDefs = /* GraphQL */ `
     syncSeq: String!
   }
 
-  """
-  Which half of a board's climbs a per-board pull returns. The two halves are
-  disjoint, and together they are exactly the rows the same pull returns with no
-  audience at all.
-
-  Whichever way a pull asks, a published, listed climb is returned to every
-  caller, whoever set it. A draft or an unlisted climb is returned to its owner
-  alone, with its stats and grades, and one with no owner to no one.
-  """
-  enum SyncAudience {
-    """
-    The published, listed climbs, plus their stats and grades. The same rows for
-    every caller, and the same rows the offline snapshot artifact carries. No
-    account privacy setting or item audience applies. A climb hidden by
-    moderation is included, with its flag. Always empty for spray walls.
-    """
-    REFERENCE
-    """
-    The caller's own climbs that are not published and listed: their drafts and
-    their unlisted climbs, plus their stats and grades. Stats rows carry no
-    first-ascent name or date. For spray walls this is every climb the pull
-    returns for the wall with no audience.
-    """
-    PROTECTED
-  }
-
   "Canonical saved-climb documents from one snapshot, without changing a pull cursor."
   type SyncClimbDocuments {
     "Authenticated account owning the client mirror, independent of the setter."

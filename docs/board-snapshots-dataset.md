@@ -57,8 +57,7 @@ privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 | `uncompressedBytes`                                     | Size of the SQLite file once decoded; absent on entries built before the field existed          |
 | `contentEncoding`                                       | `identity` (a plain SQLite file) or `gzip` (gunzip before opening)                              |
 | `builtAt`                                               | When the export built this artifact                                                             |
-| `privacyVersion`                                        | Which app builds install the file (`1` today, `2` once the two-stream client ships); not a row filter |
-| `publicationRule`                                       | `2`: published, listed climbs only. An entry without it predates that rule and is being replaced |
+| `privacyVersion`                                       | Must be `1`: external catalog only; older artifacts cannot be installed by privacy-aware clients |
 | `schemaVersion`                                         | SQLite schema revision of the tables inside                                                     |
 | `artifactShape`                                         | How the file stores its rows; see "Storage" below. `2` today, absent on older (shape 1) files   |
 | `tables.<name>.rowCount`                                | Row counts, for sanity-checking a download                                                      |
@@ -92,17 +91,15 @@ arrays), `hold_fingerprint`, `missing_hold_count` and `retired_by_reset` (spray 
 here), `revision_number` (the climb's current revision) and `holds_revision_number` (the revision at
 which its holds last changed), and sync bookkeeping (`updated_at`, `sync_seq`).
 
-Only published, listed climbs are distributed, whoever set them: `is_draft` is 0 and `is_listed`
-is 1 on every row. A draft or an unlisted climb, and its stats and grades rows, is never part of
-this dataset. `user_id` is an opaque Boardsesh account id, set on climbs made in Boardsesh.
-`is_hidden` marks a climb the community hid; filter on it for a browse. There is no size filter
-either: a layout's artifact spans every wall size, so filter with `compatible_size_ids`.
+Only imported climbs without a linked Boardsesh author are distributed. Personal climbs and beta
+are fetched through the viewer-authorized API, so account privacy changes can revoke access.
+Imported draft and listing flags retain their source values; filter them for a public-only browse. There is no size filter either: a layout's artifact spans every wall
+size, so filter with `compatible_size_ids`.
 
 **`board_climb_stats`** — community stats per `(climb, angle)`: `ascensionist_count`,
 `difficulty_average` and `display_difficulty` (in the board's native difficulty scale),
 `benchmark_difficulty` where the community designates benchmarks, `quality_average` (0–5 star
-scale), and first-ascent attribution (`fa_username`, `fa_at`): the board maker's stored credit for a
-climb that came from the maker's catalogue, and NULL for a climb made in Boardsesh.
+scale), and first-ascent attribution (`fa_username`, `fa_at`).
 
 **`snapshot_meta`** — export bookkeeping (row counts, watermarks, schema/format versions). Useful
 for verifying integrity: `row_count` should match `SELECT COUNT(*)` on each table.

@@ -60,11 +60,6 @@ import {
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
 import { createPool, closePool } from '@boardsesh/db/client';
-import {
-  publicReferenceClimbSql,
-  REFERENCE_EXCLUDED_BOARD_TYPES,
-  referenceFirstAscentSql,
-} from '@boardsesh/db/queries';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
 import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -483,72 +478,25 @@ export function withoutRowid(createTableStatement: string): string {
 // --- Postgres discovery + streaming ------------------------------------------
 
 /**
- * The rule this exporter's rows follow, stamped as `publicationRule` on every
- * manifest entry and grades block: published, listed climbs whoever set them,
- * and no draft or unlisted climb. An entry without it was built under the rule
- * before (climbs with no Boardsesh owner, drafts and unlisted ones included):
- * it is rebuilt on the next run, whatever its delta, and never merged forward.
+ * Board types this job must never publish a snapshot for.
+ *
+ * Snapshots go to a PUBLIC bucket under guessable keys
+ * (`<prefix>/<board>/<layout>/*.db`), and each one carries every climb of that
+ * `(board_type, layout_id)` partition. A spray wall's partition is one
+ * climber's private wall — an explicitly private-by-default surface whose photo
+ * is behind a 15-minute presigned URL — so publishing its climbs would hand out
+ * exactly the data the private bucket exists to withhold.
+ *
+ * This is an exclusion by board TYPE rather than a per-wall visibility check on
+ * purpose: `is_public` on a wall governs who may view it in the app, and a
+ * nightly dump of every public wall's climbs to an unauthenticated bucket is not
+ * something a climber opted into by sharing a link.
  */
-const SNAPSHOT_PUBLICATION_RULE = 2 as const;
-
-/** The `privacyVersion` a client filters artifacts on. See {@link configuredSnapshotPrivacyVersion}. */
-export type SnapshotPrivacyVersion = 1 | 2;
-
-export const DEFAULT_SNAPSHOT_PRIVACY_VERSION: SnapshotPrivacyVersion = 1;
+const SNAPSHOT_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
 
 /**
- * Which `privacyVersion` this run stamps. It does not change a row of any
- * artifact: every value builds the same files under the same publication rule.
- * It decides which app builds take them, because each build accepts exactly one
- * value and takes the paged crawl for every other.
- *
- *  - `1` (the default): what every shipped bundle accepts. They import the file
- *    and then replay their sync from epoch, so the artifact only has to hold
- *    rows they are allowed to have, which every published, listed climb is.
- *  - `2`: what the two-stream client (#6329) accepts. It resumes its
- *    `REFERENCE` stream from the artifact's watermark instead of replaying, and
- *    takes the paged crawl for a `1` entry.
- *
- * Set `SNAPSHOT_PRIVACY_VERSION=2` once that client is on the fleet. Until
- * then a `2` would send every new download on a shipped bundle to the paged
- * crawl of the whole board. A change of value rebuilds every entry on the next
- * run, like a change of shape. Anything but `1`, `2` or blank throws before the
- * run reads the database or touches storage.
- *
- * Read per run, not at module load, so one process can be pointed at either.
- */
-export function configuredSnapshotPrivacyVersion(): SnapshotPrivacyVersion {
-  const configured = process.env.SNAPSHOT_PRIVACY_VERSION?.trim();
-  if (!configured) return DEFAULT_SNAPSHOT_PRIVACY_VERSION;
-  if (configured === '1') return 1;
-  if (configured === '2') return 2;
-  throw new Error(`SNAPSHOT_PRIVACY_VERSION must be 1 or 2, got ${JSON.stringify(configured)}`);
-}
-
-/**
- * Whether a published entry is current: its rows follow the publication rule,
- * and it, and its grades block when it has one, carry the marker this run
- * stamps. Anything else is rebuilt and never merged forward.
- */
-function isEntryCurrent(entry: SnapshotManifestEntry, privacyVersion: SnapshotPrivacyVersion): boolean {
-  const blocks = entry.grades ? [entry, entry.grades] : [entry];
-  return blocks.every(
-    (block) => block.publicationRule === SNAPSHOT_PUBLICATION_RULE && block.privacyVersion === privacyVersion,
-  );
-}
-
-// Which climbs an artifact carries: the published, listed ones, whoever set them.
-// The same text scopes the `REFERENCE` sync stream (resolvers/sync/queries.ts),
-// so the rows a phone imports and the rows that stream resumes from the
-// artifact's watermark cannot drift apart.
-const REFERENCE_CLIMB = publicReferenceClimbSql('board_climbs');
-const REFERENCE_CLIMB_BC = publicReferenceClimbSql('bc');
-
-/**
- * Every (board_type, layout_id) pair that has at least one reference climb,
- * minus the board types {@link REFERENCE_EXCLUDED_BOARD_TYPES} withholds (spray:
- * a wall's partition is one climber's private wall, and this job publishes to a
- * public bucket under guessable keys).
+ * Every (board_type, layout_id) pair that has at least one climb, minus the
+ * board types {@link SNAPSHOT_EXCLUDED_BOARD_TYPES} withholds.
  */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
   const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
@@ -556,14 +504,16 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
   const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
-    WHERE ${boardCondition} AND ${layoutCondition} AND ${sqlClient.unsafe(REFERENCE_CLIMB)}
+    WHERE ${boardCondition} AND ${layoutCondition} AND user_id IS NULL AND NOT is_boardsesh_authored
+      AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+        WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
     ORDER BY board_type, layout_id
   `;
   // Filtered here rather than in the SQL predicate so an explicit
   // `--board-type spray` on the CLI is excluded too, not just a full sweep.
   return rows
     .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
-    .filter((pair) => !REFERENCE_EXCLUDED_BOARD_TYPES.has(pair.boardType));
+    .filter((pair) => !SNAPSHOT_EXCLUDED_BOARD_TYPES.has(pair.boardType));
 }
 
 function assertSafeColumns(columns: readonly string[]): void {
@@ -577,14 +527,18 @@ function assertSafeColumns(columns: readonly string[]): void {
 // Scope predicates matching the resolvers exactly. `now()` is transaction-start
 // time and constant across the whole export transaction, so the streamed rows and
 // the watermark query below apply the identical stability boundary.
-const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND ${REFERENCE_CLIMB}
+const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND user_id IS NULL AND NOT is_boardsesh_authored
+    AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+      WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
     AND updated_at < now() - make_interval(secs => $3)`;
 
 const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND ${REFERENCE_CLIMB_BC}
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )
     AND updated_at < now() - make_interval(secs => $3)`;
 
@@ -596,7 +550,9 @@ const GRADES_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
-        AND ${REFERENCE_CLIMB_BC}
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )
     AND computed_at < now() - make_interval(secs => $3)`;
 
@@ -727,11 +683,11 @@ async function layoutRefreshReason(params: {
   threshold: number;
   includeGrades: boolean;
   artifactShape: SnapshotArtifactShape;
-  privacyVersion: SnapshotPrivacyVersion;
 }): Promise<RefreshReason | null> {
-  const { sqlClient, pair, previousEntry, threshold, includeGrades, artifactShape, privacyVersion } = params;
+  const { sqlClient, pair, previousEntry, threshold, includeGrades, artifactShape } = params;
   if (!previousEntry) return 'missing-entry';
-  if (!isEntryCurrent(previousEntry, privacyVersion)) return 'stale-privacy';
+  if (previousEntry.privacyVersion !== 1 || (previousEntry.grades && previousEntry.grades.privacyVersion !== 1))
+    return 'stale-privacy';
   if (previousEntry.schemaVersion < LATEST_SCHEMA_VERSION) return 'stale-schema';
   if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
     return 'stale-schema';
@@ -840,21 +796,6 @@ export class KeysetWatermarkTracker {
 }
 
 /**
- * How one column is read for the artifact. Every column is the stored value
- * except the first-ascent pair of a stats row, which follows the rule every
- * sync stream follows (`referenceFirstAscentSql`): the stored credit of a
- * manufacturer climb, NULL where the name would come from a Boardsesh tick. An
- * artifact is public and is never recalled, and a tick stays under its author's
- * privacy settings.
- */
-function selectExpressionFor(tableName: SnapshotTableName | SnapshotGradesTableName, column: string): string {
-  if (tableName === 'board_climb_stats' && (column === 'fa_username' || column === 'fa_at')) {
-    return referenceFirstAscentSql('board_climb_stats', column);
-  }
-  return column;
-}
-
-/**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
  * the SQLite artifact, batched into multi-row INSERTs. Returns the number of rows
  * written and the table's watermark: the greatest `(cursor, sync_seq)` keyset over
@@ -878,7 +819,7 @@ async function streamTableIntoSqlite(
     throw new Error(`Snapshot table ${tableName} must export ${cursorColumn} and sync_seq to derive its watermark`);
   }
   const selectSql =
-    `SELECT ${columns.map((column) => selectExpressionFor(tableName, column)).join(', ')}, ` +
+    `SELECT ${columns.join(', ')}, ` +
     `(EXTRACT(EPOCH FROM ${cursorColumn}) * 1000000)::bigint AS ${WATERMARK_CURSOR_ALIAS} ` +
     `FROM ${tableName} WHERE ${whereClause}`;
   const chunkSize = multiRowChunkSize(columns.length);
@@ -1516,17 +1457,14 @@ function buildManifestEntry(
     uncompressedBytes: number;
     contentEncoding: 'gzip' | 'identity';
   },
-  gradesUpload:
-    | {
-        url: string;
-        key: string;
-        bytes: number;
-        // The grades file's pre-compression size, as above.
-        uncompressedBytes: number;
-        contentEncoding: 'gzip' | 'identity';
-      }
-    | undefined,
-  privacyVersion: SnapshotPrivacyVersion,
+  gradesUpload?: {
+    url: string;
+    key: string;
+    bytes: number;
+    // The grades file's pre-compression size, as above.
+    uncompressedBytes: number;
+    contentEncoding: 'gzip' | 'identity';
+  },
 ): SnapshotManifestEntry {
   // Shape 1 is the rollback, and what it rolls back to is the manifest as it
   // was before shapes: no `artifactShape`, and no decoded size on the grades
@@ -1544,8 +1482,7 @@ function buildManifestEntry(
           contentEncoding: gradesUpload.contentEncoding,
           builtAt: result.builtAt,
           schemaVersion: result.schemaVersion,
-          privacyVersion,
-          publicationRule: SNAPSHOT_PUBLICATION_RULE,
+          privacyVersion: 1,
           tables: { board_climb_grades: result.grades.tables.board_climb_grades },
         }
       : undefined;
@@ -1559,8 +1496,7 @@ function buildManifestEntry(
     contentEncoding: upload.contentEncoding,
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
-    privacyVersion,
-    publicationRule: SNAPSHOT_PUBLICATION_RULE,
+    privacyVersion: 1,
     ...(isShape2 ? { artifactShape: result.artifactShape } : {}),
     tables: {
       board_climbs: result.tables.board_climbs,
@@ -1586,8 +1522,6 @@ export function mergeManifestEntries(params: {
   previousEntries: SnapshotManifestEntry[];
   newEntries: SnapshotManifestEntry[];
   livePairs: LayoutPair[] | null;
-  /** The marker this run stamps; a previous entry carrying another is not merged. */
-  privacyVersion: SnapshotPrivacyVersion;
 }): SnapshotManifestEntry[] {
   const pairKey = (boardType: string, layoutId: number): string => `${boardType}:${layoutId}`;
   const liveKeys = params.livePairs
@@ -1596,7 +1530,8 @@ export function mergeManifestEntries(params: {
 
   const merged = new Map<string, SnapshotManifestEntry>();
   for (const previousEntry of params.previousEntries) {
-    if (!isEntryCurrent(previousEntry, params.privacyVersion)) continue;
+    if (previousEntry.privacyVersion !== 1 || (previousEntry.grades && previousEntry.grades.privacyVersion !== 1))
+      continue;
     const entryKey = pairKey(previousEntry.boardType, previousEntry.layoutId);
     // Layout vanished from the DB — drop its entry (unfiltered runs only). A
     // failed layout is still discovered, so its previous entry survives here.
@@ -1742,9 +1677,6 @@ export async function runExportWithOptions(
   // nothing read or written, and every layout of the run, its manifest entry
   // and the threshold scan's "is this entry stale" check agree on one value.
   const artifactShape = configuredSnapshotArtifactShape();
-  // Resolved once for the same reason: every entry this run builds, the stale
-  // check and the merge agree on the marker shipped clients filter on.
-  const privacyVersion = configuredSnapshotPrivacyVersion();
 
   // The production fleet reads this prefix as gzip. A mistyped manual command
   // must not replace it with an identity artifact or bypass its replay-boundary
@@ -1812,7 +1744,6 @@ export async function runExportWithOptions(
       filtered: isFilteredRun,
       gzip: options.gzip,
       artifactShape,
-      privacyVersion,
       keyPrefix,
       pairs: discoveredPairs.length,
       refreshThreshold: options.refreshThreshold ?? null,
@@ -1841,7 +1772,6 @@ export async function runExportWithOptions(
           threshold: options.refreshThreshold,
           includeGrades: options.gzip,
           artifactShape,
-          privacyVersion,
         });
         if (reason) {
           stalePairs.push(pair);
@@ -1981,7 +1911,6 @@ export async function runExportWithOptions(
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,
-              privacyVersion,
             ),
           );
         } else {
@@ -2036,7 +1965,6 @@ export async function runExportWithOptions(
                     contentEncoding: 'gzip' as const,
                   }
                 : undefined,
-              privacyVersion,
             ),
           );
         }
@@ -2076,7 +2004,6 @@ export async function runExportWithOptions(
         // filtered run so a layout below threshold (or vanished since the last
         // full export) can never be dropped from the live manifest.
         livePairs: isFilteredRun || isThresholdRefresh ? null : discoveredPairs,
-        privacyVersion,
       });
       const manifest: SnapshotManifest = {
         formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
