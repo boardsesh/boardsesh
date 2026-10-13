@@ -150,6 +150,15 @@ its exact `ToggleSidebar` control says `Hide Sidebar`. It waits for that open
 state to disappear and for animations to settle; a hidden sidebar is never
 toggled open. Fresh replay images must verify the final pane layout.
 
+For manufacturer hero scenes in tablet recording, the flow can tap the native
+list's localized “Try again” after its genuine error placard appears. It requires
+the scene acknowledgment and exact owned-board header, scopes both controls to
+the real `climb-list` ancestor, and makes at most three retry attempts while
+waiting for the selected climb's physical paint marker. The strict title, grade,
+owned-results list, header, row, overlay and final paint gates still follow.
+Replay, phones and spray editors retain their existing hero gates. A successful
+recorded response alone does not prove that the native client loaded that query.
+
 Capture-only route acknowledgment diagnostics retain the exact pathname and
 requested-parameter checks. Logs include sequence, fixed/redacted path names,
 known mismatched capture-key names, HTTP status, and fixed request-error
@@ -227,9 +236,10 @@ accessory row: UIKit can omit its central Apple Zoom link from the accessibility
 tree. Only CPP captures group that row under its actual climb name; normal use
 keeps the controls' individual accessibility. The marker still rejects retained
 or shared-session content and requires the actual selected climb UUID.
-On tablets, joining returns to the Session tab. Capture reopens UIKit's sidebar
-when collapsed, waits for its open state, then selects the existing localized
-Climbs tab and verifies its selected state before issuing the queue command;
+On tablets, joining returns to the Session tab. Capture waits for that native
+tab's selected state, then waits for and taps the existing localized unselected
+Climbs tab, which UIKit also exposes with its sidebar collapsed. It verifies
+Climbs is selected before issuing the queue command;
 the exact route, sequence, private-session and content gates still apply.
 Before each tablet frame, capture closes only the exact open-state Hide Sidebar
 control. Up to three state-checked taps handle a native tap that finishes without

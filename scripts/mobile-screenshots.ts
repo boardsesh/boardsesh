@@ -2093,13 +2093,28 @@ export function cppMirrorSelectors(locale: Locale) {
   };
 }
 
+/** The real list's error CTA retries its current query without changing inputs. */
+export function cppClimbListErrorSelectors(locale: Locale) {
+  const catalog = JSON.parse(
+    readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'common.json'), 'utf8'),
+  ) as { mobile: { offlineState: { errorTitle: string; retry: string } } };
+  const { errorTitle, retry } = catalog.mobile.offlineState;
+  // UIKit flattens climbs-screen into a sibling marker. The generic FlashList
+  // remains the real ancestor while its stricter owned-results ID is absent.
+  const childOf = { id: '^climb-list$' };
+  return {
+    error: { text: `^${cppReadinessSelector(errorTitle)}$`, childOf },
+    retry: { text: `^${cppReadinessSelector(retry)}$`, childOf, enabled: true },
+  };
+}
+
 /** Strict target fixture text supplies content gates; no default campaign scenes are reused. */
 export function renderCppMaestroFlow(
   target: CppTarget,
   device: IosScreenshotDevice,
   coverage?: CppCaptureCoverage,
   locale: Locale = 'en-US',
-  recordGradeCount = false,
+  recordFixtures = false,
 ): string {
   if (!coverage || coverage.target !== target) throw new Error(`Missing CPP content gates for ${target}`);
   const page = readCppPage(target);
@@ -2189,6 +2204,12 @@ export function renderCppMaestroFlow(
     '- waitForAnimationToEnd:\n    timeout: 30000',
   ];
   for (const scene of scenes) {
+    const selectedHero =
+      scene.command === 'accessory-prepare'
+        ? coverage.accessoryClimb
+        : scene.variant
+          ? coverage.heroClimbs?.[scene.variant.id]
+          : undefined;
     const sceneCommands =
       scene.command === 'queue'
         ? ['queue-join', scene.command]
@@ -2214,10 +2235,11 @@ export function renderCppMaestroFlow(
       );
       if (ipad)
         commands.push(
-          // Join returns to Session. Reopen UIKit's sidebar if the previous
-          // capture collapsed it, then select the native Climbs tab before
-          // the acknowledged queue command changes its capture parameters.
-          '- runFlow:\n    when:\n      notVisible:\n        text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n        selected: true\n    commands:\n      - runFlow:\n          when:\n            visible: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}\n          commands:\n            - tapOn: ${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}\n      - extendedWaitUntil:\n          visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}\n          timeout: 15000\n      - tapOn:\n          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n          selected: false',
+          // Join replaces its route with Session. Wait for that native selection
+          // before using the Climbs tab, which UIKit also exposes when collapsed.
+          '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}\n      selected: true\n    timeout: 90000',
+          '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n      selected: false\n    timeout: 90000',
+          '- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n    selected: false',
           '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n      selected: true\n    timeout: 90000',
         );
     }
@@ -2225,6 +2247,27 @@ export function renderCppMaestroFlow(
       `- evalScript: \${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=${scene.command}').body).sequence}`,
       "- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}",
     );
+    if (selectedHero && !scene.wallEditor) {
+      if (!isCppClimbId(selectedHero.climbId) || selectedHero.boardId !== coverage.boardIds?.[scene.variant!.id])
+        throw new Error(`CPP ${scene.command} requires a genuine selected climb on its actual board`);
+      if (
+        recordFixtures &&
+        ipad &&
+        scene.variant?.boardType !== 'spray' &&
+        (scene.command.startsWith('hero-') || scene.command.startsWith('other-'))
+      ) {
+        const listError = cppClimbListErrorSelectors(locale);
+        const paintedHero = {
+          id: `^${cppReadinessSelector(`cpp-climb-painted-${selectedHero.boardId}-${selectedHero.climbId}`)}$`,
+        };
+        // A live list can settle into its genuine error state before data lands.
+        // Tap only that list's real retry CTA on the acknowledged, owned board.
+        // Three attempts await actual paint; every original final gate follows.
+        commands.push(
+          `- retry:\n    maxRetries: 2\n    commands:\n      - runFlow:\n          when:\n            visible: ${JSON.stringify(listError.error)}\n          commands:\n            - assertVisible:\n                id: "^climbs-screen$"\n            - assertVisible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant!, coverage))}\n            - tapOn: ${JSON.stringify(listError.retry)}\n      - extendedWaitUntil:\n          visible: ${JSON.stringify(paintedHero)}\n          timeout: 30000`,
+        );
+      }
+    }
     if (scene.command === 'logbook') {
       const rowSelector = cppLogbookReadinessSelector(scene.ready, locale, coverage.scenes.logbook.ascentId);
       commands.push(
@@ -2261,15 +2304,7 @@ export function renderCppMaestroFlow(
         `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppReadinessSelector(scene.ready))}\n    timeout: 90000`,
       );
     commands.push('- waitForAnimationToEnd:\n    timeout: 30000');
-    const selectedHero =
-      scene.command === 'accessory-prepare'
-        ? coverage.accessoryClimb
-        : scene.variant
-          ? coverage.heroClimbs?.[scene.variant.id]
-          : undefined;
     if (selectedHero && !scene.wallEditor) {
-      if (!isCppClimbId(selectedHero.climbId) || selectedHero.boardId !== coverage.boardIds?.[scene.variant!.id])
-        throw new Error(`CPP ${scene.command} requires a genuine selected climb on its actual board`);
       commands.push(
         `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(cppReadinessSelector(`cpp-climb-painted-${selectedHero.boardId}-${selectedHero.climbId}`))}\n    timeout: 90000`,
       );
@@ -2358,7 +2393,7 @@ export function renderCppMaestroFlow(
         commands.push(
           `- extendedWaitUntil:\n    visible: ${JSON.stringify(gradeControl(gradeSelectors.maxSelected!, true))}\n    timeout: 90000`,
         );
-      if (recordGradeCount) {
+      if (recordFixtures) {
         const proofCondition = `\${output.cppGradeCount.sequence == output.cppSequence && output.cppGradeCount.locale == '${locale}' && output.cppGradeCount.proof.totalCount > 0}`;
         const recordedCountProof = `- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: \${output.cppGradeCount = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/grade-count?sequence=' + output.cppSequence + '&locale=${locale}').body)}\n      - assertTrue: ${proofCondition}`;
         const commandAck =
@@ -2394,7 +2429,7 @@ export function renderCppMaestroFlow(
         );
       }
       commands.push(
-        recordGradeCount
+        recordFixtures
           ? '- extendedWaitUntil:\n    visible: ${output.cppGradeCount.selector}\n    timeout: 90000'
           : `- extendedWaitUntil:\n    visible: ${JSON.stringify(gradeSelectors.count)}\n    timeout: 90000`,
         '- waitForAnimationToEnd:\n    timeout: 30000',

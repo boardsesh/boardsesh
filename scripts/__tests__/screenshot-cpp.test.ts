@@ -28,6 +28,7 @@ import {
   cppClimbRowReadinessSelector,
   cppGradeFilterSelectors,
   cppMirrorSelectors,
+  cppClimbListErrorSelectors,
   renderCppMaestroFlow,
   renderMaestroFlowForIosDevice,
   deviceSlug,
@@ -193,7 +194,9 @@ describe('custom product page captures', () => {
           expect(documents.flatMap((document) => document.errors)).toEqual([]);
           const steps = documents[1].toJS() as Record<string, unknown>[];
           const index = steps.findIndex(
-            (step) => (step.retry as { maxRetries?: number } | undefined)?.maxRetries === 2,
+            (step) =>
+              (step.retry as { maxRetries?: number } | undefined)?.maxRetries === 2 &&
+              JSON.stringify(step).includes('${output.cppGradeCount.selector}'),
           );
           expect(index).toBeGreaterThan(0);
           expect(JSON.stringify(steps[index - 1])).toContain('/grade-count?sequence=');
@@ -1245,6 +1248,142 @@ describe('custom product page captures', () => {
     expect(run(0, listId, 'climb-row', `${hero.readyText} Extended`)).toEqual({ swipes: 3, captured: false });
     expect(run(0, listId, 'climb-row', 'DUNES left1X literal')).toEqual({ swipes: 3, captured: false });
   });
+  it('retries only real manufacturer hero list errors during tablet recording and keeps the final gates', () => {
+    for (const target of CPP_TARGETS) {
+      const { page, coverage } = selectedScenario(target);
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const)
+        for (const device of IOS_SCREENSHOT_DEVICES) {
+          const nativeError = JSON.parse(
+            readFileSync(join('packages/shared/i18n/locales', locale, 'common.json'), 'utf8'),
+          ).mobile.offlineState as { errorTitle: string; retry: string };
+          const errorSelectors = cppClimbListErrorSelectors(locale);
+          expect(new RegExp(errorSelectors.error.text).test(nativeError.errorTitle)).toBe(true);
+          expect(new RegExp(errorSelectors.retry.text).test(nativeError.retry)).toBe(true);
+          expect(new RegExp(errorSelectors.retry.text).test(`${nativeError.retry} elsewhere`)).toBe(false);
+          expect(errorSelectors.error.childOf).toEqual({ id: '^climb-list$' });
+          expect(new RegExp(errorSelectors.retry.childOf.id).test('another-climb-list')).toBe(false);
+          const replay = renderCppMaestroFlow(target, device, coverage, locale);
+          expect(replay).not.toContain(JSON.stringify(errorSelectors.error));
+          const steps = parseAllDocuments(
+            renderCppMaestroFlow(target, device, coverage, locale, true),
+          )[1].toJS() as Record<string, unknown>[];
+          for (const [boardIndex, board] of [...page.heroBoards, ...page.otherBoards].entries()) {
+            const scene = `${boardIndex < 3 ? 'hero' : 'other'}-${(boardIndex % 3) + 1}`;
+            const start = steps.findIndex(
+              (step) => typeof step.evalScript === 'string' && step.evalScript.includes(`/set?scene=${scene}'`),
+            );
+            const end = steps.findIndex((step) => step.takeScreenshot === scene);
+            const gates = steps.slice(start + 2, end);
+            const recovery = gates.find((step) => JSON.stringify(step).includes(JSON.stringify(errorSelectors.error)));
+            const shouldRecover = device.name.startsWith('iPad') && board.boardType !== 'spray';
+            expect(!!recovery).toBe(shouldRecover);
+            if (!shouldRecover) continue;
+            const hero = coverage.heroClimbs![board.id];
+            expect(recovery).toMatchObject({
+              retry: {
+                maxRetries: 2,
+                commands: [
+                  {
+                    runFlow: {
+                      when: { visible: errorSelectors.error },
+                      commands: [
+                        { assertVisible: { id: '^climbs-screen$' } },
+                        { assertVisible: cppBoardHeaderReadinessSelector(board, coverage) },
+                        { tapOn: errorSelectors.retry },
+                      ],
+                    },
+                  },
+                  {
+                    extendedWaitUntil: {
+                      visible: { id: `^cpp-climb-painted-${hero.boardId}-${hero.climbId}$` },
+                      timeout: 30000,
+                    },
+                  },
+                ],
+              },
+            });
+            expect(gates).toContainEqual({
+              extendedWaitUntil: { visible: cppReadinessSelector(hero.readyText), timeout: 90000 },
+            });
+            expect(gates).toContainEqual({
+              extendedWaitUntil: {
+                visible: { id: `cpp-climb-painted-${hero.boardId}-${hero.climbId}` },
+                timeout: 90000,
+              },
+            });
+            expect(gates).toContainEqual({
+              extendedWaitUntil: {
+                visible: {
+                  id: target === 'spray' ? 'climb-row' : '^climb-row$',
+                  text: cppClimbRowReadinessSelector(hero.readyText, locale),
+                },
+                timeout: 90000,
+              },
+            });
+          }
+        }
+    }
+  });
+  it('bounds actual native Retry taps and rejects a stale board or paint after a list error', () => {
+    const { page, coverage } = selectedScenario('moonboard');
+    const board = page.otherBoards[2];
+    const hero = coverage.heroClimbs![board.id];
+    const device = IOS_SCREENSHOT_DEVICES.find((candidate) => candidate.name === 'iPad Pro 13-inch (M5)')!;
+    const steps = parseAllDocuments(
+      renderCppMaestroFlow('moonboard', device, coverage, 'en-US', true),
+    )[1].toJS() as Record<string, unknown>[];
+    const recovery = steps.find((step) => {
+      const serialized = JSON.stringify(step);
+      return serialized.includes('childOf') && serialized.includes(`cpp-climb-painted-${hero.boardId}`);
+    })!.retry as {
+      maxRetries: number;
+      commands: [
+        {
+          runFlow: {
+            when: { visible: { text: string; childOf: { id: string } } };
+            commands: [
+              { assertVisible: { id: string } },
+              { assertVisible: string },
+              { tapOn: { text: string; childOf: { id: string }; enabled: boolean } },
+            ];
+          };
+        },
+        { extendedWaitUntil: { visible: { id: string } } },
+      ];
+    };
+    const run = (
+      successfulTap: number,
+      currentBoard = coverage.boardNames![board.id],
+      parent = 'climb-list',
+      paintedBoard = hero.boardId,
+    ) => {
+      let taps = 0;
+      let painted = successfulTap === 0;
+      const branch = recovery.commands[0].runFlow;
+      for (let attempt = 0; attempt <= recovery.maxRetries; attempt += 1) {
+        if (!painted && new RegExp(branch.when.visible.childOf.id).test(parent)) {
+          if (!new RegExp(branch.commands[1].assertVisible).test(`${currentBoard} • ${board.angle}°`)) continue;
+          taps += 1;
+          painted = taps >= successfulTap;
+        }
+        if (
+          painted &&
+          new RegExp(recovery.commands[1].extendedWaitUntil.visible.id).test(
+            `cpp-climb-painted-${paintedBoard}-${hero.climbId}`,
+          )
+        )
+          return { taps, ready: true };
+      }
+      return { taps, ready: false };
+    };
+    expect(run(0)).toEqual({ taps: 0, ready: true });
+    expect(run(1)).toEqual({ taps: 1, ready: true });
+    expect(run(3)).toEqual({ taps: 3, ready: true });
+    expect(run(4)).toEqual({ taps: 3, ready: false });
+    expect(run(1, 'Previous Tension board')).toEqual({ taps: 0, ready: false });
+    expect(run(1, undefined, 'board-sheet-climb-list')).toEqual({ taps: 0, ready: false });
+    expect(run(1, undefined, undefined, 'previous-tension-uuid')).toEqual({ taps: 1, ready: false });
+  });
   it('resolves all 128 legacy/selected CPP flows through the real Metro registry and strict readiness handler', () => {
     let checkedDocuments = 0;
     const readinessRequest = readinessCommandTransport();
@@ -1722,23 +1861,21 @@ describe('custom product page captures', () => {
       }
     }
   });
-  it('reopens the tablet sidebar and selects Climbs after joining before the strict queue command', () => {
+  it('waits for Session before selecting the native Climbs tab after joining with either sidebar state', () => {
     const expectedHandoff = [
       {
-        runFlow: {
-          when: { notVisible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true } },
-          commands: [
-            {
-              runFlow: {
-                when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
-                commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
-              },
-            },
-            { extendedWaitUntil: { visible: '${SCREENSHOT_SIDEBAR_HIDE_LABEL}', timeout: 15000 } },
-            { tapOn: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false } },
-          ],
+        extendedWaitUntil: {
+          visible: { text: '${SCREENSHOT_SIDEBAR_RECORD_LABEL}', selected: true },
+          timeout: 90000,
         },
       },
+      {
+        extendedWaitUntil: {
+          visible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false },
+          timeout: 90000,
+        },
+      },
+      { tapOn: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false } },
       {
         extendedWaitUntil: {
           visible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true },
