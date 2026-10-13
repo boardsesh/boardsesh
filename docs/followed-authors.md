@@ -124,12 +124,20 @@ server and require both a matching signed-in owner and complete author metadata.
 An unknown Boardsesh user can be followed offline, but following-only search
 asks for a sync until that user's linked accounts are known.
 The boot warm-up runs after schema readiness and owner stamping, even if a
-screen already fetched authors before SQLite was ready. Its completion retries
-only catalogue queries whose input has `onlyFollowedAuthors: true`, including
-search pages, infinite searches, counts, and setter lists. This readiness retry
-also runs when the authors are unchanged: a cached answer can predate SQLite
+screen already fetched authors before SQLite was ready. When SQLite is already
+ready and its owner matches the viewer, warm-up completion retries only
+catalogue queries whose input has `onlyFollowedAuthors: true`, including search
+pages, infinite searches, counts, and setter lists. This Following retry also
+runs when the authors are unchanged: a cached answer can predate SQLite
 ownership and schema readiness. Ordinary catalogue queries keep their fresh
-results during warm-up.
+results during this normal launch.
+
+If the bridge observes schema or database-handle readiness recovery, a handle
+replacement, or a changed owner stamp, catalogue reads may already hold empty
+offline fallback results or results filtered for the previous owner. After
+owner stamping, the bridge cancels those reads and retries all four catalogue
+query families before loading authors. This recovery runs independently of
+whether the author load succeeds.
 
 The author observer similarly refreshes only Following catalogue queries when
 its snapshot first arrives or changes, together with Crew and climber logs.

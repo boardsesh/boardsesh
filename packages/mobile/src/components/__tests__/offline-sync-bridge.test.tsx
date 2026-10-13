@@ -148,8 +148,9 @@ vi.mock('../../lib/env', () => ({
 }));
 
 const fakeDb = { tag: 'db' };
+let providedDatabase = fakeDb;
 vi.mock('expo-sqlite', () => ({
-  useSQLiteContext: () => fakeDb,
+  useSQLiteContext: () => providedDatabase,
 }));
 
 vi.mock('expo-router', () => ({
@@ -260,6 +261,7 @@ beforeEach(() => {
   startSyncSchedulerMock.mockReturnValue(startSyncSchedulerStop);
   getPendingCountMock.mockResolvedValue(0);
   isAuthenticated = true;
+  providedDatabase = fakeDb;
   storedUserId = 'user-1';
   assertLocalUserDataOwnerMock.mockClear();
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
@@ -566,13 +568,176 @@ describe('OfflineSyncBridge — schema readiness gating', () => {
       act(() => setSchemaReady(true));
       await waitFor(() => expect(followingObserver.getCurrentResult().data).toBe('following-climbs'));
       expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1);
-      expect(followingFetch).toHaveBeenCalledTimes(2);
+      expect(followingFetch).toHaveBeenCalledTimes(3);
       expect(queryClient.getQueryData(['followedAuthors', 'user-1'])).toBe(cachedAuthors);
-      expect(ordinaryQuery.fetch).not.toHaveBeenCalled();
+      expect(ordinaryQuery.fetch).toHaveBeenCalledOnce();
     } finally {
       view.unmount();
       unsubscribe();
       ordinaryQuery.unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('restores empty ordinary offline results after late schema readiness even if authors fail', async () => {
+    setSchemaReady(false);
+    let localCatalogueReady = false;
+    loadFollowedAuthorsMock.mockRejectedValueOnce(new Error('Offline author request failed'));
+    const queryClient = makeQueryClient();
+    const roots = ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'setterStats'];
+    const ordinaryQueries = roots.map((root) => {
+      const fetch = vi.fn(async () => (localCatalogueReady ? ['downloaded-climb'] : []));
+      const observer = new QueryObserver(queryClient, {
+        queryKey: [root, { boardName: 'kilter' }],
+        queryFn: fetch,
+        staleTime: Infinity,
+      });
+      return { fetch, observer, unsubscribe: observer.subscribe(() => {}) };
+    });
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    try {
+      await waitFor(() => {
+        for (const query of ordinaryQueries) expect(query.observer.getCurrentResult().data).toEqual([]);
+      });
+      act(() => {
+        localCatalogueReady = true;
+        setSchemaReady(true);
+      });
+      await waitFor(() => {
+        for (const query of ordinaryQueries) {
+          expect(query.observer.getCurrentResult().data).toEqual(['downloaded-climb']);
+          expect(query.fetch).toHaveBeenCalledTimes(2);
+        }
+      });
+      expect(loadFollowedAuthorsMock).toHaveBeenCalledOnce();
+      expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      for (const query of ordinaryQueries) query.unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('restores personal-filter results after stamping before an author request fails', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    let stampedOwner = false;
+    stampLocalUserIdMock.mockImplementationOnce(async () => {
+      stampedOwner = true;
+    });
+    loadFollowedAuthorsMock.mockRejectedValueOnce(new Error('Offline author request failed'));
+    const queryClient = makeQueryClient();
+    const fetch = vi.fn(async () => (stampedOwner ? ['my-attempted-climb'] : []));
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['infiniteSearchClimbs', { boardName: 'kilter', showOnlyAttempted: true }],
+      queryFn: fetch,
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await waitFor(() => expect(observer.getCurrentResult().data).toEqual([]));
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    try {
+      await waitFor(() => expect(observer.getCurrentResult().data).toEqual(['my-attempted-climb']));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(loadFollowedAuthorsMock).toHaveBeenCalledOnce();
+    } finally {
+      view.unmount();
+      unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('retries ordinary reads after the database handle is replaced', async () => {
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(loadFollowedAuthorsMock).toHaveBeenCalledOnce());
+    const fetch = vi.fn(async () => (providedDatabase === fakeDb ? [] : ['recovered-climb']));
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['searchClimbs', { boardName: 'kilter' }],
+      queryFn: fetch,
+      staleTime: Infinity,
+      initialData: [],
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      providedDatabase = { tag: 'replacement' };
+      view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+      await waitFor(() => expect(observer.getCurrentResult().data).toEqual(['recovered-climb']));
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('rejects a late initial result captured before stamping', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    let stampedOwner = false;
+    let finishOldRead!: (climbs: string[]) => void;
+    stampLocalUserIdMock.mockImplementationOnce(async () => {
+      stampedOwner = true;
+    });
+    const queryClient = makeQueryClient();
+    const fetch = vi.fn(async () => {
+      if (stampedOwner) return ['my-attempted-climb'];
+      return new Promise<string[]>((resolve) => {
+        finishOldRead = resolve;
+      });
+    });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['searchClimbs', { boardName: 'kilter', showOnlyAttempted: true }],
+      queryFn: fetch,
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    try {
+      await waitFor(() => expect(observer.getCurrentResult().data).toEqual(['my-attempted-climb']));
+      await act(async () => finishOldRead([]));
+      expect(observer.getCurrentResult().data).toEqual(['my-attempted-climb']);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      view.unmount();
+      unsubscribe();
+      queryClient.clear();
+    }
+  });
+
+  it('retains an owner recovery retry across a canceled preparation', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValueOnce('unstamped');
+    let finishStamp!: () => void;
+    let stampedOwner = false;
+    stampLocalUserIdMock.mockImplementationOnce(() => {
+      stampedOwner = true;
+      return new Promise<void>((resolve) => {
+        finishStamp = resolve;
+      });
+    });
+    const queryClient = makeQueryClient();
+    const fetch = vi.fn(async () => (stampedOwner ? ['my-attempted-climb'] : []));
+    const observer = new QueryObserver(queryClient, {
+      queryKey: ['searchClimbs', { boardName: 'kilter', showOnlyAttempted: true }],
+      queryFn: fetch,
+      staleTime: Infinity,
+      initialData: [],
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    try {
+      await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledOnce());
+      isAuthenticated = false;
+      view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+      await act(async () => finishStamp());
+      expect(fetch).not.toHaveBeenCalled();
+      isAuthenticated = true;
+      view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+      await waitFor(() => expect(observer.getCurrentResult().data).toEqual(['my-attempted-climb']));
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(stampLocalUserIdMock).toHaveBeenCalledOnce();
+    } finally {
+      view.unmount();
+      unsubscribe();
       queryClient.clear();
     }
   });
