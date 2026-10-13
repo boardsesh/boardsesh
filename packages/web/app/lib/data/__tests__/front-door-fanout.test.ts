@@ -38,10 +38,10 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/app/lib/db/db', () => ({
-  sql: mockSqlTag,
+  // The all-angles stats read runs through postgres.js `unsafe`, so it counts
+  // against the same statement tally.
+  sql: Object.assign(mockSqlTag, { unsafe: mockSqlTag }),
   rowsFromResult: rowsFromResultMock,
-  dbz: {},
-  executeRows: mockSqlTag,
 }));
 
 import { getClimb, getClimbStatsForAllAngles } from '../queries';

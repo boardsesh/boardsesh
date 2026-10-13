@@ -8,9 +8,10 @@ import 'server-only';
 import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 // oxlint-disable-next-line no-restricted-imports -- raw postgres-js sql usage; migrate to drizzle
-import { dbz, executeRows, rowsFromResult, sql } from '@/app/lib/db/db';
+import { rowsFromResult, sql } from '@/app/lib/db/db';
 import { getGradeLabel, privateSafeFirstAscentAt, privateSafeFirstAscentName } from '@boardsesh/db/queries';
 import { sql as drizzleSql } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Size } from '../types';
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
@@ -235,16 +236,16 @@ async function fetchClimbStatsForAllAnglesFromDb(
   // be theirs. This page has no viewer, so it credits the earliest send an
   // anonymous visitor may read, and dates that same send. Manufacturer climbs
   // keep their stored credit. On the primary: tick audiences are privacy rules.
+  //
+  // The projection is built with drizzle and rendered to text, then run through
+  // postgres.js `unsafe`, so the read deadline can still `.cancel()` a
+  // timed-out statement (a drizzle `execute` promise has no cancel).
   const firstAscentStats = {
     boardType: drizzleSql`climb_stats.board_type`,
     climbUuid: drizzleSql`climb_stats.climb_uuid`,
     angle: drizzleSql`climb_stats.angle`,
   };
-  const result = await withReadDeadline(
-    'climb-stats-all-angles',
-    executeRows<ClimbStatsForAngle & { difficulty_id: number | null }>(
-      dbz,
-      drizzleSql`
+  const statsQuery = new PgDialect().sqlToQuery(drizzleSql`
     SELECT
       climb_stats.angle,
       COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
@@ -273,9 +274,13 @@ async function fetchClimbStatsForAllAnglesFromDb(
         AND draft_climb.is_draft IS TRUE
     )
     ORDER BY climb_stats.angle ASC
-  `,
+  `);
+  const result = rowsFromResult<ClimbStatsForAngle & { difficulty_id: number | null }>(
+    await withReadDeadline(
+      'climb-stats-all-angles',
+      sql.unsafe(statsQuery.sql, statsQuery.params as Parameters<typeof sql.unsafe>[1]),
+      remainingReadBudgetMs(),
     ),
-    remainingReadBudgetMs(),
   );
   return result.map((row) => ({
     ...row,

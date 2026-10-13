@@ -11,8 +11,12 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  * This pins the three call sites by name.
  */
 const { recordedReads, mockSqlTag } = vi.hoisted(() => ({
-  recordedReads: [] as { label: string; ms: number | undefined }[],
-  mockSqlTag: vi.fn(async () => []),
+  recordedReads: [] as { label: string; ms: number | undefined; cancellable: boolean }[],
+  mockSqlTag: Object.assign(
+    vi.fn(async () => []),
+    // postgres.js `unsafe` returns a PendingQuery the deadline can cancel.
+    { unsafe: vi.fn(() => Object.assign(Promise.resolve([]), { cancel: vi.fn() })) },
+  ),
 }));
 
 vi.mock('server-only', () => ({}));
@@ -22,8 +26,8 @@ vi.mock('@/app/lib/db/read-deadline', () => ({
   DEFAULT_READ_DEADLINE_MS: 6000,
   parseReadDeadlineMs: () => 6000,
   DbReadTimeoutError: class DbReadTimeoutError extends Error {},
-  withReadDeadline: async <T>(label: string, pending: PromiseLike<T>, ms?: number) => {
-    recordedReads.push({ label, ms });
+  withReadDeadline: async <T>(label: string, pending: PromiseLike<T> & { cancel?: () => unknown }, ms?: number) => {
+    recordedReads.push({ label, ms, cancellable: typeof pending.cancel === 'function' });
     return pending;
   },
 }));
@@ -39,8 +43,6 @@ vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: <T>(result: unknown): T[] => (Array.isArray(result) ? (result as T[]) : []),
   getReadDb: vi.fn(() => ({})),
-  dbz: {},
-  executeRows: mockSqlTag,
 }));
 
 vi.mock('@boardsesh/db/queries', async (importOriginal) => ({
@@ -81,6 +83,8 @@ describe('front-door reads run under a deadline', () => {
     await getClimbStatsForAllAngles(params.board_name, params.climb_uuid);
 
     expect(labels()).toEqual(['climb-stats-all-angles']);
+    // A query the deadline can cancel, not a bare promise it can only abandon.
+    expect(recordedReads[0]?.cancellable).toBe(true);
   });
 
   it('bounds the list front door search', async () => {

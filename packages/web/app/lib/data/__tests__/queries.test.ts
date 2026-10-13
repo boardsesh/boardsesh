@@ -2,8 +2,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { getClimb, getClimbStatsForAllAngles } from '../queries';
 import type { Climb } from '@/app/lib/types';
-import { PgDialect } from 'drizzle-orm/pg-core';
-import type { SQL } from 'drizzle-orm';
 
 /** `getClimb` resolves `null` for a genuinely missing row; these cases all expect a hit. */
 function assertClimb(climb: Climb | null): Climb {
@@ -11,13 +9,13 @@ function assertClimb(climb: Climb | null): Climb {
   return climb;
 }
 
-const { mockSqlTag, rowsFromResultMock, executeRowsMock, dbzSentinel } = vi.hoisted(() => {
-  const mockSqlTag = vi.fn();
+const { mockSqlTag, rowsFromResultMock } = vi.hoisted(() => {
+  const mockSqlTag = Object.assign(vi.fn(), { unsafe: vi.fn() });
   const rowsFromResultMock = <T>(result: unknown): T[] => {
     if (Array.isArray(result)) return result as T[];
     throw new TypeError('Expected postgres-js query result to be a row array');
   };
-  return { mockSqlTag, rowsFromResultMock, executeRowsMock: vi.fn(), dbzSentinel: { __sentinel: 'dbz' } };
+  return { mockSqlTag, rowsFromResultMock };
 });
 
 vi.mock('server-only', () => ({}));
@@ -32,8 +30,6 @@ vi.mock('next/cache', () => ({
 vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: rowsFromResultMock,
-  dbz: dbzSentinel,
-  executeRows: executeRowsMock,
 }));
 
 /** A MoonBoard canonical climb that an older, delisted uuid aliases onto. */
@@ -315,16 +311,18 @@ describe('getClimb', () => {
 
 describe('getClimbStatsForAllAngles', () => {
   beforeEach(() => {
-    executeRowsMock.mockReset();
+    mockSqlTag.unsafe.mockReset();
   });
 
   async function renderedStatsQuery(): Promise<string> {
-    executeRowsMock.mockResolvedValueOnce([]);
+    mockSqlTag.unsafe.mockResolvedValueOnce([]);
     await getClimbStatsForAllAngles('kilter', 'some-climb-uuid');
-    const [database, query] = executeRowsMock.mock.calls[0] as [unknown, SQL];
-    // On the primary: the first ascent below is decided by tick audiences.
-    expect(database).toBe(dbzSentinel);
-    return new PgDialect().sqlToQuery(query).sql.replace(/\s+/g, ' ');
+    // Through the primary pool's postgres.js `unsafe`, whose pending query the
+    // read deadline can cancel: the first ascent below is decided by tick
+    // audiences, so it is not read from the replica.
+    const [queryText, params] = mockSqlTag.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(params).toEqual(expect.arrayContaining(['kilter', 'some-climb-uuid']));
+    return queryText.replace(/\s+/g, ' ');
   }
 
   it('returns no stats for a draft climb, and still returns a stats row that has no climb row', async () => {
