@@ -10,6 +10,7 @@ export type {
   QueueState,
   QueueAction,
   QueueSearchParams,
+  QueueClimbReadTarget,
   ClimbQueue,
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,

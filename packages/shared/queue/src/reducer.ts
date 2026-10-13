@@ -3,12 +3,23 @@
  * The React `useReducer` wrapper lives in the web app.
  */
 
-import type { QueueState, QueueAction, QueueSearchParams, ClimbQueueItem } from './types';
+import type { QueueState, QueueAction, QueueSearchParams, ClimbQueueItem, Climb, QueueClimbReadTarget } from './types';
 import { insertQueueItemIdempotent } from './event-utils';
 import { playlistSuggestionSourceMatches, pruneSuggestedQueueItemsAfterCurrent } from './playlist-suggestions';
 
 function hasCurrentClimbQueueItem(payload: { currentClimbQueueItem?: ClimbQueueItem | null }): boolean {
   return Object.prototype.hasOwnProperty.call(payload, 'currentClimbQueueItem');
+}
+
+function climbMatchesReadScope(climb: Climb, boardType?: string, layoutId?: number): boolean {
+  return (
+    (boardType === undefined || !climb.boardType || climb.boardType === boardType) &&
+    (layoutId === undefined || climb.layoutId == null || climb.layoutId === layoutId)
+  );
+}
+
+function isReadTargetCurrent(item: ClimbQueueItem, target: QueueClimbReadTarget | undefined, angle: number): boolean {
+  return !!target && target.expectedClimb === item.climb && target.angle === angle;
 }
 
 export const initialState = <TSearchParams extends QueueSearchParams>(
@@ -378,6 +389,45 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       };
     }
 
+    case 'HYDRATE_CLIMBS': {
+      const { climb, targets, boardType, layoutId, activeAngle } = action.payload;
+      if (!climb.uuid || !climb.name || !climb.frames || !climbMatchesReadScope(climb, boardType, layoutId))
+        return state;
+      const queuedTargets = new Map(
+        targets.filter((target) => target.role === 'queue').map((target) => [target.uuid, target]),
+      );
+      const currentTarget = targets.find(
+        (target) => target.role === 'current' && target.uuid === state.currentClimbQueueItem?.uuid,
+      );
+      const currentIndex = state.currentClimbQueueItem
+        ? state.queue.findIndex((item) => item.uuid === state.currentClimbQueueItem?.uuid)
+        : -1;
+      let changed = false;
+      const hydrate = (
+        item: ClimbQueueItem,
+        target: QueueClimbReadTarget | undefined,
+        targetAngle: number,
+      ): ClimbQueueItem => {
+        if (
+          !isReadTargetCurrent(item, target, targetAngle) ||
+          item.climb.uuid !== climb.uuid ||
+          climb.angle !== targetAngle ||
+          (item.climb.name && item.climb.frames) ||
+          !climbMatchesReadScope(item.climb, boardType, layoutId)
+        )
+          return item;
+        changed = true;
+        return { ...item, climb: { ...item.climb, ...climb, mirrored: item.climb.mirrored } };
+      };
+      const queue = state.queue.map((item, index) =>
+        hydrate(item, queuedTargets.get(item.uuid), index < currentIndex ? item.climb.angle : activeAngle),
+      );
+      const currentClimbQueueItem = state.currentClimbQueueItem
+        ? hydrate(state.currentClimbQueueItem, currentTarget, activeAngle)
+        : null;
+      return changed ? { ...state, queue, currentClimbQueueItem } : state;
+    }
+
     case 'REGRADE_CLIMBS': {
       // Patch the per-angle grade fields onto the CURRENT + UPCOMING climbs when
       // the board angle changes. Keyed by climb.uuid (the SAME climb can appear
@@ -393,13 +443,31 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       // upcoming continuously track the live angle, a climb's angle is already
       // the live angle at the moment it advances into history, so freezing it
       // there pins the climbed-at angle for free — no separate `sentAtAngle`.
-      const { grades } = action.payload;
+      const { grades, targets, boardType, layoutId } = action.payload;
+      const queuedTargets = targets
+        ? new Map(targets.filter((target) => target.role === 'queue').map((target) => [target.uuid, target]))
+        : undefined;
+      const currentTarget = targets?.find(
+        (target) => target.role === 'current' && target.uuid === state.currentClimbQueueItem?.uuid,
+      );
       let changed = false;
-      const regrade = (item: ClimbQueueItem): ClimbQueueItem => {
+      const regrade = (item: ClimbQueueItem, role: 'queue' | 'current'): ClimbQueueItem => {
         const patch = grades[item.climb.uuid];
         // Skip if there's no patch, or the climb already carries this angle
         // (idempotent — re-running after a patch / on a stale FullSync no-ops).
         if (!patch || item.climb.angle === patch.angle) return item;
+        if (
+          !climbMatchesReadScope(item.climb, boardType, layoutId) ||
+          (targets &&
+            (!item.climb.name ||
+              !item.climb.frames ||
+              !isReadTargetCurrent(
+                item,
+                role === 'queue' ? queuedTargets?.get(item.uuid) : currentTarget,
+                patch.angle,
+              )))
+        )
+          return item;
         changed = true;
         return { ...item, climb: { ...item.climb, ...patch } };
       };
@@ -413,8 +481,8 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
 
       // History items (index < currentIndex) are returned by reference, so the
       // reference-equality / no-churn guarantees hold for them too.
-      const newQueue = state.queue.map((item, index) => (index < currentIndex ? item : regrade(item)));
-      const newCurrent = state.currentClimbQueueItem ? regrade(state.currentClimbQueueItem) : null;
+      const newQueue = state.queue.map((item, index) => (index < currentIndex ? item : regrade(item, 'queue')));
+      const newCurrent = state.currentClimbQueueItem ? regrade(state.currentClimbQueueItem, 'current') : null;
 
       // Preserve the original state reference when nothing matched, so the
       // self-healing effect that dispatches this can't churn renders.

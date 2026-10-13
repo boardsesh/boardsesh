@@ -151,6 +151,14 @@ export type ClimbRegradePatch = {
   boardseshConfidence?: string | null;
 };
 
+/** A local read addresses a particular committed representation, not just a climb UUID. */
+export type QueueClimbReadTarget = {
+  role: 'queue' | 'current';
+  uuid: string;
+  expectedClimb: Climb;
+  angle: number;
+};
+
 export type QueueSearchParams = Record<string, unknown>;
 
 export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchParams> = {
@@ -221,6 +229,24 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'CLEANUP_PENDING_UPDATE'; payload: { correlationId: string } }
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
   | { type: 'CLEAR_RESYNC_FLAG' }
-  | { type: 'REGRADE_CLIMBS'; payload: { grades: Record<string, ClimbRegradePatch> } }
+  | {
+      type: 'HYDRATE_CLIMBS';
+      payload: {
+        climb: Climb;
+        targets: QueueClimbReadTarget[];
+        boardType: string;
+        layoutId: number;
+        activeAngle: number;
+      };
+    }
+  | {
+      type: 'REGRADE_CLIMBS';
+      payload: {
+        grades: Record<string, ClimbRegradePatch>;
+        targets?: QueueClimbReadTarget[];
+        boardType?: string;
+        layoutId?: number;
+      };
+    }
   | { type: 'REFRESH_AUTHORED_CLIMB'; payload: { climbUuid: string; patch: ClimbAuthoredPatch } }
   | { type: 'CLEAR_QUEUE' };
