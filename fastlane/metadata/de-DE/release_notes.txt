@@ -21,7 +21,7 @@ MEHR NACH DEINEM GESCHMACK
 KORREKTUREN FÜR DEINE NÄCHSTE SESSION
 
 - MoonBoard-Grade nutzen jetzt die eigene V-Skala von MoonBoard. Beim Routenbuch-Import sind auch anders angeordnete Spalten oder Bouldernamen statt IDs möglich.
-- Woods-Boulder erscheinen unabhängig vom Schraubwinkel. Der Filter listet alle Routenbauer*innen eines Boards.
+- Aktiviere auf Woods Andere Winkel, um auch Boulder mit anderen Schraubwinkeln zu sehen. Der Filter für Routenbauer*innen folgt deiner Winkelauswahl.
 - Bei schlechter Verbindung geloggte Begehungen warten auf Empfang und versuchen die Synchronisierung erneut.
 - Beim Wischen bleibst du in der gewählten Liste, auch wenn ein neuer Eintrag sie umsortiert.
 - Ein Absturz beim iOS-Start und unerwünschte Safari-Tabs beim Öffnen der App sind behoben.

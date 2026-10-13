@@ -21,7 +21,7 @@ MORE WAYS TO MAKE IT YOURS
 FIXES FOR YOUR NEXT SESSION
 
 - MoonBoard grades now use MoonBoard's V scale. Logbook imports also accept exports with reordered columns or climb names instead of IDs.
-- Woods climbs appear regardless of their setting angle, and the setter filter includes every setter on a board.
+- On Woods, turn on Other angles to include climbs set at different angles. The setter filter follows your angle choice.
 - Sends logged on a flaky connection wait for signal and retry syncing.
 - Swiping through climbs stays on the list you picked, even when a new log reorders it.
 - Fixed an iOS launch crash and unwanted Safari tabs when opening the app.

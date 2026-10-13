@@ -21,7 +21,7 @@ MÁS OPCIONES A TU MEDIDA
 CORRECCIONES PARA TU PRÓXIMA SESIÓN
 
 - Los grados de MoonBoard usan ahora su propia escala V. También puedes importar logbooks con columnas en otro orden o nombres de bloques en lugar de identificadores.
-- Los bloques de Woods aparecen sea cual sea su ángulo de montaje, y el filtro de setters incluye a todos los del plafón.
+- En Woods, activa Otros ángulos para incluir bloques montados en ángulos distintos. El filtro de setters respeta tu elección de ángulos.
 - Los encadenes registrados con mala conexión esperan a tener cobertura y reintentan la sincronización.
 - Al deslizar entre bloques, sigues en la lista que elegiste aunque un registro nuevo la reordene.
 - Corregidos un cierre al abrir la app en iOS y las pestañas de Safari que aparecían al iniciarla.

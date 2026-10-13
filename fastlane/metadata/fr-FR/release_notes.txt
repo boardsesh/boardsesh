@@ -21,7 +21,7 @@ PLUS D'OPTIONS À TON GOÛT
 CORRECTIONS POUR TA PROCHAINE SÉANCE
 
 - Les cotations MoonBoard utilisent désormais sa propre échelle V. Les imports de carnet acceptent aussi les colonnes dans un autre ordre ou les noms des blocs à la place des identifiants.
-- Les blocs Woods apparaissent quel que soit leur angle d'ouverture, et le filtre des ouvreurs inclut tout le monde sur la board.
+- Sur Woods, active Autres angles pour inclure les blocs ouverts à des angles différents. Le filtre des ouvreurs et ouvreuses suit ton choix d'angles.
 - Les croix enregistrées avec une mauvaise connexion attendent le réseau pour retenter la synchronisation.
 - En balayant les blocs, tu restes dans la liste choisie, même si une nouvelle entrée du carnet la réordonne.
 - Correction d'un plantage au démarrage sur iOS et des onglets Safari qui s'ouvraient au lancement de l'app.
