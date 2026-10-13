@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
   DEFAULT_LOGBOOK_FILTERS,
   DEFAULT_LOGBOOK_SORT,
@@ -15,8 +15,9 @@ import { loadLogbookPrefs, saveLogbookPrefs } from '../../lib/logbook-prefs-stor
  * (props) and to `toAscentFeedInput` for the feed query, mirroring the climbs
  * screen's `ClimbSearchProvider` but as a hook (single consumer, no context).
  *
- * Filters + sort persist across app restarts (AsyncStorage); the climb-name
- * term is transient and is not persisted.
+ * On your own logbook filters + sort persist across app restarts
+ * (AsyncStorage); on someone else's they last the visit (`persist: false`).
+ * The climb-name term is transient and is never persisted.
  */
 export type LogbookSearchState = {
   filters: LogbookFilterState;
@@ -83,12 +84,28 @@ export type UseLogbookSearch = LogbookSearchState & {
   reset: () => void;
 };
 
-export function useLogbookSearch(): UseLogbookSearch {
-  const [state, dispatch] = useReducer(reducer, DEFAULT_STATE);
+export type UseLogbookSearchOptions = {
+  /**
+   * Load and save the filters + sort (your own logbook). False keeps them for
+   * this visit only, so filtering someone else's logbook never changes yours.
+   * Read once at mount: to switch, remount (key the caller on it), since a
+   * mid-life switch could save defaults over the stored prefs before they load.
+   */
+  persist?: boolean;
+};
+
+export function useLogbookSearch({ persist = true }: UseLogbookSearchOptions = {}): UseLogbookSearch {
+  const [persistOnMount] = useState(persist);
+  // Session-only state has nothing to load, so it opens the feed at once.
+  const [state, dispatch] = useReducer(reducer, persistOnMount, (persisting) => ({
+    ...DEFAULT_STATE,
+    hydrated: !persisting,
+  }));
 
   // Hydrate persisted filter/sort once on mount. The feed waits on `hydrated`
   // (see LogbookTab) so it fetches once with the restored prefs, not twice.
   useEffect(() => {
+    if (!persistOnMount) return;
     let cancelled = false;
     // Always complete hydration — even if loading throws (storage unavailable) —
     // so the feed, which is gated on `hydrated`, never stays stuck disabled.
@@ -108,13 +125,13 @@ export function useLogbookSearch(): UseLogbookSearch {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [persistOnMount]);
 
   // Persist filter/sort across restarts once hydrated (the name stays transient).
   useEffect(() => {
-    if (!state.hydrated) return;
+    if (!persistOnMount || !state.hydrated) return;
     void saveLogbookPrefs({ filters: state.filters, sort: state.sort });
-  }, [state.hydrated, state.filters, state.sort]);
+  }, [persistOnMount, state.hydrated, state.filters, state.sort]);
 
   // Stable action identities so the capsule row and the name handler don't churn.
   const actions = useMemo(

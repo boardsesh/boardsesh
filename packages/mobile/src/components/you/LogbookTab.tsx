@@ -71,6 +71,9 @@ import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
 const SEARCH_DEBOUNCE_MS = 300;
+// How long a setter push blocks another one if its picks never come back (a
+// push that didn't land). Longer than the native push animation.
+const SETTER_PUSH_RELEASE_MS = 1500;
 
 // Kilter and Tension share an identical difficulty-id scale, so one board's grade
 // list is the canonical scale for the grade capsule's label, the inline rail and
@@ -152,8 +155,9 @@ export function LogbookTab({
   const [editAscent, setEditAscent] = useState<AscentFeedItem | null>(null);
 
   // Logbook search/filter/sort state. The name is typed in the filter sheet and
-  // debounced before it commits to the query.
-  const logbookSearch = useLogbookSearch();
+  // debounced before it commits to the query. Only your own logbook saves its
+  // filters; someone else's keeps them for the visit.
+  const logbookSearch = useLogbookSearch({ persist: viewerIsOwner });
   const { filters, sort, name, setName, setSort, setFilters, reset, hydrated } = logbookSearch;
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -248,10 +252,18 @@ export function LogbookTab({
     setFilters(DEFAULT_LOGBOOK_FILTERS);
   }, [setName, setFilters]);
 
+  // Which section the sheet opens scrolled to: the top, or When for "Custom…".
+  const [sheetSection, setSheetSection] = useState<'when' | undefined>(undefined);
   const handleOpenFilters = useCallback(() => {
     hapticSelection();
     // Close any open inline rail so it doesn't linger under the sheet.
     setOpenRail(null);
+    setSheetSection(undefined);
+    setFilterSheetOpen(true);
+  }, []);
+  const handleOpenCustomDates = useCallback(() => {
+    setOpenRail(null);
+    setSheetSection('when');
     setFilterSheetOpen(true);
   }, []);
 
@@ -261,25 +273,48 @@ export function LogbookTab({
   // it directly; the sheet suspends itself first. The picks come back through
   // the handoff below, addressed to this Logbook alone.
   const [setterHandoffId] = useState(createLogbookSetterHandoffId);
-  const handleOpenSetters = useCallback(() => {
-    if (!userId) return;
-    const current = filtersRef.current;
-    scopedRouter.push({
-      pathname: '/users/[userId]/logbook-setters',
-      params: {
-        userId,
-        handoffId: setterHandoffId,
-        setters: JSON.stringify(current.setterUsernames),
-        boardType: current.boardType,
-        layoutIds: JSON.stringify(current.layoutIds),
-      },
-    });
-  }, [userId, scopedRouter, setterHandoffId]);
+  // One picker at a time: set on push, cleared when its picks come back (every
+  // removal hands them back) or, should the push never land, after a beat.
+  const setterPushInFlightRef = useRef(false);
+  const setterPushReleaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const releaseSetterPush = useCallback(() => {
+    setterPushInFlightRef.current = false;
+    if (setterPushReleaseRef.current) clearTimeout(setterPushReleaseRef.current);
+    setterPushReleaseRef.current = null;
+  }, []);
+  useEffect(() => releaseSetterPush, [releaseSetterPush]);
+  /**
+   * Pushes the setter picker. `beforePush` runs only once the push is going
+   * ahead (the sheet suspends there), so a refused push never hides the sheet.
+   * Returns whether it pushed.
+   */
+  const handleOpenSetters = useCallback(
+    (beforePush?: () => void): boolean => {
+      if (!userId || setterPushInFlightRef.current) return false;
+      setterPushInFlightRef.current = true;
+      setterPushReleaseRef.current = setTimeout(releaseSetterPush, SETTER_PUSH_RELEASE_MS);
+      beforePush?.();
+      const current = filtersRef.current;
+      scopedRouter.push({
+        pathname: '/users/[userId]/logbook-setters',
+        params: {
+          userId,
+          handoffId: setterHandoffId,
+          setters: JSON.stringify(current.setterUsernames),
+          boardType: current.boardType,
+          layoutIds: JSON.stringify(current.layoutIds),
+        },
+      });
+      return true;
+    },
+    [userId, scopedRouter, setterHandoffId, releaseSetterPush],
+  );
 
   useEffect(
     () =>
       subscribeToLogbookSetterSelection(({ handoffId, setterUsernames, apply }) => {
         if (handoffId !== setterHandoffId) return;
+        releaseSetterPush();
         const current = filtersRef.current.setterUsernames;
         const unchanged =
           current.length === setterUsernames.length &&
@@ -289,7 +324,7 @@ export function LogbookTab({
         // coming back over it.
         if (apply) setFilterSheetOpen(false);
       }),
-    [setterHandoffId, changeFilters],
+    [setterHandoffId, changeFilters, releaseSetterPush],
   );
 
   // The query input is rebuilt only when the committed filters/sort/name or the
@@ -709,6 +744,7 @@ export function LogbookTab({
           locale={locale}
           openRail={visibleRail}
           onOpenFilters={handleOpenFilters}
+          onOpenCustomDates={handleOpenCustomDates}
           onToggleRail={handleToggleRail}
           onChangeFilters={handleCapsuleFilters}
           onChangeSort={handleCapsuleSort}
@@ -875,6 +911,7 @@ export function LogbookTab({
           onClearName={clearName}
           onReset={handleReset}
           onOpenSetters={handleOpenSetters}
+          initialSection={sheetSection}
         />
       ) : null}
     </View>

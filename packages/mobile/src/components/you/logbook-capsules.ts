@@ -9,8 +9,8 @@
 // Setter, Benchmarks, Sort.
 //   • Grade and Angle show and hide an inline rail (one open at a time; the
 //     tab owns which).
-//   • When's "Custom…" switches to the Custom window and opens the sheet, where
-//     the From / To rows are.
+//   • When's "Custom…" switches to the Custom window and opens the sheet on its
+//     When section, where the From / To rows are.
 //   • Board shows only with something to pick: two or more logged boards, or a
 //     board already set (so it can be cleared).
 //   • Sort switches the sort key; each option says what you get ("Name A–Z").
@@ -70,6 +70,8 @@ export type LogbookCapsuleInput = LogbookLabelInput & {
   name: string;
   openRail: LogbookRailKind | null;
   onOpenFilters: () => void;
+  /** When's "Custom…": opens the sheet on its When section, where the From / To rows are. */
+  onOpenCustomDates: () => void;
   /** One handler for both directions: the caller closes the rail when it is the open one. */
   onToggleRail: (rail: LogbookRailKind) => void;
   onChangeFilters: (patch: Partial<LogbookFilterState>) => void;
@@ -338,6 +340,7 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
     boardOptions,
     openRail,
     onOpenFilters,
+    onOpenCustomDates,
     onToggleRail,
     onChangeFilters,
     onChangeSort,
@@ -444,7 +447,7 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
               label: t('mobile.logbook.capsules.customDates'),
               onPress: () => {
                 if (filters.dateWindow !== 'custom') onChangeFilters({ dateWindow: 'custom' });
-                onOpenFilters();
+                onOpenCustomDates();
               },
             },
           ],
@@ -478,7 +481,8 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
           label: label(kind, t('mobile.logbook.capsules.setter')),
           count: filters.setterUsernames.length,
           accessibilityLabel: t('mobile.logbook.capsules.setterAria'),
-          onPress: onOpenSetters,
+          // Wrapped: a platform's press event must not reach the handler's arguments.
+          onPress: () => onOpenSetters(),
         });
         break;
       case 'benchmarks':

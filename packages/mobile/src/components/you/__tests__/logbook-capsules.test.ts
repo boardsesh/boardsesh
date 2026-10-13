@@ -68,6 +68,7 @@ function makeInput(overrides: Partial<LogbookCapsuleInput> = {}): LogbookCapsule
     openRail: null,
     locale: 'en-US',
     onOpenFilters: vi.fn(),
+    onOpenCustomDates: vi.fn(),
     onToggleRail: vi.fn(),
     onChangeFilters: vi.fn(),
     onChangeSort: vi.fn(),
@@ -291,7 +292,7 @@ describe('Stars', () => {
 });
 
 describe('When', () => {
-  it('offers the rolling windows, and Custom… as a command that opens the sheet', () => {
+  it('offers the rolling windows, and Custom… as a command that opens the When section', () => {
     const input = makeInput();
     const when = capsuleFor(buildLogbookCapsules(input, mockT), 'date', 'menu');
     expect(when).toMatchObject({ label: 'mobile.logbook.capsules.when', active: false, selected: 'any' });
@@ -304,7 +305,8 @@ describe('When', () => {
       [{ dateWindow: 'month' }],
       [{ dateWindow: 'custom' }],
     ]);
-    expect(input.onOpenFilters).toHaveBeenCalledTimes(1);
+    expect(input.onOpenCustomDates).toHaveBeenCalledTimes(1);
+    expect(input.onOpenFilters).not.toHaveBeenCalled();
   });
 
   it('labels a window by name and a custom range by its dates', () => {
@@ -319,11 +321,11 @@ describe('When', () => {
     expect(when({ dateWindow: 'custom' })).toMatchObject({ label: 'mobile.logbook.capsules.when', active: false });
   });
 
-  it('only opens the sheet from Custom… when Custom is already the window', () => {
+  it('only opens the When section from Custom… when Custom is already the window', () => {
     const input = makeInput({ filters: filtersWith({ dateWindow: 'custom', fromDate: '2026-06-03' }) });
     capsuleFor(buildLogbookCapsules(input, mockT), 'date', 'menu').actions?.[0].onPress();
     expect(input.onChangeFilters).not.toHaveBeenCalled();
-    expect(input.onOpenFilters).toHaveBeenCalledTimes(1);
+    expect(input.onOpenCustomDates).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -363,8 +365,10 @@ describe('Setter and Benchmarks', () => {
     const input = makeInput({ pinned: ['setter'] });
     const resting = capsuleFor(buildLogbookCapsules(input, mockT), 'setter', 'sheet');
     expect(resting).toMatchObject({ label: 'mobile.logbook.capsules.setter', count: 0 });
-    resting.onPress();
+    // A press event from the platform never reaches the handler.
+    (resting.onPress as unknown as (event: unknown) => void)({ nativeEvent: {} });
     expect(input.onOpenSetters).toHaveBeenCalledTimes(1);
+    expect(input.onOpenSetters).toHaveBeenCalledWith();
 
     const setter = (setterUsernames: string[]) =>
       capsuleFor(

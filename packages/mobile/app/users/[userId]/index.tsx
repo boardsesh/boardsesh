@@ -159,7 +159,12 @@ export default function PublicProfileScreen() {
           <ProgressTab data={youData} topInset={0} userId={userId} isOwnProfile={isSelf} />
         ) : null}
         {activeSection === 'sessions' ? <SessionsTab userId={userId} topInset={0} /> : null}
-        {activeSection === 'logbook' ? <LogbookTab userId={userId} topInset={0} viewerIsOwner={isSelf} /> : null}
+        {/* Keyed on ownership: `isSelf` turns true only once your own profile
+            loads, and the Logbook saves its filters only on your own logbook,
+            so the flip remounts it rather than switching persistence mid-life. */}
+        {activeSection === 'logbook' ? (
+          <LogbookTab key={isSelf ? 'own' : 'other'} userId={userId} topInset={0} viewerIsOwner={isSelf} />
+        ) : null}
         {activeSection === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={0} /> : null}
       </View>
     </View>

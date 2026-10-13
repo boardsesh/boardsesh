@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
@@ -92,8 +92,14 @@ type LogbookFilterSheetProps = {
   onClearName: () => void;
   /** Filters, sort and name back to their defaults. */
   onReset: () => void;
-  /** Pushes the setter picker. The sheet suspends first and comes back when it pops. */
-  onOpenSetters: () => void;
+  /**
+   * Pushes the setter picker, calling `beforePush` (the sheet's suspend) only
+   * once the push is going ahead. Returns whether it pushed: a refused push
+   * leaves the sheet where it was.
+   */
+  onOpenSetters: (beforePush: () => void) => boolean;
+  /** Open scrolled to this section: the When capsule's "Custom…" lands on the date rows. */
+  initialSection?: 'when';
 };
 
 // One native detent. The iOS height bound comes from useSheetColumnStyle.
@@ -123,6 +129,7 @@ export function LogbookFilterSheet({
   onClearName,
   onReset,
   onOpenSetters,
+  initialSection,
 }: LogbookFilterSheetProps) {
   const { t } = useTranslation('you');
   const { systemColors } = useTheme();
@@ -232,9 +239,36 @@ export function LogbookFilterSheet({
 
   const handleOpenSetters = useCallback(() => {
     if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
-    suspend();
-    onOpenSetters();
+    onOpenSetters(suspend);
   }, [isCurrentPresentation, isAwaitingReturn, suspend, onOpenSetters]);
+
+  // Opened from "Custom…": scroll the When block to the top once both of its
+  // offsets are known (the section within the body, the block within the section).
+  const pendingWhenScrollRef = useRef(initialSection === 'when');
+  const ascentsSectionYRef = useRef<number | null>(null);
+  const whenBlockYRef = useRef<number | null>(null);
+  const { scrollRef } = subRoute;
+  const scrollToWhenWhenMeasured = useCallback(() => {
+    const sectionY = ascentsSectionYRef.current;
+    const blockY = whenBlockYRef.current;
+    if (!pendingWhenScrollRef.current || sectionY == null || blockY == null) return;
+    pendingWhenScrollRef.current = false;
+    scrollRef.current?.scrollTo({ y: Math.max(0, sectionY + blockY - spacing[3]), animated: false });
+  }, [scrollRef]);
+  const handleAscentsLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      ascentsSectionYRef.current = event.nativeEvent.layout.y;
+      scrollToWhenWhenMeasured();
+    },
+    [scrollToWhenWhenMeasured],
+  );
+  const handleWhenLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      whenBlockYRef.current = event.nativeEvent.layout.y;
+      scrollToWhenWhenMeasured();
+    },
+    [scrollToWhenWhenMeasured],
+  );
 
   // --- Pins: one stable toggle per kind, so a pin tap re-renders only its row.
   const { isPinned, togglePin } = useLogbookPinnedChips();
@@ -424,76 +458,82 @@ export function LogbookFilterSheet({
               />
             </FilterSheetSection>
 
-            <FilterSheetSection
-              title={
-                viewerIsOwner
-                  ? t('mobile.logbook.filterSheet.sectionYourAscents')
-                  : t('mobile.logbook.filterSheet.sectionTheirAscents')
-              }
-            >
-              <FilterLabelRow label={t('mobile.logbook.filterSheet.status')} {...pinProps('status')} />
-              <View style={filterSheetStyles.controlGap} />
-              <SegmentedControl
-                options={statusOptions}
-                selectedKey={statusSegmentFor(filters)}
-                onSelect={handleStatusChange}
-                accessibilityLabel={t('mobile.logbook.filterSheet.status')}
-              />
-
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow
-                label={
-                  viewerIsOwner ? t('mobile.logbook.filterSheet.yourStars') : t('mobile.logbook.filterSheet.theirStars')
+            <View pointerEvents="box-none" testID="logbook-filter-ascents" onLayout={handleAscentsLayout}>
+              <FilterSheetSection
+                title={
+                  viewerIsOwner
+                    ? t('mobile.logbook.filterSheet.sectionYourAscents')
+                    : t('mobile.logbook.filterSheet.sectionTheirAscents')
                 }
-                {...pinProps('stars')}
-              />
-              <View style={filterSheetStyles.ratingRow}>
-                <FilterChip
-                  label={t('mobile.logbook.filterSheet.anyStars')}
-                  value={undefined}
-                  selected={filters.minQuality === ''}
-                  onPress={handleAnyStars}
+              >
+                <FilterLabelRow label={t('mobile.logbook.filterSheet.status')} {...pinProps('status')} />
+                <View style={filterSheetStyles.controlGap} />
+                <SegmentedControl
+                  options={statusOptions}
+                  selectedKey={statusSegmentFor(filters)}
+                  onSelect={handleStatusChange}
+                  accessibilityLabel={t('mobile.logbook.filterSheet.status')}
                 />
-                <StarRating
-                  value={filters.minQuality === '' ? undefined : filters.minQuality}
-                  onChange={handleStarsChange}
-                  clearValue={undefined}
-                />
-              </View>
 
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow label={t('mobile.logbook.filterSheet.when')} {...pinProps('date')} />
-              <FilterChipGroup>
-                {LOGBOOK_DATE_WINDOWS.map((window) => (
+                <View style={filterSheetStyles.subsectionGap} />
+                <FilterLabelRow
+                  label={
+                    viewerIsOwner
+                      ? t('mobile.logbook.filterSheet.yourStars')
+                      : t('mobile.logbook.filterSheet.theirStars')
+                  }
+                  {...pinProps('stars')}
+                />
+                <View style={filterSheetStyles.ratingRow}>
                   <FilterChip
-                    key={window}
-                    label={logbookDateWindowLabel(window, t)}
-                    value={window}
-                    selected={filters.dateWindow === window}
-                    onPress={handleDateWindow}
+                    label={t('mobile.logbook.filterSheet.anyStars')}
+                    value={undefined}
+                    selected={filters.minQuality === ''}
+                    onPress={handleAnyStars}
                   />
-                ))}
-              </FilterChipGroup>
-              {filters.dateWindow === 'custom' ? (
-                <View style={styles.dateRows}>
-                  <DateRangeRow
-                    label={t('mobile.logbook.dateFrom')}
-                    value={filters.fromDate}
-                    onChange={handleFromDate}
-                    clearLabel={t('mobile.logbook.dateAny')}
-                    maximumDate={fromCeiling}
-                  />
-                  <DateRangeRow
-                    label={t('mobile.logbook.dateTo')}
-                    value={filters.toDate}
-                    onChange={handleToDate}
-                    clearLabel={t('mobile.logbook.dateAny')}
-                    minimumDate={fromDay}
-                    maximumDate={today}
+                  <StarRating
+                    value={filters.minQuality === '' ? undefined : filters.minQuality}
+                    onChange={handleStarsChange}
+                    clearValue={undefined}
                   />
                 </View>
-              ) : null}
-            </FilterSheetSection>
+
+                <View style={filterSheetStyles.subsectionGap} />
+                <View pointerEvents="box-none" testID="logbook-filter-when" onLayout={handleWhenLayout}>
+                  <FilterLabelRow label={t('mobile.logbook.filterSheet.when')} {...pinProps('date')} />
+                  <FilterChipGroup>
+                    {LOGBOOK_DATE_WINDOWS.map((window) => (
+                      <FilterChip
+                        key={window}
+                        label={logbookDateWindowLabel(window, t)}
+                        value={window}
+                        selected={filters.dateWindow === window}
+                        onPress={handleDateWindow}
+                      />
+                    ))}
+                  </FilterChipGroup>
+                  {filters.dateWindow === 'custom' ? (
+                    <View style={styles.dateRows}>
+                      <DateRangeRow
+                        label={t('mobile.logbook.dateFrom')}
+                        value={filters.fromDate}
+                        onChange={handleFromDate}
+                        clearLabel={t('mobile.logbook.dateAny')}
+                        maximumDate={fromCeiling}
+                      />
+                      <DateRangeRow
+                        label={t('mobile.logbook.dateTo')}
+                        value={filters.toDate}
+                        onChange={handleToDate}
+                        clearLabel={t('mobile.logbook.dateAny')}
+                        minimumDate={fromDay}
+                        maximumDate={today}
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              </FilterSheetSection>
+            </View>
 
             <FilterSheetSection title={t('mobile.logbook.filterSheet.sectionTheClimb')}>
               {showBoardControl ? (

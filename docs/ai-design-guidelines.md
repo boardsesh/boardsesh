@@ -438,8 +438,9 @@ notes), Difficulty (the grade rail), Your ascents (a four-segment All · Sends �
 control, a star minimum, and When presets with Custom From / To rows that can't cross each other or
 today), The climb (board and layout chips when there is a choice to make, the angle rail, the
 setter picker row, Only benchmark climbs) and Sort (Sort by chips and a Descending / Ascending
-order). On someone else's logbook the copy says "Their", never "Your". The setter row pushes a
-picker route and the sheet suspends around it (`useSheetSubRoute`).
+order). On someone else's logbook the copy says "Their", never "Your", and the filters and sort last
+the visit: only your own logbook saves them. The setter row pushes a picker route and the sheet
+suspends around it (`useSheetSubRoute`).
 
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
@@ -574,7 +575,7 @@ pinned on a fresh install), its store `logbookPinnedChipsStore` on the key `pinn
 its builder `src/components/you/logbook-capsules.ts` (`buildLogbookCapsules`, plus
 `buildLogbookFilterTokens` for the token row), locked by `logbook-capsules.test.ts`. Grade and Angle
 are `rail`s; Status, Stars, When, Board and Sort are `menu`s (When's "Custom…" command opens the
-sheet on the Custom window; Board shows only with two or more logged boards); Setter is a `sheet`
+sheet on the Custom window, scrolled to When; Board shows only with two or more logged boards); Setter is a `sheet`
 capsule that pushes the setter picker; Benchmarks is a `toggle`. The Sort menu switches the key, and
 each option names what it gives ("Latest", "Name A–Z", "Most tries"); the order itself is in the
 sheet. The Logbook's own climb-name search is never a capsule, only a token.

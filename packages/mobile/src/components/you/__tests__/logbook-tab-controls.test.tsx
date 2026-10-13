@@ -12,7 +12,7 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -41,7 +41,8 @@ type SheetCapture = {
   onNameChange: (text: string) => void;
   onClearName: () => void;
   onReset: () => void;
-  onOpenSetters: () => void;
+  onOpenSetters: (beforePush?: () => void) => boolean;
+  initialSection?: 'when';
 };
 
 const captured = vi.hoisted(() => ({
@@ -105,7 +106,15 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress }, children),
 }));
 
-vi.mock('@shopify/flash-list', () => ({ FlashList: () => createElement('div', { 'data-testid': 'flash-list' }) }));
+// Renders the empty state when there are no rows, so "Clear filters" can be pressed.
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({ data, ListEmptyComponent }: { data: unknown[]; ListEmptyComponent?: ReactNode }) =>
+    createElement('div', { 'data-testid': 'flash-list' }, data.length === 0 ? ListEmptyComponent : null),
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
@@ -221,7 +230,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: ()
 // use-logbook-search, use-today and @boardsesh/logbook run for real, so the
 // test asserts the real wiring from a capsule to the feed input.
 import { LogbookTab } from '../LogbookTab';
-import { loadLogbookPrefs } from '../../../lib/logbook-prefs-store';
+import { loadLogbookPrefs, saveLogbookPrefs } from '../../../lib/logbook-prefs-store';
 import { emitLogbookSetterSelection } from '../../../lib/logbook-setter-handoff';
 import { resetTodayForTests } from '../../../hooks/use-today';
 import { toGroupedFeed } from './helpers/grouped-feed-factory';
@@ -269,7 +278,8 @@ beforeEach(() => {
   focusState.callbacks.clear();
   routerState.push.mockReset();
   analytics.track.mockClear();
-  vi.mocked(loadLogbookPrefs).mockResolvedValue(null);
+  vi.mocked(loadLogbookPrefs).mockClear().mockResolvedValue(null);
+  vi.mocked(saveLogbookPrefs).mockClear();
 });
 
 afterEach(() => {
@@ -494,10 +504,110 @@ describe('LogbookTab controls', () => {
     expect(captured.feedInput).toMatchObject({ setterUsernames: ['alex', 'sam'] });
   });
 
+  it("keeps filters on someone else's logbook to the visit: never reads or writes your saved set", async () => {
+    await renderTab({ viewerIsOwner: false });
+    act(() => capsule('status', 'menu').onSelect('sends'));
+    expect(captured.feedInput).toMatchObject({ statusMode: 'send' });
+    expect(loadLogbookPrefs).not.toHaveBeenCalled();
+    expect(saveLogbookPrefs).not.toHaveBeenCalled();
+  });
+
+  it('saves filters on your own logbook', async () => {
+    await renderTab();
+    act(() => capsule('status', 'menu').onSelect('sends'));
+    expect(saveLogbookPrefs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filters: expect.objectContaining({ includeSends: true, includeAttempts: false }) }),
+    );
+  });
+
+  it('clears every filter and the name from an emptied list, keeping the sort', async () => {
+    const { getByText } = await renderTab();
+    act(() => capsule('status', 'menu').onSelect('sends'));
+    act(() => capsule('sort', 'menu').onSelect('grade'));
+    act(() => capsule('filters', 'sheet').onPress());
+    act(() => {
+      captured.sheet?.onChangeFilters({ benchmarkOnly: true, minQuality: 2 });
+      captured.sheet?.onNameChange('crimp');
+      vi.advanceTimersByTime(300);
+    });
+    expect(captured.feedInput).toMatchObject({ climbName: 'crimp', benchmarkOnly: true, sortBy: 'hardest' });
+    expect(getByText('mobile.logbook.emptyFiltered')).toBeTruthy();
+
+    fireEvent.click(getByText('mobile.logbook.clearFilters'));
+    expect(captured.sheet?.filters).toEqual(DEFAULT_LOGBOOK_FILTERS);
+    expect(captured.sheet?.name).toBe('');
+    expect(captured.sheet?.sort).toEqual(logbookSortFor('grade', 'desc'));
+    expect(captured.feedInput).not.toHaveProperty('climbName');
+    expect(captured.feedInput).toMatchObject({ sortBy: 'hardest', statusMode: 'both' });
+    expect(analytics.track).toHaveBeenCalledWith('Logbook Filter Changed', { fields: 'all', surface: 'empty_state' });
+  });
+
+  it('says nothing about filters on an unfiltered empty logbook, and never "your" on someone else\'s', async () => {
+    const own = await renderTab();
+    expect(own.getByText('mobile.logbook.empty')).toBeTruthy();
+    expect(own.queryByText('mobile.logbook.clearFilters')).toBeNull();
+    own.unmount();
+    const other = await renderTab({ viewerIsOwner: false });
+    expect(other.getByText('mobile.logbook.emptyOther')).toBeTruthy();
+  });
+
+  it('opens the sheet on When from "Custom…", and at the top from Filters', async () => {
+    const view = await renderTab();
+    act(() => capsule('date', 'menu').actions?.[0].onPress());
+    expect(captured.sheet?.initialSection).toBe('when');
+    expect(captured.sheet?.filters.dateWindow).toBe('custom');
+    act(() => captured.sheet?.onDismiss());
+    expect(view.queryByTestId('filter-sheet')).toBeNull();
+    act(() => capsule('filters', 'sheet').onPress());
+    expect(captured.sheet?.initialSection).toBeUndefined();
+  });
+
+  it('pushes one setter picker for a double tap, and another once the first hands back', async () => {
+    pinState.pinned = ['setter'];
+    await renderTab();
+    act(() => {
+      capsule('setter', 'sheet').onPress();
+      capsule('setter', 'sheet').onPress();
+    });
+    expect(routerState.push).toHaveBeenCalledTimes(1);
+    const [{ params }] = routerState.push.mock.calls[0] as [{ params: Record<string, string> }];
+    act(() => emitLogbookSetterSelection({ handoffId: params.handoffId, setterUsernames: [], apply: false }));
+    act(() => capsule('setter', 'sheet').onPress());
+    expect(routerState.push).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets go of a push that never landed after a beat', async () => {
+    pinState.pinned = ['setter'];
+    await renderTab();
+    act(() => capsule('setter', 'sheet').onPress());
+    act(() => capsule('setter', 'sheet').onPress());
+    expect(routerState.push).toHaveBeenCalledTimes(1);
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    act(() => capsule('setter', 'sheet').onPress());
+    expect(routerState.push).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses the push without a climber, before the sheet suspends', async () => {
+    await renderTab({ userId: undefined });
+    act(() => capsule('filters', 'sheet').onPress());
+    const beforePush = vi.fn();
+    let pushed = true;
+    act(() => {
+      pushed = captured.sheet?.onOpenSetters(beforePush) ?? true;
+    });
+    expect(pushed).toBe(false);
+    expect(beforePush).not.toHaveBeenCalled();
+    expect(routerState.push).not.toHaveBeenCalled();
+  });
+
   it('closes the sheet when the picker asks to show results', async () => {
     const view = await renderTab();
     act(() => capsule('filters', 'sheet').onPress());
-    act(() => captured.sheet?.onOpenSetters());
+    act(() => {
+      captured.sheet?.onOpenSetters();
+    });
     const [{ params }] = routerState.push.mock.calls[0] as [{ params: Record<string, string> }];
     expect(view.queryByTestId('filter-sheet')).not.toBeNull();
     act(() => emitLogbookSetterSelection({ handoffId: params.handoffId, setterUsernames: [], apply: true }));

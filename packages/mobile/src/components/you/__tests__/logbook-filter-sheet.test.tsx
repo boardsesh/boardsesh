@@ -40,14 +40,26 @@ const sheetHost = vi.hoisted(() => ({
   mountCount: 0,
 }));
 const managedSheet = vi.hoisted(() => ({ open: undefined as boolean | undefined }));
+const layouts = vi.hoisted(() => new Map<string, (event: { nativeEvent: { layout: { y: number } } }) => void>());
+const scrollTo = vi.hoisted(() => vi.fn());
 const focusEffect = vi.hoisted(() => ({ callback: null as null | (() => void) }));
 const pinStore = vi.hoisted(() => ({ pinnedKind: null as string | null, togglePin: vi.fn() }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
+  View: ({
+    children,
+    testID,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    onLayout?: (event: { nativeEvent: { layout: { y: number } } }) => void;
+  }) => {
+    if (testID && onLayout) layouts.set(testID, onLayout);
+    return createElement('div', { 'data-testid': testID }, children);
+  },
   Keyboard: {
     addListener: () => ({ remove: () => {} }),
     isVisible: () => false,
@@ -114,7 +126,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     { children },
     ref,
   ) {
-    useImperativeHandle(ref, () => ({ scrollTo: () => {} }), []);
+    useImperativeHandle(ref, () => ({ scrollTo }), []);
     return createElement('div', null, children);
   }),
 }));
@@ -365,7 +377,10 @@ function renderSheet(overrides: Partial<SheetProps> = {}) {
     onNameChange: vi.fn(),
     onClearName: vi.fn(),
     onReset: vi.fn(),
-    onOpenSetters: vi.fn(),
+    onOpenSetters: vi.fn((beforePush: () => void) => {
+      beforePush();
+      return true;
+    }),
     ...overrides,
   };
   return { props, ...render(createElement(LiveHarness, props)) };
@@ -379,6 +394,8 @@ beforeEach(() => {
   focusEffect.callback = null;
   pinStore.pinnedKind = null;
   pinStore.togglePin.mockReset();
+  layouts.clear();
+  scrollTo.mockReset();
 });
 
 describe('LogbookFilterSheet header', () => {
@@ -587,6 +604,15 @@ describe('The climb', () => {
     expect(sheetHost.mountCount).toBe(mountsBefore + 1);
   });
 
+  it('stays put when the picker refuses to open', () => {
+    const onOpenSetters = vi.fn(() => false);
+    const { getByLabelText } = renderSheet({ onOpenSetters });
+    fireEvent.click(getByLabelText('mobile.logbook.filterSheet.setter'));
+    expect(onOpenSetters).toHaveBeenCalledTimes(1);
+    // Not suspended: the sheet is still the one on screen.
+    expect(managedSheet.open).toBe(true);
+  });
+
   it('reads Any with no setter picked', () => {
     renderSheet();
     expect(document.querySelector('[aria-label="mobile.logbook.filterSheet.setter"]')?.textContent).toContain(
@@ -598,6 +624,30 @@ describe('The climb', () => {
     const { getByTestId, props } = renderSheet();
     fireEvent.click(getByTestId('switch-mobile.logbook.filterSheet.onlyBenchmarks'));
     expect(props.onChangeFilters).toHaveBeenLastCalledWith({ benchmarkOnly: true });
+  });
+});
+
+describe('opening on When', () => {
+  const layOut = () =>
+    act(() => {
+      layouts.get('logbook-filter-ascents')?.({ nativeEvent: { layout: { y: 400 } } });
+      layouts.get('logbook-filter-when')?.({ nativeEvent: { layout: { y: 180 } } });
+    });
+
+  it('scrolls the When block to the top once it is measured, and only once', () => {
+    renderSheet({ initialSection: 'when', filters: { ...DEFAULT_LOGBOOK_FILTERS, dateWindow: 'custom' } });
+    layOut();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    // The section's offset plus the block's, less a 12pt breath above the label.
+    expect(scrollTo).toHaveBeenCalledWith({ y: 568, animated: false });
+    layOut();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens at the top otherwise', () => {
+    renderSheet();
+    layOut();
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });
 

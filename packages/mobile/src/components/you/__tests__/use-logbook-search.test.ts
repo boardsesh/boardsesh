@@ -303,3 +303,59 @@ describe('useLogbookSearch', () => {
     expect(result.current.hydrated).toBe(true);
   });
 });
+
+describe("useLogbookSearch on someone else's logbook (persist: false)", () => {
+  beforeEach(() => {
+    vi.mocked(loadLogbookPrefs)
+      .mockReset()
+      .mockResolvedValue({
+        filters: { ...DEFAULT_LOGBOOK_FILTERS, benchmarkOnly: true },
+        sort: DEFAULT_LOGBOOK_SORT,
+      });
+    vi.mocked(saveLogbookPrefs).mockReset().mockResolvedValue(undefined);
+  });
+
+  it('opens at once on defaults, never reads your saved filters, and never writes its own', async () => {
+    const { result } = renderHook(() => useLogbookSearch({ persist: false }));
+    expect(result.current.hydrated).toBe(true);
+    await flushHydration();
+    expect(loadLogbookPrefs).not.toHaveBeenCalled();
+    expect(result.current.filters).toEqual(DEFAULT_LOGBOOK_FILTERS);
+
+    await act(async () => {
+      result.current.setFilters({ boardType: 'kilter', setterUsernames: ['alex'] });
+      result.current.setSort(logbookSortFor('grade', 'desc'));
+    });
+    await act(async () => {
+      result.current.reset();
+    });
+    expect(saveLogbookPrefs).not.toHaveBeenCalled();
+  });
+
+  it('reads persistence once at mount, so a later flip cannot save defaults over your prefs', async () => {
+    const { result, rerender } = renderHook(({ persist }) => useLogbookSearch({ persist }), {
+      initialProps: { persist: false },
+    });
+    await act(async () => {
+      result.current.setFilters({ minQuality: 3 });
+    });
+    rerender({ persist: true });
+    await flushHydration();
+    expect(loadLogbookPrefs).not.toHaveBeenCalled();
+    expect(saveLogbookPrefs).not.toHaveBeenCalled();
+  });
+
+  it('still hydrates and saves your own logbook', async () => {
+    const { result } = renderHook(() => useLogbookSearch({ persist: true }));
+    expect(result.current.hydrated).toBe(false);
+    await flushHydration();
+    expect(result.current.filters.benchmarkOnly).toBe(true);
+    vi.mocked(saveLogbookPrefs).mockClear();
+    await act(async () => {
+      result.current.setFilters({ minQuality: 3 });
+    });
+    expect(saveLogbookPrefs).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: expect.objectContaining({ minQuality: 3, benchmarkOnly: true }) }),
+    );
+  });
+});
