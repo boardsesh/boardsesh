@@ -414,8 +414,8 @@ export async function findSimilarClimbs({
           AND h.hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND c.layout_id = ${layoutId}
           AND c.is_draft = FALSE
-          -- Listed means IS TRUE, the one definition sync, search and feeds use
-          -- (publicReferenceClimbSql). A NULL-listed row is unlisted there, so
+          -- Listed means IS TRUE, the one definition search and feeds use
+          -- (publicClimbCondition). A NULL-listed row is unlisted there, so
           -- it is unlisted here too. Only the duplicate gate above stays looser.
           AND c.is_listed IS TRUE
           -- Discovery only. The duplicate GATE (findExactDuplicateMatch) is

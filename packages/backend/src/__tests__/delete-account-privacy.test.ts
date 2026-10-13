@@ -2,11 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
-import {
-  climbDraftVisibilityCondition,
-  privateSafeFirstAscentName,
-  publicReferenceClimbCondition,
-} from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, privateSafeFirstAscentName, publicClimbCondition } from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { userMutations } from '../graphql/resolvers/users/mutations';
@@ -31,7 +27,7 @@ async function publicClimbs(uuids: string[]): Promise<string[]> {
   const rows = await db
     .select({ uuid: schema.boardClimbs.uuid })
     .from(schema.boardClimbs)
-    .where(and(inArray(schema.boardClimbs.uuid, uuids), publicReferenceClimbCondition(schema.boardClimbs)));
+    .where(and(inArray(schema.boardClimbs.uuid, uuids), publicClimbCondition(schema.boardClimbs)));
   return rows.map((row) => row.uuid);
 }
 

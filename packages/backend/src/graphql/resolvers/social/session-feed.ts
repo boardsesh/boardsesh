@@ -10,11 +10,7 @@ import {
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import {
-  climbDraftVisibilityCondition,
-  ownedOrPublicReferenceClimbCondition,
-  sprayClimbVisibilityCondition,
-} from '@boardsesh/db/queries';
+import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -90,7 +86,7 @@ function listedUnhiddenClimbSql(
   viewerUserId: string | null | undefined,
 ): SQL {
   const column = (name: string) => sql.raw(`${alias}.${name}`);
-  return sql`(${ownedOrPublicReferenceClimbCondition(
+  return sql`(${ownedOrPublicClimbCondition(
     { isDraft: column('is_draft'), isListed: column('is_listed'), userId: column('user_id') },
     viewerUserId,
   )} AND ${column('is_hidden')} IS NOT TRUE)`;
@@ -276,6 +272,9 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
+          LEFT JOIN board_climbs cf_daily
+            ON cf_daily.uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
+            AND cf_daily.board_type = t.board_type
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
             AND bcs.board_type = t.board_type
@@ -1652,6 +1651,9 @@ async function fetchHardestSendsBatch(
         ) AS rank
       FROM boardsesh_ticks t
       LEFT JOIN board_climb_aliases bca_rank ON bca_rank.board_type = t.board_type AND bca_rank.alias_uuid = t.climb_uuid
+      LEFT JOIN board_climbs cf_rank
+        ON cf_rank.uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
+        AND cf_rank.board_type = t.board_type
       LEFT JOIN board_climb_stats bcs_rank
         ON bcs_rank.climb_uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
         AND bcs_rank.board_type = t.board_type

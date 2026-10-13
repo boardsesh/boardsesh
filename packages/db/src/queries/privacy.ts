@@ -328,22 +328,22 @@ export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: Viewe
  * `IS NOT TRUE` / `IS TRUE` the predicate is never NULL, so `NOT` of it is its
  * exact complement and every row is on one side or the other.
  */
-export function publicReferenceClimbCondition(climb: { isDraft: SQLWrapper; isListed: SQLWrapper }): SQL {
+export function publicClimbCondition(climb: { isDraft: SQLWrapper; isListed: SQLWrapper }): SQL {
   return sql`(${climb.isDraft} IS NOT TRUE AND ${climb.isListed} IS TRUE)`;
 }
 
 /**
  * A viewer-aware list: every published, listed climb
- * ({@link publicReferenceClimbCondition}) plus the viewer's own drafts and
+ * ({@link publicClimbCondition}) plus the viewer's own drafts and
  * unlisted climbs. The owner is the Boardsesh `user_id` on the row, so an
  * ownerless draft or unlisted climb goes to no one, and an anonymous viewer
  * gets the public set alone.
  */
-export function ownedOrPublicReferenceClimbCondition(
+export function ownedOrPublicClimbCondition(
   climb: { isDraft: SQLWrapper; isListed: SQLWrapper; userId: SQLWrapper },
   viewerId: ViewerId,
 ): SQL {
-  return sql`(${publicReferenceClimbCondition(climb)} OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
+  return sql`(${publicClimbCondition(climb)} OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
 }
 
 /**
@@ -358,8 +358,8 @@ export function ownedOrPublicReferenceClimbCondition(
  *
  * Unlisted is not tested on purpose: an unlisted climb stays out of lists,
  * search, sync and export, but a direct link still resolves it, with its ticks
- * and comments. A list filters on {@link publicReferenceClimbCondition} or
- * {@link ownedOrPublicReferenceClimbCondition} instead.
+ * and comments. A list filters on {@link publicClimbCondition} or
+ * {@link ownedOrPublicClimbCondition} instead.
  *
  * Both comparisons are NULL-safe. `is_draft` is nullable and NULL is not a
  * draft; `user_id = viewer` is NULL for an ownerless row or an anonymous
@@ -389,7 +389,7 @@ export function climbReferenceReadableCondition(
 }
 
 /**
- * {@link ownedOrPublicReferenceClimbCondition} for a row keyed by a climb
+ * {@link ownedOrPublicClimbCondition} for a row keyed by a climb
  * reference (a favourite, a playlist entry): shown in a list when the climb it
  * belongs to is published and listed, or is the viewer's own. A list someone
  * else curated never shows a viewer an unlisted climb. A reference to no climb
@@ -401,7 +401,7 @@ export function climbReferenceListedCondition(
 ): SQL {
   return sql`EXISTS (SELECT 1 FROM board_climbs privacy_listed_climb
     WHERE privacy_listed_climb.board_type = ${reference.boardType} AND privacy_listed_climb.uuid = ${reference.climbUuid}
-    AND ${ownedOrPublicReferenceClimbCondition(
+    AND ${ownedOrPublicClimbCondition(
       {
         isDraft: sql`privacy_listed_climb.is_draft`,
         isListed: sql`privacy_listed_climb.is_listed`,

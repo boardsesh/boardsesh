@@ -1,6 +1,6 @@
 import {
   climbDraftVisibilityCondition,
-  ownedOrPublicReferenceClimbCondition,
+  ownedOrPublicClimbCondition,
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
@@ -199,7 +199,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
               { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
               options.viewerUserId,
             )
-          : ownedOrPublicReferenceClimbCondition(
+          : ownedOrPublicClimbCondition(
               { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft, isListed: tables.climbs.isListed },
               options?.viewerUserId,
             ),

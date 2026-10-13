@@ -4,7 +4,7 @@ import { canAccessResource } from '../../../services/privacy';
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { ownedOrPublicReferenceClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { eq, and, or, inArray, isNull, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
@@ -141,7 +141,7 @@ export async function generateSessionSummary(
           or(
             isNull(dbSchema.boardClimbs.uuid),
             and(
-              ownedOrPublicReferenceClimbCondition(dbSchema.boardClimbs, viewerUserId),
+              ownedOrPublicClimbCondition(dbSchema.boardClimbs, viewerUserId),
               sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
             ),
           ),

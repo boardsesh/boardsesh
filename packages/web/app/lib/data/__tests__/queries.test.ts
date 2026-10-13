@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { getClimb } from '../queries';
+import { getClimb, getClimbStatsForAllAngles } from '../queries';
 import type { Climb } from '@/app/lib/types';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';

@@ -5,11 +5,11 @@ import { boardClimbs, boardClimbStats } from '../../schema/boards/unified';
 import {
   climbDraftVisibilityCondition,
   climbReferenceReadableCondition,
-  ownedOrPublicReferenceClimbCondition,
+  ownedOrPublicClimbCondition,
   privateSafeFirstAscentName,
   privateSafeFirstAscentAt,
   climbReferenceListedCondition,
-  publicReferenceClimbCondition,
+  publicClimbCondition,
 } from '../privacy';
 
 // The climb rule (#6355): a published climb is public to everyone, a draft
@@ -64,24 +64,24 @@ void describe('climbReferenceReadableCondition', () => {
   });
 });
 
-void describe('publicReferenceClimbCondition', () => {
+void describe('publicClimbCondition', () => {
   const dialect = new PgDialect();
 
   void it('is published and listed, as two two-valued tests with no owner or viewer in them', () => {
     const rendered = dialect.sqlToQuery(
-      publicReferenceClimbCondition({ isDraft: boardClimbs.isDraft, isListed: boardClimbs.isListed }),
+      publicClimbCondition({ isDraft: boardClimbs.isDraft, isListed: boardClimbs.isListed }),
     );
     assert.equal(rendered.sql, '("board_climbs"."is_draft" IS NOT TRUE AND "board_climbs"."is_listed" IS TRUE)');
     assert.deepEqual(rendered.params, []);
   });
 });
 
-void describe('ownedOrPublicReferenceClimbCondition', () => {
+void describe('ownedOrPublicClimbCondition', () => {
   const dialect = new PgDialect();
   const climb = { isDraft: boardClimbs.isDraft, isListed: boardClimbs.isListed, userId: boardClimbs.userId };
 
   void it('is the public set plus the viewer’s own drafts and unlisted climbs', () => {
-    const rendered = dialect.sqlToQuery(ownedOrPublicReferenceClimbCondition(climb, 'viewer-1'));
+    const rendered = dialect.sqlToQuery(ownedOrPublicClimbCondition(climb, 'viewer-1'));
     assert.equal(
       rendered.sql,
       '(("board_climbs"."is_draft" IS NOT TRUE AND "board_climbs"."is_listed" IS TRUE) OR COALESCE("board_climbs"."user_id" = $1, false))',
@@ -90,7 +90,7 @@ void describe('ownedOrPublicReferenceClimbCondition', () => {
   });
 
   void it('is the public set alone for an anonymous viewer, and reads no privacy table', () => {
-    const rendered = dialect.sqlToQuery(ownedOrPublicReferenceClimbCondition(climb, null));
+    const rendered = dialect.sqlToQuery(ownedOrPublicClimbCondition(climb, null));
     assert.deepEqual(rendered.params, [null]);
     assert.doesNotMatch(rendered.sql, /content_privacy|user_profiles|user_follows/);
   });
@@ -156,4 +156,3 @@ void describe('climbReferenceListedCondition', () => {
     assert.doesNotMatch(rendered.sql, /content_privacy|user_profiles|user_follows/);
   });
 });
-

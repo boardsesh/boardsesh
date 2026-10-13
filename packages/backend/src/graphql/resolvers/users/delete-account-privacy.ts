@@ -29,13 +29,14 @@ export async function withdrawDeletedAccountContent(tx: Transaction, userId: str
   await tx.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, userId)).for('update');
   // A deleted author's published climbs stay public with no author: a
   // published climb is public whoever set it, so no climb policy is written.
-  // Their drafts and unlisted climbs lose their owner and go to no one.
+  // Their drafts are deleted with the account (`deleteAccount`); an unlisted
+  // climb loses its owner, drops out of every list and still opens by its link.
   //
-  // The marker is for first-ascent names alone. Once the author reference is
-  // cleared the climb looks like manufacturer catalogue data, whose stored
-  // first-ascent credit is trusted as is; the marker keeps it recomputed from
-  // ticks the viewer may read (`privateSafeFirstAscentName`), and keeps the
-  // credit out of the board sync and snapshot artifacts.
+  // Once the author reference is cleared the climb looks like manufacturer
+  // catalogue data, whose stored first-ascent credit is trusted as is. The
+  // marker keeps that credit recomputed from ticks the viewer may read
+  // (`privateSafeFirstAscentName`), and keeps the climb out of the snapshot
+  // artifacts.
   await tx.update(schema.boardClimbs).set({ isBoardseshAuthored: true }).where(eq(schema.boardClimbs.userId, userId));
 
   // Personal media URLs remain identifying after creator/tick FKs become NULL.

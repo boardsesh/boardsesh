@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { boardClimbs } from '@boardsesh/db/schema';
-import { publicReferenceClimbCondition } from '@boardsesh/db/queries';
+import { publicClimbCondition } from '@boardsesh/db/queries';
 import { type ConnectionContext, type NewClimbCreatedEvent, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { pubsub } from '../../../pubsub/index';
@@ -78,7 +78,7 @@ export const newClimbFeedSubscription = {
               eq(boardClimbs.boardType, boardType),
               eq(boardClimbs.uuid, event.climb.uuid),
               eq(boardClimbs.isHidden, false),
-              publicReferenceClimbCondition(boardClimbs),
+              publicClimbCondition(boardClimbs),
             ),
           )
           .limit(1);

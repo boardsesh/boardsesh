@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
-import { ownedOrPublicReferenceClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
@@ -382,7 +382,7 @@ export async function canReadClimbContent(
     .where(
       and(
         eq(boardClimbs.uuid, climbUuid),
-        ownedOrPublicReferenceClimbCondition(boardClimbs, viewerId),
+        ownedOrPublicClimbCondition(boardClimbs, viewerId),
         sprayClimbVisibilityCondition(
           { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
           viewerId,
@@ -467,7 +467,7 @@ export async function redactBoardClimbs(
           .where(
             and(
               inArray(boardClimbs.uuid, climbUuids),
-              ownedOrPublicReferenceClimbCondition(boardClimbs, viewerId),
+              ownedOrPublicClimbCondition(boardClimbs, viewerId),
               sprayClimbVisibilityCondition(
                 { boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId },
                 viewerId,

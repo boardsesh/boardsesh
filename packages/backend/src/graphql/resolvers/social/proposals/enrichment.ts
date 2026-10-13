@@ -3,7 +3,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   sprayClimbVisibilityCondition,
-  ownedOrPublicReferenceClimbCondition,
+  ownedOrPublicClimbCondition,
   userActivityVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
@@ -77,7 +77,7 @@ export async function enrichProposal(
           eq(dbSchema.boardClimbs.boardType, proposal.boardType),
           // A proposal is not a read of the climb by its link: it names an
           // unlisted climb to its owner alone, like proposalClimbVisibilityCondition.
-          ownedOrPublicReferenceClimbCondition(
+          ownedOrPublicClimbCondition(
             {
               isDraft: dbSchema.boardClimbs.isDraft,
               isListed: dbSchema.boardClimbs.isListed,
@@ -327,7 +327,7 @@ export async function batchEnrichProposals(
     .where(
       and(
         inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids),
-        ownedOrPublicReferenceClimbCondition(
+        ownedOrPublicClimbCondition(
           {
             isDraft: dbSchema.boardClimbs.isDraft,
             isListed: dbSchema.boardClimbs.isListed,

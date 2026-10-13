@@ -1,7 +1,7 @@
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import { boardClimbs } from '@boardsesh/db/schema';
-import { ownedOrPublicReferenceClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 
 const queryBuilder = new QueryBuilder();
 
@@ -28,7 +28,7 @@ export function proposalClimbVisibilityCondition(
       and(
         eq(climb.uuid, reference.climbUuid),
         eq(climb.boardType, reference.boardType),
-        ownedOrPublicReferenceClimbCondition(
+        ownedOrPublicClimbCondition(
           { isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
           viewerId,
         ),

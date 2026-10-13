@@ -125,8 +125,10 @@ describe('syncClimbGrades serial-plan guard', () => {
 
     const pageStatement = renderStatement(transactionDatabase.execute.mock.calls[1][0]);
     expect(pageStatement).toContain('FROM board_climb_grades');
-    // Omitting layout/size does not omit the climb's current visibility gate.
-    expect(pageStatement).toContain('content_privacy');
+    // Omitting layout/size does not omit the climb's draft rule. A published
+    // climb has no audience, so no privacy table is read.
+    expect(pageStatement).toContain('bc.is_draft IS NOT TRUE OR COALESCE(bc.user_id = ');
+    expect(pageStatement).not.toContain('content_privacy');
     expect(pageStatement).toContain('FROM board_climbs bc');
     expect(pageStatement).not.toMatch(/\bbc\.layout_id\s*=/);
   });

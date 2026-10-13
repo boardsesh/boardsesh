@@ -5,7 +5,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   climbDraftVisibilityCondition,
-  ownedOrPublicReferenceClimbCondition,
+  ownedOrPublicClimbCondition,
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
@@ -44,7 +44,7 @@ function playlistClimbRule(
 ) {
   return viewerCurates
     ? climbDraftVisibilityCondition({ userId: climb.userId, isDraft: climb.isDraft }, viewerUserId)
-    : ownedOrPublicReferenceClimbCondition(
+    : ownedOrPublicClimbCondition(
         { userId: climb.userId, isDraft: climb.isDraft, isListed: climb.isListed },
         viewerUserId,
       );

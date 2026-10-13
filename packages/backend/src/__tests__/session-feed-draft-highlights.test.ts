@@ -40,7 +40,7 @@ beforeEach(async () => {
       (${PUBLIC_TICK}, ${CLIMBER}, 'kilter', ${PUBLISHED}, 40, 'send', 1, 20, '2026-10-01 10:00:00', ${SESSION})`);
 });
 
-describe('a visible tick never reveals another setter’s draft grades', () => {
+describe('a feed card never features another setter’s draft', () => {
   it('does not rank daily highlights or fill grade buckets from a foreign draft', async () => {
     await db.execute(sql`UPDATE boardsesh_ticks SET session_id = NULL
       WHERE uuid IN (${DRAFT_TICK}, ${PUBLIC_TICK})`);
@@ -59,7 +59,10 @@ describe('a visible tick never reveals another setter’s draft grades', () => {
     const feed = await sessionFeedQueries.sessionGroupedFeed(null, { input: { limit: 20 } }, context(CLIMBER));
     const party = feed.sessions.find((session) => session.sessionId === SESSION);
     expect(party?.hardestSend?.climbUuid).toBe(PUBLISHED);
-    expect(party?.gradeDistribution).toHaveLength(1);
+    // The session's grade buckets count every send in it, a draft's included:
+    // a draft sent in a session is the climber's activity (owner decision,
+    // 2026-10-13). Only the featured hardest send follows the climb rule.
+    expect(party?.gradeDistribution).toHaveLength(2);
   });
 
   it('keeps a logged send before its catalog climb arrives', async () => {

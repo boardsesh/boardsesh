@@ -85,7 +85,7 @@ vi.mock('@boardsesh/db/queries', () => ({
   // The spray wall visibility predicate. These tests mock the query builder, so the
   // fragment is never rendered — the module just has to export it.
   sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
-  ownedOrPublicReferenceClimbCondition: () => ({ __ownedOrPublicReference: true }),
+  ownedOrPublicClimbCondition: () => ({ __ownedOrPublicReference: true }),
   // …and its fail-closed half for a spray tick whose climb row is gone (#6031).
   sprayReferenceClimbExistsCondition: () => ({ __sprayClimbExists: true }),
   sprayReferenceVisibilityCondition: () => ({ __sprayReferenceVisibility: true }),

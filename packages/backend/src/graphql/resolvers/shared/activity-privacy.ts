@@ -4,7 +4,7 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import {
   climbDraftVisibilityCondition,
-  ownedOrPublicReferenceClimbCondition,
+  ownedOrPublicClimbCondition,
   playlistClimbEntityClimbUuid,
   playlistClimbEntityPlaylistUuid,
   sprayClimbVisibilityCondition,
@@ -50,10 +50,7 @@ function listedClimbCondition(
   viewerId: string | null | undefined,
 ): SQL {
   return and(
-    ownedOrPublicReferenceClimbCondition(
-      { isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
-      viewerId,
-    ),
+    ownedOrPublicClimbCondition({ isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId }, viewerId),
     sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
   )!;
 }
