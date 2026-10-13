@@ -43,6 +43,9 @@ const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([
   // ModalSheet: Apply commits from the native close and the sub-picker round
   // trip restores the scroll offset through its own scroll ref.
   'src/components/ClimbFilterSheet.tsx',
+  // The same shape as ClimbFilterSheet: it pushes the setter picker route and
+  // restores its scroll offset through useSheetSubRoute when it re-presents.
+  'src/components/you/LogbookFilterSheet.tsx',
   // LogAscentSheet would be listed too, but it is a ModalSheet now and gets the
   // hook from the wrapper; it only mentions the hook in a comment.
 ]);
