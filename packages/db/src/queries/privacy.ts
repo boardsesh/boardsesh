@@ -388,29 +388,6 @@ export function climbReferenceReadableCondition(
     AND ${climbDraftVisibilityCondition({ userId: sql`privacy_reference_climb.user_id`, isDraft: sql`privacy_reference_climb.is_draft` }, viewerId)})`;
 }
 
-/**
- * {@link ownedOrPublicClimbCondition} for a row keyed by a climb
- * reference (a favourite, a playlist entry): shown in a list when the climb it
- * belongs to is published and listed, or is the viewer's own. A list someone
- * else curated never shows a viewer an unlisted climb. A reference to no climb
- * at all is not shown.
- */
-export function climbReferenceListedCondition(
-  reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },
-  viewerId: ViewerId,
-): SQL {
-  return sql`EXISTS (SELECT 1 FROM board_climbs privacy_listed_climb
-    WHERE privacy_listed_climb.board_type = ${reference.boardType} AND privacy_listed_climb.uuid = ${reference.climbUuid}
-    AND ${ownedOrPublicClimbCondition(
-      {
-        isDraft: sql`privacy_listed_climb.is_draft`,
-        isListed: sql`privacy_listed_climb.is_listed`,
-        userId: sql`privacy_listed_climb.user_id`,
-      },
-      viewerId,
-    )})`;
-}
-
 type FirstAscentStats = {
   boardType: SQLWrapper;
   climbUuid: SQLWrapper;

@@ -4,9 +4,9 @@ import { canAccessResource } from '../../../services/privacy';
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
-import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
-import { eq, and, or, inArray, isNull, sql, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, inArray, sql, desc, isNotNull } from 'drizzle-orm';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { getSessionHealthExport } from '@boardsesh/db/queries';
@@ -133,18 +133,9 @@ export async function generateSessionSummary(
           eq(dbSchema.boardseshTicks.sessionId, sessionId),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
           isNotNull(dbSchema.boardseshTicks.difficulty),
-          // The card is a browse surface: a draft or an unlisted climb sent in
-          // the session is named to its owner alone, and a climb the community
-          // hid to no one, so the next hardest send is picked instead. A
-          // published, listed climb is named whoever set it. A send whose climb
-          // row is missing names no climb and stays, as before.
-          or(
-            isNull(dbSchema.boardClimbs.uuid),
-            and(
-              ownedOrPublicClimbCondition(dbSchema.boardClimbs, viewerUserId),
-              sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
-            ),
-          ),
+          // No climb rule: the climb was sent in this session, so naming it is
+          // the climber's activity. A draft or an unlisted climb sent here is
+          // named like any other (owner decision, 2026-10-13).
           // The hardest-send rows carry the climb's name and frames, and the
           // summary is keyed on a session id alone — session access is not wall
           // access. A no-op on the other eight board types. The viewer is the

@@ -1,13 +1,9 @@
-import { eq, and, asc, inArray, sql, type SQLWrapper } from 'drizzle-orm';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard, parseSetIds } from '@boardsesh/board-config';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import {
-  climbDraftVisibilityCondition,
-  ownedOrPublicClimbCondition,
-  sprayClimbVisibilityCondition,
-} from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
 import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../../db/queries/util/table-select';
@@ -29,44 +25,6 @@ export type PlaylistClimbsInput = {
   pageSize?: number;
 };
 
-/**
- * Which climbs of a playlist this viewer is shown. The playlist's owner and
- * editors curate it, so a climb they saved stays by reference, unlisted
- * included, like the climb's own page (never another climber's draft). Anyone
- * else, a public playlist's visitors and invited viewers included, gets the list
- * rule: a published, listed climb, or one of their own. An unlisted climb stays
- * out of every list someone else made.
- */
-function playlistClimbRule(
-  climb: { userId: SQLWrapper; isDraft: SQLWrapper; isListed: SQLWrapper },
-  viewerUserId: string | null | undefined,
-  viewerCurates: boolean,
-) {
-  return viewerCurates
-    ? climbDraftVisibilityCondition({ userId: climb.userId, isDraft: climb.isDraft }, viewerUserId)
-    : ownedOrPublicClimbCondition(
-        { userId: climb.userId, isDraft: climb.isDraft, isListed: climb.isListed },
-        viewerUserId,
-      );
-}
-
-/** Whether the viewer owns or edits this playlist. */
-async function viewerCuratesPlaylist(playlistId: bigint, viewerUserId: string | null | undefined): Promise<boolean> {
-  if (!viewerUserId) return false;
-  const [membership] = await db
-    .select({ id: dbSchema.playlistOwnership.id })
-    .from(dbSchema.playlistOwnership)
-    .where(
-      and(
-        eq(dbSchema.playlistOwnership.playlistId, playlistId),
-        eq(dbSchema.playlistOwnership.userId, viewerUserId),
-        inArray(dbSchema.playlistOwnership.role, ['owner', 'editor']),
-      ),
-    )
-    .limit(1);
-  return !!membership;
-}
-
 function paginateResults<T>(results: T[], pageSize: number) {
   const hasMore = results.length > pageSize;
   return { items: hasMore ? results.slice(0, pageSize) : results, hasMore };
@@ -82,14 +40,13 @@ function buildSpecificBoardClimbJoinConditions(
   boardName: BoardName,
   input: PlaylistClimbsInput,
   viewerUserId: string | null | undefined,
-  viewerCurates: boolean,
 ) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
-    // A playlist anyone can open must not substitute its own visibility for a
-    // draft's (its owner's alone) or an unlisted climb's (out of every list but
-    // its owner's). A published, listed climb shows whoever set it.
-    playlistClimbRule(tables.climbs, viewerUserId, viewerCurates),
+    // The draft rule: a playlist anyone can open must not substitute its own
+    // visibility for a draft's, which is its owner's alone. A published climb
+    // shows whoever set it, unlisted included.
+    climbDraftVisibilityCondition({ userId: tables.climbs.userId, isDraft: tables.climbs.isDraft }, viewerUserId),
     eq(tables.climbs.boardType, boardName),
     // A PUBLIC playlist would otherwise substitute its own visibility for the wall's:
     // add a private spray wall's climb to one and anybody who can open the playlist
@@ -168,7 +125,6 @@ async function fetchSpecificBoardClimbs(
   page: number,
   pageSize: number,
   viewerUserId: string | null | undefined,
-  viewerCurates: boolean,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const boardName = input.boardName as BoardName;
   if (!isValidBoardName(boardName)) {
@@ -176,13 +132,7 @@ async function fetchSpecificBoardClimbs(
   }
 
   const tables = UNIFIED_TABLES;
-  const climbJoinConditions = buildSpecificBoardClimbJoinConditions(
-    tables,
-    boardName,
-    input,
-    viewerUserId,
-    viewerCurates,
-  );
+  const climbJoinConditions = buildSpecificBoardClimbJoinConditions(tables, boardName, input, viewerUserId);
 
   const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -222,7 +172,7 @@ async function fetchSpecificBoardClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: boardName })),
-    { ...hydrateOptions, viewerUserId, viewerCuratesList: viewerCurates },
+    { ...hydrateOptions, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -258,7 +208,6 @@ async function fetchAllBoardsClimbs(
   page: number,
   pageSize: number,
   viewerUserId: string | null | undefined,
-  viewerCurates: boolean,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const tables = UNIFIED_TABLES;
 
@@ -274,7 +223,10 @@ async function fetchAllBoardsClimbs(
         // 20-row page arriving with 17) and the count inflated by rows the caller
         // can never reach. The specific-board path applies it in the join for the
         // same reason.
-        playlistClimbRule(tables.climbs, viewerUserId, viewerCurates),
+        climbDraftVisibilityCondition(
+          { userId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft },
+          viewerUserId,
+        ),
         sprayClimbVisibilityCondition(
           { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
           viewerUserId,
@@ -300,7 +252,10 @@ async function fetchAllBoardsClimbs(
         // 20-row page arriving with 17) and the count inflated by rows the caller
         // can never reach. The specific-board path applies it in the join for the
         // same reason.
-        playlistClimbRule(tables.climbs, viewerUserId, viewerCurates),
+        climbDraftVisibilityCondition(
+          { userId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft },
+          viewerUserId,
+        ),
         sprayClimbVisibilityCondition(
           { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
           viewerUserId,
@@ -326,7 +281,7 @@ async function fetchAllBoardsClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType })),
-    { angleOverrides, viewerUserId, viewerCuratesList: viewerCurates },
+    { angleOverrides, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -354,9 +309,8 @@ export const playlistClimbs = async (
 
   // Verify access (throws if denied)
   const playlistId = await verifyPlaylistAccess(input.playlistId, ctx.userId ?? null);
-  const viewerCurates = await viewerCuratesPlaylist(playlistId, ctx.userId);
 
   return input.boardName
-    ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize, ctx.userId, viewerCurates)
-    : fetchAllBoardsClimbs(playlistId, input, page, pageSize, ctx.userId, viewerCurates);
+    ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize, ctx.userId)
+    : fetchAllBoardsClimbs(playlistId, input, page, pageSize, ctx.userId);
 };

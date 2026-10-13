@@ -8,7 +8,6 @@ import {
   ownedOrPublicClimbCondition,
   privateSafeFirstAscentName,
   privateSafeFirstAscentAt,
-  climbReferenceListedCondition,
   publicClimbCondition,
 } from '../privacy';
 
@@ -137,22 +136,5 @@ void describe('privateSafeFirstAscentName', () => {
     assert.deepEqual(at.params, name.params);
     assert.match(at.sql, /SELECT privacy_fa_tick\.climbed_at\s+FROM boardsesh_ticks privacy_fa_tick/);
     assert.match(at.sql, /ELSE "board_climb_stats"\."fa_at" END$/);
-  });
-});
-
-void describe('climbReferenceListedCondition', () => {
-  void it('shows a referenced climb in a list only when it is published and listed, or the viewer owns it', () => {
-    const rendered = new PgDialect().sqlToQuery(
-      climbReferenceListedCondition(
-        { boardType: boardClimbStats.boardType, climbUuid: boardClimbStats.climbUuid },
-        'viewer-1',
-      ),
-    );
-    assert.match(
-      rendered.sql,
-      /privacy_listed_climb\.is_draft IS NOT TRUE AND privacy_listed_climb\.is_listed IS TRUE\) OR COALESCE\(privacy_listed_climb\.user_id = \$\d+, false\)/,
-    );
-    assert.ok(rendered.params.includes('viewer-1'));
-    assert.doesNotMatch(rendered.sql, /content_privacy|user_profiles|user_follows/);
   });
 });

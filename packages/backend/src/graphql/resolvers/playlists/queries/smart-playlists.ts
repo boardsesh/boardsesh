@@ -3,7 +3,6 @@ import { canViewUserActivity } from '../../../../services/privacy';
 import { eq, and, desc, sql, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
-  climbReferenceListedCondition,
   climbReferenceReadableCondition,
   isRecommendationType,
   RECOMMENDATION_TYPES,
@@ -44,19 +43,6 @@ type SmartPlaylistInput = {
 };
 
 type SmartClimbRef = ClimbRef;
-
-/**
- * Which liked climbs a viewer is shown. Their own liked list keeps what they
- * liked by reference, unlisted included (never another climber's draft).
- * Someone else's liked list is a list: a published, listed climb, or one of the
- * viewer's own, never an unlisted climb.
- */
-function likedClimbCondition(listOwnerId: string, viewerUserId: string | null | undefined): SQL {
-  const reference = { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid };
-  return viewerUserId === listOwnerId
-    ? climbReferenceReadableCondition(reference, viewerUserId)
-    : climbReferenceListedCondition(reference, viewerUserId);
-}
 
 /**
  * Build the WHERE conditions shared by every smart-playlist query path:
@@ -167,7 +153,10 @@ async function selectSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      likedClimbCondition(userId, viewerUserId),
+      climbReferenceReadableCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
       // Favourites are the other reference source — same rule, same reason.
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
@@ -246,7 +235,10 @@ async function countSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
-      likedClimbCondition(userId, viewerUserId),
+      climbReferenceReadableCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
       // Favourites are the other reference source — same rule, same reason.
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
@@ -386,8 +378,7 @@ export const smartPlaylist = async (
     // The VIEWER, not `input.userId` — that is the logbook's owner, so passing it
     // made every smart playlist hydrate as if the owner were asking and handed a
     // private wall's climb name and frames to anyone who named them.
-    // Owner-private, so the viewer is this list's owner.
-    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId, viewerCuratesList: true });
+    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId });
     return {
       meta: {
         type: input.type,
@@ -419,10 +410,7 @@ export const smartPlaylist = async (
   ]);
   // The VIEWER. `input.userId` is whose logbook is being rendered, which is not the
   // same person and must never stand in for them — see the recommendation branch.
-  const climbs = await hydrateClimbsByRefs(pageRefs, {
-    viewerUserId,
-    viewerCuratesList: !!viewerUserId && viewerUserId === input.userId,
-  });
+  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId });
 
   return {
     meta: {

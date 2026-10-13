@@ -1,8 +1,4 @@
-import {
-  climbDraftVisibilityCondition,
-  ownedOrPublicClimbCondition,
-  sprayClimbVisibilityCondition,
-} from '@boardsesh/db/queries';
+import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -23,14 +19,6 @@ export type HydrateClimbsOptions = {
    * owner will not see their own climbs in a smart playlist.
    */
   viewerUserId?: string | null;
-  /**
-   * The viewer curates this list (owns the playlist, edits it, or it is their
-   * own liked list). Then a climb they saved stays in it by reference, unlisted
-   * included, like the climb's own page. Anyone else gets the list rule: a
-   * published, listed climb, or one of their own, never an unlisted climb
-   * someone else saved. Omitted means the list rule, the safe default.
-   */
-  viewerCuratesList?: boolean;
   /**
    * Per-ref angle override (e.g. a playlistClimbs.angle that should win over
    * the climb's stats angle). Map keys are `${boardType}:${climbUuid}`.
@@ -189,20 +177,13 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
     .where(
       and(
         inArray(tables.climbs.uuid, uuids),
-        // Every caller hydrates from a list (a playlist, a liked list, a
-        // logbook), and any of them can name someone else's draft or unlisted
-        // climb. A published, listed climb hydrates whoever set it. The list's
-        // own curator keeps what they saved by reference (unlisted included,
-        // never another climber's draft); see `viewerCuratesList`.
-        options?.viewerCuratesList
-          ? climbDraftVisibilityCondition(
-              { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
-              options.viewerUserId,
-            )
-          : ownedOrPublicClimbCondition(
-              { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft, isListed: tables.climbs.isListed },
-              options?.viewerUserId,
-            ),
+        // The draft rule. Every caller hydrates from a list it did not write (a
+        // playlist, a liked list, a logbook), and any of them can name someone
+        // else's draft. A published climb hydrates whoever set it.
+        climbDraftVisibilityCondition(
+          { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
+          options?.viewerUserId,
+        ),
         // The smart-playlist logbook types hydrate straight from a user's ticks, so
         // without this a private spray wall's climbs arrive with name, frames and
         // setter. A no-op on the other eight board types.

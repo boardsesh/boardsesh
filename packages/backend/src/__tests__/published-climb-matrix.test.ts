@@ -719,12 +719,12 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     });
   });
 
-  describe('an unlisted climb in a list someone else made', () => {
+  describe('a list someone else made', () => {
     const PLAYLIST = 'matrix-playlist';
 
     beforeAll(async () => {
-      // A public account's public playlist and liked list, both holding the
-      // private author's published climb and its unlisted one.
+      // A public account's public playlist and liked list, holding the private
+      // author's published climb, its unlisted one and its draft.
       const [playlist] = await db
         .insert(schema.playlists)
         .values({ uuid: PLAYLIST, boardType: BOARD, layoutId: LAYOUT_ID, name: 'Matrix playlist', isPublic: true })
@@ -735,10 +735,12 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       await db.insert(schema.playlistClimbs).values([
         { playlistId: playlist.id, climbUuid: PRIVATE_PUBLISHED, angle: ANGLE, position: 0 },
         { playlistId: playlist.id, climbUuid: UNLISTED, angle: ANGLE, position: 1 },
+        { playlistId: playlist.id, climbUuid: DRAFT, angle: ANGLE, position: 2 },
       ]);
       await db.insert(schema.userFavorites).values([
         { userId: PUBLIC_SENDER, boardName: BOARD, climbUuid: PRIVATE_PUBLISHED, angle: ANGLE },
         { userId: PUBLIC_SENDER, boardName: BOARD, climbUuid: UNLISTED, angle: ANGLE },
+        { userId: PUBLIC_SENDER, boardName: BOARD, climbUuid: DRAFT, angle: ANGLE },
       ]);
     });
 
@@ -755,35 +757,34 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       return { uuids: page.climbs.map((climb) => climb.uuid).sort(), totalCount: page.totalCount };
     };
 
+    // A list shows an unlisted climb it holds to everyone who may open the
+    // list, as on main: the list's owner put it there. A draft stays with its
+    // own owner, whoever's list it sits in.
+    const published = { uuids: [PRIVATE_PUBLISHED, UNLISTED].sort(), totalCount: 2 };
+    const withDraft = { uuids: [PRIVATE_PUBLISHED, UNLISTED, DRAFT].sort(), totalCount: 3 };
+
     it.each([
       ['board-scoped', true],
       ['all-boards', false],
     ])(
-      'keeps it out of a %s public playlist for everyone but its curator and its owner',
+      "shows a %s public playlist's unlisted climb to its visitors, and the draft to its owner alone",
       async (_label, boardScoped) => {
-        for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
-          expect(await inPlaylist(ctx, boardScoped)).toEqual({ uuids: [PRIVATE_PUBLISHED], totalCount: 1 });
+        for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER), ctxFor(PUBLIC_SENDER)]) {
+          expect(await inPlaylist(ctx, boardScoped)).toEqual(published);
         }
-        const both = { uuids: [PRIVATE_PUBLISHED, UNLISTED].sort(), totalCount: 2 };
-        // The playlist's owner saved it, so it stays in their list by reference…
-        expect(await inPlaylist(ctxFor(PUBLIC_SENDER), boardScoped)).toEqual(both);
-        // …and the climb's own owner sees their own climb.
-        expect(await inPlaylist(ctxFor(PRIVATE_AUTHOR), boardScoped)).toEqual(both);
+        expect(await inPlaylist(ctxFor(PRIVATE_AUTHOR), boardScoped)).toEqual(withDraft);
       },
     );
 
-    it("keeps it out of another climber's liked list, and in the liker's own", async () => {
+    it("shows another climber's liked unlisted climb, and the draft to its owner alone", async () => {
       const liked = async (ctx: ConnectionContext) => {
         const page = await smartPlaylist(undefined, { input: { type: 'LIKED_CLIMBS', userId: PUBLIC_SENDER } }, ctx);
         return { uuids: page.climbs.map((climb) => climb.uuid).sort(), totalCount: page.totalCount };
       };
-      for (const ctx of [ctxFor(STRANGER), anonymous]) {
-        expect(await liked(ctx)).toEqual({ uuids: [PRIVATE_PUBLISHED], totalCount: 1 });
+      for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(PUBLIC_SENDER)]) {
+        expect(await liked(ctx)).toEqual(published);
       }
-      expect(await liked(ctxFor(PUBLIC_SENDER))).toEqual({
-        uuids: [PRIVATE_PUBLISHED, UNLISTED].sort(),
-        totalCount: 2,
-      });
+      expect(await liked(ctxFor(PRIVATE_AUTHOR))).toEqual(withDraft);
     });
   });
 

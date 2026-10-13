@@ -10,7 +10,7 @@ import {
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -72,24 +72,6 @@ function openableSessionSql(tickAlias: string, viewerUserId: string | null | und
 function dailyCardTickSql(tickAlias: string, viewerUserId: string | null | undefined): SQL {
   return sql`(NOT ${openableSessionSql(tickAlias, viewerUserId)}
     AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, tickAlias))})`;
-}
-
-/**
- * A climb a card may feature, on the `board_climbs` row named by `alias`: the
- * viewer's own, or published and listed, and in either case not hidden by the
- * community. The session summary card's rule (`session-summary.ts`), so the
- * feed card and the summary pick the same hardest send. The wall rule is
- * applied separately.
- */
-function listedUnhiddenClimbSql(
-  alias: 'cf' | 'cf_rank' | 'cf_daily' | 'cf_beta',
-  viewerUserId: string | null | undefined,
-): SQL {
-  const column = (name: string) => sql.raw(`${alias}.${name}`);
-  return sql`(${ownedOrPublicClimbCondition(
-    { isDraft: column('is_draft'), isListed: column('is_listed'), userId: column('user_id') },
-    viewerUserId,
-  )} AND ${column('is_hidden')} IS NOT TRUE)`;
 }
 
 function tickScopeFilter(boardIdFilter: number | null, snapshotAt?: string): SQL {
@@ -265,16 +247,10 @@ export async function getSessionFeed(
           SELECT
             t.*,
             t.climbed_at::date AS day,
-            COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty,
-            -- A climb the community hid is never the day's featured send while
-            -- the day has another one (daily_hardest).
-            (cf_daily.is_hidden IS TRUE) AS climb_hidden
+            COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
-          LEFT JOIN board_climbs cf_daily
-            ON cf_daily.uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
-            AND cf_daily.board_type = t.board_type
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
             AND bcs.board_type = t.board_type
@@ -315,10 +291,6 @@ export async function getSessionFeed(
                   -- drop it entirely and the climber saw "No sessions yet" despite
                   -- having logged climbs (~1,343 days across 385 climbers).
                   (dt.status IN ('flash', 'send')) DESC,
-                  -- Hide is a browse rule: a send on a climb the community hid
-                  -- is featured only when the day has no other send, and then
-                  -- under no name (fetchTickHighlightsByUuid blanks the climb).
-                  dt.climb_hidden ASC,
                   COALESCE(dt.effective_difficulty, -1) DESC, dt.climbed_at DESC, dt.id DESC
               ) AS rank
             FROM daily_ticks dt
@@ -1596,10 +1568,6 @@ async function fetchTickHighlightsByUuid(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
-      -- A card names only a climb it may feature: the viewer's own, or
-      -- published, listed and not hidden. Same shape as the spray rule above:
-      -- for anyone else the climb's name, frames and setter come back NULL.
-      AND ${listedUnhiddenClimbSql('cf', viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1651,9 +1619,6 @@ async function fetchHardestSendsBatch(
         ) AS rank
       FROM boardsesh_ticks t
       LEFT JOIN board_climb_aliases bca_rank ON bca_rank.board_type = t.board_type AND bca_rank.alias_uuid = t.climb_uuid
-      LEFT JOIN board_climbs cf_rank
-        ON cf_rank.uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
-        AND cf_rank.board_type = t.board_type
       LEFT JOIN board_climb_stats bcs_rank
         ON bcs_rank.climb_uuid = COALESCE(bca_rank.canonical_uuid, t.climb_uuid)
         AND bcs_rank.board_type = t.board_type
@@ -1665,11 +1630,6 @@ async function fetchHardestSendsBatch(
         ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
-        -- The card is a browse surface, the same rule as the session summary
-        -- card: a draft or an unlisted climb is featured to its owner alone,
-        -- and a climb the community hid to no one, so the next hardest send is
-        -- picked instead. A send whose climb has not arrived yet still counts.
-        AND (cf_rank.uuid IS NULL OR ${listedUnhiddenClimbSql('cf_rank', viewerUserId)})
         -- In the ranking, not only in the hydrating join below: that join nulls
         -- the CLIMB's columns, and the tick row itself carries its uuid, climb
         -- uuid and comment. A send on a spray climb the viewer cannot see is not
@@ -1688,9 +1648,6 @@ async function fetchHardestSendsBatch(
       -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
       -- feed already supports — instead of the row vanishing and shorting the page.
       AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
-      -- The ranking's rule again: a draft, an unlisted or a hidden climb the
-      -- viewer may not see comes back as NULL cf.*, never named.
-      AND ${listedUnhiddenClimbSql('cf', viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1903,20 +1860,7 @@ function betaCandidateJoinSql() {
       )
       AND bl.is_listed IS TRUE
       AND bl.link !~* '^https?://([a-z0-9-]+\\.)*kayaclimb\\.com/'
-    -- The climb the clip is on, for the card's climb rule (betaClimbFeaturableSql).
-    LEFT JOIN board_climbs cf_beta
-      ON cf_beta.uuid = COALESCE(bca_video.canonical_uuid, t.climb_uuid)
-      AND cf_beta.board_type = t.board_type
   `;
-}
-
-/**
- * The card features a clip only on a climb it may name: the viewer's own, or
- * published, listed and not hidden, the hardest send's rule. Otherwise the
- * next clip is picked. A clip whose climb row has not arrived yet still counts.
- */
-function betaClimbFeaturableSql(viewerUserId: string | null | undefined): SQL {
-  return sql`(cf_beta.uuid IS NULL OR ${listedUnhiddenClimbSql('cf_beta', viewerUserId)})`;
 }
 
 function betaCandidateRankSql(partitionExpression: SQL) {
@@ -1977,7 +1921,6 @@ async function fetchSessionFeaturedBetaRows(
         -- The row carries the beta link's url and climb uuid, so a link on a
         -- spray climb the viewer cannot see is not a candidate.
         AND ${sprayTickVisibleSql('t', viewerUserId)}
-        AND ${betaClimbFeaturableSql(viewerUserId)}
     )
     SELECT *
     FROM ranked
@@ -2031,9 +1974,8 @@ async function fetchDailyFeaturedBetaRows(
         AND bcs_beta.angle = t.angle
       WHERE t.status IN ('flash', 'send')
         ${batchTickFilter}
-        -- Same rules as the session query above.
+        -- Same rule as the session query above.
         AND ${sprayTickVisibleSql('t', viewerUserId)}
-        AND ${betaClimbFeaturableSql(viewerUserId)}
     )
     SELECT *
     FROM ranked
