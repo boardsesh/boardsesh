@@ -3,7 +3,7 @@
 // Every userLoggedSetters request walks the climber's whole logbook, so the
 // picker asks once per board scope and filters on the device. These cases pin
 // when a request goes out: once per scope, never per keystroke, and a server
-// search only when a full first page can't find the name.
+// search only when the first page came back full (so it may hide the name).
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -81,7 +81,7 @@ describe('useUserLoggedSetters', () => {
     });
   });
 
-  it('searches the server, debounced, only when a full first page has no match', async () => {
+  it('waits for a debounced server search when a full first page has no match', async () => {
     const fullPage = Array.from({ length: LOGGED_SETTERS_PAGE_LIMIT }, (_, index) => `setter-${index}`);
     http.request.mockImplementation(async (_document: unknown, variables: Variables) =>
       variables.input.search ? setterPage(['rare-setter']) : setterPage(fullPage),
@@ -89,13 +89,9 @@ describe('useUserLoggedSetters', () => {
     const view = renderSetters({ scope: ALL_BOARDS, search: '' });
     await waitFor(() => expect(view.result.current.isLoading).toBe(false));
 
-    // A local hit needs no request.
-    view.rerender({ scope: ALL_BOARDS, search: 'setter-1' });
-    expect(view.result.current.setters?.length).toBeGreaterThan(0);
-
     vi.useFakeTimers({ shouldAdvanceTime: true });
     view.rerender({ scope: ALL_BOARDS, search: 'rare' });
-    // Waiting out the debounce reads as loading, not "No matches".
+    // Waiting out the debounce with nothing local reads as loading, not "No matches".
     expect(view.result.current.isLoading).toBe(true);
     expect(view.result.current.setters).toBeUndefined();
     act(() => {
@@ -109,5 +105,31 @@ describe('useUserLoggedSetters', () => {
       expect(view.result.current.setters?.map((setter) => setter.setterUsername)).toEqual(['rare-setter']),
     );
     expect(requestedInputs()[1]).toEqual({ limit: LOGGED_SETTERS_PAGE_LIMIT, search: 'rare' });
+  });
+
+  it('still searches the server when a full first page has a partial match, and merges the two', async () => {
+    // "alexander" is on the first page; the "alex" the climber wants ranks past it.
+    const fullPage = [
+      'alexander',
+      ...Array.from({ length: LOGGED_SETTERS_PAGE_LIMIT - 1 }, (_, index) => `s-${index}`),
+    ];
+    http.request.mockImplementation(async (_document: unknown, variables: Variables) =>
+      variables.input.search ? { userLoggedSetters: [{ setterUsername: 'alex', tickCount: 3 }] } : setterPage(fullPage),
+    );
+    const view = renderSetters({ scope: ALL_BOARDS, search: '' });
+    await waitFor(() => expect(view.result.current.isLoading).toBe(false));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    view.rerender({ scope: ALL_BOARDS, search: 'alex' });
+    // The local hit shows at once while the server search waits out its debounce.
+    expect(view.result.current.isLoading).toBe(false);
+    expect(view.result.current.setters?.map((setter) => setter.setterUsername)).toEqual(['alexander']);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    await waitFor(() =>
+      expect(view.result.current.setters?.map((setter) => setter.setterUsername)).toEqual(['alexander', 'alex']),
+    );
+    expect(requestedInputs()[1]).toEqual({ limit: LOGGED_SETTERS_PAGE_LIMIT, search: 'alex' });
   });
 });
