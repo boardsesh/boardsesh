@@ -45,7 +45,6 @@ import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-inp
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import {
-  canAddClimbToBoard,
   classifyClimbBoardCompatibility,
   toBoardName,
   type ActiveBoardForCompatibility,
@@ -126,6 +125,7 @@ import { createBoardSuggestionCompatibilityCache } from './queue/board-suggestio
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
+import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
 import { useSessionCommands } from './queue/use-session-commands';
 import {
@@ -1257,6 +1257,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // handler — no need to set isSessionWallLit here.
   const reportWallDisconnect = useCallback(() => mutations.reportWallDisconnect(), [mutations]);
 
+  const climbReads = useQueueClimbReads({ activeBoard, privacyRevocationGeneration });
+
   // Self-healing re-grade: refetch angle-specific grades for queued climbs and
   // the displayed playlist peek whenever the active angle drifts. See useQueueRegrade.
   useQueueRegrade({
@@ -1268,6 +1270,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     playlistSuggestionSource,
     dispatch,
     setPlaylistSuggestionSourceState,
+    climbReads,
   });
 
   // Self-healing resolve: a partially-synced peer item (or a snapshot restored
@@ -1281,6 +1284,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     currentClimbQueueItem: state.currentClimbQueueItem,
     privacyRevocationGeneration,
     dispatch,
+    climbReads,
   });
 
   // The reducer raises `needsResync` when it filters corrupted (null) items out

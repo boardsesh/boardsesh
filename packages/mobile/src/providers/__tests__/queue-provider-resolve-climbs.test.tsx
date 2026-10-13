@@ -401,12 +401,9 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
   });
 
-  it('re-fetches a still-thin item when the queue changes mid-resolve (in-flight race)', async () => {
-    // The first resolve fetch is held open so the queue can churn while it's in
-    // flight. That churn cancels the run; its result is then discarded. The fix
-    // must release the run's in-flight marker on cancel so the successor run
-    // re-fetches the still-thin uuid instead of skipping it as "already resolving"
-    // — without it, the row stays "Unknown Climb" until an unrelated queue change.
+  it('retains a still-thin item read when the queue changes mid-resolve', async () => {
+    // Unrelated queue churn must retain the original read and apply it to the
+    // latest thin object in that slot, rather than repeating the request.
     let releaseFirstFetch: (() => void) | undefined;
     let fetchCount = 0;
     http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
@@ -433,7 +430,7 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     await waitFor(() => expect(http.request).toHaveBeenCalledTimes(1));
 
     // Queue churns while that fetch is still in flight (a second, resolved item
-    // arrives). This cancels the in-flight resolve run.
+    // arrives). The original read remains valid for the same scope.
     await act(async () => {
       snapshots.at(-1)?.dispatch({
         type: 'UPDATE_QUEUE',
@@ -443,19 +440,16 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
       });
     });
 
-    // The successor run re-fetches the still-thin uuid and hydrates it in place.
+    expect(fetchCount).toBe(1);
+    await act(async () => {
+      releaseFirstFetch?.();
+    });
     await waitFor(() => {
       const resolved = snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1');
       expect(resolved?.climb.name).toBe('Climb climb-thin');
       expect(resolved?.climb.frames).toBe('p1r12');
     });
-    // Proof the successor actually re-fetched rather than skipping on a stale marker.
-    expect(fetchCount).toBeGreaterThanOrEqual(2);
-
-    // Let the original (cancelled) fetch settle — its result is discarded, no crash.
-    await act(async () => {
-      releaseFirstFetch?.();
-    });
+    expect(fetchCount).toBe(1);
     expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1')?.climb.name).toBe('Climb climb-thin');
   });
 

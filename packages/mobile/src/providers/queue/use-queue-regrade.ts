@@ -1,39 +1,31 @@
 import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect } from 'react';
 import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
-import type { ClimbQueueItem, ClimbRegradePatch, PlaylistSuggestionSource, QueueAction } from '@boardsesh/queue';
+import type {
+  ClimbQueueItem,
+  ClimbRegradePatch,
+  PlaylistSuggestionSource,
+  QueueAction,
+  QueueClimbReadTarget,
+} from '@boardsesh/queue';
 import { findNextQueueItemWithSuggestions, findPreviousQueueItemWithSuggestions } from '@boardsesh/play-view';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { offlineAwareRequest } from '../../lib/graphql/offline-request';
-import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
+import { isClimbResolved } from '../../lib/queue-climb-resolution';
+import type { QueueClimbReads, QueueClimbReadDemand } from './use-queue-climb-reads';
 
 type UseQueueRegradeParams = {
   privacyRevocationGeneration?: number;
-  /** The active board (angle source of truth). Undefined until the React Query cache hydrates. */
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
-  /** Read inside the effect for the displayed playlist peek — the effect deliberately reads the ref, not the raw value. */
   playlistSuggestionSourceRef: React.RefObject<PlaylistSuggestionSource | null>;
-  /**
-   * The raw value is ONLY here because it stays in the effect's dependency array
-   * (even though the body reads the ref) — preserved verbatim from the original.
-   */
   playlistSuggestionSource: PlaylistSuggestionSource | null;
+  climbReads: QueueClimbReads;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
 };
 
-/**
- * Self-healing re-grade: a climb's difficulty/quality/sends are angle-specific
- * (stored per-angle server-side), but queue items carry the grade baked in for
- * the angle they were fetched at. Whenever the active angle differs from a
- * queued climb's display angle — the user changed the angle, or a server
- * FullSync re-staled the queue at the old angle — refetch that climb at the
- * live angle and patch it in. Local only: each client follows the angle and
- * re-grades its own queue, so nothing is sent to peers. Idempotent — after
- * patching, climb.angle === angle, so the effect no-ops on its own re-run.
- */
+/** Current/upcoming grades and displayed playlist peeks follow the live angle. */
 export function useQueueRegrade({
   privacyRevocationGeneration,
   activeBoard,
@@ -41,139 +33,100 @@ export function useQueueRegrade({
   currentClimbQueueItem,
   playlistSuggestionSourceRef,
   playlistSuggestionSource,
+  climbReads,
   dispatch,
   setPlaylistSuggestionSourceState,
 }: UseQueueRegradeParams): void {
-  // Maps a climb uuid → the angle a re-grade fetch is currently in flight for.
-  // Keyed by angle (not a plain Set) so a fetch already running for a STALE
-  // angle doesn't block a fresh fetch when the angle changes again mid-flight —
-  // otherwise that climb could strand at the old grade.
-  const regradeInFlightRef = useRef<Map<string, { angle: number; token: symbol }>>(new Map());
-  useEffect(() => {
-    if (!activeBoard) return undefined;
-    const privacyGeneration = getPrivacyRevocationGeneration();
-    const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
-    const uuids = new Set<string>();
-    const consider = (item: ClimbQueueItem | null | undefined) => {
-      if (!item?.climb) return;
-      // Re-grade when the display angle differs AND we aren't already fetching
-      // this climb for the CURRENT angle (a fetch for a prior angle re-enqueues).
-      if (item.climb.angle !== angle && regradeInFlightRef.current.get(item.climb.uuid)?.angle !== angle) {
-        uuids.add(item.climb.uuid);
-      }
-    };
-    // Only the current climb + upcoming items follow the live angle. History
-    // items (everything before the current climb — the same split
-    // buildQueueListModel uses) keep the grade for the angle they were CLIMBED
-    // at, so we skip fetching for them. REGRADE_CLIMBS also guards this, but
-    // skipping the fetch here avoids wasted GET_CLIMB round-trips for the past.
-    const currentIndex = currentClimbQueueItem
-      ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid)
-      : -1;
-    queue.forEach((item, index) => {
-      if (index < currentIndex) return;
-      consider(item);
-    });
-    consider(currentClimbQueueItem);
-    // Also re-grade the displayed playlist peeks (the next-up suggestion shown
-    // at the queue tail, and — since swipes went list-first (#4829) — the
-    // previous-in-list climb a back swipe can land on). They live in
-    // playlistSuggestionSource.climbs — NOT in state.queue — so the queue-only
-    // pass above never touches them, and the bar/drawer would keep showing the
-    // activation-angle grade until the peek is committed. Only those two are
-    // ever displayed, so re-grade them alone; re-grading the whole source could
-    // be hundreds of climbs.
-    const nextPeek = findNextQueueItemWithSuggestions(
-      queue,
-      currentClimbQueueItem,
-      playlistSuggestionSourceRef.current,
-    );
-    if (nextPeek && isPlaylistPeekQueueItemUuid(nextPeek.uuid)) consider(nextPeek);
-    const prevPeek = findPreviousQueueItemWithSuggestions(
-      queue,
-      currentClimbQueueItem,
-      playlistSuggestionSourceRef.current,
-    );
-    if (prevPeek && isPlaylistPeekQueueItemUuid(prevPeek.uuid)) consider(prevPeek);
-    if (uuids.size === 0) return undefined;
-
-    const targetUuids = [...uuids];
-    const requestToken = Symbol('queue-hydration');
-    targetUuids.forEach((uuid) => regradeInFlightRef.current.set(uuid, { angle, token: requestToken }));
-
-    let cancelled = false;
-    void (async () => {
-      const patches = await Promise.all(
-        targetUuids.map(async (climbUuid) => {
-          try {
-            const response = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, {
-              boardName: boardType,
-              layoutId,
-              sizeId,
-              setIds,
-              angle,
-              climbUuid,
-            });
-            const climb = response.climb;
-            if (!climb) return null;
-            const patch: ClimbRegradePatch = {
-              angle,
-              difficulty: climb.difficulty,
-              quality_average: climb.quality_average,
-              ascensionist_count: climb.ascensionist_count,
-              benchmark_difficulty: climb.benchmark_difficulty ?? null,
-              difficulty_error: climb.difficulty_error,
-              // Explicit nulls so an angle with no boardsesh grade row clears
-              // the stale value from the climb's previous angle.
-              boardseshDifficulty: climb.boardseshDifficulty ?? null,
-              boardseshConfidence: climb.boardseshConfidence ?? null,
-            };
-            return [climbUuid, patch] as const;
-          } catch {
-            return null;
-          } finally {
-            // Only clear our own marker — a newer run may have re-targeted this
-            // uuid to a different angle, and must keep its in-flight claim.
-            if (regradeInFlightRef.current.get(climbUuid)?.token === requestToken) {
-              regradeInFlightRef.current.delete(climbUuid);
+  useLayoutEffect(() => {
+    const demands: QueueClimbReadDemand[] = [];
+    if (activeBoard) {
+      const generation = getPrivacyRevocationGeneration();
+      const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
+      const boardKey = `${boardType}:${layoutId}:${sizeId}:${setIds}`;
+      const source = playlistSuggestionSourceRef.current;
+      const patchFor = (climb: Parameters<QueueClimbReadDemand['apply']>[0]): ClimbRegradePatch => ({
+        angle,
+        difficulty: climb.difficulty,
+        quality_average: climb.quality_average,
+        ascensionist_count: climb.ascensionist_count,
+        benchmark_difficulty: climb.benchmark_difficulty ?? null,
+        difficulty_error: climb.difficulty_error,
+        boardseshDifficulty: climb.boardseshDifficulty ?? null,
+        boardseshConfidence: climb.boardseshConfidence ?? null,
+      });
+      const consider = (item: ClimbQueueItem | null | undefined, role: QueueClimbReadTarget['role'] | 'playlist') => {
+        const climb = item?.climb;
+        if (!item || !climb?.uuid || !isClimbResolved(climb) || climb.angle === angle) return;
+        if (
+          (climb.boardType && climb.boardType !== boardType) ||
+          (climb.layoutId != null && climb.layoutId !== layoutId)
+        )
+          return;
+        const target: QueueClimbReadTarget | null =
+          role === 'playlist' ? null : { role, uuid: item.uuid, expectedClimb: climb, angle };
+        demands.push({
+          climbUuid: climb.uuid,
+          angle,
+          expectedClimb: climb,
+          targetKey: JSON.stringify(
+            role === 'playlist'
+              ? [role, source?.playlistUuid, source?.activatedClimbUuid, climb.uuid]
+              : [role, item.uuid],
+          ),
+          apply: (resolvedClimb) => {
+            const patch = patchFor(resolvedClimb);
+            if (target) {
+              dispatch({
+                type: 'REGRADE_CLIMBS',
+                payload: { grades: { [climb.uuid]: patch }, targets: [target], boardType, layoutId },
+              });
+            } else if (source) {
+              setPlaylistSuggestionSourceState((previous) => {
+                if (
+                  generation !== getPrivacyRevocationGeneration() ||
+                  !previous ||
+                  previous.boardKey !== boardKey ||
+                  previous.playlistUuid !== source.playlistUuid ||
+                  previous.activatedClimbUuid !== source.activatedClimbUuid
+                )
+                  return previous;
+                let changed = false;
+                const climbs = previous.climbs.map((currentClimb) => {
+                  if (currentClimb !== climb || currentClimb.angle === angle) return currentClimb;
+                  changed = true;
+                  return { ...currentClimb, ...patch };
+                });
+                return changed ? { ...previous, climbs } : previous;
+              });
             }
-          }
-        }),
-      );
-      if (cancelled || privacyGeneration !== getPrivacyRevocationGeneration()) return;
-      const grades: Record<string, ClimbRegradePatch> = {};
-      for (const entry of patches) {
-        if (entry) grades[entry[0]] = entry[1];
-      }
-      if (Object.keys(grades).length > 0) {
-        dispatch({ type: 'REGRADE_CLIMBS', payload: { grades } });
-        // REGRADE_CLIMBS only patches the reducer's queue + current item. The
-        // displayed peek lives in the provider-state suggestion source, so patch
-        // its climbs here too (same patch map) — otherwise the next-up grade pill
-        // keeps the old angle until the peek is committed. Idempotent: skips
-        // climbs already at the live angle, and preserves the prev reference when
-        // nothing changes so this never churns the source state.
-        setPlaylistSuggestionSourceState((prev) => {
-          if (!prev || privacyGeneration !== getPrivacyRevocationGeneration()) return prev;
-          let changed = false;
-          const climbs = prev.climbs.map((climb) => {
-            const patch = grades[climb.uuid];
-            if (!patch || climb.angle === patch.angle) return climb;
-            changed = true;
-            return { ...climb, ...patch };
-          });
-          return changed ? { ...prev, climbs } : prev;
+          },
         });
+      };
+      const currentIndex = currentClimbQueueItem
+        ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid)
+        : -1;
+      queue.forEach((item, index) => {
+        if (index >= currentIndex) consider(item, 'queue');
+      });
+      consider(currentClimbQueueItem, 'current');
+      if (source?.boardKey === boardKey) {
+        const nextPeek = findNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
+        if (nextPeek && isPlaylistPeekQueueItemUuid(nextPeek.uuid)) consider(nextPeek, 'playlist');
+        const previousPeek = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
+        if (previousPeek && isPlaylistPeekQueueItemUuid(previousPeek.uuid)) consider(previousPeek, 'playlist');
       }
-    })();
-
-    return () => {
-      for (const climbUuid of targetUuids) {
-        if (regradeInFlightRef.current.get(climbUuid)?.token === requestToken) {
-          regradeInFlightRef.current.delete(climbUuid);
-        }
-      }
-      cancelled = true;
-    };
-  }, [queue, currentClimbQueueItem, activeBoard, playlistSuggestionSource, privacyRevocationGeneration]);
+    }
+    climbReads.register('regrade', demands);
+    return () => climbReads.unregister('regrade');
+  }, [
+    queue,
+    currentClimbQueueItem,
+    activeBoard,
+    playlistSuggestionSource,
+    privacyRevocationGeneration,
+    playlistSuggestionSourceRef,
+    climbReads,
+    dispatch,
+    setPlaylistSuggestionSourceState,
+  ]);
 }

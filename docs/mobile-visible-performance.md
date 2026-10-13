@@ -241,6 +241,16 @@ Same build, #6313's reader switched off and on with a marker file, 11 Oct 2026:
 
 Not changed by either PR, on `main` the same day: the app reads each queued climb two to three times at launch (104 and 147 detail reads for a queue of 52).
 
+### Saved queue reads (#6325)
+
+Queue restoration and angle regrading share a provider-owned read tracker. A read is identified by the credential/privacy generation, board type, layout, size, sets, climb and requested angle. Replacing one queue row no longer cancels reads for the other rows. Thin references are resolved at the current board angle, except history, which retains its climbed angle; regrading handles resolved current/upcoming climbs and displayed playlist suggestions.
+
+Answers address the queue's current slot and climb object, with the current-item representation handled separately. A new thin FullSync object can request details immediately, even if an answer already filled an earlier object for the same climb. Removed or replaced slots, changed scopes and older credentials cannot receive the old answer. Mirror settings, crew attribution and ticks come from the latest target.
+
+Each whole offline-aware read has a 20-second deadline, including the SQLite work before the network request. A timeout or transient transport failure gets one retry after one second. Unchanged failed demand then stops; an offline-to-online recovery re-arms unavailable demand. Online null or denied results do not retry automatically. A single stuck read does not delay successful answers for the rest of the queue.
+
+To measure this on a phone, restore at least 20 distinct queued climbs on a board that is not downloaded and count `GetClimb` requests. Repeat on a downloaded board, counting local detail reads. Keep queue contents, angles and scopes constant, and separate retries or unavailable climbs from successful reads. Alternate baseline and candidate for at least three launches per side using the method above. Request counts and launch time are separate results: reducing duplicate reads does not establish faster startup.
+
 ### Swiping between climbs, and closing the drawer
 
 iPhone 13 Pro, iOS 26.6.1, Kilter Original 12x12 at 40 degrees, downloaded for offline, queue of 52, battery at 32 to 35 C, `scenario_play_swipe.py`, 11 October 2026. `main` is seven runs over three sittings, 410 swipes that changed the climb. The three-board carousel is two runs alternated with `main` in the last sitting, 136 swipes.
