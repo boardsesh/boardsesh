@@ -1290,13 +1290,13 @@ describe('custom product page captures', () => {
                         { assertVisible: { id: '^climbs-screen$' } },
                         { assertVisible: cppBoardHeaderReadinessSelector(board, coverage) },
                         { tapOn: errorSelectors.retry },
+                        {
+                          extendedWaitUntil: {
+                            visible: { id: `^cpp-climb-painted-${hero.boardId}-${hero.climbId}$` },
+                            timeout: 30000,
+                          },
+                        },
                       ],
-                    },
-                  },
-                  {
-                    extendedWaitUntil: {
-                      visible: { id: `^cpp-climb-painted-${hero.boardId}-${hero.climbId}$` },
-                      timeout: 30000,
                     },
                   },
                 ],
@@ -1345,10 +1345,10 @@ describe('custom product page captures', () => {
               { assertVisible: { id: string } },
               { assertVisible: string },
               { tapOn: { text: string; childOf: { id: string }; enabled: boolean } },
+              { extendedWaitUntil: { visible: { id: string }; timeout: number } },
             ];
           };
         },
-        { extendedWaitUntil: { visible: { id: string } } },
       ];
     };
     const run = (
@@ -1368,7 +1368,7 @@ describe('custom product page captures', () => {
         }
         if (
           painted &&
-          new RegExp(recovery.commands[1].extendedWaitUntil.visible.id).test(
+          new RegExp(branch.commands[3].extendedWaitUntil.visible.id).test(
             `cpp-climb-painted-${paintedBoard}-${hero.climbId}`,
           )
         )

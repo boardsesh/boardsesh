@@ -159,6 +159,10 @@ owned-results list, header, row, overlay and final paint gates still follow.
 Replay, phones and spray editors retain their existing hero gates. A successful
 recorded response alone does not prove that the native client loaded that query.
 
+The retry's 30-second paint wait runs only after tapping a genuine list error's
+Retry control. A normal load with no error placard proceeds to the existing
+90-second title and physical-paint gates.
+
 Capture-only route acknowledgment diagnostics retain the exact pathname and
 requested-parameter checks. Logs include sequence, fixed/redacted path names,
 known mismatched capture-key names, HTTP status, and fixed request-error

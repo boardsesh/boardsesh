@@ -2298,9 +2298,10 @@ export function renderCppMaestroFlow(
         };
         // A live list can settle into its genuine error state before data lands.
         // Tap only that list's real retry CTA on the acknowledged, owned board.
-        // Three attempts await actual paint; every original final gate follows.
+        // Wait after a real retry tap only. Normal loads keep the original
+        // 90-second paint gate instead of gaining a shorter recording deadline.
         commands.push(
-          `- retry:\n    maxRetries: 2\n    commands:\n      - runFlow:\n          when:\n            visible: ${JSON.stringify(listError.error)}\n          commands:\n            - assertVisible:\n                id: "^climbs-screen$"\n            - assertVisible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant!, coverage))}\n            - tapOn: ${JSON.stringify(listError.retry)}\n      - extendedWaitUntil:\n          visible: ${JSON.stringify(paintedHero)}\n          timeout: 30000`,
+          `- retry:\n    maxRetries: 2\n    commands:\n      - runFlow:\n          when:\n            visible: ${JSON.stringify(listError.error)}\n          commands:\n            - assertVisible:\n                id: "^climbs-screen$"\n            - assertVisible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant!, coverage))}\n            - tapOn: ${JSON.stringify(listError.retry)}\n            - extendedWaitUntil:\n                visible: ${JSON.stringify(paintedHero)}\n                timeout: 30000`,
         );
       }
     }
