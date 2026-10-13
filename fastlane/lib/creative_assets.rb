@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "open3"
+require "time"
 require_relative "asc_client"
 
 # Request shapes follow Apple's 2026-10-07 OpenAPI. Placement IDs and groups
@@ -10,7 +11,8 @@ require_relative "asc_client"
 module BoardseshCreatives
   Error = BoardseshASC::Error
   PLACEMENTS = { "header" => "PRODUCT_PAGE_HEADER_ASSET", "search-results" => "APP_STORE_SEARCH_RESULTS_ASSET" }.freeze
-  READY = %w[UPLOAD_COMPLETE COMPLETE PREPARE_FOR_SUBMISSION READY_FOR_REVIEW WAITING_FOR_REVIEW IN_REVIEW ACCEPTED APPROVED].freeze
+  PLACEABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW WAITING_FOR_REVIEW IN_REVIEW ACCEPTED APPROVED].freeze
+  UPLOADED = (%w[UPLOAD_COMPLETE COMPLETE] + PLACEABLE).freeze
   EDITABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW REJECTED].freeze
   LIVE = %w[READY_FOR_SALE READY_FOR_DISTRIBUTION].freeze
 
@@ -43,7 +45,7 @@ module BoardseshCreatives
       raise Error, "Unexpected asset library identity" unless library.fetch("type") == "appAssetLibraries"
       library_id = library.fetch("id")
       remote_assets = %w[images videos].flat_map { |kind| @client.list("/v1/appAssetLibraries/#{library_id}/#{kind}?filter[category]=CREATIVE_ASSETS&limit=200") }
-      remote_placements = remote_assets.flat_map do |remote|
+      remote_placements = action == "upload" ? [] : remote_assets.flat_map do |remote|
         @client.list("/v1/#{remote.fetch('type')}/#{remote.fetch('id')}/placements?limit=200")
       end.uniq { |placement| placement.fetch("id") }
       destinations = {}
@@ -52,11 +54,19 @@ module BoardseshCreatives
         matches = remote_assets.select { |asset| asset.dig("attributes", "fileName") == entry.fetch("fileName") }
         raise Error, "Duplicate creative asset filename; resolve in Asset Library" if matches.length > 1
         asset = matches.first
-        if action == "upload" && asset && !READY.include?(asset.dig("attributes", "state")) && asset.dig("attributes", "state") != "AWAITING_UPLOAD"
+        if action == "upload" && asset && !UPLOADED.include?(asset.dig("attributes", "state")) && asset.dig("attributes", "state") != "AWAITING_UPLOAD"
           raise Error, "Existing creative asset is #{asset.dig('attributes', 'state')}; inspect Asset Library before any upload"
         end
         if asset && (asset.fetch("type") != entry.fetch("type") || asset.dig("attributes", "category") != "CREATIVE_ASSETS" || asset.dig("attributes", "fileSize") != File.size(entry.fetch("path")))
           raise Error, "Remote creative identity differs from finalized manifest"
+        end
+        next entry.merge("asset" => asset, "unchanged" => !!asset && UPLOADED.include?(asset.dig("attributes", "state"))) if action == "upload"
+        if action == "place"
+          raise Error, "Upload #{entry.fetch('fileName')} before placing it" unless asset
+          state = asset.dig("attributes", "state")
+          unless PLACEABLE.include?(state)
+            raise Error, "Creative #{entry.fetch('fileName')} is #{state}; Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION or later before placement; no writes performed"
+          end
         end
         destination_key = [entry.fetch("variant"), entry.fetch("storeLocale")]
         destination = destinations[destination_key] ||= destination(entry.fetch("variant"), entry.fetch("storeLocale"), allow_live)
@@ -71,7 +81,6 @@ module BoardseshCreatives
         relation = entry.fetch("type") == "appAssetLibraryImages" ? "image" : "video"
         same = existing && asset && existing.dig("relationships", relation, "data", "id") == asset.fetch("id")
         if action == "place"
-          raise Error, "Upload #{entry.fetch('fileName')} before placing it" unless asset && READY.include?(asset.dig("attributes", "state"))
           if existing && !same
             previous_link = existing.dig("relationships", "image", "data") || existing.dig("relationships", "video", "data")
             previous = remote_assets.find { |candidate| previous_link && candidate["type"] == previous_link["type"] && candidate["id"] == previous_link["id"] }
@@ -86,7 +95,7 @@ module BoardseshCreatives
       plans.map do |plan|
         asset = uploaded_assets[plan.fetch("fileName")] || plan["asset"]
         plan = plan.merge("asset" => asset) if asset
-        asset = upload(plan, library_id) if action == "upload" && (!asset || !READY.include?(asset.dig("attributes", "state")))
+        asset = upload(plan, library_id) if action == "upload" && (!asset || !UPLOADED.include?(asset.dig("attributes", "state")))
         uploaded_assets[plan.fetch("fileName")] = asset if asset
         if action == "place" && !plan.fetch("unchanged")
           @client.request("DELETE", "/v1/appAssetLibraryPlacements/#{plan.fetch('existing').fetch('id')}") if plan["existing"]
@@ -162,9 +171,12 @@ module BoardseshCreatives
         versions = @client.list("/v1/apps/#{@app_id}/appStoreVersions?filter[platform]=IOS&limit=200")
         editable = versions.select { |version| EDITABLE.include?(version.dig("attributes", "appStoreState")) }
         live = versions.select { |version| LIVE.include?(version.dig("attributes", "appStoreState")) }
-        candidates = editable.empty? && allow_live ? live : editable
-        raise Error, "Need exactly one editable iOS version (live requires allow_live:true)" unless candidates.length == 1
-        version = candidates.first
+        version = if editable.empty? && allow_live
+          latest_live_version(live)
+        else
+          raise Error, "Need exactly one editable iOS version (live requires allow_live:true)" unless editable.length == 1
+          editable.first
+        end
         localized = @client.list("/v1/appStoreVersions/#{version.fetch('id')}/appStoreVersionLocalizations?limit=200")
         type, relationship = "appStoreVersionLocalizations", "appStoreVersionLocalization"
       else
@@ -181,6 +193,24 @@ module BoardseshCreatives
       matches = localized.select { |entry| entry.dig("attributes", "locale") == locale }
       raise Error, "Missing or ambiguous destination locale #{variant}/#{locale}" unless matches.length == 1
       { "type" => type, "relationship" => relationship, "id" => matches.first.fetch("id") }
+    end
+
+    def latest_live_version(versions)
+      raise Error, "No published iOS version found" if versions.empty?
+      dated_versions = versions.map do |version|
+        created_date = version.dig("attributes", "createdDate")
+        begin
+          raise ArgumentError unless created_date.is_a?(String) && created_date.match?(/(?:Z|[+-]\d{2}:\d{2})\z/)
+          Date.iso8601(created_date)
+          [Time.iso8601(created_date), version]
+        rescue ArgumentError
+          raise Error, "Published iOS version has missing or invalid createdDate; cannot safely choose the current version"
+        end
+      end
+      newest_date = dated_versions.map(&:first).max
+      newest = dated_versions.select { |created_date, _version| created_date == newest_date }
+      raise Error, "Published iOS versions tie for latest createdDate; cannot safely choose the current version" unless newest.length == 1
+      newest.first.last
     end
 
     def upload(plan, library_id)

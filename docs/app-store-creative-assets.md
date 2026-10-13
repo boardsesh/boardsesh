@@ -193,11 +193,17 @@ retrieves and verifies those files before CI runs the lane.
 The **App Store Creative Assets** workflow is dispatch-only, runs from `main`,
 and uses the Production environment. Its actions are `refdata`, `plan`, `upload`
 and `place`, with `variant:all` or one page name. `upload` reserves, transfers and
-commits assets without submitting review. `place` attaches uploaded assets to
-an existing version or CPP localization. Neither action creates a CPP, edits
+commits assets without submitting review or requiring a version, CPP, or destination
+localization. `place` attaches processed assets to an existing version or CPP
+localization. Apple must move every selected asset beyond `UPLOAD_COMPLETE` and
+`COMPLETE` to `PREPARE_FOR_SUBMISSION` or a later review state first. Until then,
+the lane reports the pending state and makes no placement writes. Neither action creates a CPP, edits
 screenshot slots, submits asset review, or publishes a version.
 
-Live versions require `allow_live:true`. An identical placement is reused.
+Planning or placing on live versions requires `allow_live:true`; standalone
+uploads do not. When no editable iOS version exists, the lane selects the latest
+published version by Apple's `createdDate`, refusing missing dates or ties.
+An identical placement is reused.
 Changing an owned placement requires explicit approval for its deletion and
 recreation (`allow_replace:true`); foreign placements are refused. This guard
 preserves the repository's no-deletion-without-approval rule.

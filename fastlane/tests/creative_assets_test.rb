@@ -7,21 +7,25 @@ require_relative "../lib/creative_assets"
 
 class CreativeAssetsTest < Minitest::Test
   class FakeApple
-    attr_reader :writes, :uploads, :assets, :placements
-    attr_accessor :live, :supported
+    attr_reader :writes, :uploads, :assets, :placements, :reads
+    attr_accessor :live, :supported, :versions, :destinations_available
 
     def initialize
       @writes, @uploads, @assets, @placements = [], [], [], []
+      @reads = []
       @supported = true
       @live = false
+      @destinations_available = true
     end
 
     def list(path)
+      @reads << path
+      raise "Upload unexpectedly read a placement destination" if !@destinations_available && path.match?(/appStoreVersion|appCustomProductPage|\/placements\?/)
       case path
       when "/v1/appAssetLibraryRefData"
         [{ "attributes" => { "placementTypes" => BoardseshCreatives::PLACEMENTS.map { |placement, type| { "placementTypeId" => @supported ? type : "unsupported", "specMappings" => [{ "placementGroupId" => "creative", "specs" => [placement] }] } } } }]
       when /appStoreVersions\?/
-        [{ "id" => "version", "attributes" => { "appStoreState" => @live ? "READY_FOR_DISTRIBUTION" : "PREPARE_FOR_SUBMISSION" } }]
+        @versions || [{ "id" => "version", "attributes" => { "appStoreState" => @live ? "READY_FOR_DISTRIBUTION" : "PREPARE_FOR_SUBMISSION", "createdDate" => "2026-10-01T00:00:00Z" } }]
       when /appStoreVersionLocalizations\?/
         %w[en-US es-ES es-MX fr-FR de-DE].map { |locale| { "id" => locale, "attributes" => { "locale" => locale } } }
       when %r{/appAssetLibraries/library/(images|videos)}
@@ -109,6 +113,23 @@ class CreativeAssetsTest < Minitest::Test
     BoardseshCreatives::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app", cpp_manifest: {}, probe: @probe)
   end
 
+  def upload_processed_assets
+    runner.run(action: "upload")
+    @client.assets.each { |asset| asset["attributes"]["state"] = "PREPARE_FOR_SUBMISSION" }
+  end
+
+  def use_kilter_manifest
+    config = @manifest.fetch("variants").delete("default")
+    @manifest.fetch("variants")["kilter"] = config
+    config.fetch("assets").each do |asset|
+      path = File.join(@root, asset.fetch("provenance"))
+      proof = JSON.parse(File.read(path))
+      proof["variant"] = "kilter"
+      File.write(path, JSON.generate(proof))
+      asset["provenanceSha256"] = Digest::SHA256.file(path).hexdigest
+    end
+  end
+
   def test_plan_is_read_only_and_spanish_maps_to_both_storefronts
     results = runner.run
     assert_equal 10, results.length
@@ -128,7 +149,7 @@ class CreativeAssetsTest < Minitest::Test
   end
 
   def test_place_is_idempotent_and_uses_localization_relationship
-    runner.run(action: "upload")
+    upload_processed_assets
     runner.run(action: "place")
     assert_equal 10, @client.placements.length
     assert @client.placements.all? { |placement| placement.dig("relationships", "appStoreVersionLocalization", "data", "type") == "appStoreVersionLocalizations" }
@@ -138,7 +159,7 @@ class CreativeAssetsTest < Minitest::Test
   end
 
   def test_changed_placement_requires_deletion_approval
-    runner.run(action: "upload")
+    upload_processed_assets
     runner.run(action: "place")
     @client.writes.clear
     @client.placements.first["relationships"]["image"]["data"]["id"] = @client.assets[2]["id"]
@@ -166,9 +187,89 @@ class CreativeAssetsTest < Minitest::Test
 
   def test_live_version_requires_explicit_option
     @client.live = true
-    assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload") }
+    upload_processed_assets
+    @client.writes.clear
+    assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
     assert_empty @client.writes
     assert_equal 10, runner.run(action: "plan", allow_live: true).length
+    assert_equal 10, runner.run(action: "place", allow_live: true).length
+  end
+
+  def test_upload_needs_no_version_localization_or_placement_access
+    @client.destinations_available = false
+    runner.run(action: "upload")
+    assert_equal 8, @client.uploads.length
+    assert_equal 8, @client.assets.length
+    @client.writes.clear
+    assert runner.run(action: "upload").all? { |result| result["action"] == "unchanged" }
+    assert_empty @client.writes
+  end
+
+  def test_cpp_upload_needs_no_cpp_version_localization_or_manifest_target
+    use_kilter_manifest
+    @client.destinations_available = false
+    runner.run(action: "upload")
+    assert_equal 8, @client.uploads.length
+    assert @client.assets.all? { |asset| asset.dig("attributes", "fileName").start_with?("kilter-") }
+  end
+
+  def test_processing_asset_blocks_entire_placement_batch
+    %w[UPLOAD_COMPLETE COMPLETE].each do |state|
+      upload_processed_assets
+      @client.assets.last["attributes"]["state"] = state
+      @client.writes.clear
+      error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+      assert_includes error.message, state
+      assert_includes error.message, "PREPARE_FOR_SUBMISSION"
+      assert_empty @client.writes
+      assert_empty @client.placements
+    end
+  end
+
+  def test_processing_asset_blocks_earlier_placement_replacement
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.assets.last["attributes"]["state"] = "UPLOAD_COMPLETE"
+    previous_asset = Marshal.load(Marshal.dump(@client.assets.first))
+    previous_asset["id"] = "previous-owned-header"
+    previous_asset["attributes"]["fileName"] = "default-header-en-US-#{'f' * 12}.png"
+    @client.assets << previous_asset
+    @client.placements.first["relationships"]["image"]["data"]["id"] = previous_asset.fetch("id")
+    original_placements = Marshal.load(Marshal.dump(@client.placements))
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", allow_replace: true) }
+    assert_includes error.message, "UPLOAD_COMPLETE"
+    assert_empty @client.writes
+    assert_equal original_placements, @client.placements
+  end
+
+  def test_latest_live_version_is_selected_among_historical_versions
+    @client.versions = [
+      { "id" => "older", "attributes" => { "appStoreState" => "READY_FOR_SALE", "createdDate" => "2025-12-31T23:59:59Z" } },
+      { "id" => "current", "attributes" => { "appStoreState" => "READY_FOR_DISTRIBUTION", "createdDate" => "2026-10-01T00:00:00Z" } },
+      { "id" => "historical", "attributes" => { "appStoreState" => "READY_FOR_SALE", "createdDate" => "2026-05-01T00:00:00Z" } }
+    ]
+    upload_processed_assets
+    @client.reads.clear
+    runner.run(action: "place", allow_live: true)
+    localization_reads = @client.reads.select { |path| path.include?("/appStoreVersionLocalizations?") }
+    refute_empty localization_reads
+    assert localization_reads.all? { |path| path.start_with?("/v1/appStoreVersions/current/") }
+    assert_equal 10, @client.placements.length
+  end
+
+  def test_uncertain_live_dates_block_all_placement_writes
+    [nil, "not-a-date", "2026-10-01T00:00:00", "2026-02-30T00:00:00Z", "2026-10-01T00:00:00Z"].each do |uncertain_date|
+      @client.versions = [
+        { "id" => "current", "attributes" => { "appStoreState" => "READY_FOR_DISTRIBUTION", "createdDate" => "2026-10-01T00:00:00Z" } },
+        { "id" => "other", "attributes" => { "appStoreState" => "READY_FOR_SALE", "createdDate" => uncertain_date } }
+      ]
+      upload_processed_assets
+      @client.writes.clear
+      assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", allow_live: true) }
+      assert_empty @client.writes
+      assert_empty @client.placements
+    end
   end
 
   def test_level_four_video_is_rejected
@@ -185,7 +286,7 @@ class CreativeAssetsTest < Minitest::Test
   end
 
   def test_failed_placement_is_not_successfully_unchanged
-    runner.run(action: "upload")
+    upload_processed_assets
     runner.run(action: "place")
     @client.placements.last["attributes"]["state"] = "FAILED"
     @client.writes.clear
@@ -218,18 +319,11 @@ class CreativeAssetsTest < Minitest::Test
 
   def test_cpp_placements_bind_to_cpp_localizations_in_every_store_locale
     @client = FakeCppApple.new
-    config = @manifest.fetch("variants").delete("default")
-    @manifest.fetch("variants")["kilter"] = config
-    config.fetch("assets").each do |asset|
-      path = File.join(@root, asset.fetch("provenance"))
-      proof = JSON.parse(File.read(path))
-      proof["variant"] = "kilter"
-      File.write(path, JSON.generate(proof))
-      asset["provenanceSha256"] = Digest::SHA256.file(path).hexdigest
-    end
+    use_kilter_manifest
     cpp = { "targets" => { "kilter" => { "referenceName" => "Boardsesh Kilter" } } }
     cpp_runner = BoardseshCreatives::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app", cpp_manifest: cpp, probe: @probe)
     cpp_runner.run(action: "upload")
+    @client.assets.each { |asset| asset["attributes"]["state"] = "PREPARE_FOR_SUBMISSION" }
     cpp_runner.run(action: "place")
     assert_equal 10, @client.placements.length
     assert @client.placements.all? { |placement| placement.dig("relationships", "appCustomProductPageLocalization", "data", "type") == "appCustomProductPageLocalizations" }
