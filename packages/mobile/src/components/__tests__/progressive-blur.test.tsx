@@ -55,6 +55,7 @@ vi.mock('../../providers/theme-provider', () => ({
 vi.mock('../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => surfaceMock.mode }));
 
 import { ProgressiveBlur } from '../ProgressiveBlur';
+import { ProgressiveBlur as WebProgressiveBlur } from '../ProgressiveBlur.web';
 
 describe('ProgressiveBlur', () => {
   afterEach(() => {
@@ -164,9 +165,52 @@ describe('ProgressiveBlur', () => {
 
     it('keeps the top-weighted ramp when no fadeLength is given', () => {
       themeMock.colorScheme = 'light';
-      const { container } = render(<ProgressiveBlur layers={2} />);
+      const { container } = render(<ProgressiveBlur layers={2} topFadeLength={8} />);
       // No plateau: each mask is one gradient over the full height.
       for (const mask of gradients(container)) expect(mask.height).toBe('');
+    });
+
+    it('fades into full strength over the top padding, preserving the plateau and lower fade', () => {
+      const { container } = render(<ProgressiveBlur layers={2} fadeLength={24} topFadeLength={8} scrim={false} />);
+      expect(container.querySelectorAll('[data-testid="blur-view"]')).toHaveLength(2);
+      const fades = gradients(container);
+      const upperFades = fades.filter((gradient) => gradient.height === '8');
+      const lowerFades = fades.filter((gradient) => gradient.height === '24');
+      expect(upperFades).toHaveLength(2);
+      for (const upperFade of upperFades) {
+        expect(upperFade.colors).toEqual(['transparent', '#000000']);
+        expect(upperFade.locations).toEqual([0, 1]);
+      }
+      expect(lowerFades).toHaveLength(2);
+      for (const lowerFade of lowerFades) {
+        expect(lowerFade.plateau).toMatchObject({ flex: 1, backgroundColor: '#000000' });
+        expect(lowerFade.colors).toEqual(['#000000', 'transparent']);
+      }
+      expect(lowerFades.map((gradient) => gradient.locations)).toEqual([
+        [0, 1],
+        [0, 0.5],
+      ]);
+    });
+
+    it.each([
+      ['dark', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)'],
+      ['light', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0)'],
+    ] as const)('fades the optional %s wash from its clear colour at the upper edge', (scheme, wash, clear) => {
+      themeMock.colorScheme = scheme;
+      const { container } = render(
+        <ProgressiveBlur layers={1} fadeLength={24} topFadeLength={8} scrim={false} washOpacity={0.3} />,
+      );
+      const fades = gradients(container);
+      expect(fades.find((gradient) => gradient.colors[1] === wash)).toMatchObject({
+        colors: [clear, wash],
+        height: '8',
+        locations: [0, 1],
+      });
+      expect(fades.find((gradient) => gradient.colors[0] === wash)).toMatchObject({
+        colors: [wash, clear],
+        height: '24',
+        plateau: { flex: 1, backgroundColor: wash },
+      });
     });
 
     it('drops the dark status-bar scrim when asked to', () => {
@@ -207,7 +251,7 @@ describe('ProgressiveBlur', () => {
         surfaceMock.mode = 'solid';
         themeMock.colorScheme = scheme;
         const { container } = render(
-          <ProgressiveBlur material="chrome" fadeLength={24} washOpacity={0.5} scrim={false} />,
+          <ProgressiveBlur material="chrome" fadeLength={24} topFadeLength={8} washOpacity={0.5} scrim={false} />,
         );
 
         expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
@@ -218,5 +262,19 @@ describe('ProgressiveBlur', () => {
         expect(fades[0].height).toBe('');
       },
     );
+
+    it.each(['dark', 'light'] as const)('keeps the web %s fallback unchanged with an upper fade request', (scheme) => {
+      themeMock.colorScheme = scheme;
+      const { container } = render(<WebProgressiveBlur material="chrome" fadeLength={24} topFadeLength={8} />);
+      expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
+      const fades = gradients(container);
+      expect(fades).toHaveLength(1);
+      const background = scheme === 'dark' ? '#000000' : '#FFFFFF';
+      expect(fades[0]).toMatchObject({
+        colors: [background, background, 'transparent'],
+        locations: [0, 0.55, 1],
+        height: '',
+      });
+    });
   });
 });

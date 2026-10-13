@@ -23,6 +23,8 @@ import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './n
 export const CONTROLS_BACKDROP = {
   /** Stacked chrome-material layers: each one frosts the list behind more heavily. */
   layers: 1,
+  /** Fade into the controls' top padding without a hard material boundary. */
+  topFadeLength: spacing[2],
   /**
    * Points over which the blur fades out. The fade sits below the block's bottom
    * edge, over the rows just under the controls: see `ControlsBackdrop`.
@@ -195,11 +197,12 @@ export function NativeRootHeader({
  * The controls pinned under the bar: filter chips, a segmented control.
  *
  * On iOS 26 glass they float. The list scrolls behind them and one blur, from the
- * top of the screen to just below this block (see `ControlsBackdrop`), keeps
+ * top of this supplementary block to just below it (see `ControlsBackdrop`), keeps
  * them readable: HIG Layout asks for a scroll edge effect under controls, not a
  * painted colour. Like the system's, it is there only while rows are behind the
  * controls. The blur is a material, never a glass panel, because the controls on
- * it are glass already (HIG Materials: no glass on glass).
+ * it are glass already (HIG Materials: no glass on glass). UIKit owns the material
+ * behind the native navigation bar and status area above this block.
  *
  * Everywhere else the block paints the scene background, as it always has: before
  * iOS 26, with Reduce Transparency or Increase Contrast on, and when the caller
@@ -249,9 +252,12 @@ function HeaderControls({
  * The blur behind floating controls, faded in while rows are under them.
  *
  * Absolutely positioned, so the list reserves only the inner persistent controls.
- * It covers the full block, including floating content, and reaches up to the top of
- * the screen, under the native bar, and down past its bottom by the fade's
- * length: the blur holds full strength behind every control and fades out over
+ * It covers the full supplementary block, including floating content, and starts
+ * below the native bar. UIKit supplies the bar's scroll-edge material and lenses;
+ * extending this blur behind them would stack a second material. It reaches down
+ * past this block's bottom by the fade's length. The upper fade fits inside the
+ * controls' top padding, then the blur holds full strength behind every control
+ * and fades out over
  * the rows just below, so a translucent control (the segmented control) never
  * has sharp text showing through its lower half. It stays mounted while hidden:
  * a view at zero opacity is not drawn, and the fade in has nothing to build.
@@ -288,13 +294,14 @@ function ControlsBackdrop({
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.backdrop, { top: -headerHeight, bottom: -CONTROLS_BACKDROP.fadeLength }, fade]}
+      style={[styles.backdrop, { top: 0, bottom: -CONTROLS_BACKDROP.fadeLength }, fade]}
     >
       <ProgressiveBlur
         style={StyleSheet.absoluteFill}
         material="chrome"
         layers={CONTROLS_BACKDROP.layers}
         fadeLength={CONTROLS_BACKDROP.fadeLength}
+        topFadeLength={CONTROLS_BACKDROP.topFadeLength}
         washOpacity={CONTROLS_BACKDROP.washOpacity}
         scrim={false}
       />

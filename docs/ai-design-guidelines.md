@@ -456,9 +456,15 @@ height. The disclosed grade row is drawn below that measurement, inside the full
 touch surface, so showing or hiding it leaves the list's spacing and scroll position unchanged.
 
 **On iOS 26 the block floats.** It paints no background. The list scrolls behind the controls, and
-one blur runs from the top of the screen to one fade length (24pt) below the block: full strength
-behind every control, fading out over the rows just under them. With the fade inside the block, a
+one blur runs from the top of the supplementary controls to one fade length (24pt) below the block:
+full strength behind every control, fading out over the rows just under them. With the fade inside the block, a
 translucent control (the segmented control) had sharp list text showing through its lower half.
+UIKit owns the navigation bar's scroll-edge material, status area and action lenses above this
+block. The custom blur starts at the block's own top (`top: 0`), so it never adds a second
+material behind the native bar's glass. Its mask fades from clear to full strength over the first
+8pt of the controls' top padding, avoiding a hard boundary while keeping the controls fully
+frosted. Both the filter capsule row and Profile's segmented control have this 8pt top padding.
+As the native title collapses, the block and its blur move together.
 [HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout): "Instead of
 applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to
 visually elevate controls above content." [HIG
@@ -508,7 +514,8 @@ time. That is the safe default: a forgotten wire shows as a frost at rest, which
 where the other default would put bare controls over rows mid-scroll.
 
 **The look is a few numbers**, `CONTROLS_BACKDROP` in `NativeRootHeader.tsx`: `layers` (how heavily
-the list behind is frosted), `fadeLength` (points of fade below the block), `washOpacity` (a
+the list behind is frosted), `topFadeLength` (8pt of fade within the controls' top padding),
+`fadeLength` (points of fade below the block), `washOpacity` (a
 scene-background wash; 0, because chrome material supplies the navigation backdrop's tint)
 and `fadeDuration`. Tune them there, on a device. Filter capsules' SwiftUI Host follows the app's
 resolved light/dark scheme. The wall-status capsule carries one regular native `GlassSurface`

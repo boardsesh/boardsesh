@@ -45,8 +45,8 @@ type ProgressiveBlurProps = {
   /** UIKit material: thin for existing surfaces, chrome for navigation controls. */
   material?: 'thin' | 'chrome';
   /**
-   * Hold full strength from the top down to `fadeLength` points above the bottom
-   * edge, then fade out over that length. For a backdrop behind pinned controls:
+   * Hold full strength after any upper fade down to `fadeLength` points above the
+   * bottom edge, then fade out over that length. For a backdrop behind pinned controls:
    * the default ramp is strongest at the very top and nearly clear where the
    * lowest control row sits. Omit for the default ramp across the whole height.
    *
@@ -54,6 +54,8 @@ type ProgressiveBlurProps = {
    * band everywhere else, so the no-blur fallback below keeps its single fade.
    */
   fadeLength?: number;
+  /** With `fadeLength`: fade in over this many points at the top. Defaults to 0. */
+  topFadeLength?: number;
   /**
    * Dark mode's black wash under the status bar (see `DARK_SCRIM_COLORS`). Switch
    * it off where the blur is not the screen's own always-on top band.
@@ -69,19 +71,29 @@ type ProgressiveBlurProps = {
   washOpacity?: number;
 };
 
-/** Holds `colors[0]` down to `fadeLength` above the bottom, then runs the gradient. */
+/** Holds `colors[0]` between the optional upper fade and the lower fade. */
 function PlateauFade({
   colors,
   fadeLength,
+  topFadeLength = 0,
   fadeEnd = 1,
 }: {
   colors: readonly [string, string];
   fadeLength: number;
+  topFadeLength?: number;
   /** Fraction of `fadeLength` at which the gradient reaches `colors[1]`. */
   fadeEnd?: number;
 }) {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {topFadeLength > 0 ? (
+        <LinearGradient
+          colors={[colors[1], colors[0]]}
+          locations={[0, 1]}
+          pointerEvents="none"
+          style={{ height: topFadeLength }}
+        />
+      ) : null}
       <View style={[styles.plateau, { backgroundColor: colors[0] }]} />
       <LinearGradient colors={colors} locations={[0, fadeEnd]} pointerEvents="none" style={{ height: fadeLength }} />
     </View>
@@ -97,7 +109,8 @@ function PlateauFade({
  * override.
  *
  * With `fadeLength` it becomes a backdrop for controls pinned under a bar: full
- * strength behind them, fading out only along its lower edge.
+ * strength behind them, fading out along its lower edge. `topFadeLength` adds an
+ * optional upper fade within the backdrop, before the controls begin.
  *
  * Only renders a live blur on the iOS glass / blur paths. On Material (Android) or
  * with Reduce Transparency on, `@react-native-community/blur` can't honour the iOS
@@ -110,6 +123,7 @@ export function ProgressiveBlur({
   layers = DEFAULT_LAYERS,
   material = 'thin',
   fadeLength,
+  topFadeLength = 0,
   scrim = true,
   washOpacity = 0,
 }: ProgressiveBlurProps) {
@@ -157,7 +171,12 @@ export function ProgressiveBlur({
               fadeLength == null ? (
                 <LinearGradient colors={MASK_COLORS} locations={[0, fadeEnd]} style={StyleSheet.absoluteFill} />
               ) : (
-                <PlateauFade colors={MASK_COLORS} fadeLength={fadeLength} fadeEnd={fadeEnd} />
+                <PlateauFade
+                  colors={MASK_COLORS}
+                  fadeLength={fadeLength}
+                  topFadeLength={topFadeLength}
+                  fadeEnd={fadeEnd}
+                />
               )
             }
           >
@@ -166,7 +185,11 @@ export function ProgressiveBlur({
         );
       })}
       {fadeLength != null && washOpacity > 0 ? (
-        <PlateauFade colors={[`rgba(${washRgb},${washOpacity})`, `rgba(${washRgb},0)`]} fadeLength={fadeLength} />
+        <PlateauFade
+          colors={[`rgba(${washRgb},${washOpacity})`, `rgba(${washRgb},0)`]}
+          fadeLength={fadeLength}
+          topFadeLength={topFadeLength}
+        />
       ) : null}
       {/* Dark-mode only: a black wash over the blur, strongest at the top, so the
           dynamic-island / status-bar band reads black rather than grey. Sits above

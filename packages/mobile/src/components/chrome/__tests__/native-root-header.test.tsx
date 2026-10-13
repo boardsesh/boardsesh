@@ -120,6 +120,7 @@ vi.mock('../../ProgressiveBlur', () => ({
     layers,
     material,
     fadeLength,
+    topFadeLength,
     washOpacity,
     scrim,
   }: {
@@ -127,6 +128,7 @@ vi.mock('../../ProgressiveBlur', () => ({
     layers?: number;
     material?: 'thin' | 'chrome';
     fadeLength?: number;
+    topFadeLength?: number;
     washOpacity?: number;
     scrim?: boolean;
   }) =>
@@ -136,12 +138,13 @@ vi.mock('../../ProgressiveBlur', () => ({
       'data-layers': layers,
       'data-material': material,
       'data-fade-length': fadeLength,
+      'data-top-fade-length': topFadeLength,
       'data-wash-opacity': washOpacity,
       'data-scrim': String(scrim),
     }),
 }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
-vi.mock('../../../theme/tokens', () => ({ shadows: { sm: {} }, spacing: { 1: 4 } }));
+vi.mock('../../../theme/tokens', () => ({ shadows: { sm: {} }, spacing: { 1: 4, 2: 8 } }));
 vi.mock('../../GlassSurface', () => ({
   GlassSurface: ({ borderRadius }: { borderRadius: number }) =>
     createElement('div', { 'data-glass-radius': borderRadius }),
@@ -438,12 +441,12 @@ describe('NativeRootHeader', () => {
 
       expect(readStyle(block())).not.toHaveProperty('backgroundColor');
       expect(getByText('Filter chips')).toBeTruthy();
-      // One blur from the top of the screen (148 above the block, which sits under
-      // the bar) to one fade-length below the block: full strength behind every
-      // control, fading out over the rows under them.
+      // The custom blur starts with the supplementary controls, below the native
+      // bar. UIKit owns the bar/status material; this only frosts controls and
+      // fades over the rows one fade-length below them.
       expect(readStyle(backdropFrame())).toMatchObject({
         position: 'absolute',
-        top: -148,
+        top: 0,
         bottom: -CONTROLS_BACKDROP.fadeLength,
         left: 0,
         right: 0,
@@ -453,10 +456,11 @@ describe('NativeRootHeader', () => {
       expect(backdropFrame()?.firstElementChild).toBe(backdrop());
       expect(backdrop()?.getAttribute('data-layers')).toBe(String(CONTROLS_BACKDROP.layers));
       expect(backdrop()?.getAttribute('data-fade-length')).toBe(String(CONTROLS_BACKDROP.fadeLength));
+      expect(backdrop()?.getAttribute('data-top-fade-length')).toBe('8');
       expect(backdrop()?.getAttribute('data-wash-opacity')).toBe(String(CONTROLS_BACKDROP.washOpacity));
       expect(backdrop()?.getAttribute('data-material')).toBe('chrome');
       expect(backdrop()?.getAttribute('data-wash-opacity')).toBe('0');
-      // The dark status-bar scrim belongs to the old floating chrome's own band.
+      // UIKit owns the native status area; this supplementary blur has no scrim.
       expect(backdrop()?.getAttribute('data-scrim')).toBe('false');
     });
 
@@ -654,15 +658,17 @@ describe('NativeRootHeader', () => {
       expect(measured).toEqual([[36], [36]]);
     });
 
-    it('moves the blur with the block as the large title collapses', () => {
+    it.each([100, 44, 0])('keeps the blur below the native bar when its height changes to %s', (headerHeight) => {
       controls.canFloat = true;
-      const { block, backdropFrame, update } = renderControls();
-      controls.headerHeight = 100;
+      const { block, backdrop, backdropFrame, update } = renderControls();
+      expect(readStyle(block()).top).toBe(148);
+      expect(readStyle(backdropFrame()).top).toBe(0);
+      controls.headerHeight = headerHeight;
       update({});
 
-      expect(readStyle(block()).top).toBe(100);
-      // Still starts at the top of the screen.
-      expect(readStyle(backdropFrame()).top).toBe(-100);
+      expect(readStyle(block()).top).toBe(headerHeight);
+      expect(readStyle(backdropFrame())).toMatchObject({ top: 0, bottom: -24 });
+      expect(backdrop()?.getAttribute('data-top-fade-length')).toBe('8');
     });
 
     it('draws no blur on a screen with no controls', () => {
