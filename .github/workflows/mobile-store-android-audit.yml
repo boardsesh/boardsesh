@@ -1,0 +1,53 @@
+name: Mobile Store Android Audit
+
+# The Play requests are GET-only. OAuth token acquisition uses the same account
+# as release anchoring. No edit is created, committed, or invalidated.
+on:
+  workflow_dispatch:
+    inputs:
+      android_version_code:
+        description: 'Exact production versionCode to inspect (no notes or publishing-setting verification)'
+        type: string
+        required: true
+        default: '2001247'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-store-android-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Test read-only requests and exact build identity
+        run: vp test run scripts/__tests__/mobile-store-android-audit.test.ts --reporter=agent
+      - name: Read Google Play production release state
+        env:
+          ANDROID_VERSION_CODE: ${{ inputs.android_version_code }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          STORE_AUDIT_OUTPUT: ${{ runner.temp }}/store-audit-android.json
+        run: vp exec node --import tsx scripts/mobile-store-android-audit.ts
+      - name: Retain independent release-state readback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-audit-android
+          path: ${{ runner.temp }}/store-audit-android.json
+          if-no-files-found: warn
+          retention-days: 14
