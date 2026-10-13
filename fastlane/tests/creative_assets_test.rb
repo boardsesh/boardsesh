@@ -65,6 +65,21 @@ class CreativeAssetsTest < Minitest::Test
     end
   end
 
+  class FakeCppApple < FakeApple
+    def list(path)
+      case path
+      when %r{\A/v1/apps/app/appCustomProductPages\?}
+        [{ "id" => "kilter-page", "attributes" => { "name" => "Boardsesh Kilter" } }]
+      when %r{\A/v1/appCustomProductPages/kilter-page/appCustomProductPageVersions\?}
+        [{ "id" => "kilter-version", "attributes" => { "state" => "PREPARE_FOR_SUBMISSION" } }]
+      when %r{\A/v1/appCustomProductPageVersions/kilter-version/appCustomProductPageLocalizations\?}
+        %w[en-US es-ES es-MX fr-FR de-DE].map { |locale| { "id" => "cpp-#{locale}", "attributes" => { "locale" => locale } } }
+      else
+        super
+      end
+    end
+  end
+
   def setup
     @root = File.realpath(Dir.mktmpdir("creative-assets-test"))
     @client = FakeApple.new
@@ -198,6 +213,34 @@ class CreativeAssetsTest < Minitest::Test
     File.write(file, "overwritten native video")
     @manifest["variants"]["default"]["assets"].last["sha256"] = Digest::SHA256.file(file).hexdigest
     assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload") }
+    assert_empty @client.writes
+  end
+
+  def test_cpp_placements_bind_to_cpp_localizations_in_every_store_locale
+    @client = FakeCppApple.new
+    config = @manifest.fetch("variants").delete("default")
+    @manifest.fetch("variants")["kilter"] = config
+    config.fetch("assets").each do |asset|
+      path = File.join(@root, asset.fetch("provenance"))
+      proof = JSON.parse(File.read(path))
+      proof["variant"] = "kilter"
+      File.write(path, JSON.generate(proof))
+      asset["provenanceSha256"] = Digest::SHA256.file(path).hexdigest
+    end
+    cpp = { "targets" => { "kilter" => { "referenceName" => "Boardsesh Kilter" } } }
+    cpp_runner = BoardseshCreatives::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app", cpp_manifest: cpp, probe: @probe)
+    cpp_runner.run(action: "upload")
+    cpp_runner.run(action: "place")
+    assert_equal 10, @client.placements.length
+    assert @client.placements.all? { |placement| placement.dig("relationships", "appCustomProductPageLocalization", "data", "type") == "appCustomProductPageLocalizations" }
+    refute @client.placements.any? { |placement| placement.fetch("relationships").key?("appStoreVersionLocalization") }
+  end
+
+  def test_pending_manifest_is_not_an_upload_success
+    @manifest.fetch("variants").fetch("default")["assets"] = []
+    assert_equal "pending", runner.run(action: "plan").first.fetch("action")
+    assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload") }
+    assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
     assert_empty @client.writes
   end
 end
