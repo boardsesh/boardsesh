@@ -432,8 +432,9 @@ opening rail changes it too). Its controls use the shared scroll-driven backdrop
 the list disappears. Material keeps its results viewport below the entire opaque header.
 
 The Logbook filter sheet is built from the shared filter-sheet parts and applies live, like the
-climbs sheet: X / "Filters" with the feed's own count / Reset. The count says what it counts:
-entries, or climbs grouped by day on the date-ordered feed. Its sections are Climb name (names and
+climbs sheet: X / "Filters" with the feed's own count / Reset. The count is entries, and only on
+the flat feeds: the date-ordered feed's total counts the server's (climb, day) groups, which the
+list regroups by local day, angle and mirror, so it would not match the rows. Its sections are Climb name (names and
 notes), Difficulty (the grade rail), Your ascents (a four-segment All · Sends · Flashes · Attempts
 control, a star minimum, and When presets with Custom From / To rows that can't cross each other or
 today), The climb (board and layout chips when there is a choice to make, the angle rail, the

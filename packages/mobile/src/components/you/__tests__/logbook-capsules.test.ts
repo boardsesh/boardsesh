@@ -376,8 +376,18 @@ describe('Setter and Benchmarks', () => {
         'setter',
         'sheet',
       ) as SheetCapsule;
-    expect(setter(['alex'])).toMatchObject({ label: 'alex', count: 1 });
-    expect(setter(['alex', 'sam'])).toMatchObject({ label: 'mobile.logbook.capsules.setters(2)', count: 2 });
+    expect(resting.accessibilityLabel).toBe('mobile.logbook.capsules.setterAria');
+    // The spoken label replaces the visible one on iOS and the web, so it names the picks.
+    expect(setter(['alex'])).toMatchObject({
+      label: 'alex',
+      count: 1,
+      accessibilityLabel: 'mobile.logbook.capsules.setterPickedAria(alex)',
+    });
+    expect(setter(['alex', 'sam'])).toMatchObject({
+      label: 'mobile.logbook.capsules.setters(2)',
+      count: 2,
+      accessibilityLabel: 'mobile.logbook.capsules.setterPickedAria(mobile.logbook.capsules.setters(2))',
+    });
   });
 
   it('flips Benchmarks', () => {

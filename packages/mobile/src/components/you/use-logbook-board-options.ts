@@ -4,6 +4,7 @@ import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import type { LayoutStats } from '@boardsesh/graphql/operations';
 import { useUserProfileStats, useUserTickCountsByBoard } from '../../lib/graphql/hooks/use-you-data';
+import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 
 /** One layout a climber has logged on, for the Logbook's Layout chips. */
 export type LogbookLayoutOption = { layoutId: number; label: string };
@@ -15,8 +16,6 @@ export type LogbookBoardOption = {
   /** Most-climbed first. Empty for a spray wall, whose layouts are walls with no static name. */
   layouts: LogbookLayoutOption[];
 };
-
-const SPRAY_BOARD_TYPE = 'spray';
 
 type LayoutStatsRow = Pick<LayoutStats, 'boardType' | 'layoutId' | 'distinctClimbCount'>;
 
@@ -41,7 +40,7 @@ export function buildLogbookBoardOptions(
   return [...boardTypes]
     .map((boardType): LogbookBoardOption => {
       const layouts =
-        boardType === SPRAY_BOARD_TYPE
+        boardType === SPRAY_BOARD_NAME
           ? []
           : (layoutStats ?? [])
               .filter(

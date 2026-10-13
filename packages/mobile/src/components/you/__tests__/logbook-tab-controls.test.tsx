@@ -26,14 +26,13 @@ import type { Capsule, MenuCapsule, RailCapsule, SheetCapsule } from '../../filt
 import type { FilterToken } from '../../../lib/filter-tokens';
 import type { LogbookPinnableChipKind } from '../../../lib/logbook-pinnable-chips';
 import type { LogbookBoardOption } from '../use-logbook-board-options';
-import type { LogbookMatchCount } from '../LogbookFilterSheet';
 
 type SheetCapture = {
   filters: LogbookFilterState;
   sort: LogbookSortState;
   name: string;
   viewerIsOwner: boolean;
-  matchCount: LogbookMatchCount | null;
+  matchCount: number | null;
   today: Date;
   onDismiss: () => void;
   onChangeFilters: (patch: Partial<LogbookFilterState>) => void;
@@ -425,13 +424,14 @@ describe('LogbookTab controls', () => {
     });
   });
 
-  it('hands the sheet the live total and what it counts', async () => {
+  it("hands the sheet the flat feed's entry total, and no count on the date feed", async () => {
     await renderTab();
     act(() => capsule('filters', 'sheet').onPress());
     // The default (date, newest first) order reads the grouped feed.
-    expect(captured.sheet?.matchCount).toEqual({ count: 0, grouped: true });
+    // The date feed's total counts server groups, not the rows shown: no count.
+    expect(captured.sheet?.matchCount).toBeNull();
     act(() => captured.sheet?.onChangeSort(logbookSortFor('climbName', 'asc')));
-    expect(captured.sheet?.matchCount).toEqual({ count: 42, grouped: false });
+    expect(captured.sheet?.matchCount).toBe(42);
   });
 
   it('resets filters, sort and name from the sheet', async () => {

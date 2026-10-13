@@ -133,8 +133,6 @@ export type ToggleMenuCapsule = CapsuleBase & {
 
 export type Capsule = SheetCapsule | RailCapsule | MenuCapsule | ToggleCapsule | ToggleMenuCapsule;
 
-export type CapsuleKind = Capsule['kind'];
-
 export type CapsuleRowProps = {
   /** Rendered in order. Build the array in a `useMemo` so the row can skip re-renders. */
   capsules: readonly Capsule[];

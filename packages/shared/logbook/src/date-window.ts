@@ -18,7 +18,7 @@ export function isRollingLogbookDateWindow(window: LogbookDateWindow): boolean {
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
 /** `YYYY-MM-DD` of a Date on the DEVICE's local calendar (never UTC). */
-function localIsoDate(date: Date): string {
+export function localIsoDate(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 

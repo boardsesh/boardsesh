@@ -171,6 +171,7 @@
         "boardLayouts_other": "{{board}} · {{count}} layouts",
         "setter": "Ouvreur",
         "setterAria": "Choisir des ouvreurs",
+        "setterPickedAria": "Ouvreur : {{setters}}, choisir des ouvreurs",
         "setters_one": "{{count}} ouvreur",
         "setters_other": "{{count}} ouvreurs",
         "benchmarks": "Benchmarks",
@@ -207,8 +208,6 @@
         "close": "Fermer les filtres",
         "entryCount_one": "{{count}} entrée",
         "entryCount_other": "{{count}} entrées",
-        "groupedCount_one": "{{count}} bloc, groupé par jour",
-        "groupedCount_other": "{{count}} blocs, groupés par jour",
         "sectionName": "Nom du bloc",
         "namePlaceholder": "Rechercher des blocs et des notes",
         "sectionDifficulty": "Difficulté",
@@ -245,8 +244,8 @@
       "setterPicker": {
         "title": "Ouvreurs",
         "showResults": "Voir les blocs",
-        "tickCount_one": "{{count}} croix",
-        "tickCount_other": "{{count}} croix",
+        "tickCount_one": "{{count}} entrée",
+        "tickCount_other": "{{count}} entrées",
         "empty": "Aucun ouvreur dans ce carnet pour l'instant.",
         "error": "Impossible de charger les ouvreurs.",
         "limit": "Choisis jusqu'à {{count}} ouvreurs."

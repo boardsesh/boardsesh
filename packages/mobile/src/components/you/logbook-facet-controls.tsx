@@ -6,7 +6,7 @@
 import { memo, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { parseLocalIsoDate } from '@boardsesh/logbook';
+import { localIsoDate, parseLocalIsoDate } from '@boardsesh/logbook';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -14,13 +14,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
 import { openAndroidDatePicker } from '../logbook/native-date-picker';
-
-function formatIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 /** Keeps a date inside the picker's bounds; an unset bound limits nothing. */
 function clampDate(date: Date, minimumDate: Date | undefined, maximumDate: Date | undefined): Date {
@@ -63,7 +56,7 @@ export const DateRangeRow = memo(function DateRangeRow({
   const handleChange = useCallback(
     (_event: DateTimePickerEvent, picked?: Date) => {
       if (!picked) return;
-      onChange(formatIsoDate(clampDate(picked, minimumDate, maximumDate)));
+      onChange(localIsoDate(clampDate(picked, minimumDate, maximumDate)));
     },
     [onChange, minimumDate, maximumDate],
   );
@@ -74,7 +67,7 @@ export const DateRangeRow = memo(function DateRangeRow({
       mode: 'date',
       minimumDate,
       maximumDate,
-      onPicked: (picked) => onChange(formatIsoDate(clampDate(picked, minimumDate, maximumDate))),
+      onPicked: (picked) => onChange(localIsoDate(clampDate(picked, minimumDate, maximumDate))),
     });
   }, [selectedDate, minimumDate, maximumDate, onChange]);
 

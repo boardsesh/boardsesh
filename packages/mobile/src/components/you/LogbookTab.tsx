@@ -35,7 +35,7 @@ import { LogbookRow } from './LogbookRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
 import { BoardLinkPrompt } from './BoardLinkPrompt';
-import { LogbookFilterSheet, type LogbookMatchCount } from './LogbookFilterSheet';
+import { LogbookFilterSheet } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
 import { LogbookFacetRail } from './LogbookFacetRail';
@@ -367,15 +367,11 @@ export function LogbookTab({
   // below — without this it spins forever.
   const offline = useOfflineQueryState(feed);
 
-  // The sheet's subtitle: the live feed's own total. The date-ordered feed
-  // counts one climb per day (its groups), every other order counts entries.
-  const groupedTotal = groupedFeed.data?.pages[0]?.userGroupedAscentsFeed.totalCount;
-  const flatTotal = flatFeed.data?.pages[0]?.userAscentsFeed.totalCount;
-  const matchTotal = groupedMode ? groupedTotal : flatTotal;
-  const matchCount = useMemo<LogbookMatchCount | null>(
-    () => (matchTotal == null ? null : { count: matchTotal, grouped: groupedMode }),
-    [matchTotal, groupedMode],
-  );
+  // The sheet's subtitle: the flat feed's own total of entries. The date feed
+  // has none to show: its total counts the server's (climb, day) groups, and
+  // the list regroups them here by local day, angle and mirror, so the number
+  // would not match the rows.
+  const matchCount = groupedMode ? null : (flatFeed.data?.pages[0]?.userAscentsFeed.totalCount ?? null);
 
   // Removable tokens for active filters whose capsule isn't pinned, plus the
   // name, so a filtered list always says why.

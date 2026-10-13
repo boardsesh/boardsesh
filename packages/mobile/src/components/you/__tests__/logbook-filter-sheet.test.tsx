@@ -323,7 +323,7 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 
-import { LogbookFilterSheet, type LogbookMatchCount } from '../LogbookFilterSheet';
+import { LogbookFilterSheet } from '../LogbookFilterSheet';
 
 const TODAY = new Date(2026, 5, 20);
 
@@ -399,16 +399,13 @@ beforeEach(() => {
 });
 
 describe('LogbookFilterSheet header', () => {
-  it('titles the sheet and says how many entries match, or climbs per day on the grouped feed', () => {
-    const entries: LogbookMatchCount = { count: 12, grouped: false };
-    const { getByTestId, rerender, props } = renderSheet({ matchCount: entries });
+  it('titles the sheet and says how many entries match', () => {
+    const { getByTestId } = renderSheet({ matchCount: 12 });
     expect(getByTestId('top-bar').getAttribute('data-title')).toBe('mobile.logbook.filterSheet.title');
     expect(getByTestId('subtitle').textContent).toBe('mobile.logbook.filterSheet.entryCount:12');
-    rerender(createElement(LiveHarness, { ...props, matchCount: { count: 7, grouped: true } }));
-    expect(getByTestId('subtitle').textContent).toBe('mobile.logbook.filterSheet.groupedCount:7');
   });
 
-  it('shows no count until the feed has one', () => {
+  it('shows no count without an honest one (loading, or the date feed)', () => {
     const { queryByTestId } = renderSheet();
     expect(queryByTestId('subtitle')).toBeNull();
   });

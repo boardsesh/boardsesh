@@ -41,7 +41,3 @@ export const LOGBOOK_DEFAULT_PINNED_CHIPS: readonly LogbookPinnableChipKind[] = 
   'angle',
   'sort',
 ];
-
-export function isLogbookPinnableChipKind(value: unknown): value is LogbookPinnableChipKind {
-  return typeof value === 'string' && (LOGBOOK_PINNABLE_CHIP_KINDS as readonly string[]).includes(value);
-}

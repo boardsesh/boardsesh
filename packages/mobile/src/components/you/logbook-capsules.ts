@@ -480,7 +480,13 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
           key: kind,
           label: label(kind, t('mobile.logbook.capsules.setter')),
           count: filters.setterUsernames.length,
-          accessibilityLabel: t('mobile.logbook.capsules.setterAria'),
+          // Read instead of the label on iOS and the web, so it carries the picks too.
+          accessibilityLabel:
+            filters.setterUsernames.length > 0
+              ? t('mobile.logbook.capsules.setterPickedAria', {
+                  setters: logbookSetterLabel(filters.setterUsernames, t),
+                })
+              : t('mobile.logbook.capsules.setterAria'),
           // Wrapped: a platform's press event must not reach the handler's arguments.
           onPress: () => onOpenSetters(),
         });

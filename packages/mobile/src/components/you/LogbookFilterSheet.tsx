@@ -59,16 +59,6 @@ import {
 } from './logbook-capsules';
 import type { LogbookBoardOption } from './use-logbook-board-options';
 
-/** How many results the live filters match, and what one result is. */
-export type LogbookMatchCount = {
-  count: number;
-  /**
-   * The date-ordered feed counts one climb per day (its groups); the others
-   * count entries. The subtitle says which, so the number never claims more.
-   */
-  grouped: boolean;
-};
-
 type LogbookFilterSheetProps = {
   onDismiss: () => void;
   filters: LogbookFilterState;
@@ -80,7 +70,8 @@ type LogbookFilterSheetProps = {
   /** The grade scale the capsule row's rail uses too. */
   grades: readonly Grade[];
   boardOptions: readonly LogbookBoardOption[];
-  matchCount: LogbookMatchCount | null;
+  /** Entries the live filters match, or null when there is no honest count (the date feed). */
+  matchCount: number | null;
   /** Local midnight of today: the latest day the date rows offer. */
   today: Date;
   /** Each control commits as it changes; there is no Apply. */
@@ -389,12 +380,7 @@ export function LogbookFilterSheet({
     filters.dateWindow !== DEFAULT_LOGBOOK_FILTERS.dateWindow ||
     isLogbookSortActive(sort);
 
-  const subtitle =
-    matchCount == null
-      ? undefined
-      : matchCount.grouped
-        ? t('mobile.logbook.filterSheet.groupedCount', { count: matchCount.count })
-        : t('mobile.logbook.filterSheet.entryCount', { count: matchCount.count });
+  const subtitle = matchCount == null ? undefined : t('mobile.logbook.filterSheet.entryCount', { count: matchCount });
 
   return (
     <BottomSheetModal
