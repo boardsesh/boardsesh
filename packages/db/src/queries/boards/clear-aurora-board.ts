@@ -25,6 +25,8 @@ import {
   boardUsers,
   boardWalls,
 } from '../../schema/boards/unified';
+import { publicReferenceClimbSql } from '../privacy';
+import { rowsOf } from '../util/rows';
 
 // The unified Aurora importer (packages/db/scripts/import-aurora-board-unified.ts)
 // refreshes a whole direct-Aurora board (decoy / touchstone / grasshopper / soill)
@@ -44,6 +46,16 @@ import {
 // row after it disappears from an authoritative dump. Conversely, deleted
 // accounts lose user_id while their local published climbs remain synced=false.
 //
+// The clear runs with sync tombstones suppressed, because almost every row it
+// deletes comes straight back from the dump. An upstream climb an account owns
+// is the exception the suppression must not hide. The dump does not carry an
+// account's drafts and may not carry every climb the owner backfill assigned,
+// and a device that downloaded one keeps it until it is told to drop it, since
+// a sync never treats a missing row as deleted. So the clear lists those climbs
+// first, and once the dump is back `settleClearedOwnedClimbs` gives a recreated
+// one its owner again and writes a deletion marker for each one the dump did
+// not restore.
+//
 // The catalog metadata tables (products, sets, holes, placements, layouts, users,
 // walls, circuits, tags, syncs, …) carry no Boardsesh-text-user rows — circuits /
 // tags / walls key on the integer Aurora user id sourced from the dump — so they
@@ -62,6 +74,34 @@ export type BoardseshOwnedCounts = {
   ownedStatsHistory: number;
   /** board_beta_links rows with created_by_user_id IS NOT NULL (Boardsesh-attached). */
   boardseshBetaLinks: number;
+};
+
+/**
+ * An upstream climb an account owned when the refresh cleared it: a draft the
+ * linked-account import stamped, or a climb the owner backfill assigned.
+ */
+export type ClearedOwnedClimb = {
+  uuid: string;
+  userId: string;
+  /**
+   * Published and listed when cleared, so every device may hold a copy. A
+   * draft or an unlisted climb reached its owner's devices alone.
+   */
+  wasPublic: boolean;
+};
+
+export type AuroraBoardClear = {
+  /** The Boardsesh-provenance rows the clear kept, counted before and after it. */
+  preserved: BoardseshOwnedCounts;
+  /** Hand these to {@link settleClearedOwnedClimbs} once the dump is re-inserted. */
+  clearedOwnedClimbs: ClearedOwnedClimb[];
+};
+
+export type ClearedOwnedClimbsSettlement = {
+  /** Recreated by the dump, and given back the owner they had. */
+  ownerKept: number;
+  /** Not in the dump: a deletion marker now withdraws each one from devices. */
+  withdrawn: number;
 };
 
 /**
@@ -133,9 +173,12 @@ export async function countBoardseshOwnedRows(tx: Tx, boardName: string): Promis
  * whole import transaction back. Run inside the import transaction — the throw
  * aborts it.
  *
- * Returns the preserved-row counts (for the caller's preflight/summary log).
+ * Returns the preserved-row counts (for the caller's preflight/summary log) and
+ * the owned upstream climbs it deleted, which the caller hands to
+ * {@link settleClearedOwnedClimbs} after re-inserting the dump in the same
+ * transaction.
  */
-export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<BoardseshOwnedCounts> {
+export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<AuroraBoardClear> {
   // The rows deleted here are recreated in this same transaction; tell the sync
   // tombstone triggers (log_deletion_board_climbs / _stats) to stand down, or the
   // re-import floods sync_deletions with one NULL-scoped row per climb and every
@@ -144,6 +187,18 @@ export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<B
   await tx.execute(sql`SET LOCAL boardsesh.suppress_sync_tombstones = 'on'`);
 
   const preserved = await countBoardseshOwnedRows(tx, boardName);
+
+  // The upstream climbs an account owns, read before anything is deleted. They
+  // are deleted below with every other upstream row; settleClearedOwnedClimbs
+  // decides, once the dump is back, which of them devices must drop.
+  const clearedOwnedClimbs = await tx
+    .select({
+      uuid: boardClimbs.uuid,
+      userId: sql<string>`${boardClimbs.userId}`,
+      wasPublic: sql<boolean>`${sql.raw(publicReferenceClimbSql('board_climbs'))}`,
+    })
+    .from(boardClimbs)
+    .where(and(eq(boardClimbs.boardType, boardName), eq(boardClimbs.synced, true), isNotNull(boardClimbs.userId)));
 
   // The Boardsesh-owned climb uuids to preserve. These rows are never deleted
   // (they fail the upstream `synced = true` predicate below),
@@ -227,5 +282,59 @@ export async function clearAuroraBoardData(tx: Tx, boardName: string): Promise<B
     );
   }
 
-  return preserved;
+  return { preserved, clearedOwnedClimbs };
+}
+
+/**
+ * Finish what {@link clearAuroraBoardData} started for the upstream climbs an
+ * account owned. Call it in the same transaction, after the dump is re-inserted.
+ *
+ * - A climb the dump recreated comes back with no owner, because the dump has
+ *   none. It gets the owner it had, as it would through any other upstream
+ *   write, which never clears an owner; without one a recreated draft or
+ *   unlisted climb would reach nobody. No marker: the recreated row is newer
+ *   than every copy, and the stream that holds it delivers it again.
+ * - A climb the dump did not recreate is gone from the server. A deletion marker
+ *   withdraws it: for its owner alone when it was a draft or unlisted, since
+ *   only their devices were sent it, and for every device when it was public.
+ *   If the next account sync imports the draft again, the new row is newer than
+ *   the marker, so a device keeps it.
+ *
+ * The clear's tombstone suppression covers only the delete triggers; these
+ * markers are written directly. The climb's stats and grades get none: a device
+ * drops them with the climb.
+ */
+export async function settleClearedOwnedClimbs(
+  tx: Tx,
+  boardName: string,
+  clearedOwnedClimbs: readonly ClearedOwnedClimb[],
+): Promise<ClearedOwnedClimbsSettlement> {
+  if (clearedOwnedClimbs.length === 0) return { ownerKept: 0, withdrawn: 0 };
+
+  const clearedRows = JSON.stringify(
+    clearedOwnedClimbs.map((climb) => ({ uuid: climb.uuid, user_id: climb.userId, was_public: climb.wasPublic })),
+  );
+  const cleared = sql`jsonb_to_recordset(${clearedRows}::jsonb) AS cleared(uuid text, user_id text, was_public boolean)`;
+
+  // An account deleted since the clear read it has no owner left to restore.
+  const ownerKept = await tx.execute(sql`
+    UPDATE board_climbs
+       SET user_id = cleared.user_id
+      FROM ${cleared}
+     WHERE board_climbs.board_type = ${boardName}
+       AND board_climbs.uuid = cleared.uuid
+       AND board_climbs.user_id IS NULL
+       AND EXISTS (SELECT 1 FROM users WHERE users.id = cleared.user_id)
+    RETURNING board_climbs.uuid
+  `);
+
+  const withdrawn = await tx.execute(sql`
+    INSERT INTO sync_deletions (table_name, record_id, user_id)
+    SELECT 'board_climbs', cleared.uuid, CASE WHEN cleared.was_public THEN NULL ELSE cleared.user_id END
+      FROM ${cleared}
+     WHERE NOT EXISTS (SELECT 1 FROM board_climbs WHERE board_climbs.uuid = cleared.uuid)
+    RETURNING record_id
+  `);
+
+  return { ownerKept: rowsOf(ownerKept).length, withdrawn: rowsOf(withdrawn).length };
 }

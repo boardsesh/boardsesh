@@ -31,7 +31,11 @@ import {
 } from '../src/schema/boards/unified.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { recomputeClimbStatsBulk } from '../src/queries/climb-stats/recompute.js';
-import { clearAuroraBoardData, countBoardseshOwnedRows } from '../src/queries/boards/clear-aurora-board.js';
+import {
+  clearAuroraBoardData,
+  countBoardseshOwnedRows,
+  settleClearedOwnedClimbs,
+} from '../src/queries/boards/clear-aurora-board.js';
 import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
 import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
@@ -662,7 +666,7 @@ async function main() {
           `${preserved.boardseshBetaLinks} Boardsesh-attached beta link(s) for ${boardName}.`,
       );
       console.info(`Clearing existing upstream ${boardName} rows from unified tables...`);
-      await clearAuroraBoardData(tx, boardName);
+      const { clearedOwnedClimbs } = await clearAuroraBoardData(tx, boardName);
 
       console.info(`Loading ${boardName} tables into unified schema...`);
 
@@ -687,6 +691,14 @@ async function main() {
         boardClimbHolds,
         mappedClimbHolds,
         climbHoldsRows.length > 0 ? 'climb holds (source)' : 'climb holds (derived from frames)',
+      );
+
+      // Upstream climbs an account owned: the dump brings some back without
+      // their owner, and does not bring the rest back at all.
+      const settled = await settleClearedOwnedClimbs(tx, boardName, clearedOwnedClimbs);
+      console.info(
+        `  Owned upstream climbs: ${settled.ownerKept} recreated with their owner, ` +
+          `${settled.withdrawn} not in the dump and withdrawn from devices.`,
       );
 
       // Populate denormalized required_set_ids from climb_holds -> placements
