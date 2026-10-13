@@ -1239,6 +1239,25 @@ export const climbMutations = {
         }
       }
 
+      // A draft can already have stats rows: any send logged on it (a draft sent
+      // to a session, say) writes one. The board sync sends a draft's stats only
+      // to its owner, so other devices walked their stats cursor past those rows
+      // and would only see them on the next send. Re-stamp them on publish, the
+      // way the 0144 cursor trigger would, so every device pulls them now. The
+      // trigger cannot do it: 0195 fires it only when a column the device stores
+      // changes, and publishing changes none of them.
+      if (transitioningToPublished) {
+        await tx
+          .update(dbSchema.boardClimbStats)
+          .set({ updatedAt: sql`now()`, syncSeq: sql`nextval('board_climb_stats_sync_seq_seq')` })
+          .where(
+            and(
+              eq(dbSchema.boardClimbStats.boardType, validated.boardType),
+              eq(dbSchema.boardClimbStats.climbUuid, validated.uuid),
+            ),
+          );
+      }
+
       // The search hot path INNER JOINs board_climb_stats by (boardType, climbUuid, angle).
       // Make sure a row exists at the resolved angle whenever the climb is, or just became,
       // searchable. The old row at the previous angle is left in place — it's harmless

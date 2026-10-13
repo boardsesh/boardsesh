@@ -10,7 +10,7 @@
 //
 // Published and unlisted climbs are unchanged on both. Real Postgres throughout.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -20,8 +20,17 @@ import type { ConnectionContext, SyncResult } from '@boardsesh/shared-schema';
 import { createPool, rowsFromResult } from '@boardsesh/db/client';
 import { climbDraftVisibilityCondition } from '@boardsesh/db/queries';
 import { db } from '../db/client';
+import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { discoverLayoutPairs, exportLayoutSnapshot } from '../scripts/export-board-snapshots';
+
+vi.mock('../utils/redis-rate-limiter', () => ({
+  checkRateLimitRedis: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../events', () => ({
+  publishSocialEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 const OWNER_ID = 'drafts-owner-only-owner';
 const STRANGER_ID = 'drafts-owner-only-stranger';
@@ -159,6 +168,48 @@ describe('board sync for offline downloads: drafts go to their owner only', () =
     await db.execute(sql`UPDATE board_climbs SET is_draft = false WHERE uuid IN ('draft-owned', 'draft-ownerless')`);
     const after = await syncQueries.syncClimbs(undefined, { ...scope, cursor: before.cursor }, ctx(STRANGER_ID));
     expect(documentField(after, 'uuid')).toEqual(['draft-owned', 'draft-ownerless']);
+  });
+});
+
+describe("publishing a draft re-sends its stats to other climbers' devices", () => {
+  it('re-stamps stats rows a device already walked past while the climb was a draft', async () => {
+    // A draft sent to a session and climbed there: its stats rows exist, and
+    // their cursor sits before every row other devices have already pulled.
+    await db.execute(sql`
+      INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, user_id, is_draft, is_listed, angle, frames, frames_count,
+         compatible_size_ids, updated_at)
+      VALUES
+        ('publish-me', ${BOARD_TYPE}, ${LAYOUT_ID}, 'Publish me', ${OWNER_ID}, true, false, 40, 'p1145r12p1146r13', 1,
+         ${`{${SIZE_ID}}`}::int[], ${UPDATED_AT}::timestamp)
+    `);
+    for (const angle of [40, 50]) {
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, updated_at)
+        VALUES (${BOARD_TYPE}, 'publish-me', ${angle}, 2, '2026-04-01T00:00:00Z'::timestamp)
+      `);
+    }
+    const strangerPage = await syncQueries.syncClimbStats(undefined, scope, ctx(STRANGER_ID));
+    expect(documentField(strangerPage, 'climb_uuid')).toEqual(EVERYONE_SEES);
+
+    await climbMutations.updateClimb(
+      null,
+      { input: { uuid: 'publish-me', boardType: BOARD_TYPE, isDraft: false } },
+      ctx(OWNER_ID),
+    );
+
+    const nextPage = await syncQueries.syncClimbStats(
+      undefined,
+      { ...scope, cursor: strangerPage.cursor },
+      ctx(STRANGER_ID),
+    );
+    const shipped = (nextPage.documents as Array<Record<string, unknown>>)
+      .map(
+        (document) => `${String(document.climb_uuid)}@${String(document.angle)}:${String(document.ascensionist_count)}`,
+      )
+      .sort();
+    // Both angles, with the counts the sends wrote, not a fresh empty seed.
+    expect(shipped).toEqual(['publish-me@40:2', 'publish-me@50:2']);
   });
 });
 
