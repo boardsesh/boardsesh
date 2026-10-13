@@ -2042,7 +2042,11 @@ describe('ClimbList with the climber’s row switches', () => {
 
   it('draws ten placeholder rows for the first page of default rows, six for the next page', async () => {
     loadingFirstPage();
-    expect(skeletonRows(render(<ClimbList />).container)).toHaveLength(10);
+    const firstPage = render(<ClimbList />);
+    expect(skeletonRows(firstPage.container)).toHaveLength(10);
+    // Keep the next-page lookup from resolving against this screen while its
+    // pending restore rerenders it with the changed query fixture.
+    firstPage.unmount();
 
     mocks.isClimbsLoading = false;
     expect(skeletonRows(await loadingNextPage())).toHaveLength(6);
