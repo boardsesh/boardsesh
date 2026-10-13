@@ -147,6 +147,7 @@ runs:
         echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
 
     - name: Capture screenshots (${{ inputs.locale }} · ${{ inputs.device-slug }})
+      id: capture
       # Installs the prebuilt .app, starts Metro with the screenshot env for this
       # locale, and runs Maestro for this ONE device — no native build on this
       # path. Always against prod (signed in as the test user); no
@@ -219,7 +220,13 @@ runs:
           retarget+=(--fixtures off)
         fi
         attempts="$ATTEMPTS_INPUT"
+        capture_debug_root="$SCREENSHOT_DEBUG_DIR"
         for attempt in $(seq 1 "$attempts"); do
+          if [ -n "$CPP_TARGET" ]; then
+            # The capture script preserves each failed run here before the next
+            # invocation replaces its OS-temp Metro/backend logs.
+            export SCREENSHOT_DEBUG_DIR="$capture_debug_root/attempt-$attempt"
+          fi
           echo "::group::Capture attempt $attempt/$attempts ($SHARD_LOCALE · $SHARD_DEVICE_SLUG)"
           if vp run mobile:screenshots -- \
             --platform ios \
@@ -235,6 +242,9 @@ runs:
           fi
           echo "::endgroup::"
           echo "Capture attempt $attempt/$attempts failed."
+          if [ -n "$CPP_TARGET" ]; then
+            echo 'had_failed_attempt=true' >> "$GITHUB_OUTPUT"
+          fi
           if [ "$attempt" -lt "$attempts" ]; then
             echo "Shutting down all simulators before a fresh-boot retry..."
             xcrun simctl shutdown all 2>/dev/null || true
@@ -250,7 +260,7 @@ runs:
     # the job. The Maestro tests dir is under $HOME (actions/upload-artifact
     # doesn't expand ~), so copy it into the workspace first.
     - name: Collect capture debug artifacts
-      if: ${{ failure() || (inputs.debug-artifact-on == 'always' && !cancelled()) }}
+      if: ${{ failure() || (!cancelled() && (steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always')) }}
       shell: bash
       run: |
         mkdir -p capture-debug
@@ -263,7 +273,7 @@ runs:
           > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"
 
     - name: Upload capture debug artifacts
-      if: ${{ failure() || (inputs.debug-artifact-on == 'always' && !cancelled()) }}
+      if: ${{ failure() || (!cancelled() && (steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always')) }}
       uses: actions/upload-artifact@v4
       with:
         # Per-shard name: upload-artifact@v4 rejects two uploads with the same

@@ -162,6 +162,13 @@ Generated flows retain a separate Maestro command document. All 64 combinations
 of target, app language, and device were validated with the pinned Maestro 2.6.1
 parser before the native capture rerun.
 
+CPP shard retries retain their failure evidence in separate
+`capture-debug/attempt-1/` and `capture-debug/attempt-2/` directories. Metro,
+backend, native-process diagnostics and partial captures belong to that attempt;
+the next invocation cannot overwrite them. CI uploads the existing diagnostic
+artifact for 14 days even when a later attempt succeeds. The capture result,
+two-attempt budget and content checks keep their existing behavior.
+
 The original real spray-wall photographs are committed at
 `app-stores/apple/cpp-source-photos/`: `lizfinal.JPG`, `cherry4.JPG`, and
 `bowlo.jpg`. The CPP manifest records each original filename, byte count, and

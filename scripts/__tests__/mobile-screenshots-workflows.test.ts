@@ -1,6 +1,9 @@
 /// <reference types="node" />
 
-import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { CPP_MANIFEST_PATH, CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
@@ -771,6 +774,112 @@ describe('iOS CPP capture and publication isolation', () => {
 });
 
 describe('ios-screenshot-shard composite action', () => {
+  it.each([
+    { cppTarget: 'kilter', failedAttempts: 1, expectedExit: 0 },
+    { cppTarget: 'kilter', failedAttempts: 2, expectedExit: 1 },
+    { cppTarget: 'kilter', failedAttempts: 0, expectedExit: 0 },
+    { cppTarget: '', failedAttempts: 1, expectedExit: 0 },
+  ])('preserves CPP attempt evidence: $cppTarget / $failedAttempts failures', (scenario) => {
+    const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
+    const capture = action.runs.steps.find((step) => step.id === 'capture');
+    if (!capture?.run) throw new Error('Capture script is missing');
+    const workspace = mkdtempSync(join(tmpdir(), 'cpp-retry-evidence-'));
+    try {
+      const mockBin = join(workspace, 'bin');
+      mkdirSync(mockBin);
+      const counterPath = join(workspace, 'invocations');
+      const tracePath = join(workspace, 'debug-directories');
+      const outputPath = join(workspace, 'outputs');
+      writeFileSync(counterPath, '0\n');
+      writeFileSync(tracePath, '');
+      writeFileSync(outputPath, '');
+      writeFileSync(
+        join(mockBin, 'vp'),
+        [
+          '#!/bin/bash',
+          'set -euo pipefail',
+          'read -r capture_invocation < "$MOCK_CAPTURE_COUNTER"',
+          'capture_invocation=$((capture_invocation + 1))',
+          'printf "%s\\n" "$capture_invocation" > "$MOCK_CAPTURE_COUNTER"',
+          'printf "%s\\n" "$SCREENSHOT_DEBUG_DIR" >> "$MOCK_CAPTURE_TRACE"',
+          'if [ "$capture_invocation" -le "$MOCK_CAPTURE_FAILURES" ]; then',
+          '  mkdir -p "$SCREENSHOT_DEBUG_DIR"',
+          '  printf "failure-%s\\n" "$capture_invocation" > "$SCREENSHOT_DEBUG_DIR/screenshot-backend.log"',
+          '  printf "metro-%s\\n" "$capture_invocation" > "$SCREENSHOT_DEBUG_DIR/metro.log"',
+          '  exit 1',
+          'fi',
+          'exit 0',
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+      for (const command of ['xcrun', 'sleep']) {
+        writeFileSync(join(mockBin, command), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+      }
+      const result = spawnSync('bash', ['-c', capture.run], {
+        cwd: workspace,
+        encoding: 'utf8',
+        timeout: 5000,
+        env: {
+          ...process.env,
+          PATH: mockBin + ':' + process.env.PATH,
+          SCREENSHOT_DEBUG_DIR: 'capture-debug',
+          GITHUB_OUTPUT: outputPath,
+          RUNNER_TEMP: workspace,
+          CPP_TARGET: scenario.cppTarget,
+          CPP_SCENARIO: '',
+          RENDER_MODE_INPUT: '',
+          BOARDS_INPUT: '',
+          FIXTURES_INPUT: 'record',
+          FROZEN_NOW_INPUT: '',
+          ATTEMPTS_INPUT: '2',
+          SHARD_FLOW: scenario.cppTarget ? 'app-store-cpp' : 'app-store',
+          SHARD_LOCALE: 'en-US',
+          SHARD_DEVICE_NAME: 'iPhone 16 Pro',
+          SHARD_DEVICE_SLUG: 'iphone-16-pro',
+          MOCK_CAPTURE_COUNTER: counterPath,
+          MOCK_CAPTURE_TRACE: tracePath,
+          MOCK_CAPTURE_FAILURES: String(scenario.failedAttempts),
+        },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(scenario.expectedExit);
+      expect(result.stderr).toBe('');
+      const invocations = scenario.failedAttempts === 0 ? 1 : 2;
+      const expectedDirectories = Array.from({ length: invocations }, (_, index) =>
+        scenario.cppTarget ? 'capture-debug/attempt-' + (index + 1) : 'capture-debug',
+      );
+      expect(readFileSync(tracePath, 'utf8').trim().split('\n')).toEqual(expectedDirectories);
+      const hadFailedCppAttempt = scenario.cppTarget !== '' && scenario.failedAttempts > 0;
+      expect(readFileSync(outputPath, 'utf8').includes('had_failed_attempt=true')).toBe(hadFailedCppAttempt);
+      if (hadFailedCppAttempt) {
+        expect(readFileSync(join(workspace, 'capture-debug/attempt-1/screenshot-backend.log'), 'utf8')).toBe(
+          'failure-1\n',
+        );
+        expect(readFileSync(join(workspace, 'capture-debug/attempt-1/metro.log'), 'utf8')).toBe('metro-1\n');
+        if (scenario.failedAttempts === 2) {
+          expect(readFileSync(join(workspace, 'capture-debug/attempt-2/screenshot-backend.log'), 'utf8')).toBe(
+            'failure-2\n',
+          );
+        }
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('uploads recovered CPP failure evidence without changing the capture result', () => {
+    const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
+    for (const name of ['Collect capture debug artifacts', 'Upload capture debug artifacts']) {
+      const step = action.runs.steps.find((candidate) => candidate.name === name);
+      expect(step?.if).toContain("steps.capture.outputs.had_failed_attempt == 'true'");
+      expect(step?.if).toContain('!cancelled()');
+      expect(step?.if).toContain('failure()');
+    }
+    const upload = action.runs.steps.find((step) => step.name === 'Upload capture debug artifacts');
+    expect(upload?.with?.path).toBe('capture-debug/**');
+    expect(upload?.with?.['retention-days']).toBe(14);
+  });
+
   it('explicitly disables replay for live diagnostics', () => {
     const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
     const capture = action.runs.steps.find((step) => step.run?.includes('attempts="$ATTEMPTS_INPUT"'));
