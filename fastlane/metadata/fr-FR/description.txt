@@ -6,12 +6,12 @@ Boardsesh est compatible avec Kilter, Tension, MoonBoard, Woods, Decoy, Touchsto
 TON MUR DE SPRAY AUSSI
 Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh suggère des prises à partir de la photo. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien mur est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé.
 
-L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
+L'HISTORIQUE DE LA BOARD
 Partage une board et tu perds vite le fil du dernier bloc, et quelqu'un finit toujours par l'effacer par accident.
-Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom du bloc, qui l'a allumé, qui l'a ouvert, la cotation et l'inclinaison, et les croix récentes. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.
+Retrouve les blocs allumés via Boardsesh sur cette board : le nom du bloc, qui l’a allumé, qui l’a ouvert, la cotation, l’inclinaison et les croix récentes.
 
-LES SÉANCES AVEC TA CREW
-Lance une séance et toi et ta crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer le prochain bloc au mur. À la fin, tu reçois un récap et un suivi : croix et essais, éventail de cotations, ta croix la plus dure, et ta progression dans le temps.
+LES SÉANCES AVEC TON CREW
+Lance une séance et toi et ton crew partagez une seule file que tout le monde peut piloter. N'importe qui peut allumer le prochain bloc au mur. À la fin, tu reçois un récap et un suivi : croix et essais, éventail de cotations, ta croix la plus dure, et ta progression dans le temps.
 
 PILOTE DEPUIS TON ÉCRAN VERROUILLÉ (iOS 17+)
 Les Live Activities iOS t'indiquent le bloc en cours depuis ton écran verrouillé, et te laissent en changer sans le quitter.
@@ -26,7 +26,7 @@ EMPORTE TON HISTORIQUE AVEC TOI
 Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et Tension depuis Aurora Climbing.
 
 TROUVE PLUS À GRIMPER
-Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
+Suis ton crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
 
 Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les murs de spray : n'importe quel mur que tu peux photographier.
 

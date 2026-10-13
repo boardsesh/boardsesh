@@ -1,34 +1,29 @@
-MURS DE SPRAY : TON PROPRE MUR DANS BOARDSESH
+MURS DE SPRAY : TON MUR DANS BOARDSESH
 
-Photographie ton mur de chez toi ou le mur de spray de ta salle et l'app trouve les prises. Corrige ce qu'elle a raté, choisis un look, publie, et commence à ouvrir. Les blocs fonctionnent comme sur n'importe quelle autre board : mets-les dans la file, garde-les dans des playlists, et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo.
+Ajoute une photo de ton mur à la maison ou du mur de spray de ta salle, vérifie les prises détectées et commence à ouvrir des blocs. Mets-les dans la file, garde-les dans des playlists et enregistre tes croix. Pas besoin de LED.
 
-Garde un mur privé, rends-le public, ou partage-le par lien ou QR code et ton crew peut y ouvrir des blocs et les enregistrer aussi. Mur reconfiguré ? Réinitialise-le : prends une nouvelle photo, marque les prises, et ton ancien mur est archivé avec tous ses blocs et toutes ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
+Garde le mur privé ou partage-le avec ton crew par lien ou QR code. Réinitialise le mur en conservant ses anciens blocs et toutes leurs croix dans les archives. Télécharge un mur pour garder sa photo, ses prises et ses blocs sans réseau. Sur iPad, utilise Apple Pencil pour marquer les prises.
 
-Gratuit, comme le reste de Boardsesh.
+TON CREW ET TON PROCHAIN ESSAI
 
-TON CREW, SUR CHAQUE BLOC
+Retrouve les séances en direct de ton crew sur Accueil. Ouvre un bloc pour voir les entrées du carnet des personnes que tu suis à côté des tiennes. Suis des ouvreurs et ouvreuses pour retrouver leurs nouveaux blocs dans le fil de ton crew.
 
-Accueil montre qui grimpe en ce moment, pour que tu rejoignes sa séance. Ouvre un bloc et les gens que tu suis passent en premier : leurs notes, la cotation qu'ils lui donneraient, puis les carnets de tous les autres. Suis un ouvreur ou une ouvreuse et ses nouveaux blocs arrivent dans le fil de ton crew sous forme d'une seule carte que tu swipes.
+Choisis un repos après chaque bloc enregistré ou grimpe avec un minuteur à intervalles fixes. Active le passage automatique au bloc suivant et garde Boardsesh ouvert entre les essais. Utilise Mettre juste après pour placer un bloc juste derrière celui au mur, ou ajoute une playlist sans vider la file.
 
-UN MINUTEUR DE REPOS QUI FAIT AVANCER LA FILE
+PLUS D'OPTIONS À TON GOÛT
 
-Enchaîne des blocs à la minute sans toucher ton téléphone entre deux essais. Active le minuteur de repos dans l'onglet Session : il démarre dès que tu enregistres un bloc, puis continue dans le rouge si tu traînes. Laisse-le passer au bloc suivant et il l'allume sur le mur pour toi. Quelqu'un veut passer en premier ? Appui long sur son bloc, puis touche Mettre juste après pour le placer juste derrière celui qui est sur le mur.
+- Choisis les sections sous chaque bloc : vidéos de beta, entrées du carnet, blocs similaires et autres.
+- Active Utiliser mes cotations pour parcourir, trier et filtrer les blocs selon tes propres cotations.
+- Les blocs similaires et la carte de chaleur des prises fonctionnent sans réseau avec ta board téléchargée.
+- Passe à une autre board de ta salle depuis le panneau du mur.
+- Exporte ton historique de grimpe, tes playlists et tes blocs depuis les réglages.
 
-AUSSI AU PROGRAMME
+CORRECTIONS POUR TA PROCHAINE SÉANCE
 
-- Les autres boards de ta salle sont dans la feuille du mur : un tap vers le mur devant lequel tu es, et le Bluetooth et la file te suivent.
-- Active Utiliser mes cotations et la cotation que tu as donnée à un bloc est celle que tu vois, selon laquelle tu tries et filtres.
-- Les blocs similaires et la carte de chaleur refondue marchent sur ta board téléchargée, donc sans réseau.
-- Les carnets de boards liés se synchronisent tout seuls, en continu.
-- Exporte ton historique de grimpe, tes playlists et tes blocs depuis Paramètres.
-- Nouveau look de board, Aura contour : un contour net sur chaque prise lumineuse.
-- Les voies se jouent au rythme où elles ont été ouvertes : le rythme se lit en secondes par image, jusqu'à 60.
-
-CORRIGÉ
-
-- Les croix enregistrées avec une connexion capricieuse attendent le réseau et se synchronisent au lieu de se perdre.
-- Woods : tous les blocs apparaissent quel que soit l'angle auquel ils ont été ouverts, et le filtre d'ouvreurs les liste tous.
-- MoonBoard : un bloc coté à un seul des deux angles affiche maintenant une estimation pour l'autre.
-- Les swipes dans le tiroir de lecture restent sur la liste d'où tu es parti, même quand enregistrer un bloc réordonne cette liste.
+- Les cotations MoonBoard utilisent désormais sa propre échelle V. Les imports de carnet acceptent aussi les colonnes dans un autre ordre ou les noms des blocs à la place des identifiants.
+- Les blocs Woods apparaissent quel que soit leur angle d'ouverture, et le filtre des ouvreurs inclut tout le monde sur la board.
+- Les croix enregistrées avec une mauvaise connexion attendent le réseau pour retenter la synchronisation.
+- En balayant les blocs, tu restes dans la liste choisie, même si une nouvelle entrée du carnet la réordonne.
+- Correction d'un plantage au démarrage sur iOS et des onglets Safari qui s'ouvraient au lancement de l'app.
 
 Gratuit, sans pub, open source.

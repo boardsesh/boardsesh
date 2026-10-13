@@ -1,34 +1,29 @@
-SPRAY WALLS: YOUR OWN WALL IN BOARDSESH
+SPRAY WALLS: YOUR WALL IN BOARDSESH
 
-Photograph your home wall or the spray wall at your gym and the app finds the holds. Fix what it missed, pick a look, publish, and start setting. Climbs work like on any other board: queue them, save them to playlists, and log your sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo.
+Add a photo of your home wall or your gym's spray wall, review the detected holds, and start setting boulders. Queue climbs, save them to playlists and log your sends. No LEDs needed.
 
-Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Reset it: take a new photo, mark the holds, and your old wall is archived with every climb and send. Swap a single hold and any climb that used it is flagged, ready to remix.
+Keep a wall private or share it with your crew by link or QR code. Reset your wall while keeping its old climbs and sends archived. Download a wall to keep its photo, holds and climbs available with no signal. On iPad, use Apple Pencil to mark holds.
 
-Free, like the rest of Boardsesh.
+YOUR CREW AND YOUR NEXT GO
 
-YOUR CREW, ON EVERY CLIMB
+Find your crew's live sessions on Home. Open a climb to see logs from people you follow alongside your own, and follow setters to see their new climbs in your crew feed.
 
-Home shows who's climbing right now, so you can jump into their session. Open a climb and the people you follow come first: their notes, the grade they'd give it, then everyone else's logs. Follow a setter and their new climbs land in your crew feed as one card you swipe through.
+Set a rest interval after each logged climb, or climb on a fixed timer. Turn on automatic queue advance and keep Boardsesh open between goes. Use Play next to put a climb straight after the one on the wall, or add a playlist without clearing your queue.
 
-A REST TIMER THAT MOVES THE QUEUE ON
+MORE WAYS TO MAKE IT YOURS
 
-Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. Someone wants a go first? Long-press their climb and tap Play next to slot it right behind the one on the wall.
-
-ALSO NEW
-
-- Your gym's other boards sit in the wall sheet: one tap to the wall you're standing at, and the Bluetooth link and the queue come with you.
-- Turn on Use my grades and the grade you gave a climb is the one you see, sort and filter by.
-- Similar climbs and the redesigned hold heatmap run on your downloaded board, so they work with no signal.
-- Linked board logbooks now sync on their own, around the clock.
+- Choose which sections appear below a climb, including beta videos, logs and similar climbs.
+- Turn on Use my grades to browse, sort and filter by your own grades.
+- Similar climbs and the hold heatmap work on your downloaded board with no signal.
+- Switch to another board at your gym from the wall panel.
 - Export your climbing history, playlists and climbs from Settings.
-- A new board look, Aura Outline: a solid outline on each lit hold.
-- Routes play at the pace they were set: pacing now reads in seconds a frame, up to 60.
 
-FIXED
+FIXES FOR YOUR NEXT SESSION
 
-- Sends logged on a flaky connection wait for signal and sync instead of getting lost.
-- Woods: every climb shows up whatever angle it was set at, and the setter filter lists all of a board's setters.
-- MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
-- Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
+- MoonBoard grades now use MoonBoard's V scale. Logbook imports also accept exports with reordered columns or climb names instead of IDs.
+- Woods climbs appear regardless of their setting angle, and the setter filter includes every setter on a board.
+- Sends logged on a flaky connection wait for signal and retry syncing.
+- Swiping through climbs stays on the list you picked, even when a new log reorders it.
+- Fixed an iOS launch crash and unwanted Safari tabs when opening the app.
 
 Free, no ads, open source.

@@ -404,6 +404,26 @@ Review submission and rollout remain manual:
   screenshots, then submit it for review.
 - **Play Console:** promote the verified internal release to production.
 
+Before submission, dispatch **Mobile Store Audit** (`mobile-store-audit.yml`) on
+`main` with the exact marketing version and iOS build number. It reads App Store
+Connect independently of uploader receipts and retains the `store-audit-ios` JSON
+artifact for 14 days. The report
+includes the attached build, release state/type, localized listing text and exact
+SHA-256 hashes, and each default/CPP screenshot's order, filename, source checksum,
+processing state and image URL. Compare those source checksums with the captured
+PNGs and inspect the returned images before calling the assets delivered.
+
+The audit fails when the expected release/build does not match. Missing locales,
+CPPs, device sets, checksums and unfinished screenshot processing appear as
+`readinessIssues`; a successful identity check does not certify those assets.
+Apple requests are GET-only. The audit changes no listings, assets, review
+submissions or rollout. Google Play is not queried: its read API requires an edit
+transaction that can invalidate another upload using the same service account;
+Play readback requires separate coordination with every Play writer.
+Review contact details, credentials and signed upload operations are excluded
+from the artifacts. A concurrent upload can change the observed assets; repeat
+the audit after all upload jobs finish.
+
 The scheduled **Mobile Release Anchor** workflow queries each store for the exact
 accepted build and creates
 `release/<platform>-v<version>-<shortfp>` at its immutable build commit. The

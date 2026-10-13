@@ -1,34 +1,29 @@
-MUROS DE SPRAY: TU PROPIO MURO EN BOARDSESH
+MUROS DE SPRAY: TU MURO EN BOARDSESH
 
-Fotografía tu muro de casa o el muro de spray de tu rocódromo y la app encuentra las presas. Corrige lo que se le haya pasado, elige un aspecto, publica y empieza a montar. Los bloques funcionan como en cualquier otro plafón: ponlos en cola, guárdalos en playlists y registra tus encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto.
+Añade una foto de tu muro de casa o del muro de spray de tu rocódromo, revisa las presas detectadas y empieza a montar bloques. Ponlos en cola, guárdalos en playlists y registra tus encadenes. No hacen falta LED.
 
-Mantén un muro privado, hazlo público o compártelo por enlace o código QR y tu crew también podrá montar y registrar en él. ¿Has desmontado el muro? Resetéalo: haz una foto nueva, marca las presas y tu muro anterior se archiva con todos sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
+Mantén el muro privado o compártelo con tu crew por enlace o código QR. Resetea el muro y conserva archivados sus bloques y encadenes anteriores. Descarga un muro para tener su foto, presas y bloques sin cobertura. En iPad, usa Apple Pencil para marcar presas.
 
-Gratis, como el resto de Boardsesh.
+TU CREW Y TU PRÓXIMO INTENTO
 
-TU CREW, EN CADA BLOQUE
+Encuentra las sesiones en directo de tu crew en Inicio. Abre un bloque para ver los registros de la gente que sigues junto a los tuyos. Sigue a setters para ver sus bloques nuevos en el feed de tu crew.
 
-Inicio muestra quién está escalando ahora mismo para que entres en su sesión. Abre un bloque y primero ves a la gente que sigues: sus notas, el grado que le pondrían, y después los registros de todos los demás. Sigue a un setter y sus bloques nuevos llegan al feed de tu crew como una tarjeta que deslizas.
+Elige un descanso después de cada bloque registrado o escala con un temporizador a intervalos fijos. Activa el avance automático de la cola y mantén Boardsesh abierto entre intentos. Usa Poner a continuación para colocar un bloque justo después del que está en el muro, o añade una playlist sin vaciar la cola.
 
-UN TEMPORIZADOR DE DESCANSO QUE MUEVE LA COLA
+MÁS OPCIONES A TU MEDIDA
 
-Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Sesión y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro. ¿Alguien quiere ir antes? Mantén pulsado su bloque y toca Poner a continuación para colocarlo justo detrás del que está en el muro.
+- Elige qué secciones aparecen debajo de un bloque, incluidos vídeos de beta, registros y bloques similares.
+- Activa Usar mis grados para explorar, ordenar y filtrar por tus propios grados.
+- Los bloques similares y el mapa de calor de presas funcionan con tu plafón descargado sin cobertura.
+- Cambia a otro plafón de tu rocódromo desde el panel del muro.
+- Exporta tu historial de escalada, playlists y bloques desde Ajustes.
 
-TAMBIÉN NUEVO
+CORRECCIONES PARA TU PRÓXIMA SESIÓN
 
-- Los demás plafones de tu rocódromo están en el panel del muro: un toque al muro que tienes delante, y el Bluetooth y la cola se van contigo.
-- Activa Usar mis grados y el grado que le diste a un bloque es el que ves, y por el que ordenas y filtras.
-- Los bloques similares y el nuevo mapa de calor de presas funcionan con tu plafón descargado, así que van sin cobertura.
-- Los logbooks vinculados de los plafones se sincronizan solos, a todas horas.
-- Exporta tu historial de escalada, tus playlists y tus bloques desde Ajustes.
-- Nuevo aspecto del plafón, Aura contorno: un contorno sólido en cada presa encendida.
-- Las vías suenan al ritmo con que se montaron: el ritmo se lee en segundos por fotograma, hasta 60.
-
-CORREGIDO
-
-- Los encadenes registrados con mala conexión esperan a tener cobertura y se sincronizan, en vez de perderse.
-- Woods: todos los bloques aparecen sea cual sea el ángulo al que se montaron, y el filtro de setters lista a todos los de un plafón.
-- MoonBoard: un problema graduado en solo uno de los dos ángulos ahora muestra una estimación para el otro.
-- Los deslizamientos en el panel de juego siguen en la lista de la que elegiste, aunque registrar un bloque reordene esa lista.
+- Los grados de MoonBoard usan ahora su propia escala V. También puedes importar logbooks con columnas en otro orden o nombres de bloques en lugar de identificadores.
+- Los bloques de Woods aparecen sea cual sea su ángulo de montaje, y el filtro de setters incluye a todos los del plafón.
+- Los encadenes registrados con mala conexión esperan a tener cobertura y reintentan la sincronización.
+- Al deslizar entre bloques, sigues en la lista que elegiste aunque un registro nuevo la reordene.
+- Corregidos un cierre al abrir la app en iOS y las pestañas de Safari que aparecían al iniciarla.
 
 Gratis, sin anuncios, código abierto.

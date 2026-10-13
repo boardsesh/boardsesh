@@ -1,7 +1,6 @@
 New in 2.6:
-- Spray walls: photograph your home wall or your gym's spray wall, the app finds the holds, then set, queue and log climbs on it. No LEDs needed.
-- See your crew's live sessions on Home, and their logs on every climb.
-- A rest timer that starts when you log a climb and can move the queue on.
-- Play next: long-press a climb to jump the queue.
-- Your gym's other boards are one tap away in the wall sheet.
-- Shared climb links open straight in the app.
+- Add a spray wall from a photo, review the detected holds, set climbs and log sends. Download it for sessions with no signal.
+- Find your crew's live sessions and their logs on climbs.
+- Set a rest timer and advance the queue automatically while the app stays open.
+- Choose which details appear below a climb. Add playlists without clearing your queue.
+- MoonBoard grades use its V scale. Logbook imports accept more CSV formats.

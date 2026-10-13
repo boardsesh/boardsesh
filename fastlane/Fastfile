@@ -219,6 +219,24 @@ rescue => error
 end
 
 platform :ios do
+  desc "Read back the exact iOS release, listing text and ordered default/CPP screenshots"
+  lane :audit do
+    require File.join(REPO_ROOT, "fastlane", "lib", "store_audit")
+    asc_api_key
+    require "spaceship"
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("App not found for store audit") unless app
+    manifest = JSON.parse(File.read(File.join(REPO_ROOT, "app-stores", "apple", "custom-product-pages.json")))
+    client = BoardseshASC::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
+    report = BoardseshStoreAudit::Apple.new(
+      client: client, app_id: app.id, version: ENV.fetch("RELEASE_VERSION"),
+      build_number: ENV.fetch("IOS_BUILD_NUMBER"), cpp_targets: manifest.fetch("targets"),
+      locales: EXPECTED_DELIVER_LOCALES, display_types: manifest.fetch("devices").values.uniq
+    ).run
+    BoardseshStoreAudit.write_report(ENV.fetch("STORE_AUDIT_OUTPUT"), report)
+    UI.success("iOS release identity verified; audit report includes #{report.fetch('readinessIssues').length} asset readiness issue(s).")
+  end
+
   desc "Plan, create empty drafts, stage assets, upload, or submit board-specific custom product pages"
   lane :cpp do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "custom_product_pages")

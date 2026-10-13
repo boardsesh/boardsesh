@@ -1,34 +1,29 @@
-SPRAYWÄNDE: DEINE EIGENE WAND IN BOARDSESH
+SPRAYWÄNDE: DEINE WAND IN BOARDSESH
 
-Fotografier deine Heimwand oder die Spraywand in deiner Halle, und die App findet die Griffe. Korrigier, was fehlt, wähl einen Look, veröffentliche, und leg mit dem Schrauben los. Boulder funktionieren wie an jedem anderen Board: in die Warteschlange legen, in Playlists speichern und Begehungen im selben Routenbuch eintragen wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben.
+Füge ein Foto deiner Wand zu Hause oder der Spraywand deiner Halle hinzu, prüfe die erkannten Griffe und erstelle Boulder. Lege sie in die Warteschlange, speichere sie in Playlists und logge deine Begehungen. Keine LEDs nötig.
 
-Halte eine Wand privat, mach sie öffentlich oder teile sie per Link oder QR-Code, dann kann deine Crew darauf auch schrauben und loggen. Wand abgeschraubt? Setz sie zurück: Mach ein neues Foto, markier die Griffe, und deine alte Wand wird archiviert, mit allen Bouldern und Begehungen. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert, bereit zum Remixen.
+Halte die Wand privat oder teile sie per Link oder QR-Code mit deiner Crew. Setze die Wand zurück und behalte ihre alten Boulder und Begehungen im Archiv. Lade eine Wand herunter, damit Foto, Griffe und Boulder ohne Empfang verfügbar sind. Auf dem iPad kannst du Griffe mit Apple Pencil markieren.
 
-Kostenlos, wie der Rest von Boardsesh.
+DEINE CREW UND DEIN NÄCHSTER VERSUCH
 
-DEINE CREW, BEI JEDEM BOULDER
+Finde die Live-Sessions deiner Crew auf Start. Öffne einen Boulder und sieh neben deinen Einträgen die von Leuten, denen du folgst. Folge Routenbauer*innen, um ihre neuen Boulder im Crew-Feed zu sehen.
 
-Start zeigt, wer gerade klettert, damit du in die Session springen kannst. Öffne einen Boulder, und die Leute, denen du folgst, kommen zuerst: ihre Notizen, der Grad, den sie ihm geben würden, dann die Begehungen aller anderen. Folge einer Routenbauer*in, und ihre neuen Boulder landen im Feed deiner Crew als eine Karte zum Durchwischen.
+Wähle eine Pause nach jedem geloggten Boulder oder klettere in festen Zeitabständen. Aktiviere das automatische Weiterschalten und lass Boardsesh zwischen den Versuchen geöffnet. Mit Als Nächstes dran kommt ein Boulder direkt nach dem an der Wand. Du kannst auch eine Playlist hinzufügen, ohne die Warteschlange zu leeren.
 
-EIN PAUSEN-TIMER, DER DIE WARTESCHLANGE WEITERSCHALTET
+MEHR NACH DEINEM GESCHMACK
 
-Zieh Boulder im Minutentakt durch, ohne zwischen den Versuchen zum Handy zu greifen. Schalt den Pausen-Timer im Tab Session ein, und er läuft ab dem Moment, in dem du eine Begehung einträgst, und danach ins Rote, wenn du zu lange sitzen bleibst. Lass ihn zum nächsten Boulder wechseln, dann beleuchtet er ihn für dich an der Wand. Jemand will zuerst dran? Halte seinen Boulder gedrückt und tipp auf Als Nächstes dran, um ihn direkt hinter den Boulder an der Wand zu setzen.
+- Wähle, welche Abschnitte unter einem Boulder erscheinen, etwa Beta-Videos, Routenbucheinträge und ähnliche Boulder.
+- Aktiviere Meine Grade verwenden, um nach deinen eigenen Graden zu suchen, zu sortieren und zu filtern.
+- Ähnliche Boulder und die Griff-Heatmap funktionieren mit deinem heruntergeladenen Board ohne Empfang.
+- Wechsle über die Wandansicht zu einem anderen Board deiner Halle.
+- Exportiere deine Kletterhistorie, Playlists und Boulder aus den Einstellungen.
 
-AUSSERDEM NEU
+KORREKTUREN FÜR DEINE NÄCHSTE SESSION
 
-- Die anderen Boards deiner Halle stehen im Wand-Sheet: ein Tipp auf die Wand, vor der du stehst, und die Bluetooth-Verbindung und die Warteschlange ziehen mit.
-- Schalt Meine Grade verwenden ein, und der Grad, den du einem Boulder gegeben hast, ist der, den du siehst, sortierst und filterst.
-- Ähnliche Boulder und die neu gestaltete Griff-Heatmap laufen auf deinem heruntergeladenen Board, auch ohne Empfang.
-- Verknüpfte Board-Routenbücher synchronisieren jetzt von selbst, rund um die Uhr.
-- Kletterdaten exportieren: Verlauf, Playlists und Boulder aus den Einstellungen.
-- Ein neuer Board-Look, Aura Umriss: eine feste Kontur um jeden leuchtenden Griff.
-- Routen laufen im Tempo, in dem sie gesetzt wurden: Das Tempo steht in Sekunden pro Bild, bis 60.
+- MoonBoard-Grade nutzen jetzt die eigene V-Skala von MoonBoard. Beim Routenbuch-Import sind auch anders angeordnete Spalten oder Bouldernamen statt IDs möglich.
+- Woods-Boulder erscheinen unabhängig vom Schraubwinkel. Der Filter listet alle Routenbauer*innen eines Boards.
+- Bei schlechter Verbindung geloggte Begehungen warten auf Empfang und versuchen die Synchronisierung erneut.
+- Beim Wischen bleibst du in der gewählten Liste, auch wenn ein neuer Eintrag sie umsortiert.
+- Ein Absturz beim iOS-Start und unerwünschte Safari-Tabs beim Öffnen der App sind behoben.
 
-BEHOBEN
-
-- Begehungen, die bei schlechter Verbindung eingetragen werden, warten auf Empfang und synchronisieren, statt verloren zu gehen.
-- Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, und der Filter zeigt alle Routenbauer*innen eines Boards.
-- MoonBoard: Ein Boulder mit Grad in nur einem der beiden Winkel zeigt jetzt eine Schätzung für den anderen.
-- Wischen im Play-Drawer bleibt auf der Liste, aus der du ausgewählt hast, auch wenn eine eingetragene Begehung diese Liste neu sortiert.
-
-Kostenlos, werbefrei, Open Source.
+Kostenlos, ohne Werbung, Open Source.

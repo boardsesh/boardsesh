@@ -9,9 +9,9 @@ Kilter, Tension y MoonBoard traen cada uno su propia app para su propio plafón.
 TU MURO DE SPRAY, TAMBIÉN
 ¿Un muro de casa, o un muro de spray en tu rocódromo? Fotografíalo y Boardsesh encuentra las presas. Corrige lo que se le haya pasado y luego monta bloques, ponlos en cola y registra encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto. Comparte el muro por enlace y tu crew también podrá montar en él. ¿Has desmontado el muro? Resetéalo con una foto nueva y el muro anterior se archiva con sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
 
-HISTORIAL DEL MURO, SIEMPRE ACTIVO
+HISTORIAL DEL MURO
 Si compartes muro, enseguida pierdes la cuenta de la última vía, y siempre hay alguien que la borra sin querer.
-En Boardsesh cada plafón al que te conectas tiene un feed en directo de lo que hay encendido en ese muro ahora mismo: el nombre de la vía, quién la encendió, quién la montó, el grado y el ángulo, y los encadenes recientes. Se actualiza según cambia el muro, así que siempre sabes qué hay puesto.
+Consulta los bloques iluminados con Boardsesh en ese plafón: el nombre, quién lo iluminó, quién lo montó, el grado y el ángulo, y los encadenes recientes.
 
 SIGUE CONECTADO
 Boardsesh mantiene viva la conexión con tu plafón en segundo plano, así las presas siguen encendidas durante tus pegadas aunque se apague la pantalla o cambies de app. Una notificación permanente pone Anterior y Siguiente en tu pantalla de bloqueo, para que te muevas por la cola sin volver a abrir la app. No tienes que reconectar entre vía y vía.
