@@ -215,6 +215,8 @@ export function createStableGithubClient(options: {
       'Collect durable upload leases',
       'Retain checkpoint and upload leases',
     ]);
+    const requiredJobs = ['resolve', 'prepare', 'qualify', 'tick'];
+    const optionalSkippedJobs = ['smokes', 'boot'];
     const jobNames = new Set<string>();
     const jobIds = new Set<number>();
     for (const input of jobs) {
@@ -232,7 +234,7 @@ export function createStableGithubClient(options: {
         return false;
       if (
         typeof job.name !== 'string' ||
-        !['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'].includes(job.name) ||
+        (!requiredJobs.includes(job.name) && !optionalSkippedJobs.includes(job.name)) ||
         jobNames.has(job.name)
       )
         return false;
@@ -242,8 +244,7 @@ export function createStableGithubClient(options: {
         continue;
       }
       if (
-        job.name === 'smokes' ||
-        job.name === 'boot' ||
+        optionalSkippedJobs.includes(job.name) ||
         !['success', 'failure', 'cancelled', 'timed_out'].includes(String(job.conclusion)) ||
         !Array.isArray(job.steps)
       )
@@ -271,7 +272,9 @@ export function createStableGithubClient(options: {
       }
       if (!controllerSkipped) return false;
     }
-    return jobNames.size === 6;
+    // GitHub may omit skipped reusable-workflow caller placeholders. Every
+    // direct controller job must still supply positive no-write evidence.
+    return requiredJobs.every((jobName) => jobNames.has(jobName));
   }
 
   return {

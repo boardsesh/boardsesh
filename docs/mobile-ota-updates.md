@@ -1028,7 +1028,8 @@ platforms without waiting for the daily qualification window, select a successfu
 deployment with its retained `mobile-ota-stage` artifact, then dispatch:
 
 ```bash
-gh workflow run mobile-ota-promote-staged.yml --ref main -f source_run_id=<deployment-run-id>
+SOURCE_RUN_ID=38355151115 # Replace with the selected successful deployment run ID.
+gh workflow run mobile-ota-promote-staged.yml --ref main -f source_run_id="$SOURCE_RUN_ID"
 ```
 
 The main-only workflow runs in `Production` and holds `mobile-ota-production` throughout.

@@ -217,6 +217,45 @@ describe('missing checkpoint recovery', () => {
   });
 
   it.each([
+    { command: 'tick', omittedJobs: ['smokes', 'boot'] },
+    { command: 'prepare', omittedJobs: ['smokes', 'boot'] },
+    { command: 'tick', omittedJobs: ['smokes'] },
+    { command: 'prepare', omittedJobs: ['boot'] },
+  ])(
+    'recovers $command failures without skipped reusable placeholders $omittedJobs',
+    async ({ command, omittedJobs }) => {
+      const jobs = failedJobs(14, command).filter((job) => !omittedJobs.includes(job.name));
+      const { client } = mockClient({
+        'mobile-ota-stable-release.yml/runs': {
+          workflow_runs: [
+            runInput(14, STABLE_WORKFLOW, { conclusion: 'failure', display_title: `OTA stable ${command}` }),
+            runInput(13),
+          ],
+        },
+        'runs/14/artifacts': { artifacts: [] },
+        'runs/14/attempts/1/jobs': { total_count: jobs.length, jobs },
+        'runs/13/artifacts': { artifacts: [artifactInput(13, 'mobile-ota-stable-state')] },
+      });
+      await expect(client.latestCheckpoint(15)).resolves.toMatchObject({ runId: 13 });
+    },
+  );
+
+  it.each(['resolve', 'prepare', 'qualify', 'tick'])(
+    'holds without positive evidence for direct job %s even when reusable placeholders are absent',
+    async (missingJob) => {
+      const jobs = failedJobs(14).filter((job) => ![missingJob, 'smokes', 'boot'].includes(job.name));
+      const { client } = mockClient({
+        'mobile-ota-stable-release.yml/runs': {
+          workflow_runs: [runInput(14, STABLE_WORKFLOW, { conclusion: 'failure' })],
+        },
+        'runs/14/artifacts': { artifacts: [] },
+        'runs/14/attempts/1/jobs': { total_count: jobs.length, jobs },
+      });
+      await expect(client.latestCheckpoint(15)).rejects.toThrow('has no state artifact');
+    },
+  );
+
+  it.each([
     [
       'started writer',
       (jobs: ReturnType<typeof failedJobs>) => {
@@ -268,7 +307,7 @@ describe('missing checkpoint recovery', () => {
     [
       'missing job',
       (jobs: ReturnType<typeof failedJobs>) => {
-        jobs.pop();
+        jobs.splice(1, 1);
       },
     ],
     [
@@ -287,6 +326,18 @@ describe('missing checkpoint recovery', () => {
       'unknown job',
       (jobs: ReturnType<typeof failedJobs>) => {
         jobs[5].name = 'new-writer';
+      },
+    ],
+    [
+      'nested reusable job',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[5].name = 'boot / resolve';
+      },
+    ],
+    [
+      'executed reusable caller',
+      (jobs: ReturnType<typeof failedJobs>) => {
+        jobs[4].conclusion = 'success';
       },
     ],
   ])('holds after %s', async (_label, mutate) => {
