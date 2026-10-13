@@ -11,9 +11,10 @@ import {
   type PlaylistSuggestionSource,
 } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { QueueClimbReads, useQueueClimbReads } from '../use-queue-climb-reads';
+import { QueueClimbReads, useQueueClimbReads, type QueueClimbReadDemand } from '../use-queue-climb-reads';
 import { useQueueResolveClimbs } from '../use-queue-resolve-climbs';
 import { useQueueRegrade } from '../use-queue-regrade';
+import { createBoardFeedSuggestionSource } from '../../../lib/playlists/board-feed-suggestion-source';
 
 const reads = vi.hoisted(() => ({ request: vi.fn(), generation: 0 }));
 vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: reads.request }));
@@ -84,17 +85,21 @@ async function flush(): Promise<void> {
   });
 }
 
-function harness(strict = false) {
+function harness(
+  strict = false,
+  deriveDisplay?: (source: PlaylistSuggestionSource | null) => PlaylistSuggestionSource | null,
+) {
   return renderHook(
     () => {
       const [activeBoard, setBoard] = useState<UserBoard | null>(board());
       const [generation, setGeneration] = useState(reads.generation);
       const [state, dispatch] = useReducer(queueReducer, {}, initialState);
       const [source, setSource] = useState<PlaylistSuggestionSource | null>(null);
-      const sourceRef = useRef(source);
+      const displayedSource = deriveDisplay ? deriveDisplay(source) : source;
+      const sourceRef = useRef(displayedSource);
       useLayoutEffect(() => {
-        sourceRef.current = source;
-      }, [source]);
+        sourceRef.current = displayedSource;
+      }, [displayedSource]);
       const climbReads = useQueueClimbReads({ activeBoard, privacyRevocationGeneration: generation });
       useQueueRegrade({
         activeBoard,
@@ -102,7 +107,8 @@ function harness(strict = false) {
         queue: state.queue,
         currentClimbQueueItem: state.currentClimbQueueItem,
         playlistSuggestionSourceRef: sourceRef,
-        playlistSuggestionSource: source,
+        playlistSuggestionSource: displayedSource,
+        rawPlaylistSuggestionSource: source,
         dispatch,
         setPlaylistSuggestionSourceState: setSource,
         climbReads,
@@ -115,7 +121,7 @@ function harness(strict = false) {
         dispatch,
         climbReads,
       });
-      return { state, dispatch, source, setSource, setBoard, setGeneration };
+      return { state, dispatch, source, displayedSource, setSource, setBoard, setGeneration };
     },
     strict ? { wrapper: ({ children }) => createElement(StrictMode, null, children) } : undefined,
   );
@@ -699,5 +705,118 @@ describe('queue climb read lifetimes (#6325)', () => {
       newAnswer.resolve({ climb: climb('new-peek') });
     });
     expect(result.current.source?.climbs[1].angle).toBe(25);
+  });
+
+  it.each(['separate', 'same-batch'] as const)(
+    'patches derived playlist peeks without changing the backing activation (%s answers)',
+    async (answerTiming) => {
+      const answers = new Map<string, ReturnType<typeof deferred>>();
+      reads.request.mockImplementation((_document: string, variables: { climbUuid: string }) => {
+        const answer = deferred();
+        answers.set(variables.climbUuid, answer);
+        return answer.promise;
+      });
+      const current = item('current');
+      const foreign = { ...climb('foreign'), boardType: 'tension', layoutId: 9 };
+      const previous = climb('previous', 40);
+      const next = climb('next', 40);
+      const backing: PlaylistSuggestionSource = {
+        playlistUuid: 'backing-list',
+        activatedClimbUuid: foreign.uuid,
+        boardKey: 'kilter:1:10:1,2',
+        climbs: [foreign, previous, current.climb, next],
+      };
+      const { result } = harness(false, (source) =>
+        source
+          ? createBoardFeedSuggestionSource({
+              anchorClimb: current.climb,
+              feedClimbs: source.climbs.filter((listed) => listed !== foreign),
+              boardKey: source.boardKey,
+            })
+          : null,
+      );
+      act(() => {
+        result.current.setSource(backing);
+        result.current.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [], currentClimbQueueItem: current } });
+      });
+      await flush();
+      expect(reads.request).toHaveBeenCalledTimes(2);
+      expect(result.current.displayedSource?.playlistUuid).toBe('board-feed');
+      await act(async () => {
+        answers.get('next')!.resolve({ climb: { ...next, angle: 25, difficulty: 'V6' } });
+        if (answerTiming === 'same-batch')
+          answers.get('previous')!.resolve({ climb: { ...previous, angle: 25, difficulty: 'V4' } });
+      });
+      expect(result.current.source?.climbs.find(({ uuid }) => uuid === 'next')?.difficulty).toBe('V6');
+      expect(result.current.source).not.toBe(backing);
+      if (answerTiming === 'separate') {
+        expect(result.current.source?.climbs.find(({ uuid }) => uuid === 'previous')).toBe(previous);
+        await act(async () => {
+          answers.get('previous')!.resolve({ climb: { ...previous, angle: 25, difficulty: 'V4' } });
+        });
+      }
+      expect(result.current.source?.playlistUuid).toBe('backing-list');
+      expect(result.current.source?.activatedClimbUuid).toBe(foreign.uuid);
+      expect(
+        result.current.displayedSource?.climbs
+          .filter((listed) => ['previous', 'next'].includes(listed.uuid))
+          .map((listed) => [listed.angle, listed.difficulty]),
+      ).toEqual([
+        [25, 'V4'],
+        [25, 'V6'],
+      ]);
+      expect(reads.request).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('rejects a captured normalized-peek update after the backing activation changes with the same climb object', async () => {
+    const tracker = new QueueClimbReads();
+    let demands: QueueClimbReadDemand[] = [];
+    vi.spyOn(tracker, 'register').mockImplementation((_owner, registered) => {
+      demands = registered;
+    });
+    const current = item('current');
+    const next = climb('next', 40);
+    const original: PlaylistSuggestionSource = {
+      playlistUuid: 'old-list',
+      activatedClimbUuid: 'old-anchor',
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [current.climb, next],
+    };
+    const { result } = renderHook(() => {
+      const [source, setSource] = useState<PlaylistSuggestionSource | null>(original);
+      const displayed = source
+        ? createBoardFeedSuggestionSource({
+            anchorClimb: current.climb,
+            feedClimbs: source.climbs,
+            boardKey: source.boardKey,
+          })
+        : null;
+      const sourceRef = useRef(displayed);
+      useLayoutEffect(() => {
+        sourceRef.current = displayed;
+      }, [displayed]);
+      useQueueRegrade({
+        activeBoard: board(),
+        queue: [],
+        currentClimbQueueItem: current,
+        playlistSuggestionSourceRef: sourceRef,
+        playlistSuggestionSource: displayed,
+        rawPlaylistSuggestionSource: source,
+        climbReads: tracker,
+        dispatch: vi.fn(),
+        setPlaylistSuggestionSourceState: setSource,
+      });
+      return { source, setSource };
+    });
+    const capturedApply = demands.find((demand) => demand.climbUuid === next.uuid)!.apply;
+    const replacement = { ...original, playlistUuid: 'new-list', activatedClimbUuid: 'new-anchor' };
+    act(() => result.current.setSource(replacement));
+    expect(result.current.source?.climbs[1]).toBe(next);
+    act(() => capturedApply({ ...next, angle: 25, difficulty: 'V9' }));
+    expect(result.current.source).toBe(replacement);
+    expect(result.current.source?.climbs[1].difficulty).toBe('V5');
+    expect(reads.request).not.toHaveBeenCalled();
+    tracker.retire();
   });
 });

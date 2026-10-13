@@ -545,6 +545,45 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().state.queue.some(({ climb }) => climb.uuid === foreign.uuid)).toBe(false);
   });
 
+  it('regrades a normalized board-feed peek in its backing mixed playlist', async () => {
+    activeBoardStore.set(boards.tension);
+    const current = makeClimb('foreign-current', 'kilter', 1);
+    const compatible = { ...makeClimb('tension-peek', 'tension', 8), angle: 25, difficulty: 'V7' };
+    const currentItem = makeItem('item-current', current);
+    let answer!: (response: { climb: Climb }) => void;
+    http.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [currentItem],
+      currentClimbQueueItem: currentItem,
+      playlistSuggestionSource: { ...kilterSource([current, compatible], current), boardKey: TENSION_BOARD_KEY },
+      savedAt: '2026-06-10T00:00:00.000Z',
+    });
+    renderProvider();
+    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('board-feed'));
+    expect(latest().playlistSuggestionSource?.activatedClimbUuid).toBe(current.uuid);
+    await waitFor(() => expect(answer).toBeTruthy());
+    await act(async () => {
+      answer({ climb: { ...compatible, angle: 40, difficulty: 'V5' } });
+    });
+    await waitFor(() =>
+      expect(latest().playlistSuggestionSource?.climbs.find(({ uuid }) => uuid === compatible.uuid)?.angle).toBe(40),
+    );
+    expect(latest().playlistSuggestionSource?.climbs.find(({ uuid }) => uuid === compatible.uuid)?.difficulty).toBe(
+      'V5',
+    );
+    // Returning onto the compatible list removes the derived synthetic ids.
+    // The grade must be in the backing source, not only in a replaced display.
+    act(() => latest().nextClimb());
+    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('climblist'));
+    expect(latest().playlistSuggestionSource?.activatedClimbUuid).toBe(current.uuid);
+    expect(latest().state.currentClimbQueueItem?.climb.difficulty).toBe('V5');
+  });
+
   it('masks out an all-foreign restored source even when its board key matches, with no feed to fall back to', async () => {
     // Issue #5403: this restored source has NOTHING compatible with tension once
     // normalized (both `current` and `foreign` are kilter climbs), so the old

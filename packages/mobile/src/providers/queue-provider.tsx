@@ -1268,6 +1268,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     currentClimbQueueItem: state.currentClimbQueueItem,
     playlistSuggestionSourceRef,
     playlistSuggestionSource,
+    rawPlaylistSuggestionSource,
     dispatch,
     setPlaylistSuggestionSourceState,
     climbReads,

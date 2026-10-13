@@ -20,6 +20,8 @@ type UseQueueRegradeParams = {
   currentClimbQueueItem: ClimbQueueItem | null;
   playlistSuggestionSourceRef: React.RefObject<PlaylistSuggestionSource | null>;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
+  /** The backing activation may have different ids from the normalized display source. */
+  rawPlaylistSuggestionSource?: PlaylistSuggestionSource | null;
   climbReads: QueueClimbReads;
   dispatch: React.Dispatch<QueueAction>;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
@@ -33,6 +35,7 @@ export function useQueueRegrade({
   currentClimbQueueItem,
   playlistSuggestionSourceRef,
   playlistSuggestionSource,
+  rawPlaylistSuggestionSource = playlistSuggestionSource,
   climbReads,
   dispatch,
   setPlaylistSuggestionSourceState,
@@ -44,6 +47,7 @@ export function useQueueRegrade({
       const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
       const boardKey = `${boardType}:${layoutId}:${sizeId}:${setIds}`;
       const source = playlistSuggestionSourceRef.current;
+      const backingSource = rawPlaylistSuggestionSource;
       const patchFor = (climb: Parameters<QueueClimbReadDemand['apply']>[0]): ClimbRegradePatch => ({
         angle,
         difficulty: climb.difficulty,
@@ -70,7 +74,13 @@ export function useQueueRegrade({
           expectedClimb: climb,
           targetKey: JSON.stringify(
             role === 'playlist'
-              ? [role, source?.playlistUuid, source?.activatedClimbUuid, climb.uuid]
+              ? [
+                  role,
+                  backingSource?.boardKey,
+                  backingSource?.playlistUuid,
+                  backingSource?.activatedClimbUuid,
+                  climb.uuid,
+                ]
               : [role, item.uuid],
           ),
           apply: (resolvedClimb) => {
@@ -80,14 +90,15 @@ export function useQueueRegrade({
                 type: 'REGRADE_CLIMBS',
                 payload: { grades: { [climb.uuid]: patch }, targets: [target], boardType, layoutId },
               });
-            } else if (source) {
+            } else if (backingSource) {
               setPlaylistSuggestionSourceState((previous) => {
                 if (
                   generation !== getPrivacyRevocationGeneration() ||
                   !previous ||
                   previous.boardKey !== boardKey ||
-                  previous.playlistUuid !== source.playlistUuid ||
-                  previous.activatedClimbUuid !== source.activatedClimbUuid
+                  previous.boardKey !== backingSource.boardKey ||
+                  previous.playlistUuid !== backingSource.playlistUuid ||
+                  previous.activatedClimbUuid !== backingSource.activatedClimbUuid
                 )
                   return previous;
                 let changed = false;
@@ -123,6 +134,7 @@ export function useQueueRegrade({
     currentClimbQueueItem,
     activeBoard,
     playlistSuggestionSource,
+    rawPlaylistSuggestionSource,
     privacyRevocationGeneration,
     playlistSuggestionSourceRef,
     climbReads,
