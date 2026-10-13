@@ -224,8 +224,8 @@ function assertDetailResponse(fixture: GraphqlFixtureFile, expected: CppDetailRe
             row.boardType !== boardType ||
             typeof row.uuid !== 'string' ||
             !row.uuid ||
-            typeof row.proposerId !== 'string' ||
-            !row.proposerId ||
+            (row.proposerId !== null && (typeof row.proposerId !== 'string' || !row.proposerId)) ||
+            (row.proposerId === null && (row.proposerDisplayName !== null || row.proposerAvatarUrl !== null)) ||
             !nullableString(row.proposerDisplayName) ||
             !nullableString(row.proposerAvatarUrl),
         ) ||

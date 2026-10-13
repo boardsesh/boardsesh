@@ -255,6 +255,28 @@ function reply(operationName: string, variables: Record<string, unknown>): Recor
   return { profile: { id: owner, displayName: 'Liz', avatarUrl: null } };
 }
 
+function unavailableProposerReply(variables: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
+  const input = variables.input as { boardType: string; climbUuid: string };
+  const proposals: Record<string, unknown>[] = [
+    {
+      uuid: 'proposal-with-unavailable-profile',
+      climbUuid: input.climbUuid,
+      boardType: input.boardType,
+      proposerId: null,
+      proposerDisplayName: null,
+      proposerAvatarUrl: null,
+      ...overrides,
+    },
+  ];
+  return {
+    climbProposals: {
+      proposals,
+      totalCount: 1,
+      hasMore: false,
+    },
+  };
+}
+
 async function upstream(
   options: {
     subject?: string;
@@ -948,6 +970,97 @@ describe('CPP genuine detail recording and candidate preparation', () => {
         proposerAvatarUrl: null,
       });
     }
+  });
+  it('records an unavailable proposer as null while still masking an identified foreign proposer', async () => {
+    const api = await upstream({
+      response: (operationName, variables) => {
+        if (operationName !== 'GetClimbProposals') return { body: { data: reply(operationName, variables) } };
+        const response = unavailableProposerReply(variables);
+        response.climbProposals.proposals.push({
+          ...response.climbProposals.proposals[0],
+          uuid: 'proposal-with-available-foreign-profile',
+          proposerId: '55555555-6666-4777-8888-999999999999',
+          proposerDisplayName: 'Private proposer',
+          proposerAvatarUrl: 'https://cdn/private-proposer.jpg',
+        });
+        response.climbProposals.totalCount = 2;
+        return { body: { data: response } };
+      },
+    });
+    const source = sample();
+    const { input, output } = save(source, api.origin);
+    const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    const logs: string[] = [];
+    await prepareCppCampaignFixtures(input, output, {
+      upstream: api.origin,
+      email,
+      password,
+      log: (line) => logs.push(line),
+    });
+    const manifest = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    const entries = manifest.graphql.filter((entry) => entry.operationName === 'GetClimbProposals');
+    expect(entries).toHaveLength(7);
+    for (const entry of entries) {
+      const serialized = readFileSync(join(output, entry.file), 'utf8');
+      const fixture = JSON.parse(serialized) as GraphqlFixtureFile;
+      const expected = unavailableProposerReply(fixture.variables as Record<string, unknown>).climbProposals
+        .proposals[0];
+      const rows = (fixture.response as { data: { climbProposals: { proposals: Record<string, unknown>[] } } }).data
+        .climbProposals.proposals;
+      expect(rows[0]).toEqual(expected);
+      expect(rows[1]).toMatchObject({
+        proposerId: '55555555-6666-4777-8888-999999999999',
+        proposerAvatarUrl: null,
+      });
+      expect(serialized).not.toContain('Private proposer');
+      expect(serialized).not.toContain('private-proposer.jpg');
+    }
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
+    expect(logs.join('\n')).not.toContain('Private proposer');
+  });
+  it('preserves every existing null-proposer response byte on a complete authenticated resume', async () => {
+    const api = await upstream();
+    const source = sample();
+    for (const request of resolveCppDetailReads(source.manifest, source.fixtures))
+      source.append(request.query, request.variables, {
+        data:
+          request.operationName === 'GetClimbProposals'
+            ? unavailableProposerReply(request.variables)
+            : pseudonymiseResponse(reply(request.operationName, request.variables), { ownUserId: owner }).response,
+      });
+    const { input, output } = save(source, api.origin);
+    const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.authRequests).toBe(1);
+    expect(api.requests.map((request) => request.operationName)).toEqual(['CppBootstrapProfile']);
+    expect(readFileSync(join(output, 'manifest.json'))).toEqual(readFileSync(join(input, 'manifest.json')));
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(output, entry.file)))).toEqual(before);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
+  });
+  it.each([
+    { proposerId: 42 },
+    { proposerId: true },
+    { proposerId: {} },
+    { proposerId: [] },
+    { proposerId: '' },
+    { proposerDisplayName: 'Orphaned private name' },
+    { proposerAvatarUrl: 'https://cdn/orphaned-private-avatar.jpg' },
+  ])('rejects malformed or orphaned proposer metadata %j before authentication', async (overrides) => {
+    const api = await upstream();
+    const source = sample();
+    const request = resolveCppDetailReads(source.manifest, source.fixtures).find(
+      (candidate) => candidate.operationName === 'GetClimbProposals',
+    )!;
+    source.append(request.query, request.variables, { data: unavailableProposerReply(request.variables, overrides) });
+    const { input, output } = save(source, api.origin);
+    const before = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'native collection',
+    );
+    expect(api.authRequests).toBe(0);
+    expect(api.requests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)))).toEqual(before);
   });
   it.each(['foreign upstream', 'wrong email', 'ambient scenario', 'source symlink', 'static size'])(
     'rejects %s before any network request',
