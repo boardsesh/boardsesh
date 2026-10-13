@@ -74,6 +74,14 @@ class CustomProductPagesTest < Minitest::Test
       end
       payload = body.fetch("data")
       if method == "POST"
+        if type == "appCustomProductPages" && body["included"]
+          inline = body.fetch("included").first
+          inline_id = inline.fetch("id")
+          linked_id = payload.dig("relationships", "appCustomProductPageVersions", "data").first.fetch("id")
+          unless inline_id.match?(/\A\$\{[^{}]+\}\z/) && linked_id == inline_id
+            raise BoardseshCPP::Error, "Apple API POST failed (HTTP 409; ENTITY_ERROR.INCLUDED.INVALID_ID)"
+          end
+        end
         id = "#{type}-#{@resources[type].length + 1}"
         attributes = payload.fetch("attributes", {}).dup
         attributes.merge!("version" => (@resources[type].length + 1).to_s, "state" => "PREPARE_FOR_SUBMISSION") if type == "appCustomProductPageVersions"
@@ -404,15 +412,48 @@ class CustomProductPagesTest < Minitest::Test
     create_runner.run(action: "create")
     page = @client.resources["appCustomProductPages"].values.first
     page["attributes"]["visible"] = false
-    @client.resources["appCustomProductPageVersions"].values.first["attributes"]["state"] = "APPROVED"
+    approved_version = @client.resources["appCustomProductPageVersions"].values.first
+    approved_version["attributes"]["state"] = "APPROVED"
+    @client.seed("appCustomProductPageVersions", "replaced-version", { "version" => "99", "state" => "REPLACED_WITH_NEW_VERSION" }, "appCustomProductPage" => @client.link("appCustomProductPages", page.fetch("id")))
     before = JSON.generate(@client.resources)
     count = @client.writes.length
     result = create_runner.run(action: "create").first
     assert_equal "reused", result.fetch("action")
     assert_equal "APPROVED", result.fetch("state")
+    assert_equal approved_version.fetch("id"), result.fetch("versionId")
     assert_equal false, result.fetch("visible")
     assert_equal before, JSON.generate(@client.resources)
     assert_equal count, @client.writes.length
+  end
+
+  def test_create_rejects_existing_page_without_versions_before_creating_other_targets
+    set_four_create_targets
+    @client.seed("appCustomProductPages", "existing-tension", { "name" => "Boardsesh tension", "url" => "https://apps.apple.com/app/id1?ppid=existing-tension" }, "app" => @client.link("apps", "app"))
+    # Materialize the empty collection before comparing resources so a read
+    # through the mock's default hash cannot look like a store mutation.
+    @client.resources["appCustomProductPageVersions"]
+    before = JSON.generate(@client.resources)
+
+    error = assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+
+    assert_includes error.message, "Boardsesh tension has no current version"
+    assert_empty @client.writes
+    assert_empty @client.uploads
+    assert_equal before, JSON.generate(@client.resources)
+  end
+
+  def test_create_rejects_replaced_only_existing_page_before_creating_other_targets
+    set_four_create_targets
+    @client.seed("appCustomProductPages", "existing-tension", { "name" => "Boardsesh tension", "url" => "https://apps.apple.com/app/id1?ppid=existing-tension" }, "app" => @client.link("apps", "app"))
+    @client.seed("appCustomProductPageVersions", "replaced-version", { "version" => "1", "state" => "REPLACED_WITH_NEW_VERSION" }, "appCustomProductPage" => @client.link("appCustomProductPages", "existing-tension"))
+    before = JSON.generate(@client.resources)
+
+    error = assert_raises(BoardseshCPP::Error) { create_runner.run(action: "create") }
+
+    assert_includes error.message, "Boardsesh tension has no current version"
+    assert_empty @client.writes
+    assert_empty @client.uploads
+    assert_equal before, JSON.generate(@client.resources)
   end
 
   def test_create_rejects_ambiguous_existing_name_before_creating_any_pages

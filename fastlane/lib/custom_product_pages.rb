@@ -4,7 +4,6 @@ require "json"
 require "digest"
 require "net/http"
 require "uri"
-require "securerandom"
 
 # Wire shapes verified against Apple's App Store Connect OpenAPI (2026-10-06):
 # https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip
@@ -127,19 +126,25 @@ module BoardseshCPP
       raise Error, "CPP reference names must be nonempty and unique" unless names.all? { |name| name.is_a?(String) && !name.strip.empty? } && names.uniq.length == names.length
       pages = @client.list("/v1/apps/#{@app_id}/appCustomProductPages?limit=200")
       # Resolve every existing match before the first POST so an ambiguous or
-      # misbound existing page cannot leave an avoidable partial creation.
+      # misbound or versionless existing page cannot leave an avoidable partial creation.
       candidates = selected.zip(names).map do |target, name|
         matches = pages.select { |page| page.dig("attributes", "name") == name }
         raise Error, "Multiple CPPs named #{name}; resolve ownership before creation" if matches.length > 1
         page = matches.first && verified_draft_page(matches.first.fetch("id"), name)
-        { "target" => target, "name" => name, "page" => page, "versions" => page && verified_page_versions(page) }
+        versions = page && verified_page_versions(page)
+        if page && versions.none? { |version| version.dig("attributes", "state") != "REPLACED_WITH_NEW_VERSION" }
+          raise Error, "CPP #{name} has no current version; inspect the page in App Store Connect before creation"
+        end
+        { "target" => target, "name" => name, "page" => page, "versions" => versions }
       end
       candidates.map do |candidate|
         created = candidate["page"].nil?
         if created
-          # Apple's inline ID identifies a resource within this one request;
-          # it is not an App Store Connect ID or an inferred keyword ID.
-          inline_version_id = SecureRandom.uuid
+          # Apple's ${...} syntax marks a request-local resource to create,
+          # rather than an existing App Store Connect ID. The linkage and
+          # included resource must use the same placeholder within this POST.
+          # https://developer.apple.com/videos/play/wwdc2020/10004/
+          inline_version_id = '${new-cpp-version}'
           response = @client.request("POST", "/v1/appCustomProductPages", {
             "data" => {
               "type" => "appCustomProductPages",
