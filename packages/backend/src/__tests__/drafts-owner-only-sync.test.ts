@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionContext, SyncResult } from '@boardsesh/shared-schema';
@@ -168,6 +168,101 @@ describe('board sync for offline downloads: drafts go to their owner only', () =
     await db.execute(sql`UPDATE board_climbs SET is_draft = false WHERE uuid IN ('draft-owned', 'draft-ownerless')`);
     const after = await syncQueries.syncClimbs(undefined, { ...scope, cursor: before.cursor }, ctx(STRANGER_ID));
     expect(documentField(after, 'uuid')).toEqual(['draft-owned', 'draft-ownerless']);
+  });
+});
+
+const PRIVATE_SETTER_ID = 'drafts-owner-only-private-setter';
+
+/** A private account's climbs: two published (one unlisted), one draft. */
+const PRIVATE_CLIMBS: SeededClimb[] = [
+  { uuid: 'private-published', userId: PRIVATE_SETTER_ID, isDraft: false, isListed: true },
+  { uuid: 'private-unlisted', userId: PRIVATE_SETTER_ID, isDraft: false, isListed: false },
+  { uuid: 'private-draft', userId: PRIVATE_SETTER_ID, isDraft: true, isListed: false },
+];
+
+async function seedPrivateSetter(): Promise<void> {
+  await db.execute(sql`INSERT INTO users (id, name, email)
+    VALUES (${PRIVATE_SETTER_ID}, ${PRIVATE_SETTER_ID}, ${`${PRIVATE_SETTER_ID}@example.test`}) ON CONFLICT DO NOTHING`);
+  await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${PRIVATE_SETTER_ID}, true)
+    ON CONFLICT (user_id) DO UPDATE SET is_private = true`);
+  for (const climb of PRIVATE_CLIMBS) await insertClimb(climb);
+}
+
+describe("board sync for offline downloads: a private account's published climbs go to everyone", () => {
+  beforeEach(seedPrivateSetter);
+
+  const strangerSees = [...EVERYONE_SEES, 'private-published', 'private-unlisted'].sort();
+
+  it("hands a stranger a private account's published and unlisted climbs, and not its draft", async () => {
+    expect(await syncedClimbUuids(STRANGER_ID)).toEqual(strangerSees);
+  });
+
+  it('hands a stranger their stats and grades rows the same way', async () => {
+    expect(await syncedStatClimbUuids(STRANGER_ID)).toEqual(strangerSees);
+    expect(await syncedGradeClimbUuids(STRANGER_ID)).toEqual(strangerSees);
+  });
+});
+
+/** Runs migration 0276 statement by statement, as the migrator does. */
+async function runClimbPolicyMigration(): Promise<void> {
+  const migration = readFileSync(
+    new URL('../../../db/drizzle/0276_drop_climb_content_privacy.sql', import.meta.url),
+    'utf8',
+  );
+  for (const statement of migration.split('--> statement-breakpoint')) {
+    await db.execute(sql.raw(statement));
+  }
+}
+
+describe('migration 0276 re-sends the climbs the old board sync withheld', () => {
+  beforeEach(async () => {
+    await seedPrivateSetter();
+    // The other two rows the old sync withheld: a public account's climb with
+    // an "Only me" policy, and a deleted author's climb with its tombstone.
+    await insertClimb({ uuid: 'policy-only-me', userId: OWNER_ID, isDraft: false, isListed: true });
+    await insertClimb({ uuid: 'policy-tombstone', userId: null, isDraft: false, isListed: true });
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+      VALUES ('climb', 'policy-only-me', ${OWNER_ID}, 'only_me'), ('climb', 'policy-tombstone', NULL, 'only_me')`);
+  });
+
+  // A phone that pulled under the old rule walked its cursor past these rows
+  // without receiving them. Here the stranger pulls everything first, so the
+  // cursor sits past every row, then the migration runs.
+  const resent = ['policy-only-me', 'policy-tombstone', 'private-published', 'private-unlisted'];
+
+  it('moves the climbs past a cursor that already walked by them, and nothing else', async () => {
+    const before = await syncQueries.syncClimbs(undefined, scope, ctx(STRANGER_ID));
+    await runClimbPolicyMigration();
+    const after = await syncQueries.syncClimbs(undefined, { ...scope, cursor: before.cursor }, ctx(STRANGER_ID));
+    expect(documentField(after, 'uuid')).toEqual(resent);
+  });
+
+  it('moves their stats and grades rows too', async () => {
+    const stats = await syncQueries.syncClimbStats(undefined, scope, ctx(STRANGER_ID));
+    const grades = await syncQueries.syncClimbGrades(undefined, scope, ctx(STRANGER_ID));
+    await runClimbPolicyMigration();
+    const nextStats = await syncQueries.syncClimbStats(undefined, { ...scope, cursor: stats.cursor }, ctx(STRANGER_ID));
+    const nextGrades = await syncQueries.syncClimbGrades(
+      undefined,
+      { ...scope, cursor: grades.cursor },
+      ctx(STRANGER_ID),
+    );
+    expect(documentField(nextStats, 'climb_uuid')).toEqual(resent);
+    expect(documentField(nextGrades, 'climb_uuid')).toEqual(resent);
+  });
+
+  it('leaves the private draft where it was, and deletes every climb policy', async () => {
+    const [draftBefore] = rowsFromResult<{ sync_seq: string }>(
+      await db.execute(sql`SELECT sync_seq::text AS sync_seq FROM board_climbs WHERE uuid = 'private-draft'`),
+    );
+    await runClimbPolicyMigration();
+    const [draftAfter] = rowsFromResult<{ sync_seq: string }>(
+      await db.execute(sql`SELECT sync_seq::text AS sync_seq FROM board_climbs WHERE uuid = 'private-draft'`),
+    );
+    expect(draftAfter?.sync_seq).toBe(draftBefore?.sync_seq);
+    const policies = rowsFromResult(await db.execute(sql`SELECT 1 FROM content_privacy WHERE entity_type = 'climb'`));
+    expect(policies).toHaveLength(0);
   });
 });
 
