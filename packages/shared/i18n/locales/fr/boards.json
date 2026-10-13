@@ -1212,7 +1212,7 @@
   "sprayModeration": {
     "reportTitle": "Signaler le mur",
     "reportHint": "Signaler ce mur pour une vérification administrative",
-    "submit": "Envoyer le signalement",
+    "submit": "Envoyer",
     "reported": "Merci. Ton signalement est en attente de vérification.",
     "reportOffline": "Connecte-toi à internet pour envoyer ton signalement.",
     "reportError": "Ton signalement n’a pas été envoyé. Réessaie.",

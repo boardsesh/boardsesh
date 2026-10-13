@@ -146,7 +146,7 @@ vi.mock('react-i18next', () => ({
           'qa.verdict.verdictGroupLabel': 'Verdict',
           'qa.verdict.approvePlaceholder': 'Anything worth noting? (optional)',
           'qa.verdict.declinePlaceholder': 'What went wrong? Steps help.',
-          'qa.verdict.submitLabel': 'Send verdict',
+          'qa.verdict.submitLabel': 'Send',
           'qa.verdict.leaveLabel': 'Leave preview without feedback',
           'qa.verdict.submitError': 'Could not send that verdict — try again',
           'qa.verdict.notOnPreview': "You're on production — nothing to file a verdict on.",
@@ -229,7 +229,7 @@ function renderSheet() {
 }
 
 function submitButton(container: HTMLElement): HTMLButtonElement {
-  return container.querySelector('[data-button="Send verdict"]') as HTMLButtonElement;
+  return container.querySelector('[data-button="Send"]') as HTMLButtonElement;
 }
 
 beforeEach(() => {
@@ -367,6 +367,15 @@ describe('QaVerdictSheet decline path', () => {
 });
 
 describe('QaVerdictSheet leaving without a verdict', () => {
+  it('closes the form without filing a verdict or leaving the preview', () => {
+    const { container } = renderSheet();
+    fireEvent.click(container.querySelector('[data-testid="sheet-top-bar-leading"]')!);
+    expect(sheet.dismiss).toHaveBeenCalledTimes(1);
+    sheet.fullyDismissed?.();
+    expect(previews.mutateAsync).not.toHaveBeenCalled();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+  });
+
   it('surfs back only after the dismissal settles', () => {
     const { container } = renderSheet();
     fireEvent.click(container.querySelector('[data-button="Leave preview without feedback"]')!);

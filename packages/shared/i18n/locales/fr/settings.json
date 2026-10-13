@@ -392,7 +392,7 @@
     "titleRating": "Noter Boardsesh",
     "titleBug": "Signaler un bug",
     "submitRating": "Envoyer",
-    "submitBug": "Envoyer le rapport de bug",
+    "submitBug": "Envoyer",
     "successRating": "Merci, c'est noté.",
     "successBug": "Bug enregistré, merci.",
     "errorRating": "Envoi impossible. Réessayez dans un instant.",

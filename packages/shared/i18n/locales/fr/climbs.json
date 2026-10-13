@@ -670,7 +670,7 @@
       "reasonAria": "Motif du signalement",
       "reasonRemaining": "Encore {{count}} caractères",
       "reasonCount": "{{count}}/500",
-      "submit": "Envoyer le signalement",
+      "submit": "Envoyer",
       "submitError": "Impossible d'envoyer ton signalement",
       "toast": {
         "reported": "Signalé. {{current}} votes sur {{required}} pour le masquer",

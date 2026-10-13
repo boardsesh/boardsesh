@@ -1212,7 +1212,7 @@
   "sprayModeration": {
     "reportTitle": "Report wall",
     "reportHint": "Flag this wall for admin review",
-    "submit": "Submit report",
+    "submit": "Send",
     "reported": "Thanks. Your report is in the review queue.",
     "reportOffline": "Connect to the internet to submit your report.",
     "reportError": "Your report didn’t go through. Try again.",

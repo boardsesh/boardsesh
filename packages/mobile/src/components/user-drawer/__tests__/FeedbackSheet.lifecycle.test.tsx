@@ -254,7 +254,7 @@ it('keeps dirty feedback open on cancelled dismissal and clears only a confirmed
     target: { value: 'Keep this draft on close' },
   });
   await act(async () => {
-    await nativeSheet.close?.();
+    fireEvent.click(container.querySelector('[data-testid="sheet-top-bar-leading"]')!);
   });
   expect(metadata.subscriptions).toBe(3);
   expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe(
@@ -262,7 +262,7 @@ it('keeps dirty feedback open on cancelled dismissal and clears only a confirmed
   );
   confirmDiscard.mockResolvedValueOnce(true);
   await act(async () => {
-    await nativeSheet.close?.();
+    fireEvent.click(container.querySelector('[data-testid="sheet-top-bar-leading"]')!);
   });
   expect(metadata.subscriptions).toBe(0);
   expect(container.querySelector('[data-modal-sheet="false"]')).not.toBeNull();

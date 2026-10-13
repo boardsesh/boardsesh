@@ -143,7 +143,7 @@
       "verdictGroupLabel": "Veredicto",
       "approvePlaceholder": "¿Algo que valga la pena anotar? (opcional)",
       "declinePlaceholder": "¿Qué salió mal? Los pasos ayudan.",
-      "submitLabel": "Enviar veredicto",
+      "submitLabel": "Enviar",
       "leaveLabel": "Salir de la vista previa sin comentarios",
       "submitError": "No se pudo enviar el veredicto — inténtalo de nuevo",
       "notOnPreview": "Estás en producción — no hay nada sobre lo que dar un veredicto.",

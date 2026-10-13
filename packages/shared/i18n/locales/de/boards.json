@@ -1212,7 +1212,7 @@
   "sprayModeration": {
     "reportTitle": "Wand melden",
     "reportHint": "Diese Wand zur Prüfung durch Admins melden",
-    "submit": "Meldung abschicken",
+    "submit": "Senden",
     "reported": "Danke. Deine Meldung wartet auf Prüfung.",
     "reportOffline": "Verbinde dich mit dem Internet, um die Meldung abzuschicken.",
     "reportError": "Deine Meldung wurde nicht abgeschickt. Versuch es erneut.",

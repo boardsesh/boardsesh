@@ -670,7 +670,7 @@
       "reasonAria": "Reason for the report",
       "reasonRemaining": "{{count}} more characters",
       "reasonCount": "{{count}}/500",
-      "submit": "Send report",
+      "submit": "Send",
       "submitError": "Couldn't send your report",
       "toast": {
         "reported": "Reported. {{current}} of {{required}} votes to hide it",

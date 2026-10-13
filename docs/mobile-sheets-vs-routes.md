@@ -457,6 +457,9 @@ offset comes back. A setter picker route renders `SetterPickerList` and feeds it
 - **Leading: xmark or Cancel.** Use `close` (an xmark, as the iOS 26 system sheets do) when leaving
   loses nothing: pickers, detail and filter sheets. Use `cancel` (the word) when leaving would
   throw away an edit: forms and reports. Use `back` for step two onward of a multi-step sheet.
+  Bug-report, rating and QA-verdict sheets use a leading `close` and a short trailing Send label.
+  Bug-report and rating sheets keep their unsaved-change guard; QA-verdict sheets dismiss directly.
+  Climb-report and wall-report headers also use Send; their dismissal controls keep the form default.
 - **How the confirm looks.** One spec, in `docs/ai-design-guidelines.md`, "Top-bar buttons". Name the
   trailing action's `kind`: `confirm` when it saves or commits the climber's own edit (Save, Add, a Done
   that commits a value), `send` when it sends or reports to someone else (Submit, Report, Claim),

@@ -825,7 +825,7 @@
       "verdictGroupLabel": "Verdict",
       "approvePlaceholder": "Anything worth noting? (optional)",
       "declinePlaceholder": "What went wrong? Steps help.",
-      "submitLabel": "Send verdict",
+      "submitLabel": "Send",
       "leaveLabel": "Leave preview without feedback",
       "submitError": "Could not send that verdict — try again",
       "notOnPreview": "You're on production — nothing to file a verdict on.",

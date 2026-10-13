@@ -1212,7 +1212,7 @@
   "sprayModeration": {
     "reportTitle": "Denunciar plafón",
     "reportHint": "Marcar este plafón para revisión administrativa",
-    "submit": "Enviar denuncia",
+    "submit": "Enviar",
     "reported": "Gracias. Tu denuncia está pendiente de revisión.",
     "reportOffline": "Conéctate a internet para enviar tu denuncia.",
     "reportError": "No se pudo enviar tu denuncia. Inténtalo de nuevo.",

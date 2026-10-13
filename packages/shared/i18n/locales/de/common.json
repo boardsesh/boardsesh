@@ -825,7 +825,7 @@
       "verdictGroupLabel": "Urteil",
       "approvePlaceholder": "Etwas Erwähnenswertes? (optional)",
       "declinePlaceholder": "Was ist schiefgelaufen? Schritte helfen.",
-      "submitLabel": "Urteil senden",
+      "submitLabel": "Senden",
       "leaveLabel": "Vorschau ohne Feedback verlassen",
       "submitError": "Das Urteil konnte nicht gesendet werden — versuch es noch mal",
       "notOnPreview": "Du bist auf Produktion — hier gibt es nichts zu beurteilen.",

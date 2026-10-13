@@ -670,7 +670,7 @@
       "reasonAria": "Motivo del reporte",
       "reasonRemaining": "Faltan {{count}} caracteres",
       "reasonCount": "{{count}}/500",
-      "submit": "Enviar reporte",
+      "submit": "Enviar",
       "submitError": "No se pudo enviar tu reporte",
       "toast": {
         "reported": "Reportado. {{current}} de {{required}} votos para ocultarlo",
