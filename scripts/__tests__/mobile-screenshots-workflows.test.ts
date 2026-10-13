@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { CPP_MANIFEST_PATH, CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
@@ -897,12 +898,32 @@ describe('ios-screenshot-shard composite action', () => {
     for (const name of ['Collect capture debug artifacts', 'Upload capture debug artifacts']) {
       const step = action.runs.steps.find((candidate) => candidate.name === name);
       expect(step?.if).toContain("steps.capture.outputs.had_failed_attempt == 'true'");
-      expect(step?.if).toContain('!cancelled()');
+      expect(step?.if).toContain('always()');
       expect(step?.if).toContain('failure()');
+      const expression = step!
+        .if!.replace(/^\$\{\{\s*|\s*\}\}$/g, '')
+        .replaceAll('always()', 'true')
+        .replaceAll('failure()', 'failed')
+        .replaceAll('cancelled()', 'cancelled')
+        .replaceAll("inputs.cpp-target != ''", 'isCpp')
+        .replaceAll("steps.capture.outputs.had_failed_attempt == 'true'", 'hadFailedAttempt')
+        .replaceAll("inputs.debug-artifact-on == 'always'", 'debugAlways');
+      for (const [cancelled, isCpp, hadFailedAttempt, expected] of [
+        [false, true, false, false],
+        [false, true, true, true],
+        [true, true, false, true],
+        [true, false, false, false],
+      ]) {
+        expect(
+          runInNewContext(expression, { failed: false, cancelled, isCpp, hadFailedAttempt, debugAlways: false }),
+        ).toBe(expected);
+      }
     }
     const upload = action.runs.steps.find((step) => step.name === 'Upload capture debug artifacts');
     expect(upload?.with?.path).toBe('capture-debug/**');
     expect(upload?.with?.['retention-days']).toBe(14);
+    const collect = action.runs.steps.find((step) => step.name === 'Collect capture debug artifacts');
+    expect(collect?.run).toContain('timeout: 15000, killSignal: "SIGKILL"');
   });
 
   it('explicitly disables replay for live diagnostics', () => {

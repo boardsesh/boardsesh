@@ -260,7 +260,7 @@ runs:
     # the job. The Maestro tests dir is under $HOME (actions/upload-artifact
     # doesn't expand ~), so copy it into the workspace first.
     - name: Collect capture debug artifacts
-      if: ${{ failure() || (!cancelled() && (steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always')) }}
+      if: ${{ always() && (failure() || (cancelled() && inputs.cpp-target != '') || steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always') }}
       shell: bash
       run: |
         mkdir -p capture-debug
@@ -269,11 +269,11 @@ runs:
           cp "$capture_temp_dir/$capture_log" capture-debug/ 2>/dev/null || true
         done
         cp -R "$HOME/.maestro/tests" capture-debug/maestro-tests 2>/dev/null || echo "no maestro tests dir"
-        xcrun simctl spawn booted log show --last 10m --predicate 'process == "Boardsesh"' \
+        vp exec node -e 'const {spawnSync} = require("node:child_process"); const capture = spawnSync("xcrun", ["simctl", "spawn", "booted", "log", "show", "--last", "10m", "--predicate", "process == \"Boardsesh\""], {encoding: "utf8", timeout: 15000, killSignal: "SIGKILL"}); process.stdout.write(capture.stdout || ""); process.exit(capture.status ?? 1);' \
           > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"
 
     - name: Upload capture debug artifacts
-      if: ${{ failure() || (!cancelled() && (steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always')) }}
+      if: ${{ always() && (failure() || (cancelled() && inputs.cpp-target != '') || steps.capture.outputs.had_failed_attempt == 'true' || inputs.debug-artifact-on == 'always') }}
       uses: actions/upload-artifact@v4
       with:
         # Per-shard name: upload-artifact@v4 rejects two uploads with the same

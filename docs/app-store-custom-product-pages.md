@@ -193,6 +193,18 @@ the next invocation cannot overwrite them. CI uploads the existing diagnostic
 artifact for 14 days even when a later attempt succeeds. The capture result,
 two-attempt budget and content checks keep their existing behavior.
 
+CPP Maestro runs use a separate process supervisor so an uncaught JVM main-thread
+exception cannot strand the synchronous capture script. The supervisor fails the
+attempt, terminates only its owned process group with a one-second SIGTERM grace
+and SIGKILL fallback, and lets the existing diagnostics and fresh-boot retry run.
+An independent 30-minute Maestro limit also fails the attempt. That limit does
+not guarantee that two attempts, simulator startup, and diagnostics fit within
+the shard's 65-minute job limit. Failed native diagnostic commands and the failure
+screenshot each have a 15-second hard limit. Native content checks remain required.
+CI also collects existing CPP failure files after cancellation, with a 15-second
+limit on the additional simulator log query, so a later job timeout retains the
+evidence already saved by an earlier failed attempt.
+
 The original real spray-wall photographs are committed at
 `app-stores/apple/cpp-source-photos/`: `lizfinal.JPG`, `cherry4.JPG`, and
 `bowlo.jpg`. The CPP manifest records each original filename, byte count, and

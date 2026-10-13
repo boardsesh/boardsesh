@@ -841,12 +841,21 @@ function runInherit(command: string, args: string[], env: NodeJS.ProcessEnv, cwd
   return result.status ?? 1;
 }
 
-function runCapture(command: string, args: string[], env?: NodeJS.ProcessEnv): { status: number; stdout: string } {
+function runCapture(
+  command: string,
+  args: string[],
+  env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
+): { status: number; stdout: string } {
   guardSimulatorCommand(command, args, ROOT_DIR);
   // No `env` key at all when the caller passed none: spawnSync inherits
   // process.env only when the option is absent, and `env: undefined` would be a
   // silent, empty environment.
-  const result = spawnSync(command, args, env ? { encoding: 'utf8', env } : { encoding: 'utf8' });
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    ...(env ? { env } : {}),
+    ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGKILL' as const } : {}),
+  });
   return { status: result.status ?? 1, stdout: result.stdout ?? '' };
 }
 
@@ -2725,9 +2734,12 @@ function captureIosDevice(
     // (`ps aux`) for the run's duration. This is acceptable here: CI runs on an
     // ephemeral, single-tenant runner, and locally it's the developer's own
     // machine. Revisit with `--env-file` if/when we bump to a Maestro that has it.
+    // The CPP supervisor changes the executable; keep the same lease boundary.
+    if (options.cpp) guardSimulatorCommand('maestro', ['--device', device.udid], ROOT_DIR);
     const maestroStatus = runInherit(
-      'maestro',
+      options.cpp ? 'tsx' : 'maestro',
       [
+        ...(options.cpp ? [resolve(ROOT_DIR, 'scripts/mobile-screenshot-maestro.ts')] : []),
         '--device',
         device.udid,
         'test',
@@ -2846,6 +2858,7 @@ function captureIosDevice(
     captureSucceeded = true;
   } finally {
     if (!captureSucceeded) {
+      if (options.cpp) preserveFailedRunArtifacts(captureDir);
       if (options.cpp && process.env.SCREENSHOT_DEBUG_DIR) {
         try {
           preserveIosCaptureDiagnostics({
@@ -2858,6 +2871,7 @@ function captureIosDevice(
               const result = spawnSync('xcrun', args, {
                 encoding: 'utf8',
                 timeout: 15000,
+                killSignal: 'SIGKILL',
                 maxBuffer: 1024 * 1024,
               });
               return { status: result.status ?? 1, stdout: result.stdout ?? '' };
@@ -2868,7 +2882,12 @@ function captureIosDevice(
         }
       }
       if (process.env.SCREENSHOT_DEBUG_DIR)
-        runCapture('xcrun', ['simctl', 'io', device.udid, 'screenshot', join(captureDir, 'failure-screen.png')]);
+        runCapture(
+          'xcrun',
+          ['simctl', 'io', device.udid, 'screenshot', join(captureDir, 'failure-screen.png')],
+          undefined,
+          options.cpp ? 15000 : undefined,
+        );
       preserveFailedRunArtifacts(captureDir);
     }
     deviceLogStream?.kill();
