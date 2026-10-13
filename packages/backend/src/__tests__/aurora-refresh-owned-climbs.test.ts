@@ -177,7 +177,6 @@ describe('a full Aurora board refresh and the owned upstream climbs it drops (re
     ]);
 
     const settlement = await refreshBoard(DUMP);
-    expect(settlement).toEqual({ ownerKept: 2, withdrawn: 2 });
 
     // The owner's draft is gone from their phone; their public climb from every
     // phone. A catalogue climb nobody owned keeps the refresh's old behaviour.
@@ -194,6 +193,7 @@ describe('a full Aurora board refresh and the owned upstream climbs it drops (re
       'refresh-kept-public',
       'refresh-set-here',
     ]);
+    expect(settlement).toEqual({ ownerKept: 2, withdrawn: 2 });
   });
 
   it('writes one marker per dropped owned climb: the owner’s for a draft, everyone’s for a public climb', async () => {

@@ -407,6 +407,9 @@ describeWithDatabase('a manufacturer climb with an owner keeps the manufacturerâ
       // A climb set in Boardsesh: its name never ships, and the recompute owns it.
       await seedClimb('provenance-repair-set-here', { userId: SETTER, synced: false, setterId: null });
       await seedStats('provenance-repair-set-here', { name: 'Climber', at: sendAt, upstreamSyncedAt: null });
+      // Woods writes `synced` on a climb it mints, with no manufacturer setter.
+      await seedClimb('provenance-repair-synced-set-here', { userId: SETTER, synced: true, setterId: null });
+      await seedStats('provenance-repair-synced-set-here', { name: 'Climber', at: sendAt, upstreamSyncedAt: null });
       // A catalogue climb with no owner: not this repair's business.
       await seedClimb('provenance-repair-catalogue', { userId: null, synced: true, setterId: AURORA_USER_ID });
       await seedStats('provenance-repair-catalogue', { name: 'Catalogue FA', at: sendAt, upstreamSyncedAt: null });
@@ -418,6 +421,7 @@ describeWithDatabase('a manufacturer climb with an owner keeps the manufacturerâ
         'provenance-repair-draft-stats': null,
         'provenance-repair-overwritten': null,
         'provenance-repair-set-here': 'Climber',
+        'provenance-repair-synced-set-here': 'Climber',
         'provenance-repair-upstream-credit': UPSTREAM_FIRST_ASCENT,
       });
 
