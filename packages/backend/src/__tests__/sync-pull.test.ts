@@ -271,6 +271,34 @@ describe('syncDeletions with the applied #6339 migrations underneath it', () => 
     const result = await callSyncDeletions({ updatedAt: toIso(first.stream_at), syncSeq: String(first.id) }, 500);
     expect(result.deletions.map((deletion) => deletion.recordId)).toEqual(['kilter:stream-cursor-b:40']);
   });
+
+  it("delivers the rest of a transaction when #6339's cursor ended inside it", async () => {
+    // Eight markers from one DELETE: one transaction, so one deleted_at, and
+    // eight increasing stream_at values from 0272's trigger.
+    const climbUuids = Array.from({ length: 8 }, (_, index) => `one-txn-${index}`);
+    for (const climbUuid of climbUuids) {
+      await db.execute(sql`
+        INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at, updated_at)
+        VALUES (${USER_ID}, 'kilter', ${climbUuid}, 40, now(), now())
+      `);
+    }
+    await db.execute(sql`DELETE FROM user_favorites WHERE user_id = ${USER_ID} AND climb_uuid LIKE 'one-txn-%'`);
+    const markers = rowsFromResult<MarkerRow & { record_id: string }>(
+      await db.execute(sql`SELECT id, record_id, deleted_at, stream_at FROM sync_deletions ORDER BY id`),
+    );
+    expect(markers).toHaveLength(8);
+    expect(new Set(markers.map((marker) => toIso(marker.deleted_at))).size).toBe(1);
+
+    // #6339's page of three ended on the third marker and returned its
+    // (stream_at, id), which is later than the deleted_at all eight share.
+    const third = markers[2];
+    expect(Date.parse(toIso(third.stream_at))).toBeGreaterThan(Date.parse(toIso(third.deleted_at)));
+    const result = await callSyncDeletions({ updatedAt: toIso(third.stream_at), syncSeq: String(third.id) }, 500);
+
+    expect(result.deletions.map((deletion) => deletion.recordId)).toEqual(
+      markers.slice(3).map((marker) => marker.record_id),
+    );
+  });
 });
 
 describe('cross-user isolation — every user-scoped sync resolver', () => {
@@ -432,5 +460,78 @@ describe('climb revision columns (#6023)', () => {
     } finally {
       await db.execute(sql`DELETE FROM board_climbs WHERE board_type = 'kilter' AND layout_id = ${layoutId}`);
     }
+  });
+});
+
+// #6339's backend issued deletion cursors whose time is later than the named
+// marker's deleted_at. These cases build that shape from deleted_at itself, so
+// they hold before and after the cleanup migration drops stream_at.
+describe('syncDeletions resumes a cursor from before the revert', () => {
+  // One transaction's markers share one deleted_at; the ids keep their order.
+  const TRANSACTION_AT = '2026-10-13 02:00:00.123456';
+  const LATER_AT = '2026-10-13 02:00:05.000000';
+
+  type InsertedMarker = { id: string; record_id: string };
+
+  const insertMarkers = async (deletedAt: string, recordIds: string[], userId = USER_ID) => {
+    const inserted: InsertedMarker[] = [];
+    for (const recordId of recordIds) {
+      const [marker] = rowsFromResult<InsertedMarker>(
+        await db.execute(sql`
+          INSERT INTO sync_deletions (table_name, record_id, user_id, deleted_at)
+          VALUES ('user_favorites', ${recordId}, ${userId}, ${deletedAt}::timestamp)
+          RETURNING id, record_id
+        `),
+      );
+      inserted.push(marker);
+    }
+    return inserted;
+  };
+
+  // What #6339's cursor held: a time after the marker's deleted_at.
+  const insertionTimeCursor = (marker: InsertedMarker): SyncCursorInput => ({
+    updatedAt: toIso('2026-10-13 02:00:00.373456'),
+    syncSeq: String(marker.id),
+  });
+
+  const recordIds = (count: number, prefix: string) =>
+    Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
+
+  it('resumes from the named marker so the rest of its transaction arrives once', async () => {
+    const markers = await insertMarkers(TRANSACTION_AT, recordIds(8, 'resume'));
+
+    const result = await callSyncDeletions(insertionTimeCursor(markers[2]), 500);
+
+    expect(result.deletions.map((deletion) => deletion.recordId)).toEqual(
+      markers.slice(3).map((marker) => marker.record_id),
+    );
+    expect(result.cursor).toEqual({ updatedAt: toIso(TRANSACTION_AT), syncSeq: String(markers[7].id) });
+  });
+
+  it('leaves a cursor this resolver issued unchanged', async () => {
+    const markers = await insertMarkers(TRANSACTION_AT, recordIds(8, 'own-cursor'));
+
+    const firstPage = await callSyncDeletions(null, 3);
+    expect(firstPage.cursor).toEqual({ updatedAt: toIso(TRANSACTION_AT), syncSeq: String(markers[2].id) });
+    const secondPage = await callSyncDeletions(firstPage.cursor, 500);
+
+    expect([...firstPage.deletions, ...secondPage.deletions].map((deletion) => deletion.recordId)).toEqual(
+      markers.map((marker) => marker.record_id),
+    );
+  });
+
+  it("keeps the cursor's time when the named marker was pruned or is not the caller's", async () => {
+    // The other account's marker gets the lowest id, so resuming from its
+    // deleted_at would hand this caller its own markers again.
+    const others = await insertMarkers(TRANSACTION_AT, recordIds(1, 'others'), OTHER_USER_ID);
+    const own = await insertMarkers(TRANSACTION_AT, recordIds(3, 'pruned'));
+    const later = await insertMarkers(LATER_AT, ['later']);
+    await db.execute(sql`DELETE FROM sync_deletions WHERE id = ${own[0].id}::bigint`);
+
+    const afterPrune = await callSyncDeletions(insertionTimeCursor(own[0]), 500);
+    expect(afterPrune.deletions.map((deletion) => deletion.recordId)).toEqual([later[0].record_id]);
+
+    const otherUsersMarker = await callSyncDeletions(insertionTimeCursor(others[0]), 500);
+    expect(otherUsersMarker.deletions.map((deletion) => deletion.recordId)).toEqual([later[0].record_id]);
   });
 });

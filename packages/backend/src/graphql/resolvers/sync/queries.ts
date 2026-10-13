@@ -68,6 +68,38 @@ function cursorBounds(cursor: SyncCursorInput | null | undefined): { ts: string;
 }
 
 /**
+ * Where a `syncDeletions` page resumes: the earlier of the cursor's timestamp
+ * and the `deleted_at` of the marker the cursor names.
+ *
+ * #6339's backend served deletion sync from 2026-10-13 01:56 UTC until #6431
+ * deployed. Its cursors carry the last marker's insertion time (`stream_at`),
+ * which is later than that marker's `deleted_at`. Every marker one transaction
+ * writes shares one `deleted_at` (its default is the transaction's start), so
+ * comparing `deleted_at` with that later time would skip the rest of the
+ * transaction for good when a page ended inside it. Resuming from the cursor
+ * row's own `deleted_at` delivers them.
+ *
+ * A cursor this resolver issued already holds that row's exact `deleted_at`, so
+ * LEAST returns it unchanged. An epoch cursor, a pruned row, or a row outside
+ * the caller's scope matches nothing and keeps the cursor's time. The most a
+ * resumed #6339 cursor can do is deliver a marker twice, which the client's
+ * `updated_at <= deletedAt` guard makes harmless. The text cast keeps the
+ * microseconds the next comparison needs. Names no column #6339 added, so it
+ * stays valid once those are dropped.
+ */
+async function deletionResumeTimestamp(userId: string, ts: string, seq: string): Promise<string> {
+  if (seq === EPOCH_SEQ) return ts;
+  const [cursorRow] = rowsFromResult<{ resume_ts: string }>(
+    await db.execute(sql`
+      SELECT LEAST(${ts}::timestamp, deleted_at)::text AS resume_ts
+      FROM sync_deletions
+      WHERE id = ${seq}::bigint AND (user_id = ${userId} OR user_id IS NULL)
+    `),
+  );
+  return cursorRow?.resume_ts ?? ts;
+}
+
+/**
  * Run a composite-cursor page query and shape it into a SyncResult.
  *
  * Both `updatedAtColumn` and `seqColumn` are caller-controlled SQL fragments
@@ -779,7 +811,7 @@ export const syncQueries = {
   /**
    * Pull hard deletions for the client to apply locally. Scoped to the user's own
    * deletions plus reference-data deletions (user_id IS NULL). Cursor on
-   * (deleted_at, id).
+   * (deleted_at, id), resumed through {@link deletionResumeTimestamp}.
    */
   syncDeletions: async (
     _: unknown,
@@ -788,12 +820,13 @@ export const syncQueries = {
   ): Promise<SyncDeletionsResult> => {
     const { userId, limit: lim } = prepareUserSync(ctx, cursor, limit);
     const { ts, seq } = cursorBounds(cursor);
+    const resumeTs = await deletionResumeTimestamp(userId, ts, seq);
 
     const result = await db.execute(sql`
       SELECT table_name, record_id, deleted_at, id AS __seq
       FROM sync_deletions
       WHERE (user_id = ${userId} OR user_id IS NULL)
-        AND (deleted_at, id) > (${ts}::timestamp, ${seq}::bigint)
+        AND (deleted_at, id) > (${resumeTs}::timestamp, ${seq}::bigint)
         AND deleted_at < now() - make_interval(secs => ${STABILITY_WINDOW_SECONDS})
       ORDER BY deleted_at ASC, id ASC
       LIMIT ${lim}

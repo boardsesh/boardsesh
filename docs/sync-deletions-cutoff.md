@@ -34,13 +34,31 @@ What the two live triggers do under the reverted backend:
 - **0273.** No writer sets the flag, so every marker is an ordinary one.
 
 A device whose last deletion cursor came from #6339's backend holds a
-`stream_at` value in the cursor's `updatedAt`. The reverted resolver compares
-it with `deleted_at`. A marker's `deleted_at` is never later than its
-`stream_at`, so nothing is delivered twice. A marker whose `deleted_at` is
-behind that cursor while its `stream_at` is ahead of it is skipped: a
-transaction that started before the cursor time, or a 0270 marker inside its
-one-second backdate. That is the same miss the 30-second stability window
-allowed before #6339. It can lose a deletion; it cannot fail a sync.
+`stream_at` value in the cursor's `updatedAt`, which is later than that
+marker's `deleted_at`. Every marker one transaction writes shares one
+`deleted_at`, so comparing `deleted_at` with that cursor would skip the rest of
+the transaction for good whenever a page ended inside it: a playlist's climbs, a
+catalogue delete, any multi-row delete. No long transaction is needed for that.
+So the resolver resumes from the earlier of the cursor's time and the
+`deleted_at` of the marker the cursor names, looked up by id
+(`deletionResumeTimestamp` in `resolvers/sync/queries.ts`). It names no column
+#6339 added.
+
+- A cursor the reverted resolver issued already holds the named marker's exact
+  `deleted_at`, so the lookup changes nothing. An epoch cursor, a pruned marker
+  or a marker outside the caller's scope keeps the cursor's time.
+- A resumed #6339 cursor can deliver a marker twice: one another transaction
+  wrote between the named marker's `deleted_at` and its `stream_at`, which
+  #6339 already sent. The client's `updated_at <= deletedAt` guard makes that
+  harmless.
+- It can still miss a marker from a transaction that started before the named
+  marker's transaction and wrote after #6339 issued the cursor. #6339 only
+  issued a cursor below the start of every open writer and below the stability
+  window, so that transaction ran for longer than the window: the long
+  transaction the 30-second window already missed before #6339. A `0270`
+  marker can also land there through its one-second backdate. Under the
+  reverted resolvers that costs nothing, because `syncClimbs` sends the climb's
+  new row anyway.
 
 ## Why the bootstrap tooling stays
 
