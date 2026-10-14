@@ -44,8 +44,6 @@ import {
   writeFileSync,
   type WriteStream,
 } from 'node:fs';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -113,7 +111,8 @@ import {
   recordingWorkDirs,
   recordRunMode,
   parseSessionIdFromInviteUrl,
-  parseSignalRequest,
+  startSignalServer,
+  type SignalServer,
   resolveTrimSeconds,
   restoredSessionId,
   sessionStarted,
@@ -322,55 +321,6 @@ class LogWindow {
 }
 
 // ---------------------------------------------------------------------------
-// Signal server: flows mark steps and wake each other through it (see record.ts)
-
-type SignalServer = Readonly<{
-  url: string;
-  marks: Map<string, number>;
-  values: Map<string, string>;
-  raise(name: string): void;
-  reset(): void;
-  close(): Promise<void>;
-}>;
-
-async function startSignalServer(): Promise<SignalServer> {
-  const marks = new Map<string, number>();
-  const values = new Map<string, string>();
-  const raised = new Set<string>();
-  const server: Server = createServer((request, response) => {
-    const parsed = parseSignalRequest(request.url ?? '');
-    response.setHeader('content-type', 'text/plain');
-    if (parsed.kind === 'unknown') {
-      response.statusCode = 404;
-      response.end('unknown');
-      return;
-    }
-    if (parsed.kind === 'mark') marks.set(parsed.name, Date.now());
-    if (parsed.kind === 'set') raised.add(parsed.name);
-    if (parsed.kind === 'value') {
-      response.end(values.get(parsed.name) ?? '');
-      return;
-    }
-    response.end(parsed.kind === 'signal' ? (raised.has(parsed.name) ? 'go' : 'wait') : 'ok');
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const { port } = server.address() as AddressInfo;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    marks,
-    values,
-    raise: (name) => raised.add(name),
-    reset: () => {
-      marks.clear();
-      values.clear();
-      raised.clear();
-    },
-    close: () => new Promise((resolvePromise) => server.close(() => resolvePromise())),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Maestro
 
 let maestroRunCounter = 0;
@@ -503,6 +453,7 @@ type Phone = {
   metroPort: number;
   metroLog: string;
   metro: ChildProcess | null;
+  signal: SignalServer;
 };
 
 function screenshotOptions(args: ShowcaseRecordArgs, appPath: string | null): ScreenshotOptions {
@@ -660,8 +611,12 @@ async function preparePhone(
 
   const metroLog = resolve(LOG_DIR, `metro-${role}.log`);
   console.log(`${LOG} ${role}: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);
-  const phone: Phone = { platform: 'ios', role, spec, device, appPath, metroPort, metroLog, metro: null };
-  phone.metro = startMetro(metroPort, env, metroLog);
+  const phone: Phone = { platform: 'ios', role, spec, device, appPath, metroPort, metroLog, metro: null, signal };
+  phone.metro = startMetro(
+    metroPort,
+    { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl(role) },
+    metroLog,
+  );
   if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
     throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
   }
@@ -687,13 +642,21 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     simctl(['terminate', phone.device.udid, APP_ID]);
+    // spawnSync blocks HTTP callbacks: drain an old app's queued ping before
+    // snapshotting the next launch's readiness baseline.
+    await sleep(100);
+    window.pull();
+    const readyBaseline = phone.signal.homeReadyCount(phone.role);
+    const logBaseline = countHomeReady(window.text);
     // SIMCTL_CHILD_TZ pins the app to UTC, like every screenshot capture.
     const launch = simctl(['launch', phone.device.udid, APP_ID], { ...process.env, SIMCTL_CHILD_TZ: 'UTC' });
     if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
     const deadline = Date.now() + HOME_READY_TIMEOUT_MS / attempts;
     while (Date.now() < deadline) {
       window.pull();
-      if (countHomeReady(window.text) > 0) return window;
+      if (phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline) {
+        return window;
+      }
       await sleep(1000);
     }
     console.warn(`${LOG} ${phone.role}: app not home after launch ${attempt}/${attempts}.`);
@@ -815,6 +778,7 @@ async function prepareAndroidPhone(
   metroPort: number,
   env: NodeJS.ProcessEnv,
   backendUrl: string | null,
+  signal: SignalServer,
 ): Promise<Phone> {
   const serial = await bootShowcaseEmulator(false);
   // Dark system UI, which the notification shade the island take films follows.
@@ -830,7 +794,7 @@ async function prepareAndroidPhone(
   // Notifications allowed without a prompt (the island take films the session notification).
   adb(['-s', serial, 'shell', 'pm', 'grant', SHOWCASE_ANDROID_PACKAGE, 'android.permission.POST_NOTIFICATIONS']);
   // The emulator's localhost is its own: map Metro (and a local backend) onto the host's.
-  const ports = [metroPort, ...(backendUrl ? [Number(new URL(backendUrl).port)] : [])];
+  const ports = [metroPort, signal.port, ...(backendUrl ? [Number(new URL(backendUrl).port)] : [])];
   for (const port of ports) {
     const reverse = adb(['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`]);
     if (reverse.status !== 0) throw new Error(`adb reverse tcp:${port} failed: ${reverse.stderr.trim()}`);
@@ -847,8 +811,13 @@ async function prepareAndroidPhone(
     metroPort,
     metroLog,
     metro: null,
+    signal,
   };
-  phone.metro = startMetro(metroPort, env, metroLog);
+  phone.metro = startMetro(
+    metroPort,
+    { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl('primary') },
+    metroLog,
+  );
   if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
     throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
   }
@@ -878,6 +847,10 @@ async function relaunchAndroid(phone: Phone): Promise<LogWindow> {
   adb(['-s', phone.device.udid, 'shell', 'cmd', 'statusbar', 'collapse']);
   for (let attempt = 1; attempt <= attempts; attempt++) {
     adb(['-s', phone.device.udid, 'shell', 'am', 'force-stop', SHOWCASE_ANDROID_PACKAGE]);
+    await sleep(100);
+    window.pull();
+    const readyBaseline = phone.signal.homeReadyCount(phone.role);
+    const logBaseline = countHomeReady(window.text);
     adb([
       '-s',
       phone.device.udid,
@@ -887,7 +860,9 @@ async function relaunchAndroid(phone: Phone): Promise<LogWindow> {
     const deadline = Date.now() + HOME_READY_TIMEOUT_MS / attempts;
     while (Date.now() < deadline) {
       window.pull();
-      if (countHomeReady(window.text) > 0) return window;
+      if (phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline) {
+        return window;
+      }
       await sleep(1000);
     }
     console.warn(`${LOG} android: app not home after launch ${attempt}/${attempts}.`);
@@ -1846,7 +1821,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const primaryEnv = metroEnv(args, credentials.primary, backendUrl);
     const primary =
       args.platform === 'android'
-        ? await prepareAndroidPhone(args, primaryMetroPort, primaryEnv, backendUrl)
+        ? await prepareAndroidPhone(args, primaryMetroPort, primaryEnv, backendUrl, signal)
         : await preparePhone(
             'primary',
             readPlistString(resolve(appPath, 'Info.plist'), 'DEV_CLIENT_DEFAULT_LAUNCHER_URL') ===

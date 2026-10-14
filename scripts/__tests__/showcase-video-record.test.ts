@@ -32,6 +32,7 @@ import {
   recordingWorkDirs,
   parseSessionIdFromInviteUrl,
   parseSignalRequest,
+  startSignalServer,
   resolveTrimSeconds,
   restoredSessionId,
   sessionStarted,
@@ -280,7 +281,9 @@ describe('logs', () => {
   });
 
   it('counts home arrivals', () => {
-    expect(countHomeReady(' INFO  [analytics] $screen /home\n INFO  [analytics] $screen /homes\nx')).toBe(2);
+    expect(countHomeReady(' INFO  [analytics] $screen /home\n INFO  [analytics] $screen /homes\nx')).toBe(1);
+    expect(countHomeReady('$screen /home/climbs\n$screen /home?filter=1')).toBe(0);
+    expect(countHomeReady('$screen /home')).toBe(1);
     expect(countHomeReady('')).toBe(0);
   });
 
@@ -716,6 +719,62 @@ describe('take registry', () => {
       const kind = take.board?.kind;
       expect(kind && SHOWCASE_BOARD_CONFIG_LINKS[kind], take.id).toBeTruthy();
       expect(take.primeLinks).toContain(kind ? SHOWCASE_BOARD_CONFIG_LINKS[kind] : '');
+    }
+  });
+});
+
+describe('recorder home readiness server', () => {
+  it('accepts only exact per-phone GET routes and keeps counters through take resets', async () => {
+    const signal = await startSignalServer();
+    try {
+      const primaryUrl = signal.readinessUrl('primary');
+      const secondaryUrl = signal.readinessUrl('secondary');
+      expect(new URL(primaryUrl).hostname).toBe('127.0.0.1');
+      expect(Number(new URL(primaryUrl).port)).toBe(signal.port);
+      expect(signal.homeReadyCount('primary')).toBe(0);
+      expect((await fetch(primaryUrl)).status).toBe(200);
+      expect(signal.homeReadyCount('primary')).toBe(1);
+      expect(signal.homeReadyCount('secondary')).toBe(0);
+      const primaryBaseline = signal.homeReadyCount('primary');
+      // Old arrivals and the other phone cannot satisfy the next primary launch.
+      expect(signal.homeReadyCount('primary') > primaryBaseline).toBe(false);
+      expect((await fetch(secondaryUrl)).status).toBe(200);
+      expect(signal.homeReadyCount('primary') > primaryBaseline).toBe(false);
+      expect(signal.homeReadyCount('secondary')).toBe(1);
+      expect((await fetch(primaryUrl, { method: 'POST', body: '{"ready":true}' })).status).toBe(405);
+      expect((await fetch(primaryUrl, { method: 'HEAD' })).status).toBe(405);
+      expect((await fetch(`${signal.url}/ready/unknown`)).status).toBe(404);
+      expect((await fetch(`${primaryUrl}/extra`)).status).toBe(404);
+      expect(signal.homeReadyCount('primary')).toBe(primaryBaseline);
+      signal.reset();
+      expect(signal.homeReadyCount('primary')).toBe(primaryBaseline);
+      expect(signal.homeReadyCount('secondary')).toBe(1);
+      expect((await fetch(`${primaryUrl}?source=home`)).status).toBe(200);
+      expect(signal.homeReadyCount('primary') > primaryBaseline).toBe(true);
+      // Resetting takes never lets a stale baseline overtake a cleared counter.
+      signal.reset();
+      expect(signal.homeReadyCount('primary')).toBe(2);
+    } finally {
+      await signal.close();
+    }
+  });
+
+  it('preserves flow marks, raised signals, and published values', async () => {
+    const signal = await startSignalServer();
+    try {
+      expect(await (await fetch(`${signal.url}/signal/crew-add`)).text()).toBe('wait');
+      await fetch(`${signal.url}/set/crew-add`);
+      expect(await (await fetch(`${signal.url}/signal/crew-add`)).text()).toBe('go');
+      await fetch(`${signal.url}/mark/flow-start`);
+      expect(signal.marks.has('flow-start')).toBe(true);
+      signal.values.set('anchor-home-x', '42');
+      expect(await (await fetch(`${signal.url}/value/anchor-home-x`)).text()).toBe('42');
+      signal.reset();
+      expect(signal.marks.size).toBe(0);
+      expect(signal.values.size).toBe(0);
+      expect(await (await fetch(`${signal.url}/signal/crew-add`)).text()).toBe('wait');
+    } finally {
+      await signal.close();
     }
   });
 });

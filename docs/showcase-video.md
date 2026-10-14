@@ -89,8 +89,12 @@ fallback. It:
    9:41, app in UTC), resets their keychains and installs the dev-client;
 2. starts Metro with the screenshot-mode env (`EXPO_PUBLIC_SCREENSHOT_MODE=1`,
    `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1`, the walls in `EXPO_PUBLIC_SCREENSHOT_BOARDS`,
-   the account) and waits for the app to reach home. The second phone gets its
-   own Metro and a copy of the `.app` whose launcher URL points at it;
+   the account) and waits for the app to reach home. Each phone reports home
+   through its own GET endpoint on the recorder’s loopback signal server, independently
+   of analytics consent. A fresh counter increase after each native launch (or a fresh
+   legacy Metro home marker) confirms readiness; earlier pings and the other phone
+   cannot unblock it. Android reverses this ephemeral port onto the host. The second
+   phone gets its own Metro and a copy of the `.app` whose launcher URL points at it;
 3. per take: relaunches the app (so the one-shot deep-link params fire again),
    opens the take's deep links, starts `simctl io recordVideo`, runs the take's
    Maestro flow while collecting `[showcase-anchor]` lines from Metro's output,

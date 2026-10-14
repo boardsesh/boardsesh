@@ -1,3 +1,6 @@
+import { once } from 'node:events';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -31,10 +34,11 @@ import type { ShowcaseBackend, ShowcaseBoardKind, ShowcaseStaticAnchor } from '.
 export type { ShowcaseBackend } from './takes';
 
 /**
- * The recorder's pure half: argument parsing, ffmpeg argument vectors, log
+ * The recorder's helpers: argument parsing, ffmpeg argument vectors, log
  * parsing and the end-of-run self-check. Everything here is unit tested in
  * `scripts/__tests__/showcase-video-record.test.ts`; the orchestrator
- * (`scripts/showcase-video-record.ts`) owns every process and file.
+ * (`scripts/showcase-video-record.ts`) owns every process and file; the local
+ * signal server here also accepts consent-independent home readiness pings.
  */
 
 export type ShowcaseDevice = Readonly<{
@@ -390,25 +394,96 @@ export function resolveTrimSeconds(
 
 /**
  * The signal server's routes, shared with the flows:
+ *   GET /ready/<role>   counts primary/secondary home arrivals independently of analytics
  *   GET /mark/<name>    records when a flow reached a step (the recorder reads it back)
  *   GET /set/<name>     raises a signal another device's flow is waiting on
  *   GET /signal/<name>  "go" once raised, "wait" before
  *   GET /value/<name>   a value the recorder published, "" before (see anchorTapValues)
  * Names are lowercase words and dashes, so a URL can never smuggle anything else.
  */
+export type ShowcasePhoneRole = 'primary' | 'secondary';
+
 export type SignalRequest =
+  | Readonly<{ kind: 'ready'; role: ShowcasePhoneRole }>
   | Readonly<{ kind: 'mark' | 'set' | 'signal' | 'value'; name: string }>
   | Readonly<{ kind: 'unknown' }>;
 
 export function parseSignalRequest(url: string): SignalRequest {
+  const readiness = /^\/ready\/(primary|secondary)\/?$/.exec(url.split('?')[0]);
+  if (readiness) return { kind: 'ready', role: readiness[1] as ShowcasePhoneRole };
   const match = /^\/(mark|set|signal|value)\/([a-z0-9-]{1,64})\/?$/.exec(url.split('?')[0]);
   if (!match) return { kind: 'unknown' };
   return { kind: match[1] as 'mark' | 'set' | 'signal' | 'value', name: match[2] };
 }
 
+export type SignalServer = Readonly<{
+  url: string;
+  port: number;
+  readinessUrl(role: ShowcasePhoneRole): string;
+  homeReadyCount(role: ShowcasePhoneRole): number;
+  marks: Map<string, number>;
+  values: Map<string, string>;
+  raise(name: string): void;
+  reset(): void;
+  close(): Promise<void>;
+}>;
+
+export async function startSignalServer(): Promise<SignalServer> {
+  const marks = new Map<string, number>();
+  const values = new Map<string, string>();
+  const raised = new Set<string>();
+  // Unlike take marks, these counters must survive reset() and only increase.
+  const homeReadyCounts: Record<ShowcasePhoneRole, number> = { primary: 0, secondary: 0 };
+  const server: Server = createServer((request, response) => {
+    response.setHeader('content-type', 'text/plain');
+    if (request.method !== 'GET') {
+      response.statusCode = 405;
+      response.setHeader('allow', 'GET');
+      response.end('GET required');
+      return;
+    }
+    const parsed = parseSignalRequest(request.url ?? '');
+    if (parsed.kind === 'unknown') {
+      response.statusCode = 404;
+      response.end('unknown');
+      return;
+    }
+    if (parsed.kind === 'ready') {
+      homeReadyCounts[parsed.role] += 1;
+      response.end('ok');
+      return;
+    }
+    if (parsed.kind === 'mark') marks.set(parsed.name, Date.now());
+    if (parsed.kind === 'set') raised.add(parsed.name);
+    if (parsed.kind === 'value') {
+      response.end(values.get(parsed.name) ?? '');
+      return;
+    }
+    response.end(parsed.kind === 'signal' ? (raised.has(parsed.name) ? 'go' : 'wait') : 'ok');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    port,
+    readinessUrl: (role) => `http://127.0.0.1:${port}/ready/${role}`,
+    homeReadyCount: (role) => homeReadyCounts[role],
+    marks,
+    values,
+    raise: (name) => raised.add(name),
+    reset: () => {
+      marks.clear();
+      values.clear();
+      raised.clear();
+    },
+    close: () => new Promise((resolvePromise) => server.close(() => resolvePromise())),
+  };
+}
+
 /** How many times the app has reached home in this Metro log. */
 export function countHomeReady(logText: string): number {
-  return logText.split('$screen /home').length - 1;
+  return [...logText.matchAll(/\$screen \/home(?=\s|$)/g)].length;
 }
 
 /**
