@@ -238,6 +238,7 @@
     "__tests__/cpp-ws-recording.test.ts",
     "__tests__/cpp-grade-count.test.ts",
     "__tests__/cpp-upstream-diagnostics.test.ts",
-    "__tests__/cpp-detail-coverage.test.ts"
+    "__tests__/cpp-detail-coverage.test.ts",
+    "__tests__/cpp-native-background-coverage.test.ts"
   ]
 }

@@ -515,6 +515,7 @@ async function assertRecordedThumbnailImages(
     if (seen.has(request)) throw new Error('CPP detail static recording contains duplicate requests');
     seen.add(request);
     if (!requests.has(request)) continue;
+    if (entry.response) throw new Error('CPP beta thumbnail must have a successful image response');
     const bytes = readFileSync(join(directory, entry.file));
     if (bytes.length !== entry.bytes) throw new Error('CPP beta thumbnail recorded size differs');
     await inspectCppThumbnailImage(bytes, entry.contentType);

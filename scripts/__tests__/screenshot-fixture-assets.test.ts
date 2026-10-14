@@ -5,6 +5,7 @@ import {
   captureFixturePhoto,
   SCREENSHOT_FIXTURE_ASSET_ORIGIN,
 } from '../lib/screenshot-fixture-assets';
+import { sprayDraftPurpose, sprayPhotoObjectIdentity } from '../../packages/mobile/src/lib/spray/spray-draft-purpose';
 
 const wallUuid = '00000000-0000-4000-8000-000000000047';
 const signedUrl = `https://private.example.r2.cloudflarestorage.com/spray-walls/${wallUuid}/wall.jpg?X-Amz-Signature=private-signature`;
@@ -34,6 +35,46 @@ describe('portable spray photo fixtures', () => {
       /^https:\/\/screenshot-fixtures\.boardsesh\.invalid\/static\/campaign-spray\/[a-f0-9]{64}\.jpg$/,
     );
     expect(JSON.stringify(result)).not.toContain('private-signature');
+  });
+
+  it('preserves the native hold-edit decision through portable transport and local binding', async () => {
+    const bytes = await imageBytes();
+    const objectPath = `/spray-walls/${wallUuid}/00000000-0000-4000-8000-000000000048.jpg`;
+    const source = `https://private.example.r2.cloudflarestorage.com${objectPath}?X-Amz-Signature=private`;
+    const capture = (url: string) =>
+      captureFixturePhoto(
+        { url, expiresAt: '2026-10-01T00:00:00Z' },
+        wallUuid,
+        vi.fn<typeof fetch>(async () => new Response(new Uint8Array(bytes))),
+      );
+    const published = await capture(source);
+    const draft = await capture(source.replace('Signature=private', 'Signature=renewed'));
+    const otherPhoto = await capture(source.replace('000000000048.jpg', '000000000049.jpg'));
+    const local = (captured: Awaited<ReturnType<typeof capture>>) =>
+      JSON.parse(
+        bindFixtureAssetUrls(
+          JSON.stringify(captured.photo),
+          'http://localhost:12345',
+          captured.assets.map(({ path }) => path),
+        ),
+      ) as { url: string };
+    const version = (url: string) => ({
+      photo: { url, thumbUrl: null, expiresAt: '9999-12-31T23:59:59.000Z', width: 3, height: 3 },
+      anchors: null,
+      homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+    });
+    expect(sprayPhotoObjectIdentity(local(published).url)).toBe(objectPath.slice(1));
+    expect(sprayDraftPurpose(version(local(draft).url), version(local(published).url))).toBe('hold-edit');
+    // Equal bytes do not make different original objects the same photo.
+    expect(otherPhoto.assets[0].file).toBe(published.assets[0].file);
+    expect(otherPhoto.assets[0].path).not.toBe(published.assets[0].path);
+    expect(sprayDraftPurpose(version(local(otherPhoto).url), version(local(published).url))).toBe('reset');
+    const changedGeometry = { ...version(local(draft).url), homography: [2, 0, 0, 0, 1, 0, 0, 0, 1] };
+    expect(sprayDraftPurpose(changedGeometry, version(local(published).url))).toBe('reset');
+    for (const captured of [published, draft, otherPhoto]) {
+      expect(captured.assets[0].bytes).toEqual(bytes);
+      expect(JSON.stringify(captured.photo)).not.toContain('Signature');
+    }
   });
 
   it.each([
@@ -115,6 +156,21 @@ describe('replay asset URL binding', () => {
         'http://localhost',
         [assetPath],
       ),
+    ).toThrow(/Invalid reserved/);
+  });
+
+  it.each([
+    `/static/campaign-spray/${'a'.repeat(64)}/spray-walls/${wallUuid}/not-a-photo.jpg`,
+    `/static/campaign-spray/${'a'.repeat(64)}/spray-walls/${wallUuid}/00000048.jpg/extra`,
+    `/static/campaign-spray/${'a'.repeat(64)}/spray-walls/${wallUuid}/00000048.jpg?token=private`,
+    `/static/campaign-spray/${'a'.repeat(64)}/spray-walls/${wallUuid}/00000048.jpg#fragment`,
+    `/static/campaign-spray/${'a'.repeat(64)}/spray-walls/${wallUuid}/%2e%2e/00000048.jpg`,
+    `/static/campaign-spray/${'a'.repeat(63)}/spray-walls/${wallUuid}/00000048.jpg`,
+  ])('rejects malformed object-preserving references even when listed: %s', (path) => {
+    expect(() =>
+      bindFixtureAssetUrls(JSON.stringify({ url: `${SCREENSHOT_FIXTURE_ASSET_ORIGIN}${path}` }), 'http://localhost', [
+        path,
+      ]),
     ).toThrow(/Invalid reserved/);
   });
 });

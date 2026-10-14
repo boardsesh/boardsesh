@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { assertCppNegativeFixtureFiles, readCppBackgroundFile } from './cpp-native-background-coverage';
 import { decodeFixtureSnapshot, snapshotHash } from './screenshot-fixture-snapshot';
 import {
   findSensitiveVariableKeys,
@@ -17,6 +18,7 @@ export function createFixtureSnapshotArchive(directory: string) {
   const validation = validateScreenshotFixtureManifest(JSON.parse(manifestBytes.toString('utf8')));
   if (!validation.ok) throw new Error(`Invalid fixture manifest: ${validation.reason}`);
   const manifest = validation.manifest;
+  assertCppNegativeFixtureFiles(manifest, (file) => readCppBackgroundFile(directory, file));
   const files: Record<string, string> = { 'manifest.json': manifestBytes.toString('base64') };
   for (const entry of [...manifest.graphql, ...manifest.static]) {
     if (!/^(graphql|static)\/[\w./-]+$/.test(entry.file) || entry.file.split('/').some((part) => part === '..')) {

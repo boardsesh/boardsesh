@@ -5,6 +5,12 @@ import sharp from 'sharp';
 export const SCREENSHOT_FIXTURE_ASSET_ORIGIN = 'https://screenshot-fixtures.boardsesh.invalid';
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 const LOCAL_ASSET_EXPIRY = '9999-12-31T23:59:59.000Z';
+const SPRAY_PHOTO_OBJECT_PATH = /^\/spray-walls\/[0-9a-f-]+\/[0-9a-f-]+\.jpg$/i;
+
+function isFixtureAssetPath(pathname: string): boolean {
+  const suffix = /^\/static\/campaign-spray\/[a-f0-9]{64}(.+)$/.exec(pathname)?.[1];
+  return suffix != null && (/^\.(?:jpg|png|webp)$/.test(suffix) || SPRAY_PHOTO_OBJECT_PATH.test(suffix));
+}
 
 export interface FixturePhoto {
   url: string;
@@ -80,7 +86,11 @@ export async function captureFixturePhoto(
       throw new Error('Spray photo bytes are not a supported image');
     const hash = createHash('sha256').update(bytes).digest('hex');
     const extension = format === 'jpeg' ? 'jpg' : format;
-    const path = `/static/campaign-spray/${hash}.${extension}`;
+    // The native draft classifier compares immutable photo object keys, not bytes.
+    // Keep a genuine key in the transport URL so hold edits remain hold edits,
+    // while two different photo objects with identical bytes still stay distinct.
+    const suffix = SPRAY_PHOTO_OBJECT_PATH.test(parsed.pathname) ? parsed.pathname : `.${extension}`;
+    const path = `/static/campaign-spray/${hash}${suffix}`;
     assets.push({ path, file: `static/${hash}.${extension}`, contentType: `image/${format}`, bytes });
     return `${SCREENSHOT_FIXTURE_ASSET_ORIGIN}${path}`;
   }
@@ -102,7 +112,7 @@ export function bindFixtureAssetUrls(
       const parsed = new URL(node);
       if (
         parsed.origin !== SCREENSHOT_FIXTURE_ASSET_ORIGIN ||
-        !/^\/static\/campaign-spray\/[a-f0-9]{64}\.(?:jpg|png|webp)$/.test(parsed.pathname) ||
+        !isFixtureAssetPath(parsed.pathname) ||
         parsed.search ||
         parsed.hash
       ) {

@@ -281,6 +281,14 @@ and replaces signed URLs with the reserved
 a failed or oversized download, unsupported image bytes, or remaining signed URLs.
 Review the bundled photo against the permitted reference before publication.
 
+Canonical original-photo URLs retain their genuine `spray-walls/<wall>/<photo>.jpg`
+object key after a content-hash namespace in the local URL. The native hold editor
+uses that key to distinguish editing existing holds from replacing a wall photo.
+Equal image bytes from different original objects must keep different identities.
+The stored image file remains content-addressed; signatures and private hosts are
+removed. Replay accepts these exact manifest-listed paths and the older flat asset
+paths, without changing the app's draft classifier or any recorded geometry.
+
 The candidate manifest includes every bundled image. Replay validates those
 references at startup and binds them to its actual local port for both HTTP and
 WebSocket responses. Static responses use only bundled bytes; replay never
@@ -288,11 +296,34 @@ fetches the original image. The local photo expiry is extended solely because
 these immutable fixture bytes do not expire. Keep the existing shared/Android
 fixture pin intact when validating an iOS campaign candidate.
 
+### Spray native background responses
+
+CPP preparation also checks the native Live Activity requests for the recorded
+Spray wall's owned primary session. It records the minimal native `JoinSession`
+response through an authenticated connection to that existing session. This joins
+presence without editing wall content or the queue; it does not replace the four
+required native recordings. The exact current and adjacent climb render requests
+come from the original session, board configuration and queue responses.
+
+The public board renderer currently returns an application error for these Spray
+requests. Preparation retains only a genuine HTTP 400 `application/json` response
+whose sole field is `error: "Invalid board configuration"`, bounded to 1024 bytes.
+Redirects, authentication failures, rate limits, HTML and server failures fail
+preparation. No fallback image or response is generated. These entries retain
+their status, receipt time, body hash and original source hashes; they do not count
+as images or satisfy thumbnail coverage. Entries without response metadata keep
+the existing HTTP 200 behavior.
+
+Archive creation, snapshot decoding and cache reuse, retained-source checks,
+candidate preparation, and replay validate those bindings. Runtime corruption
+produces a strict fixture miss. A complete resume authenticates the account again
+but preserves the source files and clock without another join or render download.
+
 ## The two modes
 
 **record** proxies the app's traffic to an upstream (PROD by default), streams
 the answer straight back, and writes a fixture for each new GraphQL key and each
-new `/static/*` asset. It records nothing for a non-200, for a body with no
+new `/static/*` asset. Ordinary recording records nothing for a non-200, for a body with no
 `data` key, or for a `200` carrying an `INTERNAL_SERVER_ERROR` extension — a
 broken answer is not a fixture. First recording of a key wins; a repeat logs
 `DUP` and is dropped, so the fixture set does not depend on scroll timing.

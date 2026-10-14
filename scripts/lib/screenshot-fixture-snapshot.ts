@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { assertCppNegativeFixtureFiles } from './cpp-native-background-coverage';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const FIXTURE_SNAPSHOT_REFERENCE = join(REPO_ROOT, 'app-stores/screenshot-fixtures.json');
@@ -114,6 +115,11 @@ export function decodeFixtureSnapshot(bytes: Buffer, reference: FixtureSnapshotR
     files.set(path, decoded);
   }
   if (!files.has('manifest.json') || files.size !== reference.files) throw new Error('Incomplete fixture snapshot');
+  assertCppNegativeFixtureFiles(JSON.parse(files.get('manifest.json')!.toString('utf8')), (file) => {
+    const contents = files.get(file);
+    if (!contents) throw new Error('Missing native background fixture source');
+    return contents;
+  });
   return files;
 }
 

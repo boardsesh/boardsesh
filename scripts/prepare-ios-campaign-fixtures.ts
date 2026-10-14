@@ -15,6 +15,11 @@ import { createCppPhotoRefreshDownloader } from './lib/cpp-photo-refresh';
 import { createTransport, resolveBootstrapUpstream } from './bootstrap-cpp-scenario';
 import { assertCppGradeCountProof } from './lib/cpp-grade-count';
 import { withCppDetailCoverage, type CppDetailRecordingOptions } from './lib/cpp-detail-coverage';
+import {
+  assertCppNegativeFixtureFiles,
+  readCppBackgroundFile,
+  withCppNativeBackgroundCoverage,
+} from './lib/cpp-native-background-coverage';
 
 export interface AuthorizedCampaignWall {
   wallUuid: string;
@@ -51,6 +56,7 @@ export async function prepareIosCampaignFixturesForWalls(
   }
   const manifest = readScreenshotFixtureManifest(input);
   if (!manifest) throw new Error('Recording manifest is missing');
+  assertCppNegativeFixtureFiles(manifest, (file) => readCppBackgroundFile(input, file));
   const prepared = new Map<string, GraphqlFixtureFile>();
   const assets = new Map<string, CapturedFixtureAsset>();
   const capturedWalls = new Set<string>();
@@ -197,8 +203,11 @@ export async function prepareIosCampaignFixturesForWalls(
     ],
   });
   writeFileSync(join(output, 'manifest.json'), `${JSON.stringify(candidate, null, 2)}\n`);
+  assertCppNegativeFixtureFiles(candidate, (file) => readCppBackgroundFile(output, file));
+  const images = candidate.static.filter((entry) => !entry.response && entry.contentType.startsWith('image/')).length;
+  const negativeResponses = candidate.static.filter((entry) => entry.response).length;
   console.log(
-    `Prepared campaign candidate: ${graphql.length} responses, ${candidate.static.length} bundled images; signed photo URLs removed.`,
+    `Prepared campaign candidate: ${graphql.length} responses, ${images} bundled images, ${negativeResponses} recorded application errors; signed photo URLs removed.`,
   );
 }
 
@@ -253,32 +262,34 @@ export async function prepareCppCampaignFixtures(
   refreshPhotos = false,
 ): Promise<void> {
   if (existsSync(output)) throw new Error('Candidate output already exists; choose a new directory');
-  await withCppDetailCoverage(input, options, async (recording) => {
-    const manifest = readScreenshotFixtureManifest(recording);
-    if (!manifest) throw new Error('CPP candidate recording manifest is missing');
-    const fixtures = manifest.graphql.map(
-      (entry) => JSON.parse(readFileSync(join(recording, entry.file), 'utf8')) as GraphqlFixtureFile,
-    );
-    assertCppGradeCountProof(manifest, fixtures);
-    const authorizedWalls = authorizedCppWallsFromRecording(manifest, fixtures);
-    if (authorizedWalls.length === 0) {
-      cpSync(recording, output, { recursive: true, errorOnExist: true, force: false });
-      console.log('Prepared manufacturer CPP candidate with verified native detail responses.');
-      return;
-    }
-    let download: typeof fetch = fetch;
-    if (refreshPhotos) {
-      const { transport, accountUserId } = await createTransport(options.upstream, options.email, options.password);
-      download = await createCppPhotoRefreshDownloader({
-        accountUserId: manifest.accountUserId,
-        authenticatedAccountUserId: accountUserId,
-        authorizedWalls,
-        recordedFixtures: fixtures,
-        transport,
-      });
-    }
-    await prepareIosCampaignFixturesForWalls(recording, output, authorizedWalls, download);
-  });
+  await withCppDetailCoverage(input, options, async (details) =>
+    withCppNativeBackgroundCoverage(details, options, async (recording) => {
+      const manifest = readScreenshotFixtureManifest(recording);
+      if (!manifest) throw new Error('CPP candidate recording manifest is missing');
+      const fixtures = manifest.graphql.map(
+        (entry) => JSON.parse(readFileSync(join(recording, entry.file), 'utf8')) as GraphqlFixtureFile,
+      );
+      assertCppGradeCountProof(manifest, fixtures);
+      const authorizedWalls = authorizedCppWallsFromRecording(manifest, fixtures);
+      if (authorizedWalls.length === 0) {
+        cpSync(recording, output, { recursive: true, errorOnExist: true, force: false });
+        console.log('Prepared manufacturer CPP candidate with verified native detail responses.');
+        return;
+      }
+      let download: typeof fetch = fetch;
+      if (refreshPhotos) {
+        const { transport, accountUserId } = await createTransport(options.upstream, options.email, options.password);
+        download = await createCppPhotoRefreshDownloader({
+          accountUserId: manifest.accountUserId,
+          authenticatedAccountUserId: accountUserId,
+          authorizedWalls,
+          recordedFixtures: fixtures,
+          transport,
+        });
+      }
+      await prepareIosCampaignFixturesForWalls(recording, output, authorizedWalls, download);
+    }),
+  );
 }
 
 async function main(): Promise<void> {

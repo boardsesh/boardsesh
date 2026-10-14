@@ -340,12 +340,13 @@ describe('screenshot backend', () => {
   });
 
   it('prepares a portable photo and replays exact bytes over HTTP and WebSocket on a new port', async () => {
-    const wallUuid = 'authorized-wall';
+    const wallUuid = '00000000-0000-4000-8000-000000000047';
+    const photoObjectPath = `/spray-walls/${wallUuid}/00000000-0000-4000-8000-000000000048.jpg`;
     const photoBytes = await sharp({ create: { width: 3, height: 2, channels: 3, background: '#123456' } })
       .png()
       .toBuffer();
     const photo = {
-      url: `https://bucket.r2.cloudflarestorage.com/spray-walls/${wallUuid}/photo.png?X-Amz-Signature=private`,
+      url: `https://bucket.r2.cloudflarestorage.com${photoObjectPath}?X-Amz-Signature=private`,
       expiresAt: '2026-09-08T10:00:00Z',
       width: 3,
       height: 2,
@@ -379,6 +380,7 @@ describe('screenshot backend', () => {
       };
       const photoUrl = response.data.sprayWallRenderData.photo.url;
       expect(new URL(photoUrl).port).toBe(new URL(backendOrigin).port);
+      expect(new URL(photoUrl).pathname.endsWith(photoObjectPath)).toBe(true);
       expect(photoUrl).not.toContain('Signature');
       const bytes = await fetch(photoUrl);
       expect(bytes.headers.get('content-type')).toContain('image/png');

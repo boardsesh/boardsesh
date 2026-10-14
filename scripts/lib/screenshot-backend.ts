@@ -30,6 +30,14 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { Kind, parse } from 'graphql';
 import { createCppWsRecording, type CppWsOperation } from './cpp-ws-recording';
+import {
+  assertCppNativeJoinResponse,
+  assertCppNegativeStaticEntry,
+  assertCppNegativeFixtureFiles,
+  readCppBackgroundFile,
+  resolveCppNativeBackgroundPlan,
+  type CppNativeBackgroundPlan,
+} from './cpp-native-background-coverage';
 import { isCppTarget, readCppPage } from './screenshot-cpp';
 import {
   assertCppGradeCountProof,
@@ -118,6 +126,8 @@ export type ScreenshotBackendServerOptions = {
   pseudonymise?: boolean;
   /** Which capture flow is being recorded. Stored in the manifest for provenance. */
   flow?: string;
+  /** Preparation only: persist this exact real native join after normal owned-session validation. */
+  nativeJoinRecording?: CppNativeBackgroundPlan['nativeJoin'];
   /** Record-only bounded download/receipt policy for authorized CPP detail assets. */
   staticRecording?: {
     download: (pathname: string, query: string) => Promise<{ bytes: Buffer; contentType: string }>;
@@ -487,6 +497,38 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   const staticIndex = new Map<string, StaticManifestEntry>();
   for (const entry of manifest.static)
     staticIndex.set(entry.query ? `${entry.path}?${entry.query}` : entry.path, entry);
+  assertCppNegativeFixtureFiles(manifest, (file) => readCppBackgroundFile(fixturesDir, file));
+  const nativeBackgroundPlan =
+    options.nativeJoinRecording || manifest.static.some((entry) => entry.response)
+      ? resolveCppNativeBackgroundPlan(
+          manifest,
+          manifest.graphql.map(
+            (entry) =>
+              JSON.parse(readCppBackgroundFile(fixturesDir, entry.file).toString('utf8')) as GraphqlFixtureFile,
+          ),
+        )
+      : null;
+  if (
+    options.nativeJoinRecording &&
+    (!isRecording ||
+      !nativeBackgroundPlan ||
+      JSON.stringify(options.nativeJoinRecording) !== JSON.stringify(nativeBackgroundPlan.nativeJoin))
+  )
+    throw new Error('CPP native join recording is outside the exact verified preparation scope');
+  const nativeBackgroundSources =
+    nativeBackgroundPlan?.sourceFiles.map((file) => ({
+      file,
+      sha256: sha256Hex(readCppBackgroundFile(fixturesDir, file).toString('utf8')),
+    })) ?? [];
+  for (const entry of manifest.static)
+    if (entry.response)
+      assertCppNegativeStaticEntry(
+        entry,
+        readCppBackgroundFile(fixturesDir, entry.file),
+        nativeBackgroundPlan,
+        nativeBackgroundSources,
+        manifest.frozenNow,
+      );
 
   const variantCounts = new Map<string, number>();
   for (const entry of manifest.graphql) {
@@ -1428,7 +1470,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     let bytes: Buffer;
     try {
-      bytes = readFileSync(join(fixturesDir, entry.file));
+      bytes = entry.response
+        ? readCppBackgroundFile(fixturesDir, entry.file)
+        : readFileSync(join(fixturesDir, entry.file));
+      assertCppNegativeStaticEntry(entry, bytes, nativeBackgroundPlan, nativeBackgroundSources, manifest.frozenNow);
     } catch {
       // Deleted or truncated after the startup check — a miss, not a 500.
       misses += 1;
@@ -1438,7 +1483,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     hits += 1;
     emit({ event: 'hit', kind: 'static', subject });
-    response.writeHead(200, { 'content-type': entry.contentType, 'content-length': bytes.length });
+    response.writeHead(entry.response?.status ?? 200, {
+      'content-type': entry.contentType,
+      'content-length': bytes.length,
+    });
     response.end(bytes);
   };
 
@@ -1649,6 +1697,39 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
                 cppToken,
                 (frame) => {
                   if (!current()) return;
+                  if (
+                    options.nativeJoinRecording &&
+                    frame.type === 'next' &&
+                    graphqlFixtureKey(
+                      { operationName, query: String(operation.query), variables: operation.variables },
+                      sha256Hex,
+                    ).documentHash === graphqlFixtureKey(options.nativeJoinRecording, sha256Hex).documentHash &&
+                    graphqlFixtureKey(
+                      { operationName, query: String(operation.query), variables: operation.variables },
+                      sha256Hex,
+                    ).variablesHash === graphqlFixtureKey(options.nativeJoinRecording, sha256Hex).variablesHash
+                  ) {
+                    try {
+                      assertCppNativeJoinResponse(frame.payload, nativeBackgroundPlan!.sessionId);
+                    } catch {
+                      emit({ event: 'upstream-error', operationName, detail: 'cpp-native-join-response-rejected' });
+                      socket.send(
+                        JSON.stringify({
+                          id,
+                          type: 'error',
+                          payload: [{ message: 'CPP native join response rejected' }],
+                        }),
+                      );
+                      return;
+                    }
+                    persistRecordedResponse(
+                      operation,
+                      JSON.stringify(frame.payload),
+                      200,
+                      null,
+                      nativeBackgroundPlan!.accountUserId,
+                    );
+                  }
                   socket.send(JSON.stringify(frame));
                   if (frame.type === 'complete' || frame.type === 'error') {
                     pending.cancelled = true;

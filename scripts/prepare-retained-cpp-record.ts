@@ -24,6 +24,7 @@ import { extractArtifactZip } from './mobile-ota-stable-artifacts';
 import { findOffenders } from './assert-screenshot-dimensions';
 import { DEFAULT_MIN_BYTES } from './assert-screenshot-content';
 import { resolveCppDetailReads } from './lib/cpp-detail-coverage';
+import { assertCppNegativeFixtureFiles, readCppBackgroundFile } from './lib/cpp-native-background-coverage';
 import { readScreenshotFixtureManifest, listFixtureFiles } from './lib/screenshot-backend';
 import { canonicalJson, type GraphqlFixtureFile, type ScreenshotFixtureManifest } from './lib/screenshot-fixtures';
 import { CPP_MANIFEST_PATH, isCppTarget, readCppPage, resolveCppRecipes, type CppTarget } from './lib/screenshot-cpp';
@@ -424,6 +425,7 @@ export function verifyRetainedCppSource(directory: string, target: CppTarget): S
       (entry) => json(readFileSync(join(directory, entry.file))) as GraphqlFixtureFile,
     );
     resolveCppDetailReads(manifest, fixtures);
+    assertCppNegativeFixtureFiles(manifest, (file) => readCppBackgroundFile(directory, file));
     for (const entry of manifest.static)
       if (readFileSync(join(directory, entry.file)).length !== entry.bytes) return fail();
     return manifest;

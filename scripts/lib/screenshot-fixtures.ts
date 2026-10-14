@@ -1235,6 +1235,13 @@ export type StaticManifestEntry = {
   file: string;
   contentType: string;
   bytes: number;
+  /** Genuine bounded application error; absent retains the existing HTTP 200 contract. */
+  response?: {
+    status: 400;
+    recordedAt: string;
+    sha256: string;
+    sources: Array<{ file: string; sha256: string }>;
+  };
 };
 
 /** Optional replay scenario that enables the shared-session Android captures. */
@@ -1411,6 +1418,36 @@ function staticEntryProblem(entry: unknown, index: number): string | null {
   if (!isNonEmptyString(entry.contentType)) return `static[${index}].contentType must be a non-empty string`;
   if (typeof entry.bytes !== 'number' || !Number.isInteger(entry.bytes) || entry.bytes < 0) {
     return `static[${index}].bytes must be a non-negative integer`;
+  }
+  if (entry.response !== undefined) {
+    const response = entry.response;
+    if (
+      entry.path !== '/api/internal/board-render' ||
+      entry.contentType !== 'application/json' ||
+      entry.bytes < 1 ||
+      entry.bytes > 1024 ||
+      !isRecord(response) ||
+      Object.keys(entry).sort().join(',') !== 'bytes,contentType,file,path,query,response' ||
+      Object.keys(response).sort().join(',') !== 'recordedAt,sha256,sources,status' ||
+      response.status !== 400 ||
+      typeof response.recordedAt !== 'string' ||
+      !Number.isFinite(Date.parse(response.recordedAt)) ||
+      typeof response.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(response.sha256) ||
+      !Array.isArray(response.sources) ||
+      response.sources.length < 3 ||
+      response.sources.length > 4 ||
+      response.sources.some(
+        (source) =>
+          !isRecord(source) ||
+          Object.keys(source).sort().join(',') !== 'file,sha256' ||
+          typeof source.file !== 'string' ||
+          !/^graphql\/(?:GetMyBoards|JoinSession|QueueUpdates)\/[a-f0-9]{16}\.json$/.test(source.file) ||
+          typeof source.sha256 !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(source.sha256),
+      )
+    )
+      return `static[${index}].response is not a bounded CPP application failure`;
   }
   return null;
 }
