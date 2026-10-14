@@ -33,7 +33,9 @@ name: showcase take - a friend adds a climb
 #   10%,84%             observed Kilter queue first-slot fallback, only when
 #                       the native drawer exposes no Queue accessibility label
 #                       and the recorder verifies board slot 0 is actually Kilter
-#   (mirror boards retain the label path; their first slot is Mirror)
+#   91%,90%           observed Tension Queue in the lower-right utility row,
+#                       only for verified iOS Tension layout 10 in slot 1; not Mirror
+#   (other mirror boards retain the label path; no unmeasured coordinate target)
 #   50%,78%             verified Kilter first-upcoming row, after its avatar logs
 #   50%,7%              the backdrop above the reaction menu
 
@@ -54,7 +56,7 @@ name: showcase take - a friend adds a climb
 - waitForAnimationToEnd
 
 # The recorded native drawer can render without exposing its app controls to
-# XCTest. Prefer its label; use the measured Kilter point only when verified.
+# XCTest. Prefer its label; use a measured family-specific point only when verified.
 - evalScript: ${output.queueOpened = false}
 - runFlow:
     when:

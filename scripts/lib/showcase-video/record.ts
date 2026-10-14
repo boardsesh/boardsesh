@@ -782,14 +782,26 @@ export function crewPeerRowFallbackPoint(
   platform: ShowcasePlatform,
   logText: string,
 ): string {
+  // A family-specific Queue target does not prove its first-upcoming row geometry.
+  if (kind !== 'default' && kind !== 'kilter') return '';
   return crewQueueFallbackPoint(kind, platform, logText) ? '50%,78%' : '';
 }
 
-/** Observed iOS Kilter queue target when its native drawer exposes no accessibility controls. */
+/** Measured family-specific iOS queue targets when the native drawer omits accessibility controls. */
 export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: ShowcasePlatform, logText: string): string {
-  if (platform !== 'ios' || (kind !== 'default' && kind !== 'kilter')) return '';
-  // The first toolbar slot is Mirror on Tension. Verify the actual resolved
-  // board as well as the selected recording kind before offering this point.
+  if (platform !== 'ios') return '';
+  // Tension mirrors: its genuine Queue button is in the lower-right utility
+  // row, away from the first-slot Mirror control. Only layout 10 was measured;
+  // layout 11 cannot mirror and puts Queue in a different slot.
+  if (kind === 'tension') {
+    if (findBoardSlotProblem(logText, 1, 'tension') !== null) return '';
+    const lastTensionSlotResolution = logText
+      .split('\n')
+      .reverse()
+      .find((line) => line.includes('[screenshot] board[1] '));
+    return /\bL10 S\d+ @-?[\d.]+°, tension\)\s*$/.test(lastTensionSlotResolution ?? '') ? '91%,90%' : '';
+  }
+  if (kind !== 'default' && kind !== 'kilter') return '';
   return findBoardSlotProblem(logText, 0, 'kilter') === null ? '10%,84%' : '';
 }
 
