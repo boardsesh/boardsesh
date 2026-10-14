@@ -67,7 +67,7 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => {
   };
 });
 vi.mock('../../providers/theme-provider', () => ({ useTheme: useThemeMock }));
-vi.mock('../../theme/expo-ui-modifiers', () => ({ brandAccentColor: () => '#6D28D9' }));
+vi.mock('../../theme/expo-ui-modifiers', () => ({ brandControlTint: () => '#6D28D9' }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: hapticSelectionMock }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 } }));
 

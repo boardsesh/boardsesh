@@ -151,7 +151,16 @@ clears AA.
 Documented contrast (from `colors.ts`):
 
 - Light: white-on-`#6D28D9` = 7.10:1; black-on-`#FF8A3D` accent = 8.95:1.
-- Dark: `#A78BFA` tint ≥ 6.12:1 across the dark surface ladder; white-on-`#7C3AED` = 5.70:1.
+- Dark: `#A78BFA` tint = 5.12:1 on the iOS sheet / elevated grouped card (`#2C2C2E`) and 6.25:1 on
+  `#1C1C1E`; white-on-`#7C3AED` = 5.70:1. `#7C3AED` itself is only 2.45:1 on `#2C2C2E`, below the 3:1 a
+  control needs.
+
+**Settings rows and controls.** Settings row titles, values and chevrons use `label` /
+`secondaryLabel` / `tertiaryLabel`, never the accent; accent text is for actions and links only. On
+iOS that means fixed `PlatformColor` styles (`settings-row-styles.ios.ts`), not a hierarchical style,
+which follows the tint inside a row `Button`. Controls (Toggle / Switch track, Slider, menu Picker
+value, plain text button) use the `primary` tint (`brandControlTint`); `primaryFill`
+(`brandAccentColor`) only under white text (filled buttons, the selected segment, badges).
 
 ### System colours (surfaces & labels)
 

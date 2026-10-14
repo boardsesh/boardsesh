@@ -55,8 +55,8 @@ import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-nat
 import { useTheme } from '../providers/theme-provider';
 import {
   segmentedBrandColors,
-  sliderBrandColors,
-  switchBrandColors,
+  sliderControlColors,
+  switchControlColors,
   type BrandControlColors,
 } from '../theme/expo-ui-modifiers';
 import { material, spacing } from '../theme/tokens';
@@ -131,8 +131,9 @@ const DISABLED_ROW = alpha(material.disabledContentOpacity);
 const ROW_PADDING = padding(spacing[4], spacing[3], spacing[4], spacing[3]);
 
 type RowColors = {
-  brandColors: BrandControlColors & { error: string; primary: string };
-  switchColors: ReturnType<typeof switchBrandColors>;
+  brandColors: BrandControlColors & { error: string };
+  /** On-track in the control tint; a dark checked thumb in dark mode. */
+  switchColors: ReturnType<typeof switchControlColors>;
   segmentColors: ReturnType<typeof segmentedBrandColors>;
   /** Tint for a nav row's leading Material icon — the secondary-label colour. */
   iconTint: ColorValue;
@@ -481,7 +482,7 @@ function SliderRow({ row, colors }: { row: MoreSliderRow; colors: RowColors }) {
         steps={materialStepCount(row.min, row.max, row.step)}
         onValueChange={handleValueChange}
         onValueChangeFinished={handleFinished}
-        colors={sliderBrandColors(colors.brandColors)}
+        colors={sliderControlColors(colors.brandColors)}
         modifiers={[fillMaxWidth()]}
       />
     </Column>
@@ -492,7 +493,7 @@ export function MoreForm({ model }: MoreFormProps) {
   const { brandColors, systemColors, colorScheme } = useTheme();
   const colors: RowColors = {
     brandColors,
-    switchColors: switchBrandColors(brandColors),
+    switchColors: switchControlColors(brandColors, colorScheme),
     segmentColors: segmentedBrandColors(brandColors),
     iconTint: systemColors.secondaryLabel,
     itemColor: systemColors.label as string,

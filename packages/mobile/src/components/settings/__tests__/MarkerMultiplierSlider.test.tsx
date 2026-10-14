@@ -83,8 +83,9 @@ vi.mock('../../Text', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    // Distinct from `systemColors.accent` so the test can tell which one paints.
-    brandColors: { primaryFill: '#7C3AED', onPrimary: '#FFFFFF' },
+    // Dark-scheme brand values, each distinct from `systemColors.accent`, so the
+    // test can tell which one paints.
+    brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF' },
     systemColors: {
       accent: '#6D28D9',
       background: '#ffffff',
@@ -130,7 +131,7 @@ afterEach(() => {
 });
 
 describe('MarkerMultiplierSlider — tint', () => {
-  it('fills the track and rings the thumb with the native-control tint (primaryFill)', () => {
+  it('fills the track and rings the thumb with the control tint (primary), not the fill', () => {
     const { container } = render(
       <MarkerMultiplierSlider
         accessibilityLabel={LABEL}
@@ -142,8 +143,10 @@ describe('MarkerMultiplierSlider — tint', () => {
         onChange={vi.fn()}
       />,
     );
-    expect(container.querySelector('[data-bg="#7C3AED"]')).not.toBeNull();
-    expect(container.querySelector('[data-border="#7C3AED"]')).not.toBeNull();
+    expect(container.querySelector('[data-bg="#A78BFA"]')).not.toBeNull();
+    expect(container.querySelector('[data-border="#A78BFA"]')).not.toBeNull();
+    // `primaryFill` #7C3AED is 2.45:1 on a dark card, under the 3:1 a control needs.
+    expect(container.querySelector('[data-bg="#7C3AED"]')).toBeNull();
     expect(container.querySelector('[data-bg="#6D28D9"]')).toBeNull();
   });
 });

@@ -63,8 +63,10 @@ export const brandColors = {
  * brighter #7C3AED so white text still clears AA (5.70:1). Semantic tones brighten
  * for legibility on dark surfaces. Same keys as `brandColors`.
  *
- * Contrast (WCAG, dark): #A78BFA tint ≥5.5:1 on dark surfaces up through elevated;
- * white-on-#7C3AED = 5.70:1.
+ * Contrast (WCAG, dark): #A78BFA tint 6.25:1 on #1C1C1E and 5.12:1 on the iOS
+ * elevated grouped card (#2C2C2E) — legible for text and controls drawn on a card.
+ * #7C3AED is a FILL only: white-on-#7C3AED = 5.70:1, but #7C3AED itself is 2.45:1
+ * on #2C2C2E, so never use it as a control tint or text on a dark card.
  */
 export const brandColorsDark = {
   tint: '#A78BFA',

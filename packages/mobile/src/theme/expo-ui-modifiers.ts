@@ -16,14 +16,19 @@
 // brand-colour values and return plain colour strings / plain config objects.
 // Each platform component file imports its OWN native modifier factories
 // (`tint`, `disabled`, the `SwitchColors` shape, …) and feeds them these values,
-// e.g. `tint(brandAccentColor(brandColors))` on iOS, or
-// `colors={switchBrandColors(brandColors)}` on Android.
+// e.g. `tint(brandControlTint(brandColors))` on iOS, or
+// `colors={switchControlColors(brandColors, colorScheme)}` on Android.
 //
-// The surface generalises to the other primitives this migration covers:
-// `brandAccentColor` is the one source of the on-fill accent every control tints
-// with (Toggle, Switch, Picker / SegmentedControl, Slider, Button). Add
-// control-specific Android colour mappers (`sliderBrandColors`, …) here as more
-// primitives land — each reading `brandAccentColor` so they can't drift.
+// Two brand colours, two jobs:
+// - `brandAccentColor` (the theme's `primaryFill`) is for a surface that carries
+//   WHITE text or a white glyph: a filled button, a selected segment, a badge.
+// - `brandControlTint` (the theme's `primary`) is for a control's on-state drawn
+//   straight on a card: a Toggle / Switch track, a Slider, a menu Picker's value,
+//   a plain text button. In dark mode `primaryFill` #7C3AED is 2.45:1 on the iOS
+//   grouped card #2C2C2E, under the 3:1 minimum for a control; `primary` #A78BFA
+//   is 5.12:1 there. Light mode is the same violet (#6D28D9) either way.
+// Add control-specific Android colour mappers here as more primitives land, each
+// reading one of those two so they can't drift.
 
 /**
  * The subset of resolved brand colours the native-control bridge reads. The
@@ -31,6 +36,11 @@
  * so call sites pass it straight through.
  */
 export type BrandControlColors = {
+  /**
+   * Brand colour for FOREGROUND use: text, icons, and a control's on-state drawn
+   * on a card. Scheme-aware (`#6D28D9` light, lighter `#A78BFA` dark).
+   */
+  primary: string;
   /**
    * Brand colour for a FILLED surface — the on-track / selected-fill accent.
    * Scheme-aware (`#6D28D9` light, brighter `#7C3AED` dark) so white thumbs and
@@ -42,23 +52,47 @@ export type BrandControlColors = {
 };
 
 /**
- * The brand accent every native control tints with (on-track, selected fill,
- * thumb). Sourced once here so a Toggle, Switch, Picker, Slider, and Button all
- * read the same scheme-aware brand colour. Feed it to the platform's accent
- * input: iOS `tint(...)`, Android Switch `checkedTrackColor`, Slider `color`, …
+ * The brand FILL: the colour of a surface that carries white text or a white
+ * glyph (a filled button, a selected segment, a badge). White on it is 7.10:1
+ * light and 5.70:1 dark. Not for a control drawn straight on a card; that is
+ * `brandControlTint`.
  */
 export function brandAccentColor(brandColors: BrandControlColors): string {
   return brandColors.primaryFill;
 }
 
 /**
- * Plain Compose `SwitchColors` bridging the brand on-track colour for a native
- * Android `Switch`. Returned as a minimal object — every `SwitchColors` field is
- * optional — so this shared file needs no `@expo/ui/jetpack-compose` import; the
- * `.android.tsx` file passes it straight to the Switch's `colors` prop.
+ * The tint for a native control's on-state drawn straight on a card: iOS
+ * `tint(...)` on a Toggle, menu Picker, Slider or plain Button, the Android
+ * Switch track and Slider. `#A78BFA` in dark is 5.12:1 on the iOS grouped card
+ * (#2C2C2E) and 6.25:1 on #1C1C1E; `#6D28D9` in light is 7.10:1 on white.
  */
-export function switchBrandColors(brandColors: BrandControlColors): { checkedTrackColor: string } {
-  return { checkedTrackColor: brandAccentColor(brandColors) };
+export function brandControlTint(brandColors: BrandControlColors): string {
+  return brandColors.primary;
+}
+
+/**
+ * Ink for a dark-mode Switch's CHECKED thumb. On the lighter dark-mode track
+ * (#A78BFA) a white thumb blurs into it; this dark ink is 6.8:1 against it, the
+ * M3 pattern of a dark `onPrimary` over a light primary. Same value as the
+ * Velvet dark ink, `brandColors.onAccent`.
+ */
+const DARK_SCHEME_CHECKED_THUMB = '#16111F';
+
+/**
+ * Plain Compose `SwitchColors` for a native Android `Switch` drawn on a settings
+ * card: the on-track is `brandControlTint`. In dark mode that track is the light
+ * #A78BFA, so the checked thumb switches to a dark ink to stay visible; light
+ * mode keeps the Compose default thumb (the track is the same #6D28D9 as before).
+ */
+export function switchControlColors(
+  brandColors: BrandControlColors,
+  colorScheme: 'light' | 'dark',
+): { checkedTrackColor: string; checkedThumbColor?: string } {
+  return {
+    checkedTrackColor: brandControlTint(brandColors),
+    ...(colorScheme === 'dark' ? { checkedThumbColor: DARK_SCHEME_CHECKED_THUMB } : {}),
+  };
 }
 
 /**
@@ -95,6 +129,21 @@ export function sliderBrandColors(brandColors: BrandControlColors): {
   return {
     thumbColor: brandAccentColor(brandColors),
     activeTrackColor: brandAccentColor(brandColors),
+  };
+}
+
+/**
+ * Plain Compose `SliderColors` for a native Android `Slider` on a settings card:
+ * the thumb and the filled track take `brandControlTint`, like the iOS Slider's
+ * `tint`, so the filled part clears 3:1 on a dark card.
+ */
+export function sliderControlColors(brandColors: BrandControlColors): {
+  thumbColor: string;
+  activeTrackColor: string;
+} {
+  return {
+    thumbColor: brandControlTint(brandColors),
+    activeTrackColor: brandControlTint(brandColors),
   };
 }
 

@@ -37,21 +37,19 @@ import {
   textInputAutocapitalization,
   submitLabel as submitLabelModifier,
   onSubmit as onSubmitModifier,
-  font,
-  foregroundStyle,
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { brandControlTint } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { shouldPushValueToNative } from './AuthTextInput.logic';
 import { assertNeverSwitcherRow } from './SwitcherForm.logic';
+import { CHEVRON, FOOTNOTE, PRIMARY_LABEL, ROW_ICON, SECONDARY_LABEL, TERTIARY_LABEL } from './settings-row-styles.ios';
 import type { SwitcherActionRow, SwitcherFieldRow, SwitcherFormProps, SwitcherTargetRow } from './SwitcherForm.types';
 
-const PRIMARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'primary' });
-const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
-const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
-const FOOTNOTE = font({ textStyle: 'footnote' });
+// Row label colours and glyph sizes come from settings-row-styles.ios, shared
+// with MoreForm: fixed label colours, because a hierarchical style inside a
+// Button follows the window tint and turns lilac on the root stack.
 
 // Semantic action icon → SF Symbol. Cast at the call site (the SFSymbol union
 // isn't resolvable from the shared types module), matching MoreForm.ios.
@@ -68,9 +66,9 @@ const ACTION_SF_SYMBOL = {
 // row would show — the whole row is just dimmed — matching the original.
 function TargetTrailing({ row }: { row: SwitcherTargetRow }) {
   if (row.state === 'switching') return <ProgressView />;
-  if (row.state === 'active') return <Image systemName="checkmark" modifiers={[SECONDARY_LABEL]} />;
+  if (row.state === 'active') return <Image systemName="checkmark" modifiers={[ROW_ICON, SECONDARY_LABEL]} />;
   if ((row.state === 'pressable' || row.state === 'disabled') && row.showChevronWhenPressable) {
-    return <Image systemName="chevron.right" modifiers={[FOOTNOTE, TERTIARY_LABEL]} />;
+    return <Image systemName="chevron.right" modifiers={[CHEVRON, TERTIARY_LABEL]} />;
   }
   return null;
 }
@@ -134,7 +132,7 @@ function FieldRow({ row }: { row: SwitcherFieldRow }) {
 
   const modifiers = useMemo(
     () => [
-      tint(brandAccentColor(brandColors)),
+      tint(brandControlTint(brandColors)),
       accessibilityLabelModifier(row.label),
       textInputAutocapitalization('never'),
       autocorrectionDisabled(true),
@@ -168,7 +166,8 @@ function ActionRow({ row, iconColors }: { row: SwitcherActionRow; iconColors: Ac
     );
   }
   // Semantic tint for the Sentry glyphs, matching the original RN icon colours:
-  // warning amber, flame red, everything else the brand accent.
+  // warning amber, flame red, everything else the control tint (a glyph on the
+  // card, so the foreground violet, not the fill).
   const iconColor =
     row.icon === 'warning' ? iconColors.warning : row.icon === 'flame' ? iconColors.error : iconColors.accent;
   return (
@@ -176,7 +175,7 @@ function ActionRow({ row, iconColors }: { row: SwitcherActionRow; iconColors: Ac
       <HStack spacing={spacing[3]}>
         <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
         <Spacer />
-        <Image systemName={ACTION_SF_SYMBOL[row.icon]} modifiers={[tint(iconColor)]} />
+        <Image systemName={ACTION_SF_SYMBOL[row.icon]} modifiers={[ROW_ICON, tint(iconColor)]} />
       </HStack>
     </Button>
   );
@@ -184,8 +183,11 @@ function ActionRow({ row, iconColors }: { row: SwitcherActionRow; iconColors: Ac
 
 export function SwitcherForm({ model }: SwitcherFormProps) {
   const { brandColors, colorScheme } = useTheme();
-  const accent = brandAccentColor(brandColors);
-  const iconColors: ActionIconColors = { accent, warning: brandColors.warning, error: brandColors.error };
+  const iconColors: ActionIconColors = {
+    accent: brandControlTint(brandColors),
+    warning: brandColors.warning,
+    error: brandColors.error,
+  };
 
   return (
     <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>

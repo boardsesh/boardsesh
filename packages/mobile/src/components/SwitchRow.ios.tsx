@@ -22,7 +22,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { brandControlTint } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
@@ -36,8 +36,9 @@ const ROW_MIN_HEIGHT_WITH_SUBTITLE = 64;
 export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
   const { brandColors, colorScheme } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
-  // On-track colour: always the brand tint (HIG Color: one accent for every control).
-  const onTrack = brandAccentColor(brandColors);
+  // On-track colour: the brand control tint (HIG Color: one accent for every
+  // control). Not the brand FILL — that one fails 3:1 on a dark grouped card.
+  const onTrack = brandControlTint(brandColors);
 
   return (
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} ignoreSafeArea="all" style={styles.host}>

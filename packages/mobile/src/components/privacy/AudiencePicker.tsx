@@ -67,21 +67,33 @@ export function AudiencePicker<TAudience extends PrivacyResourceAudience>({
         <Text>{labels[audience]}</Text>
       </PressableSurface>
       {expanded && !disabled
-        ? options.map((option) => (
-            <PressableSurface
-              key={option}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: option === audience }}
-              onPress={() => void chooseAudience(option)}
-              style={{
-                padding: spacing[3],
-                borderRadius: radii.button,
-                backgroundColor: systemColors.secondaryBackground,
-              }}
-            >
-              <Text color={option === audience ? brandColors.primary : systemColors.label}>{labels[option]}</Text>
-            </PressableSurface>
-          ))
+        ? options.map((option) => {
+            const selected = option === audience;
+            return (
+              <PressableSurface
+                key={option}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                onPress={() => void chooseAudience(option)}
+                style={[
+                  styles.option,
+                  {
+                    padding: spacing[3],
+                    gap: spacing[2],
+                    borderRadius: radii.button,
+                    backgroundColor: systemColors.secondaryBackground,
+                  },
+                ]}
+              >
+                <Text color={selected ? brandColors.primary : systemColors.label} style={styles.optionLabel}>
+                  {labels[option]}
+                </Text>
+                {/* The checkmark carries the selection too, so it never rests on
+                    colour alone (WCAG 1.4.1). */}
+                {selected ? <Icon name="check.small" size={20} color={systemColors.accent} /> : null}
+              </PressableSurface>
+            );
+          })
         : null}
     </View>
   );
@@ -93,5 +105,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  optionLabel: {
+    flex: 1,
   },
 });

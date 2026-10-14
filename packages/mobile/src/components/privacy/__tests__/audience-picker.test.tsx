@@ -10,26 +10,47 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ spacing: [], radii: {}, systemColors: {}, brandColors: {} }),
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span> }));
-vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => <i data-icon={name} /> }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
     onPress,
     accessibilityLabel,
     accessibilityRole,
+    accessibilityState,
   }: {
     children: React.ReactNode;
     onPress: () => void;
     accessibilityLabel?: string;
     accessibilityRole?: string;
+    accessibilityState?: { checked?: boolean };
   }) => (
-    <button onClick={onPress} aria-label={accessibilityLabel} role={accessibilityRole}>
+    <button
+      onClick={onPress}
+      aria-label={accessibilityLabel}
+      role={accessibilityRole}
+      aria-checked={accessibilityState?.checked}
+    >
       {children}
     </button>
   ),
 }));
 import { AudiencePicker, BOARD_AUDIENCES } from '../AudiencePicker';
 beforeEach(() => confirm.mockReset());
+describe('selected audience', () => {
+  it('marks the chosen option with a checkmark, not colour alone', () => {
+    const view = render(<AudiencePicker audience="followers" options={BOARD_AUDIENCES} onChange={vi.fn()} />);
+    fireEvent.click(view.getByLabelText('privacy.audienceLabel'));
+    const selected = view.getByRole('radio', { name: 'privacy.audiences.followers' });
+    expect(selected.getAttribute('aria-checked')).toBe('true');
+    expect(selected.querySelector('[data-icon="check.small"]')).not.toBeNull();
+    for (const label of ['privacy.audiences.public', 'privacy.audiences.unlisted', 'privacy.audiences.invited']) {
+      const option = view.getByRole('radio', { name: label });
+      expect(option.getAttribute('aria-checked')).toBe('false');
+      expect(option.querySelector('[data-icon="check.small"]')).toBeNull();
+    }
+  });
+});
 describe('private audience publication consent', () => {
   it('asks again when an already-selected Public choice has stale consent', async () => {
     const onChange = vi.fn();

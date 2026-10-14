@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { NativeMarkerSlider } from './NativeMarkerSlider';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
-import { brandAccentColor } from '../../theme/expo-ui-modifiers';
+import { brandControlTint } from '../../theme/expo-ui-modifiers';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -54,9 +54,10 @@ export function MarkerMultiplierSlider({
   onChangeEnd,
 }: MarkerMultiplierSliderProps) {
   const { systemColors, brandColors } = useTheme();
-  // The same on-track tint the native @expo/ui Slider and Switch use (HIG Color:
-  // one accent across every control), so this hand-built slider can't drift.
-  const onTrackColor = brandAccentColor(brandColors);
+  // The control tint the settings forms' native Slider and Switch use, so this
+  // slider matches them. The foreground violet, not the fill: the track sits on
+  // the card with no white text over it.
+  const onTrackColor = brandControlTint(brandColors);
   const lastAppliedValueRef = useRef(value);
   useEffect(() => {
     lastAppliedValueRef.current = value;

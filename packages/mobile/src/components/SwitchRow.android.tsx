@@ -21,7 +21,7 @@ import { Row, Column, Text, Switch } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, weight, toggleable, padding, defaultMinSize, alpha } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { switchBrandColors } from '../theme/expo-ui-modifiers';
+import { switchControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
@@ -29,8 +29,10 @@ import type { SwitchRowProps } from './SwitchRow.types';
 export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
   const { brandColors, colorScheme, systemColors } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
-  // On-track colour: always the brand tint (M3: one primary colour for selection controls).
-  const switchColors = switchBrandColors(brandColors);
+  // On-track colour: the brand control tint (M3: one primary colour for
+  // selection controls), with a dark checked thumb in dark mode so it stays
+  // visible on the lighter track.
+  const switchColors = switchControlColors(brandColors, colorScheme);
 
   const rowModifiers = [
     fillMaxWidth(),

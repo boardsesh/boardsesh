@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import { act, render } from '@testing-library/react';
 const native = vi.hoisted(() => ({
-  props: null as null | { onValueChange: (value: number) => void; onValueChangeEnd: () => void },
+  props: null as null | { color: string; onValueChange: (value: number) => void; onValueChangeEnd: () => void },
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12 } }));
 vi.mock('react-native', () => ({
@@ -27,7 +27,10 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primaryFill: '#6D28D9' }, systemColors: { secondaryLabel: '#555' } }),
+  useTheme: () => ({
+    brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED' },
+    systemColors: { secondaryLabel: '#555' },
+  }),
 }));
 vi.mock('../NativeMarkerSlider', () => ({
   NativeMarkerSlider: (props: NonNullable<typeof native.props>) => {
@@ -81,5 +84,19 @@ describe('native linear slider persistence contract', () => {
     view.rerender(<MarkerMultiplierSlider {...props} value={1.8} />);
     act(() => native.props?.onValueChangeEnd());
     expect(commit).toHaveBeenCalledWith(1.8);
+  });
+  it('tints the native slider with the control tint, not the fill', () => {
+    render(
+      <MarkerMultiplierSlider
+        accessibilityLabel="Marker size"
+        value={1}
+        min={0}
+        max={2}
+        step={0.1}
+        format={format}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(native.props?.color).toBe('#A78BFA');
   });
 });

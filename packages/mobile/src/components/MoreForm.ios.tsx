@@ -41,8 +41,6 @@ import {
   pickerStyle,
   tint,
   tag,
-  font,
-  foregroundStyle,
   textSelection,
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
@@ -55,11 +53,12 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { brandAccentColor, brandControlTint } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow, guardedButtonPress, isButtonRowPressable, useOpensOutsideAppHint } from './MoreForm.logic';
 import { makeSelectHandler } from './SegmentedControl.logic';
 import { useSliderCommit } from './MoreForm.slider';
+import { CHEVRON, FOOTNOTE, PRIMARY_LABEL, ROW_ICON, SECONDARY_LABEL, TERTIARY_LABEL } from './settings-row-styles.ios';
 import type {
   MoreButtonRow,
   MoreFormProps,
@@ -70,13 +69,17 @@ import type {
   MoreValueRow,
 } from './MoreForm.types';
 
-// Hierarchical foreground styles for the system label colours SwiftUI uses in a
-// Settings list. Reused across rows so the palette can't drift.
-const PRIMARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'primary' });
-const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
-const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
-const FOOTNOTE = font({ textStyle: 'footnote' });
+// Row label colours and glyph sizes live in settings-row-styles.ios: fixed
+// label / secondaryLabel / tertiaryLabel, never the accent (see that file for why).
 const SELECTABLE_TEXT = textSelection(true);
+
+/**
+ * The two brand colours a row can tint with. `control` (the theme's `primary`)
+ * is a control's on-state drawn on the card: Toggle, menu Picker, Slider, a
+ * plain button. `fill` (`primaryFill`) is only for a surface that carries white
+ * text, here the selected segment.
+ */
+type RowTints = { control: string; fill: string };
 
 // The SFSymbol union the Image `systemName` prop accepts. The model carries a
 // semantic `MoreIconName`; map it to the SF Symbol here (the symbol union isn't
@@ -114,10 +117,14 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   account: 'person.crop.circle',
   offline: 'icloud.and.arrow.down',
   general: 'gearshape',
-  climbs: 'list.bullet.rectangle',
+  // SF Symbols 4, iOS 16.0+.
+  climbs: 'figure.climbing',
   boardLighting: 'lightbulb',
-  earlyAccess: 'testtube.2',
-  developer: 'hammer',
+  // Sparkles for features not everyone has yet. `testtube.2` drew filled
+  // liquid, and `flask` needs iOS 17 (the app's floor is 16.4).
+  earlyAccess: 'sparkles',
+  // `hammer` drew larger than the other glyphs in the column.
+  developer: 'wrench.and.screwdriver',
   export: 'square.and.arrow.up',
   policy: 'doc.text',
 };
@@ -130,9 +137,10 @@ function NavRow({ row }: { row: MoreNavRow }) {
   ];
   return (
     // A row Button. Every child sets an explicit foregroundStyle so the row reads
-    // as a Settings row (label/secondary/tertiary), not the default accent-tinted
-    // button content. `badge(...)` adds the standard trailing badge (the "New"
-    // pill); the manual chevron is the disclosure indicator.
+    // as a Settings row (label/secondary/tertiary), not the accent-tinted content
+    // a Button gives its children by default. `badge(...)` adds the standard
+    // trailing badge (the "New" pill); the manual chevron is the disclosure
+    // indicator.
     //
     // The icon and title go through a SwiftUI `Label`: inside a Form, Label gives
     // every icon the same column width, so titles line up down the section even
@@ -143,7 +151,7 @@ function NavRow({ row }: { row: MoreNavRow }) {
         <Label
           icon={
             row.icon ? (
-              <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[SECONDARY_LABEL]} />
+              <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[ROW_ICON, SECONDARY_LABEL]} />
             ) : undefined
           }
         >
@@ -154,7 +162,7 @@ function NavRow({ row }: { row: MoreNavRow }) {
         </Label>
         <Spacer />
         {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
-        <Image systemName={row.external ? 'arrow.up.right' : 'chevron.right'} modifiers={[FOOTNOTE, TERTIARY_LABEL]} />
+        <Image systemName={row.external ? 'arrow.up.right' : 'chevron.right'} modifiers={[CHEVRON, TERTIARY_LABEL]} />
       </HStack>
     </Button>
   );
@@ -191,17 +199,24 @@ function ValueRow({ row }: { row: MoreValueRow }) {
 }
 
 /**
- * A standalone action. `destructive` colours the label red; the action lives in
- * the screen. A `subtle` button keeps its colour but drops to footnote size so a
- * secondary destructive action (Delete Account) reads quieter than the primary
- * one (Sign Out) stacked above it, instead of two equal-weight red rows.
+ * A standalone action. `destructive` colours the label red; any other button
+ * takes the control tint explicitly, so it reads the same violet whether the
+ * screen sits inside a tab (whose tint is the label colour) or on the root
+ * stack (the app AccentColor). The action lives in the screen. A `subtle`
+ * button keeps its colour but drops to footnote size so a secondary destructive
+ * action (Delete Account) reads quieter than the primary one (Sign Out) stacked
+ * above it, instead of two equal-weight red rows.
  *
  * `disabled` and `loading` both disable the native Button; `loading` also puts a
  * spinner beside the label so the climber can see the press landed.
  */
-function ButtonRow({ row }: { row: MoreButtonRow }) {
+function ButtonRow({ row, controlTint }: { row: MoreButtonRow; controlTint: string }) {
   const role = row.role === 'destructive' ? 'destructive' : undefined;
-  const modifiers = [...(row.emphasis === 'subtle' ? [FOOTNOTE] : []), disabledModifier(!isButtonRowPressable(row))];
+  const modifiers = [
+    ...(row.emphasis === 'subtle' ? [FOOTNOTE] : []),
+    ...(role ? [] : [tint(controlTint)]),
+    disabledModifier(!isButtonRowPressable(row)),
+  ];
   const handlePress = guardedButtonPress(row);
   if (row.loading) {
     return (
@@ -216,13 +231,13 @@ function ButtonRow({ row }: { row: MoreButtonRow }) {
   return <Button role={role} label={row.label} onPress={handlePress} modifiers={modifiers} />;
 }
 
-function renderRow(row: MoreRow, accent: string) {
+function renderRow(row: MoreRow, tints: RowTints) {
   switch (row.kind) {
     case 'nav':
       return <NavRow key={row.key} row={row} />;
     case 'toggle':
       // Two Text children → title + subtitle (SwiftUI styles the second secondary
-      // and folds both into the VoiceOver label). Brand on-track tint.
+      // and folds both into the VoiceOver label). Control tint on the track.
       return (
         <Toggle
           key={row.key}
@@ -230,7 +245,7 @@ function renderRow(row: MoreRow, accent: string) {
           onIsOnChange={(next) => {
             if (!row.disabled) row.onValueChange(next);
           }}
-          modifiers={[tint(accent), disabledModifier(row.disabled ?? false)]}
+          modifiers={[tint(tints.control), disabledModifier(row.disabled ?? false)]}
         >
           <Text>{row.label}</Text>
           {row.subtitle ? <Text>{row.subtitle}</Text> : null}
@@ -253,7 +268,8 @@ function renderRow(row: MoreRow, accent: string) {
           }}
           modifiers={[
             pickerStyle('segmented'),
-            tint(accent),
+            // The selected segment carries white text, so it takes the fill.
+            tint(tints.fill),
             disabledModifier(row.disabled ?? false),
             ...(row.label ? [accessibilityLabelModifier(row.label)] : []),
           ]}
@@ -276,7 +292,7 @@ function renderRow(row: MoreRow, accent: string) {
           onSelectionChange={(value) => {
             if (typeof value === 'string' && !row.disabled) row.onSelect(value);
           }}
-          modifiers={[pickerStyle('menu'), tint(accent), disabledModifier(row.disabled ?? false)]}
+          modifiers={[pickerStyle('menu'), tint(tints.control), disabledModifier(row.disabled ?? false)]}
         >
           {row.options.map((option) => (
             <Text key={option.key} modifiers={[tag(option.key)]}>
@@ -300,9 +316,9 @@ function renderRow(row: MoreRow, accent: string) {
     case 'value':
       return <ValueRow key={row.key} row={row} />;
     case 'button':
-      return <ButtonRow key={row.key} row={row} />;
+      return <ButtonRow key={row.key} row={row} controlTint={tints.control} />;
     case 'slider':
-      return <SliderRow key={row.key} row={row} accent={accent} />;
+      return <SliderRow key={row.key} row={row} controlTint={tints.control} />;
     case 'custom':
       // The one place React Native content lives inside the SwiftUI tree.
       // `frame` pins the height rather than letting `matchContents` negotiate
@@ -333,7 +349,7 @@ function renderRow(row: MoreRow, accent: string) {
  * row switch is a plain function — and because the value label has to sit in an
  * `HStack` above the track, which is two views, not one.
  */
-function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
+function SliderRow({ row, controlTint }: { row: MoreSliderRow; controlTint: string }) {
   const { handleValueChange, handleEditingChanged } = useSliderCommit(row);
   return (
     <VStack alignment="leading" spacing={spacing[1]}>
@@ -350,7 +366,7 @@ function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
         onValueChange={handleValueChange}
         onEditingChanged={handleEditingChanged}
         modifiers={[
-          tint(accent),
+          tint(controlTint),
           accessibilityLabelModifier(row.label),
           accessibilityValueModifier(row.format(row.value)),
         ]}
@@ -361,7 +377,7 @@ function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
 
 export function MoreForm({ model }: MoreFormProps) {
   const { brandColors, colorScheme } = useTheme();
-  const accent = brandAccentColor(brandColors);
+  const tints: RowTints = { control: brandControlTint(brandColors), fill: brandAccentColor(brandColors) };
 
   return (
     // `colorScheme` forces the native appearance to follow our in-app Light/Dark
@@ -375,7 +391,7 @@ export function MoreForm({ model }: MoreFormProps) {
             title={section.title}
             footer={section.footer ? <Text>{section.footer}</Text> : undefined}
           >
-            {section.rows.map((row) => renderRow(row, accent))}
+            {section.rows.map((row) => renderRow(row, tints))}
           </Section>
         ))}
       </Form>
