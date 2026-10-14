@@ -107,13 +107,11 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   editProfile: require('../../assets/material-icons/editProfile.xml'),
   privacy: require('../../assets/material-icons/privacy.xml'),
   // The rest are Material Icons Outlined (24dp), matching the glyphs iOS draws:
-  // account_circle, cloud_download, settings, format_list_bulleted, lightbulb,
-  // science, build, ios_share and description.
+  // account_circle, settings, format_list_bulleted, science, build, ios_share
+  // and description.
   account: require('../../assets/material-icons/account.xml'),
-  offline: require('../../assets/material-icons/offline.xml'),
   general: require('../../assets/material-icons/general.xml'),
   climbs: require('../../assets/material-icons/climbs.xml'),
-  boardLighting: require('../../assets/material-icons/boardLighting.xml'),
   earlyAccess: require('../../assets/material-icons/earlyAccess.xml'),
   developer: require('../../assets/material-icons/developer.xml'),
   export: require('../../assets/material-icons/export.xml'),

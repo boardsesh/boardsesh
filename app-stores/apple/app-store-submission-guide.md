@@ -285,7 +285,7 @@ Apple rejects apps that are just websites wrapped in a WebView without meaningfu
 
 Apple requires all apps with account creation to also support account deletion.
 
-- Before submitting, verify that **Settings → Account → Delete Account** works and fully removes the user's data.
+- Before submitting, verify that **Settings → Account → Delete account** works and fully removes the user's data.
 - Test this with a throwaway account, not the demo account.
 
 ### 2.1 Performance (App Completeness)

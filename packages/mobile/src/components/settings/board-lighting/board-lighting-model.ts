@@ -1,4 +1,4 @@
-import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
+import type { MoreRow, MoreSection } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
 
 type Toggle = { enabled: boolean; onChange: (enabled: boolean) => void };
@@ -23,10 +23,11 @@ export type BoardLightingModelInput = {
 };
 
 /**
- * "Board lighting": what lights the connected board on its own, and when the
- * phone lets go of it so another climber can connect.
+ * The Board page's lighting half: what lights the connected board on its own,
+ * then the Bluetooth group, which says when the phone lets go of the board so
+ * another climber can connect.
  */
-export function buildBoardLightingModel(input: BoardLightingModelInput): MoreFormModel {
+export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
   const { t, autoDisconnectTimeout } = input;
 
   const lightingRows: MoreRow[] = [
@@ -58,39 +59,41 @@ export function buildBoardLightingModel(input: BoardLightingModelInput): MoreFor
     });
   }
 
-  return {
-    sections: [
-      // No section title: it would repeat the page's own.
-      { key: 'lighting', footer: t('settings:ble.lighting.description'), rows: lightingRows },
-      {
-        key: 'autoDisconnect',
-        title: t('settings:ble.autoDisconnect.title'),
-        footer: t('settings:ble.autoDisconnect.description'),
-        rows: [
-          {
-            kind: 'toggle',
-            key: 'autoDisconnectBle',
-            label: t('settings:ble.autoDisconnect.enabledLabel'),
-            subtitle: t('settings:ble.autoDisconnect.enabledDescription'),
-            value: input.autoDisconnect.enabled,
-            onValueChange: input.autoDisconnect.onChange,
+  return [
+    {
+      key: 'lighting',
+      title: t('settings:ble.lighting.title'),
+      footer: t('settings:ble.lighting.description'),
+      rows: lightingRows,
+    },
+    {
+      key: 'bluetooth',
+      title: t('settings:ble.sectionTitle'),
+      footer: t('settings:ble.autoDisconnect.description'),
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'autoDisconnectBle',
+          label: t('settings:ble.autoDisconnect.enabledLabel'),
+          subtitle: t('settings:ble.autoDisconnect.enabledDescription'),
+          value: input.autoDisconnect.enabled,
+          onValueChange: input.autoDisconnect.onChange,
+        },
+        {
+          kind: 'select',
+          key: 'autoDisconnectTimeoutSeconds',
+          label: t('settings:ble.autoDisconnect.timeoutLabel'),
+          options: autoDisconnectTimeout.options.map((option) => ({
+            key: String(option.seconds),
+            label: option.label,
+          })),
+          selectedKey: String(autoDisconnectTimeout.seconds),
+          onSelect: (key) => {
+            const choice = autoDisconnectTimeout.options.find((option) => String(option.seconds) === key);
+            if (choice) autoDisconnectTimeout.onChange(choice.seconds);
           },
-          {
-            kind: 'select',
-            key: 'autoDisconnectTimeoutSeconds',
-            label: t('settings:ble.autoDisconnect.timeoutLabel'),
-            options: autoDisconnectTimeout.options.map((option) => ({
-              key: String(option.seconds),
-              label: option.label,
-            })),
-            selectedKey: String(autoDisconnectTimeout.seconds),
-            onSelect: (key) => {
-              const choice = autoDisconnectTimeout.options.find((option) => String(option.seconds) === key);
-              if (choice) autoDisconnectTimeout.onChange(choice.seconds);
-            },
-          },
-        ],
-      },
-    ],
-  };
+        },
+      ],
+    },
+  ];
 }

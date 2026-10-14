@@ -68,7 +68,6 @@ export type PrivacyModelInput = {
   onReviewBoards: () => void;
   onAnalyticsChange: (next: boolean) => void;
   onSessionRecordingChange: (next: boolean) => void;
-  onExportData: () => void;
   onOpenPrivacyPolicy: () => void;
 };
 
@@ -109,7 +108,10 @@ function audienceLabel(audience: PrivacyResourceAudience, t: PrivacyTranslate): 
 }
 
 /**
- * The Privacy page as plain data: every privacy control in one place.
+ * The Privacy page as plain data: every privacy control in one place, in at
+ * most six groups: Private account, People, New session audience, Boards,
+ * Analytics, and the privacy policy. A status group goes above them while the
+ * settings load, fail, or can't be saved.
  *
  * Nothing here saves on a button. Each switch and the select write once, the
  * moment they change, and every writing row locks while a write is in flight or
@@ -222,39 +224,38 @@ export function buildPrivacyModel(input: PrivacyModelInput): MoreFormModel {
       });
     }
 
-    // A plain preference: saves whether or not account privacy controls are on.
-    sections.push({
-      key: 'boards',
-      footer: t('settings:privacy.anonymousOnForeignBoardsDescription'),
-      rows: [
-        {
-          kind: 'toggle',
-          key: 'anonymousOnForeignBoards',
-          label: t('settings:privacy.anonymousOnForeignBoards'),
-          value: displayed.anonymousOnForeignBoards,
-          disabled: writeLocked,
-          onValueChange: input.onAnonymousOnForeignBoardsChange,
-        },
-      ],
-    });
-
+    // You on other people's boards, and who can reach yours. The anonymity
+    // switch is a plain preference: it saves whether or not account privacy
+    // controls are on. Its explanation sits on the switch itself and the
+    // review's in the footer under it, so each line stays next to its own row.
+    const boardRows: MoreRow[] = [
+      {
+        kind: 'toggle',
+        key: 'anonymousOnForeignBoards',
+        label: t('settings:privacy.anonymousOnForeignBoards'),
+        subtitle: t('settings:privacy.anonymousOnForeignBoardsDescription'),
+        value: displayed.anonymousOnForeignBoards,
+        disabled: writeLocked,
+        onValueChange: input.onAnonymousOnForeignBoardsChange,
+      },
+    ];
     if (enabled) {
-      sections.push({
-        key: 'boardAccess',
-        footer: t('settings:privacy.boardReview'),
-        rows: [
-          {
-            kind: 'nav',
-            key: 'reviewBoards',
-            label: t('settings:privacy.reviewBoards'),
-            onPress: input.onReviewBoards,
-          },
-        ],
+      boardRows.push({
+        kind: 'nav',
+        key: 'reviewBoards',
+        label: t('settings:privacy.reviewBoards'),
+        onPress: input.onReviewBoards,
       });
     }
+    sections.push({
+      key: 'boards',
+      footer: enabled ? t('settings:privacy.boardReview') : undefined,
+      rows: boardRows,
+    });
   }
 
-  // Local consent, not a server write: works signed out and offline alike.
+  // Local consent, not a server write: works signed out and offline alike. The
+  // footer explains both switches; the recording switch also says when to use it.
   sections.push({
     key: 'analytics',
     title: t('consent:settingsTitle'),
@@ -269,16 +270,11 @@ export function buildPrivacyModel(input: PrivacyModelInput): MoreFormModel {
         value: input.analytics.preference,
         onValueChange: input.onAnalyticsChange,
       },
-    ],
-  });
-  sections.push({
-    key: 'sessionRecording',
-    footer: t('common:mobile.settings.diagnostics.recordingDescription'),
-    rows: [
       {
         kind: 'toggle',
         key: 'sessionRecording',
         label: t('common:mobile.settings.diagnostics.recording'),
+        subtitle: t('common:mobile.settings.diagnostics.recordingDescription'),
         value: input.sessionRecording.value,
         disabled: input.sessionRecording.disabled,
         onValueChange: input.onSessionRecordingChange,
@@ -286,25 +282,20 @@ export function buildPrivacyModel(input: PrivacyModelInput): MoreFormModel {
     ],
   });
 
-  const dataRows: MoreRow[] = [];
-  if (signedIn) {
-    dataRows.push({
-      kind: 'nav',
-      key: 'exportData',
-      label: t('settings:export.title'),
-      icon: 'export',
-      onPress: input.onExportData,
-    });
-  }
-  dataRows.push({
-    kind: 'nav',
-    key: 'privacyPolicy',
-    label: t('settings:privacy.policy'),
-    icon: 'policy',
-    external: true,
-    onPress: input.onOpenPrivacyPolicy,
+  // Export lives on Account; the policy is the one link that applies signed out.
+  sections.push({
+    key: 'policy',
+    rows: [
+      {
+        kind: 'nav',
+        key: 'privacyPolicy',
+        label: t('settings:privacy.policy'),
+        icon: 'policy',
+        external: true,
+        onPress: input.onOpenPrivacyPolicy,
+      },
+    ],
   });
-  sections.push({ key: 'data', title: t('settings:privacy.yourData'), rows: dataRows });
 
   return { sections };
 }

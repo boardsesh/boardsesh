@@ -401,8 +401,6 @@
     "bugPlaceholder": "Was hast du gemacht? Was hast du erwartet, was kam stattdessen?",
     "ratingPlaceholder": "Was geht dir durch den Kopf?",
     "remainingChars": "Noch {{count}} Zeichen",
-    "sessionRecordingLabel": "Session-Aufzeichnung einschalten",
-    "sessionRecordingDescription": "Hilf uns, den Fehler schneller zu beheben: Schalt die Session-Aufzeichnung ein und lös ihn nochmal aus. Danach kannst du sie wieder ausschalten.",
     "bluetoothBugLabel": "Ich habe Bluetooth-Probleme",
     "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deins nicht verbindet. Es wird kein Board gesteuert — wir hören nur zu.",
     "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
@@ -462,8 +460,8 @@
     "cancel": "Abbrechen",
     "connectBoard": "Board verbinden",
     "relightBoard": "Board neu beleuchten",
+    "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "title": "Automatisch trennen",
       "description": "Trennt die Verbindung zum Board, wenn für die gewählte Zeit kein Boulder angezeigt wurde.",
       "enabledLabel": "Automatisch trennen",
       "enabledDescription": "Lass andere Kletterer*innen verbinden, sobald der Timer abläuft.",

@@ -14,7 +14,7 @@ function makeInput(overrides: Partial<ClimbsModelInput> = {}): ClimbsModelInput 
     boardseshGrades: null,
     climbListPresetLabel: 'Default',
     onOpenClimbList: vi.fn(),
-    climbDrawerSection: { key: 'climbDrawer', title: 'Climb view', rows: [] },
+    climbDrawerSection: { key: 'climbDrawer', title: 'Below the climb', rows: [] },
     ...overrides,
   };
 }
@@ -30,7 +30,7 @@ function findRow(input: ClimbsModelInput, key: string): MoreRow {
 describe('buildClimbsModel', () => {
   it('runs grades, then the climb list, then the climb view', () => {
     // The Maestro tutorial finds the "Use my grades" switch by its neighbours:
-    // the Climb view section has to stay below it.
+    // the Below the climb section has to stay below it.
     expect(buildClimbsModel(makeInput()).sections.map((section) => section.key)).toEqual([
       'grades',
       'climbList',

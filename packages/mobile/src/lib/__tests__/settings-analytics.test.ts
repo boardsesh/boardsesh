@@ -42,14 +42,14 @@ describe('withSettingTracking', () => {
 
   it('reports a toggle change with its page, key and value, then applies it', () => {
     const toggle = vi.fn();
-    const model = withSettingTracking(buildModel({ toggle, select: vi.fn() }), 'board-lighting');
+    const model = withSettingTracking(buildModel({ toggle, select: vi.fn() }), 'board');
     const row = model.sections[0]?.rows[0];
     if (row?.kind !== 'toggle') throw new Error('expected a toggle row');
 
     row.onValueChange(true);
 
     expect(trackMock).toHaveBeenCalledWith('Setting Changed', {
-      page: 'board-lighting',
+      page: 'board',
       key: 'lightOnSwipe',
       value: true,
     });

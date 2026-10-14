@@ -163,7 +163,7 @@ Until this rule existed, `runMigrations` filtered `version > current`, found not
 | `getDatabaseHandle()`                             | Stays `null`, and `isSchemaReady()` stays `false`. This is the existing "local DB unavailable" path, so every reader falls back to the network and offline surfaces show the usual "No signal" placard. No retry is scheduled: the answer cannot change until the JS does. |
 | The outbox                                        | Not drained, not dropped, not dead-lettered. The scheduler and the drainer are gated on schema readiness, so they never start; a send logged in this state goes straight to the server, as it does whenever the handle is null. Queued sends wait in the file.            |
 | `useOfflineDatabase()`                            | Returns a stand-in whose every method refuses with `SchemaNewerThanAppError` (`packages/mobile/src/db/refused-database.ts`). See below for why the null handle is not enough on its own.                                                                                  |
-| Settings → Offline & storage → Storage            | Says "Offline storage is paused" and that downloads and waiting sends stay on the phone, instead of "Couldn't measure your downloads" with a Retry that cannot work.                                                                                                                |
+| Settings → General → Storage                      | Says "Offline storage is paused" and that downloads and waiting sends stay on the phone, instead of "Couldn't measure your downloads" with a Retry that cannot work.                                                                                                                |
 | Update check                                      | `watchForSchemaDowngrade` (`packages/mobile/src/lib/schema-downgrade-recovery.ts`) runs `performOtaRecovery` once per process: check, then download a newer bundle if the server has one. It does not reload. The bundle launches on the next cold start, because nothing says it knows the stored schema and a restart mid-session for nothing is worse than waiting. |
 | Sign-out                                          | The database wipe is skipped, as it is whenever the handle is null; the wall photographs are still deleted. The owner stamp (`assertLocalUserDataOwner`) clears the previous account's rows when a bundle that can open the file next signs in. **Known cost:** if a different account signs in first, that clear takes the first account's queued sends with it, with no drain attempt. The manual sign-out dialog says so in this state ("Stay signed in" / "Sign out anyway"); a forced sign-out (expired session) has no moment to ask. |
 
@@ -705,7 +705,7 @@ to simulate an outage on a device). The banner itself never painted in productio
 `ready` prop was frozen at `false` behind `DatabaseProvider`. It now reads readiness from
 `LaunchReadyProvider`, and `connectivity-banner-kill` hides it without touching the detection above.
 
-**Offline mode.** The climber's own switch, first row of Settings → Offline & storage ("Offline mode"), with two
+**Offline mode.** The climber's own switch, first row of the Offline section in Settings → General ("Offline mode"), with two
 shortcuts on the banner: "Stay offline" during an outage, "Go online" to leave. It is a persisted MMKV
 setting (`offlineMode`, native only — Expo web has no storage behind it and the row is not drawn
 there), seeded into the store at launch by `start-connectivity.ts` and mirrored both ways, so a phone

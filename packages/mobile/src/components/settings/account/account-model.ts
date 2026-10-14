@@ -12,12 +12,13 @@ export type AccountModelInput = {
   /** The signed-in email, shown under Edit profile. `null` while it loads, or offline. */
   email: string | null;
   onEditProfile: () => void;
+  onExportData: () => void;
   onSignOut: () => void;
   onDeleteAccount: () => void;
 };
 
 /**
- * "Account": your profile, and the two ways out.
+ * "Account": your profile, your data, and the two ways out.
  *
  * Stuck writes come first when there are any. Signing out deletes them, and the
  * sign-out dialog says to cancel and hit Retry sync first, so Retry sits on the
@@ -43,6 +44,19 @@ export function buildAccountModel(input: AccountModelInput): MoreFormModel {
           label: t('settings:profile.editAction'),
           icon: 'editProfile',
           onPress: input.onEditProfile,
+        },
+      ],
+    },
+    {
+      key: 'yourData',
+      title: t('settings:privacy.yourData'),
+      rows: [
+        {
+          kind: 'nav',
+          key: 'exportData',
+          label: t('settings:export.title'),
+          icon: 'export',
+          onPress: input.onExportData,
         },
       ],
     },

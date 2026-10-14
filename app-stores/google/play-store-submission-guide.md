@@ -223,7 +223,7 @@ Go to **Policy > App content > Data safety** and fill out Google's data safety q
 
 - **Does your app collect or share any of the required user data types?** Yes
 - **Is all of the user data collected by your app encrypted in transit?** Yes (HTTPS)
-- **Do you provide a way for users to request that their data is deleted?** Yes (Settings → Account → Delete Account)
+- **Do you provide a way for users to request that their data is deleted?** Yes (Settings → Account → Delete account)
 - **Does your app follow Google Play's Families Policy?** No (not a children's app)
 
 ### Data collected

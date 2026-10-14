@@ -1,16 +1,20 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { MoreForm } from '../../MoreForm';
+import type { MoreSection } from '../../MoreForm.types';
 import { useAutoDisconnectTimeoutLabels } from '../../ble/use-auto-disconnect-timeout-labels';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../lib/ble/auto-disconnect-controller';
 import { hapticSelection } from '../../../lib/haptics';
-import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provider';
 import { useSetting } from '../../../settings';
-import { buildBoardLightingModel } from './board-lighting-model';
+import { buildBoardLightingSections } from './board-lighting-model';
 
-export function BoardLightingSettingsScreen() {
+/**
+ * The lighting and Bluetooth groups at the foot of the Board page, with every
+ * hook they read. The page owns the analytics wrapper, so these sections report
+ * `Setting Changed` under the page that shows them.
+ */
+export function useBoardLightingSections(): MoreSection[] {
   const { t } = useTranslation('common');
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
@@ -26,56 +30,53 @@ export function BoardLightingSettingsScreen() {
   const setMoonboardLightAdjacentHolds = bluetooth?.setMoonboardLightAdjacentHolds;
   const reassertWall = bluetooth?.reassertWall;
 
-  const model = useMemo(
+  return useMemo(
     () =>
-      withSettingTracking(
-        buildBoardLightingModel({
-          t,
-          lightOnSwipe: {
-            enabled: lightOnSwipe,
-            onChange: (enabled) => {
-              hapticSelection();
-              setLightOnSwipe(enabled);
-            },
+      buildBoardLightingSections({
+        t,
+        lightOnSwipe: {
+          enabled: lightOnSwipe,
+          onChange: (enabled) => {
+            hapticSelection();
+            setLightOnSwipe(enabled);
           },
-          lightOnClimbTap: {
-            enabled: lightOnClimbTap,
-            onChange: (enabled) => {
-              hapticSelection();
-              setLightOnClimbTap(enabled);
-            },
+        },
+        lightOnClimbTap: {
+          enabled: lightOnClimbTap,
+          onChange: (enabled) => {
+            hapticSelection();
+            setLightOnClimbTap(enabled);
           },
-          moonboardLightAdjacentHolds: showMoonboardLightAdjacentHolds
-            ? {
-                enabled: moonboardLightAdjacentHolds,
-                onChange: (enabled) => {
-                  hapticSelection();
-                  setMoonboardLightAdjacentHolds?.(enabled);
-                  reassertWall?.();
-                },
-              }
-            : null,
-          autoDisconnect: {
-            enabled: autoDisconnectBle,
-            onChange: (enabled) => {
-              hapticSelection();
-              setAutoDisconnectBle(enabled);
-            },
+        },
+        moonboardLightAdjacentHolds: showMoonboardLightAdjacentHolds
+          ? {
+              enabled: moonboardLightAdjacentHolds,
+              onChange: (enabled) => {
+                hapticSelection();
+                setMoonboardLightAdjacentHolds?.(enabled);
+                reassertWall?.();
+              },
+            }
+          : null,
+        autoDisconnect: {
+          enabled: autoDisconnectBle,
+          onChange: (enabled) => {
+            hapticSelection();
+            setAutoDisconnectBle(enabled);
           },
-          autoDisconnectTimeout: {
-            seconds: autoDisconnectTimeoutSeconds,
-            options: AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
-              seconds,
-              label: autoDisconnectTimeoutLabels[seconds],
-            })),
-            onChange: (seconds) => {
-              hapticSelection();
-              setAutoDisconnectTimeoutSeconds(seconds);
-            },
+        },
+        autoDisconnectTimeout: {
+          seconds: autoDisconnectTimeoutSeconds,
+          options: AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
+            seconds,
+            label: autoDisconnectTimeoutLabels[seconds],
+          })),
+          onChange: (seconds) => {
+            hapticSelection();
+            setAutoDisconnectTimeoutSeconds(seconds);
           },
-        }),
-        'board-lighting',
-      ),
+        },
+      }),
     [
       t,
       lightOnSwipe,
@@ -93,6 +94,4 @@ export function BoardLightingSettingsScreen() {
       autoDisconnectTimeoutLabels,
     ],
   );
-
-  return <MoreForm model={model} />;
 }

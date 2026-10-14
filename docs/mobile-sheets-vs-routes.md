@@ -255,7 +255,7 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climbs & grades → Climb view and the player's ⋯ → View options use the same seven visibility
+Settings → Climbs & grades → Below the climb and the player's ⋯ → View options use the same seven visibility
 switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
@@ -276,7 +276,7 @@ has no ⋯ and no Settings, ignores the stored choices and gets the default sect
 ready at once (no read to wait for), so a member's Hide all left in the same browser
 can't strand them with nothing below the board. Every other viewer, a guest without an
 account included, keeps the stored choices, because ⋯ → View options and Settings →
-Climbs & grades → Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
+Climbs & grades → Below the climb both write them. These device-local choices use AsyncStorage (IndexedDB in
 the browser) and keep each section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header

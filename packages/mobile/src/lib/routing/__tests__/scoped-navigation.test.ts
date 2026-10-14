@@ -23,7 +23,9 @@ const SETTINGS_PAGES = readdirSync(fileURLToPath(new URL('../../../../app/settin
 
 describe('navigation keeps the originating tab', () => {
   it('finds the Settings pages', () => {
-    expect(SETTINGS_PAGES).toEqual(expect.arrayContaining(['privacy', 'climbs', 'offline', 'board-look/custom']));
+    expect(SETTINGS_PAGES).toEqual(expect.arrayContaining(['privacy', 'climbs', 'general', 'board-look/custom']));
+    expect(SETTINGS_PAGES).not.toContain('offline');
+    expect(SETTINGS_PAGES).not.toContain('board-lighting');
   });
 
   it.each(['home', 'climbs', 'record', 'discover', 'profile', 'wall', 'account'])(

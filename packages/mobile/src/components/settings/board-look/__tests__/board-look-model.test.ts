@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildBoardLookModel, type BoardLookModelInput } from '../board-look-model';
-import type { MoreNavRow } from '../../../MoreForm.types';
+import type { MoreNavRow, MoreSection } from '../../../MoreForm.types';
 import type { BoardLookSuggestion } from '../../../../lib/board-render/board-look-suggestions';
+
+// Stand-ins for the lighting half; its own builder is covered in board-lighting-model.test.ts.
+const LIGHTING_SECTIONS: MoreSection[] = [
+  { key: 'lighting', title: 'Board lighting', rows: [] },
+  { key: 'bluetooth', title: 'Bluetooth', rows: [] },
+];
 
 function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModelInput {
   return {
@@ -17,11 +23,11 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key),
     onOpenCustomLook: vi.fn(),
     onOpenAccessibility: vi.fn(),
-    onResetBoardLook: vi.fn(),
     suggestion: null,
     onApplySuggestion: vi.fn(),
     onDismissSuggestion: vi.fn(),
     sprayWalls: null,
+    lightingSections: LIGHTING_SECTIONS,
     ...overrides,
   };
 }
@@ -39,12 +45,17 @@ function navRow(input: BoardLookModelInput, key: string): MoreNavRow {
 }
 
 describe('buildBoardLookModel — what the screen leads with', () => {
-  it('puts the presets rail first, then the two destinations, then the reset', () => {
-    expect(sectionKeys(makeInput())).toEqual(['presets', 'destinations', 'reset']);
+  it('puts the presets rail first, then the two destinations, then lighting and Bluetooth', () => {
+    expect(sectionKeys(makeInput())).toEqual(['presets', 'destinations', 'lighting', 'bluetooth']);
   });
 
   it('drops the rail entirely when there is no board to draw', () => {
-    expect(sectionKeys(makeInput({ carousel: null }))).toEqual(['destinations', 'reset']);
+    expect(sectionKeys(makeInput({ carousel: null }))).toEqual(['destinations', 'lighting', 'bluetooth']);
+  });
+
+  it('has no reset of its own: each leaf resets what it shows', () => {
+    const keys = buildBoardLookModel(makeInput()).sections.flatMap((section) => section.rows.map((row) => row.key));
+    expect(keys).not.toContain('resetBoardLook');
   });
 
   it('hosts the rail full-bleed at the height it was given', () => {
@@ -85,6 +96,10 @@ describe('buildBoardLookModel — what the nav rows say is behind them', () => {
     );
   });
 
+  it('names the hold-marker leaf after what it holds', () => {
+    expect(navRow(makeInput(), 'accessibility').label).toBe('mobile.settings.boardLook.accessibility.pageTitle');
+  });
+
   it('reports default markers when nothing has been customised', () => {
     expect(navRow(makeInput(), 'accessibility').subtitle).toBe(
       'mobile.settings.boardLook.accessibility.rowSubtitleDefault',
@@ -101,10 +116,10 @@ describe('buildBoardLookModel — spray walls', () => {
     expect(sectionKeys(makeInput())).not.toContain('sprayWalls');
   });
 
-  it('sits between the destinations and the reset, and flips the setting', () => {
+  it('sits between the destinations and the lighting, and flips the setting', () => {
     const onUseOwnLookChange = vi.fn();
     const input = makeInput({ sprayWalls: { useOwnLook: false, onUseOwnLookChange } });
-    expect(sectionKeys(input)).toEqual(['presets', 'destinations', 'sprayWalls', 'reset']);
+    expect(sectionKeys(input)).toEqual(['presets', 'destinations', 'sprayWalls', 'lighting', 'bluetooth']);
 
     const section = buildBoardLookModel(input).sections.find((candidate) => candidate.key === 'sprayWalls');
     expect(section?.footer).toBe('mobile.settings.boardLook.sprayWalls.footer');
@@ -113,23 +128,6 @@ describe('buildBoardLookModel — spray walls', () => {
     expect(row.value).toBe(false);
     row.onValueChange(true);
     expect(onUseOwnLookChange).toHaveBeenCalledWith(true);
-  });
-});
-
-describe('buildBoardLookModel — the reset', () => {
-  it('carries the note promising hold colours are left alone', () => {
-    const reset = buildBoardLookModel(makeInput()).sections.at(-1);
-    expect(reset?.footer).toBe('mobile.settings.boardLook.resetAllNote');
-  });
-
-  it('fires only the board-look reset', () => {
-    const onResetBoardLook = vi.fn();
-    const row = buildBoardLookModel(makeInput({ onResetBoardLook }))
-      .sections.flatMap((section) => section.rows)
-      .find((candidate) => candidate.key === 'resetBoardLook');
-    if (row?.kind !== 'button') throw new Error('no reset button');
-    row.onPress();
-    expect(onResetBoardLook).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -150,7 +148,8 @@ describe('buildBoardLookModel — a suggestion from the phone', () => {
       'suggestion',
       'presets',
       'destinations',
-      'reset',
+      'lighting',
+      'bluetooth',
     ]);
   });
 

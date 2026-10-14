@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Halt die Glühbirne gedrückt",
         "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
-        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board-Beleuchtung.",
+        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board.",
         "row2": "Griff darüber beleuchten. Nur MoonBoard.",
         "row3": "Boulder beim Wischen beleuchten.",
         "row4": "Boulder beim Antippen in der Liste beleuchten. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",

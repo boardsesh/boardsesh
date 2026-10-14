@@ -159,7 +159,7 @@ describe('Privacy page — signed out', () => {
     state.viewerId = undefined;
     state.settings = { data: undefined, isLoading: false, isError: false, refetch: vi.fn() };
     renderScreen();
-    expect(state.model?.sections.map((section) => section.key)).toEqual(['analytics', 'sessionRecording', 'data']);
+    expect(state.model?.sections.map((section) => section.key)).toEqual(['analytics', 'policy']);
     expect(hasRow('loading')).toBe(false);
   });
 });

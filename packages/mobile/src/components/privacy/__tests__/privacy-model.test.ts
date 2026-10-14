@@ -42,7 +42,6 @@ function makeInput(overrides: Partial<PrivacyModelInput> = {}): PrivacyModelInpu
     onReviewBoards: vi.fn(),
     onAnalyticsChange: vi.fn(),
     onSessionRecordingChange: vi.fn(),
-    onExportData: vi.fn(),
     onOpenPrivacyPolicy: vi.fn(),
     ...overrides,
   };
@@ -67,13 +66,13 @@ function findRow<TKind extends MoreRow['kind']>(
 describe('buildPrivacyModel — which sections show', () => {
   it('signed out: only analytics and the policy, never a spinner', () => {
     const input = makeInput({ signedIn: false, settings: undefined, settingsLoading: true, offline: true });
-    expect(sectionKeys(input)).toEqual(['analytics', 'sessionRecording', 'data']);
+    expect(sectionKeys(input)).toEqual(['analytics', 'policy']);
     expect(rowKeys(input)).toEqual(['analytics', 'sessionRecording', 'privacyPolicy']);
   });
 
   it('signed in and loading: a busy status row ahead of the local controls', () => {
     const input = makeInput({ settings: undefined, settingsLoading: true });
-    expect(sectionKeys(input)).toEqual(['status', 'analytics', 'sessionRecording', 'data']);
+    expect(sectionKeys(input)).toEqual(['status', 'analytics', 'policy']);
     expect(findRow(input, 'loading', 'value').busy).toBe(true);
   });
 
@@ -91,28 +90,42 @@ describe('buildPrivacyModel — which sections show', () => {
 
   it('server controls off: a note instead of the account switch, and the anonymity switch still works', () => {
     const input = makeInput({ settings: { ...SERVER, enabled: false } });
-    expect(sectionKeys(input)).toEqual(['account', 'boards', 'analytics', 'sessionRecording', 'data']);
+    expect(sectionKeys(input)).toEqual(['account', 'boards', 'analytics', 'policy']);
     expect(findRow(input, 'accountControlsLater', 'info').body).toBe('settings:privacy.accountControlsLater');
     expect(rowKeys(input)).not.toContain('privateAccount');
     expect(findRow(input, 'anonymousOnForeignBoards', 'toggle').disabled).toBe(false);
   });
 
-  it('server controls on: the whole page, in order', () => {
-    expect(sectionKeys(makeInput())).toEqual([
-      'account',
-      'people',
-      'sessionDefault',
-      'boards',
-      'boardAccess',
-      'analytics',
-      'sessionRecording',
-      'data',
+  it('server controls on: the whole page, in six groups', () => {
+    expect(
+      buildPrivacyModel(makeInput()).sections.map((section) => [section.key, section.rows.map((row) => row.key)]),
+    ).toEqual([
+      ['account', ['privateAccount']],
+      ['people', ['followers']],
+      ['sessionDefault', ['sessionDefault']],
+      ['boards', ['anonymousOnForeignBoards', 'reviewBoards']],
+      ['analytics', ['analytics', 'sessionRecording']],
+      ['policy', ['privacyPolicy']],
     ]);
   });
 
-  it('offers export only to a signed-in climber', () => {
-    expect(rowKeys(makeInput())).toContain('exportData');
+  it('never offers export, which lives on Account', () => {
+    expect(rowKeys(makeInput())).not.toContain('exportData');
     expect(rowKeys(makeInput({ signedIn: false }))).not.toContain('exportData');
+  });
+
+  it('keeps each board explanation next to its own row', () => {
+    const boards = buildPrivacyModel(makeInput()).sections.find((section) => section.key === 'boards');
+    expect(findRow(makeInput(), 'anonymousOnForeignBoards', 'toggle').subtitle).toBe(
+      'settings:privacy.anonymousOnForeignBoardsDescription',
+    );
+    expect(boards?.footer).toBe('settings:privacy.boardReview');
+    // Without the server's controls there is no review row, so no line about it.
+    const withoutReview = buildPrivacyModel(makeInput({ settings: { ...SERVER, enabled: false } })).sections.find(
+      (section) => section.key === 'boards',
+    );
+    expect(withoutReview?.rows.map((row) => row.key)).toEqual(['anonymousOnForeignBoards']);
+    expect(withoutReview?.footer).toBeUndefined();
   });
 
   it('opens the policy outside the app', () => {
@@ -226,6 +239,12 @@ describe('buildPrivacyModel — analytics', () => {
       'consent:regionDefaultNote consent:settingsBody',
     );
     expect(findRow(makeInput(), 'analytics', 'toggle').label).toBe('consent:analyticsLabel');
+  });
+
+  it('says on the recording switch itself what it records and when to use it', () => {
+    const recording = findRow(makeInput(), 'sessionRecording', 'toggle');
+    expect(recording.label).toBe('common:mobile.settings.diagnostics.recording');
+    expect(recording.subtitle).toBe('common:mobile.settings.diagnostics.recordingDescription');
   });
 
   it('locks recording without consent', () => {

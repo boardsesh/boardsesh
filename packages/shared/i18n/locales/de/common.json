@@ -17,12 +17,11 @@
     "settings": {
       "title": "Einstellungen",
       "pages": {
-        "offline": {
-          "title": "Offline & Speicher",
-          "on": "An"
-        },
         "general": {
           "title": "Allgemein"
+        },
+        "board": {
+          "title": "Board"
         },
         "climbs": {
           "title": "Boulder & Grade"
@@ -158,6 +157,7 @@
         },
         "accessibility": {
           "title": "Barrierefreiheit",
+          "pageTitle": "Griff-Farben & -Formen",
           "classicOnlyNote": "Markerform, Strichstärke und Größe gelten nur für die klassische Darstellung. Bei Boardsesh ist die Silhouette des beleuchteten Griffs selbst die Form — aktiviere unten die Rollen-Symbole für einen formbasierten Hinweis.",
           "roleGlyphs": {
             "label": "Rollen-Symbole",
@@ -366,6 +366,7 @@
         "personalGradesDescription": "Zeigt den Grad, den du einem Boulder gegeben hast, statt den der Community, und sortiert und filtert danach."
       },
       "offline": {
+        "title": "Offline",
         "offlineMode": "Offline-Modus",
         "offlineModeDescription": "Stoppt den Kontakt zum Boardsesh-Server, bis du ihn wieder ausschaltest. Heruntergeladene Boards funktionieren weiter und deine Begehungen warten auf deinem Handy.",
         "autoDownload": "Boards offline halten",
@@ -385,8 +386,8 @@
         "contributeSubtitle": "Die Übersetzungen kommen aus der Community. Öffne die {{language}}-Dateien auf GitHub, um eine Formulierung zu korrigieren oder zu ergänzen."
       },
       "diagnostics": {
-        "recording": "Hilf uns, besser zu werden",
-        "recordingDescription": "Sende anonyme, maskierte Session-Aufzeichnungen, damit wir Bugs schneller plattmachen. Deine Eingaben und Fotos bleiben verborgen. Du kannst es jederzeit abschalten."
+        "recording": "Sitzungsaufzeichnungen teilen",
+        "recordingDescription": "Zeichnet deinen Bildschirm in der App auf, damit wir sehen, wie ein Bug passiert. Deine Eingaben und Fotos bleiben verborgen. Schalte es ein, während du ein Problem für den Support nachstellst, und danach wieder aus."
       },
       "syncIssues": {
         "title": "Sync-Probleme",
@@ -432,8 +433,8 @@
         "leaveDeferred": "Zurückwechseln geht noch nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
       },
       "climbDrawer": {
-        "title": "Boulderansicht",
         "description": "Wähle, was du unter dem Boulder siehst.",
+        "settingsFooter": "Wähle, was du unter dem Boulder siehst. Du kannst das auch im Menü ⋯ eines Boulders unter Ansichtsoptionen ändern.",
         "loading": "Ansichtsoptionen werden geladen…",
         "hideAll": "Alles ausblenden",
         "showAll": "Alles anzeigen",

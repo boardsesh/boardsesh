@@ -103,25 +103,24 @@ export default function SettingsLayout() {
       <Stack screenOptions={screenOptions}>
         <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
         {/* The pages the Settings root lists, in its order. */}
+        <Stack.Screen name="general" options={{ title: settingsPageTitle('general', t) }} />
         <Stack.Screen name="privacy" options={{ title: settingsPageTitle('privacy', t) }} />
         {/* No title here: the page names itself after the list it shows. */}
         <Stack.Screen name="privacy-people" />
-        <Stack.Screen name="integrations" options={{ title: settingsPageTitle('integrations', t) }} />
         <Stack.Screen name="account" options={{ title: settingsPageTitle('account', t) }} />
-        {/* Board look is a parent plus two leaves: the parent asks "which look?",
-          and everything you can tune about one lives a tap away. Registered flat
-          in this stack (no nested layout) so back-swipe and the header keep
-          behaving. */}
-        <Stack.Screen name="board-look/index" options={{ title: settingsPageTitle('boardLook', t) }} />
+        <Stack.Screen name="integrations" options={{ title: settingsPageTitle('integrations', t) }} />
+        {/* Board is a parent plus two leaves: the parent asks "which look?" and
+          holds the lighting and Bluetooth switches, and everything you can tune
+          about a look lives a tap away. The route keeps its old `board-look`
+          name. Registered flat in this stack (no nested layout) so back-swipe
+          and the header keep behaving. */}
+        <Stack.Screen name="board-look/index" options={{ title: settingsPageTitle('board', t) }} />
         <Stack.Screen name="board-look/custom" options={{ title: t('mobile.settings.boardLook.customLook.title') }} />
         <Stack.Screen
           name="board-look/accessibility"
-          options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
+          options={{ title: t('mobile.settings.boardLook.accessibility.pageTitle') }}
         />
-        <Stack.Screen name="offline" options={{ title: settingsPageTitle('offline', t) }} />
-        <Stack.Screen name="general" options={{ title: settingsPageTitle('general', t) }} />
         <Stack.Screen name="climbs" options={{ title: settingsPageTitle('climbs', t) }} />
-        <Stack.Screen name="board-lighting" options={{ title: settingsPageTitle('boardLighting', t) }} />
         <Stack.Screen name="early-access" options={{ title: settingsPageTitle('earlyAccess', t) }} />
         <Stack.Screen name="developer" options={{ title: settingsPageTitle('developer', t) }} />
         {/* The pages those pages open. */}

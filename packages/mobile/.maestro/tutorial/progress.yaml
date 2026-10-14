@@ -2,7 +2,7 @@ appId: com.boardsesh.app.dev
 name: Tutorial - your grades and combined progress
 ---
 # "Use my grades" lives on Settings > Climbs & grades. Its switch is found by its
-# neighbours: the label above-left of it, and the Climb view section below the
+# neighbours: the label above-left of it, and the Below the climb section below the
 # grades and the Climb list row.
 - openLink: com.boardsesh.app://settings/climbs
 - waitForAnimationToEnd
@@ -17,18 +17,18 @@ name: Tutorial - your grades and combined progress
       notVisible:
         rightOf: Use my grades
         below: Use my grades
-        above: Climb view
+        above: Below the climb
         checked: true
     commands:
       - tapOn:
           rightOf: Use my grades
           below: Use my grades
-          above: Climb view
+          above: Below the climb
           checked: false
 - assertVisible:
     rightOf: Use my grades
     below: Use my grades
-    above: Climb view
+    above: Below the climb
     checked: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/personal-grades')}
 - extendedWaitUntil:

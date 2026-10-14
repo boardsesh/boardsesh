@@ -40,7 +40,7 @@ const TOPICS = [
  * section ids are stable: `climb-counts` is linked from docs/kilter-sync.md.
  *
  * The Aurora linking steps are checked against the mobile app: avatar → user
- * drawer → Settings → the More screen → Connected apps → Board Accounts, where
+ * drawer → Settings → Connected apps → Board accounts, where
  * the Tension card says "Link" and the Kilter card says "Sign in to Kilter".
  */
 export default function HelpContent() {

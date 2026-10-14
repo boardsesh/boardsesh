@@ -6,15 +6,11 @@ import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useEffectiveBoardRenderSettings } from '../../../hooks/use-native-climb-render';
 import { renderedBoardLookOption } from '../../../lib/board-render/board-look-options';
 import { useBoardRenderSettings } from '../../../lib/board-render-settings';
-import { useConnectivity } from '../../../lib/connectivity/use-connectivity';
-import { isOfflineModeSupported } from '../../../lib/connectivity/connectivity-store';
 import { hapticLight } from '../../../lib/haptics';
 import { useQaMenu } from '../../../lib/qa/use-qa-menu';
 import { useAuth } from '../../../providers/auth-provider';
-import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { gradeFormatOptions } from '../climbs/climbs-model';
 import { useDeveloperSettingsAccess } from '../developer/use-developer-settings-access';
-import { useShowStorage } from '../offline/use-show-storage';
 import { SETTINGS_ROOT_ROUTES } from './settings-pages';
 import { buildSettingsRootModel } from './settings-root-model';
 import { useSyncIssuesSection } from './use-sync-issues';
@@ -30,9 +26,6 @@ export function SettingsRootScreen() {
   // document but must still be able to reach Sign out.
   const { isAuthenticated } = useAuth();
   const syncIssues = useSyncIssuesSection();
-  const offlineEnabled = useOfflineDownloadsEnabled();
-  const showStorage = useShowStorage();
-  const { offlineMode } = useConnectivity();
   const { gradeFormat } = useGradeFormat();
   const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
   const { allowed: showDeveloper } = useDeveloperSettingsAccess();
@@ -51,10 +44,6 @@ export function SettingsRootScreen() {
     return option ? t(option.labelI18nKey) : undefined;
   }, [boardRenderSettingsLoaded, boardRenderSettings, boardseshRendererAvailable, t]);
 
-  // Offline mode only. "Keep boards offline" on its own still syncs, so an "On"
-  // here would read as the phone being offline when it isn't.
-  const offlineModeOn = isOfflineModeSupported() && offlineMode;
-
   const model = useMemo(
     () =>
       buildSettingsRootModel({
@@ -62,13 +51,11 @@ export function SettingsRootScreen() {
         syncIssues,
         visible: {
           account: isAuthenticated,
-          offline: offlineEnabled || showStorage,
           earlyAccess: showQaPreviews,
           developer: showDeveloper,
         },
         values: {
-          boardLook: boardLookLabel,
-          offline: offlineModeOn ? t('mobile.settings.pages.offline.on') : undefined,
+          board: boardLookLabel,
           climbs: gradeFormatOptions(t).find((option) => option.key === gradeFormat)?.label,
         },
         onOpen: (page) => {
@@ -76,18 +63,7 @@ export function SettingsRootScreen() {
           router.push(SETTINGS_ROOT_ROUTES[page]);
         },
       }),
-    [
-      t,
-      syncIssues,
-      isAuthenticated,
-      offlineEnabled,
-      showStorage,
-      showQaPreviews,
-      showDeveloper,
-      boardLookLabel,
-      offlineModeOn,
-      gradeFormat,
-    ],
+    [t, syncIssues, isAuthenticated, showQaPreviews, showDeveloper, boardLookLabel, gradeFormat],
   );
 
   return <MoreForm model={model} />;

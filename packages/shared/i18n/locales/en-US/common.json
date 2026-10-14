@@ -17,12 +17,11 @@
     "settings": {
       "title": "Settings",
       "pages": {
-        "offline": {
-          "title": "Offline & storage",
-          "on": "On"
-        },
         "general": {
           "title": "General"
+        },
+        "board": {
+          "title": "Board"
         },
         "climbs": {
           "title": "Climbs & grades"
@@ -158,6 +157,7 @@
         },
         "accessibility": {
           "title": "Accessibility",
+          "pageTitle": "Hold colours & shapes",
           "classicOnlyNote": "Marker shape, brush, and size only apply to the Classic render. In Boardsesh, the lit hold's own silhouette is the shape — turn on role glyphs below for a shape-based cue instead.",
           "roleGlyphs": {
             "label": "Role glyphs",
@@ -366,6 +366,7 @@
         "personalGradesDescription": "Show the grade you gave a climb instead of the crowd's, and sort and filter by it."
       },
       "offline": {
+        "title": "Offline",
         "offlineMode": "Offline mode",
         "offlineModeDescription": "Stop talking to the Boardsesh server until you turn this off. Downloaded boards keep working and sends queue up on your phone.",
         "autoDownload": "Keep boards offline",
@@ -385,8 +386,8 @@
         "contributeSubtitle": "These come from the community. Open the {{language}} files on GitHub to fix or add a phrase."
       },
       "diagnostics": {
-        "recording": "Help us improve",
-        "recordingDescription": "Send anonymous, masked session recordings so we can squash bugs faster. Your typing and photos stay hidden. Flip it off whenever you like."
+        "recording": "Share session recordings",
+        "recordingDescription": "Records your screen in the app so we can see a bug happen. Your typing and photos stay hidden. Turn it on while you reproduce a problem for support, then switch it off."
       },
       "syncIssues": {
         "title": "Sync issues",
@@ -432,8 +433,8 @@
         "leaveDeferred": "Can't switch back yet. We'll try again next time you open the app."
       },
       "climbDrawer": {
-        "title": "Climb view",
         "description": "Choose what you see below the climb.",
+        "settingsFooter": "Choose what you see below the climb. You can also change this from the ⋯ menu on a climb, under View options.",
         "loading": "Loading view options…",
         "hideAll": "Hide all",
         "showAll": "Show all",

@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Garde l'ampoule appuyée",
         "p1": "Une fois connecté, garde l'ampoule appuyée pour ces réglages, de haut en bas.",
-        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres, puis Éclairage de la board.",
+        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres, puis Board.",
         "row2": "Allumer la prise du dessus. MoonBoard uniquement.",
         "row3": "Allumer en faisant défiler les blocs.",
         "row4": "Allumer en sélectionnant dans la liste. Désactive les deux et explorer ne change plus le mur.",

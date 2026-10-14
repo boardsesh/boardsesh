@@ -58,21 +58,21 @@
     "profileError": "Failed to load profile"
   },
   "profile": {
-    "editAction": "Edit Profile",
+    "editAction": "Edit profile",
     "avatar": {
       "upload": "Upload",
       "change": "Change",
       "hintMobile": "Cropped square and compressed automatically."
     },
     "displayName": {
-      "label": "Display Name",
+      "label": "Display name",
       "placeholder": "Enter your display name"
     },
     "email": {
       "label": "Email",
       "help": "Email cannot be changed"
     },
-    "save": "Save Changes",
+    "save": "Save changes",
     "saved": "Settings saved successfully",
     "saveError": "Failed to save settings",
     "validation": {
@@ -87,8 +87,8 @@
     "cta": "Open the app"
   },
   "deleteAccount": {
-    "title": "Delete Account",
-    "button": "Delete Account",
+    "title": "Delete account",
+    "button": "Delete account",
     "dialog": {
       "warning": "This is permanent. Your profile, draft climbs, logbook entries, and all other data will be deleted and cannot be recovered.",
       "checking": "Checking your climbs...",
@@ -97,7 +97,7 @@
       "removeSetterName": "Remove my setter name from published climbs",
       "confirmInstruction": "Type <strong>DELETE</strong> to confirm.",
       "confirmPlaceholder": "DELETE",
-      "confirm": "Delete My Account"
+      "confirm": "Delete my account"
     },
     "error": "Failed to delete account. Please try again."
   },
@@ -182,7 +182,7 @@
     "deleteError": "Failed to delete controller"
   },
   "aurora": {
-    "title": "Board Accounts",
+    "title": "Board accounts",
     "card": {
       "boardSuffix": "Board",
       "username": "Username:",
@@ -401,8 +401,6 @@
     "bugPlaceholder": "What were you doing? What did you expect vs see?",
     "ratingPlaceholder": "What's on your mind?",
     "remainingChars": "{{count}} more characters to go",
-    "sessionRecordingLabel": "Turn on session recording",
-    "sessionRecordingDescription": "Help us fix your bug faster by turning on session recording and reproducing the bug. You can turn it off after.",
     "bluetoothBugLabel": "I'm having Bluetooth trouble",
     "bluetoothBugDescription": "Scans for nearby boards and sends us what they broadcast, so we can figure out why yours won't connect. No board is controlled — we just listen.",
     "contactConsentLabel": "Can we contact you about this?",
@@ -462,8 +460,8 @@
     "cancel": "Cancel",
     "connectBoard": "Connect Board",
     "relightBoard": "Re-light board",
+    "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "title": "Auto-disconnect",
       "description": "Disconnect from the board after no climb has been displayed for the selected time.",
       "enabledLabel": "Auto-disconnect",
       "enabledDescription": "Let other climbers connect after the timer expires.",

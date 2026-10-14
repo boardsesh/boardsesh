@@ -270,7 +270,6 @@ export function PrivacySettingsScreen() {
         hapticSelection();
         sessionRecording.onValueChange(next);
       },
-      onExportData: () => router.push('/settings/export'),
       onOpenPrivacyPolicy: () => void openExternalUrl(PRIVACY_POLICY_URL, 'privacy-settings'),
     }),
     SETTINGS_PAGE,

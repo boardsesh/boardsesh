@@ -23,7 +23,7 @@ export type ClimbsModelInput = {
   /** The climb-list preset the climber is on ("Default", "Custom"…). */
   climbListPresetLabel: string;
   onOpenClimbList: () => void;
-  /** The "Climb view" section, shared with the play drawer's own sheet. */
+  /** The "Below the climb" section, shared with the play drawer's own sheet. */
   climbDrawerSection: MoreSection;
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildBoardLightingModel, type BoardLightingModelInput } from '../board-lighting-model';
+import { buildBoardLightingSections, type BoardLightingModelInput } from '../board-lighting-model';
 import type { MoreRow } from '../../../MoreForm.types';
 
 function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLightingModelInput {
@@ -22,27 +22,28 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
 }
 
 function findRow(input: BoardLightingModelInput, key: string): MoreRow {
-  const row = buildBoardLightingModel(input)
-    .sections.flatMap((section) => section.rows)
+  const row = buildBoardLightingSections(input)
+    .flatMap((section) => section.rows)
     .find((candidate) => candidate.key === key);
   if (!row) throw new Error(`no row ${key}`);
   return row;
 }
 
-describe('buildBoardLightingModel', () => {
-  it('lists what lights the board, then auto-disconnect', () => {
-    const model = buildBoardLightingModel(makeInput());
-    expect(model.sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
+describe('buildBoardLightingSections', () => {
+  it('lists what lights the board, then Bluetooth with auto-disconnect', () => {
+    const sections = buildBoardLightingSections(makeInput());
+    expect(sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
       ['lighting', ['lightOnSwipe', 'lightOnClimbTap']],
-      ['autoDisconnect', ['autoDisconnectBle', 'autoDisconnectTimeoutSeconds']],
+      ['bluetooth', ['autoDisconnectBle', 'autoDisconnectTimeoutSeconds']],
     ]);
   });
 
-  it('keeps both descriptions as footers, and leaves the page title off the first section', () => {
-    const [lighting, autoDisconnect] = buildBoardLightingModel(makeInput()).sections;
-    expect(lighting.title).toBeUndefined();
+  it('titles both groups, since they sit on the Board page under the look, and keeps both descriptions as footers', () => {
+    const [lighting, bluetooth] = buildBoardLightingSections(makeInput());
+    expect(lighting.title).toBe('settings:ble.lighting.title');
     expect(lighting.footer).toBe('settings:ble.lighting.description');
-    expect(autoDisconnect.footer).toBe('settings:ble.autoDisconnect.description');
+    expect(bluetooth.title).toBe('settings:ble.sectionTitle');
+    expect(bluetooth.footer).toBe('settings:ble.autoDisconnect.description');
   });
 
   it('adds the MoonBoard extra-LED switch only for a MoonBoard', () => {

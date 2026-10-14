@@ -803,7 +803,7 @@ post-OTA launch. The legacy rows are never deleted, but the first write after a 
 `bootstrap-attempts:` down to the mirrored value — the clean pass has to be visible to a rolled-back bundle
 too, or it would re-read the pre-migration count and settle the scope all over again.
 
-A scope torn down from **Settings → Offline & storage → Storage** becomes eligible again: `removeBoardScopeData`
+A scope torn down from **Settings → General → Storage** becomes eligible again: `removeBoardScopeData`
 (`sync/scope-teardown.ts`) clears all three board-data checkpoints **and** its `bootstrap-attempts:` /
 `bootstrap-attempts-healed:` / `bootstrap-done:` / `bootstrap-paged-fallback:` / `bootstrap-retry:` markers
 in the same transaction as the rows, so a re-download takes the snapshot fast path rather than a paged

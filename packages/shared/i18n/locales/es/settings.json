@@ -403,8 +403,6 @@
     "remainingChars": "Faltan {{count}} caracteres",
     "starRating_one": "{{count}} estrella",
     "starRating_other": "{{count}} estrellas",
-    "sessionRecordingLabel": "Activar grabación de sesión",
-    "sessionRecordingDescription": "Ayúdanos a corregir tu error más rápido activando la grabación de sesión y reproduciendo el problema. Puedes desactivarla después.",
     "bluetoothBugLabel": "Tengo problemas con el Bluetooth",
     "bluetoothBugDescription": "Busca plafones cercanos y nos envía lo que emiten, para entender por qué el tuyo no se conecta. No se controla ningún plafón: solo escuchamos.",
     "contactConsentLabel": "¿Podemos contactarte sobre esto?",
@@ -462,8 +460,8 @@
     "cancel": "Cancelar",
     "connectBoard": "Conectar plafón",
     "relightBoard": "Reiluminar plafón",
+    "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "title": "Desconexión automática",
       "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
       "enabledLabel": "Desconexión automática",
       "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",

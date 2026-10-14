@@ -218,7 +218,7 @@ const SHARE_LABEL = 'mobile.climbRow.share';
 
 describe('PlayDrawerActionBar', () => {
   // ⋯ moved to the drawer's top row, and section choices live there and in
-  // Settings → Climb view, so neither ⋯ nor the eye belongs to the bar any more.
+  // Settings → Below the climb, so neither ⋯ nor the eye belongs to the bar any more.
   it('draws neither ⋯ nor the section eye', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
 

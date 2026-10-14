@@ -42,18 +42,18 @@ name: Tutorial - real photo spray wall
       notVisible:
         rightOf: Use my look on spray walls
         below: Spray walls
-        above: Reset board look
+        above: Board lighting
         checked: true
     commands:
       - tapOn:
           rightOf: Use my look on spray walls
           below: Spray walls
-          above: Reset board look
+          above: Board lighting
           checked: false
 - assertVisible:
     rightOf: Use my look on spray walls
     below: Spray walls
-    above: Reset board look
+    above: Board lighting
     checked: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/look')}
 - extendedWaitUntil:

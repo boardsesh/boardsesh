@@ -244,9 +244,11 @@ export const FeedbackSheet = memo(function FeedbackSheet({
 
         {isBugReport ? (
           <View style={[styles.recordingCard, { backgroundColor: systemColors.secondaryBackground }]}>
+            {/* The same switch, words and all, as Settings → Privacy, so the
+                note to turn it off again reads the same in both places. */}
             <SessionRecordingSwitchRow
-              label={t('feedbackForm.sessionRecordingLabel')}
-              description={t('feedbackForm.sessionRecordingDescription')}
+              label={tCommon('mobile.settings.diagnostics.recording')}
+              description={tCommon('mobile.settings.diagnostics.recordingDescription')}
             />
             <SwitchRow
               label={t('feedbackForm.bluetoothBugLabel')}

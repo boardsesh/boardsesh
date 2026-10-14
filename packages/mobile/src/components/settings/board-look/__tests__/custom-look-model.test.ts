@@ -22,6 +22,7 @@ function makeInput(overrides: Partial<CustomLookModelInput> = {}): CustomLookMod
     },
     preview: null,
     previewHeight: 268,
+    onResetBoardLook: vi.fn(),
     ...overrides,
     // `boardsesh` is spread above from the override, so re-pin it after the spread.
     ...(overrides.boardsesh ? { boardsesh } : {}),
@@ -133,7 +134,7 @@ describe('buildCustomLookModel — the board you are tuning', () => {
   it('leads with the preview, above the knobs that change it', () => {
     const model = buildCustomLookModel(makeInput({ preview: 'PREVIEW' }));
     expect(model.sections[0].key).toBe('preview');
-    expect(model.sections.map((section) => section.key)).toEqual(['preview', 'mode', 'glowVeil', 'marks']);
+    expect(model.sections.map((section) => section.key)).toEqual(['preview', 'mode', 'glowVeil', 'marks', 'reset']);
   });
 
   it('hosts it full-bleed at the height it was given', () => {
@@ -149,6 +150,25 @@ describe('buildCustomLookModel — the board you are tuning', () => {
       'mode',
       'glowVeil',
       'marks',
+      'reset',
     ]);
+  });
+});
+
+describe('buildCustomLookModel — the reset', () => {
+  it('ends the page, with the note promising hold colours are left alone', () => {
+    const reset = buildCustomLookModel(makeInput()).sections.at(-1);
+    expect(reset?.key).toBe('reset');
+    expect(reset?.footer).toBe('mobile.settings.boardLook.resetAllNote');
+  });
+
+  it('is the quiet button, and fires only the board-look reset', () => {
+    const onResetBoardLook = vi.fn();
+    const row = findRow(makeInput({ onResetBoardLook }), 'resetBoardLook');
+    if (row?.kind !== 'button') throw new Error('no reset button');
+    expect(row.label).toBe('mobile.settings.boardLook.resetAll');
+    expect(row.emphasis).toBe('subtle');
+    row.onPress();
+    expect(onResetBoardLook).toHaveBeenCalledTimes(1);
   });
 });

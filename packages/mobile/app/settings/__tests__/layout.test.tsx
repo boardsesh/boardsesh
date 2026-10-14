@@ -146,17 +146,15 @@ function pressHeaderBack(options: ScreenOptions) {
 // is a row that pushes into a navigator that doesn't register it.
 const SETTINGS_PAGES = [
   'index',
+  'general',
   'privacy',
   'privacy-people',
-  'integrations',
   'account',
+  'integrations',
   'board-look/index',
   'board-look/custom',
   'board-look/accessibility',
-  'offline',
-  'general',
   'climbs',
-  'board-lighting',
   'early-access',
   'developer',
   'climb-list',
@@ -239,14 +237,12 @@ describe('the settings stack', () => {
   it('titles every page on the Settings root with the label of the row that opens it', () => {
     // Both come from settingsPageTitle; the root model test checks the row half.
     const routeNames = {
-      privacy: 'privacy',
-      integrations: 'integrations',
-      account: 'account',
-      boardLook: 'board-look/index',
-      offline: 'offline',
       general: 'general',
+      privacy: 'privacy',
+      account: 'account',
+      integrations: 'integrations',
+      board: 'board-look/index',
       climbs: 'climbs',
-      boardLighting: 'board-lighting',
       earlyAccess: 'early-access',
       developer: 'developer',
     } as const;

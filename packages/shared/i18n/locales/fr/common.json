@@ -17,12 +17,11 @@
     "settings": {
       "title": "Paramètres",
       "pages": {
-        "offline": {
-          "title": "Hors ligne et stockage",
-          "on": "Activé"
-        },
         "general": {
           "title": "Général"
+        },
+        "board": {
+          "title": "Board"
         },
         "climbs": {
           "title": "Blocs et cotations"
@@ -158,6 +157,7 @@
         },
         "accessibility": {
           "title": "Accessibilité",
+          "pageTitle": "Couleurs et formes des prises",
           "classicOnlyNote": "La forme, l'épaisseur et la taille du marqueur ne s'appliquent qu'au rendu Classique. En Boardsesh, la silhouette de la prise allumée fait déjà office de forme — active les glyphes de rôle ci-dessous pour un repère basé sur la forme.",
           "roleGlyphs": {
             "label": "Glyphes de rôle",
@@ -366,6 +366,7 @@
         "personalGradesDescription": "Affiche la cotation que tu as donnée à un bloc plutôt que celle de la communauté, et trie et filtre avec."
       },
       "offline": {
+        "title": "Hors ligne",
         "offlineMode": "Mode hors ligne",
         "offlineModeDescription": "Coupe les échanges avec le serveur Boardsesh jusqu'à ce que tu le désactives. Les boards téléchargées continuent de fonctionner et tes croix attendent sur ton téléphone.",
         "autoDownload": "Garder les boards hors ligne",
@@ -385,8 +386,8 @@
         "contributeSubtitle": "Les traductions sont maintenues par la communauté. Ouvrez les fichiers {{language}} sur GitHub pour corriger ou ajouter une phrase."
       },
       "diagnostics": {
-        "recording": "Aidez-nous à nous améliorer",
-        "recordingDescription": "Envoyez des enregistrements de session anonymes et masqués pour qu'on corrige les bugs plus vite. Ce que vous tapez et vos photos restent masqués. Désactivez quand vous voulez."
+        "recording": "Partager les enregistrements de session",
+        "recordingDescription": "Enregistre ton écran dans l’app pour qu’on voie le bug se produire. Ce que tu tapes et tes photos restent masqués. Active-le pendant que tu reproduis un problème pour le support, puis désactive-le."
       },
       "syncIssues": {
         "title": "Problèmes de synchronisation",
@@ -432,8 +433,8 @@
         "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       },
       "climbDrawer": {
-        "title": "Vue du bloc",
         "description": "Choisis ce que tu vois sous le bloc.",
+        "settingsFooter": "Choisis ce que tu vois sous le bloc. Tu peux aussi le changer depuis le menu ⋯ d’un bloc, dans Options d’affichage.",
         "loading": "Chargement des options d’affichage…",
         "hideAll": "Tout masquer",
         "showAll": "Tout afficher",

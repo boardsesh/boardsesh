@@ -382,7 +382,7 @@ export function PlayCore({
   // strand them with nothing below the board and no way back. The defaults need
   // no read, so they are ready at once. Every other viewer, a guest without an
   // account included, keeps their stored choices: they can reach both ⋯ → View
-  // options and Settings → Climb view, and those write exactly that store.
+  // options and Settings → Below the climb, and those write exactly that store.
   const sections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
   const sectionsReady = isAnonymous || storedSectionsPreference.ready;
 

@@ -11,6 +11,7 @@ function makeInput(overrides: Partial<AccountModelInput> = {}): AccountModelInpu
     syncIssues: null,
     email: 'alex@example.com',
     onEditProfile: vi.fn(),
+    onExportData: vi.fn(),
     onSignOut: vi.fn(),
     onDeleteAccount: vi.fn(),
     ...overrides,
@@ -26,19 +27,25 @@ function button(input: AccountModelInput, key: string): MoreButtonRow {
 }
 
 describe('buildAccountModel', () => {
-  it('leads with Edit profile, and ends with the two ways out', () => {
+  it('leads with Edit profile, then your data, and ends with the two ways out', () => {
     expect(
       buildAccountModel(makeInput()).sections.map((section) => [section.key, section.rows.map((row) => row.key)]),
     ).toEqual([
       ['profile', ['editProfile']],
+      ['yourData', ['exportData']],
       ['accountActions', ['signOut', 'deleteAccount']],
     ]);
   });
 
-  it('no longer carries Privacy or Export data, which live on the Privacy page', () => {
-    const keys = buildAccountModel(makeInput()).sections.flatMap((section) => section.rows.map((row) => row.key));
-    expect(keys).not.toContain('privacy');
-    expect(keys).not.toContain('exportData');
+  it('carries the export under Your data, and no Privacy row, which has its own page', () => {
+    const model = buildAccountModel(makeInput());
+    expect(model.sections.flatMap((section) => section.rows.map((row) => row.key))).not.toContain('privacy');
+    const yourData = model.sections.find((section) => section.key === 'yourData');
+    expect(yourData?.title).toBe('settings:privacy.yourData');
+    const exportRow = yourData?.rows[0];
+    if (exportRow?.kind !== 'nav') throw new Error('exportData is not a nav row');
+    expect(exportRow.label).toBe('settings:export.title');
+    expect(exportRow.icon).toBe('export');
   });
 
   it('shows the email under Edit profile, and nothing while it is unknown', () => {
@@ -60,6 +67,7 @@ describe('buildAccountModel', () => {
     expect(model.sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
       ['syncIssues', ['retrySync']],
       ['profile', ['editProfile']],
+      ['yourData', ['exportData']],
       ['accountActions', ['signOut', 'deleteAccount']],
     ]);
     const [syncIssues] = model.sections;
@@ -76,7 +84,7 @@ describe('buildAccountModel', () => {
     const rootSection = buildSettingsRootModel({
       t: echo,
       syncIssues,
-      visible: { account: true, offline: false, earlyAccess: false, developer: false },
+      visible: { account: true, earlyAccess: false, developer: false },
       values: {},
       onOpen: vi.fn(),
     }).sections[0];
@@ -87,9 +95,13 @@ describe('buildAccountModel', () => {
     const input = makeInput();
     button(input, 'signOut').onPress();
     button(input, 'deleteAccount').onPress();
-    const editProfile = buildAccountModel(input).sections[0].rows[0];
-    if (editProfile.kind !== 'nav') throw new Error('editProfile is not a nav row');
+    const [profile, yourData] = buildAccountModel(input).sections;
+    const editProfile = profile.rows[0];
+    const exportData = yourData.rows[0];
+    if (editProfile.kind !== 'nav' || exportData.kind !== 'nav') throw new Error('expected nav rows');
     editProfile.onPress();
+    exportData.onPress();
+    expect(input.onExportData).toHaveBeenCalledOnce();
     expect(input.onSignOut).toHaveBeenCalledOnce();
     expect(input.onDeleteAccount).toHaveBeenCalledOnce();
     expect(input.onEditProfile).toHaveBeenCalledOnce();

@@ -115,11 +115,9 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   editProfile: 'person.crop.circle',
   privacy: 'hand.raised',
   account: 'person.crop.circle',
-  offline: 'icloud.and.arrow.down',
   general: 'gearshape',
   // SF Symbols 4, iOS 16.0+.
   climbs: 'figure.climbing',
-  boardLighting: 'lightbulb',
   // Sparkles for features not everyone has yet. `testtube.2` drew filled
   // liquid, and `flask` needs iOS 17 (the app's floor is 16.4).
   earlyAccess: 'sparkles',

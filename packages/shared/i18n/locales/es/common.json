@@ -289,12 +289,11 @@
     "settings": {
       "title": "Ajustes",
       "pages": {
-        "offline": {
-          "title": "Sin conexión y almacenamiento",
-          "on": "Activado"
-        },
         "general": {
           "title": "General"
+        },
+        "board": {
+          "title": "Plafón"
         },
         "climbs": {
           "title": "Bloques y grados"
@@ -430,6 +429,7 @@
         },
         "accessibility": {
           "title": "Accesibilidad",
+          "pageTitle": "Colores y formas de las presas",
           "classicOnlyNote": "La forma, el grosor y el tamaño del marcador solo se aplican al renderizado Clásico. En Boardsesh, la silueta de la propia presa encendida es la forma — activa los glifos de rol de abajo para tener una pista basada en formas.",
           "roleGlyphs": {
             "label": "Glifos de rol",
@@ -638,6 +638,7 @@
         "personalGradesDescription": "Muestra el grado que le pusiste a un bloque en vez del de la comunidad, y ordena y filtra por él."
       },
       "offline": {
+        "title": "Sin conexión",
         "offlineMode": "Modo sin conexión",
         "offlineModeDescription": "Deja de hablar con el servidor de Boardsesh hasta que lo desactives. Los plafones descargados siguen funcionando y tus encadenes quedan en cola en el móvil.",
         "autoDownload": "Mantener los plafones sin conexión",
@@ -657,8 +658,8 @@
         "contributeSubtitle": "Las traducciones las mantiene la comunidad. Abre los archivos de {{language}} en GitHub para corregir o añadir una frase."
       },
       "diagnostics": {
-        "recording": "Ayúdanos a mejorar",
-        "recordingDescription": "Envía grabaciones de sesión anónimas y enmascaradas para que corrijamos errores más rápido. Lo que escribes y tus fotos quedan ocultos. Desactívalo cuando quieras."
+        "recording": "Compartir grabaciones de sesión",
+        "recordingDescription": "Graba tu pantalla en la app para que veamos cómo ocurre un error. Lo que escribes y tus fotos quedan ocultos. Actívalo mientras reproduces un problema para soporte y luego desactívalo."
       },
       "syncIssues": {
         "title": "Problemas de sincronización",
@@ -704,8 +705,8 @@
         "leaveDeferred": "Todavía no se puede volver. Lo intentaremos la próxima vez que abras la app."
       },
       "climbDrawer": {
-        "title": "Vista del bloque",
         "description": "Elige qué ves debajo del bloque.",
+        "settingsFooter": "Elige qué ves debajo del bloque. También puedes cambiarlo desde el menú ⋯ de un bloque, en Opciones de vista.",
         "loading": "Cargando opciones de vista…",
         "hideAll": "Ocultar todo",
         "showAll": "Mostrar todo",

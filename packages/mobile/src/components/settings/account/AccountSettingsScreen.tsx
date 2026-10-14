@@ -32,6 +32,10 @@ export function AccountSettingsScreen() {
             hapticLight();
             router.push('/settings/edit');
           },
+          onExportData: () => {
+            hapticLight();
+            router.push('/settings/export');
+          },
           // No haptic on the two destructive actions, as before. The warning and
           // the wipe both live in the hook, shared with the user drawer's Log
           // out row so the two can't drift apart (issue #3621).

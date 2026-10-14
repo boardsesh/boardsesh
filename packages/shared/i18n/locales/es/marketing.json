@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Mantén pulsada la bombilla",
         "p1": "Con el plafón conectado, mantén pulsada la bombilla para estos controles, de arriba abajo.",
-        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes, en Iluminación del plafón.",
+        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes, en Plafón.",
         "row2": "Iluminar la presa de arriba. Solo MoonBoard.",
         "row3": "Iluminar bloques al deslizar.",
         "row4": "Iluminar bloques al tocar la lista. Apaga los dos y explorar deja de mover el muro.",

@@ -49,14 +49,7 @@ export function EarlyAccessSettingsScreen() {
         }),
         'early-access',
       ),
-    [
-      t,
-      showQaPreviews,
-      qaPrNumber,
-      isTester,
-      qaPromptOnLaunch,
-      setQaPromptOnLaunch,
-    ],
+    [t, showQaPreviews, qaPrNumber, isTester, qaPromptOnLaunch, setQaPromptOnLaunch],
   );
 
   return <MoreForm model={model} />;

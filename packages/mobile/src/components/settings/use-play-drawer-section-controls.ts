@@ -14,10 +14,13 @@ export type PlayDrawerSectionControl = { id: PlayDrawerSectionId; label: string;
 export function usePlayDrawerSectionControls() {
   const { t } = useTranslation('common');
   const { sections, ready, setSection, setAll } = usePlayDrawerSectionsPreference();
-  const title = t('mobile.settings.climbDrawer.title');
   const sheetTitle = t('mobile.settings.climbDrawer.sheetTitle');
   const description = t('mobile.settings.climbDrawer.description');
+  // "Below the climb": the sheet's group heading and the Settings section's
+  // title, so both name the same place.
   const groupTitle = t('mobile.settings.climbDrawer.groupTitle');
+  // Settings says where else this lives: the climb's ⋯ menu, under View options.
+  const settingsFooter = t('mobile.settings.climbDrawer.settingsFooter');
   const footer = t('mobile.settings.climbDrawer.footer');
   const loadingLabel = t('mobile.settings.climbDrawer.loading');
   const hideAllLabel = t('mobile.settings.climbDrawer.hideAll');
@@ -72,8 +75,8 @@ export function usePlayDrawerSectionControls() {
   const settingsSection = useMemo<MoreSection>(
     () => ({
       key: 'climbDrawer',
-      title,
-      footer: description,
+      title: groupTitle,
+      footer: settingsFooter,
       // MoreForm's native toggle model has no disabled state; withhold actions
       // until storage settles so loading cannot overwrite a saved choice.
       rows: ready
@@ -93,10 +96,20 @@ export function usePlayDrawerSectionControls() {
           ]
         : [{ kind: 'info', key: 'loading', label: loadingLabel, body: '' }],
     }),
-    [title, description, ready, controls, onSectionChange, hideAllLabel, showAllLabel, hideAll, showAll, loadingLabel],
+    [
+      groupTitle,
+      settingsFooter,
+      ready,
+      controls,
+      onSectionChange,
+      hideAllLabel,
+      showAllLabel,
+      hideAll,
+      showAll,
+      loadingLabel,
+    ],
   );
   return {
-    title,
     sheetTitle,
     description,
     groupTitle,

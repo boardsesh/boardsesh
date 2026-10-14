@@ -45,6 +45,8 @@ export type CustomLookModelInput = {
    */
   preview: ReactNode;
   previewHeight: number;
+  /** Puts the looks and every knob here back to default; hold colours stay. */
+  onResetBoardLook: () => void;
 };
 
 export type CustomLookSliderKey = 'glowReach' | 'plateauShare' | 'veilOpacity' | 'fillOpacity';
@@ -256,6 +258,24 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     },
     { key: 'glowVeil', title: t('mobile.settings.boardLook.glowVeil.title'), rows: glowVeilRows },
     { key: 'marks', title: t('mobile.settings.boardLook.marks.title'), rows: marksRows },
+    {
+      // Last, under the knobs it undoes, the way Hold colours & shapes keeps its
+      // own reset under its markers: each page resets only what it shows.
+      key: 'reset',
+      rows: [
+        {
+          kind: 'button',
+          key: 'resetBoardLook',
+          label: t('mobile.settings.boardLook.resetAll'),
+          emphasis: 'subtle',
+          onPress: input.onResetBoardLook,
+        },
+      ],
+      // The footer is what makes the reset split legible: this button used to
+      // wipe the climber's hold colours too, under a label that never mentioned
+      // them.
+      footer: t('mobile.settings.boardLook.resetAllNote'),
+    },
   );
 
   return { sections };

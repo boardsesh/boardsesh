@@ -1503,7 +1503,7 @@ describe('PlayDrawer — the anonymous joins', () => {
   });
 
   // A guest without an account is still a member viewer: ⋯ → View options and
-  // Settings → Climb view both write the stored choices, so the drawer has to
+  // Settings → Below the climb both write the stored choices, so the drawer has to
   // honour them. Only the anonymous reader, who can reach neither, is overridden.
   it('keeps a signed-out member viewer on their stored Hide all', () => {
     drawerSections.sections = {

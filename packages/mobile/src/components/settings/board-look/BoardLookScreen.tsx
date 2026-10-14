@@ -28,10 +28,13 @@ import {
 import { buildBoardLookModel } from './board-look-model';
 import { useSprayWallsUseOwnLookSetting } from '../../../lib/spray-wall-look-preference';
 import { hapticSelection } from '../../../lib/haptics';
+import { withSettingTracking } from '../../../lib/settings-analytics';
+import { useBoardLightingSections } from '../board-lighting/use-board-lighting-sections';
 
 /**
- * "Board look" — the parent. Pick a look from a rail of renders of your own
- * board, or step into one of the two things behind it.
+ * "Board" — the parent. Pick a look from a rail of renders of your own board,
+ * or step into one of the two things behind it; below that, what lights the
+ * board and when the phone lets go of it.
  *
  * The Custom CARD and the "Custom look" ROW are deliberately different actions.
  * The card is a look change: it brings back the bundle you last tuned, the same
@@ -41,15 +44,8 @@ import { hapticSelection } from '../../../lib/haptics';
  */
 export function BoardLookScreen() {
   const { t } = useTranslation('common');
-  const {
-    settings,
-    matchingOptionId,
-    boardseshRendererAvailable,
-    requestedMode,
-    applyPreset,
-    restoreCustomLook,
-    resetBoardLook,
-  } = useBoardLookSettings();
+  const { settings, matchingOptionId, boardseshRendererAvailable, requestedMode, applyPreset, restoreCustomLook } =
+    useBoardLookSettings();
   const { preview } = useBoardPreviewClimb();
   // The rail's row is pinned in POINTS by a native host (SwiftUI `frame`, Compose
   // `height`) before React Native lays anything out, so the height has to account
@@ -61,6 +57,7 @@ export function BoardLookScreen() {
   const { markerOverrides } = useHoldColorOverrides();
   const signals = useOsAccessibilitySignals();
   const { useOwnLook, setUseOwnLook } = useSprayWallsUseOwnLookSetting();
+  const lightingSections = useBoardLightingSections();
   const sprayWalls = useMemo(
     () => ({
       useOwnLook,
@@ -153,23 +150,26 @@ export function BoardLookScreen() {
 
   const model = useMemo(
     () =>
-      buildBoardLookModel({
-        carousel,
-        carouselHeight: boardLookCardHeight(fontScale),
-        matchingOptionId,
-        currentLookLabel,
-        overriddenCount,
-        boardseshRendererAvailable,
-        requestedMode,
-        t,
-        onOpenCustomLook: () => router.push('/settings/board-look/custom'),
-        onOpenAccessibility: () => router.push('/settings/board-look/accessibility'),
-        onResetBoardLook: resetBoardLook,
-        suggestion,
-        onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),
-        onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
-        sprayWalls,
-      }),
+      withSettingTracking(
+        buildBoardLookModel({
+          carousel,
+          carouselHeight: boardLookCardHeight(fontScale),
+          matchingOptionId,
+          currentLookLabel,
+          overriddenCount,
+          boardseshRendererAvailable,
+          requestedMode,
+          t,
+          onOpenCustomLook: () => router.push('/settings/board-look/custom'),
+          onOpenAccessibility: () => router.push('/settings/board-look/accessibility'),
+          suggestion,
+          onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),
+          onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
+          sprayWalls,
+          lightingSections,
+        }),
+        'board',
+      ),
     [
       carousel,
       matchingOptionId,
@@ -179,10 +179,10 @@ export function BoardLookScreen() {
       requestedMode,
       fontScale,
       t,
-      resetBoardLook,
       suggestion,
       settleSuggestion,
       sprayWalls,
+      lightingSections,
     ],
   );
 

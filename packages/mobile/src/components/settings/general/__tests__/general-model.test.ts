@@ -1,8 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildGeneralModel, type GeneralModelInput } from '../general-model';
-import type { MoreRow } from '../../../MoreForm.types';
+import { buildGeneralModel, type GeneralModelInput, type GeneralOfflineInput } from '../general-model';
+import type { MoreRow, MoreToggleRow } from '../../../MoreForm.types';
 
 const echo = (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key);
+
+const offlineModeRow: MoreToggleRow = {
+  kind: 'toggle',
+  key: 'offlineMode',
+  label: 'Offline mode',
+  value: false,
+  onValueChange: vi.fn(),
+};
+
+function makeOffline(overrides: Partial<GeneralOfflineInput> = {}): GeneralOfflineInput {
+  return {
+    offlineEnabled: true,
+    offlineModeRow,
+    autoOfflineBoards: false,
+    onAutoOfflineBoardsChange: vi.fn(),
+    pendingCount: 0,
+    effectiveOffline: false,
+    showStorage: true,
+    onOpenStorage: vi.fn(),
+    ...overrides,
+  };
+}
 
 function makeInput(overrides: Partial<GeneralModelInput> = {}): GeneralModelInput {
   return {
@@ -13,10 +35,24 @@ function makeInput(overrides: Partial<GeneralModelInput> = {}): GeneralModelInpu
     onLanguageChange: vi.fn(),
     activeLocale: 'fr',
     onHelpTranslate: vi.fn(),
+    offline: makeOffline(),
     onReplayWalkthrough: vi.fn(),
     onReplayBoardLook: vi.fn(),
     ...overrides,
   };
+}
+
+/** The Offline part of the page: its groups, their rows, and the title over them. */
+function offlineLayout(offline: GeneralOfflineInput): [string, string | undefined, string[]][] {
+  return buildGeneralModel(makeInput({ offline }))
+    .sections.filter((section) => section.key === 'offline' || section.key === 'storage')
+    .map((section) => [section.key, section.title, section.rows.map((row) => row.key)]);
+}
+
+function offlineSection(offline: GeneralOfflineInput) {
+  const section = buildGeneralModel(makeInput({ offline })).sections.find((candidate) => candidate.key === 'offline');
+  if (!section) throw new Error('no offline section');
+  return section;
 }
 
 function findRow(input: GeneralModelInput, key: string): MoreRow {
@@ -28,11 +64,13 @@ function findRow(input: GeneralModelInput, key: string): MoreRow {
 }
 
 describe('buildGeneralModel', () => {
-  it('runs appearance, language, help translate, then the walkthroughs', () => {
+  it('runs appearance, language, help translate, offline, then the walkthroughs', () => {
     expect(buildGeneralModel(makeInput()).sections.map((section) => section.key)).toEqual([
       'appearance',
       'language',
       'languageContribute',
+      'offline',
+      'storage',
       'replay',
       'replayBoardLook',
     ]);
@@ -99,5 +137,77 @@ describe('buildGeneralModel', () => {
     expect(walkthrough?.footer).toBeUndefined();
     expect(boardLook?.rows.map((row) => row.key)).toEqual(['replay-board-look']);
     expect(boardLook?.footer).toBe('mobile.settings.boardLook.intro.replaySubtitle');
+  });
+});
+
+describe('buildGeneralModel — offline', () => {
+  it('puts Offline mode first, then keeping boards offline, then Storage, under one Offline title', () => {
+    expect(offlineLayout(makeOffline())).toEqual([
+      ['offline', 'mobile.settings.offline.title', ['offlineMode', 'autoOfflineBoards']],
+      ['storage', undefined, ['storage']],
+    ]);
+  });
+
+  it('leaves Offline mode out where the switch can do nothing', () => {
+    expect(offlineLayout(makeOffline({ offlineModeRow: null }))[0]).toEqual([
+      'offline',
+      'mobile.settings.offline.title',
+      ['autoOfflineBoards'],
+    ]);
+  });
+
+  it('still offers Storage, titled Offline, with offline downloads switched off, so old downloads can be cleared', () => {
+    expect(offlineLayout(makeOffline({ offlineEnabled: false }))).toEqual([
+      ['storage', 'mobile.settings.offline.title', ['storage']],
+    ]);
+  });
+
+  it('shows the offline switches without Storage when nothing is downloaded', () => {
+    expect(offlineLayout(makeOffline({ showStorage: false }))).toEqual([
+      ['offline', 'mobile.settings.offline.title', ['offlineMode', 'autoOfflineBoards']],
+    ]);
+  });
+
+  it('drops the whole section when neither half applies', () => {
+    expect(offlineLayout(makeOffline({ offlineEnabled: false, showStorage: false }))).toEqual([]);
+  });
+
+  it('says nothing about pending writes when there are none', () => {
+    expect(offlineSection(makeOffline()).footer).toBeUndefined();
+  });
+
+  it('says queued writes wait for a connection while offline, and are sending once online', () => {
+    expect(offlineSection(makeOffline({ pendingCount: 2, effectiveOffline: true })).footer).toBe(
+      'mobile.settings.offline.pendingFooter:{"count":2}',
+    );
+    expect(offlineSection(makeOffline({ pendingCount: 2, effectiveOffline: false })).footer).toBe(
+      'mobile.settings.offline.syncingFooter:{"count":2}',
+    );
+  });
+
+  it('hands the keep-offline switch to its handler', () => {
+    const onAutoOfflineBoardsChange = vi.fn();
+    const row = findRow(
+      makeInput({ offline: makeOffline({ autoOfflineBoards: true, onAutoOfflineBoardsChange }) }),
+      'autoOfflineBoards',
+    );
+    if (row.kind !== 'toggle') throw new Error('autoOfflineBoards is not a toggle');
+    expect(row.value).toBe(true);
+    row.onValueChange(false);
+    expect(onAutoOfflineBoardsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('names the Storage row after the page it opens, with the detail in the footer', () => {
+    const onOpenStorage = vi.fn();
+    const storage = buildGeneralModel(makeInput({ offline: makeOffline({ onOpenStorage }) })).sections.find(
+      (section) => section.key === 'storage',
+    );
+    expect(storage?.footer).toBe('mobile.settings.storage.rowSubtitle');
+    const row = storage?.rows[0];
+    if (row?.kind !== 'nav') throw new Error('storage is not a nav row');
+    expect(row.label).toBe('mobile.settings.storage.title');
+    expect(row.subtitle).toBeUndefined();
+    row.onPress();
+    expect(onOpenStorage).toHaveBeenCalledOnce();
   });
 });

@@ -403,8 +403,6 @@
     "remainingChars": "Encore {{count}} caractères à écrire",
     "starRating_one": "{{count}} étoile",
     "starRating_other": "{{count}} étoiles",
-    "sessionRecordingLabel": "Activer l'enregistrement de session",
-    "sessionRecordingDescription": "Aidez-nous à corriger votre bug plus vite en activant l'enregistrement de session et en reproduisant le problème. Vous pourrez le désactiver ensuite.",
     "bluetoothBugLabel": "J'ai des problèmes de Bluetooth",
     "bluetoothBugDescription": "Recherche les boards à proximité et nous envoie ce qu'elles diffusent, pour comprendre pourquoi la tienne ne se connecte pas. Aucune board n'est commandée : on se contente d'écouter.",
     "contactConsentLabel": "Pouvons-nous vous contacter à ce sujet ?",
@@ -462,8 +460,8 @@
     "cancel": "Annuler",
     "connectBoard": "Connecter la board",
     "relightBoard": "Rallumer la board",
+    "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "title": "Déconnexion automatique",
       "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
       "enabledLabel": "Déconnexion automatique",
       "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
