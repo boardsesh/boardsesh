@@ -1,7 +1,14 @@
+import { searchPhonePose } from '../../marketing/showcase-video/anim.mjs';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SHOWCASE_TAKE_IDS } from '../lib/showcase-video/contract';
-import { buildStoreSearchArgs, parseRenderArgs } from '../lib/showcase-video/render';
+import {
+  buildStoreSearchArgs,
+  parseRenderArgs,
+  storeSearchCrewPhonePose,
+  SHOWCASE_PHONE,
+  screenToCanvas,
+} from '../lib/showcase-video/render';
 import {
   creativeVideoProblems,
   storeSearchTarget,
@@ -109,5 +116,65 @@ describe('Apple search video', () => {
       }
       expect(copy.boards).not.toMatch(/Kilter|Tension|MoonBoard/);
     }
+  });
+});
+
+describe('store search crew framing', () => {
+  const canvas = { width: 1920, height: 1280 };
+  const safeArea = { top: 120, bottom: 120, left: 120, right: 120 };
+
+  it('fits the complete phone beside the caption without cropping the bottom queue rows', () => {
+    const pose = storeSearchCrewPhonePose(SHOWCASE_PHONE, canvas, safeArea);
+    const halfWidth = (SHOWCASE_PHONE.width * pose.scale) / 2;
+    const halfHeight = (SHOWCASE_PHONE.height * pose.scale) / 2;
+    expect(pose.cy - halfHeight).toBeGreaterThanOrEqual(safeArea.top);
+    expect(pose.cy + halfHeight).toBeLessThanOrEqual(canvas.height - safeArea.bottom);
+    expect(pose.cx - halfWidth).toBeGreaterThan(120 + 740);
+    expect(pose.cx + halfWidth).toBeLessThanOrEqual(canvas.width - safeArea.right);
+    expect(pose.scale).toBeGreaterThan(1);
+    expect(pose.scale).toBeLessThan(1.6);
+    expect([pose.rx, pose.ry, pose.rz]).toEqual([0, 0, 0]);
+  });
+
+  it('keeps even the bottom-most native avatar and menu pixels inside the stage safe area', () => {
+    const pose = storeSearchCrewPhonePose(SHOWCASE_PHONE, canvas, safeArea);
+    const screen = { width: 440, height: 956 };
+    // Stronger than any particular row position: every native pixel, including
+    // a peer avatar at the bottom edge of a dynamic queue sheet, remains visible.
+    const bottomAvatar = screenToCanvas({ x: 360, y: 936, width: 20, height: 20 }, screen, pose, canvas);
+    const bottomMenu = screenToCanvas({ x: 0, y: 910, width: 440, height: 46 }, screen, pose, canvas);
+    for (const rect of [bottomAvatar, bottomMenu]) {
+      expect(rect.y).toBeGreaterThanOrEqual(safeArea.top);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(canvas.height - safeArea.bottom);
+      expect(rect.x).toBeGreaterThan(120 + 740);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(canvas.width - safeArea.right);
+    }
+  });
+
+  it('fits every crew caption while keeping non-crew framing and loop painting unchanged', () => {
+    const timeline = readFileSync(new URL('../../marketing/showcase-video/timeline.mjs', import.meta.url), 'utf8');
+    const defaultPose = { cx: 1420, cy: 910, scale: 1.6, rx: 0, ry: 0, rz: 0 };
+    const crewPose = storeSearchCrewPhonePose(SHOWCASE_PHONE, canvas, safeArea);
+    const fittedCaptions = new Set<string>();
+    for (const variant of STORE_SEARCH_VARIANTS) {
+      const scenes = resolveTimeline(new Set(SHOWCASE_TAKE_IDS), storeSearchPlan(variant)).scenes;
+      for (const scene of scenes) {
+        const renderedPose = searchPhonePose(scene.takes[0], scene.takes.length, defaultPose, crewPose);
+        if (scene.takes.length === 1 && scene.takes[0] === 'crew') {
+          fittedCaptions.add(scene.caption ?? '');
+          expect(renderedPose).toBe(crewPose);
+        } else {
+          expect(renderedPose).toBe(defaultPose);
+        }
+      }
+    }
+    expect([...fittedCaptions].sort()).toEqual(['crew', 'friends', 'tensionFriends']);
+    expect(searchPhonePose('boards-kilter', 1, defaultPose, crewPose)).toBe(defaultPose);
+    expect(searchPhonePose('crew', 2, defaultPose, crewPose)).toBe(defaultPose);
+    expect(searchPhonePose('crew', 1, defaultPose, undefined)).toBe(defaultPose);
+    expect(timeline).toContain('const pose = searchPhonePose(');
+    expect(timeline).toContain('paintSearchScene(opening, 0)');
+    expect(timeline).toContain("cy: single ? (scene.id === 'lock-screen' ? 925 : 910) : 820");
+    expect(timeline).toContain('scale: single ? 1.6 : index === Math.floor(count / 2) ? 1.12 : 0.92');
   });
 });

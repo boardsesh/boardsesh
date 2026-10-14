@@ -187,6 +187,23 @@ export function showcasePhone(platform: ShowcasePlatform, screenAspect?: number)
 export const SHOWCASE_PERSPECTIVE = 2200;
 
 export type ShowcasePose = Readonly<{ cx: number; cy: number; scale: number; rx: number; ry: number; rz: number }>;
+/** Keep each crew beat's real queue rows inside the search creative's safe area. */
+export function storeSearchCrewPhonePose(
+  phone: ShowcasePhone,
+  canvas: Readonly<{ width: number; height: number }>,
+  safeArea: ShowcaseStageData['safeArea'],
+): ShowcasePose {
+  const top = safeArea?.top ?? 0;
+  const bottom = safeArea?.bottom ?? 0;
+  const right = safeArea?.right ?? 0;
+  const cx = canvas.width * (1420 / 1920);
+  // The unchanged search caption occupies x=120..860. Fit the complete native
+  // screen beside it, rather than cropping away the queue sheet's lower rows.
+  const availableWidth = 2 * Math.min(cx - 860, canvas.width - right - cx);
+  const scale = Math.min(1.6, (canvas.height - top - bottom) / phone.height, availableWidth / phone.width);
+  return { cx, cy: (top + canvas.height - bottom) / 2, scale, rx: 0, ry: 0, rz: 0 };
+}
+
 export type ShowcasePoseName =
   | 'OFF_RIGHT'
   | 'CALLOUT'
@@ -1579,6 +1596,7 @@ export type ShowcaseStageData = Readonly<{
     locale: string;
     variant: string;
     crossfadeFrames: number;
+    crewPhonePose?: ShowcasePose;
     captions: Readonly<Record<string, string>>;
     sources?: readonly Readonly<{
       takeId: ShowcaseTakeId;

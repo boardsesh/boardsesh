@@ -22,6 +22,7 @@ import {
   progress,
   projectPoint,
   spring,
+  searchPhonePose,
 } from './anim.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -718,16 +719,22 @@ function paintSearchScene(entry, frame) {
     const take = data.takes[phone.takeId];
     const count = phones.length;
     const single = count === 1;
-    // Multi-board shots are a centred trio; all subsequent single phones zoom.
+    // Keep the opening trio and other single-phone beats at their existing poses;
+    // every crew beat fits the whole screen so the peer row stays visible.
     const centre = single ? 1420 : 1390 + (index - (count - 1) / 2) * 240;
-    const pose = {
-      cx: centre,
-      cy: single ? (scene.id === 'lock-screen' ? 925 : 910) : 820,
-      scale: single ? 1.6 : index === Math.floor(count / 2) ? 1.12 : 0.92,
-      rx: 0,
-      ry: 0,
-      rz: 0,
-    };
+    const pose = searchPhonePose(
+      phone.takeId,
+      count,
+      {
+        cx: centre,
+        cy: single ? (scene.id === 'lock-screen' ? 925 : 910) : 820,
+        scale: single ? 1.6 : index === Math.floor(count / 2) ? 1.12 : 0.92,
+        rx: 0,
+        ry: 0,
+        rz: 0,
+      },
+      data.storeSearch.crewPhonePose,
+    );
     setVars(phone.rig, { cx: pose.cx, cy: pose.cy, s: pose.scale, rx: 0, ry: 0, rz: 0 });
     setVars(phone.shadow, { cx: -1000, cy: -1000 });
     const footage = footageAt(take.segments, local, take.frameCount);

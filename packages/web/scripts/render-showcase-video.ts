@@ -96,6 +96,7 @@ import {
   marksFilePath,
   renderWorkDirs,
   showcasePhone,
+  storeSearchCrewPhonePose,
   buildBoardRenderUrl,
   buildClimbSearchRequest,
   buildAppPreviewArgs,
@@ -757,7 +758,14 @@ function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: bo
   };
   return {
     format,
-    ...(prepared.storeSearch ? { storeSearch: prepared.storeSearch } : {}),
+    ...(prepared.storeSearch
+      ? {
+          storeSearch: {
+            ...prepared.storeSearch,
+            crewPhonePose: storeSearchCrewPhonePose(prepared.phone, { width, height }, rendition.safeArea),
+          },
+        }
+      : {}),
     width,
     height,
     fps: SHOWCASE_FPS,

@@ -48,3 +48,10 @@ export function footageAt(
   local: number,
   frameCount: number,
 ): number;
+
+export function searchPhonePose<T extends Pose>(
+  takeId: string | undefined,
+  phoneCount: number,
+  defaultPose: T,
+  crewPose?: T,
+): T;

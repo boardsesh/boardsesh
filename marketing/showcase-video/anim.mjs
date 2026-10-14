@@ -313,3 +313,8 @@ export function footageAt(segments, local, frameCount) {
   const [, lastTo, lastHold = 0] = segments[segments.length - 1];
   return limit(lastHold > 0 ? lastTo - 1 : lastTo + local - offset);
 }
+
+/** Only a single real crew phone needs the full queue framing; other poses stay unchanged. */
+export function searchPhonePose(takeId, phoneCount, defaultPose, crewPose) {
+  return phoneCount === 1 && takeId === 'crew' && crewPose ? crewPose : defaultPose;
+}
