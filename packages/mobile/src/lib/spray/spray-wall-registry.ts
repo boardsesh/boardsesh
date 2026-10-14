@@ -225,6 +225,18 @@ export type RegisteredSprayWall = {
    * caller that can accidentally pin a wall as fresh forever.
    */
   registeredAtMs: number;
+  /**
+   * An initial, never-published wall registered from its DRAFT version by the
+   * add-a-wall flow (`use-spray-wall-draft.ts`), so its look step can draw it.
+   *
+   * The published loader has nothing to replace it with: `sprayWallRenderData`
+   * with no version answers null for a wall with no published version. So a
+   * render miss on a draft its editor still holds is not a withdrawal
+   * (`settleSprayWallRenderMiss`). Only ever set by the caller that registers
+   * a draft; the loader's published registrations never carry it, and a
+   * re-registration does not inherit it from the entry it replaces.
+   */
+  draft?: boolean;
 };
 
 /**
@@ -244,6 +256,16 @@ const walls = new Map<number, RegisteredSprayWall>();
 let removalSequence = 0;
 let registryRemovalGeneration = 0;
 const wallRemovalGenerations = new Map<number, number>();
+
+/**
+ * The registry-wide removal generation: moves only on `withdrawAllSprayWalls`
+ * (sign-out), never on a single wall's withdrawal. A read stamped with an older
+ * one began under a session that has since been erased, and must not be read
+ * again on that session's behalf.
+ */
+export function sprayWallSessionGeneration(): number {
+  return registryRemovalGeneration;
+}
 
 /** Stamp a load before I/O; removal makes its eventual registration stale. */
 export function sprayWallRemovalGeneration(layoutId: number): number {
@@ -740,6 +762,30 @@ function markUnavailable(layoutId: number): void {
 /** A cold by-layout miss is discovery failure; an existing wall losing access is withdrawal. */
 export function settleSprayWallDiscoveryMiss(layoutId: number): void {
   if (walls.has(layoutId)) unregisterSprayWall(layoutId);
+  else markUnavailable(layoutId);
+}
+
+/**
+ * The wall resolved by layout, but its PUBLISHED render payload came back null.
+ *
+ * For a published wall that is a withdrawal: deleted between the two reads,
+ * visibility revoked, the published photo gone. But a wall still being created
+ * has no published version at all, so the same null is simply "not published
+ * yet", and withdrawing the draft its add-a-wall flow registered would erase
+ * the look step's preview and every cached payload with it.
+ *
+ * So a draft is kept only while it is the SAME wall and its registration still
+ * says this viewer may edit it. `viewerCanEdit` is forced false by an account
+ * change (`resetSprayWallViewerAccess`) and by a payload fetched for another
+ * viewer (`registerSprayWall`), so a draft held across an account change is
+ * withdrawn here like any other wall. A cold miss with nothing registered is
+ * only marked unavailable: there is nothing to withdraw, and bumping the
+ * removal generation would stale a draft read that is still in flight.
+ */
+export function settleSprayWallRenderMiss(layoutId: number, wallUuid: string): void {
+  const held = walls.get(layoutId);
+  if (held?.draft && held.wallUuid === wallUuid && held.viewerCanEdit) return;
+  if (held) unregisterSprayWall(layoutId);
   else markUnavailable(layoutId);
 }
 

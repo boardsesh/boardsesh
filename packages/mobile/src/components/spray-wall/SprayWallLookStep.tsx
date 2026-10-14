@@ -137,11 +137,13 @@ export function SprayWallLookStep({
   const savingRef = useRef(false);
   const [localSaving, setLocalSaving] = useState(false);
 
-  // The draft back in the registry. The editor's own `useSprayWallDraft`
-  // unregistered it on its way out — its teardown reloads the PUBLISHED wall,
-  // which a wall being created does not have — so the preview below would have
-  // nothing to draw. The second hook holds it there against that reload, which
-  // is async and can land after this screen's own registration.
+  // The draft in the registry, so the preview below has a wall to draw. A wall
+  // being created has no published version, and the editor's teardown only
+  // reloads a published one, so it no longer clears this draft on its way out;
+  // nor does a published-wall load that finds nothing published
+  // (`settleSprayWallRenderMiss`). The second hook re-registers the draft from
+  // the cached payload whenever the registry holds anything else, e.g. after a
+  // withdrawal of this wall followed by a fresh read.
   const draftState = useSprayWallDraft(draft.layoutId, draft.wallUuid, draft.versionNumber, draft.versionId);
   useKeepSprayDraftRegistered(draft.layoutId, draft.wallUuid, draft.versionNumber, draft.versionId);
 
@@ -405,10 +407,25 @@ export function SprayWallLookStep({
               />
             ) : (
               <ScrollView contentContainerStyle={styles.placeholder} showsVerticalScrollIndicator>
-                {draftState.isUnavailable || previewStatus === 'unavailable' ? (
-                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
-                    {t('sprayWizard.look.unavailable')}
-                  </Text>
+                {draftState.isStalled || draftState.isUnavailable || previewStatus === 'unavailable' ? (
+                  <>
+                    <Text
+                      variant="subheadline"
+                      color={systemColors.secondaryLabel}
+                      style={styles.centered}
+                      accessibilityLiveRegion="polite"
+                    >
+                      {draftState.isStalled ? t('sprayEditor.loadStalled') : t('sprayWizard.look.unavailable')}
+                    </Text>
+                    <Button
+                      title={t('sprayWizard.review.retry')}
+                      variant="text"
+                      size="small"
+                      onPress={draftState.retry}
+                      disabled={saving}
+                      testID="spray-look-retry"
+                    />
+                  </>
                 ) : (
                   <>
                     <ActivityIndicator />

@@ -15,6 +15,7 @@ import {
   registerSprayWall,
   type RegisteredSprayWall,
   sprayWallRemovalGeneration,
+  sprayWallSessionGeneration,
   sprayWallViewerGeneration,
   subscribeToSprayWalls,
 } from './spray-wall-registry';
@@ -33,6 +34,12 @@ type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | 
  */
 const draftViewerGenerations = new WeakMap<SprayWallRenderData, number>();
 const draftRemovalGenerations = new WeakMap<SprayWallRenderData, number>();
+/**
+ * The registry-wide session each payload was read under (`sprayWallSessionGeneration`).
+ * A payload whose wall was withdrawn on its own is read again; one from before
+ * a sign-out is not (see the re-read effect in `useSprayWallDraft`).
+ */
+const draftSessionGenerations = new WeakMap<SprayWallRenderData, number>();
 
 export const sprayWallDraftQueryKey = (
   wallUuid: string | null,
@@ -61,6 +68,7 @@ const DRAFT_STALE_TIME_MS = 5 * 60 * 1000;
 async function fetchSprayWallDraft(layoutId: number, wallUuid: string | null, versionNumber: number | null) {
   const viewerGeneration = sprayWallViewerGeneration();
   const removalGeneration = sprayWallRemovalGeneration(layoutId);
+  const sessionGeneration = sprayWallSessionGeneration();
   const response = await getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_DRAFT_RENDER_DATA, {
     uuid: wallUuid,
     version: versionNumber,
@@ -68,6 +76,7 @@ async function fetchSprayWallDraft(layoutId: number, wallUuid: string | null, ve
   if (response.sprayWallRenderData) {
     draftViewerGenerations.set(response.sprayWallRenderData, viewerGeneration);
     draftRemovalGenerations.set(response.sprayWallRenderData, removalGeneration);
+    draftSessionGenerations.set(response.sprayWallRenderData, sessionGeneration);
   }
   return response;
 }
@@ -188,12 +197,34 @@ export function useSprayWallDraft(
     if (draftViewerGenerations.get(renderData) !== sprayWallViewerGeneration()) return;
     registerSprayWall(layoutId, {
       ...wall,
+      draft: true,
       viewerAccess: {
         canEdit: wall.viewerCanEdit,
         generation: draftViewerGenerations.get(renderData) ?? -1,
       },
     });
   }, [layoutId, renderData, wall]);
+
+  // A payload left behind by a withdrawal of THIS wall alone (a removal, or an
+  // account change) is nulled by the memo above, and nothing else would read it
+  // again inside the stale window: the step would say "unavailable" for good.
+  // So it is read once more, as a fresh server-authorised read under whoever is
+  // signed in now. Once per `viewer:removal` pair, so a read that keeps landing
+  // stale cannot loop. Never after a sign-out: a payload from an erased session
+  // is not read again on its behalf.
+  const healedForRef = useRef<string | null>(null);
+  const { refetch: refetchDraft, fetchStatus } = query;
+  useEffect(() => {
+    if (!renderData || fetchStatus !== 'idle') return;
+    const stale =
+      draftRemovalGenerations.get(renderData) !== sprayWallRemovalGeneration(layoutId) ||
+      draftViewerGenerations.get(renderData) !== sprayWallViewerGeneration();
+    if (!stale) return;
+    if (draftSessionGenerations.get(renderData) !== sprayWallSessionGeneration()) return;
+    if (healedForRef.current === accessGeneration) return;
+    healedForRef.current = accessGeneration;
+    void refetchDraft();
+  }, [layoutId, renderData, fetchStatus, accessGeneration, refetchDraft]);
 
   // Captured in a ref so the teardown does not re-run — and therefore does not
   // yank the published wall back mid-session — when the uuid prop settles.
@@ -307,6 +338,7 @@ export function useKeepSprayDraftRegistered(
     if (!wall) return;
     registerSprayWall(layoutId, {
       ...wall,
+      draft: true,
       viewerAccess: {
         canEdit: wall.viewerCanEdit,
         generation: draftViewerGenerations.get(payload) ?? -1,

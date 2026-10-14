@@ -35,6 +35,7 @@ import {
   type RegisteredSprayArt,
   refreshSprayWall,
   settleSprayWallDiscoveryMiss,
+  settleSprayWallRenderMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
   setSprayWallArchiveState,
@@ -887,13 +888,15 @@ async function loadSprayWallOnline(
     if (!isCurrent()) return;
   }
   if (!renderData) {
-    // The wall exists but has nothing renderable: deleted between the two reads,
-    // visibility revoked, the published version's photo gone. A wall we already
-    // hold must be WITHDRAWN here rather than left drawing its old holds over a
-    // cached photo indefinitely — the `!wallUuid` branch above withdraws for the
-    // same reason, and a revalidation is exactly when this branch is reached with
-    // a live registration in place.
-    unregisterSprayWall(layoutId);
+    // The wall exists but has no published payload: deleted between the two
+    // reads, visibility revoked, the published version's photo gone — or, for
+    // a wall still being created, nothing published yet. A published wall we
+    // already hold is WITHDRAWN rather than left drawing its old holds over a
+    // cached photo indefinitely, as the `!wallUuid` branch above does. The one
+    // exception is the add-a-wall flow's own draft registration, which this
+    // read cannot replace and must not erase while its editor may still see it
+    // (`settleSprayWallRenderMiss`).
+    settleSprayWallRenderMiss(layoutId, wallUuid);
     return;
   }
   const [{ look, background }, archive] = await Promise.all([lookRead, archiveRead]);

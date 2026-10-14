@@ -3079,6 +3079,28 @@ its overlays. A loader discovering that a wall is no longer readable uses the
 same withdrawal path. Filesystem cleanup still runs without an offline database
 and when the SQLite sign-out wipe fails.
 
+One case is not a withdrawal. The add-a-wall flow registers the wall it is
+creating from its draft version (`draft: true` on the registration), so the
+look step can draw it. The published-wall loader asks `sprayWallRenderData`
+with no version, and for a wall with no published version that answer is null.
+`settleSprayWallRenderMiss` keeps the registration in that one case: a draft,
+for the same wall uuid, whose registration still says the viewer can edit it.
+Everything else still withdraws a draft:
+
+- sign-out (`withdrawAllSprayWalls`), Start over, removing the wall or its
+  deletion tombstone, which all withdraw directly;
+- an account change, because `resetSprayWallViewerAccess` sets `viewerCanEdit`
+  to false on every registration, and a payload read for another account
+  registers with it false too;
+- the layout no longer resolving (`sprayWallByLayout` null), or resolving to a
+  different wall uuid.
+
+A cold null with nothing registered only marks the layout unavailable. It does
+not bump the removal generation, so a draft read already in flight still lands.
+A draft payload whose stamp went stale because this wall alone was withdrawn is
+read again once per viewer and removal generation pair, as a fresh
+server-authorised read. A payload read before a sign-out is never read again.
+
 Session and per-wall generations fence pending downloads and render results.
 Partial photo downloads use generation-specific destinations; a late transfer
 removes its own partial rather than publishing it or erasing a replacement.

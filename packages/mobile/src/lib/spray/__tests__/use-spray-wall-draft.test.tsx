@@ -252,6 +252,40 @@ describe('draft render ownership', () => {
     expect(getSprayWall(LAYOUT_ID)).toBeNull();
   });
 
+  it('reads again after a single-wall removal leaves its payload behind', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+    const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true));
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    // No loader is installed here, so the cached payload survives the removal,
+    // stamped with the removal generation it was read under.
+    act(() => unregisterSprayWall(LAYOUT_ID));
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.wall?.versionId).toBe(30));
+    expect(result.current.isUnavailable).toBe(false);
+    await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.versionId).toBe(30));
+    // Once per removal: the fresh read is current, so nothing reads a third time.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a stale payload again only once per removal', async () => {
+    let calls = 0;
+    requestMock.mockImplementation(async () => {
+      calls += 1;
+      // The second read is itself overtaken by another removal of the wall.
+      if (calls === 2) unregisterSprayWall(LAYOUT_ID);
+      return { sprayWallRenderData: payload() };
+    });
+    renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    act(() => unregisterSprayWall(LAYOUT_ID));
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(3));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requestMock).toHaveBeenCalledTimes(3);
+  });
+
   it('does not refresh an old editor’s wall when sign-out and unmount happen together', async () => {
     registerPublished();
     requestMock.mockResolvedValue({ sprayWallRenderData: payload() });

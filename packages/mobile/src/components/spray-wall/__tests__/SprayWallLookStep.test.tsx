@@ -15,6 +15,8 @@ const controls = vi.hoisted(() => ({
   },
   dimProps: null as null | { onLiveChange: (dim: number) => void; onCommit: (dim: number) => void },
   unavailable: true,
+  stalled: false,
+  retry: vi.fn(),
   save: vi.fn(async (_input: unknown) => {}),
   art: { status: 'error' as 'pending' | 'error' | 'success', data: null as unknown },
   /** The header's confirm, as the step last set it through `useHeaderActions`. */
@@ -128,7 +130,12 @@ vi.mock('../../../hooks/use-synthetic-spray-wall-preview', () => ({
   }),
 }));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({
-  useSprayWallDraft: () => ({ isUnavailable: controls.unavailable, lookPreviewSource: null }),
+  useSprayWallDraft: () => ({
+    isUnavailable: controls.unavailable,
+    isStalled: controls.stalled,
+    retry: controls.retry,
+    lookPreviewSource: null,
+  }),
   useKeepSprayDraftRegistered: () => {},
 }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
@@ -201,6 +208,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   controls.headerInset = 96;
   controls.unavailable = true;
+  controls.stalled = false;
   controls.preview = null;
   controls.rendererAvailable = true;
   controls.art = { status: 'error', data: null };
@@ -231,6 +239,20 @@ describe('spray Look visibility and fallback', () => {
       renderSettings: boardLookOptionWallDefault(alternative.id),
     });
     expect(onConfirmed).toHaveBeenCalledOnce();
+  });
+  it('says the read stalled and retries it from the button', () => {
+    controls.stalled = true;
+    const { getByText, queryByText } = renderStep();
+    expect(getByText('sprayEditor.loadStalled')).toBeTruthy();
+    expect(queryByText('sprayWizard.look.unavailable')).toBeNull();
+    fireEvent.click(getByText('sprayWizard.review.retry'));
+    expect(controls.retry).toHaveBeenCalledOnce();
+  });
+  it('offers a retry beside the unavailable line too', () => {
+    const { getByText } = renderStep();
+    expect(getByText('sprayWizard.look.unavailable')).toBeTruthy();
+    fireEvent.click(getByText('sprayWizard.review.retry'));
+    expect(controls.retry).toHaveBeenCalledOnce();
   });
   it('draws one selected preview with a slider when the wall can be drawn', () => {
     controls.unavailable = false;
