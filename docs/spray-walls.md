@@ -401,10 +401,21 @@ Three rules in that flow are not obvious from the API and are easy to undo:
   `user_boards.is_public` / `is_unlisted` false and parks the requested pair on
   `spray_walls.pending_is_public` / `pending_is_unlisted`; the first publish copies
   it onto the board row (and the photo into the public bucket, when public) and
-  nulls it. An explicit `updateSprayWall` visibility change before then nulls it
-  too — the later choice wins. It used to live only in the wizard's React state,
-  applied by an `updateSprayWall` after the publish, so a climber who closed the
-  app and resumed the wall published it private whatever they had picked (#5513).
+  nulls it. An `updateSprayWall` that states a visibility before then is parked
+  the same way: the board row stays private, the stated flags replace their half
+  of the pending pair (a flag left out keeps its half, and a private choice nulls
+  the pair), and no public photo copy is made until the publish. That is how the
+  wizard's last details step works — name, angle, gym, location and visibility in
+  one `updateSprayWall` just before the first publish. Three exceptions: the
+  audience controls (`updateResourcePrivacy`) still apply directly, a reset
+  clone drops its pair and writes the board row (see
+  [Archive and reset](#archive-and-reset)), and a published wall writes the flags
+  directly as it always has. `SprayWall.pendingVisibility` returns the waiting
+  pair to the wall's owner. It is null for everybody else, after the first
+  publish, and when nothing is waiting. The creation-time choice used to live only
+  in the wizard's React state, applied by an `updateSprayWall` after the publish,
+  so a climber who closed the app and resumed the wall published it private
+  whatever they had picked (#5513).
   The wizard still makes that post-publish write, which re-states the choice on a
   backend that predates the pending columns.
 - **An unfinished wall is resumed, never duplicated.** Because the row is real, an
@@ -737,7 +748,8 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `createSprayWallVersion(input)` | A new DRAFT: version 1 from an uploaded photo (solving its homography), or a hold edit on the published photo (`sourceVersionId`). A new photo on a published wall is refused. |
 | `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. Refused once the wall has a published climb. |
 | `removeSprayWallHolds(input)` | Takes holds off as of a draft. Refused once the wall has a published climb. |
-| `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
+| `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. The first publish applies any parked visibility. |
+| `updateSprayWall(input)` | Name, description, angle (until the first publish), gym, location, and visibility. On a wall that has never published, visibility is parked until the first publish (#5513). |
 | `resetSprayWall(input)` | Clones the wall for a reset. See [Archive and reset](#archive-and-reset). |
 | `setSprayWallRenderSettings(input)` | Stores the wall's default look on `spray_walls.render_settings`, or clears it with `null`. The plain edit gate (below). |
 | `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
@@ -769,7 +781,17 @@ unless the input says otherwise**. A wall is somebody's home. Even when the inpu
 does say otherwise, the board row starts private: `isPublic` / `isUnlisted` land on
 `spray_walls.pending_is_public` / `pending_is_unlisted` and the first publish
 applies them (#5513). A client that sends neither — every binary from before that
-fix sends both false — gets a private wall and nothing pending, as before.
+fix sends both false — gets a private wall and nothing pending, as before. A
+visibility stated later through `updateSprayWall`, while the wall is still
+unpublished, is parked on the same columns.
+
+`updateSprayWall` takes the same location fields as `createSprayWall`
+(`locationName`, `latitude`, `longitude`, `hideLocation`). `latitude` and
+`longitude` go together, both or neither. They are applied before the gym-link
+check, so a wall with no point can be placed and linked to a nearby public gym
+in one call. `hideLocation` is owner-only, like visibility, and on a wall with a
+location policy it is read through `legacyLocationAudience`, the same way
+`updateBoard` reads it.
 
 ### The wall's default look
 
@@ -3531,7 +3553,9 @@ through presigned URLs, like a private one.
 Every other field on `updateSprayWall` follows `requireBoardEditAccess`, which a
 gym owner/admin and a community leader also pass. Visibility does not: **both**
 `isPublic` and `isUnlisted` are owner-only
-(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). Putting a photograph of somebody's wall on
+(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`), and so is a change to `hideLocation`. The
+rule holds on an unpublished wall too, where the choice is only parked: a gym
+admin cannot park one either. Putting a photograph of somebody's wall on
 the open web, and starting to announce their climbs, is the photographer's call.
 
 `isUnlisted` is in that guard for a reason that is easy to miss: on a wall it is

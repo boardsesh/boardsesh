@@ -212,6 +212,22 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     unfinished.
     """
     replacedByWallUuid: ID
+    """
+    The visibility waiting for this wall's first publish, or null.
+
+    Only for the wall's OWNER, only while the wall has never been published, and
+    only when something other than private is waiting: createSprayWall and
+    updateSprayWall hold a requested public or unlisted wall private until the
+    first publish applies it. A reset clone's pair is the old wall's audience,
+    and its publish may narrow it to what the old wall has by then.
+    """
+    pendingVisibility: SprayWallVisibility
+  }
+
+  "A wall's visibility pair, as the board row carries it."
+  type SprayWallVisibility {
+    isPublic: Boolean!
+    isUnlisted: Boolean!
   }
 
   "Where a version's generated wall looks are."
@@ -383,12 +399,28 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     """
     Make the wall world-readable. This is the switch that turns a private wall into
     a shared one, so it is also what starts publishing its climbs to feeds.
+
+    Owner only, like isUnlisted. On a wall that has never been published (and is
+    not a reset clone) the choice is held until the first publish, which applies
+    it: the wall stays private until there is something to see, and
+    SprayWall.pendingVisibility reports what is waiting. A flag left out keeps
+    the half already waiting.
     """
     isPublic: Boolean
-    "Reachable by uuid — the share link — and listed nowhere."
+    "Reachable by uuid — the share link — and listed nowhere. Held until the first publish, like isPublic."
     isUnlisted: Boolean
-    "Attach the wall to a gym the caller may link boards to, or pass null to detach."
+    """
+    Attach the wall to a gym the caller may link boards to, or pass null to detach.
+    A nearby public gym is checked against the coordinates this same call sets,
+    when it sets them.
+    """
     gymUuid: ID
+    locationName: String
+    "Pass together with longitude: both, or neither. Null clears the point."
+    latitude: Float
+    longitude: Float
+    "Owner only. Hides the wall's location from everyone else."
+    hideLocation: Boolean
     """
     Correct the wall's angle.
 

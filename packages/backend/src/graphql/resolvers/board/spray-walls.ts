@@ -2,6 +2,7 @@ import {
   canAccessResource,
   canAccessResourceWithoutLink,
   getResourcePrivacy,
+  legacyLocationAudience,
   legacyResourceAudience,
 } from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
@@ -716,7 +717,26 @@ async function toGraphQLWall(
       source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
       successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
+    pendingVisibility: pendingVisibilityForViewer(loaded, userId),
   };
+}
+
+/**
+ * The visibility waiting for a wall's first publish, for its OWNER only (#5513).
+ *
+ * The owner's app reads it to show the choice the climber made while the wall is
+ * still private. Nobody else gets it: a gym admin cannot change it
+ * (`updateSprayWall` refuses them), and "this wall is about to go public" is the
+ * owner's to know. Null once the wall has published, even when a stale pair is
+ * left standing — the first publish is the only one that applies it.
+ */
+function pendingVisibilityForViewer(
+  { wall, board }: LoadedWall,
+  userId: string | null | undefined,
+): PendingVisibility | null {
+  if (!userId || board.ownerId !== userId || wall.currentVersionId != null) return null;
+  if (wall.pendingIsPublic == null && wall.pendingIsUnlisted == null) return null;
+  return { isPublic: wall.pendingIsPublic === true, isUnlisted: wall.pendingIsUnlisted === true };
 }
 
 /**
@@ -3415,6 +3435,17 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
     });
   }
+  // Hiding or showing where the wall is follows the same rule, as it does on
+  // `updateBoard`. A CHANGE only: re-stating the current flag is not a decision.
+  if (
+    validated.hideLocation !== undefined &&
+    validated.hideLocation !== board.hideLocation &&
+    board.ownerId !== ctx.userId
+  ) {
+    throw new GraphQLError('Only the climber who set this wall up can hide or show where it is', {
+      extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
+    });
+  }
 
   const policyCondition = and(
     eq(dbSchema.resourcePrivacy.kind, 'board'),
@@ -3429,6 +3460,33 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   const stagedVisibility = initialAudience
     ? { isPublic: initialAudience === 'public', isUnlisted: initialAudience === 'unlisted' }
     : validated;
+
+  // A wall that has never been published holds a stated visibility instead of
+  // applying it (#5513), the same way `createSprayWall` does: the board row stays
+  // private and the pair waits on `pending_is_public` / `pending_is_unlisted` for
+  // the first publish. The add-wall wizard names the wall and picks who sees it
+  // AFTER the photo upload, in one call before that publish, and applying it here
+  // would make a public board with no photo, no holds and no climbs for as long as
+  // the rest of the wizard takes — and for good, if it is abandoned.
+  //
+  // Not for the audience controls (`privacyUpdate`): that path writes its own
+  // policy row and keeps applying directly. Not for a reset clone: its pair is the
+  // old wall's audience, and a stated choice there drops the pair and writes the
+  // board row (see the pending merge under the lock). Decided here so the public
+  // copy below is never made for a parked change, and again under the lock, where
+  // it counts.
+  const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
+  const parksVisibility = (state: { currentVersionId: number | null; resetFromWallId: number | null }) =>
+    !privacyUpdate && statesVisibility && state.currentVersionId == null && state.resetFromWallId == null;
+  const parkedBeforeLock = parksVisibility(wall);
+
+  // Applied before the gym-link check below, which measures the distance from
+  // the wall to a self-linked public gym: a wall that had no point gets one in
+  // the same call that links it. An omitted half falls back to the stored one,
+  // which the schema only allows when both are omitted.
+  const nextLatitude = validated.latitude !== undefined ? validated.latitude : board.latitude;
+  const nextLongitude = validated.longitude !== undefined ? validated.longitude : board.longitude;
+  const changesLocation = validated.latitude !== undefined || validated.longitude !== undefined;
 
   // The angle is the one field a published wall cannot change. `board_climb_stats`
   // is keyed by angle and every tick recorded so far sits at the old one, so
@@ -3456,8 +3514,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         ctx,
         gymUuid: validated.gymUuid,
         userId: ctx.userId!,
-        boardLatitude: board.latitude,
-        boardLongitude: board.longitude,
+        boardLatitude: nextLatitude,
+        boardLongitude: nextLongitude,
       });
       nextGymId = gym.id;
     }
@@ -3466,11 +3524,18 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
   if (validated.name !== undefined) updates.name = validated.name;
   if (validated.description !== undefined) updates.description = validated.description;
-  if (stagedVisibility.isPublic !== undefined) updates.isPublic = stagedVisibility.isPublic;
-  if (stagedVisibility.isUnlisted !== undefined) updates.isUnlisted = stagedVisibility.isUnlisted;
+  // Visibility is written under the lock, where parking is decided for good.
   if (nextGymId !== undefined) updates.gymId = nextGymId;
   if (validated.angle !== undefined) updates.angle = validated.angle;
+  if (validated.locationName !== undefined) updates.locationName = validated.locationName;
+  if (changesLocation) {
+    updates.latitude = nextLatitude;
+    updates.longitude = nextLongitude;
+  }
+  // A location policy, when the wall has one, is re-read under the lock and may
+  // override this — see `legacyLocationAudience` there.
   if (privacyUpdate) updates.hideLocation = privacyUpdate.locationAudience !== 'public';
+  else if (validated.hideLocation !== undefined) updates.hideLocation = validated.hideLocation;
 
   // Losing public status has to RETRACT what was already fanned out, not just
   // stop future fan-out — see `purgeSprayWallFeedItems`. `is_unlisted` is not a
@@ -3502,8 +3567,12 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // its owner, so its photo has no business in the world-readable bucket even
   // when the owner flips the flag. Re-checked under the lock below, since a hide
   // can land while the copy is in flight.
-  const promoting = stagedVisibility.isPublic === true && !board.isPublic;
-  const healing = board.isPublic && stagedVisibility.isPublic !== false && wall.publicPhotoKey == null;
+  //
+  // Never for a parked change either: the board row stays private, and the first
+  // publish makes the copy when it applies the pair (`refreshPublicWallPhoto`).
+  const promoting = !parkedBeforeLock && stagedVisibility.isPublic === true && !board.isPublic;
+  const healing =
+    !parkedBeforeLock && board.isPublic && stagedVisibility.isPublic !== false && wall.publicPhotoKey == null;
   const promotedPhotoKey =
     wall.hiddenAt == null && (promoting || healing)
       ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
@@ -3513,6 +3582,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // never before, or a rolled-back demotion would leave a still-public wall
   // pointing at bytes that are gone.
   const orphanedPublicKeys: string[] = [];
+  // Set only when a parked change found the wall published under the lock.
+  let publishedMeanwhileVersionId = null as number | null;
 
   try {
     await db.transaction(async (tx) => {
@@ -3542,6 +3613,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         .select({
           isPublic: dbSchema.userBoards.isPublic,
           isUnlisted: dbSchema.userBoards.isUnlisted,
+          hideLocation: dbSchema.userBoards.hideLocation,
           deletedAt: dbSchema.userBoards.deletedAt,
           ownerId: dbSchema.userBoards.ownerId,
         })
@@ -3557,6 +3629,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
           pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
           deletedAt: dbSchema.sprayWalls.deletedAt,
           resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+          currentVersionId: dbSchema.sprayWalls.currentVersionId,
         })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
@@ -3567,7 +3640,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
         throw notFoundError();
       }
-      let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = validated;
+      let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = stagedVisibility;
       if (privacyUpdate) {
         const settings = {
           ownerId: boardNow.ownerId,
@@ -3590,16 +3663,48 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         if (policy) {
           const audience = legacySprayAudience(policy.audience, boardNow, validated);
           effectiveVisibility = { isPublic: audience === 'public', isUnlisted: audience === 'unlisted' };
-          updates.isPublic = effectiveVisibility.isPublic;
-          updates.isUnlisted = effectiveVisibility.isUnlisted;
-          if (audience !== policy.audience)
+          const policyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = {};
+          if (audience !== policy.audience) policyUpdates.audience = audience;
+          // The location half, read the way `updateBoard` reads it: hiding lands
+          // as `only_me`, and an old screen's boolean cannot widen the policy.
+          if (validated.hideLocation !== undefined) {
+            const locationAudience = legacyLocationAudience(
+              policy.locationAudience,
+              validated.hideLocation,
+              boardNow.hideLocation,
+            );
+            updates.hideLocation = locationAudience !== 'public';
+            if (locationAudience !== policy.locationAudience) policyUpdates.locationAudience = locationAudience;
+          }
+          if (Object.keys(policyUpdates).length > 0)
             await tx
               .update(dbSchema.resourcePrivacy)
-              .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
+              .set({
+                ...policyUpdates,
+                revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
+                updatedAt: new Date(),
+              })
               .where(policyCondition);
         }
       }
-      const losingPublic = effectiveVisibility.isPublic === false && boardNow.isPublic;
+
+      // Parking, decided for good now that a publish cannot land in between.
+      const parked = parksVisibility(wallNow);
+      if (parked) {
+        // The board row stays private. One left public or unlisted with nothing
+        // published — a backend from before #5513 could leave one — closes here,
+        // now that its owner has stated a choice; that choice waits with the rest.
+        if (boardNow.isPublic) updates.isPublic = false;
+        if (boardNow.isUnlisted) updates.isUnlisted = false;
+      } else {
+        if (effectiveVisibility.isPublic !== undefined) updates.isPublic = effectiveVisibility.isPublic;
+        if (effectiveVisibility.isUnlisted !== undefined) updates.isUnlisted = effectiveVisibility.isUnlisted;
+        // A publish committed between the decision above and the lock: the
+        // choice applies directly, as it does on any published wall, and the
+        // public copy that was skipped for a parked change is made after commit.
+        if (parkedBeforeLock) publishedMeanwhileVersionId = wallNow.currentVersionId;
+      }
+      const losingPublic = updates.isPublic === false && boardNow.isPublic;
       if (Object.keys(updates).length > 0) {
         await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
       }
@@ -3654,15 +3759,26 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       // themselves, that is a choice, not a stale copy, so the pair is dropped:
       // the board row this call writes is what publishes, unnarrowed, whatever
       // order the owner edited the two walls in.
-      const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
-      const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
-      if (hasPending && statesVisibility && wallNow?.resetFromWallId != null) {
+      //
+      // A parked change on a never-published wall merges the same way, except
+      // that with nothing pending the base for a flag it leaves out is the board
+      // row, so a pair is always parked whole.
+      const hasPending = wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null;
+      if (parked) {
+        const merged = pendingVisibilityColumns({
+          isPublic: effectiveVisibility.isPublic ?? (hasPending ? wallNow.pendingIsPublic === true : boardNow.isPublic),
+          isUnlisted:
+            effectiveVisibility.isUnlisted ?? (hasPending ? wallNow.pendingIsUnlisted === true : boardNow.isUnlisted),
+        });
+        wallUpdates.pendingIsPublic = merged.pendingIsPublic;
+        wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
+      } else if (hasPending && statesVisibility && wallNow.resetFromWallId != null) {
         wallUpdates.pendingIsPublic = null;
         wallUpdates.pendingIsUnlisted = null;
       } else if (hasPending && statesVisibility) {
         const merged = pendingVisibilityColumns({
-          isPublic: effectiveVisibility.isPublic ?? wallNow?.pendingIsPublic === true,
-          isUnlisted: effectiveVisibility.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
+          isPublic: effectiveVisibility.isPublic ?? wallNow.pendingIsPublic === true,
+          isUnlisted: effectiveVisibility.isUnlisted ?? wallNow.pendingIsUnlisted === true,
         });
         wallUpdates.pendingIsPublic = merged.pendingIsPublic;
         wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
@@ -3671,8 +3787,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       // it) has to find the board still public under the lock: a demotion that
       // committed after the read above would otherwise get a world-readable photo
       // key written onto a wall that is now private.
-      const stillPublic = effectiveVisibility.isPublic ?? boardNow.isPublic;
-      if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
+      const stillPublic = updates.isPublic ?? boardNow.isPublic;
+      if (promotedPhotoKey && (wallNow.hiddenAt != null || !stillPublic)) {
         // Hidden, or no longer public, while the copy was in flight: the copy is
         // attached to nothing and goes on the post-commit delete list with the
         // other orphans.
@@ -3699,6 +3815,30 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
 
   for (const orphanedKey of orphanedPublicKeys) {
     await deletePublicWallPhoto(orphanedKey);
+  }
+
+  // The copy skipped for a change that was going to be parked, when a publish
+  // won the race and the change applied directly instead. Best effort and
+  // re-checked under the row lock, like the publish's own refresh.
+  if (publishedMeanwhileVersionId != null && updates.isPublic === true && wall.hiddenAt == null) {
+    await refreshPublicWallPhoto(
+      wall.id,
+      board.uuid,
+      await publishedPhotoKey({ ...wall, currentVersionId: publishedMeanwhileVersionId }),
+      publishedMeanwhileVersionId,
+    );
+  }
+
+  // Outside the transaction and never throwing — see the helper for why a
+  // PostGIS failure must not fail the mutation.
+  if (changesLocation) {
+    await syncLocationGeography({
+      table: 'user_boards',
+      id: board.id,
+      latitude: nextLatitude,
+      longitude: nextLongitude,
+      operation: 'updateSprayWall',
+    });
   }
 
   logger.info('Spray wall updated', {

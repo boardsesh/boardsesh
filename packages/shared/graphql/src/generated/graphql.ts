@@ -9851,6 +9851,16 @@ export type SprayWall = {
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
   /**
+   * The visibility waiting for this wall's first publish, or null.
+   *
+   * Only for the wall's OWNER, only while the wall has never been published, and
+   * only when something other than private is waiting: createSprayWall and
+   * updateSprayWall hold a requested public or unlisted wall private until the
+   * first publish applies it. A reset clone's pair is the old wall's audience,
+   * and its publish may narrow it to what the old wall has by then.
+   */
+  pendingVisibility?: Maybe<SprayWallVisibility>;
+  /**
    * A stable, unsigned URL for the wall photo — public walls only, null for every
    * other wall.
    *
@@ -10343,6 +10353,13 @@ export type SprayWallVersion = {
  * reset commits (SW-12).
  */
 export type SprayWallVersionStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED';
+
+/** A wall's visibility pair, as the board row carries it. */
+export type SprayWallVisibility = {
+  __typename?: 'SprayWallVisibility';
+  isPublic: Scalars['Boolean']['output'];
+  isUnlisted: Scalars['Boolean']['output'];
+};
 
 /**
  * A board that probably belongs to a gym but isn't linked to it yet — either it
@@ -11034,15 +11051,31 @@ export type UpdateSprayWallInput = {
    */
   climbEditPolicy?: InputMaybe<SprayClimbEditPolicy>;
   description?: InputMaybe<Scalars['String']['input']>;
-  /** Attach the wall to a gym the caller may link boards to, or pass null to detach. */
+  /**
+   * Attach the wall to a gym the caller may link boards to, or pass null to detach.
+   * A nearby public gym is checked against the coordinates this same call sets,
+   * when it sets them.
+   */
   gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  /** Owner only. Hides the wall's location from everyone else. */
+  hideLocation?: InputMaybe<Scalars['Boolean']['input']>;
   /**
    * Make the wall world-readable. This is the switch that turns a private wall into
    * a shared one, so it is also what starts publishing its climbs to feeds.
+   *
+   * Owner only, like isUnlisted. On a wall that has never been published (and is
+   * not a reset clone) the choice is held until the first publish, which applies
+   * it: the wall stays private until there is something to see, and
+   * SprayWall.pendingVisibility reports what is waiting. A flag left out keeps
+   * the half already waiting.
    */
   isPublic?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Reachable by uuid — the share link — and listed nowhere. */
+  /** Reachable by uuid — the share link — and listed nowhere. Held until the first publish, like isPublic. */
   isUnlisted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Pass together with longitude: both, or neither. Null clears the point. */
+  latitude?: InputMaybe<Scalars['Float']['input']>;
+  locationName?: InputMaybe<Scalars['String']['input']>;
+  longitude?: InputMaybe<Scalars['Float']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
   uuid: Scalars['ID']['input'];
 };

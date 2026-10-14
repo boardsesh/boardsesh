@@ -4,6 +4,7 @@ import {
   canAccessResource,
   canAccessResourceWithoutLink,
   legacyResourceAudience,
+  legacyLocationAudience,
   canViewActivityIdentity,
   canViewResourceLocation,
   resourceAccessCondition,
@@ -2531,8 +2532,11 @@ export const socialBoardMutations = {
             }
           }
           if (policy && validatedInput.hideLocation !== undefined) {
-            const locationAudience =
-              validatedInput.hideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
+            const locationAudience = legacyLocationAudience(
+              policy.locationAudience,
+              validatedInput.hideLocation,
+              lockedBoard.hideLocation,
+            );
             updateValues.hideLocation = locationAudience !== 'public';
             if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
           }

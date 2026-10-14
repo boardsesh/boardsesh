@@ -54,6 +54,20 @@ export function legacyResourceAudience(
   return current;
 }
 
+/**
+ * The legacy `hideLocation` boolean read against a board's location policy.
+ * Hiding a location that was showing always lands as `only_me`; anything else
+ * (un-hiding, or re-stating the current flag) leaves the policy where it is, so
+ * an old edit screen cannot widen a newer location audience.
+ */
+export function legacyLocationAudience(
+  current: PrivacyLocationAudience,
+  hideLocation: boolean,
+  currentlyHidden: boolean,
+): PrivacyLocationAudience {
+  return hideLocation && !currentlyHidden ? 'only_me' : current;
+}
+
 export async function getPrivacySettings(userId: string): Promise<PrivacySettings> {
   const [profile] = await db.select().from(schema.userProfiles).where(eq(schema.userProfiles.userId, userId)).limit(1);
   return {

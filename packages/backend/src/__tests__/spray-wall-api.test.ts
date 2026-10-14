@@ -4209,12 +4209,12 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
 describe('a wall with no published version is listed to nobody but its owner', () => {
   /** A public spray wall that has never been published — the state the gate is about. */
   async function unpublishedPublicWall(name: string): Promise<CreatedWall> {
-    // `createSprayWall` now holds a requested public visibility until the first
-    // publish (#5513), so a wall created public is private here. `updateSprayWall`
-    // is still a door to a public wall with nothing on it, and the gate below is
-    // what keeps that state out of every listing.
+    // Neither `createSprayWall` nor `updateSprayWall` can make this state any more:
+    // both hold a requested public visibility until the first publish (#5513). A
+    // backend from before that, or a rollback across it, still can, and the gate
+    // below must not rest on one door — so the flag is written straight to the row.
     const wall = await createWall(OWNER, { name });
-    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    await db.update(userBoards).set({ isPublic: true }).where(eq(userBoards.uuid, wall.uuid));
     // No version, no publish: `current_version_id` stays NULL.
     const [row] = (await db.execute(
       sql`SELECT current_version_id FROM spray_walls WHERE layout_id = ${wall.layoutId}`,
@@ -5781,6 +5781,237 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     const row = await visibilityOf(wall.uuid);
     expect(row.is_public).toBe(false);
     expect(row.pending_is_public).toBeNull();
+  });
+
+  // The add-wall wizard names the wall and picks who sees it AFTER the photo
+  // upload: the row is created private with a default name, and one
+  // `updateSprayWall` carries the details just before the first publish. That
+  // call parks the choice exactly as `createSprayWall` does.
+
+  /** Whether STRANGER's board search turns the wall up by name. */
+  const strangerFinds = async (name: string, uuid: string): Promise<boolean> => {
+    const search = (await socialBoardQueries.searchBoards(
+      {},
+      { input: { query: name, limit: 20, offset: 0 } },
+      ctxFor(STRANGER),
+    )) as { boards: Array<{ uuid: string }> };
+    return search.boards.some((board) => board.uuid === uuid);
+  };
+
+  const publishFirst = async (wallUuid: string) => {
+    const versionId = await openDraft(wallUuid);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+  };
+
+  /** A public gym owned by OUTSIDER, with `member` joined at `role`, optionally at a point. */
+  const gymWithMember = async (
+    member: string,
+    role: 'admin' | 'member',
+    point: { latitude: number; longitude: number } | null = null,
+  ): Promise<{ uuid: string; id: number }> => {
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, latitude, longitude, created_at, updated_at)
+      VALUES (${gymUuid}, 'Parking Gym', ${gymUuid}, ${OUTSIDER}, true,
+              ${point?.latitude ?? null}, ${point?.longitude ?? null}, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${member}, ${role}, now())
+    `);
+    return { uuid: gymUuid, id: Number(gym.id) };
+  };
+
+  it('holds a public choice made by update until the first publish, photo copy included', async () => {
+    const wall = await createWall(OWNER, { name: 'Parked public garage' });
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    vi.mocked(copyObjectBetweenBuckets).mockClear();
+
+    const updated = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, isPublic: true } },
+      ctxFor(OWNER),
+    )) as { board: { isPublic: boolean }; publicPhotoUrl: string | null; pendingVisibility: unknown };
+    expect(updated.board.isPublic).toBe(false);
+    expect(updated.publicPhotoUrl).toBeNull();
+    expect(updated.pendingVisibility).toEqual({ isPublic: true, isUnlisted: false });
+
+    const parked = await visibilityOf(wall.uuid);
+    expect(parked).toMatchObject({
+      is_public: false,
+      is_unlisted: false,
+      pending_is_public: true,
+      pending_is_unlisted: false,
+      public_photo_key: null,
+    });
+    expect(copyObjectBetweenBuckets).not.toHaveBeenCalled();
+    expect(publicBucketObjects.size).toBe(0);
+    expect(await strangerFinds('Parked public garage', wall.uuid)).toBe(false);
+    expect(await sprayWallQueries.sprayWallByLayout({}, { layoutId: wall.layoutId }, ctxFor(STRANGER))).toBeNull();
+
+    await publishFirst(wall.uuid);
+
+    const published = await visibilityOf(wall.uuid);
+    expect(published).toMatchObject({
+      is_public: true,
+      is_unlisted: false,
+      pending_is_public: null,
+      pending_is_unlisted: null,
+    });
+    expect(published.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(published.public_photo_key!)).toBe(true);
+    expect(await strangerFinds('Parked public garage', wall.uuid)).toBe(true);
+  });
+
+  it('holds an unlisted choice made by update until the first publish, and copies nothing public', async () => {
+    const wall = await createWall(OWNER, { name: 'Parked unlisted shed' });
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: true } }, ctxFor(OWNER));
+
+    expect(await visibilityOf(wall.uuid)).toMatchObject({
+      is_public: false,
+      is_unlisted: false,
+      pending_is_public: false,
+      pending_is_unlisted: true,
+      public_photo_key: null,
+    });
+    // The share link is not live yet: there is nothing behind it to share.
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).toBeNull();
+
+    await publishFirst(wall.uuid);
+
+    expect(await visibilityOf(wall.uuid)).toMatchObject({
+      is_public: false,
+      is_unlisted: true,
+      pending_is_public: null,
+      pending_is_unlisted: null,
+      public_photo_key: null,
+    });
+    expect(publicBucketObjects.size).toBe(0);
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).not.toBeNull();
+    expect(await strangerFinds('Parked unlisted shed', wall.uuid)).toBe(false);
+  });
+
+  it('lets a later private choice clear a parked public one before the first publish', async () => {
+    const wall = await createWall(OWNER, { name: 'Changed my mind' });
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: false } }, ctxFor(OWNER));
+
+    const parked = await visibilityOf(wall.uuid);
+    expect(parked.pending_is_public).toBeNull();
+    expect(parked.pending_is_unlisted).toBeNull();
+
+    await publishFirst(wall.uuid);
+
+    const published = await visibilityOf(wall.uuid);
+    expect(published.is_public).toBe(false);
+    expect(published.is_unlisted).toBe(false);
+    expect(published.public_photo_key).toBeNull();
+    expect(await sprayWallQueries.sprayWallByLayout({}, { layoutId: wall.layoutId }, ctxFor(STRANGER))).toBeNull();
+  });
+
+  it('refuses a gym admin who states a visibility or hides the location of an unpublished wall', async () => {
+    const wall = await createWall(OWNER);
+    const gym = await gymWithMember(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+    for (const input of [{ isPublic: true }, { isUnlisted: true }, { hideLocation: true }]) {
+      await expect(
+        sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, ...input } }, ctxFor(STRANGER)),
+      ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } });
+    }
+    const row = await visibilityOf(wall.uuid);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.pending_is_unlisted).toBeNull();
+    // Everything else on the wall is still theirs to edit.
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, name: 'Gym renamed' } }, ctxFor(STRANGER));
+  });
+
+  it("reports pendingVisibility to the wall's owner only, and only until the first publish", async () => {
+    const wall = await createWall(OWNER, { isPublic: true });
+    const gym = await gymWithMember(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+    const pendingFor = async (userId: string) =>
+      (
+        (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(userId))) as {
+          pendingVisibility: unknown;
+        } | null
+      )?.pendingVisibility;
+
+    expect(await pendingFor(OWNER)).toEqual({ isPublic: true, isUnlisted: false });
+    const mine = (await sprayWallQueries.mySprayWalls({}, {}, ctxFor(OWNER))) as Array<{
+      uuid: string;
+      pendingVisibility: unknown;
+    }>;
+    expect(mine.find((row) => row.uuid === wall.uuid)?.pendingVisibility).toEqual({
+      isPublic: true,
+      isUnlisted: false,
+    });
+    // The gym admin can read the unfinished wall, and not what it is about to become.
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).not.toBeNull();
+    expect(await pendingFor(STRANGER)).toBeNull();
+    expect((await pendingFor(OUTSIDER)) ?? null).toBeNull();
+
+    await publishFirst(wall.uuid);
+    expect(await pendingFor(OWNER)).toBeNull();
+  });
+
+  it('names, places and links a wall to a nearby public gym in one call, on a wall that had no point', async () => {
+    const point = { latitude: 51.5007, longitude: -0.1246 };
+    const gym = await gymWithMember(GYM_EDITOR, 'member', point);
+    const wall = await createWall(OWNER);
+
+    // Without a point the self-link has nothing to measure from.
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, gymUuid: gym.uuid } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/not authorized/i);
+
+    const updated = (await sprayWallMutations.updateSprayWall(
+      {},
+      {
+        input: {
+          uuid: wall.uuid,
+          name: 'The Arches',
+          angle: 30,
+          gymUuid: gym.uuid,
+          locationName: 'Arch 4',
+          ...point,
+          hideLocation: true,
+          isPublic: true,
+        },
+      },
+      ctxFor(OWNER),
+    )) as { pendingVisibility: unknown };
+    expect(updated.pendingVisibility).toEqual({ isPublic: true, isUnlisted: false });
+
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board).toMatchObject({
+      name: 'The Arches',
+      gymId: gym.id,
+      locationName: 'Arch 4',
+      latitude: point.latitude,
+      longitude: point.longitude,
+      hideLocation: true,
+      isPublic: false,
+    });
+    expect(Number(board.angle)).toBe(30);
+  });
+
+  it('refuses half a point', async () => {
+    const wall = await createWall(OWNER);
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, latitude: 51.5 } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/latitude and longitude go together/);
+    await expect(
+      sprayWallMutations.updateSprayWall(
+        {},
+        { input: { uuid: wall.uuid, latitude: null, longitude: -0.12 } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/latitude and longitude go together/);
   });
 });
 

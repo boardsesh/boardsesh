@@ -245,6 +245,12 @@ export const UpdateSprayWallInputSchema = z
         `A spray wall's angle must be one of ${SPRAY_ANGLES.join(', ')}`,
       )
       .optional(),
+    // The same location fields `createSprayWall` takes, so the wizard's last
+    // step can place the wall and link a nearby gym in one call. Null clears.
+    locationName: z.string().max(200).optional().nullable(),
+    latitude: z.number().min(-90).max(90).optional().nullable(),
+    longitude: z.number().min(-180).max(180).optional().nullable(),
+    hideLocation: z.boolean().optional(),
     // Accepted and ignored. Kept in the "something to update" count below, so an
     // older app flipping the retired toggle gets its wall back, not an error.
     climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
@@ -254,6 +260,15 @@ export const UpdateSprayWallInputSchema = z
   .refine(
     (input) => Object.keys(input).some((key) => key !== 'uuid'),
     'Nothing to update — pass at least one field besides the wall uuid',
+  )
+  // A point is both halves. One without the other would leave the wall at a
+  // latitude from one place and a longitude from another, and the gym-link
+  // proximity check reads exactly that pair.
+  .refine(
+    (input) =>
+      (input.latitude === undefined) === (input.longitude === undefined) &&
+      (input.latitude === null) === (input.longitude === null),
+    'latitude and longitude go together — pass both, or neither',
   );
 
 // `validateInput` reports messages, not paths, so every message names its field:
