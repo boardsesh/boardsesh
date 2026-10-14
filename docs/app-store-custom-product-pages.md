@@ -289,8 +289,13 @@ request sends the existing version ID, as required by the GraphQL input contract
 Liz's Wall reuses the existing owned Home Spray Wall with its UUID unchanged.
 After ownership, private visibility, published photo provenance, and real holds
 are verified, bootstrap applies the user-approved name-only rename to Liz's Wall.
-It rereads the wall and catalogue labels and verifies unchanged published photo,
-version, hold count, homography, and board configuration. Checkpoint-bound Cherry
+It rereads the actual wall and social-board names and verifies unchanged published
+photo, version, hold count, homography, and board configuration. Spray's optional
+`UserBoard` layout/size labels are normally null; any returned non-null label must
+match the requested name. Missing or malformed fields stop setup. This verifies
+the API's native display names, not hidden catalogue-table labels. Ownership,
+private visibility and editability are checked even when the names already match.
+Checkpoint-bound Cherry
 and Bowlo walls from earlier runs receive the same verified rename to Cherry's Wall
 and The Bowlo; newly created walls use those names directly. The committed seed binding and
 approved stored-photo SHA are checked against the live owner and downloaded bytes;

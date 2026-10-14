@@ -79,8 +79,8 @@ export interface BootstrapBoard {
   setIds: string;
   angle: number;
   isPublic?: boolean;
-  layoutName?: string;
-  sizeName?: string;
+  layoutName?: string | null;
+  sizeName?: string | null;
   slug?: string;
 }
 interface WallVersion {
@@ -808,13 +808,6 @@ export async function ensureSprayBoardName(
   )
     return { board, problem: `${variant.id}: spray-wall ownership changed before name verification` };
   if (
-    before.board.name === variant.selector &&
-    board.name === variant.selector &&
-    board.layoutName === variant.selector &&
-    board.sizeName === variant.selector
-  )
-    return { board, problem: null };
-  if (
     board.uuid !== initialWall.uuid ||
     board.ownerId !== options.accountUserId ||
     board.isPublic !== false ||
@@ -823,6 +816,14 @@ export async function ensureSprayBoardName(
     !before.board.canEdit
   )
     return { board, problem: `${variant.id}: renaming requires an owned, editable private spray wall` };
+  // UserBoard returns null catalogue labels for Spray; its actual wall and
+  // social-board names are the native labels. A missing field is not null.
+  if ([board.layoutName, board.sizeName].some((label) => label !== null && typeof label !== 'string'))
+    return { board, problem: `${variant.id}: catalogue label readback is missing or malformed` };
+  const catalogueLabelsMatch = (candidate: BootstrapBoard) =>
+    [candidate.layoutName, candidate.sizeName].every((label) => label === null || label === variant.selector);
+  if (before.board.name === variant.selector && board.name === variant.selector && catalogueLabelsMatch(board))
+    return { board, problem: null };
   actions.push(`${variant.id}: rename verified private wall to ${variant.selector}`);
   if (!options.apply) return { board, problem: `${variant.id}: wall-name update requires --apply` };
 
@@ -876,9 +877,10 @@ export async function ensureSprayBoardName(
     after.board.ownerId !== options.accountUserId ||
     renamed.isPublic !== false ||
     after.board.isPublic !== false ||
+    !renamed.canEdit ||
+    !after.board.canEdit ||
     renamed.name !== variant.selector ||
-    renamed.layoutName !== variant.selector ||
-    renamed.sizeName !== variant.selector ||
+    !catalogueLabelsMatch(renamed) ||
     after.board.name !== variant.selector ||
     JSON.stringify(geometry(renamed)) !== JSON.stringify(geometry(board)) ||
     JSON.stringify(geometry(after.board)) !== JSON.stringify(geometry(before.board)) ||

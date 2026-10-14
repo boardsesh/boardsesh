@@ -340,8 +340,9 @@ function sprayRenameHarness(variantIndex = 0) {
     angle: 40,
     name: ['Home Spray Wall', 'Cherry', 'Bowlo'][variantIndex],
     isPublic: false,
-    layoutName: 'Old catalogue label',
-    sizeName: 'Old catalogue label',
+    // The real UserBoard resolver returns null for these optional labels.
+    layoutName: null,
+    sizeName: null,
   };
   let wall = {
     uuid: board.uuid,
@@ -362,6 +363,7 @@ function sprayRenameHarness(variantIndex = 0) {
     staleSocialName: false,
     staleCatalogue: false,
     changedGeometry: false,
+    lostEditPermission: false,
     failAfterSprayRename: false,
   };
   harness.options.apply = true;
@@ -389,8 +391,9 @@ function sprayRenameHarness(variantIndex = 0) {
       board = {
         ...board,
         name: behavior.staleSocialName ? board.name : variant.selector,
-        layoutName: behavior.staleCatalogue ? board.layoutName : variant.selector,
-        sizeName: behavior.staleCatalogue ? board.sizeName : variant.selector,
+        layoutName: behavior.staleCatalogue ? 'Stale catalogue label' : null,
+        sizeName: behavior.staleCatalogue ? 'Stale catalogue label' : null,
+        canEdit: !behavior.lostEditPermission,
       };
       wall = {
         ...wall,
@@ -926,8 +929,8 @@ describe('verified spray wall names', () => {
     expect(result.board).toMatchObject({
       uuid: checkpointIdentity.uuid,
       name: harness.variant.selector,
-      layoutName: harness.variant.selector,
-      sizeName: harness.variant.selector,
+      layoutName: null,
+      sizeName: null,
     });
     const mutations = harness.calls.filter((call) => !call.name.startsWith('Get'));
     expect(mutations).toEqual([
@@ -946,6 +949,63 @@ describe('verified spray wall names', () => {
       (await ensureSprayBoardName(harness.options, harness.variant, result.board, harness.originalWall, [])).problem,
     ).toBeNull();
     expect(harness.calls.filter((call) => call.name === 'UpdateSprayWall')).toHaveLength(1);
+  });
+
+  it('accepts matching non-null catalogue labels without repeating the name update', async () => {
+    const harness = sprayRenameHarness();
+    Object.assign(harness.originalBoard, {
+      name: harness.variant.selector,
+      layoutName: harness.variant.selector,
+      sizeName: harness.variant.selector,
+    });
+    const result = await ensureSprayBoardName(
+      harness.options,
+      harness.variant,
+      harness.originalBoard,
+      harness.originalWall,
+      [],
+    );
+    expect(result.problem).toBeNull();
+    expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+  });
+
+  it.each(['board-public', 'wall-public', 'board-uneditable', 'wall-uneditable', 'foreign-owner'] as const)(
+    'rejects a null-label no-op when the existing wall is %s',
+    async (failure) => {
+      const harness = sprayRenameHarness();
+      harness.originalBoard.name = harness.variant.selector;
+      harness.originalWall.board = { ...harness.originalBoard };
+      if (failure === 'board-public') harness.originalBoard.isPublic = true;
+      if (failure === 'wall-public') harness.originalWall.board.isPublic = true;
+      if (failure === 'board-uneditable') harness.originalBoard.canEdit = false;
+      if (failure === 'wall-uneditable') harness.originalWall.board.canEdit = false;
+      if (failure === 'foreign-owner') harness.originalWall.board.ownerId = testUuid(900);
+      const result = await ensureSprayBoardName(
+        harness.options,
+        harness.variant,
+        harness.originalBoard,
+        harness.originalWall,
+        [],
+      );
+      expect(result.problem).not.toBeNull();
+      expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+    },
+  );
+
+  it.each(['layoutName', 'sizeName'] as const)('rejects missing or malformed %s before name writes', async (field) => {
+    for (const invalidLabel of [undefined, 42]) {
+      const harness = sprayRenameHarness();
+      Object.assign(harness.originalBoard, { [field]: invalidLabel });
+      const result = await ensureSprayBoardName(
+        harness.options,
+        harness.variant,
+        harness.originalBoard,
+        harness.originalWall,
+        [],
+      );
+      expect(result.problem).toContain('missing or malformed');
+      expect(harness.calls.every((call) => call.name.startsWith('Get'))).toBe(true);
+    }
   });
 
   it('aligns the social name with a name-only owner update when production leaves it stale', async () => {
@@ -1041,7 +1101,7 @@ describe('verified spray wall names', () => {
     },
   );
 
-  it.each(['staleCatalogue', 'changedGeometry'] as const)(
+  it.each(['staleCatalogue', 'changedGeometry', 'lostEditPermission'] as const)(
     'blocks capture when the real reread reports %s',
     async (failure) => {
       const harness = sprayRenameHarness();
