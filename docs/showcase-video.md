@@ -116,6 +116,17 @@ exposes no controls, the observed `10%,84%` point is available only for a
 Kilter/default recording whose actual slot-zero log resolves to Kilter. Mirror
 boards receive no coordinate fallback. The existing avatar and Play next anchor
 checks still gate whether the resulting crew footage is valid.
+After the second phone adds its climb, the flow requires the first upcoming
+row's genuine avatar marker before long-pressing it. The preferred accessibility
+label combines localized position 2 with the added-by label. The verified iOS
+Kilter fallback presses row text at `50%,78%`, away from its drag handle; a
+missing avatar never substitutes a guessed coordinate.
+
+Screenshot mode skips persisted session restoration. End a capture session in
+its existing app context before any cold launch, and stop if that cannot be
+confirmed. Android cleanup collapses the notification shade first. Android crew
+capture currently stops before starting a session because invite extraction is
+not supported.
 
 ### Board-specific store footage
 

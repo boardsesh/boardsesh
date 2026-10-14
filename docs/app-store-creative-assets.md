@@ -155,6 +155,10 @@ substituted beneath translated captions. The search export is 1920 × 1280,
 30 fps, H.264 High at level 5.0 or higher, with no audio. Default runs about
 20 seconds; CPP cuts run about 15 seconds. Frame zero carries the first caption,
 and the final 15 frames dissolve back to it.
+Each crew beat fits the complete phone inside the stage's vertical safe area,
+so the real peer-added queue row and avatar remain visible. Its source interval
+still starts before the row arrives. Review that motion in the composed video;
+valid native anchors alone do not establish that the composition shows them.
 
 ```sh
 vp run video:record -- --kind kilter --locales all --app-path <Boardsesh.app>
