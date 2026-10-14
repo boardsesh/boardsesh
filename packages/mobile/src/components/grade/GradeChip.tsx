@@ -34,10 +34,13 @@ export type GradeChipTone = 'neutral' | 'selected' | 'range' | 'consensus';
 export type GradeChipColorway = 'grade' | 'selection';
 
 /**
- * The chip's visual height. The chip and the range rail's row both size from
- * this one number, so a different height is a one-line change.
+ * The chip's minimum touch height, shared with the range rail. Flat chips also
+ * use this visual height; floating glass has a smaller lens inside the target.
  */
 export const GRADE_CHIP_HEIGHT = 44;
+// Measured native controlSize('small') capsule: 84px at 3x, or 28pt.
+const GLASS_CHIP_HEIGHT = 28;
+const GLASS_CHIP_INSET = (GRADE_CHIP_HEIGHT - GLASS_CHIP_HEIGHT) / 2;
 
 // The chip's border. Every `grade` tone keeps this width, so none of them
 // resizes the box; the `selection` colorway's 2pt consensus ring is the one
@@ -141,43 +144,40 @@ export function GradeChip({
             : backgroundColor
           : undefined;
     return (
-      <View onLayout={onLayout} style={style}>
+      <View onLayout={onLayout} style={[styles.glassCarrier, style]}>
         <GlassSurface
           glassEffectStyle="regular"
-          borderRadius={GRADE_CHIP_HEIGHT / 2}
+          borderRadius={GLASS_CHIP_HEIGHT / 2}
           tintColor={tintColor}
-          style={styles.glassSurface}
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.glassSurface]}
+        />
+        <PressableSurface
+          onPress={onPress}
+          onLongPress={onLongPress}
+          delayLongPress={delayLongPress}
+          feedback="none"
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          accessibilityHint={accessibilityHint}
+          accessibilityState={accessibilityState}
+          style={[styles.pressable, styles.glassPressable]}
         >
-          <PressableSurface
-            onPress={onPress}
-            onLongPress={onLongPress}
-            delayLongPress={delayLongPress}
-            feedback="none"
-            hitSlop={4}
-            accessibilityRole="button"
-            accessibilityLabel={accessibilityLabel}
-            accessibilityHint={accessibilityHint}
-            accessibilityState={accessibilityState}
-            style={[styles.pressable, styles.glassPressable]}
-          >
-            <View style={styles.content}>
-              <Text
-                variant="footnote"
-                // Glass tint remains translucent: its label follows the theme,
-                // rather than assuming the grade RGB is an opaque background.
-                color={tone === 'neutral' ? systemColors.secondaryLabel : systemColors.label}
-                numberOfLines={1}
-                style={styles.label}
-              >
-                {label}
-              </Text>
-            </View>
-          </PressableSurface>
-          <View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.glassRing, { borderColor, borderWidth }]}
-          />
-        </GlassSurface>
+          <View style={[styles.content, styles.glassContent]}>
+            <Text
+              variant="footnote"
+              // Glass tint remains translucent: its label follows the theme,
+              // rather than assuming the grade RGB is an opaque background.
+              color={tone === 'neutral' ? systemColors.secondaryLabel : systemColors.label}
+              numberOfLines={1}
+              style={styles.label}
+            >
+              {label}
+            </Text>
+          </View>
+        </PressableSurface>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.glassRing, { borderColor, borderWidth }]} />
       </View>
     );
   }
@@ -208,16 +208,27 @@ export function GradeChip({
 }
 
 const styles = StyleSheet.create({
-  glassSurface: {
+  glassCarrier: {
     minHeight: GRADE_CHIP_HEIGHT,
     minWidth: 52,
   },
+  glassSurface: {
+    top: GLASS_CHIP_INSET,
+    bottom: GLASS_CHIP_INSET,
+  },
   glassPressable: {
-    // Preserve the old border-box geometry without an RN border around the lens.
-    padding: CHIP_BORDER_WIDTH,
+    // Keep the full 44pt target and horizontal border-box geometry. Taller text
+    // grows the carrier and its inset lens together, without clipping glyphs.
+    paddingHorizontal: CHIP_BORDER_WIDTH,
+    paddingVertical: GLASS_CHIP_INSET + CHIP_BORDER_WIDTH,
+  },
+  glassContent: {
+    minHeight: GLASS_CHIP_HEIGHT - CHIP_BORDER_WIDTH * 2,
   },
   glassRing: {
-    borderRadius: GRADE_CHIP_HEIGHT / 2,
+    top: GLASS_CHIP_INSET,
+    bottom: GLASS_CHIP_INSET,
+    borderRadius: GLASS_CHIP_HEIGHT / 2,
   },
   pressable: {
     minHeight: GRADE_CHIP_HEIGHT,

@@ -470,7 +470,9 @@ and accessibility gate as floating header controls. Their rail has no continuous
 neutral labels use the secondary theme label, selected/range labels the primary label.
 Selected endpoints retain the grade hue with a 35% tint and a selection ring; interior grades
 keep their 18% tint and grade-colour ring. Each native lens has its own rounded edge, with
-rings drawn separately, and a static carrier preserves the 44pt touch target and tap/hold behavior.
+rings drawn separately. At normal text size the 28pt lens matches the native small filter
+capsules inside a full 44pt touch target. Eight-point vertical insets and matching content
+padding let the lens grow with taller text. The static carrier preserves tap/hold behavior.
 Other grade pickers keep their existing flat chips. Older iOS, Material, Reduce Transparency
 and Increase Contrast keep the local opaque backing. Angle rails also retain their local
 `systemColors.background` backing; the filter capsule row stays transparent.

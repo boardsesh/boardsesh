@@ -181,7 +181,11 @@ describe('opt-in floating glass grade chips', () => {
       <GradeChip glass tone={tone} label="V6" gradeColor={GRADE_COLOR} onPress={vi.fn()} accessibilityLabel="V6" />,
     );
     expect(container.querySelectorAll('[data-glass-chip]')).toHaveLength(1);
-    expect(captured.glassProps[0]).toMatchObject({ glassEffectStyle: 'regular', borderRadius: 22 });
+    expect(captured.glassProps[0]).toMatchObject({
+      glassEffectStyle: 'regular',
+      borderRadius: 14,
+      pointerEvents: 'none',
+    });
     const surfaceStyle = flatten((captured.glassProps[0] as { style: unknown }).style);
     const frameStyle = flatten(captured.frameStyles[0]);
     for (const carrierStyle of [surfaceStyle, frameStyle, flatten(captured.viewStyles[0])]) {
@@ -189,8 +193,9 @@ describe('opt-in floating glass grade chips', () => {
       expect(carrierStyle.borderWidth).toBeUndefined();
       expect(carrierStyle.overflow).toBeUndefined();
     }
-    expect(surfaceStyle).toMatchObject({ minHeight: 44, minWidth: 52 });
-    expect(frameStyle).toMatchObject({ minHeight: 44, padding: 1 });
+    expect(surfaceStyle).toMatchObject({ top: 8, bottom: 8 });
+    expect(flatten(captured.viewStyles[0])).toMatchObject({ minHeight: 44, minWidth: 52 });
+    expect(frameStyle).toMatchObject({ minHeight: 44, minWidth: 52, paddingHorizontal: 1, paddingVertical: 9 });
     expect(captured.textColors.at(-1)).toBe(tone === 'neutral' ? systemColors.secondaryLabel : systemColors.label);
   });
 
@@ -205,7 +210,13 @@ describe('opt-in floating glass grade chips', () => {
         <GradeChip glass tone={tone} label="V6" gradeColor={GRADE_COLOR} onPress={vi.fn()} accessibilityLabel="V6" />,
       );
       expect(captured.glassProps[0]).toMatchObject({ tintColor });
-      expect(flatten(captured.viewStyles.at(-1))).toMatchObject({ borderColor, borderWidth: 1, borderRadius: 22 });
+      expect(flatten(captured.viewStyles.at(-1))).toMatchObject({
+        borderColor,
+        borderWidth: 1,
+        borderRadius: 14,
+        top: 8,
+        bottom: 8,
+      });
     }
   });
 
@@ -246,6 +257,28 @@ describe('opt-in floating glass grade chips', () => {
     fireEvent.contextMenu(container.querySelector('button')!);
     expect(onPress).toHaveBeenCalledOnce();
     expect(onLongPress).toHaveBeenCalledOnce();
+  });
+
+  it('centres the 28pt lens in a full 44pt touch owner and leaves room for taller text', () => {
+    const { container } = render(<GradeChip glass label="V6" onPress={vi.fn()} accessibilityLabel="V6" />);
+    const lens = container.querySelector('[data-glass-chip]')!;
+    const button = container.querySelector('button')!;
+    expect(button.parentElement).toBe(lens.parentElement);
+    expect(lens.contains(button)).toBe(false);
+    const carrier = flatten(captured.viewStyles[0]);
+    const content = flatten(captured.viewStyles[1]);
+    const frame = flatten(captured.frameStyles[0]);
+    const lensStyle = flatten((captured.glassProps[0] as { style: unknown }).style);
+    const touchHeight = Number(carrier.minHeight);
+    const edgeInsets = Number(lensStyle.top) + Number(lensStyle.bottom);
+    expect(touchHeight).toBe(44);
+    expect(touchHeight - edgeInsets).toBe(28);
+    expect(content).toMatchObject({ minHeight: 26, paddingHorizontal: 12 });
+    // A tall line grows the touch owner and lens together: padding stays outside
+    // the text instead of letting glyphs protrude from a fixed 28pt surface.
+    const largeLineHeight = 44;
+    const expandedHeight = Math.max(touchHeight, largeLineHeight + Number(frame.paddingVertical) * 2);
+    expect(expandedHeight - edgeInsets).toBeGreaterThanOrEqual(largeLineHeight + 2);
   });
 });
 
