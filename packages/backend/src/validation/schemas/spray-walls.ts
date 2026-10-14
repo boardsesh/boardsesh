@@ -118,7 +118,7 @@ export const CreateSprayWallInputSchema = z.object({
   isPublic: z.boolean().optional(),
   isUnlisted: z.boolean().optional(),
   gymUuid: UUIDSchema.optional().nullable(),
-  locationName: z.string().max(200).optional().nullable(),
+  locationName: z.string().trim().max(200).optional().nullable(),
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   hideLocation: z.boolean().optional(),
@@ -247,7 +247,7 @@ export const UpdateSprayWallInputSchema = z
       .optional(),
     // The same location fields `createSprayWall` takes, so the wizard's last
     // step can place the wall and link a nearby gym in one call. Null clears.
-    locationName: z.string().max(200).optional().nullable(),
+    locationName: z.string().trim().max(200).optional().nullable(),
     latitude: z.number().min(-90).max(90).optional().nullable(),
     longitude: z.number().min(-180).max(180).optional().nullable(),
     hideLocation: z.boolean().optional(),

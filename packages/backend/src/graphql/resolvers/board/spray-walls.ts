@@ -3469,16 +3469,23 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // would make a public board with no photo, no holds and no climbs for as long as
   // the rest of the wizard takes — and for good, if it is abandoned.
   //
-  // Not for the audience controls (`privacyUpdate`): that path writes its own
-  // policy row and keeps applying directly. Not for a reset clone: its pair is the
+  // Not for the audience controls: neither `privacyUpdate`, which writes its own
+  // policy row, nor a wall that already HAS one. A policy is the owner's audience
+  // choice and the board flags are its projection, so the call applies directly,
+  // clamped to the policy as on any wall (`legacySprayAudience` never widens a
+  // restricted one). Parking there would leave a private board row under a
+  // public policy until the publish. Not for a reset clone: its pair is the
   // old wall's audience, and a stated choice there drops the pair and writes the
   // board row (see the pending merge under the lock). Decided here so the public
   // copy below is never made for a parked change, and again under the lock, where
   // it counts.
   const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
-  const parksVisibility = (state: { currentVersionId: number | null; resetFromWallId: number | null }) =>
-    !privacyUpdate && statesVisibility && state.currentVersionId == null && state.resetFromWallId == null;
-  const parkedBeforeLock = parksVisibility(wall);
+  const parksVisibility = (
+    state: { currentVersionId: number | null; resetFromWallId: number | null },
+    hasPolicy: boolean,
+  ) =>
+    !privacyUpdate && !hasPolicy && statesVisibility && state.currentVersionId == null && state.resetFromWallId == null;
+  const parkedBeforeLock = parksVisibility(wall, initialPolicy != null);
 
   // Applied before the gym-link check below, which measures the distance from
   // the wall to a self-linked public gym: a wall that had no point gets one in
@@ -3640,6 +3647,20 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
         throw notFoundError();
       }
+      // The owner-only location check again, against the flag as it is NOW. The
+      // one above read it before the lock: a gym admin's edit screen echoing
+      // `hideLocation: false` with a rename, while the owner hid the location in
+      // between, would otherwise put the address back on show.
+      if (
+        validated.hideLocation !== undefined &&
+        validated.hideLocation !== boardNow.hideLocation &&
+        boardNow.ownerId !== ctx.userId
+      ) {
+        throw new GraphQLError('Only the climber who set this wall up can hide or show where it is', {
+          extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
+        });
+      }
+      let hasPolicy = false;
       let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = stagedVisibility;
       if (privacyUpdate) {
         const settings = {
@@ -3660,6 +3681,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         // A new restriction may have committed while the photo was copying.
         // Decide again under the wall lock before attaching that copy or flags.
         const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+        hasPolicy = policy != null;
         if (policy) {
           const audience = legacySprayAudience(policy.audience, boardNow, validated);
           effectiveVisibility = { isPublic: audience === 'public', isUnlisted: audience === 'unlisted' };
@@ -3689,7 +3711,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       }
 
       // Parking, decided for good now that a publish cannot land in between.
-      const parked = parksVisibility(wallNow);
+      const parked = parksVisibility(wallNow, hasPolicy);
       if (parked) {
         // The board row stays private. One left public or unlisted with nothing
         // published — a backend from before #5513 could leave one — closes here,
@@ -3702,7 +3724,12 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         // A publish committed between the decision above and the lock: the
         // choice applies directly, as it does on any published wall, and the
         // public copy that was skipped for a parked change is made after commit.
-        if (parkedBeforeLock) publishedMeanwhileVersionId = wallNow.currentVersionId;
+        // (A policy row appearing in between also lands here; on a wall with no
+        // published version there is no photo to copy, and the first publish
+        // makes it.)
+        if (parkedBeforeLock && wallNow.currentVersionId != null) {
+          publishedMeanwhileVersionId = wallNow.currentVersionId;
+        }
       }
       const losingPublic = updates.isPublic === false && boardNow.isPublic;
       if (Object.keys(updates).length > 0) {

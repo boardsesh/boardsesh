@@ -407,7 +407,9 @@ Three rules in that flow are not obvious from the API and are easy to undo:
   the pair), and no public photo copy is made until the publish. That is how the
   wizard's last details step works — name, angle, gym, location and visibility in
   one `updateSprayWall` just before the first publish. Three exceptions: the
-  audience controls (`updateResourcePrivacy`) still apply directly, a reset
+  audience controls (`updateResourcePrivacy`) still apply directly, and so does
+  any call on a wall that already has an audience policy (clamped to it, so the
+  policy and the board flags never disagree); a reset
   clone drops its pair and writes the board row (see
   [Archive and reset](#archive-and-reset)), and a published wall writes the flags
   directly as it always has. `SprayWall.pendingVisibility` returns the waiting
@@ -789,7 +791,8 @@ unpublished, is parked on the same columns.
 (`locationName`, `latitude`, `longitude`, `hideLocation`). `latitude` and
 `longitude` go together, both or neither. They are applied before the gym-link
 check, so a wall with no point can be placed and linked to a nearby public gym
-in one call. `hideLocation` is owner-only, like visibility, and on a wall with a
+in one call. `hideLocation` is owner-only, like visibility, checked again under the wall
+lock against the current flag (a re-stated equal value is fine), and on a wall with a
 location policy it is read through `legacyLocationAudience`, the same way
 `updateBoard` reads it.
 

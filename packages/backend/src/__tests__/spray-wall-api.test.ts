@@ -6013,6 +6013,198 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
       ),
     ).rejects.toThrow(/latitude and longitude go together/);
   });
+
+  it('applies a parked choice directly when a publish lands while the update waits for the lock', async () => {
+    const wall = await createWall(OWNER);
+    const versionId = Number(await openDraft(wall.uuid));
+    const [wallRow] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, wall.uuid));
+
+    let releaseLock: () => void = () => {};
+    let announceLock: () => void = () => {};
+    const lockHeld = new Promise<void>((resolve) => {
+      announceLock = resolve;
+    });
+    const mayPublish = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    // A stand-in publish holding the wall lock: by the time the update gets the
+    // lock, the wall it decided to park for has a published version.
+    const publish = db.transaction(async (transaction) => {
+      await lockWallForWrite(transaction, wallRow.id);
+      announceLock();
+      await mayPublish;
+      await transaction
+        .update(sprayWallVersions)
+        .set({ status: 'published', publishedAt: new Date() })
+        .where(eq(sprayWallVersions.id, versionId));
+      await transaction.update(sprayWalls).set({ currentVersionId: versionId }).where(eq(sprayWalls.id, wallRow.id));
+    });
+    await lockHeld;
+    const update = sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, isPublic: true } },
+      ctxFor(OWNER),
+    );
+    try {
+      await vi.waitFor(
+        async () => {
+          const [lock] = (await db.execute(sql`
+            SELECT EXISTS (
+              SELECT 1 FROM pg_locks
+              WHERE locktype = 'advisory'
+                AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                AND classid = ${SPRAY_WALL_WRITE_LOCK_NAMESPACE}
+                AND objid = ${wallRow.id}
+                AND objsubid = 2
+                AND NOT granted
+            ) AS waiting
+          `)) as unknown as Array<{ waiting: boolean }>;
+          expect(lock.waiting).toBe(true);
+        },
+        { timeout: 5000 },
+      );
+    } finally {
+      releaseLock();
+      await publish;
+    }
+    await update;
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.pending_is_unlisted).toBeNull();
+    // The copy skipped for the parked change is made after the commit.
+    expect(row.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(row.public_photo_key!)).toBe(true);
+  });
+
+  it('closes a version-less wall left public when its owner states a choice, and parks the rest', async () => {
+    const wall = await createWall(OWNER);
+    // What a backend from before #5513 could leave: public, with nothing published.
+    await db.update(userBoards).set({ isPublic: true }).where(eq(userBoards.uuid, wall.uuid));
+    const climbUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed)
+      VALUES (${climbUuid}, 'spray', ${wall.layoutId}, 'Fanned out', '', true, false)
+    `);
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'climb', 'climb', ${climbUuid}, now())
+    `);
+
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: false } }, ctxFor(OWNER));
+
+    expect(await visibilityOf(wall.uuid)).toMatchObject({
+      is_public: false,
+      is_unlisted: false,
+      pending_is_public: true,
+      pending_is_unlisted: false,
+      public_photo_key: null,
+    });
+    // Going private retracts what was fanned out, parked or not.
+    expect(await db.select().from(feedItems).where(eq(feedItems.entityId, climbUuid))).toHaveLength(0);
+
+    await publishFirst(wall.uuid);
+
+    const published = await visibilityOf(wall.uuid);
+    expect(published.is_public).toBe(true);
+    expect(published.pending_is_public).toBeNull();
+    expect(published.public_photo_key).not.toBeNull();
+  });
+
+  it('lets the audience control on an unpublished wall apply directly', async () => {
+    const wall = await createWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'public', locationAudience: 'public', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.pending_is_unlisted).toBeNull();
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy?.audience).toBe('public');
+  });
+
+  it('applies a stated choice directly on an unpublished wall that has an audience policy', async () => {
+    // Parking here would leave a private board row under a public policy.
+    const wall = await createWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'public', locationAudience: 'public', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Policy wall', isPublic: true } },
+      ctxFor(OWNER),
+    );
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.is_unlisted).toBe(false);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.pending_is_unlisted).toBeNull();
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy?.audience).toBe('public');
+
+    await publishFirst(wall.uuid);
+    const published = await visibilityOf(wall.uuid);
+    expect(published.is_public).toBe(true);
+    expect(published.public_photo_key).not.toBeNull();
+  });
+
+  it('lets a gym admin re-state the current hideLocation with an edit', async () => {
+    const wall = await createWall(OWNER);
+    const gym = await gymWithMember(STRANGER, 'admin');
+    await db.update(userBoards).set({ gymId: gym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Gym edit', hideLocation: false } },
+      ctxFor(STRANGER),
+    );
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board).toMatchObject({ name: 'Gym edit', hideLocation: false });
+  });
+
+  it('does not let hideLocation: false widen an only_me location policy', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'invite_only', locationAudience: 'only_me', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, hideLocation: false } }, ctxFor(OWNER));
+
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board.hideLocation).toBe(true);
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy?.locationAudience).toBe('only_me');
+  });
+
+  it('clears the point with null coordinates, after which a nearby gym can no longer be self-linked', async () => {
+    const point = { latitude: 51.5007, longitude: -0.1246 };
+    const gym = await gymWithMember(GYM_EDITOR, 'member', point);
+    const wall = await createWall(OWNER, point);
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, latitude: null, longitude: null } },
+      ctxFor(OWNER),
+    );
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board.latitude).toBeNull();
+    expect(board.longitude).toBeNull();
+
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, gymUuid: gym.uuid } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/not authorized/i);
+  });
 });
 
 describe('who may edit a climb on a spray wall: the setter, for 24 hours', () => {
