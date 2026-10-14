@@ -6,7 +6,20 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { parse } from 'yaml';
+import {
+  readCppCaptureSource,
+  verifyCppCaptureCompatibility,
+  type CppCaptureSourceContext,
+} from './assert-cpp-screenshots';
+import {
+  retainedArtifactExecution,
+  retainedExecution,
+  retainedHistory,
+  type RetainedExecution,
+  type RetainedRetryHistory,
+} from './lib/cpp-retained-history';
 import { extractArtifactZip } from './mobile-ota-stable-artifacts';
 import { findOffenders } from './assert-screenshot-dimensions';
 import { DEFAULT_MIN_BYTES } from './assert-screenshot-content';
@@ -15,6 +28,8 @@ import { readScreenshotFixtureManifest, listFixtureFiles } from './lib/screensho
 import { canonicalJson, type GraphqlFixtureFile, type ScreenshotFixtureManifest } from './lib/screenshot-fixtures';
 import { CPP_MANIFEST_PATH, isCppTarget, readCppPage, resolveCppRecipes, type CppTarget } from './lib/screenshot-cpp';
 
+const MAX_RECORD_ATTEMPTS = 10;
+const SKIPPED_RECORD_JOBS = ['cpp-finalize', 'cpp-create', 'cpp-plan', 'ios-finalize', 'ios-capture', 'probe'];
 const WORKFLOW_PATH = '.github/workflows/mobile-screenshots-ios.yml';
 export const RETAINED_CPP_DEVICES = [
   ['iPhone 16 Pro Max', 'iphone-16-pro-max'],
@@ -50,6 +65,8 @@ export interface RetainedCppClient {
   bytes(path: string): Buffer;
   isAncestor(producerSha: string, preparerSha: string): boolean;
   workflow(producerSha: string): string;
+  source(producerSha: string, path: string): Buffer;
+  isCommit(commit: string): boolean;
 }
 export interface RetainedCppOptions {
   repository: string;
@@ -65,6 +82,8 @@ interface SelectedArtifact {
   digest: string;
   kind: 'recording' | 'native' | 'bootstrap';
   device?: string;
+  jobId?: number;
+  attempt?: number;
 }
 interface Producer {
   runId: number;
@@ -73,9 +92,44 @@ interface Producer {
   preparerSha: string;
   jobIds: number[];
   artifacts: SelectedArtifact[];
+  retryHistory?: RetainedRetryHistory;
+  captureSource?: CppCaptureSourceContext;
+  compatibility?: ReturnType<typeof verifyCppCaptureCompatibility>;
 }
 
-/** Only the same immutable, first-attempt producer and its four successful native jobs qualify. */
+// Full readback inputs are private: legacy public receipt bytes remain unchanged.
+const verifiedInputs = new WeakMap<Producer, { sha256: string; artifactSizes: Map<number, number> }>();
+
+/** Read actual original job output, never shell source that merely mentions the expected inputs. */
+function verifyRecordInputs(log: Buffer, target: CppTarget, producerSha: string): void {
+  if (log.length > 2 * 1024 * 1024) return fail();
+  const lines = stripVTControlCharacters(log.toString()).split(/\r?\n/);
+  for (const [name, expected] of Object.entries({
+    SOURCE_SHA: producerSha,
+    CPP_TARGET: target,
+    CPP_ACTION: 'capture',
+    FIXTURES_MODE: 'record',
+    LOCALES: 'en-US',
+    UPLOAD_DEFAULT: 'false',
+    PUBLISH_BASELINE: 'false',
+  })) {
+    const values = lines.flatMap((line) => {
+      const match = line.match(new RegExp(`^\\d{4}-\\d{2}-\\d{2}T\\S+Z   ${name}: (.*)$`));
+      return match ? [match[1]] : [];
+    });
+    if (!values.length || values.some((entry) => entry !== expected)) return fail();
+  }
+  const resolved = lines.filter((line) => /^\d{4}-\d{2}-\d{2}T\S+Z Resolved: /.test(line));
+  if (
+    resolved.length !== 1 ||
+    !resolved[0].endsWith(
+      `Resolved: gate=full ios_locales=["en-US"] upload=false flow=app-store source_sha=${producerSha}`,
+    )
+  )
+    return fail();
+}
+
+/** Reconcile carried successes with their original executions; all four devices remain mandatory. */
 export function verifyRetainedCppProducer(options: RetainedCppOptions, client: RetainedCppClient): Producer {
   if (
     options.repository !== 'boardsesh/boardsesh' ||
@@ -102,12 +156,18 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
     run.event !== 'workflow_dispatch' ||
     run.status !== 'completed' ||
     !['success', 'failure'].includes(String(run.conclusion)) ||
-    run.run_attempt !== 1 ||
+    !id(run.run_attempt) ||
+    run.run_attempt > MAX_RECORD_ATTEMPTS ||
     !sha(run.head_sha) ||
+    !client.isCommit(run.head_sha) ||
+    !client.isCommit(options.preparerSha) ||
     !client.isAncestor(run.head_sha, options.preparerSha)
   )
     return fail();
   const producerSha = run.head_sha;
+  const attempt = run.run_attempt;
+  const captureSource = readCppCaptureSource(options.target, producerSha, (path) => client.source(producerSha, path));
+  const compatibility = verifyCppCaptureCompatibility(options.target, captureSource);
   const source: unknown = parse(client.workflow(producerSha));
   if (
     !object(source) ||
@@ -144,8 +204,19 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
     capture.with.flow !== 'app-store'
   )
     return fail();
-  const jobs = client.pages(`${prefix}/runs/${options.runId}/attempts/1/jobs?per_page=100`, 'jobs');
-  if (jobs.some((job) => !id(job.id) || job.run_attempt !== 1 || job.status !== 'completed')) return fail();
+  const jobs = client.pages(`${prefix}/runs/${options.runId}/attempts/${attempt}/jobs?per_page=100`, 'jobs');
+  if (
+    jobs.some(
+      (job) =>
+        !id(job.id) ||
+        job.run_attempt !== attempt ||
+        job.run_id !== options.runId ||
+        job.head_sha !== producerSha ||
+        job.status !== 'completed',
+    ) ||
+    new Set(jobs.map((job) => job.id)).size !== jobs.length
+  )
+    return fail();
   const requiredNames = [
     'setup',
     'cpp-bootstrap',
@@ -157,6 +228,44 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
     return matches[0];
   });
   if (jobs.filter((job) => String(job.name).startsWith('cpp-capture')).length !== 4) return fail();
+  const allowedNames = [...requiredNames, 'ios-build', 'cpp-prepare-record', ...SKIPPED_RECORD_JOBS];
+  if (jobs.some((job) => !allowedNames.includes(String(job.name)))) return fail();
+  const build = jobs.filter((job) => job.name === 'ios-build');
+  if (build.length !== 1 || build[0].conclusion !== 'success') return fail();
+  for (const job of jobs)
+    if (SKIPPED_RECORD_JOBS.includes(String(job.name)) && job.conclusion !== 'skipped') return fail();
+  const retry =
+    attempt > 1
+      ? retainedHistory(prefix, options.runId, attempt, producerSha, jobs, client, SKIPPED_RECORD_JOBS, fail)
+      : undefined;
+  function originalJob(job: Record<string, unknown>): RetainedExecution | undefined {
+    if (!retry) return undefined;
+    const signature = retainedExecution(job, fail).signatureSha256;
+    const original = retry.executions.find((entry) => entry.signatureSha256 === signature);
+    if (!original || original.conclusion !== 'success') return fail();
+    retry.history.selectedExecutions.push({ ...original, latestJobId: Number(job.id) });
+    return original;
+  }
+  for (const job of [...required, build[0]]) retainedExecution(job, fail);
+  if (retry)
+    for (const prior of retry.executions) {
+      if (prior.conclusion !== 'failure' || prior.name.startsWith('cpp-capture')) continue;
+      if (
+        prior.name !== 'cpp-prepare-record' ||
+        !client
+          .bytes(`${prefix}/jobs/${prior.jobId}/logs`)
+          .toString()
+          .includes('CPP detail source lacks the genuine owned leader primary queue')
+      )
+        return fail();
+    }
+  const originals = new Map(required.map((job) => [job.name, originalJob(job)]));
+  originalJob(build[0]);
+  verifyRecordInputs(
+    client.bytes(`${prefix}/jobs/${originals.get('setup')?.jobId ?? Number(required[0].id)}/logs`),
+    options.target,
+    producerSha,
+  );
   const failures = jobs.filter((job) => !['success', 'skipped'].includes(String(job.conclusion)));
   if (run.conclusion === 'failure') {
     if (
@@ -173,7 +282,34 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
   const artifacts = client.pages(`${prefix}/runs/${options.runId}/artifacts?per_page=100`, 'artifacts');
   const selected: SelectedArtifact[] = [];
   function select(name: string, kind: SelectedArtifact['kind'], job: Record<string, unknown>, device?: string) {
-    const matches = artifacts.filter((artifact) => artifact.name === name);
+    const original = originals.get(job.name);
+    const candidates = artifacts.filter((artifact) => artifact.name === name);
+    if (candidates.some((artifact) => !id(artifact.size_in_bytes) || artifact.size_in_bytes > 128 * 1024 * 1024))
+      return fail();
+    const matches = retry
+      ? candidates.filter((artifact) => {
+          const bound = retainedArtifactExecution(
+            artifact,
+            String(job.name),
+            retry.executions,
+            options.runId,
+            producerSha,
+            fail,
+          );
+          const matched = bound.execution;
+          if (matched.signatureSha256 === original?.signatureSha256) return true;
+          if (matched.conclusion !== 'failure') return fail();
+          retry.history.excludedArtifacts.push({
+            id: bound.id,
+            name,
+            digest: bound.digest,
+            createdAt: bound.createdAt,
+            jobId: matched.jobId,
+            attempt: matched.attempt,
+          });
+          return false;
+        })
+      : candidates;
     const artifact = matches[0];
     if (
       matches.length !== 1 ||
@@ -191,7 +327,14 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
       artifact.workflow_run.head_sha !== producerSha
     )
       return fail();
-    selected.push({ id: artifact.id, name, digest: artifact.digest, kind, ...(device ? { device } : {}) });
+    selected.push({
+      id: artifact.id,
+      name,
+      digest: artifact.digest,
+      kind,
+      ...(device ? { device } : {}),
+      ...(original ? { jobId: original.jobId, attempt: original.attempt } : {}),
+    });
   }
   select(`cpp-bootstrap-${options.target}`, 'bootstrap', required[1]);
   RETAINED_CPP_DEVICES.forEach(([, device], index) => {
@@ -204,14 +347,43 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
     select(`ios-cpp-${options.target}-cpp-capture-en-US-${device}`, 'native', required[index + 2], device);
   });
   if (new Set(selected.map((artifact) => artifact.id)).size !== selected.length) return fail();
-  return {
+  {
+    const relevant = artifacts.filter((artifact) =>
+      /^(?:cpp-bootstrap-|ios-cpp-|screenshot-fixtures-cpp-capture-)/.test(String(artifact.name)),
+    );
+    const known = [...selected, ...(retry?.history.excludedArtifacts ?? [])];
+    if (
+      known.length !== relevant.length ||
+      new Set(known.map((artifact) => artifact.id)).size !== known.length ||
+      relevant.some((artifact) => !known.some((entry) => entry.id === artifact.id))
+    )
+      return fail();
+    retry?.history.excludedArtifacts.sort((left, right) => left.id - right.id);
+  }
+  const producer: Producer = {
     runId: options.runId,
-    attempt: 1,
+    attempt,
     producerSha,
     preparerSha: options.preparerSha,
-    jobIds: required.map((job) => Number(job.id)),
+    jobIds: required.map((job) => originals.get(job.name)?.jobId ?? Number(job.id)),
     artifacts: selected,
+    ...(retry ? { retryHistory: retry.history } : {}),
+    ...(compatibility.sourceManifestSha256 !== compatibility.currentManifestSha256
+      ? { captureSource, compatibility }
+      : {}),
   };
+  verifiedInputs.set(producer, {
+    sha256: hash(
+      canonicalJson({ run, workflow, jobs, artifacts, priorAttempts: retry?.history.attempts ?? [], captureSource }),
+    ),
+    artifactSizes: new Map(
+      selected.map((artifact) => [
+        artifact.id,
+        Number(artifacts.find((entry) => entry.id === artifact.id)!.size_in_bytes),
+      ]),
+    ),
+  });
+  return producer;
 }
 
 function scenarioHash(capture: unknown): string {
@@ -261,9 +433,15 @@ export function verifyRetainedCppSource(directory: string, target: CppTarget): S
 }
 
 /** Verify actual native PNGs and their existing record-mode metadata, never relabel their commit. */
-export function verifyRetainedCppNative(directory: string, device: string, manifest: ScreenshotFixtureManifest): void {
+export function verifyRetainedCppNative(
+  directory: string,
+  device: string,
+  manifest: ScreenshotFixtureManifest,
+  captureSource?: CppCaptureSourceContext,
+): void {
   try {
     const target = manifest.capture!.cpp!.target;
+    const compatibility = captureSource ? verifyCppCaptureCompatibility(target, captureSource) : undefined;
     const page = readCppPage(target);
     const rawFolder = join(directory, 'raw-screenshots', 'en-US', device);
     const framedFolder = join(directory, 'screenshots', 'en-US', device);
@@ -297,7 +475,8 @@ export function verifyRetainedCppNative(directory: string, device: string, manif
       presentation.locale !== 'en-US' ||
       !object(presentation.cpp) ||
       presentation.cpp.target !== target ||
-      presentation.cpp.manifestSha256 !== hash(readFileSync(CPP_MANIFEST_PATH)) ||
+      presentation.cpp.manifestSha256 !==
+        (compatibility?.sourceManifestSha256 ?? hash(readFileSync(CPP_MANIFEST_PATH))) ||
       !object(presentation.files) ||
       canonicalJson(Object.keys(presentation.files).sort()) !==
         canonicalJson(recipes.map(({ output }) => output).sort())
@@ -341,7 +520,12 @@ export async function downloadRetainedCppRecord(options: RetainedCppOptions, cli
     const artifactDirectories = new Map<number, string>();
     for (const artifact of producer.artifacts) {
       const bytes = client.bytes(`repos/${options.repository}/actions/artifacts/${artifact.id}/zip`);
-      if (bytes.length > 128 * 1024 * 1024 || `sha256:${hash(bytes)}` !== artifact.digest) return fail();
+      if (
+        bytes.length > 128 * 1024 * 1024 ||
+        bytes.length !== verifiedInputs.get(producer)?.artifactSizes.get(artifact.id) ||
+        `sha256:${hash(bytes)}` !== artifact.digest
+      )
+        return fail();
       const zip = join(scratch, `${artifact.id}.zip`);
       writeFileSync(zip, bytes);
       const directory = join(scratch, String(artifact.id));
@@ -371,7 +555,7 @@ export async function downloadRetainedCppRecord(options: RetainedCppOptions, cli
       originalIdentityHash = identityHash(manifest);
       const native = producer.artifacts.find((entry) => entry.kind === 'native' && entry.device === artifact.device)!;
       const nativeDirectory = artifactDirectories.get(native.id)!;
-      verifyRetainedCppNative(nativeDirectory, artifact.device!, manifest);
+      verifyRetainedCppNative(nativeDirectory, artifact.device!, manifest, producer.captureSource);
       nativeInventories[artifact.device!] = hash(
         canonicalJson(
           Object.fromEntries(
@@ -382,6 +566,13 @@ export async function downloadRetainedCppRecord(options: RetainedCppOptions, cli
       manifests[artifact.device!] = hash(readFileSync(join(directory, 'manifest.json')));
       renameSync(directory, join(recordings, artifact.device!));
     }
+    const readback = verifyRetainedCppProducer(options, client);
+    if (
+      !verifiedInputs.has(producer) ||
+      verifiedInputs.get(readback)?.sha256 !== verifiedInputs.get(producer)?.sha256 ||
+      canonicalJson(readback) !== canonicalJson(producer)
+    )
+      return fail();
     mkdirSync(resolve(options.out, '..'), { recursive: true });
     renameSync(recordings, options.out);
     mkdirSync(resolve(options.receipt, '..'), { recursive: true });
@@ -412,6 +603,19 @@ export async function downloadRetainedCppRecord(options: RetainedCppOptions, cli
 export function verifyRetainedCppMerged(directory: string, receiptPath: string): void {
   const receipt = json(readFileSync(receiptPath));
   if (!object(receipt) || !isCppTarget(receipt.target)) return fail();
+  if (receipt.captureSource !== undefined || receipt.compatibility !== undefined) {
+    if (
+      !object(receipt.captureSource) ||
+      receipt.captureSource.sourceSha !== receipt.producerSha ||
+      !object(receipt.compatibility)
+    )
+      return fail();
+    const compatibility = verifyCppCaptureCompatibility(
+      receipt.target,
+      receipt.captureSource as unknown as CppCaptureSourceContext,
+    );
+    if (canonicalJson(compatibility) !== canonicalJson(receipt.compatibility)) return fail();
+  }
   const manifest = verifyRetainedCppSource(directory, receipt.target);
   if (scenarioHash(manifest.capture) !== receipt.scenarioSha256 || identityHash(manifest) !== receipt.identitySha256)
     return fail();
@@ -438,6 +642,14 @@ function createClient(): RetainedCppClient {
         return false;
       }
     },
+    isCommit: (commit) => {
+      try {
+        return execFileSync('git', ['cat-file', '-t', commit], { encoding: 'utf8', stdio: 'pipe' }).trim() === 'commit';
+      } catch {
+        return false;
+      }
+    },
+    source: (producerSha, path) => execFileSync('git', ['show', `${producerSha}:${path}`], { stdio: 'pipe' }),
     workflow: (producerSha) =>
       execFileSync('git', ['show', `${producerSha}:${WORKFLOW_PATH}`], { encoding: 'utf8', stdio: 'pipe' }),
   };

@@ -88,9 +88,15 @@ dispatch `cpp_record_run_id` with one target, `cpp_action=capture`,
 `fixtures=record`, `locales=en-US`, `flow=app-store`, and `gate=full`.
 Upload and baseline flags must be false; scenario, fixture, board, render and
 clock overrides must be empty. This skips bootstrap, build and capture and uses
-the existing preparation job. The producer must be a completed first attempt
-of this repository's screenshot workflow, from an ancestor of the preparer,
-with all four native devices successful. An overall failure qualifies only when
+the existing preparation job. The producer must be a completed run of this
+repository's screenshot workflow, from an ancestor of the preparer, with all
+four native devices successful. A failed native job may have been rerun: up to
+ten attempts are reconciled using the original execution times and ordered
+step outcomes. Carried successes keep their original job IDs; the bootstrap
+and each device's recording and native archives must bind to exactly one
+successful execution. Failed partial archives are excluded only when they bind
+unambiguously to a failed execution. Duplicate successes, unknown history and
+missing devices fail closed. An overall failure qualifies only when
 the old preparation job rejected the owned primary queue after those captures.
 
 Before screenshot credentials, the job verifies original artifact IDs, archive
@@ -103,6 +109,20 @@ candidate. The candidate's provenance receipt retains separate producer and
 preparer SHAs and artifact hashes, without account or session metadata.
 The candidate digest remains in its separate digest JSON; merge conflicts stay
 in the preparation job log.
+The original successful setup log must prove record/capture mode, en-US, the
+selected target, and disabled upload/baseline flags. Before local installation,
+the importer reads the producer again and rejects a changed retry or artifact
+inventory. Retry receipts bind every original selected execution and excluded
+failed artifact; unchanged first-attempt receipts keep their format.
+
+When unrelated CPP definitions changed, the current importer reads the original
+manifest and four caption catalogs from the verified producer commit. The full
+selected target, shared manifest fields and every used caption must still match
+current source. Native presentation hashes must match those exact original
+manifest bytes. The receipt binds this source context and compatibility proof;
+no caller-supplied hash or rewritten sidecar can substitute for it. Current
+native coverage, image hashes, dimensions and recipe checks still apply.
+
 Original native pixels remain attributed to the producer. This path publishes
 no fixture or store assets; candidate QA and a full replay still follow.
 

@@ -238,6 +238,20 @@ function metadata() {
     run_attempt: 1,
     head_sha: producerSha,
   };
+  let setupLog =
+    Object.entries({
+      SOURCE_SHA: producerSha,
+      CPP_TARGET: 'tension',
+      CPP_ACTION: 'capture',
+      FIXTURES_MODE: 'record',
+      LOCALES: 'en-US',
+      UPLOAD_DEFAULT: 'false',
+      PUBLISH_BASELINE: 'false',
+    })
+      .map(([name, value]) => `2026-10-12T01:00:00Z   ${name}: ${value}`)
+      .join('\n') +
+    `\n2026-10-12T01:00:01Z Resolved: gate=full ios_locales=["en-US"] upload=false flow=app-store source_sha=${producerSha}`;
+  const sourceFiles = new Map<string, Buffer>();
   const jobs = [
     { id: 1, name: 'setup' },
     { id: 2, name: 'cpp-bootstrap' },
@@ -248,12 +262,25 @@ function metadata() {
   ].map((job) => ({
     ...job,
     run_attempt: 1,
+    run_id: 123,
+    head_sha: producerSha,
+    steps: [
+      {
+        number: 1,
+        name: job.name.startsWith('cpp-capture') ? 'Capture target-specific native scenes' : 'Run job',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: '2026-10-12T01:00:00Z',
+        completed_at: '2026-10-12T01:10:00Z',
+      },
+    ],
     status: 'completed',
     conclusion: 'success',
     started_at: '2026-10-12T01:00:00Z',
     completed_at: '2026-10-12T01:10:00Z',
   }));
   jobs.push({ ...jobs[0], id: 7, name: 'cpp-prepare-record', conclusion: 'failure' });
+  jobs.push({ ...jobs[0], id: 8, name: 'ios-build' });
   const artifacts = [
     { name: 'cpp-bootstrap-tension' },
     ...RETAINED_CPP_DEVICES.flatMap(([, slug]) => [
@@ -264,6 +291,7 @@ function metadata() {
     ...artifact,
     id: index + 10,
     expired: false,
+    size_in_bytes: 100,
     digest: `sha256:${'c'.repeat(64)}`,
     created_at: '2026-10-12T01:05:00Z',
     workflow_run: { id: 123, head_sha: producerSha },
@@ -282,6 +310,7 @@ function metadata() {
     },
     bytes: (path) => {
       calls.push(path);
+      if (path === 'repos/boardsesh/boardsesh/actions/jobs/1/logs') return Buffer.from(setupLog);
       if (path.endsWith('/logs'))
         return Buffer.from(
           'prepare-ios-campaign-fixtures.ts: CPP detail source lacks the genuine owned leader primary queue',
@@ -289,6 +318,8 @@ function metadata() {
       return archives.get(Number(path.split('/').at(-2)))!;
     },
     isAncestor: () => ancestor,
+    isCommit: () => true,
+    source: (_commit, path) => sourceFiles.get(path) ?? readFileSync(path),
     workflow: () => readFileSync('.github/workflows/mobile-screenshots-ios.yml', 'utf8'),
   };
   return {
@@ -300,11 +331,272 @@ function metadata() {
     archives,
     client,
     calls,
+    sourceFiles,
+    setSetupLog: (transform: (log: string) => string) => {
+      setupLog = transform(setupLog);
+    },
     setAncestor: (allowed: boolean) => {
       ancestor = allowed;
     },
   };
 }
+
+function retriedMetadata() {
+  const source = metadata();
+  const prior = structuredClone(source.jobs);
+  prior[4].conclusion = 'failure';
+  prior[4].steps[0].conclusion = 'failure';
+  prior[6].conclusion = 'skipped';
+  prior[6].steps = [];
+  source.jobs.forEach((job) => {
+    job.id += 100;
+    job.run_attempt = 2;
+  });
+  const retried = source.jobs[4];
+  retried.started_at = '2026-10-12T02:00:00Z';
+  retried.completed_at = '2026-10-12T02:10:00Z';
+  retried.steps = [{ ...retried.steps[0], started_at: retried.started_at, completed_at: retried.completed_at }];
+  source.jobs[6].conclusion = 'success';
+  source.run.run_attempt = 2;
+  source.run.conclusion = 'success';
+  const partial = { ...source.artifacts[5], id: 99 };
+  source.artifacts[5].created_at = source.artifacts[6].created_at = '2026-10-12T02:05:00Z';
+  source.artifacts.push(partial);
+  source.client.pages = (path, field) =>
+    field === 'artifacts' ? source.artifacts : path.includes('/attempts/1/') ? prior : source.jobs;
+  return { ...source, prior, partial };
+}
+
+function sourceManifest(
+  source: ReturnType<typeof metadata>,
+  mutate: (manifest: { targets: Record<string, Record<string, unknown>>; version: number }) => void,
+): Buffer {
+  const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8')) as {
+    targets: Record<string, Record<string, unknown>>;
+    version: number;
+  };
+  mutate(manifest);
+  const bytes = Buffer.from(JSON.stringify(manifest));
+  source.sourceFiles.set('app-stores/apple/custom-product-pages.json', bytes);
+  return bytes;
+}
+
+describe('retained record failed-job retries', () => {
+  it('binds carried successes and bootstrap to originals, selecting the fourth native retry and excluding only its failed partial', () => {
+    const source = retriedMetadata();
+    const result = verifyRetainedCppProducer(source.options, source.client);
+    expect(result.jobIds).toEqual([1, 2, 3, 4, 105, 6]);
+    expect(result.artifacts).toHaveLength(9);
+    expect(
+      result.artifacts
+        .filter((artifact) => artifact.device === 'ipad-pro-13-inch-m5')
+        .map((artifact) => artifact.jobId),
+    ).toEqual([105, 105]);
+    expect(result.retryHistory?.selectedExecutions.find((job) => job.name === 'cpp-bootstrap')).toMatchObject({
+      jobId: 2,
+      latestJobId: 102,
+      attempt: 1,
+    });
+    expect(result.retryHistory?.excludedArtifacts).toEqual([
+      {
+        id: 99,
+        name: source.partial.name,
+        digest: source.partial.digest,
+        createdAt: source.partial.created_at,
+        jobId: 5,
+        attempt: 1,
+      },
+    ]);
+  });
+  it.each([
+    [
+      'unrecorded earlier attempt',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.prior.pop();
+      },
+    ],
+    [
+      'overlapping executions',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.partial.created_at = '2026-10-12T02:05:00Z';
+        source.prior[4].completed_at = '2026-10-12T02:10:00Z';
+      },
+    ],
+    [
+      'unknown partial window',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.partial.created_at = '2026-10-12T01:30:00Z';
+      },
+    ],
+    [
+      'expired failed partial',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.partial.expired = true;
+      },
+    ],
+    [
+      'foreign failed partial source',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.partial.workflow_run = { id: 123, head_sha: preparerSha };
+      },
+    ],
+    [
+      'duplicate successful archive',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.artifacts.push({ ...source.artifacts[1], id: 199 });
+      },
+    ],
+    [
+      'different genuine success',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.prior[4].conclusion = 'success';
+        source.prior[4].steps[0].conclusion = 'success';
+      },
+    ],
+    [
+      'unknown relevant artifact',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.artifacts.push({
+          ...source.artifacts[0],
+          id: 199,
+          name: 'ios-cpp-moonboard-cpp-capture-en-US-iphone-16-pro',
+        });
+      },
+    ],
+    [
+      'changed carried-success steps',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.jobs[2].steps = [{ ...source.jobs[2].steps[0], number: 2 }];
+      },
+    ],
+    [
+      'failed capture step under successful job',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.jobs[2].steps = [{ ...source.jobs[2].steps[0], conclusion: 'skipped' }];
+      },
+    ],
+    [
+      'duplicate step number',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.jobs[2].steps.push({ ...source.jobs[2].steps[0] });
+      },
+    ],
+    [
+      'cancelled history',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.prior[4].conclusion = 'cancelled';
+      },
+    ],
+    [
+      'unrelated failed bootstrap history',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.prior[1].conclusion = 'failure';
+      },
+    ],
+    [
+      'out of bound attempt',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.run.run_attempt = 11;
+      },
+    ],
+    [
+      'missing fourth native',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.artifacts.splice(6, 1);
+      },
+    ],
+    [
+      'missing bootstrap',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.artifacts.shift();
+      },
+    ],
+    [
+      'failed latest fourth native',
+      (source: ReturnType<typeof retriedMetadata>) => {
+        source.jobs[4].conclusion = 'failure';
+      },
+    ],
+  ])('rejects %s', (_name, mutate) => {
+    const source = retriedMetadata();
+    mutate(source);
+    expect(() => verifyRetainedCppProducer(source.options, source.client)).toThrow();
+  });
+  it.each([
+    'CPP_TARGET: tension',
+    'CPP_ACTION: capture',
+    'FIXTURES_MODE: record',
+    'LOCALES: en-US',
+    'UPLOAD_DEFAULT: false',
+    'PUBLISH_BASELINE: false',
+    'Resolved: gate=full',
+  ])('rejects missing or contradictory original setup %s', (field) => {
+    const source = metadata();
+    source.setSetupLog((log) => log.replace(field, `${field} changed`));
+    expect(() => verifyRetainedCppProducer(source.options, source.client)).toThrow();
+  });
+  it.each(['duplicate-output', 'contradictory-env', 'only-shell-source'])('rejects %s setup evidence', (kind) => {
+    const source = metadata();
+    source.setSetupLog((log) =>
+      kind === 'duplicate-output'
+        ? `${log}\n${log.split('\n').at(-1)}`
+        : kind === 'contradictory-env'
+          ? `${log}\n2026-10-12T01:00:00Z   PUBLISH_BASELINE: true`
+          : log.replaceAll('Z   ', 'Z echo '),
+    );
+    expect(() => verifyRetainedCppProducer(source.options, source.client)).toThrow();
+  });
+  it('preserves the legacy receipt producer shape for unchanged first attempts', () => {
+    const source = metadata(),
+      result = verifyRetainedCppProducer(source.options, source.client);
+    expect(Object.keys(result).sort()).toEqual(
+      ['runId', 'attempt', 'producerSha', 'preparerSha', 'jobIds', 'artifacts'].sort(),
+    );
+    expect(result.jobIds).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(Object.keys(result.artifacts[0]).sort()).toEqual(['id', 'name', 'digest', 'kind'].sort());
+    expect(Object.keys(result.artifacts[1]).sort()).toEqual(['id', 'name', 'digest', 'kind', 'device'].sort());
+  });
+});
+
+describe('original Git manifest context', () => {
+  it('accepts only unrelated target drift and binds actual source manifest bytes', () => {
+    const source = metadata();
+    const original = sourceManifest(source, (manifest) => {
+      manifest.targets.kilter.name = 'Earlier unrelated name';
+    });
+    const result = verifyRetainedCppProducer(source.options, source.client);
+    expect(result.captureSource?.manifest).toBe(original.toString());
+    expect(result.captureSource?.sourceSha).toBe(producerSha);
+    expect(result.compatibility?.sourceManifestSha256).toBe(sha256(original));
+  });
+  it.each(['target', 'globals', 'used-caption', 'noncommit', 'nonancestor', 'missing-original-bytes'])(
+    'rejects incompatible %s context',
+    (kind) => {
+      const source = metadata();
+      if (kind === 'target')
+        sourceManifest(source, (manifest) => {
+          manifest.targets.tension.name = 'Changed';
+        });
+      if (kind === 'globals')
+        sourceManifest(source, (manifest) => {
+          manifest.version = 2;
+        });
+      if (kind === 'used-caption') {
+        const path = 'app-stores/presentation/fr.json';
+        const captions = JSON.parse(readFileSync(path, 'utf8')) as Record<string, { headline: string }>;
+        captions[readCppPage('tension').recipes.phone[0].caption].headline += ' changed';
+        source.sourceFiles.set(path, Buffer.from(JSON.stringify(captions)));
+      }
+      if (kind === 'noncommit') source.client.isCommit = () => false;
+      if (kind === 'nonancestor') source.setAncestor(false);
+      if (kind === 'missing-original-bytes')
+        source.client.source = () => {
+          throw new Error('Missing original Git object');
+        };
+      expect(() => verifyRetainedCppProducer(source.options, source.client)).toThrow();
+    },
+  );
+});
 
 describe('retained CPP producer authorization', () => {
   it('accepts only the old preparation failure after four genuine native successes', () => {
@@ -406,6 +698,28 @@ describe('retained CPP producer authorization', () => {
       'wrong attempt',
       (source: ReturnType<typeof metadata>) => {
         source.jobs[2].run_attempt = 2;
+      },
+    ],
+    [
+      'foreign first-attempt namespace',
+      (source: ReturnType<typeof metadata>) => {
+        source.artifacts.push({
+          ...source.artifacts[0],
+          id: 199,
+          name: 'ios-cpp-spray-cpp-capture-fr-ipad-pro-11-inch-m5',
+        });
+      },
+    ],
+    [
+      'invalid archive size',
+      (source: ReturnType<typeof metadata>) => {
+        source.artifacts[0].size_in_bytes = 0;
+      },
+    ],
+    [
+      'oversized archive',
+      (source: ReturnType<typeof metadata>) => {
+        source.artifacts[0].size_in_bytes = 128 * 1024 * 1024 + 1;
       },
     ],
     [
@@ -600,11 +914,125 @@ function recordingArtifacts(source: ReturnType<typeof metadata>, changingCounts 
     const archive = zip(root);
     source.archives.set(artifact.id, archive);
     artifact.digest = `sha256:${sha256(archive)}`;
+    artifact.size_in_bytes = archive.length;
   }
   return example;
 }
 
 describe('retained original source and native bytes', () => {
+  it('imports retry shards without reading the failed partial or relabelling any original native bytes', async () => {
+    const source = retriedMetadata();
+    recordingArtifacts(source);
+    const originalBytes = new Map(source.archives);
+    source.archives.delete(99);
+    await downloadRetainedCppRecord(source.options, source.client);
+    const receipt = JSON.parse(readFileSync(source.options.receipt, 'utf8')) as {
+      retryHistory: { excludedArtifacts: Array<{ id: number }> };
+      manifestSha256: Record<string, string>;
+    };
+    expect(receipt.retryHistory.excludedArtifacts[0].id).toBe(99);
+    expect(Object.keys(receipt.manifestSha256).sort()).toEqual(RETAINED_CPP_DEVICES.map(([, device]) => device).sort());
+    for (const [artifactId, bytes] of source.archives) expect(bytes.equals(originalBytes.get(artifactId)!)).toBe(true);
+    expect(source.calls.some((path) => path.endsWith('/artifacts/99/zip'))).toBe(false);
+  });
+  it('checks original native sidecars against exact Git bytes while current selected-target gates still apply', () => {
+    const source = metadata(),
+      fixture = sample(),
+      root = directory(),
+      device = 'iphone-16-pro-max';
+    const original = sourceManifest(source, (manifest) => {
+      manifest.targets.kilter.name = 'Previous unrelated name';
+    });
+    const context = verifyRetainedCppProducer(source.options, source.client).captureSource!;
+    writeNative(root, device, fixture.manifest);
+    const filename = join(root, 'screenshots', 'en-US', device, 'presentation.json');
+    const presentation = JSON.parse(readFileSync(filename, 'utf8')) as { cpp: { manifestSha256: string } };
+    expect(() => verifyRetainedCppNative(root, device, fixture.manifest, context)).toThrow();
+    presentation.cpp.manifestSha256 = sha256(original);
+    writeFileSync(filename, JSON.stringify(presentation));
+    const originalSidecar = readFileSync(filename);
+    expect(() => verifyRetainedCppNative(root, device, fixture.manifest, context)).not.toThrow();
+    expect(readFileSync(filename).equals(originalSidecar)).toBe(true);
+    expect(() => verifyRetainedCppNative(root, device, fixture.manifest)).toThrow();
+    expect(() =>
+      verifyRetainedCppNative(root, device, fixture.manifest, { ...context, version: 2 } as unknown as typeof context),
+    ).toThrow();
+    expect(() =>
+      verifyRetainedCppNative(root, device, fixture.manifest, { ...context, unknown: true } as typeof context),
+    ).toThrow();
+  });
+  it.each([
+    'selected-artifact',
+    'selected-time',
+    'selected-size',
+    'excluded-artifact',
+    'excluded-size',
+    'prior-history',
+    'late-attempt',
+    'diagnostic-addition',
+  ])('rejects a late %s change without local installation', async (kind) => {
+    const source = retriedMetadata();
+    recordingArtifacts(source);
+    const bytes = source.client.bytes.bind(source.client);
+    let changed = false;
+    source.client.bytes = (path) => {
+      const result = bytes(path);
+      if (!changed && path.endsWith('/zip')) {
+        changed = true;
+        if (kind === 'selected-artifact') source.artifacts[1].digest = `sha256:${'e'.repeat(64)}`;
+        if (kind === 'selected-time') source.artifacts[1].created_at = '2026-10-12T01:06:00Z';
+        if (kind === 'selected-size') source.artifacts[1].size_in_bytes++;
+        if (kind === 'excluded-size') source.partial.size_in_bytes++;
+        if (kind === 'diagnostic-addition')
+          source.artifacts.push({ ...source.artifacts[0], id: 199, name: 'capture-debug-new' });
+        if (kind === 'excluded-artifact') source.partial.digest = `sha256:${'e'.repeat(64)}`;
+        if (kind === 'prior-history') source.prior[4].steps[0].name = 'Altered failure';
+        if (kind === 'late-attempt') source.run.run_attempt = 3;
+      }
+      return result;
+    };
+    await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow();
+    expect(existsSync(source.options.out)).toBe(false);
+    expect(existsSync(source.options.receipt)).toBe(false);
+  });
+  it('rejects changed first-attempt step metadata during download without altering the legacy receipt shape', async () => {
+    const source = metadata();
+    recordingArtifacts(source);
+    const bytes = source.client.bytes.bind(source.client);
+    source.client.bytes = (path) => {
+      const result = bytes(path);
+      if (path.endsWith('/zip')) source.jobs[2].steps = [{ ...source.jobs[2].steps[0], number: 2 }];
+      return result;
+    };
+    await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow();
+    expect(existsSync(source.options.out)).toBe(false);
+  });
+  it('rejects only the mutated source context in an otherwise valid merged receipt', async () => {
+    const source = metadata();
+    recordingArtifacts(source);
+    await downloadRetainedCppRecord(source.options, source.client);
+    const merged = join(source.options.out, 'iphone-16-pro-max');
+    const originalReceipt = JSON.parse(readFileSync(source.options.receipt, 'utf8')) as Record<string, unknown>;
+    expect(() => verifyRetainedCppMerged(merged, source.options.receipt)).not.toThrow();
+    sourceManifest(source, (manifest) => {
+      manifest.targets.kilter.name = 'Earlier unrelated name';
+    });
+    const producer = verifyRetainedCppProducer(source.options, source.client);
+    for (const kind of ['partial-context', 'wrong-source', 'wrong-proof', 'unknown-version']) {
+      const receipt: Record<string, unknown> = {
+        ...originalReceipt,
+        captureSource: producer.captureSource,
+        compatibility: producer.compatibility,
+      };
+      if (kind === 'partial-context') delete receipt.compatibility;
+      if (kind === 'wrong-source') receipt.captureSource = { ...producer.captureSource, sourceSha: preparerSha };
+      if (kind === 'wrong-proof')
+        receipt.compatibility = { ...producer.compatibility, sourceManifestSha256: 'e'.repeat(64) };
+      if (kind === 'unknown-version') receipt.captureSource = { ...producer.captureSource, version: 2 };
+      writeFileSync(source.options.receipt, JSON.stringify(receipt));
+      expect(() => verifyRetainedCppMerged(merged, source.options.receipt)).toThrow();
+    }
+  });
   it('accepts changing genuine counts across bootstrap, four shards and newest merge without rewriting originals', async () => {
     const source = metadata();
     recordingArtifacts(source, true);
@@ -688,6 +1116,7 @@ describe('retained original source and native bytes', () => {
   it('rejects ZIP digest tampering before extracting or emitting source output', async () => {
     const source = metadata();
     source.archives.set(10, Buffer.from('tampered ZIP'));
+    source.artifacts[0].size_in_bytes = Buffer.byteLength('tampered ZIP');
     await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow();
     expect(existsSync(source.options.out)).toBe(false);
     expect(existsSync(source.options.receipt)).toBe(false);
@@ -714,6 +1143,7 @@ describe('retained original source and native bytes', () => {
       const archive = zip(root);
       source.archives.set(artifact.id, archive);
       artifact.digest = `sha256:${sha256(archive)}`;
+      artifact.size_in_bytes = archive.length;
       await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow(
         'failed source or artifact verification',
       );
@@ -740,6 +1170,7 @@ describe('retained original source and native bytes', () => {
       const archive = readFileSync(filename);
       source.archives.set(10, archive);
       source.artifacts[0].digest = `sha256:${sha256(archive)}`;
+      source.artifacts[0].size_in_bytes = archive.length;
       await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow(
         'failed source or artifact verification',
       );
