@@ -495,12 +495,14 @@ offset comes back. A setter picker route renders `SetterPickerList` and feeds it
   keeps its long-press history menu, and ours would not.
 - **Multi-step flows** (the spray wizard). Step 1 shows an X as leading. From step 2 on, show a
   back chevron instead (disabled while a request runs), and blank the title: the body's step
-  counter says where you are, and a German forward label plus the X would not fit at 375 pt.
-  Leaving from there is a swipe down through the leave guard, or back to step 1's X; Android Back
-  steps back like the chevron. Trailing is the step's forward action: "Next", "Skip" while untouched, "Done". Pass a
+  counter says where you are, and a German forward label plus the X would not fit at 375 pt. The
+  one exception is a settings-style form step ("Name your wall"), which is named in the bar the way
+  Settings pages are. Leaving from there is a swipe down through the leave guard, or back to step
+  1's X; Android Back steps back like the chevron. Trailing is the step's forward action: "Next",
+  and "Save" on the last counted step. Pass a
   leading action on every step: the hook never clears, so a step that leaves it out keeps the
   last step's chevron.
-- **Secondary content actions** ("Reset", "Start the corners again", "Take a photo") sit inline
+- **Secondary content actions** ("Reset", "Reset corners", "Choose from your photos") sit inline
   next to the content they act on, the way Photos puts Reset over the crop. The live climb filter
   sheet keeps its short Reset pinned alongside Close, with no confirm action. Never stack secondary
   actions under a primary button.
