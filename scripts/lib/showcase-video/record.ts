@@ -745,6 +745,21 @@ export function restoredSessionId(logText: string): string | null {
   return last && last !== '(none)' ? last : null;
 }
 
+/** Close Android SystemUI while preserving the app's live capture session. */
+export function collapseCaptureNotificationShade(
+  platform: ShowcasePlatform,
+  serial: string,
+  executeAdb: (args: string[]) => { status: number; stderr: string },
+): void {
+  if (platform !== 'android') return;
+  const collapse = executeAdb(['-s', serial, 'shell', 'cmd', 'statusbar', 'collapse']);
+  if (collapse.status !== 0) {
+    throw new Error(
+      `Android notification shade did not collapse: ${collapse.stderr.trim() || `adb exit ${collapse.status}`}`,
+    );
+  }
+}
+
 /** Close a live capture session before a cold launch can discard its JS state. */
 export async function ensureCaptureSessionClosed(
   session: { open: boolean },

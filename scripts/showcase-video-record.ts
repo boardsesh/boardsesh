@@ -98,6 +98,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   ensureCaptureSessionClosed,
   differingPixelRatio,
@@ -1388,6 +1389,9 @@ async function endSession(context: RunContext, label: string): Promise<void> {
   // Screenshot mode deliberately skips persisted queue/session hydration.
   // Native relaunch here would lose the live session before we can end it.
   // The teardown flow dismisses overlays and navigates home -> record in place.
+  // The Android lock-screen take leaves SystemUI's notification shade open;
+  // dismiss it without cold-launching away the creator's live session.
+  collapseCaptureNotificationShade(context.primary.platform, context.primary.device.udid, adb);
   const window = new LogWindow(context.primary.metroLog);
   for (const flow of SESSION_END_FLOWS) await runFlow(context, flow, `${label}-end-session`);
   const endedBy = Date.now() + 10_000;

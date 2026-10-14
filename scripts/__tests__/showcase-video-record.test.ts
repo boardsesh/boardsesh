@@ -21,6 +21,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   ensureCaptureSessionClosed,
   findBoardHandoffProblem,
@@ -893,6 +894,13 @@ describe('capture session cleanup before a cold launch', () => {
     );
     expect(cleanup).not.toContain('await relaunch(');
     expect(cleanup).toContain('await runFlow(context, flow,');
+    const shadeCollapse = cleanup.indexOf(
+      'collapseCaptureNotificationShade(context.primary.platform, context.primary.device.udid, adb)',
+    );
+    const teardownFlow = cleanup.indexOf('await runFlow(context, flow,');
+    expect(shadeCollapse).toBeGreaterThan(-1);
+    expect(shadeCollapse).toBeLessThan(teardownFlow);
+    expect(cleanup).not.toContain('force-stop');
     const flow = readFileSync(showcaseFlowPath('session-end.yaml'), 'utf8');
     expect(flow.indexOf("text: '${SHOWCASE_CLOSE_LABEL}'")).toBeLessThan(flow.indexOf('- openLink:'));
     expect(flow).toContain('optional: true');
@@ -930,5 +938,32 @@ describe('observed native crew queue fallback', () => {
     expect(openedProof).toBeGreaterThan(fallbackBranch);
     expect(openedProof).toBeLessThan(source.indexOf("'/mark/queue-open'"));
     expect(parseAllDocuments(source).every((document) => document.errors.length === 0)).toBe(true);
+  });
+});
+
+describe('warm capture cleanup notification shade', () => {
+  it('collapses the Android primary shade without stopping its live app', () => {
+    const executeAdb = vi.fn(() => ({ status: 0, stderr: '' }));
+    collapseCaptureNotificationShade('android', 'emulator-primary', executeAdb);
+    expect(executeAdb).toHaveBeenCalledOnce();
+    expect(executeAdb).toHaveBeenCalledWith(['-s', 'emulator-primary', 'shell', 'cmd', 'statusbar', 'collapse']);
+  });
+
+  it('does not call Android tools for an iOS capture', () => {
+    const executeAdb = vi.fn(() => ({ status: 0, stderr: '' }));
+    collapseCaptureNotificationShade('ios', 'ios-primary', executeAdb);
+    expect(executeAdb).not.toHaveBeenCalled();
+  });
+
+  it('blocks further cleanup when the shade cannot be dismissed', () => {
+    expect(() =>
+      collapseCaptureNotificationShade('android', 'emulator-primary', () => ({
+        status: 1,
+        stderr: ' device offline\n',
+      })),
+    ).toThrow('Android notification shade did not collapse: device offline');
+    expect(() =>
+      collapseCaptureNotificationShade('android', 'emulator-primary', () => ({ status: 2, stderr: '' })),
+    ).toThrow('adb exit 2');
   });
 });
