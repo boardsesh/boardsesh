@@ -221,7 +221,7 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
   // The echo-loop guard, exercised through the real exported entry point so the
   // WHERE predicate runs against Postgres instead of being re-derived here.
   // Nothing can actually reach Kilter yet — pushPendingRatings calls
-  // pushNotWired('POST /api/climb-rating/') before any request — which is
+  // pushNotWired('rating write (candidate /api/v2/climb-rating/)') before any request — which is
   // exactly what makes it a usable oracle: reaching the throw means the row was
   // selected for push.
   describe('push-back skips detached ratings', () => {
@@ -234,7 +234,7 @@ describe('applyClimbRatings REMOVE → soft-detach (real DB)', () => {
       // Positive control: without this, "resolves" below would prove nothing —
       // the select has to be capable of picking the row up in the first place.
       await expect(pushKilterUserData({ db, userId: TEST_USER_ID, accessToken: 'test-token' })).rejects.toThrowError(
-        /POST \/api\/climb-rating\//,
+        /candidate \/api\/v2\/climb-rating\//,
       );
     });
 

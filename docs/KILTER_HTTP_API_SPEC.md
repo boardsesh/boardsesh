@@ -1,11 +1,11 @@
 # Kilter HTTP API Specification
 
-**Covered version**: Kilter Board mobile app, current as of 2026-05-23
+**Covered version**: Kilter Board Android 2.10.1 (versionCode 65), with live API checks from 2026-06-02
 **Sibling docs**: [KILTER_POWERSYNC_SPEC.md](KILTER_POWERSYNC_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
 
 > Kilter Grips runs their own backend, separate from the Aurora Climbing backend that other Aurora-family boards share. The wire-level Bluetooth protocol used to drive the LED hardware is shared with Aurora and is documented in [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](AURORA_BLUETOOTH_PROTOCOL_SPEC.md). **This document only covers the HTTP and realtime-sync APIs.**
 >
-> The document is intended as a starting point for interop work, not as an authoritative contract. Endpoint paths and the SQLite mirror schema are well-established; HTTP method choices and full request/response shapes are best-guess and will need traffic-capture confirmation in places. Each section carries an explicit confidence marker.
+> This is a client and integration guide, not an authoritative server contract. The 2.10.1 package contains some URL literals that are not the routes accepted by the service; live checked routes are identified below. Method choices and full request/response shapes remain unverified unless explicitly stated.
 
 ---
 
@@ -49,14 +49,14 @@ Networking splits into four planes:
 Most reads go to a **local SQLite mirror**, but that mirror is filled by **two different mechanisms**, and the split matters for interop:
 
 - **PowerSync** fills the small reference catalog (holds, hold sets, grades, products, layouts, mounting holes), `gyms`/`walls`, and the signed-in user's own data (logs, attempts, ratings, circuits, settings, social). Confirmed working with a stock `@powersync/node` client — see [`KILTER_POWERSYNC_SPEC.md §6`](KILTER_POWERSYNC_SPEC.md#6-what-syncs-where).
-- **REST** fills the public **climb catalog** (`climbs` + `climb_stats`). The app pages `/api/climbs/climbdetails/{productName}/edges` by board region on first login (the "Downloading data…" screen) and caches the rows locally. This catalog is **not** a PowerSync bucket.
+- **REST** fills the public **climb catalog** (`climbs` + `climb_stats`). The package contains a region-based `/climbdetails/{productName}/edges` path, but that route returned 404 in the 2026-06-02 service check. Boardsesh uses the successful per-layout `/api/climbs/all/{productLayoutUuid}` and `/api/climb-stat/all/{productLayoutUuid}` reads. This catalog is **not** a PowerSync bucket.
 
 The REST API is therefore used for:
 
-- the public climb catalog read path (`/api/climbs/...edges`, `/curated`, `/all/`, `/climb-stat/all/`, `/delteduuids`)
+- the public climb catalog read path (`/api/climbs/all/{productLayoutUuid}`, `/api/climb-stat/all/{productLayoutUuid}`, `/api/climbs/delteduuids`)
 - writes (logs, climbs, ratings, circuits)
 - operations PowerSync can't model (image upload, email verification, OAuth-mediated registration)
-- "transactional" endpoints that wrap multi-table writes the server promises to apply atomically
+- named `transaction` endpoints used for grouped write candidates; server atomicity is unverified
 
 The app feels offline-tolerant because reads hit local SQLite — but populating the climb catalog there is an explicit REST download, not a background PowerSync stream.
 
@@ -100,13 +100,13 @@ Authentication is delegated to Keycloak, with Authorization Code + PKCE.
 3. Client exchanges the code at `/token` for an `access_token`, `refresh_token`, and `id_token`.
 4. `access_token` is sent as `Authorization: Bearer <jwt>` on every call to `portal.kiltergrips.com/api/*`. The same token authenticates the PowerSync stream.
 
-**Token response fields**:
+**Token endpoint response fields** (OIDC JSON; `expiresAt` is a local value computed from `expires_in`):
 
-- `accessToken`
-- `refreshToken`
-- `tokenType` (`Bearer`)
-- `expiresAt`
-- `idToken` (OIDC, decoded for user info)
+- `access_token`
+- `refresh_token`
+- `token_type` (`Bearer`)
+- `expires_in` (seconds)
+- `id_token` (OIDC, decoded for user info)
 
 **ID-token / user-info claims used by the client**:
 
@@ -133,15 +133,15 @@ Path conventions:
 - Resource collections are plural: `/api/climbs`, `/api/circuits`, `/api/walls`.
 - Single-resource fetches usually use a trailing-slash + ID pattern: `/api/climbs/single/{climbUuid}`, `/api/circuits/get-circuit/{circuitUuid}`.
 - Transactional / multi-table write endpoints are explicitly named: `/api/climbs/create-climb/transaction`, `/api/climbs/update-climb/transaction`.
-- Snake_case is used in the PowerSync schema (mirror of Postgres columns); the REST DTOs are most likely camelCase. Traffic capture is needed to confirm.
+- Snake_case is common in the PowerSync rows. The checked per-layout catalog REST responses use camelCase; other write DTOs still need confirmation.
 
-> **Confidence**: MEDIUM. Header expectations are universal for this stack but the wire JSON casing is unverified.
+> **Confidence**: HIGH for catalog response casing; LOW for untested write headers and DTO casing.
 
 ---
 
 ## 5. Endpoints
 
-For each endpoint, **path** is well-established. **Method** is inferred from semantics (resource lookup → GET; "create" / "update" / "transaction" → POST; etc.). **Shape** is inferred from the matching client-side data model and from the PowerSync table schemas in [§7](#7-local-sqlite-schema-client-side-mirror) — treat shapes as a minimum schema, not a strict contract.
+For each endpoint, distinguish a path embedded in the client from a route accepted in a live service check. Unless called out, **method** is inferred from semantics (resource lookup → GET; "create" / "update" / "transaction" → POST) and **shape** is inferred from client-side models. Treat inferred shapes as examples, not a contract.
 
 ### 5.1 Users
 
@@ -194,17 +194,17 @@ For each endpoint, **path** is well-established. **Method** is inferred from sem
 | Method | Path                                                                                                    | Purpose                                                                           |
 | ------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `GET`  | `/api/climbs/`                                                                                          | Paginated climb list (filtered by query params)                                   |
-| `GET`  | `/api/climbs/all/`                                                                                      | Full climb listing (used by initial sync / catalog warm-up)                       |
+| `GET`  | `/api/climbs/all/{productLayoutUuid}`                                                                    | Full per-layout climb array; live checked by Boardsesh                            |
 | `GET`  | `/api/climbs/single/{climbUuid}`                                                                        | Fetch one climb                                                                   |
 | `GET`  | `/api/climbs/curated`                                                                                   | Curated/featured climbs                                                           |
 | `GET`  | `/api/climbs/logged`                                                                                    | Climbs the current user has logged                                                |
 | `GET`  | `/api/climbs/delteduuids`                                                                               | UUIDs of deleted climbs (sync cleanup; note the typo)                             |
 | `GET`  | `/api/climbs/climbdetails/`                                                                             | Climb details (joined with rating/log info)                                       |
 | `GET`  | `/api/climbs/climbdetails/user`                                                                         | Current user's climbs with stats                                                  |
-| `GET`  | `/api/climbs/climbdetails/{productName}/edges?edgeLeft=&edgeRight=&edgeBottom=&edgeTop=&limit=&offset=` | Paginated climbs for a wall, filtered by frame region                             |
-| `GET`  | `/api/climbs/climbdetails/{productName}/edges/count`                                                    | Count for the above (for pagination UI)                                           |
-| `POST` | `/api/climbs/create-climb/transaction`                                                                  | Atomic create — writes the climb + mounting holes + stats rows in one transaction |
-| `POST` | `/api/climbs/update-climb/transaction`                                                                  | Atomic update of climb + mounting holes                                           |
+| `GET`  | `/api/climbs/climbdetails/{productName}/edges?edgeLeft=&edgeRight=&edgeBottom=&edgeTop=&limit=&offset=` | Client-packaged region route; returned 404 in the 2026-06-02 check                |
+| `GET`  | `/api/climbs/climbdetails/{productName}/edges/count`                                                    | Client-packaged count route; service behavior unverified                          |
+| `POST` | `/api/climbs/create-climb/transaction`                                                                  | Grouped create candidate; accepted body and atomicity unverified                 |
+| `POST` | `/api/climbs/update-climb/transaction`                                                                  | Grouped update candidate; accepted body and atomicity unverified                 |
 
 **Climb DTO** — JSON key on the wire (camelCase, inferred) mapped to the snake_case Postgres column that PowerSync mirrors:
 
@@ -232,14 +232,16 @@ For each endpoint, **path** is well-established. **Method** is inferred from sem
 
 The `create-climb/transaction` and `update-climb/transaction` request bodies are presumed to include the parent climb fields plus an array of `mountingHoles` (see [§5.5](#55-climb-mounting-holes)).
 
-> Confidence: HIGH for the path list and the underlying column schema. MEDIUM for JSON-key casing.
+`/api/climbs/all/` without a layout ID returned `[]` in the 2026-06-02 check. The per-layout read returns camelCase JSON. See [kilter-sync.md](kilter-sync.md#verified-restpowersync-contract-phase-0-2026-06-02) for the checked response and current integration.
+
+> Confidence: HIGH for the checked per-layout and deletion reads; HIGH that the other listed path literals occur in the client package; LOW for untested route behavior and write shapes.
 
 ### 5.3 Climb statistics
 
 | Method | Path                   | Purpose                                  |
 | ------ | ---------------------- | ---------------------------------------- |
 | `GET`  | `/api/climb-stat/`     | Per-climb stats for a single climb+angle |
-| `GET`  | `/api/climb-stat/all/` | Bulk stats listing                       |
+| `GET`  | `/api/climb-stat/all/{productLayoutUuid}` | Full per-layout stat array; live checked by Boardsesh |
 
 **ClimbStat DTO**:
 
@@ -264,11 +266,11 @@ Primary key is `(climb_uuid, angle)`.
 
 | Method   | Path                                  | Purpose                                                                      |
 | -------- | ------------------------------------- | ---------------------------------------------------------------------------- |
-| `GET`    | `/api/climb-rating/`                  | List the current user's ratings (likely filterable by `climbUuid` / `angle`) |
-| `GET`    | `/api/climb-rating/{climbRatingUuid}` | Fetch a single rating                                                        |
-| `POST`   | `/api/climb-rating/`                  | Create a rating                                                              |
-| `PUT`    | `/api/climb-rating/{climbRatingUuid}` | Update a rating                                                              |
-| `DELETE` | `/api/climb-rating/{climbRatingUuid}` | Delete a rating                                                              |
+| `GET`    | `/api/v2/climb-rating/`                  | List the current user's ratings (likely filterable by `climbUuid` / `angle`) |
+| `GET`    | `/api/v2/climb-rating/{climbRatingUuid}` | Fetch a single rating                                                        |
+| `POST`   | `/api/v2/climb-rating/`                  | Create a rating                                                              |
+| `PUT`    | `/api/v2/climb-rating/{climbRatingUuid}` | Update a rating                                                              |
+| `DELETE` | `/api/v2/climb-rating/{climbRatingUuid}` | Delete a rating                                                              |
 
 **ClimbRating DTO** (inferred):
 
@@ -287,7 +289,9 @@ Primary key is `(climb_uuid, angle)`.
 }
 ```
 
-> Confidence: MEDIUM. Path is established; method matrix is inferred from REST conventions.
+The 2.10.1 package contains both absolute `/api/v2/climb-rating` URLs and a relative `/api/climb-rating/` literal. Which operations use each route, and which methods the service accepts, remain unverified. The table shows the versioned route family as a client candidate, not a tested write contract.
+
+> Confidence: HIGH for embedded route literals; LOW for method matrix and write shape.
 
 ### 5.5 Climb mounting holes
 
@@ -317,12 +321,12 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 
 | Method   | Path                  | Purpose                                                  |
 | -------- | --------------------- | -------------------------------------------------------- |
-| `GET`    | `/api/logs/`          | List the current user's logs                             |
-| `GET`    | `/api/logs/{logUuid}` | Fetch a single log                                       |
-| `POST`   | `/api/logs/`          | Create one log                                           |
-| `POST`   | `/api/logs/bulk`      | Bulk-upload logs (offline-first sync of pending entries) |
-| `PUT`    | `/api/logs/{logUuid}` | Update a log                                             |
-| `DELETE` | `/api/logs/{logUuid}` | Delete a log                                             |
+| `GET`    | `/api/v2/logs/`          | List the current user's logs                             |
+| `GET`    | `/api/v2/logs/{logUuid}` | Fetch a single log                                       |
+| `POST`   | `/api/v2/logs/`          | Create one log                                           |
+| `POST`   | `/api/v2/logs/bulk`      | Bulk-upload logs (offline-first sync of pending entries) |
+| `PUT`    | `/api/v2/logs/{logUuid}` | Update a log                                             |
+| `DELETE` | `/api/v2/logs/{logUuid}` | Delete a log                                             |
 
 **Log DTO**:
 
@@ -343,7 +347,9 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 }
 ```
 
-> Confidence: HIGH for `/api/logs/` and `/api/logs/bulk`. MEDIUM for individual fields.
+The 2.10.1 package contains absolute `/api/v2/logs/` and `/api/v2/logs/bulk` URLs. The table's method matrix and write body are still inferred; no push request has been checked against the service.
+
+> Confidence: HIGH for embedded route literals; LOW for method matrix and write shape.
 
 ### 5.7 Circuits and circuit climbs
 
@@ -434,10 +440,12 @@ The placement-type enum is the same one used over Bluetooth (see [`AURORA_BLUETO
 | `GET`    | `/api/followers/gym/?gymUuid=`  | Followers of a gym                                           |
 | `POST`   | `/api/followers/`               | Follow a user or gym                                         |
 | `DELETE` | `/api/followers/`               | Unfollow                                                     |
+| inferred | `/api/v2/followers/users/`      | Versioned user-follow route embedded in the 2.10.1 package  |
+| inferred | `/api/v2/followers/gyms/`       | Versioned gym-follow route embedded in the 2.10.1 package   |
 
 Gym endpoints don't surface as `/api/gyms` paths — gym data appears to be **read exclusively from the PowerSync SQLite mirror** (see [§7](#7-local-sqlite-schema-client-side-mirror)). Discovery / "find gym near me" is handled client-side by querying the local DB after Google Places autocomplete narrows the geographic region (see [§8](#8-third-party-integrations)).
 
-> Confidence: HIGH for follower paths. MEDIUM that gym CRUD goes through PowerSync rather than REST.
+> Confidence: HIGH for embedded v1 and v2 follower path literals; LOW for the operation-to-route mapping and methods. Gym rows are available through PowerSync; gym CRUD behavior is unverified.
 
 ### 5.10 Notifications
 
@@ -644,9 +652,9 @@ Gaps that need traffic capture or direct confirmation from Kilter to close:
 
 1. **Exact `/v2/users/` semantics** — is it a versioning bump, an admin/internal namespace, or a paginated variant?
 2. ~~**OAuth `client_id`**~~ — **Resolved**: `client_id=kilter`, `scope=openid offline_access` (see [§3](#3-authentication-keycloak--oidc)).
-3. **Exact JSON casing on the wire** — the REST side is most likely camelCase but unverified. The PowerSync side mirrors Postgres columns as-is (mostly snake_case, with some camelCase — the confirmed `gyms` schema has both).
+3. **Write JSON casing** — the checked catalog response is camelCase; mutation bodies remain unverified. PowerSync rows retain mixed source column casing.
 4. **PUT vs PATCH for updates** — `*/update-climb/transaction` endpoints accept POST, but for simple updates (rating, settings) PUT vs PATCH cannot be distinguished from the path list alone.
-5. **Catalog REST pagination contract** — the `/api/climbs/climbdetails/{productName}/edges` params (`edge*`, `limit`, `offset`), page-size cap, and whether `/api/climbs/all/` is an unpaginated bulk pull. The single most useful capture for an interop consumer (this is the public-catalog read path — see [§1](#1-architecture-overview)).
+5. **Catalog route drift** — Boardsesh's per-layout `/api/climbs/all/{productLayoutUuid}` and `/api/climb-stat/all/{productLayoutUuid}` reads were accepted in 2026-06-02. The packaged region route returned 404 in that check; recheck both routes when the service changes.
 6. **Errors** — only `RegistrationError` is a typed model. Other endpoints probably return a generic shape (`{ "error": "...", "message": "..." }`) but this isn't established.
 7. **Rate limits / pagination defaults** — no headers or limits surfaced.
 8. **The two static pages at `app.kiltergrips.com`** — `/privacy` and `/terms` are the only routes seen.

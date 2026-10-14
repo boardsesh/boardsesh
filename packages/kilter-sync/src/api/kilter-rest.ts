@@ -2,8 +2,8 @@ import { KILTER_PORTAL_HOST } from './types';
 import { KilterApiError, responseRetryAfterMs } from './errors';
 
 /**
- * REST client primitives for the Kilter push surface (/api/logs/bulk,
- * /api/climb-rating, /api/circuits, /api/circuit-climbs). The auth header
+ * REST client primitives for the Kilter push surface (the packaged
+ * /api/v2/logs/bulk and /api/v2/climb-rating candidates, plus circuit routes). The auth header
  * is the same Keycloak access token that authenticates the PowerSync
  * stream.
  *
@@ -35,7 +35,7 @@ export type LogPushItem = {
   /**
    * Raw Boardsesh/Kilter Grips scale (1-5). Grips is natively 1-5
    * (catalog-sync.ts, user-sync.ts), not Aurora 1-3. Confirm the scale
-   * against captured /api/logs traffic when wiring up the POST.
+   * against checked /api/v2/logs traffic when wiring up the POST.
    */
   quality?: number;
   difficulty?: number;

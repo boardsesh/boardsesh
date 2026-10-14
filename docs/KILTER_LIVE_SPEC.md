@@ -2,11 +2,12 @@
 
 **Covered version**: Kilter Board Android 2.10.1, versionCode 65 (`com.kiltergrips.kilter_board_app`)
 **Re-verified**: 2026-09-07 against the Google Play APK installed on the connected Android phone, using readable Dart AOT strings and call-path analysis of `libapp.so` (SHA-256 `f5191fdbf466cf2082a9ae5e076c43cf69d13e6b5ca9aeca3eebb79f9222eeed`; 30,922 strings at minimum length 5).
+**Additional package check**: 2026-10-14, Android 2.10.1 ARMv7 `libapp.so` SHA-256 `8af06628260bb3c8284d63ac8e2ec8684522d40f28a96a763df8a6d8846aa4a1`. It contains all three live REST URLs and `live_climbs_pool_interval`; this string check alone does not repeat the ARM64 call-path verification or establish identical behavior.
 **Sibling docs**: [HTTP API](KILTER_HTTP_API_SPEC.md), [PowerSync](KILTER_POWERSYNC_SPEC.md), [Bluetooth](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [Kilter sync](kilter-sync.md), [live history integration](kilter-live-history.md)
 
 > The live feature reads recently displayed climbs through authenticated REST polling and publishes display events through a separate REST endpoint. Its observed contract is a wall-scoped recent-climb feed. A feed entry does not establish that a climber is still present or that a climb is still lit.
 >
-> Confidence markers apply to client behavior: **HIGH** means a literal, serializer, or call path establishes the claim; **MEDIUM** means the client supports an interpretation whose server semantics remain unverified; **LOW** means unresolved. No authenticated live responses or production writes were exercised. Android and iOS version numbers are independent; this document makes no claim of iOS protocol parity.
+> Confidence markers apply to client behavior: **HIGH** means a literal, serializer, or call path establishes the claim; **MEDIUM** means the client supports an interpretation whose server semantics remain unverified; **LOW** means unresolved. An authorized read check is documented in §10; no activity write was exercised. Android and iOS version numbers are independent; this document makes no claim of iOS protocol parity.
 
 ---
 
@@ -247,7 +248,7 @@ All items below are **LOW confidence / unresolved**, unless an explicit client o
 
 ## 9. Verification anchors
 
-**Confidence: HIGH.** These method/constant addresses identify the client evidence for future re-verification. Addresses are specific to the covered ARM64 snapshot; they are not wire identifiers. No application binary or disassembly is included in this repository.
+**Confidence: HIGH for the September ARM64 package.** These method/constant addresses identify the client evidence for future checks. They belong to SHA-256 `f5191fdbf466cf2082a9ae5e076c43cf69d13e6b5ca9aeca3eebb79f9222eeed`; they must not be used as addresses in the October ARMv7 package. They are not wire identifiers. No application binary or disassembly is included in this repository.
 
 | Component | Anchor | Contract area |
 | --- | --- | --- |

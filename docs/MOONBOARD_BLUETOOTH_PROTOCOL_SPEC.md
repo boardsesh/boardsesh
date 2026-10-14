@@ -1,6 +1,7 @@
 # MoonBoard Bluetooth Protocol Specification
 
 **Source app**: Moon Climbing (`com.trainingboard.moon`) **v1.2.45** (build 265)
+**Later package check**: v1.3.68 (build 368), 2026-10-14; see §9 for coverage
 **Stack**: Flutter (Dart AOT; Dart `3.8.1`, stable channel) + [`flutter_reactive_ble`](https://pub.dev/packages/flutter_reactive_ble)
 **Transport**: Bluetooth Low Energy (BLE)
 
@@ -37,7 +38,7 @@ Each claim is tagged so you can separate what was observed in the app from what 
 | How many controller generations?       | **Two.** The app carries UUIDs for both an original **RedBearLab** service and the newer **Nordic UART** one.                        | ✅   |
 | Original-hardware service / write char | `713d0000-…` service, write to `713d0003-…`.                                                                                         | ✅   |
 | Newer-hardware service / write char    | `6e400001-…` (Nordic UART) service, write to `6e400002-…` (Nordic UART RX).                                                          | ✅   |
-| Subscribes to board notifications?     | **No.** Neither notify characteristic (`713d0002`, `6e400003`) is referenced — the app is write-only.                                | ✅   |
+| Subscribes to board notifications?     | No notify-characteristic literal was found; subscription behavior was not established.                                               | ❓   |
 | Bonds / pairs with the board?          | **No.** The app explicitly tells users _"DO NOT pair your phone to the board"_ — a plain GATT connect, no bond.                      | ✅   |
 | Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                                           | ✅   |
 | LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                                       | 🔁   |
@@ -66,6 +67,8 @@ android.permission.WAKE_LOCK
 
 `minSdk 26`, `targetSdk 35`. Permission-prompt copy: _"Bluetooth and location access is required to connect to the MoonBoard."_
 
+The later v1.3.68 package targets SDK 36 and still declares Bluetooth scan/connect and location permissions. Its base APK and ARM64 split share signer SHA-256 `9903070fe6cf4674e1a8875c07c911aa859a4fee666a8c83a409084d3ec94caf`.
+
 For completeness on the stack (not part of the LED path): the app is Flutter (Dart 3.8.1, stable channel), stores its board database with `drift` over `sqlcipher`, and uses Firebase for its backend. None of that is needed for interop.
 
 ---
@@ -92,14 +95,14 @@ This is the well-known **RedBearLab BLE Shield** UUID family, and `713d0003` is 
 
 This is the path Boardsesh already implements (see `UART_SERVICE_UUID` / `UART_WRITE_CHARACTERISTIC_UUID` in [`transport.ts`](../packages/shared/ble-protocol/src/transport.ts)).
 
-### 2.3 Write-only — no notify channel
+### 2.3 No notify channel identified
 
-✅ Neither notify/TX characteristic appears anywhere in the binary:
+✅ Neither notify/TX characteristic appears among the readable literals in the inspected package:
 
 - `713d0002-…` (RedBearLab peripheral→central notify) — **absent**.
 - `6e400003-…` (Nordic UART TX) — **absent**.
 
-The app references only the two **write** characteristics, on either hardware generation. With no notify characteristic referenced, LED control is one-way, **app → board**.
+The identified LED path uses the two **write** characteristics. Static literal absence does not rule out dynamically constructed UUIDs or a separate notification path; no such path was established by this check.
 
 ### 2.4 Two further 128-bit UUIDs ❓
 
@@ -142,7 +145,7 @@ discover services           → RedBearLab 713d0000…  OR  Nordic UART 6e400001
 locate write characteristic → 713d0003…              OR  6e400002…
         │
         ▼
-READY → write LED frames     (Write Without Response — see §5.4)
+READY → write LED frames     (write type depends on characteristic — see §5.4)
         │
         ▼
 disconnect
@@ -150,7 +153,9 @@ disconnect
 
 ✅ **Unbonded by design.** The app surfaces an explicit warning — _"Do you want to connect to the board (DO NOT pair your phone to the board)?"_ — and connects without creating an OS-level bond. An interoperable client should likewise **GATT-connect without pairing**; bonding these controllers is a known source of broken connections.
 
-> **Difference vs. the open-source-derived client:** the existing Boardsesh client connects, discovers the Nordic UART service, and writes. It has no branch for the RedBearLab service, so it cannot drive an original-hardware board even though the official app can.
+❓ The v1.3.68 package contains copy for an optional secured-board gate: _"Enter your board PIN to send LED data"_ and a six-digit PIN requirement. The quoted pairing warning was not found among this package's readable strings. This copy suggests a PIN flow, but does not establish its BLE messages, whether an unlock is sent over BLE, or a change to bonding behavior. Boardsesh does not implement a PIN exchange; compatibility with secured boards remains unverified.
+
+> **Boardsesh compatibility:** the client now probes Nordic UART and then RedBearLab, with the iOS write type selected from the characteristic properties. The RedBearLab path still needs a check on an original board.
 
 ---
 
@@ -190,23 +195,24 @@ Each record is a one-letter **marker** followed by the LED **position**:
 
 ### 5.3 LED position numbering (serpentine)
 
-🔁 The 11-column × 18-row board (columns A–K, rows 1–18) is wired as a single **serpentine** WS2812B string: up column A, down column B, up column C, and so on. The app converts a hold's grid coordinate to its position on that string exactly as Boardsesh's `getMoonboardSerialPosition` does:
+🔁 The standard 11-column × 18-row board (columns A–K, rows 1–18) is wired as a single **serpentine** LED string: up column A, down column B, up column C, and so on. Boardsesh's `getMoonboardSerialPosition` implements this mapping. The Mini has 11 columns × 12 rows and uses the same formula with `numRows = 12`; the v1.3.68 package contains Mini MoonBoard 2020 and 2025 board assets. The exact official-app coordinate-to-packet call path remains unverified.
 
 Pseudocode (`//` is integer division / floor, `%` is modulo; `#` starts a comment):
 
 ```text
-holdId    = 1..198          # row-major: A1=1, B1=2, … K1=11, A2=12, …
+numRows   = 18              # standard; 12 for Mini
+holdId    = 1..11*numRows   # row-major: A1=1, B1=2, … K1=11, A2=12, …
 z         = holdId - 1
 col       = z % 11          # column index 0..10  (modulo)
-row       = floor(z / 11)   # row index 0..17     (z // 11)
+row       = floor(z / 11)   # row index 0..numRows-1
 
-if col is even:  position = col*18 + row
-if col is odd:   position = col*18 + (17 - row)
+if col is even:  position = col*numRows + row
+if col is odd:   position = col*numRows + (numRows - 1 - row)
 
-# position range: 0..197
+# position range: 0..197 (standard), 0..131 (Mini)
 ```
 
-The position index is a property of the **physical LED string**, so it is identical between the official app and Boardsesh. Worked checks (matching `moonboard.test.ts`): `holdId 1 → 0`, `holdId 2 → 35`, `holdId 12 → 1`, `holdId 198 → 197`.
+The position index represents the **physical LED string**. The official app's use of this exact mapping still needs a packet check. Worked checks for Boardsesh (matching `moonboard.test.ts`): `holdId 1 → 0`, `holdId 2 → 35`, `holdId 12 → 1`, `holdId 198 → 197`.
 
 ### 5.4 BLE chunking
 
@@ -224,7 +230,7 @@ Boardsesh sends `l##` **only on a deliberate clear** (the "Turn off all lights" 
 
 ### 5.6 "V2" config prefix — the additional-LED feature
 
-🔁 Community controller firmware ([`FabianRig/ArduinoMoonBoardLED`](https://github.com/FabianRig/ArduinoMoonBoardLED), a reverse-engineered open-source LED box the app's own README describes as compatible with "the 'new' MoonBoard app") accepts an **optional config prefix** immediately before the `l#…#` frame:
+🔁 Community controller firmware ([`FabianRig/ArduinoMoonBoardLED`](https://github.com/FabianRig/ArduinoMoonBoardLED), an open-source LED box the app's own README describes as compatible with "the 'new' MoonBoard app") accepts an **optional config prefix** immediately before the `l#…#` frame:
 
 ```
 ~D l# <marker><pos> , … #
@@ -237,6 +243,8 @@ When `useadditionalled` is set, the firmware renders each hold twice: its normal
 **What Boardsesh does with this.** `getMoonboardBluetoothPacket(frames, numRows, { lightAdjacentHolds: true })` (`packages/shared/ble-protocol/src/moonboard.ts`, mirrored in `BoardBleEncoding.makeMoonboardPacket` for the native iOS re-light path) prepends `~D` to a non-empty frame. Boardsesh has no way to read a given board's `additionalledmapping[]` table, so this only toggles the firmware's own behaviour — it does not compute or claim a specific "above" vs "below" direction itself, which is why the user-facing copy says "light the hold above" (the README's own framing: "show lights above holds") rather than promising an exact offset. The clear-all `l##` frame never gets the prefix (prefixing it has no visible effect and would exercise the firmware's empty-string parsing edge case for no benefit). The feature is opt-in per user (a persisted preference, off by default) since it depends on firmware most controllers don't ship.
 
 **Unconfirmed on official Moon controllers** — like §5.5's clear-all, this is corroborated against the open-source firmware and Boardsesh's own working client, not captured from the official app (see [§9](#9-methodology--limitations)). Unsupported-prefix behavior must be verified on RedBearLab and Nordic controllers before release: they may ignore the whole write or continue at the normal `l#…#` frame.
+
+The v1.3.68 package contains the UI strings _"Display light above and below holds (MoonBoard only)"_ and _"Display beta colours (dual lights will be disabled)"_. They indicate a dual-light option in the newer app, but do not identify its wire command or validate the community firmware's `~D` prefix on an official controller.
 
 ---
 
@@ -263,7 +271,7 @@ This is the hook an interoperable client should adopt: **record which service a 
 | Controller generations                | **Two**: RedBearLab `713d0000` **and** Nordic UART `6e400001` (discovery wired)¹        | **Two**: RedBearLab `713d0000` **and** Nordic UART `6e400001` |
 | Original-hardware boards              | Discovers + writes `713d0003` (write-with-response on iOS); **unverified on hardware**¹ | Writes to `713d0003` on the RedBearLab service                |
 | Per-board hardware version            | None (probes UART → RedBearLab on each connect)                                         | `led_version` persisted per board                             |
-| Notify channel                        | None — write-only                                                                       | None — write-only on both generations                         |
+| Notify channel                        | None in Boardsesh's LED path                                                            | No subscription established from inspected package            |
 | Bonding                               | Plain GATT connect, no bond                                                             | Explicitly **unbonded** ("DO NOT pair")                       |
 | Payload (`l#…#`, markers, serpentine) | As documented here                                                                      | **Same** 🔁                                                   |
 | Extra UUIDs                           | Ignored                                                                                 | Two present, non-BLE (uuid-package / SDK realm) ❓            |
@@ -278,7 +286,9 @@ This is the hook an interoperable client should adopt: **record which service a 
 
 This protocol was reconstructed by **static inspection of the shipped Moon Climbing app** for the sole purpose of interoperability — identifying the BLE services, characteristics, connection model, and message shape an independent client must use to drive the same LED hardware. The app's compiled Dart assets are **not obfuscated**, so service/characteristic UUIDs, the BLE library surface, the data-model symbols, and the user-facing connection copy are all directly readable; the items in §1–§4, §6, §7 are tagged ✅ on that basis.
 
-**Why the byte-level encoding is tagged 🔁, not ✅.** The distribution analysed bundles only 32-bit (`armeabi-v7a`) native code, and the available Dart-AOT method-body tooling targets 64-bit snapshots. Static inspection confirms _that_ the app frames LED commands (the `l#` literal and the hardware UUIDs are present) and selects per-board behaviour (`led_version`), but the exact field layout in §5 is taken from the corroborating sources — Boardsesh's shipped `moonboard.ts`, open-source controller firmware, and the physical LED wiring — all of which the shared hardware guarantees the app must match.
+**Why the byte-level encoding is tagged 🔁, not ✅.** The original v1.2.45 distribution analysed for this document bundles only 32-bit (`armeabi-v7a`) native code, while the available Dart-AOT method-body tooling for that check targeted 64-bit snapshots. Static inspection confirms _that_ the app frames LED commands (the `l#` literal and the hardware UUIDs are present) and selects per-board behaviour (`led_version`), but the exact field layout in §5 is taken from the corroborating sources — Boardsesh's shipped `moonboard.ts`, open-source controller firmware, and the physical LED wiring.
+
+**Later package coverage.** The APKPure v1.3.68 base APK (SHA-256 `dd0c8affe7675bfbb4fdaf3d0969b245b1c8524a4ededfbf734ed9d53fbf78ec`) and its ARM64 `libapp.so` (SHA-256 `03532ef1c5b38d4b558b271368a2dd036b45c6cd06c30af8f774789363953634`) retain the RedBearLab and Nordic UART service/write-characteristic literals, `l#`, `led_version`, and both characteristic-write API names. That corroborates their presence in the newer client. The app's call paths and exact packets were not established from this package, so earlier byte-format and controller-behavior limits still apply. A package string alone does not prove a BLE operation was executed.
 
 **To upgrade 🔁 → ✅ and resolve §2.4:** capture a **live BLE session** against each board generation (Android HCI snoop log / nRF Connect, or Boardsesh's own Web Bluetooth path) and diff the on-wire bytes against §5, watching for any GATT activity on the two unidentified UUIDs.
 
@@ -292,7 +302,7 @@ This protocol was reconstructed by **static inspection of the shipped Moon Climb
 | `713d0003-503e-4c75-ba94-3148f18d941e` | RedBearLab write characteristic        | yes (write)             |
 | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` | Nordic UART service (newer hardware)   | yes (service)           |
 | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` | Nordic UART RX (write)                 | yes (write)             |
-| `713d0002-…` / `6e400003-…`            | Notify characteristics                 | **absent** — write-only |
+| `713d0002-…` / `6e400003-…`            | Notify characteristics                 | No readable literal found; use unverified |
 | `6ba7b811-9dad-11d1-80b4-00c04fd430c8` | `uuid` package NAMESPACE_URL constant  | no                      |
 | `2c9285bc-dfd0-4fd8-a13d-393660f8a060` | Non-BLE app identifier (unconfirmed)   | no                      |
 | `5b2bf25f-9a69-4a5a-8788-6f3ddcb97fc4` | Non-BLE app identifier (unconfirmed)   | no                      |

@@ -186,7 +186,7 @@ async function pushPendingTicks(db: DrizzleDb, userId: string, _accessToken: str
   // below documents the structure the real implementation should
   // return; everything past `pushNotWired` is unreachable today and
   // exists as scaffolding for the eventual wire-up.
-  if (items.length > 0) pushNotWired('POST /api/logs/bulk');
+  if (items.length > 0) pushNotWired('log write (candidate /api/v2/logs/bulk)');
   const results: LogPushResult[] = [];
 
   if (results.length === 0) return;
@@ -277,7 +277,7 @@ async function pushPendingRatings(db: DrizzleDb, userId: string, _accessToken: s
   // is gated on without a wire implementation, then the typed scaffold
   // documents what the real `await Promise.allSettled(...)` should
   // populate.
-  if (items.length > 0) pushNotWired('POST /api/climb-rating/');
+  if (items.length > 0) pushNotWired('rating write (candidate /api/v2/climb-rating/)');
   const settled: Array<PromiseSettledResult<RatingPushResult>> = [];
 
   // Stringify the bigint id so JSON.stringify doesn't throw

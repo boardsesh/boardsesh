@@ -51,8 +51,8 @@ Kilter exposes its product across three independent hosts. We hit all three on a
                           push-back (stubbed today)           │
 ┌──────────────────────┐ ◀───────────────────────────────────┘
 │ portal.kiltergrips   │
-│ /api/logs/bulk       │
-│ /api/climb-rating/   │
+│ /api/v2/logs/bulk    │
+│ /api/v2/climb-rating/│
 │ /api/circuits        │
 └──────────────────────┘
 ```
@@ -61,7 +61,7 @@ Kilter exposes its product across three independent hosts. We hit all three on a
 
 - **`idp.kiltergrips.com` — Keycloak.** Standard OIDC, `kilter` client (public, PKCE today; `KILTER_OAUTH_CLIENT_SECRET` is optional and only set for confidential-client deployments). Token refresh handled by `packages/kilter-sync/src/api/keycloak.ts`. Keycloak rotates the refresh token on every refresh; the daemon persists the new one (encrypted) inside the same DB session as the rest of the cycle.
 - **`sync1.kiltergrips.com/sync/stream` — PowerSync.** NDJSON wire (`application/x-ndjson`). One POST with subscriptions in the body, the server streams a snapshot of every subscribed bucket and ends with a `{"checkpoint_complete": …}` envelope. Implemented in [`packages/kilter-sync/src/api/powersync-client.ts`](../packages/kilter-sync/src/api/powersync-client.ts). The client aborts the fetch on `checkpoint_complete` — we deliberately don't follow live updates, only the snapshot.
-- **`portal.kiltergrips.com/api/*` — REST.** Where push-back lives: `/api/logs/bulk`, `/api/climb-rating/`, `/api/circuits` (+ `/api/circuit-climbs`). Payload shapes still being verified live; push-back is gated behind `KILTER_SYNC_PUSH_ENABLED` and the unwired POST helpers call `pushNotWired()` (throws) rather than guessing a body shape.
+- **`portal.kiltergrips.com/api/*` — REST.** The 2.10.1 package contains `/api/v2/logs/bulk` and `/api/v2/climb-rating/` URLs alongside circuit routes. The write method and payload for each operation remain unverified; push-back is gated behind `KILTER_SYNC_PUSH_ENABLED` and the unwired helpers call `pushNotWired()` (throws).
 
 All three hosts are overridable via `KILTER_IDP_HOST`, `KILTER_SYNC_HOST`, `KILTER_PORTAL_HOST` for sandbox use.
 
@@ -137,7 +137,7 @@ The reason this isn't a plain `onConflictDoUpdate(target: kilterId)` is that Pos
 
 ### Why `board_climb_ratings` is its own table
 
-Kilter exposes ratings as a first-class resource at `POST /api/climb-rating/` — separate from logs, with their own UUID (`climb_rating_uuid`). We need a stable home for both pulled and pushed rows, with surrogate keys (`kilter_id` and `aurora_id`) that are **partial-unique on NOT NULL** so a Boardsesh-originated rating can later be adopted by either backend without colliding with other not-yet-synced rows.
+Kilter exposes ratings as a first-class resource, separate from logs, with their own UUID (`climb_rating_uuid`). The 2.10.1 package contains a `/api/v2/climb-rating/` URL, but its write contract remains unchecked. We need a stable home for both pulled and pushed rows, with surrogate keys (`kilter_id` and `aurora_id`) that are **partial-unique on NOT NULL** so a Boardsesh-originated rating can later be adopted by either backend without colliding with other not-yet-synced rows.
 
 The conflict target on insert is the natural key `(board_type, climb_uuid, angle, user_id)`, not `kilter_id` — same reasoning as the ticks path. Kilter's per-rating payload doesn't carry `weight`, so kilter-origin rows leave that column NULL.
 
@@ -611,10 +611,10 @@ op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync dae
 
 ## Open wire questions
 
-These are the things still TODO. The kilter wire-spec documents that backed the original design were intentionally excluded from this repo for legal reasons, so verification has to happen against real traffic.
+These are the remaining integration questions. Packaged client URLs help identify candidates, while request and response behavior needs service checks.
 
-1. **REST push payload shapes.** `/api/logs/bulk`, `/api/climb-rating/`, `/api/circuits`, `/api/circuit-climbs` — endpoint paths confirmed, body shapes not. Push-back is gated behind `KILTER_SYNC_PUSH_ENABLED` and the POST helpers call `pushNotWired()` (throws) until captured.
-2. **Attempts endpoint.** Whether attempts share `/api/logs/` with `topped=false`, or live on a separate REST endpoint. Pull side handles both as `logs` rows already; only push is blocked.
-3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog is REST, paged per product layout: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The documented `climbdetails/{productName}/edges` endpoint does not exist.
+1. **REST push contract.** The 2.10.1 package contains `/api/v2/logs/bulk` and `/api/v2/climb-rating/` URLs, but the operation-to-route mapping, methods, request bodies, and responses need a checked write. Push-back is gated behind `KILTER_SYNC_PUSH_ENABLED`; the helpers call `pushNotWired()` (throws).
+2. **Attempts write.** The checked pull path carries sends and attempts in `logs`; confirm whether the versioned log write uses `topped=false` for attempts.
+3. ~~**Climb-metadata source.**~~ **Resolved (2026-06-02).** The public catalog uses full per-layout arrays: `GET /api/climbs/all/{productLayoutUuid}` (+ `/api/climb-stat/all/{…}`, `/api/climbs/delteduuids`). See [Catalog sync (Flow A)](#catalog-sync-flow-a). The packaged `climbdetails/{productName}/edges` route returned 404 in the service check.
 
 When any of these get verified, replace the matching `pushNotWired()` call with the real POST and remove the item here.

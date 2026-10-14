@@ -2,6 +2,7 @@
 
 **Source app**: Kilter Board (`com.kiltergrips.kilter_board_app`) **v2.5.2** (build 48)
 **Distribution**: APKPure (XAPK), analysed 2026-06-27
+**Later package check**: v2.10.1 (build 65), 2026-10-14; see §10 for coverage
 **Stack**: Flutter (Dart AOT, engine Dart `3.10.4` stable) + [`flutter_blue_plus`](https://pub.dev/packages/flutter_blue_plus)
 **Transport**: Bluetooth Low Energy (BLE), Nordic UART Service
 
@@ -307,6 +308,8 @@ Unlike a single static "light the holds" push, this app has a per-frame animatio
 ---
 
 ## 10. Methodology & limitations
+
+**Later package coverage.** The APKPure v2.10.1 XAPK (SHA-256 `dd17655cd391adbbe01135856fc4f481e606bbfca700e85edd3022b25a58018b`) contains an ARMv7 `libapp.so` (SHA-256 `8af06628260bb3c8284d63ac8e2ec8684522d40f28a96a763df8a6d8846aa4a1`). Its readable strings retain the Aurora advertisement, Nordic UART service and RX UUIDs, and the `convertMessage` and `addBoilerPlate` symbols. The base APK and native split have matching signer certificates. This confirms the constants remain packaged in the newer app; this split does not provide a new method-body or live-wire check of the write path. The byte-level claims below remain grounded in the earlier ARM64 method-body analysis.
 
 **How this was produced.** First pass: the XAPK was pulled from APKPure (`apkeep`), the base + `armeabi-v7a` split unpacked, and `libapp.so` (the Dart AOT snapshot) analysed with `strings` + `rabin2` (radare2). The snapshot is **not obfuscated** — full Dart class/method names and string literals are intact — which is what makes §1–§3, §5, §7–§8 directly verifiable. Second pass (the one that upgraded §6 to ✅): the **arm64-v8a** `libapp.so` was pulled from a device (`adb pull split_config.arm64_v8a.apk`) and decompiled with `blutter` (Dart 3.10.4) to recover the BLE method bodies.
 

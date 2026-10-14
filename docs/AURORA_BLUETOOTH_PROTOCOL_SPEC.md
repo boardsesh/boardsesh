@@ -1,6 +1,6 @@
 # Aurora Bluetooth Protocol Specification
 
-**Version**: Derived from Kilter Board Android App v3.6.4 (Build 202)
+**Version**: Derived from Kilter Board Android App v3.6.4 (Build 202); cross-checked against Tension Board Android 5.0.7 (build 231)
 **Protocol Versions**: API v2 and API v3
 **Transport**: Bluetooth Low Energy (BLE)
 
@@ -36,6 +36,8 @@
 The Aurora Bluetooth protocol is used by Aurora Climbing products (Kilter Board, Tension Board, Decoy Board, etc.) to control LED arrays on climbing walls via Bluetooth Low Energy. The app sends LED position+color data to the board, which lights up specific holds to display climbing routes ("problems").
 
 The protocol is built on top of the **Nordic UART Service (NUS)**, a widely-used BLE serial emulation profile. Communication is unidirectional for LED control: the app writes commands to the board's RX characteristic.
+
+The Tension Board 5.0.7 APK (`com.auroraclimbing.tensionboard2`, SHA-256 `2731ea0264796b4834c1df53b9c480142640f8bab0995780c34268b7590565f6`) independently confirms the shared framing and LED encoders in `BluetoothServiceKt`, the discovery flow in `StdBluetoothService`, and the connection/write path in `BasicLEDWall`. Its resources pass `Tension` as the scan-name substring and `1` as `leds_per_hold`. This package check establishes Tension client behavior; it does not establish how every controller firmware responds.
 
 **Key characteristics:**
 
@@ -98,7 +100,7 @@ BluetoothAdapter.startLeScan(
 The name substring is product-specific and configured at service construction time:
 
 - **Kilter Board**: `"Kilter"`
-- **Tension Board**: `"Tension"` (presumed)
+- **Tension Board**: `"Tension"` (confirmed in the Tension 5.0.7 app resources)
 - **Decoy Board**: `"Decoy"` (presumed)
 
 ---

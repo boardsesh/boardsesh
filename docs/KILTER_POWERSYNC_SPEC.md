@@ -1,14 +1,14 @@
 # Kilter PowerSync Specification
 
-**Covered version**: Kilter Board mobile app, current as of 2026-05-23
-**Re-verified**: 2026-06-01 against the decompiled APK (`libapp.so` / `libpowersync.so` string dumps)
+**Covered version**: Kilter Board Android 2.10.1 (versionCode 65), plus the Boardsesh service checks from 2026-06-02
+**Package checked**: ARMv7 `libapp.so` SHA-256 `8af06628260bb3c8284d63ac8e2ec8684522d40f28a96a763df8a6d8846aa4a1`; client behavior is distinguished from server checks below
 **Sibling docs**: [KILTER_HTTP_API_SPEC.md](KILTER_HTTP_API_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [aurora-sync.md](aurora-sync.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
 
 > Kilter mirrors part of its Postgres database into the client over [PowerSync](https://www.powersync.com), an open-source sync layer. To consume Kilter user data from Boardsesh — the analogue of what `@boardsesh/aurora-sync` does for Tension/Decoy/So-iLL — Boardsesh acts as a **PowerSync client** against `sync1.kiltergrips.com`. This document describes Kilter's PowerSync setup.
 >
 > Where confidence is lower than HIGH, sections are explicitly marked.
 
-> **Correction (2026-06-01).** Earlier drafts of this doc assumed the _entire_ catalog — including the world-readable climb catalog — is mirrored through PowerSync, served from inferred `public_climbs` / `global_catalog` buckets. The decompiled app shows that is **wrong**. PowerSync carries only (a) the small global **reference catalog** (holds, hold sets, grades, products, layouts, mounting holes, placement types) and (b) **per-user data** (the signed-in user's logs, attempts, ratings, circuits, walls, settings, social graph). The **public climb catalog (`climbs` + `climb_stats`) is fetched over REST**, paginated by board region, and cached into local SQLite — see [§6](#6-what-syncs-where) and [KILTER_HTTP_API_SPEC.md §5.2](KILTER_HTTP_API_SPEC.md#52-climbs). There is no PowerSync bucket that streams every public climb to every client. If you are trying to "sync the `public_climbs` bucket", stop — it does not exist; pull the catalog via REST instead.
+> **Catalog boundary.** Named PowerSync streams carry reference and user data, including `logs`, ratings, and circuits. Boardsesh fetches the public `climbs` and `climb_stats` catalogs through per-layout REST reads. Its live-checked routes are `GET /api/climbs/all/{productLayoutUuid}` and `GET /api/climb-stat/all/{productLayoutUuid}`. The package also contains a region-based `/climbdetails/{productName}/edges` literal; that route returned 404 in the 2026-06-02 service check. The app's current route choice is not established by those strings alone.
 
 ---
 
@@ -50,10 +50,10 @@ PowerSync sits between a Postgres database and SQLite clients. The shape:
 
 Key concepts:
 
-- **Sync rules** (server-side YAML) declare _buckets_. Each bucket is a parameterised query over Postgres that selects which rows belong in it. Buckets are the unit of sync — a client subscribes to buckets, the server streams oplog rows.
-- **Parameters** come from the auth JWT (e.g. `request.user_id()`) or from client-supplied parameters in the connection request. Typical patterns: a `global` bucket of public catalog rows; one `by_user[uid]` bucket per authenticated user; potentially `by_wall[wall_uuid]`, `by_circuit[circuit_uuid]`, etc.
+- **Sync rules** define named streams and the bucket instances delivered for a subscription. A client requests streams; the server returns bucket identifiers and oplog rows.
+- **Parameters** can come from the auth JWT or from client-supplied stream subscriptions. In this deployment, Boardsesh requests named streams such as `global`, `global_gyms`, `global_climbs`, `user_buckets`, and `circuit_buckets`; the service returns parameterized bucket instances.
 - **Client schema**: clients register a SQLite schema declaring which tables/columns/indexes they want. The PowerSync SQLite extension creates the tables and maintains them as oplog rows arrive.
-- **CRUD upstream**: clients enqueue local mutations into a `ps_crud` table. PowerSync's `uploadData` callback hands those rows to app code, which calls the developer's REST API. After the REST call succeeds, the client calls `write-checkpoint2.json` so PowerSync knows the write has been persisted server-side.
+- **CRUD upstream**: the SDK can queue local mutations in `ps_crud` and hand them to an app callback. The packaged client includes REST mutation routes and a `write-checkpoint2.json` string; the precise callback and checkpoint sequence has not been checked with a write request.
 - **Transport**: an authenticated long-poll-style streaming HTTP request (BSON-stream or NDJSON), with WebSocket as an alternative on newer protocol versions. Reconnects with a checkpoint cursor.
 
 PowerSync's client and protocol are open-source: see [`powersync-ja/powersync-service`](https://github.com/powersync-ja/powersync-service) and [`powersync-ja/powersync-js`](https://github.com/powersync-ja/powersync-js).
@@ -67,7 +67,7 @@ PowerSync's client and protocol are open-source: see [`powersync-ja/powersync-se
 | Service host              | `https://sync1.kiltergrips.com`                                                                                                                                                                                                                                           |
 | Sync core                 | **Rust core `0.4.10`** (`powersync_rs_version` string in `libpowersync.so`), wrapped by the PowerSync Dart SDK                                                                                                                                                            |
 | Local schema mode         | **Raw tables** — the app declares real `CREATE TABLE`s and PowerSync applies oplog rows through configured INSERT/UPDATE/DELETE statements, instead of the default auto-generated `ps_data_*` views (`RawTable` / `raw_tables` / `PendingStatement` in `libpowersync.so`) |
-| Sync model                | PowerSync **Sync Streams** (`ps_stream_subscriptions`, `StreamSubscriptionRequest`, `subscribe`/`unsubscribe`, per-subscription `ttl`) — the newer stream-subscription protocol, not classic JWT-only bucket derivation                                                   |
+| Sync model                | PowerSync **Sync Streams**. The client request names streams; the service resolves bucket instances from subscriptions and identity                                                                                                                                    |
 | Storage                   | Local SQLite + the PowerSync SQLite extension                                                                                                                                                                                                                             |
 | Backend connector         | Custom — Kilter implements their own connector backed by the REST API                                                                                                                                                                                                     |
 | Auth mode                 | **Keycloak access token used directly** as PowerSync JWT (see [§3](#3-authentication-for-the-sync-stream))                                                                                                                                                                |
@@ -75,11 +75,11 @@ PowerSync's client and protocol are open-source: see [`powersync-ja/powersync-se
 | Write-checkpoint endpoint | `https://sync1.kiltergrips.com/write-checkpoint2.json?client_id=<powersync_client_id>`                                                                                                                                                                                    |
 | Content-Type negotiation  | `Accept: application/vnd.powersync.bson-stream;q=0.9,application/x-ndjson;q=0.8`                                                                                                                                                                                          |
 
-The client identifies itself with a stable UUID returned by `SELECT powersync_client_id()` — the PowerSync extension generates and persists this per install. It's appended to write-checkpoint calls so the server can correlate uploaded writes with the streaming session.
+The SDK can obtain a client identifier with `SELECT powersync_client_id()`. A write-checkpoint URL containing `client_id` occurs in the packaged SDK; the official app's upload sequence remains unverified.
 
-A Boardsesh `@powersync/node` client connects with a plain `Schema` of the tables it wants, calls `waitForFirstSync()`, and reads the local mirror. This is **confirmed working** for `gyms` and `walls` against the live service — see the connector example in [§3](#3-authentication-for-the-sync-stream). The same client returns nothing for the public climb catalog, because those rows do not stream (see [§6](#6-what-syncs-where)).
+A prior `@powersync/node` check populated `gyms` and `walls`. Boardsesh now sends explicit named subscriptions through its NDJSON client. Subscribing to a schema table alone does not request every stream; the public climb catalog is fetched through REST (see [§6](#6-what-syncs-where)).
 
-> Confidence: HIGH for endpoint, content-type, client_id flow, sync-core version, raw-table mode, and that a stock `@powersync/node` client syncs the buckets the token grants.
+> Confidence: HIGH for the endpoint, stream-subscription request used by Boardsesh, and the prior `gyms`/`walls` check. `libpowersync.so` contains the `0.4.10` version and raw-table strings, but package strings alone do not prove every server setting or upload path.
 
 ---
 
@@ -125,12 +125,7 @@ const connector: PowerSyncBackendConnector = {
 
 The minted access token carries `aud: ["kilter", "account"]` (the `account` audience is auto-added by Keycloak; `kilter` is the client). That is sufficient for the sync stream.
 
-**Two token theories that are NOT the answer** — both come up when the public climb catalog fails to sync, and both are dead ends:
-
-1. _"A different scope (`kilter-catalog`, `portal`, …) would mint `aud: ["kilter-portal", …]` and unlock more buckets."_ The app binary contains exactly one OAuth scope (`offline_access`, plus implicit `openid`) and one realm/client. There is no second audience or catalog scope anywhere in `libapp.so`. PowerSync checks `aud` **once per connection**, not per bucket — if the token authenticates the stream at all (it does; gyms/walls sync), audience is not gating any particular table.
-2. _"The portal/web uses a different `client_id` that gets broader buckets."_ The only Keycloak client is `kilter`. The other client-id strings in the binary (`androidClientId`, `iosClientId`, `kilter-app-analytics`, `…firebasestorage.app`) are **Firebase / Google** identifiers for Google Sign-In, Places, and analytics — unrelated to PowerSync auth.
-
-The real reason the catalog doesn't sync is structural, not credential: the public climb catalog is not served by PowerSync at all (see [§6](#6-what-syncs-where)). No token change unlocks it.
+The inspected package includes the `kilter` OAuth client and `openid offline_access` scope. The authenticated service snapshot contains reference and user rows, while the public climb catalog is provided through REST. The package alone cannot prove that no other client registration or server-side authorization rule exists.
 
 **Implications for Boardsesh**:
 
@@ -144,7 +139,7 @@ The real reason the catalog doesn't sync is structural, not credential: the publ
 
 ## 4. Wire protocol
 
-Kilter uses a stock PowerSync client, so the documented PowerSync streaming protocol applies. The high-level shape:
+The package includes the PowerSync Dart SDK. The concrete request below is from the Boardsesh client and its checked service response:
 
 ### 4.1 Initial connection
 
@@ -152,22 +147,25 @@ Kilter uses a stock PowerSync client, so the documented PowerSync streaming prot
 POST /sync/stream HTTP/1.1
 Host: sync1.kiltergrips.com
 Authorization: Bearer <keycloak_access_token>
-Accept: application/vnd.powersync.bson-stream;q=0.9,application/x-ndjson;q=0.8
+Accept: application/x-ndjson
 Content-Type: application/json
 
 {
-  "client_id": "<uuid from powersync_client_id()>",
-  "buckets": [],                        // empty on first sync; checkpoint resumes on later runs
-  "include_checksum": true,
-  "raw_data": true                      // request row JSON rather than diffs
+  "streams": {
+    "include_defaults": false,
+    "subscriptions": [
+      { "stream": "user_buckets", "override_priority": null, "parameters": {} },
+      { "stream": "circuit_buckets", "override_priority": null, "parameters": {} }
+    ]
+  }
 }
 ```
 
-The body shape is fixed by the PowerSync protocol — clients don't choose buckets, the server determines them from sync rules + JWT claims.
+This is the request body used by Boardsesh for a user snapshot. The client names streams, and the server resolves their bucket instances. Other clients may include defaults or additional resume fields. The shown request shape has been accepted by the service; it is not a claim that every SDK sends identical JSON.
 
 ### 4.2 Streamed messages
 
-The server responds with `Transfer-Encoding: chunked`, emitting newline-delimited JSON (or length-prefixed BSON if the client negotiated BSON). Message types:
+The checked Boardsesh request receives newline-delimited JSON. The packaged SDK also advertises BSON-stream support; HTTP framing can vary by connection. Message types:
 
 | Message                           | Purpose                                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -179,16 +177,15 @@ The server responds with `Transfer-Encoding: chunked`, emitting newline-delimite
 
 ### 4.3 CRUD upload
 
-Local writes are batched into `ps_crud` and flushed via the connector's `uploadData(database)` callback. The callback:
+The PowerSync SDK supports batching local writes in `ps_crud` for an `uploadData(database)` callback. A typical flow:
 
 1. Reads pending entries (`object_type`, `op`, `id`, `data`) from `ps_crud`.
-2. Calls Kilter's REST API (`portal.kiltergrips.com/api/...`) to apply the mutation. Most non-trivial writes hit `/api/.../transaction` endpoints which take the equivalent of the local row set in one call.
-3. On 2xx, calls `POST https://sync1.kiltergrips.com/write-checkpoint2.json?client_id=<id>` so the sync service can correlate the upload with the next streaming checkpoint.
-4. Calls `database.deleteCrudBatch()` to mark it persisted.
+2. Uses Kilter's REST API (`portal.kiltergrips.com/api/...`) to apply app mutations.
+3. Clears successfully uploaded local entries and waits for the synced server state.
 
-This means the streaming endpoint is **read-only from the client's perspective** — every server-side write to Postgres flows through Kilter's REST API, and PowerSync mirrors it back out to all subscribed clients.
+The observed Boardsesh sync client is read-only. The exact official-app callback order, REST payloads, and checkpoint behavior require request-level confirmation; the presence of SDK strings for `write-checkpoint2.json` does not establish when the app invokes that endpoint.
 
-> Confidence: HIGH that the protocol matches stock PowerSync (the SDK is unmodified); MEDIUM on the exact JSON keys in the request body — they may differ slightly by SDK version.
+> Confidence: HIGH for the Boardsesh request and parsed NDJSON snapshot. LOW for the official app's upload callback and checkpoint sequence.
 
 ---
 
@@ -198,9 +195,9 @@ The client uses PowerSync **raw tables**: it declares its own `CREATE TABLE`s an
 
 ### 5.1 Synced via PowerSync
 
-These rows stream from `sync1.kiltergrips.com` and are confirmed (`gyms`, `walls`) or strongly indicated (the rest, via `<table>__<column>` indexes) to arrive over the sync stream.
+The checked streams contain the reference and user rows listed in §6. The wider client schema below includes candidates inferred from `<table>__<column>` indexes; an index name alone does not prove a row type arrived in a selected stream.
 
-**Global reference catalog** (small, identical for every user — the "static" board data):
+**Reference catalog** (observed in the selected global streams):
 
 | Table               | Indexed columns (and inferred PK)                                   | Notes                                                                          |
 | ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -214,7 +211,7 @@ These rows stream from `sync1.kiltergrips.com` and are confirmed (`gyms`, `walls
 | `gyms`              | `gym_uuid` (pk)                                                     | Gym directory — schema confirmed (see [§5.3](#53-gyms-table-confirmed-schema)) |
 | `walls`             | `wall_uuid` (pk), `product_layout_uuid`, `product_name`, `gym_uuid` | Physical boards                                                                |
 
-**Per-user data** (scoped to the authenticated `sub` by server-side stream rules):
+**User-related schema candidates** (only checked rows from the selected user streams are confirmed):
 
 | Table                  | Indexed columns (and inferred PK)                                                                                                     | Notes                                             |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -226,27 +223,27 @@ These rows stream from `sync1.kiltergrips.com` and are confirmed (`gyms`, `walls
 | `user_notifications`   | `user_uuid`, `receiver_uuid`                                                                                                          | Notification feed                                 |
 | `gym_followers`        | `user_uuid`                                                                                                                           | Gym follow edges                                  |
 | `gym_notifications`    | `gym_uuid`, `receiver_uuid`                                                                                                           | Notifications scoped to a gym                     |
-| `logs`                 | `user_uuid`, `climb_uuid`, `product_layout_uuid`, `created_at`                                                                        | Confirmed ascents                                 |
-| `attempts`             | `user_uuid`, `product_layout_uuid`, `angle`                                                                                           | **Separate** from `logs` — attempts/bids vs sends |
+| `logs`                 | `user_uuid`, `climb_uuid`, `product_layout_uuid`, `created_at`                                                                        | Sends and attempts, distinguished by `topped` and `flashed` |
+| `attempts`             | `user_uuid`, `product_layout_uuid`, `angle`                                                                                           | Index literals identify a schema candidate; no separate stream role verified |
 | `climb_ratings`        | `climb_rating_uuid` (pk), `user_uuid`, `climb_uuid`, `wall_uuid`, `gym_uuid`, `product_layout_uuid`, `difficulty_grade_id`            | Heavily indexed                                   |
 | `circuits`             | `circuit_uuid` (pk)                                                                                                                   | Curated route lists                               |
 | `circuit_climbs`       | `circuit_uuid`, `climb_uuid`                                                                                                          | Many-to-many                                      |
 | `climb_mounting_holes` | `climb_uuid`, `product_layout_uuid`, `mounting_hole_uuid`, `hold_placement_id`, `placement_type`, `default_placement_type`, `hold_id` | Hold placements per climb                         |
 | `climb_beta_links`     | `climb_uuid`, `angle`, `link`                                                                                                         | External beta video/post links                    |
 
-> The app writes `logs`, `attempts`, `climb_ratings`, `circuits`, `circuit_climbs`, `walls`, `user_settings`, `user_blocked_climbs` locally (direct `INSERT … RETURNING *`) for optimistic UI, then uploads via REST; PowerSync mirrors the server's version back. For a read-only Boardsesh consumer, treat them as read-only sync targets.
+The table lists client-schema candidates, not a guarantee that every row type arrives in every subscription. The checked `user_buckets` stream carries `logs` for both sends and attempts; Boardsesh reads it without creating local upstream writes. Other table coverage must be checked against the selected streams.
 
 ### 5.2 NOT synced via PowerSync — the public climb catalog (REST-cached)
 
-These are plain local SQLite tables the app fills itself. **They are not PowerSync buckets.** This is the correction at the heart of this revision.
+These are local SQLite tables with app-side cache operations. **They are not observed in the selected PowerSync streams.** The table separates package cache evidence from routes checked by Boardsesh; it does not assume the app invokes the same REST route.
 
-| Table                           | Populated by                                                                                                                                    | Notes                                                                                                                                                                         |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `climbs`                        | REST: `GET /api/climbs/climbdetails/{productName}/edges?…limit=&offset=` (paginated by board region), `/api/climbs/curated`, `/api/climbs/all/` | Direct `INSERT INTO climbs (id, climb_uuid, …)` in app code. The full public climb catalog.                                                                                   |
-| `climb_stats`                   | REST: `/api/climb-stat/all/` (and inline with climb detail)                                                                                     | Direct `INSERT INTO climb_stats (…)`. Per-climb-angle aggregates.                                                                                                             |
-| `climbs_for_product_fetch_info` | App bookkeeping                                                                                                                                 | Tracks paginated-fetch progress per `(product_name, edge_*)`; drives the "Downloading data…" preparing screen on first login. Proof that the catalog is pulled, not streamed. |
-| `product_layout_updates`        | App bookkeeping                                                                                                                                 | Per-layout cache-invalidation marker (`updated_at`).                                                                                                                          |
-| `recently_tried_climbs`         | App-local                                                                                                                                       | Device-only history; never leaves the device.                                                                                                                                 |
+| Table | Package evidence | Current Boardsesh read |
+| --- | --- | --- |
+| `climbs` | Direct local `INSERT INTO climbs` statement; package also contains the region `/edges` route | `GET /api/climbs/all/{productLayoutUuid}`, accepted in the 2026-06-02 service check |
+| `climb_stats` | Direct local `INSERT INTO climb_stats` statement | `GET /api/climb-stat/all/{productLayoutUuid}`, accepted in the same check |
+| `climbs_for_product_fetch_info` | Local region-fetch progress table | None; Boardsesh tracks its own catalog runs |
+| `product_layout_updates` | Local per-layout cache marker | None |
+| `recently_tried_climbs` | Local recent-climb history | None |
 
 See [§6](#6-what-syncs-where) for the full data-flow picture and [KILTER_HTTP_API_SPEC.md §5.2](KILTER_HTTP_API_SPEC.md#52-climbs) for the catalog endpoints and `climbs` schema.
 
@@ -263,7 +260,7 @@ latitude, longitude, gymLogo, bannerLogo, instagramUsername, isListed
 
 - PowerSync types are coerced to SQLite's three storage classes (`TEXT`, `INTEGER`, `REAL`). Booleans on the wire become `INTEGER 0/1`. Timestamps are `TEXT` ISO-8601.
 - Every synced row carries an `id TEXT` column (PowerSync's oplog row id). The working `gyms`/`walls` sync selects `id` directly alongside the natural `*_uuid` key. Kilter's tables all have natural primary keys (`*_uuid` etc.); a Boardsesh translator keys on those and can ignore `id`.
-- The `attempts` vs `logs` split matches Aurora's `bids` vs `ascents` distinction. Boardsesh already dual-writes both into `boardsesh_ticks` ([aurora-sync.md](aurora-sync.md)); the Kilter equivalent should follow the same pattern.
+- Kilter's checked `logs` stream contains both sends and attempts. `topped` and `flashed` distinguish the outcome. The package also contains `attempts` index names, but no separate `attempts` stream role was verified or needed by the Boardsesh pull.
 
 > Confidence: HIGH that `gyms`/`walls` sync (working scraper) and HIGH that `climbs`/`climb_stats` do **not** (REST-fed, per [§5.2](#52-not-synced-via-powersync--the-public-climb-catalog-rest-cached)). MEDIUM-HIGH that the remaining per-user/reference tables sync over the stream — they carry PowerSync index naming but each is worth confirming when wiring up the translator.
 
@@ -271,63 +268,36 @@ latitude, longitude, gymLogo, bannerLogo, instagramUsername, isListed
 
 ## 6. What syncs where
 
-Kilter splits catalog data across **two transports**, and that split is the answer to "how do I sync the public climbs". The full route catalog is too large to mirror onto every device, so only the small/static and the per-user slices go through PowerSync; the big public climb catalog is paged over REST and cached.
+The service distinguishes **stream names** in a request from the parameterized **bucket instances** returned in a checkpoint. Boardsesh sends `streams.include_defaults: false` and names only the streams it needs. The following mapping is based on the service snapshots used by the current integration; a schema declaration alone does not subscribe to a stream.
 
-```
-                         ┌─────────────────────────────────────────────┐
-   PowerSync stream  ───▶│ reference catalog: products, product_layouts │  small, static,
-   sync1.kiltergrips.com │   mounting_holes, holds, hold_sets,          │  same for everyone
-   (Keycloak JWT)        │   placement_types, difficulty_grades, gyms,  │
-                         │   walls                                       │
-                         ├─────────────────────────────────────────────┤
-                         │ per-user (scoped to sub): logs, attempts,    │  one user's data
-                         │   climb_ratings, circuits, circuit_climbs,   │
-                         │   climb_mounting_holes, climb_beta_links,    │
-                         │   users, user_settings, user_analytics,      │
-                         │   user_*/gym_* social                        │
-                         └─────────────────────────────────────────────┘
+| Requested stream | Observed bucket content | Boardsesh use |
+| --- | --- | --- |
+| `global` | Holds, hold sets, grades, placement types | Reference catalog |
+| `global_gyms` | Gyms, walls, products, layouts | Reference catalog and board mapping |
+| `global_climbs` | Beta links, hold placements, mounting holes | Reference catalog; no public `climbs` rows |
+| `user_buckets` | User, homewall, `logs`, ratings, analytics | Per-user import; `logs` covers sends and attempts |
+| `circuit_buckets` | Circuits and circuit climbs | Playlist import; must accompany `user_buckets` |
 
-   REST (same JWT)   ───▶  climbs + climb_stats  ← the public climb catalog
-   portal.kiltergrips.com  GET /api/climbs/climbdetails/{productName}/edges?
-                              edgeLeft=&edgeRight=&edgeBottom=&edgeTop=&limit=&offset=
-                            GET /api/climbs/climbdetails/{productName}/edges/count
-                            GET /api/climbs/curated   ·   GET /api/climbs/all/
-                            GET /api/climb-stat/all/  ·   GET /api/climbs/delteduuids
-                            → app pages through them, INSERTs into local `climbs`/`climb_stats`,
-                              tracks progress in `climbs_for_product_fetch_info`
-```
+`GET /api/climbs/all/{productLayoutUuid}` and `GET /api/climb-stat/all/{productLayoutUuid}` supply the public climb catalog. These per-layout reads and `GET /api/climbs/delteduuids` were checked against the service in 2026-06-02 and are the routes in the Boardsesh client. The package's `/climbdetails/{productName}/edges` literal does not establish a working route; it returned 404 in that check. `/api/climbs/all/` without a layout ID returned an empty array.
 
-### Why the catalog is REST, not a bucket
+The current user sync explicitly requests `user_buckets` plus `circuit_buckets`. Requesting only one leaves part of the playlist data out. See [kilter-sync.md](kilter-sync.md#powersync-buckets-verified-live) for object-type mapping and error handling.
 
-Five independent signals in the app, all pointing the same way:
-
-1. **Direct inserts.** The app issues `INSERT INTO climbs (id, climb_uuid, climb_concat, name, …)` and `INSERT INTO climb_stats (…)` itself — you don't hand-write inserts into a PowerSync-managed view.
-2. **A progress table.** `climbs_for_product_fetch_info(product_name, count, progress, edge_left, edge_right, edge_bottom, edge_top, last_updated_at)` exists only to track _paginated fetching_ of climbs by board region. PowerSync tracks its own sync state; a per-region progress counter is a REST-pagination artifact.
-3. **A count endpoint.** `/edges/count` returns a total so the client can drive a progress bar — a REST/pagination idiom, meaningless for a streamed bucket.
-4. **A "preparing" screen.** `preparing_screen.dart` shows "Downloading data…" on first login while it pages the catalog in. PowerSync's first sync needs no app-driven download loop.
-5. **It's confirmed empty over PowerSync.** A working `@powersync/node` scraper syncs `gyms`/`walls` fine but gets no public catalog when it adds `climbs` to the schema — because nothing streams there.
-
-### For Boardsesh
-
-- **Catalog (Flow A):** pull `climbs` + `climb_stats` over REST, paging `/api/climbs/climbdetails/{productName}/edges` per product per board region (or try `/api/climbs/all/` + `/api/climb-stat/all/` for a bulk pull), using the same Keycloak token. Do **not** model it as a PowerSync bucket. See [kilter-sync.md → Catalog sync (Flow A)](kilter-sync.md#catalog-sync-flow-a).
-- **Per-user (Flow B):** a normal `@powersync/node` connection with the user's token streams their `logs` / `attempts` / `climb_ratings` / `circuits`, plus the reference catalog and `gyms`/`walls`. This is the part PowerSync is genuinely for.
-
-> Confidence: HIGH that the public catalog is REST-fed (five signals + the working scraper). HIGH that reference + per-user data is PowerSync. The exact server-side stream/bucket _names_ remain server-side and unverifiable from the client, but they no longer matter for the integration — the client never names a bucket, it declares tables and the server fills them.
+> Confidence: HIGH for the observed service snapshots, accepted stream request, and checked REST catalog routes. Server-side rule definitions, account-specific visibility, and future stream contents remain unverified.
 
 ---
 
 ## 7. Client-side writes (CRUD queue)
 
-The client issues writes through the standard PowerSync `ps_crud` queue, which uploads via the REST endpoints documented in [`KILTER_HTTP_API_SPEC.md`](KILTER_HTTP_API_SPEC.md):
+The package contains PowerSync CRUD support and REST mutation URLs documented in [`KILTER_HTTP_API_SPEC.md`](KILTER_HTTP_API_SPEC.md). The operation-to-route mapping and payloads below remain candidates until an actual write request is checked:
 
 - `climbs` + `climb_mounting_holes` writes → `/api/climbs/create-climb/transaction`, `/api/climbs/update-climb/transaction`.
 - `circuits` + `circuit_climbs` writes → `/api/circuits` and `/api/circuit-climbs`.
 - `user_settings`, `user_blocked_climbs` writes → `/api/users/user-settings`, `/api/users/block-climb`, `/api/users/unblock-climb/...`.
-- `logs` and `climb_ratings` writes → `/api/logs/`, `/api/logs/bulk`, `/api/climb-rating/`.
+- `logs` and `climb_ratings` writes → candidate `/api/v2/logs/`, `/api/v2/logs/bulk`, `/api/v2/climb-rating/` URLs in the 2.10.1 package.
 
-The "transaction" REST endpoints exist because PowerSync's upload callback delivers `ps_crud` entries in committed order but applies them one row at a time — the server-side `*-transaction` endpoint accepts the whole row set (parent + children) at once to avoid partial commits.
+The transaction endpoints suggest grouped writes, but the package alone does not establish server atomicity or their complete request bodies.
 
-> Confidence: HIGH that the upload flow goes through PowerSync's CRUD queue (it's a default behavior of the SDK).
+> Confidence: HIGH for packaged route literals and SDK CRUD support; LOW for official-app callback sequence and write shapes. Boardsesh push-back remains unwired.
 
 ---
 
@@ -348,9 +318,9 @@ See [`kilter-sync.md`](kilter-sync.md) for the integration design — schema mig
 
 **Still open:**
 
-1. **Catalog REST contract details.** The `/api/climbs/climbdetails/{productName}/edges` params (`edgeLeft/Right/Bottom/Top`, `limit`, `offset`) and the exact response shape are read off the binary, not captured. Confirm the page size cap, whether `/api/climbs/all/` returns the unpaginated catalog, and the JSON casing before building the runner. **Validation cost**: a few authenticated requests.
+1. **Catalog route changes.** The checked per-layout `/api/climbs/all/{productLayoutUuid}` and `/api/climb-stat/all/{productLayoutUuid}` routes work for the current integration. Recheck them when the app or service changes; the package's `/climbdetails/{productName}/edges` path returned 404 in the prior service check.
 2. **Ratelimits or anti-scraping.** Kilter may cap concurrent streams per `sub`, or rate-limit the catalog REST endpoints. If we sync while the user has the app open, one side may get disconnected. Serialize per-user; back off on 429.
 3. **Schema drift.** New client releases can grow the synced tables/indexes and the REST DTOs. Smoke-test that fails loudly on a mismatch rather than silently dropping rows.
 4. **ToS / abuse considerations.** This does what their app does, on behalf of users who opt in by handing over Keycloak credentials. Same shape as `aurora-sync`. Worth a parallel section in CLAUDE.md / LEGAL.md before production.
-5. **`attempts` table semantics.** Confirm whether Kilter's `attempts` is "all attempts including sends" or "non-sends only" — affects the `boardsesh_ticks` dual-write rule.
+5. **Write contract.** Confirm which packaged v2 URL each log/rating operation uses, including method, body, and response. `logs` already carries both sends and attempts on the checked pull path.
 6. **Refresh-token lifetime.** Keycloak refresh_tokens expire (default 30 days / session-idle). The daemon must detect expired refresh and surface a re-auth prompt rather than failing silently.
