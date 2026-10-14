@@ -993,7 +993,8 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
+          # Keep checkout's full history so a newer base remains a provable fast-forward.
+          git fetch --no-tags origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
           vp run check:db-migrations -- --base "origin/$BASE_REF"
       # Guards the failure mode check:db-migrations cannot see: a migration
       # whose `when` lands below drizzle's created_at high-water mark is skipped
