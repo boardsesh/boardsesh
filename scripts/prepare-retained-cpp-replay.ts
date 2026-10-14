@@ -95,6 +95,29 @@ export function isReviewedShowcasePair(path: string, producerSha256: string, cur
   const pair = REVIEWED_SHOWCASE_PAIRS.get(path);
   return pair?.[0] === producerSha256 && pair[1] === currentSha256;
 }
+// #6452 changes query refresh timing in the screenshot-reachable offline drainer.
+// These exact reviewed pairs allow explicitly accepted older captures, not an
+// equivalence claim or an exception for future shared runtime changes.
+const REVIEWED_OFFLINE_DRAIN_PAIRS = new Map<string, readonly [string, string]>([
+  [
+    'packages/shared/offline-sync/src/database.ts',
+    [
+      '2ddd607df6ebf20c23dafb9fcc38b16195d146f7bfabd6b0d036f7b7411de75c',
+      '6e99f8dec863347a818f2ebc771503760dd3185921c0210f39239dcafd3c262a',
+    ],
+  ],
+  [
+    'packages/shared/offline-sync/src/mutation-queue/drainer.ts',
+    [
+      '08bf822c9156f32ebafc114ee137d6e5ce18543ff58104e30198eb85ec693e7a',
+      '59308a386487ecec6e38813de571640e8132448a032e566ae45951c03773d0ec',
+    ],
+  ],
+]);
+export function isReviewedOfflineDrainPair(path: string, producerSha256: string, currentSha256: string): boolean {
+  const pair = REVIEWED_OFFLINE_DRAIN_PAIRS.get(path);
+  return pair?.[0] === producerSha256 && pair[1] === currentSha256;
+}
 const MAX_REPLAY_ATTEMPTS = 10;
 const SKIPPED_CAPTURE_JOBS = [
   'cpp-bootstrap',
@@ -465,19 +488,21 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
       if (
         !REVIEWABLE_RUNTIME_PATHS.has(path) &&
         !FOLLOWING_RUNTIME_PATHS.has(path) &&
-        !isReviewedShowcasePair(path, producerSha256, currentSha256)
+        !isReviewedShowcasePair(path, producerSha256, currentSha256) &&
+        !isReviewedOfflineDrainPair(path, producerSha256, currentSha256)
       )
         return fail();
       runtimeFiles.push({ path, producerSha256, currentSha256 });
     }
   }
-  // Preserve existing v1 approval bytes. Only the exact Following delta uses
-  // v2's explicit presence proof, including absence of the one added helper.
+  // Preserve existing v1 approval bytes. Following and frozen compatibility
+  // pairs use v2's presence proof, including absence of the one added helper.
   const runtimeDrift: RuntimeDrift = runtimeFiles.some(
     (entry) =>
       entry.producerSha256 === null ||
       FOLLOWING_RUNTIME_PATHS.has(entry.path) ||
-      REVIEWED_SHOWCASE_PAIRS.has(entry.path),
+      REVIEWED_SHOWCASE_PAIRS.has(entry.path) ||
+      REVIEWED_OFFLINE_DRAIN_PAIRS.has(entry.path),
   )
     ? {
         version: 2,

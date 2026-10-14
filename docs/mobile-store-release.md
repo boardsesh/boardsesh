@@ -619,11 +619,18 @@ token. This is not a general
 exception for video or Maestro files: any further byte change fails, even with a
 new token. The original producer's complete capture contract remains retained.
 
+The two offline-drainer changes from #6452 are separately frozen in
+`REVIEWED_OFFLINE_DRAIN_PAIRS`. This code is reachable during screenshots and
+changes query-refresh timing when queued writes drain. Explicitly accepting the
+older capture does not claim identical current pixels: its original source and
+image bytes stay bound. Only the exact reviewed path/old/new hashes qualify;
+future changes, additions or deletions of shared code still fail.
+
 Review the actual producer-to-current diff and confirm that the retained images
 still describe the submitted app. Build a record with `version: 1`, the full
 `producerSha`, and `files` sorted by repository path. Each changed file contains
 `path`, `producerSha256` and `currentSha256`, hashing its original and current
-bytes. The #6450 or #6461 exceptions use `version: 2`; every file also records
+bytes. The #6450, #6461 or #6452 exceptions use `version: 2`; every file also records
 `producerPresent` and `currentPresent`. The allowed addition has
 `producerPresent: false`, `producerSha256: null`, `currentPresent: true` and its
 actual `currentSha256`. Modified files have both presence fields set to `true`

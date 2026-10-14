@@ -17,6 +17,7 @@ import {
   createReplayClient,
   isReplayCapturePath,
   isReviewedShowcasePair,
+  isReviewedOfflineDrainPair,
   verifyReplayFixture,
   prepareRetainedReplay,
   replayHash,
@@ -56,6 +57,8 @@ const trackedPaths = [
   'packages/mobile/.maestro/showcase/session-end.yaml',
   'scripts/lib/showcase-video/record.ts',
   'scripts/lib/showcase-video/render.ts',
+  'packages/shared/offline-sync/src/database.ts',
+  'packages/shared/offline-sync/src/mutation-queue/drainer.ts',
   'packages/shared/board-render/src/index.ts',
   'package.json',
   'pnpm-lock.yaml',
@@ -619,6 +622,178 @@ describe('explicit presence and exact compatibility approval', () => {
     const [_path, prior, current] = showcasePairs[0];
     expect(isReviewedShowcasePair('scripts/mobile-screenshots.ts', prior, current)).toBe(false);
     expect(isReviewedShowcasePair('packages/mobile/.maestro/app-store-cpp.yaml', prior, current)).toBe(false);
+  });
+
+  const offlineDrainPairs = [
+    [
+      'packages/shared/offline-sync/src/database.ts',
+      '2ddd607df6ebf20c23dafb9fcc38b16195d146f7bfabd6b0d036f7b7411de75c',
+      '6e99f8dec863347a818f2ebc771503760dd3185921c0210f39239dcafd3c262a',
+    ],
+    [
+      'packages/shared/offline-sync/src/mutation-queue/drainer.ts',
+      '08bf822c9156f32ebafc114ee137d6e5ce18543ff58104e30198eb85ec693e7a',
+      '59308a386487ecec6e38813de571640e8132448a032e566ae45951c03773d0ec',
+    ],
+  ] as const;
+  function offlineDrainSources(side: 'producer' | 'current' = 'producer') {
+    // Immutable actual source bytes keep compatibility tests independent of later
+    // app edits and shallow CI history. Both sides retain their reviewed hashes.
+    const sources = new Map<string, Buffer>();
+    for (const [path, prior, current] of offlineDrainPairs) {
+      const file = path.endsWith('/database.ts') ? 'database' : 'drainer';
+      const bytes = readFileSync(
+        join(ROOT, 'scripts/__tests__/fixtures/cpp-offline-drain-6452', `${file}.${side}.txt`),
+      );
+      expect(replayHash(bytes)).toBe(side === 'producer' ? prior : current);
+      sources.set(path, bytes);
+    }
+    return sources;
+  }
+  function offlineDrainSource() {
+    const source = sample();
+    const originals = offlineDrainSources();
+    source.client.source = (_commit, path) => originals.get(path) ?? readFileSync(join(ROOT, path));
+    source.options.repoRoot = directory();
+    for (const path of trackedPaths) put(source.options.repoRoot, path, source.client.source(producerSha, path));
+    const originalProof = verifyReplayProducer(source.options, source.client);
+    for (const [path, bytes] of offlineDrainSources('current')) put(source.options.repoRoot, path, bytes);
+    const files: Array<{
+      path: string;
+      producerPresent: boolean;
+      producerSha256: string;
+      currentPresent: boolean;
+      currentSha256: string;
+    }> = offlineDrainPairs.map(([path, prior, current]) => ({
+      path,
+      producerPresent: true,
+      producerSha256: prior,
+      currentPresent: true,
+      currentSha256: current,
+    }));
+    const drift = {
+      version: 2,
+      producerSha,
+      files,
+    };
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(drift)}\n`);
+    return { ...source, originals, originalProof, drift };
+  }
+  it.each(offlineDrainPairs)(
+    'accepts only the exact independently reviewed offline-drain pair: %s',
+    (path, prior, current) => {
+      expect(isReplayCapturePath(path)).toBe(true);
+      expect(isReviewedOfflineDrainPair(path, prior, current)).toBe(true);
+      expect(isReviewedOfflineDrainPair(path, current, prior)).toBe(false);
+      expect(isReviewedOfflineDrainPair(path, prior, replayHash('future bytes'))).toBe(false);
+      expect(isReviewedOfflineDrainPair(path, replayHash('another producer'), current)).toBe(false);
+      expect(
+        isReviewedOfflineDrainPair('packages/shared/offline-sync/src/sync/invalidation-batch.ts', prior, current),
+      ).toBe(false);
+    },
+  );
+  it('binds real approved offline-drain bytes in v2 while retaining the original producer contract', () => {
+    const source = offlineDrainSource();
+    const proof = verifyReplayProducer(source.options, source.client);
+    expect(proof.artifacts).toHaveLength(16);
+    expect(proof.captureContractSha256).toBe(source.originalProof.captureContractSha256);
+    expect(proof.runtimeDrift).toEqual({ ...source.drift, approvedSha256: source.options.approvedRuntimeDrift });
+    expect(() => requireReviewedReceipt(proof, replayHash(`${canonicalJson(source.originalProof)}\n`), true)).toThrow();
+  });
+  it.each(['missing', 'wrong', 'v1', 'false-presence', 'omitted-pair'])(
+    'rejects %s approval despite exact reviewed offline-drain bytes',
+    (kind) => {
+      const source = offlineDrainSource();
+      if (kind === 'missing') source.options.approvedRuntimeDrift = undefined;
+      if (kind === 'wrong') source.options.approvedRuntimeDrift = '0'.repeat(64);
+      if (kind === 'v1') {
+        source.options.approvedRuntimeDrift = replayHash(
+          `${canonicalJson({
+            version: 1,
+            producerSha,
+            files: source.drift.files.map(({ path, producerSha256, currentSha256 }) => ({
+              path,
+              producerSha256,
+              currentSha256,
+            })),
+          })}\n`,
+        );
+      }
+      if (kind === 'false-presence' || kind === 'omitted-pair') {
+        if (kind === 'false-presence') source.drift.files[0].producerPresent = false;
+        else source.drift.files.pop();
+        source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      }
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it.each(['wrong-old', 'wrong-new', 'reverse'])(
+    'rejects %s offline-drain bytes even with a recomputed exact approval token',
+    (kind) => {
+      const source = offlineDrainSource();
+      const entry = source.drift.files[1];
+      if (kind === 'wrong-old') source.originals.set(entry.path, Buffer.from('different old implementation'));
+      if (kind === 'wrong-new') put(source.options.repoRoot, entry.path, 'future implementation');
+      if (kind === 'reverse') {
+        put(source.options.repoRoot, entry.path, source.originals.get(entry.path)!);
+        source.originals.set(entry.path, offlineDrainSources('current').get(entry.path)!);
+      }
+      entry.producerSha256 = replayHash(source.originals.get(entry.path)!);
+      entry.currentSha256 = replayHash(readFileSync(join(source.options.repoRoot, entry.path)));
+      source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it.each(['addition', 'deletion'])('rejects offline-drain path %s despite the approved hashes', (kind) => {
+    const source = offlineDrainSource();
+    const path = source.drift.files[0].path;
+    source.client.files = (commit) =>
+      (kind === 'addition' ? commit === producerSha : commit !== producerSha)
+        ? trackedPaths.filter((candidate) => candidate !== path)
+        : trackedPaths;
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  it('requires a new full v2 token when exact offline-drain pairs join the prior Following delta', () => {
+    const source = followingSource();
+    const originalDrift = structuredClone(source.drift);
+    const oldApproval = source.options.approvedRuntimeDrift;
+    const originals = offlineDrainSources();
+    source.client.source = (_commit, path) => originals.get(path) ?? readFileSync(join(ROOT, path));
+    for (const [path, bytes] of offlineDrainSources('current')) put(source.options.repoRoot, path, bytes);
+    for (const [path, prior, current] of offlineDrainPairs)
+      source.drift.files.push({
+        path,
+        producerPresent: true,
+        producerSha256: prior,
+        currentPresent: true,
+        currentSha256: current,
+      });
+    source.drift.files.sort((left, right) => (left.path < right.path ? -1 : 1));
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+    const proof = verifyReplayProducer(source.options, source.client);
+    expect(proof.runtimeDrift).toEqual({ ...source.drift, approvedSha256: source.options.approvedRuntimeDrift });
+    expect(proof.runtimeDrift?.files.filter((entry) => !originals.has(entry.path))).toEqual(originalDrift.files);
+    expect(source.options.approvedRuntimeDrift).not.toBe(oldApproval);
+  });
+  it('does not extend approval to another shared file or missing native success', () => {
+    const source = offlineDrainSource();
+    const path = 'packages/shared/offline-sync/src/sync/invalidation-batch.ts';
+    source.client.files = () => [...trackedPaths, path];
+    put(source.options.repoRoot, path, 'unreviewed batch change');
+    source.drift.files.push({
+      path,
+      producerPresent: true,
+      producerSha256: replayHash(readFileSync(join(ROOT, path))),
+      currentPresent: true,
+      currentSha256: replayHash('unreviewed batch change'),
+    });
+    source.drift.files.sort((left, right) => (left.path < right.path ? -1 : 1));
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    const incomplete = offlineDrainSource();
+    incomplete.jobs.at(-1)!.conclusion = 'failure';
+    expect(() => verifyReplayProducer(incomplete.options, incomplete.client)).toThrow();
   });
 });
 
