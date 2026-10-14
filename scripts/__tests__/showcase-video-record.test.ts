@@ -1013,7 +1013,23 @@ describe('observed native crew queue fallback', () => {
     expect(
       crewQueueFallbackPoint('tension', 'ios', `${tensionSlot}\n${tensionSlot.replace('tension)', 'kilter)')}`),
     ).toBe('');
-    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot)).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot)).toBe('50%,78%');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot.replace('(L10 S6', '(S6'))).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', `${tensionSlot}\n[screenshot] WARN board[1] no wall`)).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', `${tensionSlot}\n${tensionSlot.replace('(L10', '(L11')}`)).toBe(
+      '',
+    );
+    expect(
+      crewPeerRowFallbackPoint(
+        'tension',
+        'ios',
+        tensionSlot.replace('High Point', 'L10 S6 @40°, tension').replace('(L10', '(L11'),
+      ),
+    ).toBe('');
+
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot.replace('(L10', '(L11'))).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot.replace('board[1]', 'board[0]'))).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot.replace('tension)', 'kilter)'))).toBe('');
     expect(crewPeerRowFallbackPoint('tension', 'android', tensionSlot)).toBe('');
     expect(crewPeerRowFallbackPoint('tension', 'ios', '')).toBe('');
   });

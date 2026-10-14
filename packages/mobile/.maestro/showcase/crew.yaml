@@ -36,7 +36,8 @@ name: showcase take - a friend adds a climb
 #   91%,90%           observed Tension Queue in the lower-right utility row,
 #                       only for verified iOS Tension layout 10 in slot 1; not Mirror
 #   (other mirror boards retain the label path; no unmeasured coordinate target)
-#   50%,78%             verified Kilter first-upcoming row, after its avatar logs
+#   50%,78%             observed Kilter or Tension layout 10 first-upcoming row,
+#                       after its genuine peer avatar logs and board verifies
 #   50%,7%              the backdrop above the reaction menu
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -99,7 +100,7 @@ name: showcase take - a friend adds a climb
 - assertTrue: ${output.peerAvatarY !== '' && !isNaN(Number(output.peerAvatarY))}
 
 # Prefer the attributed row's localized accessibility label. If XCTest omits
-# sheet controls, use the observed first-upcoming Kilter row's text, never ≡.
+# sheet controls, use the verified observed first-upcoming row's text, never ≡.
 - evalScript: ${output.peerRowPressed = false}
 - runFlow:
     when:

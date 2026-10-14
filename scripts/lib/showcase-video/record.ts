@@ -776,14 +776,15 @@ export function crewPeerRowPattern(addedByLabel: string, positionLabel: string):
   return `^.*[,] ${escapeFragment(positionLabel)}, ${escapeFragment(fragments[0])}.+${escapeFragment(fragments[1])}.*$`;
 }
 
-/** Observed first upcoming Kilter row, away from its trailing drag handle. */
+/** Observed first-upcoming Kilter/Tension row, away from its trailing drag handle. */
 export function crewPeerRowFallbackPoint(
   kind: ShowcaseVariantKind,
   platform: ShowcasePlatform,
   logText: string,
 ): string {
-  // A family-specific Queue target does not prove its first-upcoming row geometry.
-  if (kind !== 'default' && kind !== 'kilter') return '';
+  // Both iOS targets are independently measured. Queue verification retains
+  // Tension's layout 10/slot 1 gate; other families have no observed peer row.
+  if (kind !== 'default' && kind !== 'kilter' && kind !== 'tension') return '';
   return crewQueueFallbackPoint(kind, platform, logText) ? '50%,78%' : '';
 }
 

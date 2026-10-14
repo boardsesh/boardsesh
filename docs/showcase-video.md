@@ -816,6 +816,8 @@ player omits Queue controls, verified Kilter/default slot 0 uses the measured
 91%,90% Queue button. Tension’s primary first slot is Mirror and is never used
 as Queue. Layout 11 cannot mirror and is rejected. Android, other families,
 missing layouts/resolutions and mismatched boards
-receive no coordinate fallback. The existing first-upcoming row coordinate
-remains Kilter/default-only until genuine Tension row geometry is measured;
-real peer-avatar and Play next anchors remain required before validation.
+receive no coordinate fallback. Native QueueSheet captures independently show
+the attributed first-upcoming row at 50%,78% for Kilter/default and Tension
+layout 10. The row fallback inherits the same verified platform, slot, family
+and Tension layout gate; it stays away from the trailing drag handle. Real
+peer-avatar and Play next anchors remain required before validation.
