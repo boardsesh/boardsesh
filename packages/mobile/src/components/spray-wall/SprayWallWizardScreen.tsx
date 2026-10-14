@@ -2,8 +2,9 @@ import { useHeaderHeight } from 'expo-router/react-navigation';
 import { PressableSurface } from '../PressableSurface';
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
-// Name it → photograph it → optionally mark its corners → upload → let the
-// server suggest holds → correct them → pick the background → pick hold lighting → publish. One route: the steps share
+// Photograph it → optionally mark its corners → upload → let the server
+// suggest holds → correct them → pick the background → pick hold lighting →
+// name it (prefilled) → publish. One route: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
 // pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
@@ -24,7 +25,7 @@ import { PressableSurface } from '../PressableSurface';
 // per wall").
 //
 // The same flow builds a RESET (`resetOfWallUuid`). `resetSprayWall` clones the
-// old wall's settings into a new, unfinished wall, so the run skips the meta
+// old wall's settings into a new, unfinished wall, so the run skips the details
 // step and rejoins at the photo like any resumed wall. Its first publish
 // archives the old wall (`docs/spray-walls.md`, "Archive and reset").
 
@@ -60,12 +61,17 @@ import {
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
 import {
-  BoardIdentityFields,
-  BoardVisibilityFields,
+  BoardGymField,
+  BuilderTextInput,
   SectionLabel,
   SprayWallVisibilityField,
 } from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
+import { formatDefaultBoardName } from '../board-discovery/board-builder-labels';
+import { CollapsibleSection } from '../CollapsibleSection';
+import { Icon } from '../Icon';
+import { useProfile } from '../../lib/graphql/hooks';
+import { useAuth } from '../../providers/auth-provider';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
@@ -90,6 +96,7 @@ import { buildHelpUrl } from '../../lib/help-url';
 import {
   extractGraphqlCode,
   extractGraphqlMessage,
+  isSprayWallVisibilityOwnerOnlyError,
   sprayWallLifecycleRefusal,
 } from '../../lib/graphql/extract-error-message';
 import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
@@ -110,13 +117,14 @@ import {
   useMySprayWallLifecycle,
   usePublishSprayWallVersion,
   useResetSprayWall,
+  useUpdateSprayWallDetails,
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
-import { wallCreatedEventProperties } from './wall-created-event';
+import { wallCreatedEventProperties, type WallCreatedMeta } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
-import { SprayWallLookStep } from './SprayWallLookStep';
+import { SprayWallLookStep, type SprayLookChoice } from './SprayWallLookStep';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { exitSprayWizard } from './exit-spray-wizard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
@@ -131,18 +139,26 @@ import { editCrops, editRotates, editsEqual, isIdentityEdit, type WallPhotoEdit 
 import {
   addWallReducer,
   backLeavesFlow,
+  backStaysInFlow as stepsBackInFlow,
+  countedSteps as countedStepsFor,
   initialAddWallState,
   isBusy,
   leaveCheckpoint,
   leaveDecision,
   leaveStillApplies,
-  type AddWallStep,
+  type AddWallState,
   type EditorLeaveState,
   type CreatedWall,
   type CreatedWallDraft,
   type DetectionOutcome,
 } from './add-wall-machine';
-import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
+import {
+  detailsSeedFromWall,
+  findResumableWall,
+  planUploadRetry,
+  resumeTargetFor,
+  startOverPlan,
+} from './resume-draft';
 import { SPRAY_FORM_MAX_WIDTH, isIpadSprayFlow } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
@@ -158,10 +174,21 @@ const MAX_PREVIEW_WIDTH = 520;
  */
 const LEAVE_AFTER_BIND = () => {};
 
-/** The steps that get a "step N of M" counter — the ones a climber drives. */
-const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'background', 'look', 'publish'];
-/** A reset never shows the meta step (its settings came from the wall it replaces), so it counts from the photo. */
-const RESET_COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'background', 'look', 'publish'];
+/**
+ * The machine's first state for this run. A reset and a targeted open have
+ * nothing to show until the server answers, so they open on the `resuming`
+ * wait; a plain run opens on the photo and asks behind it.
+ */
+function initialWizardState({
+  skipsDetails,
+  blocksOnResume,
+}: {
+  skipsDetails: boolean;
+  blocksOnResume: boolean;
+}): AddWallState {
+  const state = initialAddWallState({ skipsDetails });
+  return blocksOnResume ? addWallReducer(state, { type: 'RESUME_CHECK_STARTED' }) : state;
+}
 
 /**
  * Reset refusals no retry can fix: the server will say the same thing again.
@@ -201,7 +228,8 @@ export function SprayWallWizardScreen({
   versionId,
 }: SprayWallWizardScreenProps) {
   const headerHeight = useHeaderHeight();
-  const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
+  const isReset = resetOfWallUuid != null;
+  const countedSteps = countedStepsFor(isReset);
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -251,8 +279,26 @@ export function SprayWallWizardScreen({
   const formColumnCapped = isIpadSprayFlow();
   const bottomInset = useWindowBottomInset();
 
-  const builder = useSprayWallBuilder();
-  const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
+  // The name a wall gets when nobody types one, as Create board does it
+  // ("Marco's Spray wall"). The wall is created with it at the upload, so a
+  // climber who never types still gets a wall with a name. Without a display
+  // name, our own words rather than the board type's English label.
+  const { isAuthenticated } = useAuth();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const profileName = profile?.displayName?.trim();
+  const defaultWallName = useMemo(
+    () =>
+      profileName
+        ? formatDefaultBoardName({ userName: profileName, boardName: 'spray', layoutName: 'spray', size: null })
+        : t('sprayWizard.details.namePlaceholder'),
+    [profileName, t],
+  );
+  const builder = useSprayWallBuilder(null, { defaultName: defaultWallName });
+  const [state, dispatch] = useReducer(
+    addWallReducer,
+    { skipsDetails: isReset, blocksOnResume: isReset || !!wallUuid },
+    initialWizardState,
+  );
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
   const connectivityReason = useConnectivityField(selectConnectivityReason);
@@ -274,6 +320,8 @@ export function SprayWallWizardScreen({
   const publishVersionAsync = publishVersion.mutateAsync;
   const updateVisibility = useUpdateSprayWallVisibility();
   const updateVisibilityAsync = updateVisibility.mutateAsync;
+  const updateDetails = useUpdateSprayWallDetails();
+  const updateDetailsAsync = updateDetails.mutateAsync;
 
   // The camera is a property of the BINARY and of the DEVICE, not of this
   // bundle: SW-02 put the usage description in 2.6.0, and an iOS simulator has
@@ -298,17 +346,35 @@ export function SprayWallWizardScreen({
   const boardRef = useRef<UserBoard | null>(null);
 
   /**
-   * Whether the meta step ran in THIS run — i.e. whether `builder` was ever
-   * filled in.
+   * The details step's answers, read when the climber pressed Save — or null
+   * when this run never saved them (a reset, which has no details step).
    *
-   * A resumed wall rejoins at the photo or at the editor and skips `meta`
-   * entirely, so the builder still holds its constructor defaults. They look
-   * exactly like real answers (40 degrees, no gym, private), which is why the
-   * analytics payload is told explicitly rather than left to guess: see
-   * `wall-created-event.ts`. Set where the wall is actually created, so the
-   * mid-flow `adopt` path — a wall this run DID create — keeps its real answers.
+   * The analytics payload is told explicitly rather than left to read the
+   * builder: on a reset the builder still holds its constructor defaults, which
+   * look exactly like real answers (40 degrees, no gym, private). See
+   * `wall-created-event.ts`.
    */
-  const metaRanHereRef = useRef(false);
+  const detailsMetaRef = useRef<WallCreatedMeta | null>(null);
+  /**
+   * The wall was picked back up from an earlier sitting (the resume prompt, a
+   * targeted open), as opposed to created in this run. Telemetry only.
+   */
+  const resumedHereRef = useRef(false);
+
+  /**
+   * Take the details step's prefill from the wall as the server holds it. Not
+   * on a reset: the clone's visibility is the old wall's audience, which its
+   * publish may narrow, and an after-publish write of the prefill would undo
+   * that.
+   */
+  const hydrateBuilder = builder.hydrate;
+  const hydrateDetails = useCallback(
+    (wall: Parameters<typeof detailsSeedFromWall>[0]) => {
+      if (isReset) return;
+      hydrateBuilder(detailsSeedFromWall(wall));
+    },
+    [isReset, hydrateBuilder],
+  );
 
   // A board the climber just built is theirs by construction, so `isLocalOnly`
   // skips the follow-and-download pass; `rethrow` keeps the failure in this
@@ -373,14 +439,13 @@ export function SprayWallWizardScreen({
   // Step 0 — is there a wall to pick up?
   // ============================================
 
-  // Only while the flow is actually asking. Once it has an answer the query is
-  // dead weight, and refetching it mid-flow could offer to resume the very wall
-  // this run just created.
-  // A reset never asks: `resetSprayWall` hands back the clone to work on. A
-  // targeted open never asks either: it already names the wall.
-  const mySprayWalls = useMySprayWalls({
-    enabled: state.step === 'resuming' && resetOfWallUuid == null && !wallUuid,
-  });
+  // Only while the flow is actually asking — behind the photo step, which shows
+  // from the first frame. Once it has an answer the query is dead weight, and
+  // refetching it mid-flow could offer to resume the very wall this run just
+  // created. A reset never asks: `resetSprayWall` hands back the clone to work
+  // on. A targeted open never asks either: it already names the wall.
+  const asksToResume = state.resumeCheck === 'pending' && resetOfWallUuid == null && !wallUuid;
+  const mySprayWalls = useMySprayWalls({ enabled: asksToResume });
   // `refetch` comes out with the rest of the fields on purpose. React Query keeps
   // it stable for the query's life, where the RESULT object is a fresh reference
   // on every render — so a callback closing over the whole thing would be rebuilt
@@ -392,9 +457,7 @@ export function SprayWallWizardScreen({
   // list, since the full wall payload no longer carries the reset fields; on a
   // backend without them this fails, nothing is filtered, and the check behaves
   // as it always did.
-  const sprayWallLifecycle = useMySprayWallLifecycle({
-    enabled: state.step === 'resuming' && resetOfWallUuid == null && !wallUuid,
-  });
+  const sprayWallLifecycle = useMySprayWallLifecycle({ enabled: asksToResume });
   const lifecycleSettled = !sprayWallLifecycle.isFetching;
   const lifecycleRows = sprayWallLifecycle.data;
   /**
@@ -490,6 +553,10 @@ export function SprayWallWizardScreen({
         return;
       }
 
+      // Every run but a reset passes the details step, a resumed one too, so
+      // it opens on what the wall already holds.
+      hydrateDetails(full);
+      resumedHereRef.current = true;
       const target = resumeTargetFor(resumable, full.versions ?? []);
       if (target.at === 'review') {
         dispatch({ type: 'RESUMED_AT_REVIEW', draft: target.draft, savedHoldCount: target.savedHoldCount });
@@ -498,7 +565,7 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable],
+    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable, hydrateDetails],
   );
 
   const [targetAttempt, setTargetAttempt] = useState(0);
@@ -522,9 +589,20 @@ export function SprayWallWizardScreen({
     };
   }, [resetOfWallUuid, wallUuid, state.step, targetAttempt, decideResume, showTargetUnavailable, t]);
 
+  // Whether a photo picker is up right now, for the one answer below that lands
+  // after an await: the prompt must never be presented over the picker.
+  const pickerBusyRef = useRef(false);
+  pickerBusyRef.current = pickerBusy;
+
+  // The prompt waits while the picker is up (an Alert over it can be lost, or
+  // land on the wrong screen), and while the climber is on the crop detour: it
+  // is asked on the photo step itself, whose Next is waiting for this answer.
+  const resumeCheckPending = state.resumeCheck === 'pending';
+  const onPhotoStep = state.step === 'photo';
   useEffect(() => {
     if (resetOfWallUuid != null || wallUuid) return;
-    if (state.step !== 'resuming' || !wallsSettled || !lifecycleSettled || resumeAskedRef.current) return;
+    if (!resumeCheckPending || !onPhotoStep || pickerBusy) return;
+    if (!wallsSettled || !lifecycleSettled || resumeAskedRef.current) return;
     resumeAskedRef.current = true;
 
     // A failed list is not a reason to block: the worst case is one extra wall
@@ -562,9 +640,27 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUME_DECLINED' });
         return;
       }
+      // The picker opened while the read was out: ask again once it closes
+      // (the effect re-runs on `pickerBusy`).
+      if (pickerBusyRef.current) {
+        resumeAskedRef.current = false;
+        return;
+      }
       askToResume();
     });
-  }, [resetOfWallUuid, wallUuid, state.step, wallsSettled, lifecycleSettled, lifecycleRows, walls, decideResume, t]);
+  }, [
+    resetOfWallUuid,
+    wallUuid,
+    resumeCheckPending,
+    onPhotoStep,
+    pickerBusy,
+    wallsSettled,
+    lifecycleSettled,
+    lifecycleRows,
+    walls,
+    decideResume,
+    t,
+  ]);
 
   // ============================================
   // Step 0, for a reset — the clone to work on
@@ -752,9 +848,9 @@ export function SprayWallWizardScreen({
     // the upload from here would spend the photo and then fail on a rule the
     // climber cannot see; the way on from a draft is detection, not upload.
     if (state.draft) return;
-    // Only needed when there is no wall yet. A resumed wall already carries its
-    // name, angle and requested visibility on the server, so the meta step never
-    // ran.
+    // Only needed when there is no wall yet. The climber has not seen the
+    // details step, so this is the builder as it opened: the default name, 40°,
+    // private and the location hidden. The details step edits it afterwards.
     const input = state.wall ? null : builder.buildCreateInput();
     if (!state.wall && !input) return;
 
@@ -795,10 +891,12 @@ export function SprayWallWizardScreen({
         const created = await createWallAsync(input!);
         wall = { wallUuid: created.uuid, layoutId: created.layoutId, viewerCanEdit: created.viewerCanEdit };
         boardRef.current = created.board;
-        metaRanHereRef.current = true;
         // Recorded BEFORE the upload, so a failure here still leaves the flow
         // pointing at the wall that exists rather than minting another on retry.
         dispatch({ type: 'WALL_CREATED', wall });
+        // What the server now holds is what the details step diffs against, so
+        // a Save that changes nothing sends nothing.
+        hydrateDetails(created);
       }
 
       const uploaded = await uploadSprayWallPhoto({
@@ -849,6 +947,9 @@ export function SprayWallWizardScreen({
       dispatch({
         type: 'UPLOAD_FAILED',
         message: notice ? uploadNoticeMessage(notice) : capOrServerMessage(error, t('sprayWizard.upload.failed')),
+        // A cap refusal says the same thing however often it is asked, so the
+        // step offers no "Try again" for it.
+        final: !notice && sprayCapFromErrorCode(extractGraphqlCode(error)) != null,
       });
     }
   }, [
@@ -864,6 +965,7 @@ export function SprayWallWizardScreen({
     runDetection,
     capOrServerMessage,
     uploadNoticeMessage,
+    hydrateDetails,
     t,
   ]);
 
@@ -906,6 +1008,64 @@ export function SprayWallWizardScreen({
   }, [detectDraft, queryClient]);
 
   // ============================================
+  // Step 6 — name it (prefilled), then publish
+  // ============================================
+
+  // Collapsed until asked for: a wall's angle is one most climbers keep.
+  const [angleOpen, setAngleOpen] = useState(false);
+  const toggleAngle = useCallback(() => {
+    hapticSelection();
+    setAngleOpen((open) => !open);
+  }, []);
+
+  /**
+   * Save the details step: ONE `updateSprayWall` with only what changed since
+   * the server last answered, or no call at all when nothing did. Either way
+   * the publish follows by itself (`DETAILS_SAVED` lands on `publish`).
+   *
+   * A failure stays on the step with the fields as typed, so Save sends the
+   * same diff again; the baseline only moves once a save has landed.
+   */
+  const saveDetails = useCallback(async () => {
+    const { wall } = state;
+    if (state.step !== 'details' || state.details.saving || !wall || !builder.canCreate) return;
+    hapticSelection();
+    // What the funnel reports: the answers as saved, whether or not they changed.
+    detailsMetaRef.current = {
+      angle: builder.angle,
+      hasLocationName: builder.locationName.trim().length > 0,
+      hasCoords: builder.coords != null,
+      gymUuid: builder.selectedGym?.uuid ?? null,
+    };
+    const update = builder.buildDetailsUpdate();
+    if (!update) {
+      dispatch({ type: 'DETAILS_SAVED' });
+      return;
+    }
+    dispatch({ type: 'DETAILS_SAVE_STARTED' });
+    AccessibilityInfo.announceForAccessibility(t('sprayWizard.details.saving'));
+    try {
+      const saved = await updateDetailsAsync({ uuid: wall.wallUuid, ...update });
+      if (!mountedRef.current) return;
+      boardRef.current = saved.board;
+      builder.markSaved();
+      dispatch({ type: 'DETAILS_SAVED' });
+    } catch (error) {
+      if (!mountedRef.current) return;
+      // Sharing a wall is the owner's alone, as on Edit board; everything else
+      // (a gym the climber may not link to, the cap, a lifecycle refusal) is
+      // said in the server's words or ours, never as a blanket failure.
+      const message = isSprayWallVisibilityOwnerOnlyError(error)
+        ? t('mobile.sprayVisibility.ownerOnlyError')
+        : capOrServerMessage(error, t('sprayWizard.details.saveFailed'));
+      if (!isSprayWallVisibilityOwnerOnlyError(error)) reportError(error);
+      dispatch({ type: 'DETAILS_SAVE_FAILED', message });
+      // `accessibilityLiveRegion` is Android-only; VoiceOver needs telling.
+      AccessibilityInfo.announceForAccessibility(message);
+    }
+  }, [state, builder, updateDetailsAsync, capOrServerMessage, t]);
+
+  // ============================================
   // Step 7 — publish, bind, leave
   // ============================================
 
@@ -926,12 +1086,12 @@ export function SprayWallWizardScreen({
       // the wall as the active board are two writes behind one button, and
       // `publishSprayWallVersion` refuses a version that has already landed — so
       // a retry that re-ran both would turn a failed bind into a dead end.
-      // The visibility the climber chose in THIS run's meta step. The server
-      // already holds it from `createSprayWall` and the publish applies it
-      // (#5513) — which is what covers a resumed run, where this is null because
-      // the builder never saw the meta step. The write below re-states it for a
-      // backend that predates that. Read up here because the analytics payload
-      // needs it too — it is what the wall is ABOUT to be.
+      // The visibility on the details step. The server already holds it (the
+      // details Save parks it on an unpublished wall, and the publish applies
+      // it); the write below re-states it, idempotently, for a backend that
+      // predates that. Null on a reset, whose builder is never hydrated: its
+      // publish gives it the old wall's audience. Read up here because the
+      // analytics payload needs it too — it is what the wall is ABOUT to be.
       const visibility = builder.pendingVisibility();
 
       if (!published) {
@@ -942,28 +1102,24 @@ export function SprayWallWizardScreen({
         // This publish archived the wall the reset replaces. Say so on this
         // device now, rather than when its registration next revalidates.
         if (resetOfWallUuid != null) settleArchivedSprayWall(queryClient, resetOfWallUuid, draft.wallUuid);
-        // Built from the wall itself, not from `builder`: a resumed run never ran
-        // the meta step, so the builder's fields are its constructor defaults and
-        // reporting them would bias this funnel for every wall finished on a
-        // second sitting. `wall-created-event.ts` carries the whole rule.
-        // Once per wall, here and nowhere else; and caught, so a builder that
-        // throws costs the event rather than the bind.
+        // Built from the wall itself where it can be, and from the details
+        // step's answers as they were SAVED: a reset never shows that step, so
+        // its builder holds constructor defaults that would bias this funnel.
+        // `wall-created-event.ts` carries the whole rule. Once per wall, here
+        // and nowhere else; and caught, so a builder that throws costs the
+        // event rather than the bind.
         try {
           track(
             SHARED_EVENTS.BoardCreated,
             wallCreatedEventProperties({
               layoutId: wall.layoutId,
               board,
-              meta: metaRanHereRef.current
-                ? {
-                    angle: builder.angle,
-                    hasLocationName: builder.locationName.trim().length > 0,
-                    hasCoords: builder.coords != null,
-                    gymUuid: builder.selectedGym?.uuid ?? null,
-                  }
-                : null,
+              meta: detailsMetaRef.current,
               pendingVisibility: visibility,
               isReset: resetOfWallUuid != null,
+              // Said outright on a run that saved the details: such a run has
+              // `meta` whether it created the wall or picked it back up.
+              resumed: detailsMetaRef.current ? resumedHereRef.current : undefined,
             }),
           );
         } catch (error) {
@@ -1040,10 +1196,11 @@ export function SprayWallWizardScreen({
   }, [closeBoardsModal]);
 
   /**
-   * Publish runs by itself the moment the look step confirms — its button is
-   * the last one, and a further screen asking to publish again would be the
-   * three-commit flow this replaced. Once per draft: a failure stays on the
-   * publish step with its error and Retry, and never re-fires on its own.
+   * Publish runs by itself the moment the details step saves (a reset's look
+   * step confirms) — its button is the last one, and a further screen asking to
+   * publish again would be the three-commit flow this replaced. Once per draft:
+   * a failure stays on the publish step with its error and Retry, and never
+   * re-fires on its own.
    */
   const autoPublishedVersionRef = useRef<string | null>(null);
   useEffect(() => {
@@ -1122,16 +1279,15 @@ export function SprayWallWizardScreen({
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    // `review`, `background` and `publish` have no step behind them — the draft is on
-    // the server by then — so back means leaving, which keeps the draft. A
-    // reset's photo step has nothing behind it either: the clone's name and
-    // angle came from the wall it replaces, so there is no meta step to return to.
-    if (backLeavesFlow(state) || (resetOfWallUuid != null && state.step === 'photo')) {
+    // The photo step is the first, and `review`, `background` and `publish`
+    // have no step behind them — the draft is on the server by then — so back
+    // means leaving, which keeps the draft.
+    if (backLeavesFlow(state)) {
       router.back();
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, router, resetOfWallUuid]);
+  }, [state, router]);
 
   const candidateCount = state.detection.candidates.length;
   const onHoldsCommitted = useCallback(
@@ -1150,7 +1306,21 @@ export function SprayWallWizardScreen({
   const onBackgroundConfirmed = useCallback(() => dispatch({ type: 'BACKGROUND_CONFIRMED' }), []);
   const onLookSaveStarted = useCallback(() => dispatch({ type: 'LOOK_SAVE_STARTED' }), []);
   const onLookSaveFailed = useCallback(() => dispatch({ type: 'LOOK_SAVE_FAILED' }), []);
-  const onLookConfirmed = useCallback(() => dispatch({ type: 'LOOK_CONFIRMED' }), []);
+  /**
+   * The look the climber confirmed, per draft version, so that Back from the
+   * details step reopens the look step as they left it rather than on the
+   * defaults. A ref: it is read when the look step mounts, and nothing renders
+   * on it changing.
+   */
+  const lookChoiceRef = useRef<{ versionId: string; choice: SprayLookChoice } | null>(null);
+  const confirmedVersionId = state.draft?.versionId ?? null;
+  const onLookConfirmed = useCallback(
+    (choice: SprayLookChoice) => {
+      if (confirmedVersionId) lookChoiceRef.current = { versionId: confirmedVersionId, choice };
+      dispatch({ type: 'LOOK_CONFIRMED' });
+    },
+    [confirmedVersionId],
+  );
 
   const retryDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
   const reviewNotice = useMemo(
@@ -1178,12 +1348,10 @@ export function SprayWallWizardScreen({
     (state.step === 'review' || state.step === 'background' || state.step === 'look') && state.draft != null;
 
   // A back chevron where Back steps back inside the flow, an X where it would
-  // leave (the first step, a reset's photo step, and persisted steps except
-  // the hold-look step, which returns to the background). Passed on every step: the header keeps whatever was set last.
-  const backStaysInFlow =
-    (state.step === 'photo' || state.step === 'anchors' || state.step === 'upload' || state.step === 'look') &&
-    !backLeavesFlow(state) &&
-    !(resetOfWallUuid != null && state.step === 'photo');
+  // leave (the photo step, which is the first, and the persisted steps except
+  // the hold-look and details steps, which step back to the choice before).
+  // Passed on every step: the header keeps whatever was set last.
+  const backStaysInFlow = stepsBackInFlow(state) && state.step !== 'adjust';
   // While a request runs, Back does nothing (`goBack` refuses), so the chevron
   // says so. With the chevron leading there is no X: a German "Überspringen"
   // beside it would not fit at 375 pt. Leaving from those steps is a swipe down
@@ -1196,35 +1364,43 @@ export function SprayWallWizardScreen({
       : { kind: 'close', onPress: exitFlow };
 
   const publishRunning = state.publish.running;
+  const detailsSaving = state.details.saving;
   let headerTrailing: HeaderTrailingAction | null = null;
-  if (state.step === 'meta') {
+  if (state.step === 'photo') {
+    // Waits for the resume check as well as a photo: going on would create a
+    // second wall beside one the climber may be about to be offered back. The
+    // check runs behind this step, so it is usually done before they are.
+    const photoPicked = state.photo != null;
+    const waitingForResume = state.resumeCheck === 'pending';
     headerTrailing = {
       kind: 'forward',
-      label: t('sprayWizard.meta.next'),
-      onPress: () => dispatch({ type: 'META_DONE' }),
-      disabled: !builder.canCreate,
-      prominent: true,
-    };
-  } else if (state.step === 'photo') {
-    headerTrailing = {
-      kind: 'forward',
-      label: t('sprayWizard.photo.next'),
+      label: t('sprayWizard.next'),
       onPress: () => dispatch({ type: 'PHOTO_CONFIRMED' }),
-      disabled: state.photo == null,
+      disabled: !photoPicked || waitingForResume,
+      loading: photoPicked && waitingForResume && resumeError == null,
       prominent: true,
     };
   } else if (state.step === 'anchors' && state.photo) {
-    // Skip while the rings are where they started, Next once one has moved. No
-    // corners is a valid answer, so only a refused quad shuts the gate.
+    // Next whether or not the rings moved: rings left where they started mean
+    // "no corners", a valid answer, so only a refused quad shuts the gate.
     headerTrailing = {
       kind: 'forward',
-      label: state.anchors ? t('sprayWizard.anchors.next') : t('sprayWizard.anchors.skip'),
+      label: t('sprayWizard.next'),
       onPress: () => dispatch({ type: 'ANCHORS_DONE' }),
       disabled: state.anchorRejection != null,
       prominent: true,
     };
-  } else if (state.step === 'upload' && state.upload.error) {
+  } else if (state.step === 'upload' && state.upload.error && !state.upload.final) {
     headerTrailing = { kind: 'forward', label: t('sprayWizard.upload.retry'), onPress: retryUpload, prominent: true };
+  } else if (state.step === 'details') {
+    headerTrailing = {
+      kind: 'confirm',
+      label: t('sprayWizard.details.save'),
+      onPress: () => void saveDetails(),
+      loading: detailsSaving || publishRunning,
+      disabled: !builder.canCreate || detailsSaving,
+      prominent: true,
+    };
   } else if (state.step === 'publish' && state.publish.error) {
     headerTrailing = {
       kind: 'forward',
@@ -1313,7 +1489,7 @@ export function SprayWallWizardScreen({
         viewerCanEdit={state.draft.viewerCanEdit}
         candidates={state.detection.candidates}
         revealOnMount={revealRings}
-        primaryLabel={t('sprayWizard.review.next')}
+        primaryLabel={t('sprayWizard.next')}
         loadingPhoto={state.photo}
         notice={reviewNotice}
         onCommitted={onHoldsCommitted}
@@ -1325,12 +1501,24 @@ export function SprayWallWizardScreen({
 
   // Both look choices share one mounted surface, so Back preserves the
   // background, hold style and dimming without writing either choice early.
+  // Back from the details step remounts it, with the choice it confirmed.
   if ((state.step === 'background' || state.step === 'look') && state.draft) {
+    const confirmedChoice =
+      lookChoiceRef.current?.versionId === state.draft.versionId ? lookChoiceRef.current.choice : undefined;
     return (
       <SprayWallLookStep
         key={state.draft.versionId}
         draft={state.draft}
         phase={state.step}
+        // "Save" where the look is the last step (a reset), "Next" where the
+        // details step follows.
+        forwardLabel={
+          state.step === 'look' && state.skipsDetails ? t('sprayWizard.details.save') : t('sprayWizard.next')
+        }
+        confirmWithoutLabel={
+          state.skipsDetails ? t('sprayWizard.look.publishWithout') : t('sprayWizard.look.continueWithout')
+        }
+        initialChoice={confirmedChoice}
         onBackgroundConfirmed={onBackgroundConfirmed}
         stepCounter={t('sprayWizard.stepCounter', {
           current: countedSteps.indexOf(state.step) + 1,
@@ -1431,53 +1619,6 @@ export function SprayWallWizardScreen({
           </View>
         ) : null}
 
-        {state.step === 'meta' ? (
-          <>
-            <Text variant="title3">{t('sprayWizard.meta.title')}</Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.meta.body')}
-            </Text>
-
-            <BoardIdentityFields
-              builder={builder}
-              namePlaceholder={t('sprayWizard.meta.namePlaceholder')}
-              onOpenGymPicker={() => setGymPickerOpen(true)}
-            />
-
-            <SectionLabel>{t('sprayWizard.meta.angle')}</SectionLabel>
-            {/* The shared list, snapped — not a free-text field. The server
-                validates against `SPRAY_ANGLES`, so a typed 37 would walk the
-                whole flow and only be refused at the upload, with the wall
-                already created. The same slider and teaching diagram the board
-                builder uses, so a wall's angle is picked the way every other
-                board's is. */}
-            <View style={styles.angleDiagram}>
-              <AngleBoardDiagram
-                angle={builder.angle}
-                size={140}
-                accessibilityLabel={t('sprayWizard.meta.anglePreview', { angle: builder.angle })}
-              />
-            </View>
-            <AngleSlider angles={sprayAngles} value={builder.angle} onChange={builder.setAngle} />
-            <Text variant="caption1" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.meta.angleHint')}
-            </Text>
-
-            {/* Same three-way control as Edit board: two switches let "Public"
-                and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
-            <SprayWallVisibilityField builder={builder} />
-            <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
-
-            {/* The wall cap said before it bites rather than after: ten is a
-                number a gym with a lot of bays can reach, and meeting it as a
-                refusal on the publish step — with a photo already uploaded — is
-                the worst moment to learn it. */}
-            <Text variant="caption1" color={systemColors.secondaryLabel}>
-              {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
-            </Text>
-          </>
-        ) : null}
-
         {state.step === 'photo' ? (
           <>
             <Text variant="title3">
@@ -1500,6 +1641,17 @@ export function SprayWallWizardScreen({
                 {t('sprayWizard.photo.helpLink')}
               </Text>
             </PressableSurface>
+            {/* The resume check runs behind this step. When it fails, Next keeps
+                waiting for it, so the failure and the way to ask again are
+                said here. */}
+            {resumeError ? (
+              <View style={styles.resumeError}>
+                <Text variant="footnote" color={systemColors.error} accessibilityLiveRegion="polite">
+                  {resumeError}
+                </Text>
+                <Button title={t('sprayWizard.resume.retry')} variant="text" size="small" onPress={retryResume} />
+              </View>
+            ) : null}
             {/* Said before the upload, not after it fails: Offline mode is a
                 switch the climber can turn off right now. */}
             {offlineModeOn ? (
@@ -1549,6 +1701,90 @@ export function SprayWallWizardScreen({
               </View>
             ) : null}
           </>
+        ) : null}
+
+        {state.step === 'details' ? (
+          // Nothing here may change under a save in flight: the diff it sent is
+          // what the baseline moves to when it lands.
+          <View style={styles.detailsForm} pointerEvents={detailsSaving ? 'none' : 'auto'}>
+            <Text variant="title3">{t('sprayWizard.details.title')}</Text>
+
+            <View style={styles.field}>
+              <SectionLabel>{t('mobile.custom.name')}</SectionLabel>
+              <BuilderTextInput
+                value={builder.name}
+                onChangeText={builder.setName}
+                placeholder={defaultWallName}
+                accessibilityLabel={t('mobile.custom.name')}
+                maxLength={100}
+                // A wall's name is a proper noun ("Garage", "The Cave");
+                // autocorrect rewrote it and spell-check underlined it (#5960).
+                autoCorrect={false}
+                spellCheck={false}
+                returnKeyType="done"
+                editable={!detailsSaving}
+              />
+            </View>
+
+            {/* Same three-way control as Edit board: two switches let "Public"
+                and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
+            <View style={styles.field}>
+              <SprayWallVisibilityField builder={builder} />
+            </View>
+
+            {/* The shared list, snapped — not a free-text field. The server
+                validates against `SPRAY_ANGLES`. Collapsed to its value: 40° is
+                the commonest home wall, and one tap opens the slider. */}
+            <PressableSurface
+              onPress={toggleAngle}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: angleOpen }}
+              accessibilityLabel={`${t('sprayWizard.details.angle')}, ${t('sprayWizard.details.angleValue', { angle: builder.angle })}`}
+              style={[
+                styles.angleRow,
+                { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
+              ]}
+            >
+              <Text variant="body" style={styles.angleRowLabel}>
+                {t('sprayWizard.details.angle')}
+              </Text>
+              <Text variant="body" color={systemColors.secondaryLabel}>
+                {t('sprayWizard.details.angleValue', { angle: builder.angle })}
+              </Text>
+              <Icon name={angleOpen ? 'chevron.up' : 'chevron.down'} size={16} color={systemColors.tertiaryLabel} />
+            </PressableSurface>
+            {angleOpen ? (
+              <View style={styles.field}>
+                <View style={styles.angleDiagram}>
+                  <AngleBoardDiagram
+                    angle={builder.angle}
+                    size={96}
+                    accessibilityLabel={t('sprayWizard.details.anglePreview', { angle: builder.angle })}
+                  />
+                </View>
+                <AngleSlider angles={sprayAngles} value={builder.angle} onChange={builder.setAngle} />
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('sprayWizard.details.angleHint')}
+                </Text>
+              </View>
+            ) : null}
+
+            <CollapsibleSection title={t('sprayWizard.details.more')} summary={builder.selectedGym?.name ?? null}>
+              <BoardGymField selectedGym={builder.selectedGym} onOpenGymPicker={() => setGymPickerOpen(true)} />
+            </CollapsibleSection>
+
+            {state.details.error ? (
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
+                {state.details.error}
+              </Text>
+            ) : null}
+
+            {/* The wall cap said before it bites rather than after: ten is a
+                number a gym with a lot of bays can reach. */}
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
+              {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
+            </Text>
+          </View>
         ) : null}
 
         {state.step === 'upload' ? (
@@ -1706,7 +1942,29 @@ const styles = StyleSheet.create({
   },
   angleDiagram: {
     alignItems: 'center',
-    paddingVertical: spacing[2],
+    paddingVertical: spacing[1],
+  },
+  detailsForm: {
+    gap: spacing[3],
+  },
+  field: {
+    gap: spacing[1],
+  },
+  angleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  angleRowLabel: {
+    flex: 1,
+  },
+  resumeError: {
+    alignItems: 'flex-start',
+    gap: spacing[1],
   },
   previewWrap: {
     alignItems: 'center',

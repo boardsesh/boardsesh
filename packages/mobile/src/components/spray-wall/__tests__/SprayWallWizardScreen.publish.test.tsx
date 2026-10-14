@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   hasParent: { current: true },
   publishVersion: vi.fn<(versionId: string) => Promise<unknown>>(),
   updateVisibility: vi.fn<(input: unknown) => Promise<unknown>>(),
+  updateDetails: vi.fn<(input: unknown) => Promise<unknown>>(),
   activate:
     vi.fn<
       (
@@ -67,8 +68,9 @@ const mocks = vi.hoisted(() => ({
     current: null as null | {
       phase: 'background' | 'look';
       stepCounter: string;
+      forwardLabel: string;
       onBackgroundConfirmed: () => void;
-      onConfirmed: () => void;
+      onConfirmed: (choice: unknown) => void;
     },
   },
   resetWall: vi.fn<(wallUuid: string) => Promise<unknown>>(),
@@ -174,16 +176,29 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('i') }));
 vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
-  BoardIdentityFields: () => null,
-  BoardVisibilityFields: () => null,
+  BuilderTextInput: () => null,
+  BoardGymField: () => null,
   SectionLabel: () => null,
+  SprayWallVisibilityField: () => null,
 }));
+vi.mock('../../CollapsibleSection', () => ({
+  CollapsibleSection: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+}));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: undefined }) }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 // One object for the whole file: the wizard's callbacks list the builder as a
 // dependency, and a fresh one per render would rebuild every one of them.
 const builder = vi.hoisted(() => ({
   pendingVisibility: () => null,
   buildCreateInput: () => null,
-  canCreate: false,
+  // Nothing changed on the details step: Save publishes with no write.
+  buildDetailsUpdate: () => null,
+  hydrate: () => {},
+  markSaved: () => {},
+  name: 'Garage wall',
+  setName: () => {},
+  canCreate: true,
   angle: 40,
   setAngle: () => {},
   locationName: '',
@@ -211,8 +226,9 @@ vi.mock('../SprayWallLookStep', () => ({
   SprayWallLookStep: (props: {
     phase: 'background' | 'look';
     stepCounter: string;
+    forwardLabel: string;
     onBackgroundConfirmed: () => void;
-    onConfirmed: () => void;
+    onConfirmed: (choice: unknown) => void;
   }) => {
     mocks.lookProps.current = props;
     return createElement('div', { 'data-testid': 'look', 'data-step': props.stepCounter });
@@ -268,6 +284,7 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useResetSprayWall: () => ({ mutateAsync: mocks.resetWall }),
   useMySprayWallLifecycle: () => ({ data: undefined, isFetching: false }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: mocks.updateVisibility }),
+  useUpdateSprayWallDetails: () => ({ mutateAsync: mocks.updateDetails }),
 }));
 
 const { SprayWallWizardScreen } = await import('../SprayWallWizardScreen');
@@ -290,7 +307,9 @@ function pressHeaderTrailing(label: string) {
   act(() => trailing?.onPress());
 }
 
-/** Mount, pick the draft back up, commit its holds and confirm its look: publish starts by itself. */
+const LOOK_CHOICE = { selectedId: 'aura-outline', dim: null, background: 'photo', backgroundTouched: false };
+
+/** Mount, pick the draft back up, commit its holds, confirm its look and Save its details: publish starts by itself. */
 async function reachPublish() {
   const view = render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs' }));
   await flush();
@@ -300,12 +319,18 @@ async function reachPublish() {
   await flush();
   expect(screen.getByTestId('editor')).toBeTruthy();
   act(() => mocks.editorProps.current?.onCommitted({ written: 0, removed: 0, holdCount: 5 }));
-  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 7');
+  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 4 of 6');
   expect(mocks.publishVersion).not.toHaveBeenCalled();
   act(() => mocks.lookProps.current?.onBackgroundConfirmed());
-  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 6 of 7');
-  act(() => mocks.lookProps.current?.onConfirmed());
+  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 6');
+  expect(mocks.lookProps.current?.forwardLabel).toBe('sprayWizard.next');
+  act(() => mocks.lookProps.current?.onConfirmed(LOOK_CHOICE));
+  // The details step, last of the six; the publish waits for its Save.
+  expect(screen.getByText('Step 6 of 6')).toBeTruthy();
+  expect(mocks.publishVersion).not.toHaveBeenCalled();
+  pressHeaderTrailing('sprayWizard.details.save');
   await flush();
+  expect(mocks.updateDetails).not.toHaveBeenCalled();
   return view;
 }
 
@@ -447,11 +472,14 @@ describe('SprayWallWizardScreen — publishing a reset', () => {
     act(() => pickUp?.onPress?.());
     await flush();
     act(() => mocks.editorProps.current?.onCommitted({ written: 0, removed: 0, holdCount: 3 }));
-    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 4 of 6');
+    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 4 of 5');
     act(() => mocks.lookProps.current?.onBackgroundConfirmed());
-    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 6');
-    act(() => mocks.lookProps.current?.onConfirmed());
+    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 5');
+    // The look is a reset's last step: it says Save, and publishing follows it.
+    expect(mocks.lookProps.current?.forwardLabel).toBe('sprayWizard.details.save');
+    act(() => mocks.lookProps.current?.onConfirmed(LOOK_CHOICE));
     await flush();
+    expect(screen.queryByText('sprayWizard.details.title')).toBeNull();
 
     expect(mocks.publishVersion).toHaveBeenCalledWith('clone-v1');
     expect(mocks.settleArchived).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'old-wall', 'clone-1');

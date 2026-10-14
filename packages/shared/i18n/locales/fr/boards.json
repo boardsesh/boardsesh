@@ -996,15 +996,7 @@
     "screenTitle": "Ajouter un mur de spray",
     "stepCounter": "Étape {{current}} sur {{total}}",
     "back": "Retour",
-    "meta": {
-      "title": "C'est quoi ce mur ?",
-      "body": "Donne-lui un nom, dis son dévers et choisis qui peut le voir.",
-      "namePlaceholder": "Mur du garage",
-      "angle": "Angle",
-      "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
-      "next": "Suivant",
-      "anglePreview": "Mur à {{angle}} degrés"
-    },
+    "next": "Suivant",
     "photo": {
       "title": "Photographie le mur",
       "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
@@ -1014,7 +1006,6 @@
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",
       "adjust": "Recadrer ou pivoter",
-      "next": "Suivant",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre.",
       "tip": "Recule, place-toi bien en face du mur et cadre les 4 coins."
@@ -1048,8 +1039,6 @@
       "cornerTopRight": "Coin en haut à droite",
       "cornerBottomRight": "Coin en bas à droite",
       "cornerBottomLeft": "Coin en bas à gauche",
-      "next": "Suivant",
-      "skip": "Passer",
       "clear": "Recommencer les coins",
       "quality": {
         "good": "Bien en face. Le mur sera redressé proprement.",
@@ -1079,7 +1068,6 @@
       "resumeHint": "Tu peux quitter et reprendre plus tard."
     },
     "review": {
-      "next": "Choisir le rendu",
       "nothingFound": "Aucune prise repérée. Touche le mur pour les ajouter.",
       "detectionFailed": "Impossible de repérer les prises cette fois. Touche le mur pour les ajouter.",
       "manualOnly": "Touche le mur pour ajouter tes prises.",
@@ -1093,9 +1081,22 @@
       "saving": "Enregistrement du rendu…",
       "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
       "publishWithout": "Publier quand même",
+      "continueWithout": "Continuer quand même",
       "dimTitle": "Assombrir le reste du mur",
       "dimOff": "Désactivé",
       "previewPhoto": "L’éclairage des prises est prévisualisé sur ta photo d’origine. {{background}} sera utilisé à la publication."
+    },
+    "details": {
+      "title": "Donne un nom à ton mur",
+      "namePlaceholder": "Mon mur de spray",
+      "angle": "Angle",
+      "angleValue": "{{angle}}°",
+      "angleHint": "Figé une fois publié.",
+      "anglePreview": "Mur à {{angle}} degrés",
+      "more": "Plus",
+      "save": "Enregistrer",
+      "saving": "Enregistrement de ton mur…",
+      "saveFailed": "Impossible d'enregistrer les infos du mur. Réessaie."
     },
     "publish": {
       "title": "Ajoute-le à tes boards",
@@ -1139,7 +1140,6 @@
     "background": {
       "title": "Que doit montrer le mur ?",
       "body": "Fais glisser le curseur entre la photo, le mur et les prises avant de choisir leur éclairage.",
-      "next": "Choisir l’aspect des prises",
       "unsupported": "Seule la photo est disponible pour le moment. Tu peux quand même terminer ton mur."
     }
   },

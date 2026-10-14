@@ -21,8 +21,9 @@ vi.mock('../../PressableSurface', async () => {
 //
 //  - the crop step sets its own Cancel and Done, and the wizard does not write
 //    over either side while it shows;
-//  - the look step sets its own confirm, and moving on to the publish clears it
-//    (the hook never clears a slot, so the wizard has to).
+//  - the look step sets its own confirm, the details step after it gets the
+//    wizard's Save, and moving on to the publish clears it (the hook never
+//    clears a slot, so the wizard has to).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -144,6 +145,7 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   usePublishSprayWallVersion: () => ({ mutateAsync: pendingPublish }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
+  useUpdateSprayWallDetails: () => ({ mutateAsync: vi.fn() }),
   useDiscardSprayWallDraft: () => ({ mutateAsync: vi.fn() }),
   useResetSprayWall: () => ({ mutateAsync: vi.fn() }),
   useMySprayWallLifecycle: () => ({
@@ -161,11 +163,17 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('i') }));
 vi.mock('../../board-discovery/GymPickerSheet', () => ({ GymPickerSheet: () => null }));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({
-  BoardIdentityFields: () => createElement('div', { 'data-testid': 'identity' }),
-  BoardVisibilityFields: () => null,
+  BuilderTextInput: () => null,
+  BoardGymField: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
 }));
+vi.mock('../../CollapsibleSection', () => ({
+  CollapsibleSection: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+}));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { displayName: 'Marco' } }) }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
@@ -192,12 +200,15 @@ vi.mock('../SprayWallLookStep', async () => {
     }: {
       phase: 'background' | 'look';
       onBackgroundConfirmed: () => void;
-      onConfirmed: () => void;
+      onConfirmed: (choice: unknown) => void;
     }) => {
       useHeaderActions({
         trailing: {
           label: phase === 'background' ? 'background.confirm' : 'look.confirm',
-          onPress: phase === 'background' ? onBackgroundConfirmed : onConfirmed,
+          onPress:
+            phase === 'background'
+              ? onBackgroundConfirmed
+              : () => onConfirmed({ selectedId: 'aura', dim: null, background: 'photo', backgroundTouched: false }),
           prominent: true,
         },
       });
@@ -249,11 +260,9 @@ afterEach(cleanup);
 describe('the wizard header, with the real useHeaderActions', () => {
   it('leaves Cancel and Done to the crop step, and takes the header back after it', async () => {
     render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs' }));
-    expect(screen.getByTestId('identity')).toBeTruthy();
-    expect(lastSlotProps('headerLeft')?.kind).toBe('close');
-
-    pressTrailing();
     expect(screen.getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(lastSlotProps('headerLeft')?.kind).toBe('close');
+    expect(trailingLabel()).toBe('sprayWizard.next');
     pickLibraryMock.mockResolvedValueOnce({ outcome: 'picked', photo: PHOTO });
     await act(async () => fireEvent.click(screen.getByText('sprayWizard.photo.library')));
 
@@ -268,14 +277,15 @@ describe('the wizard header, with the real useHeaderActions', () => {
     const done = lastSlotProps('headerRight')?.trailing as { label: string; onPress: () => void };
     expect(done.label).toBe('sprayWizard.adjust.done');
 
-    // Done with nothing changed is Cancel: back on the photo, with its chevron and Next.
+    // Done with nothing changed is Cancel: back on the photo, the first step,
+    // with its X and Next.
     act(() => done.onPress());
     expect(screen.getByText('sprayWizard.photo.title')).toBeTruthy();
-    expect(lastSlotProps('headerLeft')?.kind).toBe('back');
-    expect(trailingLabel()).toBe('sprayWizard.photo.next');
+    expect(lastSlotProps('headerLeft')?.kind).toBe('close');
+    expect(trailingLabel()).toBe('sprayWizard.next');
   });
 
-  it("clears the look step's confirm once the publish starts", async () => {
+  it("hands the look step's confirm to the details step's Save, and clears it once the publish starts", async () => {
     wallsQuery.current = {
       data: [
         { uuid: 'wall-1', layoutId: 7, viewerCanEdit: true, board: { name: 'Garage wall' }, currentVersion: null },
@@ -311,6 +321,17 @@ describe('the wizard header, with the real useHeaderActions', () => {
     expect(lastSlotProps('headerLeft')?.kind).toBe('close');
     pressTrailing();
     expect(trailingLabel()).toBe('look.confirm');
+
+    // The details step: the wizard's own Save, and a chevron back to the look.
+    pressTrailing();
+    expect(screen.getByText('sprayWizard.details.title')).toBeTruthy();
+    expect(trailingLabel()).toBe('sprayWizard.details.save');
+    expect((lastSlotProps('headerRight')?.trailing as { kind?: string } | undefined)?.kind).toBe('confirm');
+    expect(lastSlotProps('headerLeft')?.kind).toBe('back');
+    act(() => (lastSlotProps('headerLeft')?.onPress as (() => void) | undefined)?.());
+    expect(trailingLabel()).toBe('look.confirm');
+    pressTrailing();
+    expect(trailingLabel()).toBe('sprayWizard.details.save');
 
     pressTrailing();
     await act(async () => {});

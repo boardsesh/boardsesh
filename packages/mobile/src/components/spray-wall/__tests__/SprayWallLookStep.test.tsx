@@ -165,7 +165,7 @@ vi.mock('../SprayWallBackgroundSlider', () => ({
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
-import { SprayWallLookStep } from '../SprayWallLookStep';
+import { SprayWallLookStep, type SprayLookChoice } from '../SprayWallLookStep';
 import {
   SPRAY_WALL_LOOK_OPTIONS,
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
@@ -178,7 +178,10 @@ function pressHeaderTrailing(label: string) {
   expect(controls.headerTrailing?.label).toBe(label);
   controls.headerTrailing?.onPress();
 }
-function renderStep(initialPhase: 'background' | 'look' = 'look') {
+function renderStep(
+  initialPhase: 'background' | 'look' = 'look',
+  extra: { lookLabel?: string; initialChoice?: SprayLookChoice } = {},
+) {
   const onConfirmed = vi.fn();
   const onSaveStarted = vi.fn();
   const onSaveFailed = vi.fn();
@@ -192,6 +195,9 @@ function renderStep(initialPhase: 'background' | 'look' = 'look') {
         draft,
         phase,
         stepCounter: phase === 'background' ? 'Step 5 of 7' : 'Step 6 of 7',
+        forwardLabel: phase === 'look' && extra.lookLabel ? extra.lookLabel : 'sprayWizard.next',
+        confirmWithoutLabel: 'sprayWizard.look.continueWithout',
+        initialChoice: extra.initialChoice,
         onBackgroundConfirmed: () => setPhase('look'),
         onSaveStarted,
         onSaveFailed,
@@ -202,7 +208,7 @@ function renderStep(initialPhase: 'background' | 'look' = 'look') {
   return { ...render(createElement(WizardLook)), onConfirmed, onSaveStarted, onSaveFailed };
 }
 function finishBackground() {
-  act(() => pressHeaderTrailing('sprayWizard.background.next'));
+  act(() => pressHeaderTrailing('sprayWizard.next'));
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -231,7 +237,7 @@ describe('spray Look visibility and fallback', () => {
     fireEvent.click(getByRole('radio', { name: alternative.labelI18nKey }));
     expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
     await act(async () => {
-      pressHeaderTrailing(`mobile.settings.boardLook.intro.saveNamed:${alternative.labelI18nKey}`);
+      pressHeaderTrailing('sprayWizard.next');
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith({
       layoutId: draft.layoutId,
@@ -281,10 +287,7 @@ function artAnswer(verdict: 'GOOD' | 'SOFT' | 'FAIL', reason = 'ok') {
 
 describe('spray Look wall background', () => {
   const defaultLook = () => boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
-  const saveButton = () => {
-    const option = SPRAY_WALL_LOOK_OPTIONS.find((entry) => entry.id === DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)!;
-    return `mobile.settings.boardLook.intro.saveNamed:${option.labelI18nKey}`;
-  };
+  const saveButton = () => 'sprayWizard.next';
 
   it('hides the picker and sends no background to a backend without generated looks', async () => {
     const { getByTestId } = renderStep('background');
@@ -367,7 +370,7 @@ describe('spray Look wall background', () => {
     // Keystone: the "too angled" sentence, not the corner-pins one.
     expect(getByText('sprayBackground.notAvailable')).toBeTruthy();
     // The way past a save that will not land, inline under the sentence.
-    expect(getByText('sprayWizard.look.publishWithout')).toBeTruthy();
+    expect(getByText('sprayWizard.look.continueWithout')).toBeTruthy();
     fireEvent.click(getByText('Back to background'));
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
   });
@@ -389,7 +392,7 @@ describe('two look steps keep choices local until final confirmation', () => {
     expect(controls.save).not.toHaveBeenCalled();
     finishBackground();
     expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
-    await act(async () => pressHeaderTrailing(`mobile.settings.boardLook.intro.saveNamed:${alternative.labelI18nKey}`));
+    await act(async () => pressHeaderTrailing('sprayWizard.next'));
     expect(controls.save).toHaveBeenCalledOnce();
     expect(controls.save.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -446,4 +449,40 @@ it('updates the selected hold preview while dimming before writing settings', ()
   const settings = boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID, controls.sliderProps?.options);
   expect(settings?.boardsesh.veilOpacity).toBe(0.7);
   expect(controls.save).not.toHaveBeenCalled();
+});
+
+describe('the wizard names the forward action and keeps the choice', () => {
+  it('says what the wizard tells it to, Save on a reset', () => {
+    renderStep('look', { lookLabel: 'sprayWizard.details.save' });
+    expect(controls.headerTrailing?.label).toBe('sprayWizard.details.save');
+  });
+
+  it('reports the confirmed choice, so Back from the details step can bring it back', async () => {
+    controls.art = artAnswer('GOOD');
+    const { getByText, getByRole, onConfirmed } = renderStep('background');
+    fireEvent.click(getByText('bg:hold-cutouts'));
+    finishBackground();
+    const alternative = SPRAY_WALL_LOOK_OPTIONS.find(
+      (option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID && option.id !== 'classic',
+    )!;
+    fireEvent.click(getByRole('radio', { name: alternative.labelI18nKey }));
+    act(() => controls.dimProps?.onCommit(0.4));
+    await act(async () => pressHeaderTrailing('sprayWizard.next'));
+    expect(onConfirmed).toHaveBeenCalledExactlyOnceWith({
+      selectedId: alternative.id,
+      dim: 0.4,
+      background: 'hold-cutouts',
+      backgroundTouched: true,
+    });
+  });
+
+  it('opens on the choice it is handed', () => {
+    const alternative = SPRAY_WALL_LOOK_OPTIONS.find(
+      (option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID && option.id !== 'classic',
+    )!;
+    const { getByRole } = renderStep('look', {
+      initialChoice: { selectedId: alternative.id, dim: 0.3, background: 'photo', backgroundTouched: true },
+    });
+    expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
+  });
 });

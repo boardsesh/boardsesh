@@ -3,6 +3,8 @@ import type { Quad } from '@boardsesh/spray-wall-geometry';
 import {
   addWallReducer,
   backLeavesFlow,
+  backStaysInFlow,
+  countedSteps,
   hasUnfinishedWall,
   initialAddWallState,
   isBusy,
@@ -61,7 +63,6 @@ function fresh(): AddWallState {
 /** The state a flow is in once the photo is chosen and the wall is on the server. */
 function atReview(candidates: { cx: number; cy: number; r: number; confidence: number }[] = []): AddWallState {
   return run([
-    { type: 'META_DONE' },
     { type: 'PHOTO_PICKED', photo: PHOTO },
     { type: 'PHOTO_CONFIRMED' },
     { type: 'ANCHORS_DONE' },
@@ -73,23 +74,50 @@ function atReview(candidates: { cx: number; cy: number; r: number; confidence: n
 }
 
 describe('addWallReducer — walking forwards', () => {
-  it('starts by checking for a wall to pick up', () => {
+  it('opens on the photo, checking for a wall to pick up behind it', () => {
     const state = initialAddWallState();
-    expect(state.step).toBe('resuming');
+    expect(state.step).toBe('photo');
+    expect(state.resumeCheck).toBe('pending');
+    expect(state.skipsDetails).toBe(false);
     expect(state.photo).toBeNull();
     expect(state.wall).toBeNull();
     expect(state.draft).toBeNull();
     expect(state.published).toBe(false);
   });
 
-  it('runs meta → photo → anchors → upload', () => {
-    const state = run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }]);
+  it('keeps the full-screen wait for a reset or a targeted open', () => {
+    const state = addWallReducer(initialAddWallState({ skipsDetails: true }), { type: 'RESUME_CHECK_STARTED' });
+    expect(state.step).toBe('resuming');
+    expect(state.resumeCheck).toBe('pending');
+    expect(state.skipsDetails).toBe(true);
+  });
+
+  it('holds the photo step until the resume check answers', () => {
+    const picked = addWallReducer(initialAddWallState(), { type: 'PHOTO_PICKED', photo: PHOTO });
+    // Going on now could create a second wall beside the one about to be offered back.
+    expect(addWallReducer(picked, { type: 'PHOTO_CONFIRMED' })).toBe(picked);
+    const declined = addWallReducer(picked, { type: 'RESUME_DECLINED' });
+    expect(declined.resumeCheck).toBe('settled');
+    // The photo picked behind the check is for the new wall.
+    expect(declined.photo).toEqual(PHOTO);
+    expect(addWallReducer(declined, { type: 'PHOTO_CONFIRMED' }).step).toBe('anchors');
+  });
+
+  it('settles the check on a decline without leaving a crop the climber is in', () => {
+    const cropping = run([{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'ADJUST_OPENED' }], initialAddWallState());
+    const declined = addWallReducer(cropping, { type: 'RESUME_DECLINED' });
+    expect(declined.step).toBe('adjust');
+    expect(declined.resumeCheck).toBe('settled');
+  });
+
+  it('runs photo → anchors → upload', () => {
+    const state = run([{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }]);
     expect(state.step).toBe('anchors');
     expect(addWallReducer(state, { type: 'ANCHORS_DONE' }).step).toBe('upload');
   });
 
   it('will not leave the photo step with no photo', () => {
-    const state = run([{ type: 'META_DONE' }, { type: 'PHOTO_CONFIRMED' }]);
+    const state = run([{ type: 'PHOTO_CONFIRMED' }]);
     expect(state.step).toBe('photo');
   });
 
@@ -128,12 +156,7 @@ describe('addWallReducer — the anchor quad', () => {
   });
 
   it('skipping leaves no anchors at all, which is the photo-frame case', () => {
-    const state = run([
-      { type: 'META_DONE' },
-      { type: 'PHOTO_PICKED', photo: PHOTO },
-      { type: 'PHOTO_CONFIRMED' },
-      { type: 'ANCHORS_DONE' },
-    ]);
+    const state = run([{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }, { type: 'ANCHORS_DONE' }]);
     expect(state.anchors).toBeNull();
     expect(state.step).toBe('upload');
   });
@@ -142,7 +165,6 @@ describe('addWallReducer — the anchor quad', () => {
 describe('addWallReducer — going back', () => {
   it('keeps the wall meta and the photo when backing out of the anchors', () => {
     const state = run([
-      { type: 'META_DONE' },
       { type: 'PHOTO_PICKED', photo: PHOTO },
       { type: 'PHOTO_CONFIRMED' },
       { type: 'ANCHORS_SET', anchors: SQUARE },
@@ -156,7 +178,6 @@ describe('addWallReducer — going back', () => {
 
   it('drops the anchors when a DIFFERENT photo is picked', () => {
     const state = run([
-      { type: 'META_DONE' },
       { type: 'PHOTO_PICKED', photo: PHOTO },
       { type: 'PHOTO_CONFIRMED' },
       { type: 'ANCHORS_SET', anchors: SQUARE },
@@ -169,7 +190,6 @@ describe('addWallReducer — going back', () => {
 
   it('refuses to move while a request is in flight', () => {
     const uploading = run([
-      { type: 'META_DONE' },
       { type: 'PHOTO_PICKED', photo: PHOTO },
       { type: 'PHOTO_CONFIRMED' },
       { type: 'ANCHORS_DONE' },
@@ -197,7 +217,6 @@ describe('addWallReducer — going back', () => {
 describe('addWallReducer — a failed upload', () => {
   it('stays on the upload step with the photo and the error', () => {
     const state = run([
-      { type: 'META_DONE' },
       { type: 'PHOTO_PICKED', photo: PHOTO },
       { type: 'PHOTO_CONFIRMED' },
       { type: 'ANCHORS_DONE' },
@@ -280,13 +299,18 @@ describe('addWallReducer — review, look and publish', () => {
   });
 
   it('ignores a commit that arrives off the review step', () => {
-    const state = run([{ type: 'META_DONE' }]);
+    const state = run([]);
     expect(addWallReducer(state, { type: 'REVIEW_COMMITTED', holdCount: 5 })).toBe(state);
   });
 
   it('moves to publish once holds exist and the look is confirmed', () => {
     const state = run(
-      [{ type: 'REVIEW_COMMITTED', holdCount: 12 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 12 },
+        { type: 'BACKGROUND_CONFIRMED' },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
+      ],
       atReview(),
     );
     expect(state.step).toBe('publish');
@@ -299,6 +323,7 @@ describe('addWallReducer — review, look and publish', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 12 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
       ],
@@ -315,6 +340,7 @@ describe('addWallReducer — review, look and publish', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 12 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -327,7 +353,7 @@ describe('addWallReducer — review, look and publish', () => {
 
 describe('leavingKeepsDraft', () => {
   it('is false before anything reaches the server', () => {
-    expect(leavingKeepsDraft(run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }]))).toBe(false);
+    expect(leavingKeepsDraft(run([{ type: 'PHOTO_PICKED', photo: PHOTO }]))).toBe(false);
   });
 
   it('is true once the wall and its draft version exist', () => {
@@ -340,6 +366,7 @@ describe('leavingKeepsDraft', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 1 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -354,7 +381,8 @@ describe('addWallReducer — picking up an abandoned wall', () => {
 
   it('declining the resume starts a fresh wall', () => {
     const state = addWallReducer(initialAddWallState(), { type: 'RESUME_DECLINED' });
-    expect(state.step).toBe('meta');
+    expect(state.step).toBe('photo');
+    expect(state.resumeCheck).toBe('settled');
     expect(state.wall).toBeNull();
     expect(state.draft).toBeNull();
   });
@@ -362,6 +390,7 @@ describe('addWallReducer — picking up an abandoned wall', () => {
   it('resuming a bare wall rejoins at the photo and REUSES the wall', () => {
     const state = addWallReducer(initialAddWallState(), { type: 'RESUMED_AT_PHOTO', wall: WALL });
     expect(state.step).toBe('photo');
+    expect(state.resumeCheck).toBe('settled');
     // The whole point: the meta step never runs again, and nothing downstream
     // may call createSprayWall for a wall that already exists.
     expect(state.wall).toEqual(WALL);
@@ -371,12 +400,33 @@ describe('addWallReducer — picking up an abandoned wall', () => {
   it('resuming a draft with a photo rejoins at the editor with no candidates', () => {
     const state = addWallReducer(initialAddWallState(), { type: 'RESUMED_AT_REVIEW', draft: DRAFT });
     expect(state.step).toBe('review');
+    expect(state.resumeCheck).toBe('settled');
     expect(state.draft).toEqual(DRAFT);
     expect(state.wall).toEqual(WALL);
     // No second detector pass: the first run's candidates were either ruled on
     // or are gone, and re-suggesting over saved holds would draw them twice.
     expect(state.detection.candidates).toHaveLength(0);
     expect(state.detection.outcome).toBe('idle');
+  });
+
+  it('drops a photo picked behind the check when it resumes a draft that has its own', () => {
+    const picked = addWallReducer(initialAddWallState(), { type: 'PHOTO_PICKED', photo: PHOTO });
+    const state = addWallReducer(picked, { type: 'RESUMED_AT_REVIEW', draft: DRAFT });
+    // Drawn under the editor while it loads, it would show the wrong wall.
+    expect(state.photo).toBeNull();
+    expect(state.anchors).toBeNull();
+  });
+
+  it('keeps the photo when an upload retry adopts the draft it made', () => {
+    const uploading = run([
+      { type: 'PHOTO_PICKED', photo: PHOTO },
+      { type: 'PHOTO_CONFIRMED' },
+      { type: 'ANCHORS_DONE' },
+      { type: 'UPLOAD_STARTED' },
+      { type: 'UPLOAD_FAILED', message: 'lost' },
+    ]);
+    const adopted = addWallReducer(uploading, { type: 'RESUMED_AT_REVIEW', draft: DRAFT });
+    expect(adopted.photo).toEqual(PHOTO);
   });
 
   it('knows a created wall is unfinished until it publishes', () => {
@@ -388,6 +438,7 @@ describe('addWallReducer — picking up an abandoned wall', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -414,6 +465,7 @@ describe('addWallReducer — publishing is latched separately from binding', () 
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -439,6 +491,7 @@ describe('addWallReducer — publishing is latched separately from binding', () 
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
       ],
@@ -465,7 +518,8 @@ describe('addWallReducer — a resumed draft that already has holds', () => {
     expect(committed.step).toBe('background');
     const holdLook = addWallReducer(committed, { type: 'BACKGROUND_CONFIRMED' });
     expect(holdLook.step).toBe('look');
-    expect(addWallReducer(holdLook, { type: 'LOOK_CONFIRMED' }).step).toBe('publish');
+    // And its details, prefilled from the wall, before the publish.
+    expect(addWallReducer(holdLook, { type: 'LOOK_CONFIRMED' }).step).toBe('details');
   });
 
   it('never counts a negative stored total', () => {
@@ -484,7 +538,7 @@ describe('shouldConfirmLeave', () => {
   // one and silently dropped by another has learned the app does not mean it.
   it('does not ask before anything has been written', () => {
     expect(shouldConfirmLeave(fresh())).toBe(false);
-    expect(shouldConfirmLeave(run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }]))).toBe(false);
+    expect(shouldConfirmLeave(run([{ type: 'PHOTO_PICKED', photo: PHOTO }]))).toBe(false);
   });
 
   it('asks while a request is in flight', () => {
@@ -495,6 +549,7 @@ describe('shouldConfirmLeave', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
       ],
       atReview(),
@@ -513,6 +568,7 @@ describe('shouldConfirmLeave', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 1 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -547,6 +603,7 @@ describe('leaveDecision', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -565,6 +622,7 @@ describe('leaveDecision', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
         { type: 'PUBLISH_FAILED', message: 'bind stalled' },
@@ -586,6 +644,7 @@ describe('leaveDecision', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
       ],
       atReview(),
@@ -604,7 +663,7 @@ describe('leaveStillApplies', () => {
   it('drops a Leave pressed after the look step handed over to the publish step', () => {
     const atLook = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'BACKGROUND_CONFIRMED' }], atReview());
     const asked = leaveCheckpoint(atLook);
-    const handedOver = run([{ type: 'LOOK_CONFIRMED' }], atLook);
+    const handedOver = run([{ type: 'LOOK_CONFIRMED' }, { type: 'DETAILS_SAVED' }], atLook);
     expect(handedOver.step).toBe('publish');
     expect(leaveStillApplies(asked, handedOver, EDITOR_IDLE)).toBe(false);
   });
@@ -621,7 +680,12 @@ describe('leaveStillApplies', () => {
 
   it('drops a Leave pressed after the auto-publish started', () => {
     const committed = run(
-      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
+      ],
       atReview(),
     );
     const asked = leaveCheckpoint(committed);
@@ -640,6 +704,7 @@ describe('leaveStillApplies', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
       ],
       atReview(),
@@ -661,19 +726,26 @@ describe('addWallReducer — the look step', () => {
     expect(state.published).toBe(false);
   });
 
-  it('moves on to publish when the look is confirmed', () => {
+  it('moves on to the details step when the look is confirmed', () => {
     const state = addWallReducer(atLook(), { type: 'LOOK_CONFIRMED' });
+    expect(state.step).toBe('details');
+    expect(state.details).toEqual({ saving: false, error: null });
+    expect(state.published).toBe(false);
+  });
+
+  it('goes straight on to publish on a reset, which has no details step', () => {
+    const resetLook = { ...atLook(), skipsDetails: true };
+    const state = addWallReducer(resetLook, { type: 'LOOK_CONFIRMED' });
     expect(state.step).toBe('publish');
     expect(state.publish).toEqual({ running: false, error: null });
-    expect(state.published).toBe(false);
   });
 
   it('ignores a confirm that arrives off the look step', () => {
     // A stray confirm must not skip the editor and its empty-wall guard.
     const review = atReview();
     expect(addWallReducer(review, { type: 'LOOK_CONFIRMED' })).toBe(review);
-    const meta = run([{ type: 'META_DONE' }]);
-    expect(addWallReducer(meta, { type: 'LOOK_CONFIRMED' })).toBe(meta);
+    const photo = run([]);
+    expect(addWallReducer(photo, { type: 'LOOK_CONFIRMED' })).toBe(photo);
   });
 
   it('returns from hold lighting to the background without losing the draft or holds', () => {
@@ -702,6 +774,7 @@ describe('addWallReducer — the look step', () => {
         { type: 'REVIEW_COMMITTED', holdCount: 4 },
         { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
+        { type: 'DETAILS_SAVED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
       ],
@@ -736,7 +809,10 @@ describe('addWallReducer — the look step', () => {
     expect(failed.lookSaving).toBe(false);
     expect(leaveDecision(failed, EDITOR_IDLE)).toBe('confirm');
 
-    const confirmed = run([{ type: 'LOOK_SAVE_STARTED' }, { type: 'LOOK_CONFIRMED' }], atLook());
+    const confirmed = run(
+      [{ type: 'LOOK_SAVE_STARTED' }, { type: 'LOOK_CONFIRMED' }, { type: 'DETAILS_SAVED' }],
+      atLook(),
+    );
     expect(confirmed.step).toBe('publish');
     expect(confirmed.lookSaving).toBe(false);
   });
@@ -756,12 +832,17 @@ describe('backLeavesFlow — what the footer Back does', () => {
   });
 
   it('leaves from every step past the draft, and from the first step', () => {
-    expect(backLeavesFlow(fresh())).toBe(true); // meta
+    expect(backLeavesFlow(fresh())).toBe(true); // photo
     expect(backLeavesFlow(atReview())).toBe(true);
     expect(
       backLeavesFlow(
         run(
-          [{ type: 'REVIEW_COMMITTED', holdCount: 2 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+          [
+            { type: 'REVIEW_COMMITTED', holdCount: 2 },
+            { type: 'BACKGROUND_CONFIRMED' },
+            { type: 'LOOK_CONFIRMED' },
+            { type: 'DETAILS_SAVED' },
+          ],
           atReview(),
         ),
       ),
@@ -769,10 +850,7 @@ describe('backLeavesFlow — what the footer Back does', () => {
   });
 
   it('steps back inside the flow before a draft exists', () => {
-    expect(backLeavesFlow(run([{ type: 'META_DONE' }]))).toBe(false); // photo
-    expect(
-      backLeavesFlow(run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }])),
-    ).toBe(false); // anchors
+    expect(backLeavesFlow(run([{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }]))).toBe(false); // anchors
   });
 });
 
@@ -786,12 +864,12 @@ describe('addWallReducer — crop or rotate', () => {
   };
 
   function atPhoto(): AddWallState {
-    return run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }]);
+    return run([{ type: 'PHOTO_PICKED', photo: PHOTO }]);
   }
 
   it('opens only from the photo step, and only with a photo', () => {
     expect(run([{ type: 'ADJUST_OPENED' }], atPhoto()).step).toBe('adjust');
-    expect(run([{ type: 'META_DONE' }, { type: 'ADJUST_OPENED' }]).step).toBe('photo');
+    expect(run([{ type: 'ADJUST_OPENED' }]).step).toBe('photo');
     expect(run([{ type: 'PHOTO_CONFIRMED' }, { type: 'ADJUST_OPENED' }], atPhoto()).step).toBe('anchors');
   });
 
@@ -845,7 +923,6 @@ describe('addWallReducer — crop or rotate', () => {
 
   it('is not offered once a draft has adopted the photo', () => {
     const uploaded = run([
-      { type: 'META_DONE' },
       { type: 'PHOTO_PICKED', photo: PHOTO },
       { type: 'PHOTO_CONFIRMED' },
       { type: 'ANCHORS_DONE' },
@@ -866,5 +943,115 @@ describe('background choice before hold lighting', () => {
     const look = addWallReducer(background, { type: 'BACKGROUND_CONFIRMED' });
     expect(addWallReducer(look, { type: 'BACKGROUND_CONFIRMED' })).toBe(look);
     expect(addWallReducer(atReview(), { type: 'BACKGROUND_CONFIRMED' }).step).toBe('review');
+  });
+});
+
+describe('addWallReducer — the details step', () => {
+  function atDetails(): AddWallState {
+    return run(
+      [{ type: 'REVIEW_COMMITTED', holdCount: 5 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+      atReview(),
+    );
+  }
+
+  it('moves on to publish once saved, with a clean publish', () => {
+    const saved = run([{ type: 'DETAILS_SAVE_STARTED' }, { type: 'DETAILS_SAVED' }], atDetails());
+    expect(saved.step).toBe('publish');
+    expect(saved.details).toEqual({ saving: false, error: null });
+    expect(saved.publish).toEqual({ running: false, error: null });
+  });
+
+  it('publishes with no save at all when nothing changed', () => {
+    expect(addWallReducer(atDetails(), { type: 'DETAILS_SAVED' }).step).toBe('publish');
+  });
+
+  it('stays put with the error when a save fails, and a retry clears it', () => {
+    const failed = run(
+      [{ type: 'DETAILS_SAVE_STARTED' }, { type: 'DETAILS_SAVE_FAILED', message: 'nope' }],
+      atDetails(),
+    );
+    expect(failed.step).toBe('details');
+    expect(failed.details).toEqual({ saving: false, error: 'nope' });
+    const retrying = addWallReducer(failed, { type: 'DETAILS_SAVE_STARTED' });
+    expect(retrying.details).toEqual({ saving: true, error: null });
+  });
+
+  it('refuses every details action off the details step', () => {
+    const look = run([{ type: 'REVIEW_COMMITTED', holdCount: 5 }, { type: 'BACKGROUND_CONFIRMED' }], atReview());
+    expect(addWallReducer(look, { type: 'DETAILS_SAVE_STARTED' })).toBe(look);
+    expect(addWallReducer(look, { type: 'DETAILS_SAVE_FAILED', message: 'x' })).toBe(look);
+    // A stray "saved" must not skip the look step's own write.
+    expect(addWallReducer(look, { type: 'DETAILS_SAVED' })).toBe(look);
+  });
+
+  it('blocks every way out while saving, because its success publishes', () => {
+    const saving = addWallReducer(atDetails(), { type: 'DETAILS_SAVE_STARTED' });
+    expect(isBusy(saving)).toBe(true);
+    expect(leaveDecision(saving, EDITOR_IDLE)).toBe('block');
+    expect(addWallReducer(saving, { type: 'BACK' })).toBe(saving);
+  });
+
+  it('steps back to the hold look, dropping a stale error but keeping the draft', () => {
+    const failed = run(
+      [{ type: 'DETAILS_SAVE_STARTED' }, { type: 'DETAILS_SAVE_FAILED', message: 'nope' }],
+      atDetails(),
+    );
+    expect(backLeavesFlow(failed)).toBe(false);
+    expect(backStaysInFlow(failed)).toBe(true);
+    const look = addWallReducer(failed, { type: 'BACK' });
+    expect(look.step).toBe('look');
+    expect(look.details.error).toBeNull();
+    expect(look.draft).toEqual(DRAFT);
+  });
+
+  it('asks before leaving, since the draft is kept', () => {
+    expect(leaveDecision(atDetails(), EDITOR_IDLE)).toBe('confirm');
+  });
+});
+
+describe('backStaysInFlow — chevron or X', () => {
+  it('draws the X on the photo step: it is the first', () => {
+    expect(backStaysInFlow(fresh())).toBe(false);
+    expect(addWallReducer(fresh(), { type: 'BACK' })).toEqual(fresh());
+  });
+
+  it('draws the chevron on the corners, the upload before a draft, the hold look and the details', () => {
+    const anchors = run([{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'PHOTO_CONFIRMED' }]);
+    expect(backStaysInFlow(anchors)).toBe(true);
+    expect(backStaysInFlow(addWallReducer(anchors, { type: 'ANCHORS_DONE' }))).toBe(true);
+    const look = run([{ type: 'REVIEW_COMMITTED', holdCount: 1 }, { type: 'BACKGROUND_CONFIRMED' }], atReview());
+    expect(backStaysInFlow(look)).toBe(true);
+    expect(backStaysInFlow(addWallReducer(look, { type: 'LOOK_CONFIRMED' }))).toBe(true);
+  });
+
+  it('draws the X once the draft is on the server, outside the look and details', () => {
+    expect(backStaysInFlow(atReview())).toBe(false);
+    expect(backStaysInFlow(run([{ type: 'REVIEW_COMMITTED', holdCount: 1 }], atReview()))).toBe(false);
+  });
+});
+
+describe('countedSteps', () => {
+  it('counts six steps for a new wall, ending on the details, and never the publish', () => {
+    expect(countedSteps(false)).toEqual(['photo', 'anchors', 'review', 'background', 'look', 'details']);
+  });
+
+  it('counts five for a reset, which has no details step', () => {
+    expect(countedSteps(true)).toEqual(['photo', 'anchors', 'review', 'background', 'look']);
+  });
+});
+
+describe('addWallReducer — a final upload refusal', () => {
+  it('marks a cap refusal final, and a new attempt clears it', () => {
+    const uploading = run([
+      { type: 'PHOTO_PICKED', photo: PHOTO },
+      { type: 'PHOTO_CONFIRMED' },
+      { type: 'ANCHORS_DONE' },
+      { type: 'UPLOAD_STARTED' },
+    ]);
+    const refused = addWallReducer(uploading, { type: 'UPLOAD_FAILED', message: 'cap', final: true });
+    expect(refused.upload).toMatchObject({ error: 'cap', final: true, running: false });
+    const plain = addWallReducer(uploading, { type: 'UPLOAD_FAILED', message: 'offline' });
+    expect(plain.upload.final).toBe(false);
+    expect(addWallReducer(refused, { type: 'UPLOAD_STARTED' }).upload.final).toBe(false);
   });
 });

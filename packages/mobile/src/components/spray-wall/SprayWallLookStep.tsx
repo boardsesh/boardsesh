@@ -96,10 +96,28 @@ function adjustDim(value: number, direction: 1 | -1): number {
   return adjustValue(value, direction * DIM_STEP, DIM_MIN, DIM_MAX, roundDim);
 }
 
+/**
+ * What the climber chose on the two look phases, handed to the wizard on
+ * confirm so that Back from the details step can reopen the look as it was.
+ */
+export type SprayLookChoice = {
+  selectedId: BoardLookOptionId;
+  /** The dim slider's value, or null when it was never touched. */
+  dim: number | null;
+  background: SprayWallBackground;
+  backgroundTouched: boolean;
+};
+
 type SprayWallLookStepProps = {
   draft: CreatedWallDraft;
   stepCounter: string;
   phase: 'background' | 'look';
+  /** The header's forward label for this phase: "Next", or "Save" where the look is the last step. */
+  forwardLabel: string;
+  /** The way past a failed save: "Keep going anyway", or "Publish anyway" where publishing is next. */
+  confirmWithoutLabel: string;
+  /** The choice confirmed earlier in this run, when the climber came back to change it. */
+  initialChoice?: SprayLookChoice;
   onBackgroundConfirmed: () => void;
   /**
    * The save is in flight. The flow treats it as busy, so nothing can leave
@@ -107,10 +125,10 @@ type SprayWallLookStepProps = {
    * success would publish the wall the climber walked away from.
    */
   onSaveStarted: () => void;
-  /** The save failed; the step offers a retry and "Publish anyway". */
+  /** The save failed; the step offers a retry and a way past (`confirmWithoutLabel`). */
   onSaveFailed: () => void;
-  /** The look is stored on the wall, or the climber chose to publish without it. */
-  onConfirmed: () => void;
+  /** The look is stored on the wall, or the climber chose to go on without it. */
+  onConfirmed: (choice: SprayLookChoice) => void;
   /**
    * One more line under the body, said before publishing: a reset's step uses
    * it to say the wall it replaces is archived when this one goes live.
@@ -122,6 +140,9 @@ export function SprayWallLookStep({
   draft,
   stepCounter,
   phase,
+  forwardLabel,
+  confirmWithoutLabel,
+  initialChoice,
   onBackgroundConfirmed,
   onSaveStarted,
   onSaveFailed,
@@ -155,7 +176,7 @@ export function SprayWallLookStep({
   // the selected one's. Once touched, the value applies to every look that has
   // a veil, in the previews and in what is stored. Committed on release only:
   // the selected preview follows the live value; the save uses that preview.
-  const [dim, setDim] = useState<number | null>(null);
+  const [dim, setDim] = useState<number | null>(initialChoice?.dim ?? null);
   const [liveDim, setLiveDim] = useState<number | null>(null);
 
   // Every look stays offered even when THIS phone cannot draw Aura: the pick
@@ -168,7 +189,9 @@ export function SprayWallLookStep({
 
   // Local until Continue: sliding only moves the selection, and the one
   // write happens on the button.
-  const [selectedId, setSelectedId] = useState<BoardLookOptionId>(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
+  const [selectedId, setSelectedId] = useState<BoardLookOptionId>(
+    initialChoice?.selectedId ?? DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
+  );
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.id === selectedId),
@@ -222,8 +245,8 @@ export function SprayWallLookStep({
     () => sprayBackgroundGate({ status: artQuery.status, art: artQuery.data }),
     [artQuery.status, artQuery.data],
   );
-  const [background, setBackground] = useState<SprayWallBackground>('photo');
-  const [backgroundTouched, setBackgroundTouched] = useState(false);
+  const [background, setBackground] = useState<SprayWallBackground>(initialChoice?.background ?? 'photo');
+  const [backgroundTouched, setBackgroundTouched] = useState(initialChoice?.backgroundTouched ?? false);
   // "Wall only" is the suggestion once the photo passes, until the creator picks.
   useEffect(() => {
     if (!backgroundTouched) setBackground(suggestedBackground(backgroundGate));
@@ -260,7 +283,7 @@ export function SprayWallLookStep({
     AccessibilityInfo.announceForAccessibility(t('sprayWizard.look.saving'));
     try {
       await setRenderSettingsAsync({ layoutId: draft.layoutId, uuid: draft.wallUuid, renderSettings });
-      onConfirmed();
+      onConfirmed({ selectedId: selectedOption.id, dim, background, backgroundTouched });
     } catch (error) {
       reportError(error);
       onSaveFailed();
@@ -298,6 +321,7 @@ export function SprayWallLookStep({
     background,
     backgroundGate,
     backgroundTouched,
+    dim,
   ]);
 
   const fallbackOptions = useMemo(
@@ -313,7 +337,6 @@ export function SprayWallLookStep({
     [saving, options],
   );
 
-  const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
   const displayedBackground = canPickBackground(backgroundGate, background) ? background : 'photo';
   const backgroundLabel =
     displayedBackground === 'photo'
@@ -321,19 +344,19 @@ export function SprayWallLookStep({
       : displayedBackground === 'wall-crop'
         ? t('sprayBackground.wallCrop')
         : t('sprayBackground.holdCutouts');
-  const publishWithout = useCallback(() => {
-    if (!savingRef.current && !saving) onConfirmed();
-  }, [saving, onConfirmed]);
+  const confirmWithout = useCallback(() => {
+    if (!savingRef.current && !saving) {
+      onConfirmed({ selectedId: selectedOption?.id ?? selectedId, dim, background, backgroundTouched });
+    }
+  }, [saving, onConfirmed, selectedOption, selectedId, dim, background, backgroundTouched]);
 
-  // "Use <look>" is the step's forward action: text, not the ✓.
+  // The wizard names the forward action ("Next", or "Save" on a reset's last
+  // step): text, not the ✓.
   // The X stays leading: from here on, leaving keeps the draft.
   useHeaderActions({
     trailing: {
       kind: 'forward',
-      label:
-        phase === 'background'
-          ? t('sprayWizard.background.next')
-          : tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel }),
+      label: forwardLabel,
       onPress: phase === 'background' ? onBackgroundConfirmed : () => void handleContinue(),
       loading: saving,
       disabled: saving,
@@ -372,10 +395,10 @@ export function SprayWallLookStep({
                 {saveError}
               </Text>
               <Button
-                title={t('sprayWizard.look.publishWithout')}
+                title={confirmWithoutLabel}
                 variant="text"
                 size="small"
-                onPress={publishWithout}
+                onPress={confirmWithout}
                 disabled={saving}
               />
             </View>

@@ -1,13 +1,13 @@
 // The `Board Created` properties for a spray wall (epic #5346, SW-09).
 //
-// Pulled out of the wizard so the RESUMED path can be pinned by a test. The
-// event fires in exactly one place — the publish step — and every property used
-// to be read straight off `useSprayWallBuilder`. That is right for a wall built
-// in one sitting and quietly wrong for one finished in two: a resumed run
-// rejoins at the photo or at the editor and NEVER runs the meta step, so the
-// builder still holds its constructor defaults (40 degrees, no gym, private).
-// Sending those would bias `angle`, `isPublic` and `hasGym` for every resumed
-// wall, and nobody reading the funnel months later would know to distrust it.
+// Pulled out of the wizard so the paths that never answer the details step can
+// be pinned by a test. The event fires in exactly one place — the publish step —
+// and every property used to be read straight off `useSprayWallBuilder`. That is
+// right for a run that saved the details step and quietly wrong for one that did
+// not (a reset, which has no details step): there the builder still holds its
+// constructor defaults (40 degrees, no gym, private). Sending those would bias
+// `angle`, `isPublic` and `hasGym`, and nobody reading the funnel months later
+// would know to distrust it.
 //
 // So the rule here is: anything the `user_boards` row can answer comes off the
 // ROW, which is real on both paths. The two properties it cannot answer are left
@@ -35,7 +35,7 @@ export type WallBoardRow = {
 };
 
 /**
- * What the meta step answered, or null when this run never ran it.
+ * What the details step answered, as saved, or null when this run never ran it.
  *
  * Nullable on purpose — null IS the resumed case, and making the caller say so
  * is what keeps a defaulted builder from being mistaken for a real answer.
@@ -52,12 +52,17 @@ export type WallCreatedEventInput = {
   layoutId: number;
   /** The wall's board row, when it arrived. Authoritative for everything it carries. */
   board: WallBoardRow | null;
-  /** The meta step's own answers, or null on a resumed run. */
+  /** The details step's own answers, or null when this run never saved them. */
   meta: WallCreatedMeta | null;
   /** The visibility about to be applied by `updateSprayWall`, or null when the wall stays private. */
   pendingVisibility: { isPublic: boolean; isUnlisted: boolean } | null;
   /** The wall is a reset's replacement (`resetSprayWall`), not a new wall. */
   isReset: boolean;
+  /**
+   * The wall was picked back up from an earlier sitting. Left out, it is read
+   * off `meta`: a run that never answered the details step is a resumed one.
+   */
+  resumed?: boolean;
 };
 
 export type WallCreatedEventProperties = {
@@ -90,10 +95,10 @@ export type WallCreatedEventProperties = {
 
 /** The `Board Created` payload for a wall that has just published its first version. */
 export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCreatedEventProperties {
-  const { layoutId, board, meta, pendingVisibility, isReset } = input;
+  const { layoutId, board, meta, pendingVisibility, isReset, resumed } = input;
 
   // The row wins wherever it can. On a resumed wall it is the only honest
-  // source; on a fresh one it holds the value the meta step just sent, so
+  // source; on a fresh one it holds the value the details step just saved, so
   // preferring it costs nothing and removes the branch.
   const angle = board?.angle ?? meta?.angle ?? 0;
   const gymUuid = board?.gymUuid ?? meta?.gymUuid ?? null;
@@ -116,7 +121,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     angle,
     isOwned: true,
     ...(isPublic !== undefined ? { isPublic } : {}),
-    // Omitted, not defaulted, when the meta step did not run.
+    // Omitted, not defaulted, when the details step did not run.
     ...(meta ? { hasLocationName: meta.hasLocationName, hasCoords: meta.hasCoords } : {}),
     hasGym: gymUuid != null,
     // The gym being ATTACHED, and deliberately not the `gym_uuid` super property,
@@ -127,7 +132,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     // Splits the funnel's two populations. A resumed wall carries neither
     // location property, so an analyst who pools the two reads a denominator
     // that is missing rows rather than one that is wrong.
-    resumed: meta == null,
+    resumed: resumed ?? meta == null,
     isReset,
   };
 }

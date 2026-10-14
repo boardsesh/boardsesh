@@ -996,15 +996,7 @@
     "screenTitle": "Añadir un muro de spray",
     "stepCounter": "Paso {{current}} de {{total}}",
     "back": "Atrás",
-    "meta": {
-      "title": "¿Qué muro es este?",
-      "body": "Ponle nombre, di cuánto se inclina y elige quién puede verlo.",
-      "namePlaceholder": "Muro del garaje",
-      "angle": "Ángulo",
-      "angleHint": "Cuánto se inclina el muro, en pasos de 5°. Queda fijo al publicar.",
-      "next": "Siguiente",
-      "anglePreview": "Muro a {{angle}} grados"
-    },
+    "next": "Siguiente",
     "photo": {
       "title": "Fotografía el muro",
       "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
@@ -1014,7 +1006,6 @@
       "camera": "Hacer una foto",
       "pickAnother": "Elegir otra foto",
       "adjust": "Recortar o girar",
-      "next": "Siguiente",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
       "failed": "Esa foto no se abre. Prueba con otra.",
       "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
@@ -1048,8 +1039,6 @@
       "cornerTopRight": "Esquina superior derecha",
       "cornerBottomRight": "Esquina inferior derecha",
       "cornerBottomLeft": "Esquina inferior izquierda",
-      "next": "Siguiente",
-      "skip": "Saltar",
       "clear": "Empezar las esquinas de nuevo",
       "quality": {
         "good": "Bien de frente. El muro se enderezará limpio.",
@@ -1079,7 +1068,6 @@
       "resumeHint": "Puedes salir y continuar más tarde."
     },
     "review": {
-      "next": "Elegir el aspecto",
       "nothingFound": "No se encontraron presas. Toca el muro para añadirlas.",
       "detectionFailed": "Esta vez no pudimos encontrar presas. Toca el muro para añadirlas.",
       "manualOnly": "Toca el muro para añadir tus presas.",
@@ -1093,9 +1081,22 @@
       "saving": "Guardando el aspecto…",
       "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
       "publishWithout": "Publicar igualmente",
+      "continueWithout": "Seguir igualmente",
       "dimTitle": "Oscurecer el resto del muro",
       "dimOff": "Desactivado",
       "previewPhoto": "La iluminación de las presas se muestra sobre la foto original. Al publicar se usará {{background}}."
+    },
+    "details": {
+      "title": "Ponle nombre a tu muro",
+      "namePlaceholder": "Mi muro de spray",
+      "angle": "Ángulo",
+      "angleValue": "{{angle}}°",
+      "angleHint": "Queda fijo al publicar.",
+      "anglePreview": "Muro a {{angle}} grados",
+      "more": "Más",
+      "save": "Guardar",
+      "saving": "Guardando tu muro…",
+      "saveFailed": "No se pudieron guardar los datos del muro. Inténtalo de nuevo."
     },
     "publish": {
       "title": "Añádelo a tus plafones",
@@ -1139,7 +1140,6 @@
     "background": {
       "title": "¿Qué debería mostrar el muro?",
       "body": "Desliza entre la foto, el muro y las presas antes de elegir cómo se iluminan.",
-      "next": "Elegir aspecto de las presas",
       "unsupported": "Ahora solo está disponible la foto. Aún puedes terminar tu muro."
     }
   },

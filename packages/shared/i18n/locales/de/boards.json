@@ -996,15 +996,7 @@
     "screenTitle": "Spraywand hinzufügen",
     "stepCounter": "Schritt {{current}} von {{total}}",
     "back": "Zurück",
-    "meta": {
-      "title": "Was ist das für eine Wand?",
-      "body": "Gib ihr einen Namen, sag wie steil sie ist, und wähle, wer sie sehen darf.",
-      "namePlaceholder": "Garagenwand",
-      "angle": "Winkel",
-      "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
-      "next": "Weiter",
-      "anglePreview": "Wand mit {{angle}} Grad"
-    },
+    "next": "Weiter",
     "photo": {
       "title": "Fotografiere die Wand",
       "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
@@ -1014,7 +1006,6 @@
       "camera": "Foto aufnehmen",
       "pickAnother": "Anderes Foto wählen",
       "adjust": "Zuschneiden oder drehen",
-      "next": "Weiter",
       "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
       "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes.",
       "tip": "Geh ein Stück zurück, stell dich frontal zur Wand und hol alle 4 Ecken ins Bild."
@@ -1048,8 +1039,6 @@
       "cornerTopRight": "Ecke oben rechts",
       "cornerBottomRight": "Ecke unten rechts",
       "cornerBottomLeft": "Ecke unten links",
-      "next": "Weiter",
-      "skip": "Überspringen",
       "clear": "Ecken neu setzen",
       "quality": {
         "good": "Schön frontal. Die Wand lässt sich sauber entzerren.",
@@ -1079,7 +1068,6 @@
       "resumeHint": "Du kannst später weitermachen."
     },
     "review": {
-      "next": "Look wählen",
       "nothingFound": "Keine Griffe gefunden. Tippe auf die Wand, um sie hinzuzufügen.",
       "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Wand, um Griffe hinzuzufügen.",
       "manualOnly": "Tippe auf die Wand, um deine Griffe hinzuzufügen.",
@@ -1093,9 +1081,22 @@
       "saving": "Dein Look wird gespeichert…",
       "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
       "publishWithout": "Trotzdem veröffentlichen",
+      "continueWithout": "Trotzdem weiter",
       "dimTitle": "Rest der Wand abdunkeln",
       "dimOff": "Aus",
       "previewPhoto": "Die Griffbeleuchtung siehst du auf deinem Originalfoto. Beim Veröffentlichen wird {{background}} verwendet."
+    },
+    "details": {
+      "title": "Gib deiner Wand einen Namen",
+      "namePlaceholder": "Meine Spraywand",
+      "angle": "Winkel",
+      "angleValue": "{{angle}}°",
+      "angleHint": "Nach dem Veröffentlichen fest.",
+      "anglePreview": "Wand mit {{angle}} Grad",
+      "more": "Mehr",
+      "save": "Speichern",
+      "saving": "Deine Wand wird gespeichert…",
+      "saveFailed": "Die Angaben zur Wand konnten nicht gespeichert werden. Versuch es noch mal."
     },
     "publish": {
       "title": "Ab zu deinen Boards",
@@ -1139,7 +1140,6 @@
     "background": {
       "title": "Was soll die Wand zeigen?",
       "body": "Wechsle mit dem Regler zwischen Foto, Wand und Griffen, bevor du ihre Beleuchtung auswählst.",
-      "next": "Griffoptik wählen",
       "unsupported": "Aktuell ist nur das Foto verfügbar. Du kannst deine Wand trotzdem fertigstellen."
     }
   },

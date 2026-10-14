@@ -144,4 +144,28 @@ describe('wallCreatedEventProperties', () => {
     });
     expect(kept.isPublic).toBe(false);
   });
+
+  // Every run but a reset now answers the details step, a resumed one too, so
+  // `meta` alone no longer says which sitting finished the wall.
+  it('takes `resumed` as said when the run knows it', () => {
+    const picked = wallCreatedEventProperties({
+      layoutId: 7,
+      board: row(),
+      meta: meta(),
+      pendingVisibility: null,
+      isReset: false,
+      resumed: true,
+    });
+    expect(picked.resumed).toBe(true);
+    expect(picked.hasLocationName).toBe(true);
+    const fresh = wallCreatedEventProperties({
+      layoutId: 7,
+      board: row(),
+      meta: meta(),
+      pendingVisibility: null,
+      isReset: false,
+      resumed: false,
+    });
+    expect(fresh.resumed).toBe(false);
+  });
 });

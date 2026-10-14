@@ -1,12 +1,12 @@
 // The add-a-wall stepper, as a pure reducer (epic #5346, SW-09).
 //
-// Eight steps, four of which can fail, three of which talk to a server, and one
+// Ten steps, five of which can fail, four of which talk to a server, and one
 // of which is a whole other screen. Written as a reducer rather than a pile of
 // `useState` for the reason every step in the flow shares: **going back must not
 // lose anything.** A climber who reaches the anchors step, changes their mind
 // about the photo, backs up and picks a different one has to arrive at a state
 // where the FIRST photo's anchors are gone (they described a different picture)
-// but the wall's name, angle and visibility are untouched. That is a transition
+// but the wall row and its draft are untouched. That is a transition
 // table, and a transition table is a thing worth testing on its own.
 //
 // What this file deliberately does NOT do is any I/O. Every server call, the
@@ -22,6 +22,13 @@ import type { EditableWallPhoto } from '../../lib/spray/photo-edit';
 /**
  * Where the climber is.
  *
+ * The flow opens on `photo`: the photo is the interesting part, and the name,
+ * angle and visibility come last (`details`), prefilled, so a climber can go from
+ * photo to published wall without typing anything. `resuming` is a full-screen
+ * wait used only by a reset and by a targeted open, which cannot show anything
+ * until the server has answered; a plain run checks for an unfinished wall
+ * BEHIND the photo step (`resumeCheck`).
+ *
  * `upload` covers everything between "the photo is chosen" and "the draft
  * version exists" — the wall row, the multipart POST and `createSprayWallVersion`
  * — because none of the three is separately actionable: they retry together and
@@ -32,7 +39,6 @@ import type { EditableWallPhoto } from '../../lib/spray/photo-edit';
  */
 export type AddWallStep =
   | 'resuming'
-  | 'meta'
   | 'photo'
   | 'adjust'
   | 'anchors'
@@ -41,6 +47,7 @@ export type AddWallStep =
   | 'review'
   | 'background'
   | 'look'
+  | 'details'
   | 'publish'
   | 'done';
 
@@ -81,6 +88,20 @@ export type DetectionOutcome = 'idle' | 'running' | 'done' | 'unavailable' | 'fa
 
 export type AddWallState = {
   step: AddWallStep;
+  /**
+   * Whether the look for an unfinished wall to pick up has answered.
+   *
+   * `pending` from the start of a plain run, while the photo step shows: the
+   * question is asked behind it, and the photo step's Next waits for the answer,
+   * because going on would create a second wall beside the one the climber may
+   * want back. Any resume answer settles it.
+   */
+  resumeCheck: 'pending' | 'settled';
+  /**
+   * A reset run: the clone's name, angle and visibility came from the wall it
+   * replaces, so the look goes straight on to the publish.
+   */
+  skipsDetails: boolean;
   photo: PickedWallPhoto | null;
   /** The wall's four corners in `photo`'s pixels, TL/TR/BR/BL. Null = use the photo frame. */
   anchors: Quad | null;
@@ -112,6 +133,11 @@ export type AddWallState = {
     error: string | null;
     /** How many times the upload has been attempted for this photo. */
     attempts: number;
+    /**
+     * The failure is one no retry can fix (a cap refusal): the server will say
+     * the same thing again, so the step offers no "Try again".
+     */
+    final: boolean;
   };
   detection: {
     outcome: DetectionOutcome;
@@ -122,6 +148,14 @@ export type AddWallState = {
   };
   publish: {
     running: boolean;
+    error: string | null;
+  };
+  /**
+   * The details step's save (`updateSprayWall`). Busy like a publish: its
+   * success moves the flow on to publish, so nothing may leave under it.
+   */
+  details: {
+    saving: boolean;
     error: string | null;
   };
   /**
@@ -147,7 +181,6 @@ export type AddWallAction =
   | { type: 'RESUME_DECLINED' }
   | { type: 'RESUMED_AT_PHOTO'; wall: CreatedWall }
   | { type: 'RESUMED_AT_REVIEW'; draft: CreatedWallDraft; savedHoldCount?: number }
-  | { type: 'META_DONE' }
   | { type: 'PHOTO_PICKED'; photo: PickedWallPhoto }
   | { type: 'PHOTO_CONFIRMED' }
   /** "Crop or rotate" on the photo step. */
@@ -161,7 +194,8 @@ export type AddWallAction =
   | { type: 'ANCHORS_DONE' }
   | { type: 'UPLOAD_STARTED' }
   | { type: 'UPLOAD_PROGRESS'; progress: number | null }
-  | { type: 'UPLOAD_FAILED'; message: string }
+  /** `final`: a refusal no retry can fix (a cap), so no "Try again" is offered. */
+  | { type: 'UPLOAD_FAILED'; message: string; final?: boolean }
   | { type: 'WALL_CREATED'; wall: CreatedWall }
   | { type: 'DRAFT_CREATED'; draft: CreatedWallDraft }
   | { type: 'DETECTION_STARTED' }
@@ -174,8 +208,12 @@ export type AddWallAction =
   | { type: 'BACKGROUND_CONFIRMED' }
   | { type: 'LOOK_SAVE_STARTED' }
   | { type: 'LOOK_SAVE_FAILED' }
-  /** The wall's look is stored on the server; publishing is all that is left. */
+  /** The wall's look is stored on the server; the details (or, on a reset, the publish) are next. */
   | { type: 'LOOK_CONFIRMED' }
+  | { type: 'DETAILS_SAVE_STARTED' }
+  | { type: 'DETAILS_SAVE_FAILED'; message: string }
+  /** The name, angle, gym and visibility are on the wall (or nothing changed); publishing is all that is left. */
+  | { type: 'DETAILS_SAVED' }
   | { type: 'PUBLISH_STARTED' }
   | { type: 'PUBLISH_FAILED'; message: string }
   | { type: 'PUBLISHED' }
@@ -183,18 +221,21 @@ export type AddWallAction =
 
 const NO_CANDIDATES: readonly SprayHoldCandidate[] = [];
 
-export function initialAddWallState(): AddWallState {
+export function initialAddWallState(options?: { skipsDetails?: boolean }): AddWallState {
   return {
-    step: 'resuming',
+    step: 'photo',
+    resumeCheck: 'pending',
+    skipsDetails: options?.skipsDetails ?? false,
     photo: null,
     anchors: null,
     anchorRejection: null,
     wall: null,
     draft: null,
     published: false,
-    upload: { running: false, progress: null, error: null, attempts: 0 },
+    upload: { running: false, progress: null, error: null, attempts: 0, final: false },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
+    details: { saving: false, error: null },
     lookSaving: false,
     photoProcessing: false,
     savedHoldCount: 0,
@@ -204,44 +245,73 @@ export function initialAddWallState(): AddWallState {
 /**
  * Where `BACK` goes from each step.
  *
+ * `photo` is absent because it is the first step: Back there closes the flow.
+ *
  * `detect`, `review`, `background` and `publish` are absent on purpose. By then the
  * wall and its draft version exist on the server and the photo has been adopted;
  * stepping back into `photo` would offer to upload a second photo onto a draft
  * that already has one, which `runUpload` declines outright — so the step would
  * sit there doing nothing at all, which is worse than having no way back. `background`
  * cannot step back into `review` either: the holds are already committed, and the
- * editor would reopen on them with nothing to ask. `look` returns to `background`, preserving local choices. The way out of those four is
- * leaving the flow, which keeps the draft for later.
+ * editor would reopen on them with nothing to ask. `look` returns to `background`,
+ * and `details` to `look`, the screen handing the look step back the choice it
+ * confirmed. The way out of the other four is leaving the flow, which keeps the
+ * draft for later.
  *
  * `upload` keeps its way back because a draft cannot exist there: the action that
  * creates one is also the action that leaves the step.
  */
 const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
-  photo: 'meta',
   // Back on the crop step is Cancel: the edit is dropped, the photo is as it was.
   adjust: 'photo',
   anchors: 'photo',
   upload: 'photo',
   look: 'background',
+  details: 'look',
 };
 
 /**
  * Whether the footer's Back LEAVES the flow rather than stepping back inside it.
  *
- * `meta` is the first step, so there is nothing behind it. `review`, `background` and
- * `publish` have no step behind them either — the draft is on the server by
- * then (see `BACK_TARGET`). The hold-look step returns to the background choice;
- * the two choices remain local until the final save. Leaving keeps the draft.
+ * `photo` is the first step, so there is nothing behind it (nor behind the
+ * `resuming` wait). `review`, `background` and `publish` have no step behind
+ * them either — the draft is on the server by then (see `BACK_TARGET`). The
+ * hold-look step returns to the background choice, and the details step to the
+ * hold look. Leaving keeps the draft.
  */
 export function backLeavesFlow(state: AddWallState): boolean {
-  if (state.step === 'look') return false;
+  if (state.step === 'look' || state.step === 'details') return false;
   return (
     state.draft != null ||
-    state.step === 'meta' ||
+    state.step === 'resuming' ||
+    state.step === 'photo' ||
     state.step === 'review' ||
     state.step === 'background' ||
     state.step === 'publish'
   );
+}
+
+/**
+ * Whether Back steps back INSIDE the flow from here: the header draws a chevron
+ * rather than the X, and Android Back is taken by the flow rather than the stack.
+ */
+export function backStaysInFlow(state: AddWallState): boolean {
+  return !backLeavesFlow(state) && BACK_TARGET[state.step] != null;
+}
+
+const COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'background', 'look', 'details'];
+const RESET_COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'background', 'look'];
+
+/**
+ * The steps that get a "Step N of M" counter: the ones a climber drives.
+ *
+ * Publish is not one. It runs by itself the moment the last counted step saves,
+ * so counting it would promise a step nobody stops on. A reset never shows the
+ * details step (the clone's settings came from the wall it replaces), so it
+ * counts one fewer.
+ */
+export function countedSteps(skipsDetails: boolean): readonly AddWallStep[] {
+  return skipsDetails ? RESET_COUNTED_STEPS : COUNTED_STEPS;
 }
 
 /**
@@ -290,7 +360,9 @@ export function shouldConfirmLeave(state: AddWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
-  return state.upload.running || state.publish.running || state.lookSaving || state.photoProcessing;
+  return (
+    state.upload.running || state.publish.running || state.lookSaving || state.details.saving || state.photoProcessing
+  );
 }
 
 /** What the hold editor knows that the machine does not, read at the moment of leaving. */
@@ -329,6 +401,8 @@ export function leaveDecision(state: AddWallState, editor: EditorLeaveState): Le
   if (state.step === 'review' && editor.handingOver) return 'block';
   // The look step's save is the same kind of moment: its success publishes.
   if (state.step === 'look' && state.lookSaving) return 'block';
+  // And the details step's: its success publishes too.
+  if (state.step === 'details' && state.details.saving) return 'block';
   if (state.step === 'review' && editor.dirty && !isBusy(state)) return 'confirmDiscard';
   return shouldConfirmLeave(state) ? 'confirm' : 'leave';
 }
@@ -362,18 +436,28 @@ export function leaveStillApplies(askedAt: LeaveCheckpoint, state: AddWallState,
 export function addWallReducer(state: AddWallState, action: AddWallAction): AddWallState {
   switch (action.type) {
     case 'RESUME_CHECK_STARTED':
-      return { ...state, step: 'resuming' };
+      // The full-screen wait: a reset building its clone, or a targeted open
+      // reading the wall it names. A plain run never shows it.
+      return { ...state, step: 'resuming', resumeCheck: 'pending' };
 
     case 'RESUME_DECLINED':
       // Either there was nothing to resume, or the climber chose to start over
       // and the old wall has been cleaned up. Either way this is a fresh wall.
-      return { ...state, step: 'meta', wall: null, draft: null };
+      // A photo already picked behind the check stays: it is for the new wall,
+      // and so is a crop the climber is in the middle of.
+      return {
+        ...state,
+        step: state.step === 'resuming' ? 'photo' : state.step,
+        resumeCheck: 'settled',
+        wall: null,
+        draft: null,
+      };
 
     case 'RESUMED_AT_PHOTO':
-      // The wall exists but no photo was ever adopted onto it. Its name, angle
-      // and visibility are already stored on the row, so the meta step has
-      // nothing left to ask and the flow rejoins at the photo.
-      return { ...state, step: 'photo', wall: action.wall, draft: null };
+      // The wall exists but no photo was ever adopted onto it, so the flow
+      // rejoins at the photo. A photo picked while the check ran is kept: the
+      // wall has none of its own.
+      return { ...state, step: 'photo', resumeCheck: 'settled', wall: action.wall, draft: null };
 
     case 'RESUMED_AT_REVIEW': {
       // A draft version with a photo: the holds are the only thing left. No
@@ -382,9 +466,18 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // every one of them twice. The editor loads the saved holds ON, so its
       // Publish goes straight through without a pointless edit.
       const resumedHolds = Math.max(0, action.savedHoldCount ?? 0);
+      // A photo picked on this phone while the resume check ran is not the
+      // draft's photo: drawn under the editor while it loads, it would show
+      // the wrong wall. The upload's own retry (`planUploadRetry`) adopts a
+      // draft made from THIS photo, so from `upload` it stays.
+      const keepsLocalPhoto = state.step === 'upload';
       return {
         ...state,
         step: 'review',
+        resumeCheck: 'settled',
+        photo: keepsLocalPhoto ? state.photo : null,
+        anchors: keepsLocalPhoto ? state.anchors : null,
+        anchorRejection: keepsLocalPhoto ? state.anchorRejection : null,
         wall: {
           wallUuid: action.draft.wallUuid,
           layoutId: action.draft.layoutId,
@@ -396,9 +489,6 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       };
     }
 
-    case 'META_DONE':
-      return { ...state, step: 'photo' };
-
     case 'PHOTO_PICKED':
       // A new photo invalidates the anchors — they were four points on the OTHER
       // picture — and resets the upload, whose attempts counted against a file
@@ -408,11 +498,14 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         photo: action.photo,
         anchors: null,
         anchorRejection: null,
-        upload: { running: false, progress: null, error: null, attempts: 0 },
+        upload: { running: false, progress: null, error: null, attempts: 0, final: false },
       };
 
     case 'PHOTO_CONFIRMED':
-      return state.photo ? { ...state, step: 'anchors' } : state;
+      // Not while the resume check is out: going on would create a second wall
+      // beside the one the climber may be about to be offered back.
+      if (state.step !== 'photo' || !state.photo || state.resumeCheck === 'pending') return state;
+      return { ...state, step: 'anchors' };
 
     case 'ADJUST_OPENED':
       // Only from the photo step, and only with a photo to adjust. Never once a
@@ -440,7 +533,7 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         photoProcessing: false,
         anchors: null,
         anchorRejection: null,
-        upload: { running: false, progress: null, error: null, attempts: 0 },
+        upload: { running: false, progress: null, error: null, attempts: 0, final: false },
       };
 
     case 'PHOTO_PROCESSING_FAILED':
@@ -473,7 +566,7 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       return {
         ...state,
         step: 'upload',
-        upload: { running: true, progress: null, error: null, attempts: state.upload.attempts + 1 },
+        upload: { running: true, progress: null, error: null, attempts: state.upload.attempts + 1, final: false },
       };
 
     case 'UPLOAD_PROGRESS':
@@ -483,7 +576,11 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
     case 'UPLOAD_FAILED':
       // Stays on `upload` with the photo and the wall intact, so "Try again"
       // retries the upload alone rather than restarting the flow.
-      return { ...state, step: 'upload', upload: { ...state.upload, running: false, error: action.message } };
+      return {
+        ...state,
+        step: 'upload',
+        upload: { ...state.upload, running: false, error: action.message, final: action.final ?? false },
+      };
 
     case 'WALL_CREATED':
       return { ...state, wall: action.wall };
@@ -555,12 +652,38 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
 
     case 'LOOK_CONFIRMED':
       // The look is already stored on the wall by the time this lands (the
-      // screen writes it, then confirms), so landing on `publish` starts the
-      // publish exactly as the editor's commit used to (the screen runs it from
-      // an effect). Refused off the look step: a stray confirm must not skip
-      // the editor's own guard on an empty wall.
+      // screen writes it, then confirms). Next is the details step, prefilled;
+      // a reset has no details to ask about, so it lands on `publish`, which
+      // starts the publish (the screen runs it from an effect). Refused off the
+      // look step: a stray confirm must not skip the editor's own guard on an
+      // empty wall.
       if (state.step !== 'look') return state;
+      if (!state.skipsDetails) {
+        return { ...state, step: 'details', lookSaving: false, details: { saving: false, error: null } };
+      }
       return { ...state, step: 'publish', lookSaving: false, publish: { running: false, error: null } };
+
+    case 'DETAILS_SAVE_STARTED':
+      if (state.step !== 'details' || state.details.saving) return state;
+      return { ...state, details: { saving: true, error: null } };
+
+    case 'DETAILS_SAVE_FAILED':
+      // Stays on the details step with every field as the climber left it, so
+      // Save sends again exactly what did not land.
+      if (state.step !== 'details') return state;
+      return { ...state, details: { saving: false, error: action.message } };
+
+    case 'DETAILS_SAVED':
+      // Saved, or nothing changed: publishing is all that is left, and landing
+      // on `publish` starts it. Refused off the details step for the reason
+      // `LOOK_CONFIRMED` is refused off the look step.
+      if (state.step !== 'details') return state;
+      return {
+        ...state,
+        step: 'publish',
+        details: { saving: false, error: null },
+        publish: { running: false, error: null },
+      };
 
     case 'LOOK_SAVE_STARTED':
       if (state.step !== 'look') return state;
@@ -570,9 +693,10 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       return state.lookSaving ? { ...state, lookSaving: false } : state;
 
     case 'PUBLISH_STARTED':
-      // Only from the publish step: the look step is the only way in, and a
-      // publish started anywhere else would skip it (and the editor's guard on
-      // an empty wall). The screen's two callers both run on this step.
+      // Only from the publish step: the details step (a reset's look step) is
+      // the only way in, and a publish started anywhere else would skip it (and
+      // the editor's guard on an empty wall). The screen's two callers both run
+      // on this step.
       if (state.step !== 'publish') return state;
       return { ...state, publish: { running: true, error: null } };
 
@@ -596,7 +720,10 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       const target = BACK_TARGET[state.step];
       if (!target) return state;
       // Backing out of `anchors` keeps them: the climber may be checking the
-      // photo, not replacing it. Picking a new photo is what clears them.
+      // photo, not replacing it. Picking a new photo is what clears them. Out
+      // of `details`, the fields stay as they were typed and only a stale
+      // save error goes.
+      if (state.step === 'details') return { ...state, step: target, details: { saving: false, error: null } };
       return { ...state, step: target };
     }
 

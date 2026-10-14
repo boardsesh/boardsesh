@@ -6,7 +6,7 @@ import { HeaderTrailingButton } from '../HeaderActionButtons';
 import { spacing } from '../../theme/tokens';
 
 type SprayEditorHeaderActionsProps = {
-  /** The primary button's label: "Publish holds", or "Pick a look" in the add-a-wall flow. */
+  /** The primary button's label: "Publish holds", or "Next" in the add-a-wall flow. */
   primaryLabel: string;
   /** A commit is in flight: a spinner stands in for the label. */
   primaryLoading: boolean;
@@ -50,7 +50,7 @@ export const SprayEditorHeaderActions = React.memo(function SprayEditorHeaderAct
           accessibilityLabel={t('sprayEditor.hints.replay')}
         />
       ) : null}
-      {/* Forward text, not the ✓: "Pick a look" moves on, and the label says which. */}
+      {/* Forward text, not the ✓: "Next" moves on, and the label says which. */}
       <HeaderTrailingButton
         testID="spray-editor-primary"
         kind="forward"

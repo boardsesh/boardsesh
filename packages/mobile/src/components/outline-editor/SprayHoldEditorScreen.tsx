@@ -291,7 +291,7 @@ export type SprayHoldEditorScreenProps = {
    */
   revealOnMount?: boolean;
   /**
-   * The one button that saves the holds and moves on — "Pick a look" on the
+   * The one button that saves the holds and moves on — "Next" on the
    * add-a-wall flow, "Publish holds" on a live wall. On a phone the editor puts
    * it in its route's header (`headerRight`, next to "?"); on the iPad layout it
    * stays in the cluster at the bottom.
