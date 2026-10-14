@@ -2354,6 +2354,11 @@ export function renderCppMaestroFlow(
         `- repeat:\n    times: 5\n    while:\n      notVisible:\n        id: ${JSON.stringify(rowSelector.id)}\n        text: ${JSON.stringify(rowSelector.text)}\n    commands:\n      - swipe:\n          from:\n            id: logbook-screen\n          direction: UP\n          duration: 700\n      - waitForAnimationToEnd:\n          timeout: 30000`,
         `- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(rowSelector.id)}\n      text: ${JSON.stringify(rowSelector.text)}\n    timeout: 90000`,
       );
+    } else if (scene.command === 'status' && target === 'spray') {
+      // Projects renders ClimbListRow as one accessible name/author/grade row.
+      // Match that real row; Maestro cannot find a standalone title inside it.
+      const rowSelector = { id: '^climb-row$', text: cppClimbRowReadinessSelector(scene.ready, locale) };
+      commands.push(`- extendedWaitUntil:\n    visible: ${JSON.stringify(rowSelector)}\n    timeout: 90000`);
     } else if (scene.command === 'status' && target !== 'spray') {
       commands.push(
         '- extendedWaitUntil:\n    visible:\n      id: climbs-screen\n    timeout: 90000',

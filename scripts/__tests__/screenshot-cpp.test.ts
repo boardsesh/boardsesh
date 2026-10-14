@@ -2004,6 +2004,43 @@ describe('custom product page captures', () => {
         ).toThrow('distinct primary accessory');
     }
   });
+  it('requires the actual composite Spray Projects row before its status capture', () => {
+    const { coverage } = selectedScenario('spray');
+    coverage.scenes.status.readyText = 'Black Pearl';
+    // Both failed native attempts exposed this grouped iOS label, not a
+    // standalone title. Maestro matches the complete accessibility string.
+    const nativeRow = { id: 'climb-row', text: 'Black Pearl, Test User, close, V4' };
+    for (const device of IOS_SCREENSHOT_DEVICES)
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const)
+        for (const recording of [false, true]) {
+          const documents = parseAllDocuments(renderCppMaestroFlow('spray', device, coverage, locale, recording));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as {
+            evalScript?: string;
+            takeScreenshot?: string;
+            extendedWaitUntil?: { visible?: { id?: string; text?: string } | string; timeout?: number };
+          }[];
+          const statusStart = steps.findIndex((step) => step.evalScript?.includes('/set?scene=status'));
+          const statusCapture = steps.findIndex((step) => step.takeScreenshot === '07-playlist');
+          expect(statusStart).toBeGreaterThan(-1);
+          expect(statusCapture).toBeGreaterThan(statusStart);
+          const rowGates = steps.slice(statusStart, statusCapture).flatMap((step) => {
+            const wait = step.extendedWaitUntil;
+            return wait && typeof wait.visible === 'object' && wait.visible.id === '^climb-row$' ? [wait] : [];
+          });
+          expect(rowGates).toHaveLength(1);
+          expect(rowGates[0].timeout).toBe(90000);
+          const selector = rowGates[0].visible as { id: string; text: string };
+          const matches = (row: { id: string; text: string }) =>
+            new RegExp(selector.id).test(row.id) && new RegExp(selector.text).test(row.text);
+          expect(matches(nativeRow)).toBe(true);
+          expect(matches({ ...nativeRow, text: 'Black Pearl, Liz, close, V4' })).toBe(true);
+          expect(matches({ ...nativeRow, id: 'different-climb-row' })).toBe(false);
+          for (const text of ['Black Pearl', 'Black Pearl Extended, Test User, close, V4', 'Other Black Pearl, V4'])
+            expect(matches({ ...nativeRow, text })).toBe(false);
+          expect(steps.filter((step) => step.takeScreenshot)).toHaveLength(13);
+        }
+  });
   it('shows genuine empty spray wall canvases only for explicitly verified zero-climb walls', () => {
     const { page, boards, coverage, fixturesDir } = scenario('spray');
     const cherry = page.heroBoards[1];

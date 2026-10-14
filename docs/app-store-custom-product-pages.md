@@ -190,6 +190,14 @@ Generated flows retain a separate Maestro command document. All 64 combinations
 of target, app language, and device were validated with the pinned Maestro 2.6.1
 parser before the native capture rerun.
 
+Spray's Status scene opens Projects, whose native climb rows group the name,
+author, status and grade into one accessibility label. Its required gate matches
+the exact `climb-row` ID and the selected climb's escaped name within that row,
+using the same localized composite-row selector as other native climb lists.
+The acknowledged route, actual board identity, accessory-climb checks and
+90-second content deadline remain required. A visible row does not replace the
+recorded Projects response or subsequent full replay and image review.
+
 CPP shard retries retain their failure evidence in separate
 `capture-debug/attempt-1/` and `capture-debug/attempt-2/` directories. Metro,
 backend, native-process diagnostics and partial captures belong to that attempt;
