@@ -117,7 +117,9 @@ module BoardseshStoreAudit
         app = review_link(submission, "app", "apps")
         raise Error, "Apple review submission app or platform mismatch" unless app["id"] == @app_id && attributes["platform"] == "IOS"
         context = review_link(submission, "appStoreVersionForReview", "appStoreVersions", nullable: true)
-        items = @client.list("/v1/reviewSubmissions/#{submission_id}/items?include=#{REVIEW_ITEM_TYPES.keys.join(',')}&limit=200").map do |item|
+        # Relationship linkage already identifies each item. Expanding every
+        # resource type is unnecessary and Apple rejects that include request.
+        items = @client.list("/v1/reviewSubmissions/#{submission_id}/items?limit=200").map do |item|
           item_id = review_id(item, "reviewSubmissionItems")
           raise Error, "Duplicate Apple review item identity" if item_ids.include?(item_id)
           item_ids << item_id

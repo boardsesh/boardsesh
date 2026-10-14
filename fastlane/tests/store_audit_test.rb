@@ -160,6 +160,19 @@ class StoreAuditTest < Minitest::Test
     assert client.requests.all? { |method, _path| method == "GET" }
   end
 
+  def test_review_item_inventory_uses_linkage_without_expanding_resources
+    client = FakeApple.new
+    client.review_submissions = [review_submission("cpp-review", "IN_REVIEW")]
+    client.review_items = { "cpp-review" => [review_item("cpp-item", "READY_FOR_REVIEW", "appCustomProductPageVersion", "cpp-version")] }
+
+    report = apple(client).run
+
+    item_requests = client.requests.select { |_method, path| path.start_with?("/v1/reviewSubmissions/") }
+    assert_equal [["GET", "/v1/reviewSubmissions/cpp-review/items?limit=200"]], item_requests
+    assert_equal "cpp-version", report.dig("reviewSubmissions", 0, "items", 0, "resources", 0, "id")
+    refute report.dig("reviewSubmissions", 0, "membershipAmbiguous")
+  end
+
   def test_review_inventory_preserves_other_item_types_and_unknown_states
     client = FakeApple.new
     client.review_submissions = [review_submission("items-review", "FUTURE_STATE", context: nil)]
