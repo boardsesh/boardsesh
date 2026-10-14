@@ -153,11 +153,15 @@ Issue #6438 uses fresh iOS footage for every app locale (`en-US`, `es`, `fr`,
 `spray`). Spanish footage serves both `es-ES` and `es-MX`; no English footage is
 substituted beneath translated captions. The search export is 1920 × 1280,
 30 fps, H.264 High at level 5.0 or higher, with no audio. Default runs about
-20 seconds; CPP cuts run about 15 seconds. Frame zero carries the first caption,
-and the final 15 frames dissolve back to it.
+20 seconds; CPP cuts run about 15 seconds. Frame zero carries the first caption
+fully set. Other scenes reuse the hero's word reveals and upright 2D spring
+motion: phones enter before the scene boundary, then move out at its end.
+Captions are readable by frame 10, and board piles arrive with a short stagger.
+The background stays dark. The final 15 frames use the hero's phone rise and
+word reveal to land exactly on the opening frame.
 Each crew beat fits the complete phone inside the stage's vertical safe area,
 so the real peer-added queue row and avatar remain visible. Its source interval
-still starts before the row arrives. Review that motion in the composed video;
+still starts before the row arrives, after the phone has settled. Review that motion in the composed video;
 valid native anchors alone do not establish that the composition shows them.
 
 ```sh
