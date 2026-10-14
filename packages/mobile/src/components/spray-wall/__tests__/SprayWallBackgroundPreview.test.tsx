@@ -12,7 +12,7 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -131,10 +131,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('span', { 'data-testid': testID }, children),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
-}));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
@@ -146,30 +142,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useAppColorScheme: () => 'dark',
 }));
 
-const sliderState = vi.hoisted(() => ({ lastChange: null as null | ((id: string) => void) }));
-vi.mock('../../LookOptionSlider', () => ({
-  LookOptionSlider: ({
-    options,
-    value,
-    onChange,
-    disabled,
-  }: {
-    options: { id: string; label: string }[];
-    value: string;
-    onChange: (id: string) => void;
-    disabled: boolean;
-  }) => {
-    sliderState.lastChange = onChange;
-    return createElement(
-      'div',
-      { 'data-testid': 'slider', 'data-value': value, 'aria-disabled': disabled },
-      options.map((option) =>
-        createElement('button', { key: option.id, disabled, onClick: () => onChange(option.id) }, option.label),
-      ),
-    );
-  },
-}));
-const { SprayWallBackgroundSlider } = await import('../SprayWallBackgroundSlider');
+const { SprayWallBackgroundPreview } = await import('../SprayWallBackgroundPreview');
 const SOURCE = {
   layoutId: 9,
   versionId: 3,
@@ -184,71 +157,30 @@ const SOURCE = {
   ],
 };
 
-const OPEN = { kind: 'open', soft: false, status: 'none' } as const;
-
 afterEach(() => {
   cleanup();
   photoCache.onDisk = true;
 });
 
-describe('wizard background slider', () => {
-  it('shows one selected background and replaces its preview as the slider moves', () => {
-    const onChange = vi.fn();
-    const { getByTestId, getByText, queryByTestId, rerender, container } = render(
-      <SprayWallBackgroundSlider gate={OPEN} value="wall-crop" onChange={onChange} previewSource={SOURCE} />,
+describe('wizard background preview', () => {
+  it('draws the one selected background, fitted to its row, and swaps it when the choice moves', () => {
+    const { getByTestId, queryByTestId, rerender, container } = render(
+      <SprayWallBackgroundPreview value="wall-crop" previewSource={SOURCE} />,
     );
     expect(getByTestId('flattened').getAttribute('data-uri')).toBe(LOCAL_PHOTO);
     expect(getByTestId('flattened').getAttribute('data-tile')).toBe('150x120');
     expect(queryByTestId('spray-background-tile-visual-photo')).toBeNull();
-    fireEvent.click(getByText('sprayBackground.holdCutouts'));
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('hold-cutouts');
-    rerender(<SprayWallBackgroundSlider gate={OPEN} value="hold-cutouts" onChange={onChange} previewSource={SOURCE} />);
+    rerender(<SprayWallBackgroundPreview value="hold-cutouts" previewSource={SOURCE} />);
     expect(getByTestId('masked-view')).toBeTruthy();
-    expect(getByText('sprayBackground.note.volumes')).toBeTruthy();
     expect(container.querySelectorAll('[data-testid^="spray-background-tile-visual-"]')).toHaveLength(1);
-    rerender(<SprayWallBackgroundSlider gate={OPEN} value="photo" onChange={onChange} previewSource={SOURCE} />);
+    rerender(<SprayWallBackgroundPreview value="photo" previewSource={SOURCE} />);
     expect(container.querySelector('img')?.getAttribute('data-cache-policy')).toBe('memory');
     expect(container.querySelector('img')?.getAttribute('data-size')).toBe('160x120');
     expect(container.innerHTML).not.toContain(SOURCE.photoUrl);
   });
 
-  it.each(['loading', 'unsupported', 'locked'] as const)(
-    'offers photo only for %s, refusing stale generated callbacks',
-    (kind) => {
-      const gate = kind === 'locked' ? { kind, reason: 'no-pins' as const } : { kind };
-      const onChange = vi.fn();
-      const { getByTestId, queryByText } = render(
-        <SprayWallBackgroundSlider gate={gate} value="wall-crop" onChange={onChange} previewSource={SOURCE} />,
-      );
-      expect(getByTestId('slider').getAttribute('data-value')).toBe('photo');
-      expect(queryByText('sprayBackground.wallCrop')).toBeNull();
-      expect(queryByText('sprayBackground.holdCutouts')).toBeNull();
-      sliderState.lastChange?.('wall-crop');
-      sliderState.lastChange?.('hold-cutouts');
-      expect(onChange).not.toHaveBeenCalled();
-      if (kind === 'loading') expect(getByTestId('slider').getAttribute('aria-disabled')).toBe('true');
-    },
-  );
-
-  it('holds selection still while saving, including a delayed slider callback', () => {
-    const onChange = vi.fn();
-    render(<SprayWallBackgroundSlider gate={OPEN} value="photo" onChange={onChange} previewSource={SOURCE} disabled />);
-    sliderState.lastChange?.('hold-cutouts');
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it('shows a readable unavailable fallback without an endless loading spinner', () => {
-    const { getByText, queryByTestId } = render(
-      <SprayWallBackgroundSlider
-        gate={{ kind: 'unsupported' }}
-        value="photo"
-        onChange={vi.fn()}
-        previewSource={null}
-        unavailable
-      />,
-    );
-    expect(getByText('sprayWizard.look.unavailable')).toBeTruthy();
-    expect(getByText('sprayWizard.background.unsupported')).toBeTruthy();
+  it('shows no endless spinner when the draft cannot be drawn', () => {
+    const { queryByTestId } = render(<SprayWallBackgroundPreview value="photo" previewSource={null} unavailable />);
     expect(queryByTestId('spinner')).toBeNull();
   });
 });

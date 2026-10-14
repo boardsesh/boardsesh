@@ -16,10 +16,10 @@
 // the floor at the default size, so it has to be safe: the page is held still
 // for as long as a finger is on a ring, and a drag can never become a scroll.
 //
-// "Start the corners again" sits in a row of its own above the photo, the way
+// "Reset corners" sits in a row of its own above the photo, the way
 // the crop step puts Rotate and Reset there. It is always drawn and only
 // disabled until there are corners to undo, so the photo is never re-fitted at
-// the moment a drag ends. Back, Skip and Next are in the header.
+// the moment a drag ends. Back and Next are in the header.
 //
 // Nothing under the photo changes height either. The hint and the "those
 // corners cross over" sentence that replaces it share one slot, sized for the
@@ -37,8 +37,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { SprayCornerMarker } from './SprayCornerMarker';
+import { StepCounter } from './StepCounter';
 import { MIN_STAGE_HEIGHT, useFittedPhotoStage } from './use-fitted-photo-stage';
 
 export type SprayCornerStepProps = {
@@ -61,7 +61,7 @@ export type SprayCornerStepProps = {
   qualityFrame?: ReferenceSize | null;
   /** True once there are corners to throw away. */
   canClear: boolean;
-  /** "Start the corners again": back to the default rings. */
+  /** "Reset corners": back to the default rings. */
   onClear: () => void;
 };
 
@@ -80,7 +80,7 @@ export function SprayCornerStep({
   onClear,
 }: SprayCornerStepProps) {
   const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
   const bottomInset = useWindowBottomInset();
 
@@ -134,15 +134,13 @@ export function SprayCornerStep({
       bounces={false}
       showsVerticalScrollIndicator={false}
     >
-      {stepCounter ? (
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stepCounter}>
-          {stepCounter}
+      <View style={styles.titleBlock}>
+        {stepCounter ? <StepCounter label={stepCounter} /> : null}
+        <Text variant="title3">{title}</Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {body}
         </Text>
-      ) : null}
-      <Text variant="title3">{title}</Text>
-      <Text variant="subheadline" color={systemColors.secondaryLabel}>
-        {body}
-      </Text>
+      </View>
       <View style={styles.clearRow}>
         <Button
           title={t('sprayWizard.anchors.clear')}
@@ -206,7 +204,7 @@ export function SprayCornerStep({
           {qualityNote ? (
             <Text
               variant="footnote"
-              color={qualityNote === 'good' ? systemColors.secondaryLabel : iosSystemColors.systemOrange}
+              color={qualityNote === 'good' ? systemColors.secondaryLabel : brandColors.warning}
               style={styles.hint}
               accessibilityLiveRegion="polite"
               testID={`spray-corner-quality-${qualityNote}`}
@@ -239,15 +237,15 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing[4],
-    gap: spacing[2],
+    gap: spacing[3],
   },
   clearRow: {
     flexDirection: 'row',
     justifyContent: 'center',
   },
-  stepCounter: {
-    textTransform: 'uppercase',
-    marginBottom: spacing[1],
+  // The counter, the title and the line under it.
+  titleBlock: {
+    gap: spacing[1],
   },
   stage: {
     flex: 1,

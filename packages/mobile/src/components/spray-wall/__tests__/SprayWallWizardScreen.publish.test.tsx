@@ -81,20 +81,32 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
-    createElement('button', { onClick: disabled ? undefined : onPress }, children),
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    testID,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    testID?: string;
+  }) => createElement('button', { 'data-testid': testID, onClick: disabled ? undefined : onPress }, children),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Alert: { alert: mocks.alert },
   BackHandler: { addEventListener: () => ({ remove() {} }) },
-  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     hairlineWidth: 1,
+    absoluteFill: {},
     create: (styles: unknown) => styles,
   },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  Switch: () => null,
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
@@ -156,11 +168,15 @@ vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
+  cardCorners: { borderRadius: 12 },
 }));
+vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    variant: 'liquidGlass',
+    brandColors: { primary: '#6D28D9', warning: '#B45309' },
     systemColors: { secondaryLabel: '#888', tertiaryLabel: '#999', separator: '#222', tertiaryBackground: '#333' },
   }),
 }));
@@ -213,6 +229,8 @@ vi.mock('../../board-discovery/use-spray-wall-builder', () => ({
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
+vi.mock('../SprayWallNameSheet', () => ({ SprayWallNameSheet: () => null }));
+vi.mock('../SprayScanPhoto', () => ({ SprayScanPhoto: () => null }));
 vi.mock('../SprayPhotoAdjustStep', () => ({ SprayPhotoAdjustStep: () => null }));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
@@ -325,8 +343,9 @@ async function reachPublish() {
   expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 6');
   expect(mocks.lookProps.current?.forwardLabel).toBe('sprayWizard.next');
   act(() => mocks.lookProps.current?.onConfirmed(LOOK_CHOICE));
-  // The details step, last of the six; the publish waits for its Save.
-  expect(screen.getByText('Step 6 of 6')).toBeTruthy();
+  // The details step, last of the six (a form named in the bar, no counter);
+  // the publish waits for its Save.
+  expect(screen.getByTestId('spray-details-step')).toBeTruthy();
   expect(mocks.publishVersion).not.toHaveBeenCalled();
   pressHeaderTrailing('sprayWizard.details.save');
   await flush();
@@ -479,7 +498,7 @@ describe('SprayWallWizardScreen — publishing a reset', () => {
     expect(mocks.lookProps.current?.forwardLabel).toBe('sprayWizard.details.save');
     act(() => mocks.lookProps.current?.onConfirmed(LOOK_CHOICE));
     await flush();
-    expect(screen.queryByText('sprayWizard.details.title')).toBeNull();
+    expect(screen.queryByTestId('spray-details-step')).toBeNull();
 
     expect(mocks.publishVersion).toHaveBeenCalledWith('clone-v1');
     expect(mocks.settleArchived).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'old-wall', 'clone-1');

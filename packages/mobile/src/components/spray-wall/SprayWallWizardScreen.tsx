@@ -1,5 +1,3 @@
-import { useHeaderHeight } from 'expo-router/react-navigation';
-import { PressableSurface } from '../PressableSurface';
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
 // Photograph it → optionally mark its corners → upload → let the server
@@ -34,7 +32,6 @@ import {
   AccessibilityInfo,
   Alert,
   BackHandler,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -51,7 +48,7 @@ import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schem
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
+import { PressableSurface } from '../PressableSurface';
 import { SprayCornerStep } from './SprayCornerStep';
 import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
 import {
@@ -60,20 +57,11 @@ import {
   type SprayEditorNotice,
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
-import {
-  BoardGymField,
-  BuilderTextInput,
-  SectionLabel,
-  SprayWallVisibilityField,
-} from '../board-discovery/BoardMetaFields';
-import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
+import { useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { formatDefaultBoardName } from '../board-discovery/board-builder-labels';
-import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAuth } from '../../providers/auth-provider';
-import { AngleSlider } from '../play-drawer/AngleSlider';
-import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
 import {
   ownHeaderRight,
@@ -83,11 +71,12 @@ import {
 } from '../../hooks/use-header-actions';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useToast } from '../../providers/toast-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { cardCorners, spacing } from '../../theme/tokens';
+import { withAlpha } from '../../theme/colors';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { useConnectivityField } from '../../lib/connectivity/use-connectivity';
 import { getConnectivitySnapshot, type ConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
 import { classifySprayUploadFailure, sprayUploadNotice, type SprayUploadNotice } from './spray-upload-notice';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { addErrorBreadcrumb, reportError } from '../../lib/error-reporting';
@@ -100,7 +89,7 @@ import {
   sprayWallLifecycleRefusal,
 } from '../../lib/graphql/extract-error-message';
 import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
-import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
+import { sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import { DONE_EXIT_OFFER_MS, PostPublishStalledError, runPostPublishBind } from '../../lib/spray/post-publish-bind';
@@ -124,6 +113,8 @@ import {
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties, type WallCreatedMeta } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
+import { SprayScanPhoto } from './SprayScanPhoto';
+import { SprayWallDetailsStep } from './SprayWallDetailsStep';
 import { SprayWallLookStep, type SprayLookChoice } from './SprayWallLookStep';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { exitSprayWizard } from './exit-spray-wizard';
@@ -161,11 +152,11 @@ import {
 } from './resume-draft';
 import { SPRAY_FORM_MAX_WIDTH, isIpadSprayFlow } from '../../lib/spray/spray-flow-presentation';
 
-/** The angle list as `AngleSlider` takes it. Built once: it never changes. */
-const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
-
-/** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
+/** Widest the photo tile is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
+
+/** The picked photo never takes more than this share of the window's height. */
+const MAX_PREVIEW_HEIGHT_SHARE = 0.55;
 
 /**
  * The bind's navigation, taken away from `useActivateBoard`: the wizard leaves
@@ -227,11 +218,10 @@ export function SprayWallWizardScreen({
   wallUuid,
   versionId,
 }: SprayWallWizardScreenProps) {
-  const headerHeight = useHeaderHeight();
   const isReset = resetOfWallUuid != null;
   const countedSteps = countedStepsFor(isReset);
   const { t, i18n } = useTranslation('boards');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors, variant } = useTheme();
   const { showToast } = useToast();
 
   // The photo is the step that decides how many holds the finder misses, so
@@ -273,7 +263,7 @@ export function SprayWallWizardScreen({
   const router = useRouter();
   const navigation = useNavigation();
   const queryClient = useQueryClient();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
   // cover however its window is later resized.
   const formColumnCapped = isIpadSprayFlow();
@@ -304,10 +294,6 @@ export function SprayWallWizardScreen({
   const connectivityReason = useConnectivityField(selectConnectivityReason);
   const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
   const [pickerBusy, setPickerBusy] = useState(false);
-  // Hosted here rather than inside `BoardIdentityFields` so the sheet is a
-  // SIBLING of the ScrollView, exactly as it is in `BoardForm` — a sheet mounted
-  // inside a scrolling parent inherits its clipping and its pan.
-  const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
   const createWall = useCreateSprayWall();
   const createVersion = useCreateSprayWallVersion();
@@ -433,7 +419,9 @@ export function SprayWallWizardScreen({
   const bindControllerRef = useRef<AbortController | null>(null);
   useEffect(() => () => bindControllerRef.current?.abort(), []);
 
-  const previewWidth = Math.min(MAX_PREVIEW_WIDTH, windowWidth - spacing[4] * 2);
+  // The photo tile: as wide as the column allows up to 520 pt, 4:3 while empty.
+  const columnWidth = formColumnCapped ? Math.min(SPRAY_FORM_MAX_WIDTH, windowWidth) : windowWidth;
+  const previewWidth = Math.max(0, Math.min(MAX_PREVIEW_WIDTH, columnWidth - spacing[4] * 2));
 
   // ============================================
   // Step 0 — is there a wall to pick up?
@@ -787,6 +775,12 @@ export function SprayWallWizardScreen({
     [pickerBusy, showToast, t],
   );
 
+  /** The empty tile's tap: the camera where this binary and phone have one, the library otherwise. */
+  const pickFromTile = useCallback(
+    () => void pickPhoto(cameraAvailable ? 'camera' : 'library'),
+    [pickPhoto, cameraAvailable],
+  );
+
   // ============================================
   // Step 2, detour — crop or rotate
   // ============================================
@@ -985,8 +979,8 @@ export function SprayWallWizardScreen({
   }, [state.draft, runUpload]);
 
   // Entering the upload step with nothing in flight and no error to acknowledge
-  // starts it. An effect rather than a call from the anchors CTA, so that both
-  // ways in — "Use these corners" and "Skip" — behave identically.
+  // starts it. An effect rather than a call from the corners' Next, so that
+  // every way in (moved rings or untouched ones) behaves identically.
   useEffect(() => {
     if (state.step !== 'upload') return;
     if (state.upload.running || state.upload.error || state.upload.attempts > 0) return;
@@ -1010,13 +1004,6 @@ export function SprayWallWizardScreen({
   // ============================================
   // Step 6 — name it (prefilled), then publish
   // ============================================
-
-  // Collapsed until asked for: a wall's angle is one most climbers keep.
-  const [angleOpen, setAngleOpen] = useState(false);
-  const toggleAngle = useCallback(() => {
-    hapticSelection();
-    setAngleOpen((open) => !open);
-  }, []);
 
   /**
    * Save the details step: ONE `updateSprayWall` with only what changed since
@@ -1427,14 +1414,17 @@ export function SprayWallWizardScreen({
     if (clearHeaderRight) navigation.setOptions(ownHeaderRight(undefined));
   }, [clearHeaderRight, navigation, state.step]);
 
-  // The title only on the first step (and while the resume check runs). Past
-  // it the body's "STEP N OF M" says where the climber is, and the bar's room
-  // goes to the actions.
+  // The title on the first step (and while the resume check runs), and on the
+  // details form, which is a settings-style page and is named in the bar the
+  // way Settings pages are. Elsewhere the body's "Step N of M" says where the
+  // climber is, and the bar's room goes to the actions.
   const showsTitle = state.step === 'resuming' || state.step === countedSteps[0];
   const screenTitle = resetOfWallUuid != null ? t('sprayWizard.reset.screenTitle') : t('sprayWizard.screenTitle');
+  const detailsTitle = t('sprayWizard.details.title');
+  const barTitle = state.step === 'details' ? detailsTitle : showsTitle ? screenTitle : '';
   useLayoutEffect(() => {
-    navigation.setOptions({ title: showsTitle ? screenTitle : '' });
-  }, [navigation, showsTitle, screenTitle]);
+    navigation.setOptions({ title: barTitle });
+  }, [navigation, barTitle]);
 
   // Android Back steps back inside the flow where the chevron would; anywhere
   // else it falls through to the stack, which the leave guard intercepts. Only
@@ -1518,6 +1508,8 @@ export function SprayWallWizardScreen({
         confirmWithoutLabel={
           state.skipsDetails ? t('sprayWizard.look.publishWithout') : t('sprayWizard.look.continueWithout')
         }
+        // A reset publishes straight after this step, so its way past says so.
+        saveFailedMessage={state.skipsDetails ? t('sprayWizard.look.failedPublish') : t('sprayWizard.look.failed')}
         initialChoice={confirmedChoice}
         onBackgroundConfirmed={onBackgroundConfirmed}
         stepCounter={t('sprayWizard.stepCounter', {
@@ -1533,8 +1525,6 @@ export function SprayWallWizardScreen({
       />
     );
   }
-
-  const stepIndex = countedSteps.indexOf(state.step);
 
   // The crop step is a screenful of its own for the corner step's reason: a
   // drag on the crop box must never also be a scroll. It is not counted — it
@@ -1555,12 +1545,15 @@ export function SprayWallWizardScreen({
 
   // Its own screenful rather than a section of the scrolling page below: the
   // photo is fitted to the space under the header, so all four rings are on
-  // screen and a vertical drag is never also a scroll (#5958). Back, Skip and
-  // Next are in the header; "Start the corners again" sits with the photo.
+  // screen and a vertical drag is never also a scroll (#5958). Back and Next
+  // are in the header; "Reset corners" sits with the photo.
   if (state.step === 'anchors' && state.photo) {
     return (
       <SprayCornerStep
-        stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
+        stepCounter={t('sprayWizard.stepCounter', {
+          current: countedSteps.indexOf('anchors') + 1,
+          total: countedSteps.length,
+        })}
         title={t('sprayWizard.anchors.title')}
         body={t('sprayWizard.anchors.body')}
         photo={state.photo}
@@ -1575,292 +1568,310 @@ export function SprayWallWizardScreen({
     );
   }
 
+  // A settings-style form of its own (`MoreForm`): it fills the screen and
+  // scrolls by itself, so it is not boxed into the page below.
+  if (state.step === 'details') {
+    return (
+      <SprayWallDetailsStep
+        builder={builder}
+        defaultName={defaultWallName}
+        saving={detailsSaving}
+        error={state.details.error}
+      />
+    );
+  }
+
+  // With the photo on this phone the upload shows it exactly where the scan
+  // will sweep it, so the photo stays on screen from the corners through
+  // detection. A run without the file keeps the plain progress block below.
+  if (state.step === 'upload' && state.photo) {
+    const uploadMessage =
+      state.upload.error ??
+      (state.upload.progress == null
+        ? t('sprayWizard.upload.working')
+        : t('sprayWizard.upload.percent', { percent: Math.round(state.upload.progress * 100) }));
+    return (
+      <SprayScanPhoto
+        photo={state.photo}
+        message={uploadMessage}
+        failed={state.upload.error != null}
+        band={false}
+        // Only once the wall exists: before that, leaving would lose the photo.
+        resumeHint={state.wall && !state.upload.error ? t('sprayWizard.upload.resumeHint') : undefined}
+      />
+    );
+  }
+
+  const isResetRun = resetOfWallUuid != null;
+  const photo = state.photo;
+  const tileTitle = photo
+    ? t('sprayWizard.photo.adjust')
+    : isResetRun
+      ? cameraAvailable
+        ? t('sprayWizard.reset.heroTitle')
+        : t('sprayWizard.reset.heroTitleLibrary')
+      : cameraAvailable
+        ? t('sprayWizard.photo.heroTitle')
+        : t('sprayWizard.photo.heroTitleLibrary');
+  const tileBody = cameraAvailable ? t('sprayWizard.photo.heroBody') : t('sprayWizard.photo.heroBodyLibrary');
+  // 4:3 while empty; the photo's own shape once picked, never past 55% of
+  // the window, so the actions under it stay on screen.
+  const tileHeight = photo
+    ? Math.min(previewHeight(previewWidth, photo), windowHeight * MAX_PREVIEW_HEIGHT_SHARE)
+    : (previewWidth * 3) / 4;
+  const emptyTileColors = {
+    borderColor: withAlpha(brandColors.primary, 0.45),
+    backgroundColor: selectByVariant(variant, {
+      liquidGlass: systemColors.tertiaryFill,
+      material: systemColors.fill,
+    }),
+  };
+
   return (
-    <KeyboardAvoidingView
-      keyboardVerticalOffset={headerHeight}
+    <ScrollView
       style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      contentInsetAdjustmentBehavior="automatic"
+      // Nothing pinned under the page, so it pads only past the home
+      // indicator. iOS adds that inset itself under `automatic`.
+      contentContainerStyle={[
+        styles.content,
+        state.step === 'photo' ? styles.photoContent : null,
+        formColumnCapped ? styles.tabletContent : null,
+        { paddingBottom: spacing[4] + (Platform.OS === 'ios' ? 0 : bottomInset) },
+      ]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
     >
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        // Nothing pinned under the page, so it pads only past the home
-        // indicator. iOS adds that inset itself under `automatic`.
-        contentContainerStyle={[
-          styles.content,
-          formColumnCapped ? styles.tabletContent : null,
-          { paddingBottom: spacing[4] + (Platform.OS === 'ios' ? 0 : bottomInset) },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {stepIndex >= 0 ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stepCounter}>
-            {t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
+      {state.step === 'resuming' ? (
+        <View style={styles.doneBlock}>
+          {resumeError ? null : <ActivityIndicator />}
+          <Text
+            variant="subheadline"
+            color={resumeError ? systemColors.error : systemColors.secondaryLabel}
+            accessibilityLiveRegion="polite"
+          >
+            {resumeError ?? (isResetRun ? t('sprayWizard.reset.starting') : t('sprayWizard.resume.checking'))}
           </Text>
-        ) : null}
+          {resumeError && !resumeErrorIsFinal ? (
+            <Button title={t('sprayWizard.resume.retry')} variant="filled" onPress={retryResume} />
+          ) : null}
+          {resumeError && (isResetRun || wallUuid) ? (
+            <Button title={t('sprayWizard.back')} variant="text" onPress={closeBoardsModal} />
+          ) : null}
+        </View>
+      ) : null}
 
-        {state.step === 'resuming' ? (
-          <View style={styles.doneBlock}>
-            {resumeError ? null : <ActivityIndicator />}
-            <Text
-              variant="subheadline"
-              color={resumeError ? systemColors.error : systemColors.secondaryLabel}
-              accessibilityLiveRegion="polite"
-            >
-              {resumeError ??
-                (resetOfWallUuid != null ? t('sprayWizard.reset.starting') : t('sprayWizard.resume.checking'))}
-            </Text>
-            {resumeError && !resumeErrorIsFinal ? (
-              <Button title={t('sprayWizard.resume.retry')} variant="filled" onPress={retryResume} />
-            ) : null}
-            {resumeError && (resetOfWallUuid != null || wallUuid) ? (
-              <Button title={t('sprayWizard.back')} variant="text" onPress={closeBoardsModal} />
-            ) : null}
-          </View>
-        ) : null}
-
-        {state.step === 'photo' ? (
-          <>
-            <Text variant="title3">
-              {resetOfWallUuid != null ? t('sprayWizard.reset.photoTitle') : t('sprayWizard.photo.title')}
-            </Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {resetOfWallUuid != null ? t('sprayWizard.reset.photoBody') : t('sprayWizard.photo.body')}
-            </Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.photo.tip')}
-            </Text>
-            <PressableSurface
-              onPress={openPhotoGuide}
-              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-              style={styles.photoGuideLink}
-              accessibilityRole="link"
-              accessibilityHint={t('sprayWizard.photo.helpLinkHint')}
-            >
-              <Text variant="subheadline" color={systemColors.accent}>
-                {t('sprayWizard.photo.helpLink')}
-              </Text>
-            </PressableSurface>
-            {/* The resume check runs behind this step. When it fails, Next keeps
-                waiting for it, so the failure and the way to ask again are
-                said here. */}
-            {resumeError ? (
-              <View style={styles.resumeError}>
-                <Text variant="footnote" color={systemColors.error} accessibilityLiveRegion="polite">
-                  {resumeError}
-                </Text>
-                <Button title={t('sprayWizard.resume.retry')} variant="text" size="small" onPress={retryResume} />
+      {state.step === 'photo' ? (
+        <>
+          {/* The whole step is one big target: tap the tile, the camera opens
+              (the photo library on a phone without one). Once there is a
+              photo the tile shows it, and a tap opens the crop. */}
+          <PressableSurface
+            onPress={photo ? openAdjust : pickFromTile}
+            disabled={pickerBusy}
+            accessibilityRole="button"
+            accessibilityLabel={tileTitle}
+            accessibilityHint={photo ? undefined : tileBody}
+            testID="spray-photo-tile"
+            style={[
+              styles.tile,
+              { width: previewWidth, height: tileHeight },
+              photo ? styles.tilePicked : [styles.tileEmpty, emptyTileColors],
+            ]}
+          >
+            {photo ? (
+              <Image
+                source={{ uri: photo.uri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                accessibilityIgnoresInvertColors
+                testID="spray-photo-preview"
+              />
+            ) : (
+              <View style={styles.tileContent} pointerEvents="none">
+                <Icon name={cameraAvailable ? 'camera' : 'photo'} size={44} color={brandColors.primary} />
+                <View style={styles.titleBlock}>
+                  <Text variant="headline" style={styles.centered}>
+                    {tileTitle}
+                  </Text>
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
+                    {tileBody}
+                  </Text>
+                </View>
               </View>
-            ) : null}
-            {/* Said before the upload, not after it fails: Offline mode is a
-                switch the climber can turn off right now. */}
-            {offlineModeOn ? (
-              <Text variant="footnote" color={iosSystemColors.systemOrange} accessibilityLiveRegion="polite">
-                {t('sprayWizard.upload.offlineMode')}
-              </Text>
-            ) : null}
+            )}
+          </PressableSurface>
+
+          {photo ? (
+            // Crop happens before the upload, so the server only ever sees
+            // the cropped file.
             <View style={styles.photoActions}>
               <Button
-                title={state.photo ? t('sprayWizard.photo.pickAnother') : t('sprayWizard.photo.library')}
-                variant={state.photo ? 'text' : 'filled'}
-                onPress={() => void pickPhoto('library')}
+                title={t('sprayWizard.photo.adjust')}
+                icon="crop.free"
+                variant="tonal"
+                size="small"
+                onPress={openAdjust}
                 disabled={pickerBusy}
+                testID="spray-photo-adjust"
               />
               {/* Only on a binary whose Info.plist declares the camera. On an
                   older one iOS does not deny the request, it terminates. */}
               {cameraAvailable ? (
                 <Button
-                  title={t('sprayWizard.photo.camera')}
-                  variant="text"
+                  title={t('sprayWizard.photo.retake')}
+                  icon="camera"
+                  variant="tonal"
+                  size="small"
                   onPress={() => void pickPhoto('camera')}
                   disabled={pickerBusy}
+                  testID="spray-photo-retake"
                 />
-              ) : null}
-            </View>
-            {state.photo ? (
-              <View style={styles.previewWrap}>
-                <Image
-                  source={{ uri: state.photo.uri }}
-                  style={{
-                    width: previewWidth,
-                    height: previewHeight(previewWidth, state.photo),
-                    borderRadius: borderRadius.lg,
-                  }}
-                  contentFit="cover"
-                  accessibilityIgnoresInvertColors
-                />
-                {/* Under the photo it changes. Crop happens before the upload, so
-                    the server only ever sees the cropped file. */}
+              ) : (
                 <Button
-                  title={t('sprayWizard.photo.adjust')}
-                  icon="crop.free"
-                  variant="text"
-                  onPress={openAdjust}
+                  title={t('sprayWizard.photo.change')}
+                  icon="photo"
+                  variant="tonal"
+                  size="small"
+                  onPress={() => void pickPhoto('library')}
                   disabled={pickerBusy}
+                  testID="spray-photo-change"
                 />
-              </View>
-            ) : null}
-          </>
-        ) : null}
-
-        {state.step === 'details' ? (
-          // Nothing here may change under a save in flight: the diff it sent is
-          // what the baseline moves to when it lands.
-          <View style={styles.detailsForm} pointerEvents={detailsSaving ? 'none' : 'auto'}>
-            <Text variant="title3">{t('sprayWizard.details.title')}</Text>
-
-            <View style={styles.field}>
-              <SectionLabel>{t('mobile.custom.name')}</SectionLabel>
-              <BuilderTextInput
-                value={builder.name}
-                onChangeText={builder.setName}
-                placeholder={defaultWallName}
-                accessibilityLabel={t('mobile.custom.name')}
-                maxLength={100}
-                // A wall's name is a proper noun ("Garage", "The Cave");
-                // autocorrect rewrote it and spell-check underlined it (#5960).
-                autoCorrect={false}
-                spellCheck={false}
-                returnKeyType="done"
-                editable={!detailsSaving}
-              />
+              )}
             </View>
+          ) : cameraAvailable ? (
+            <Button
+              title={t('sprayWizard.photo.fromLibrary')}
+              variant="text"
+              onPress={() => void pickPhoto('library')}
+              disabled={pickerBusy}
+              testID="spray-photo-library"
+            />
+          ) : null}
 
-            {/* Same three-way control as Edit board: two switches let "Public"
-                and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
-            <View style={styles.field}>
-              <SprayWallVisibilityField builder={builder} />
+          {isResetRun ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
+              {t('sprayWizard.reset.photoNote')}
+            </Text>
+          ) : null}
+
+          {/* The resume check runs behind this step. When it fails, Next keeps
+              waiting for it, so the failure and the way to ask again are
+              said here. */}
+          {resumeError ? (
+            <View style={styles.resumeError}>
+              <Text
+                variant="footnote"
+                color={systemColors.error}
+                style={styles.centered}
+                accessibilityLiveRegion="polite"
+              >
+                {resumeError}
+              </Text>
+              <Button title={t('sprayWizard.resume.retry')} variant="text" size="small" onPress={retryResume} />
             </View>
+          ) : null}
 
-            {/* The shared list, snapped — not a free-text field. The server
-                validates against `SPRAY_ANGLES`. Collapsed to its value: 40° is
-                the commonest home wall, and one tap opens the slider. */}
-            <PressableSurface
-              onPress={toggleAngle}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: angleOpen }}
-              accessibilityLabel={`${t('sprayWizard.details.angle')}, ${t('sprayWizard.details.angleValue', { angle: builder.angle })}`}
-              style={[
-                styles.angleRow,
-                { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
-              ]}
+          {/* Said before the upload, not after it fails: Offline mode is a
+              switch the climber can turn off right now. */}
+          {offlineModeOn ? (
+            <Text
+              variant="footnote"
+              color={brandColors.warning}
+              style={styles.centered}
+              accessibilityLiveRegion="polite"
+              testID="spray-photo-offline"
             >
-              <Text variant="body" style={styles.angleRowLabel}>
-                {t('sprayWizard.details.angle')}
-              </Text>
-              <Text variant="body" color={systemColors.secondaryLabel}>
-                {t('sprayWizard.details.angleValue', { angle: builder.angle })}
-              </Text>
-              <Icon name={angleOpen ? 'chevron.up' : 'chevron.down'} size={16} color={systemColors.tertiaryLabel} />
-            </PressableSurface>
-            {angleOpen ? (
-              <View style={styles.field}>
-                <View style={styles.angleDiagram}>
-                  <AngleBoardDiagram
-                    angle={builder.angle}
-                    size={96}
-                    accessibilityLabel={t('sprayWizard.details.anglePreview', { angle: builder.angle })}
-                  />
-                </View>
-                <AngleSlider angles={sprayAngles} value={builder.angle} onChange={builder.setAngle} />
-                <Text variant="caption1" color={systemColors.secondaryLabel}>
-                  {t('sprayWizard.details.angleHint')}
-                </Text>
-              </View>
-            ) : null}
-
-            <CollapsibleSection title={t('sprayWizard.details.more')} summary={builder.selectedGym?.name ?? null}>
-              <BoardGymField selectedGym={builder.selectedGym} onOpenGymPicker={() => setGymPickerOpen(true)} />
-            </CollapsibleSection>
-
-            {state.details.error ? (
-              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
-                {state.details.error}
-              </Text>
-            ) : null}
-
-            {/* The wall cap said before it bites rather than after: ten is a
-                number a gym with a lot of bays can reach. */}
-            <Text variant="caption1" color={systemColors.secondaryLabel}>
-              {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
+              {t('sprayWizard.upload.offlineMode')}
             </Text>
-          </View>
-        ) : null}
+          ) : null}
 
-        {state.step === 'upload' ? (
-          <>
-            <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
-            {state.upload.error ? (
-              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
-                {state.upload.error}
+          {/* The photo is the step that decides how many holds the finder
+              misses: one tip here, and the long version a tap away. Gone once
+              there is a photo, when it is too late to help. */}
+          {photo ? null : (
+            <>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
+                {t('sprayWizard.photo.tip')}
               </Text>
-            ) : (
-              <ProgressBlock
-                label={
-                  state.upload.progress == null
-                    ? t('sprayWizard.upload.working')
-                    : t('sprayWizard.upload.percent', { percent: Math.round(state.upload.progress * 100) })
-                }
-                progress={state.upload.progress}
-              />
-            )}
-          </>
-        ) : null}
-
-        {state.step === 'detect' && state.draft ? (
-          <SprayDetectionStep
-            wallUuid={state.draft.wallUuid}
-            versionId={state.draft.versionId}
-            onComplete={detectionCompleted}
-            onManual={useManualEditor}
-          />
-        ) : null}
-
-        {state.step === 'publish' ? (
-          <>
-            <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
-            {state.publish.error ? (
-              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
-                {state.publish.error}
-              </Text>
-            ) : (
-              <View style={styles.doneBlock}>
-                <ActivityIndicator />
-                <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
-                  {t('sprayWizard.publish.working')}
+              <PressableSurface
+                onPress={openPhotoGuide}
+                hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                style={styles.photoGuideLink}
+                accessibilityRole="link"
+                accessibilityHint={t('sprayWizard.photo.helpLinkHint')}
+                testID="spray-photo-guide"
+              >
+                <Text variant="subheadline" color={systemColors.accent}>
+                  {t('sprayWizard.photo.helpLink')}
                 </Text>
-              </View>
-            )}
-          </>
-        ) : null}
+              </PressableSurface>
+            </>
+          )}
+        </>
+      ) : null}
 
-        {state.step === 'done' ? (
-          <View style={styles.doneBlock}>
-            <ActivityIndicator />
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.done.body')}
+      {state.step === 'upload' ? (
+        <View style={styles.titleBlock}>
+          <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
+          {state.upload.error ? (
+            <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
+              {state.upload.error}
             </Text>
-          </View>
-        ) : null}
-      </ScrollView>
+          ) : (
+            <ProgressBlock
+              label={
+                state.upload.progress == null
+                  ? t('sprayWizard.upload.working')
+                  : t('sprayWizard.upload.percent', { percent: Math.round(state.upload.progress * 100) })
+              }
+              progress={state.upload.progress}
+            />
+          )}
+          {state.wall && !state.upload.error ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.upload.resumeHint')}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
-      {gymPickerOpen ? (
-        <GymPickerSheet
-          selectedUuid={builder.selectedGym?.uuid ?? null}
-          boardCoords={builder.coords}
-          showsOnMap={builder.isPublic}
-          onSelect={(gym) => {
-            builder.setSelectedGym(gym);
-            setGymPickerOpen(false);
-          }}
-          onRequestManualLocation={() => {
-            builder.setSelectedGym(null);
-            setGymPickerOpen(false);
-          }}
-          onDismiss={() => setGymPickerOpen(false)}
+      {state.step === 'detect' && state.draft ? (
+        <SprayDetectionStep
+          wallUuid={state.draft.wallUuid}
+          versionId={state.draft.versionId}
+          onComplete={detectionCompleted}
+          onManual={useManualEditor}
         />
       ) : null}
-    </KeyboardAvoidingView>
+
+      {state.step === 'publish' ? (
+        <View style={styles.titleBlock}>
+          <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
+          {state.publish.error ? (
+            <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
+              {state.publish.error}
+            </Text>
+          ) : (
+            <View style={styles.doneBlock}>
+              <ActivityIndicator />
+              <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+                {t('sprayWizard.publish.working')}
+              </Text>
+            </View>
+          )}
+        </View>
+      ) : null}
+
+      {state.step === 'done' ? (
+        <View style={styles.doneBlock}>
+          <ActivityIndicator />
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {t('sprayWizard.done.body')}
+          </Text>
+        </View>
+      ) : null}
+    </ScrollView>
   );
 }
 
@@ -1928,7 +1939,12 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing[4],
-    gap: spacing[2],
+    gap: spacing[3],
+  },
+  // The opener breathes a little more, and centres its column on the tile.
+  photoContent: {
+    gap: spacing[4],
+    alignItems: 'center',
   },
   // A full-screen iPad cover: the form keeps a readable column, centred.
   tabletContent: {
@@ -1936,47 +1952,43 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  stepCounter: {
-    textTransform: 'uppercase',
-    marginBottom: spacing[1],
-  },
-  angleDiagram: {
-    alignItems: 'center',
-    paddingVertical: spacing[1],
-  },
-  detailsForm: {
-    gap: spacing[3],
-  },
-  field: {
+  // A title and the line under it.
+  titleBlock: {
     gap: spacing[1],
   },
-  angleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+  tile: {
+    ...cardCorners,
+    overflow: 'hidden',
   },
-  angleRowLabel: {
-    flex: 1,
+  tileEmpty: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tilePicked: {
+    borderWidth: 0,
+  },
+  tileContent: {
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[6],
+  },
+  centered: {
+    textAlign: 'center',
   },
   resumeError: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing[1],
   },
-  previewWrap: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
-    gap: spacing[2],
-  },
   photoGuideLink: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
   },
   photoActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: spacing[2],
-    paddingTop: spacing[3],
   },
   progressBlock: {
     gap: spacing[3],

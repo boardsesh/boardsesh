@@ -119,7 +119,7 @@ describe('native wizard exit protection', () => {
     const layout = readFileSync(resolve(mobileRoot, 'app/boards/_layout.tsx'), 'utf8');
     expect(layout.includes('headerBackButtonMenuEnabled: false')).toBe(true);
   });
-  it('keeps editor controls below the measured header and photo actions ahead of the preview', () => {
+  it('keeps editor controls below the measured header and photo actions on screen under the photo', () => {
     const editor = readFileSync(resolve(mobileRoot, 'src/components/outline-editor/SprayHoldEditorScreen.tsx'), 'utf8');
     expect(editor.includes('const headerInset = useTransparentHeaderInset()')).toBe(true);
     expect(/backgroundColor:\s*systemColors.background,\s*marginTop:\s*headerInset/.test(editor)).toBe(true);
@@ -128,8 +128,11 @@ describe('native wizard exit protection', () => {
       wizard.indexOf("{state.step === 'photo' ?"),
       wizard.indexOf("{state.step === 'upload' ?"),
     );
-    expect(photo.indexOf('styles.photoActions')).toBeGreaterThan(0);
-    expect(photo.indexOf('styles.photoActions')).toBeLessThan(photo.indexOf('styles.previewWrap'));
+    // The actions sit under the photo, which is capped at 55% of the window's
+    // height so a portrait photo cannot push them below the fold.
+    expect(photo.indexOf('styles.photoActions')).toBeGreaterThan(photo.indexOf('spray-photo-tile'));
+    expect(wizard.includes('const MAX_PREVIEW_HEIGHT_SHARE = 0.55;')).toBe(true);
+    expect(wizard.includes('windowHeight * MAX_PREVIEW_HEIGHT_SHARE')).toBe(true);
     const layout = readFileSync(resolve(mobileRoot, 'app/boards/_layout.tsx'), 'utf8');
     expect(/SprayWizardExitButton\s+returnTo=\{resolveBoardReturnTo\(/.test(layout)).toBe(true);
   });

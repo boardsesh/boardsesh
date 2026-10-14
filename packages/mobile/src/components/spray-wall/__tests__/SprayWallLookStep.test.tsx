@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,12 +7,17 @@ const controls = vi.hoisted(() => ({
   headerInset: 96,
   preview: null as unknown,
   rendererAvailable: true as boolean | null,
-  sliderProps: null as null | {
+  carouselProps: null as null | {
     options: readonly BoardLookOption[];
     boardseshRendererAvailable?: boolean | null;
     selectedId: string;
-    disabled?: boolean;
+    selectOnSnap?: boolean;
+    showDescriptions?: boolean;
+    heroThumb?: { width: number; height: number } | null;
+    onSelect: (id: string) => void;
   },
+  /** The form model the step last handed `MoreForm`. */
+  model: null as null | MoreFormModel,
   dimProps: null as null | { onLiveChange: (dim: number) => void; onCommit: (dim: number) => void },
   unavailable: true,
   stalled: false,
@@ -33,17 +38,58 @@ vi.mock('react-native', () => ({
     children,
     style,
     onLayout,
+    testID,
   }: {
     children?: ReactNode;
     style?: unknown;
     onLayout?: (event: unknown) => void;
+    testID?: string;
   }) => {
     useEffect(() => onLayout?.({ nativeEvent: { layout: { width: 402, height: 500 } } }), [onLayout]);
-    const marginTop = Array.isArray(style) ? style.find((entry) => entry?.marginTop != null)?.marginTop : undefined;
-    return createElement('div', { 'data-margin-top': marginTop }, children);
+    const paddingTop = Array.isArray(style) ? style.find((entry) => entry?.paddingTop != null)?.paddingTop : undefined;
+    return createElement('div', { 'data-padding-top': paddingTop, 'data-testid': testID }, children);
   },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  // What the MoreForm stub draws its rows with.
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityState,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+    accessibilityState?: { selected?: boolean };
+  }) =>
+    createElement(
+      'button',
+      {
+        role: accessibilityRole,
+        'aria-label': accessibilityLabel,
+        'aria-checked': accessibilityState?.selected,
+        disabled,
+        onClick: onPress,
+      },
+      children,
+    ),
+  Switch: () => null,
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+// The real stub, with the model it was handed kept for the test to drive.
+vi.mock('../../MoreForm', async () => {
+  const stub = await import('../../../../test/more-form-stub');
+  return {
+    MoreForm: (props: { model: MoreFormModel }) => {
+      controls.model = props.model;
+      return stub.MoreForm(props);
+    },
+  };
+});
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
 vi.mock('../../../hooks/use-header-actions', () => ({
   useHeaderActions: ({ trailing }: { trailing?: { label: string; onPress: () => void } | null }) => {
@@ -60,7 +106,13 @@ vi.mock('../../../hooks/use-transparent-header-inset', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { secondaryLabel: '#888', background: '#fff', secondaryBackground: '#eee', separator: '#ddd' },
+    systemColors: {
+      secondaryLabel: '#888',
+      background: '#fff',
+      secondaryBackground: '#eee',
+      separator: '#ddd',
+      groupedBackground: '#f4f1fb',
+    },
     textStyles: { footnote: { lineHeight: 18 }, caption1: { lineHeight: 16 } },
   }),
 }));
@@ -108,10 +160,10 @@ vi.mock('../../ValueSlider', () => ({
   },
 }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
-vi.mock('../../board-look/BoardLookSlider', () => ({
-  BoardLookSlider: (props: NonNullable<typeof controls.sliderProps>) => {
-    controls.sliderProps = props;
-    return createElement('div', { 'data-testid': 'board-look-slider', 'data-selected': props.selectedId });
+vi.mock('../../board-look/BoardLookCarousel', () => ({
+  BoardLookCarousel: (props: NonNullable<typeof controls.carouselProps>) => {
+    controls.carouselProps = props;
+    return createElement('div', { 'data-testid': 'board-look-carousel', 'data-selected': props.selectedId });
   },
 }));
 vi.mock('../../board-look/RailIndexDots', () => ({ RailIndexDots: () => null }));
@@ -144,34 +196,29 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
 vi.mock('../../../lib/spray/use-spray-wall-art', () => ({
   useSprayWallArt: () => controls.art,
 }));
-vi.mock('../SprayWallBackgroundSlider', () => ({
-  SprayWallBackgroundSlider: ({
-    gate,
-    value,
-    onChange,
-  }: {
-    gate: { kind: string };
-    value: string;
-    onChange: (background: string) => void;
-  }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'background-picker', 'data-value': value, 'data-gate': gate.kind },
-      (gate.kind === 'open' ? ['photo', 'wall-crop', 'hold-cutouts'] : ['photo']).map((key) =>
-        createElement('button', { key, onClick: () => onChange(key) }, `bg:${key}`),
-      ),
-    ),
+vi.mock('../SprayWallBackgroundPreview', () => ({
+  SprayWallBackgroundPreview: ({ value }: { value: string }) =>
+    createElement('div', { 'data-testid': 'background-preview', 'data-value': value }),
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
 import { SprayWallLookStep, type SprayLookChoice } from '../SprayWallLookStep';
+import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
 import {
   SPRAY_WALL_LOOK_OPTIONS,
   DEFAULT_SPRAY_WALL_LOOK_OPTION_ID,
   boardLookOptionWallDefault,
   type BoardLookOption,
 } from '../../../lib/board-render/board-look-options';
+/** A background segment in the form, by its label key's last part. */
+function backgroundRadio(label: 'photo' | 'wallCrop' | 'holdCutouts') {
+  return screen.getByRole('radio', { name: `sprayBackground.${label}` });
+}
+/** A row of the model the step last handed `MoreForm`. */
+function modelRow(key: string): MoreRow | undefined {
+  return controls.model?.sections.flatMap((section) => section.rows).find((row) => row.key === key);
+}
 const draft = { wallUuid: 'wall-1', layoutId: 9001, versionId: '12', versionNumber: 1, viewerCanEdit: true };
 /** The header's "Use <look>": checks the label, then presses it. */
 function pressHeaderTrailing(label: string) {
@@ -197,6 +244,7 @@ function renderStep(
         stepCounter: phase === 'background' ? 'Step 5 of 7' : 'Step 6 of 7',
         forwardLabel: phase === 'look' && extra.lookLabel ? extra.lookLabel : 'sprayWizard.next',
         confirmWithoutLabel: 'sprayWizard.look.continueWithout',
+        saveFailedMessage: 'sprayWizard.look.failed',
         initialChoice: extra.initialChoice,
         onBackgroundConfirmed: () => setPhase('look'),
         onSaveStarted,
@@ -216,6 +264,8 @@ beforeEach(() => {
   controls.unavailable = true;
   controls.stalled = false;
   controls.preview = null;
+  controls.carouselProps = null;
+  controls.model = null;
   controls.rendererAvailable = true;
   controls.art = { status: 'error', data: null };
   controls.headerTrailing = null;
@@ -226,7 +276,7 @@ describe('spray Look visibility and fallback', () => {
   it.each([96, 0])('clears a %i-point header and displays the wizard counter', (headerInset) => {
     controls.headerInset = headerInset;
     const { container, getByText } = renderStep();
-    expect(container.firstElementChild?.lastElementChild?.getAttribute('data-margin-top')).toBe(String(headerInset));
+    expect(container.firstElementChild?.lastElementChild?.getAttribute('data-padding-top')).toBe(String(headerInset));
     expect(getByText('Step 6 of 7')).toBeTruthy();
   });
   it('offers every look without a preview and saves the selected non-default look', async () => {
@@ -260,12 +310,33 @@ describe('spray Look visibility and fallback', () => {
     fireEvent.click(getByText('sprayWizard.review.retry'));
     expect(controls.retry).toHaveBeenCalledOnce();
   });
-  it('draws one selected preview with a slider when the wall can be drawn', () => {
+  it('draws the swipeable rail as a form row, with the dim slider under it, when the wall can be drawn', () => {
     controls.unavailable = false;
     controls.preview = { boardWidth: 500, boardHeight: 700 };
-    const { getByTestId, queryAllByRole } = renderStep();
-    expect(getByTestId('board-look-slider')).toBeTruthy();
+    const { getByTestId, queryAllByRole, queryByTestId } = renderStep();
+    expect(getByTestId('board-look-carousel')).toBeTruthy();
+    // The names-only fallback is gone once there is a wall to draw.
     expect(queryAllByRole('radio')).toHaveLength(0);
+    expect(queryByTestId('look-slider')).toBeNull();
+    expect(controls.carouselProps?.showDescriptions).toBe(false);
+    expect(controls.carouselProps?.selectedId).toBe(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
+    const carouselRow = modelRow('lookCarousel');
+    expect(carouselRow).toMatchObject({ kind: 'custom', fullBleed: true });
+    expect(modelRow('dim')).toMatchObject({ kind: 'slider', label: 'sprayWizard.look.dimTitle' });
+  });
+
+  it('lets a swipe choose the look, and saves the one it landed on', async () => {
+    controls.unavailable = false;
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    renderStep();
+    const alternative = SPRAY_WALL_LOOK_OPTIONS.find((option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)!;
+    act(() => controls.carouselProps?.onSelect(alternative.id));
+    expect(controls.carouselProps?.selectedId).toBe(alternative.id);
+    expect(controls.save).not.toHaveBeenCalled();
+    await act(async () => pressHeaderTrailing('sprayWizard.next'));
+    expect(controls.save).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ renderSettings: boardLookOptionWallDefault(alternative.id) }),
+    );
   });
 });
 
@@ -290,8 +361,9 @@ describe('spray Look wall background', () => {
   const saveButton = () => 'sprayWizard.next';
 
   it('hides the picker and sends no background to a backend without generated looks', async () => {
-    const { getByTestId } = renderStep('background');
-    expect(getByTestId('background-picker').getAttribute('data-gate')).toBe('unsupported');
+    const { queryAllByRole, getByText } = renderStep('background');
+    expect(queryAllByRole('radio')).toHaveLength(0);
+    expect(getByText(/sprayWizard\.background\.unsupported/)).toBeTruthy();
     finishBackground();
     await act(async () => {
       pressHeaderTrailing(saveButton());
@@ -306,7 +378,7 @@ describe('spray Look wall background', () => {
   it('suggests Wall only when the photo passes, and stores it', async () => {
     controls.art = artAnswer('GOOD');
     const { getByTestId } = renderStep('background');
-    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('wall-crop');
+    expect(getByTestId('background-preview').getAttribute('data-value')).toBe('wall-crop');
     expect(controls.save).not.toHaveBeenCalled();
     finishBackground();
     await act(async () => {
@@ -322,8 +394,8 @@ describe('spray Look wall background', () => {
   it('stores the photo by name when the creator picks it, so an earlier save cannot stick', async () => {
     controls.art = artAnswer('SOFT');
     const { getByTestId, getByText } = renderStep('background');
-    fireEvent.click(getByText('bg:photo'));
-    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
+    fireEvent.click(backgroundRadio('photo'));
+    expect(getByTestId('background-preview').getAttribute('data-value')).toBe('photo');
     finishBackground();
     await act(async () => {
       pressHeaderTrailing(saveButton());
@@ -344,10 +416,10 @@ describe('spray Look wall background', () => {
 
   it('stays on the photo for a photo that fails the gate', async () => {
     controls.art = artAnswer('FAIL', 'keystone');
-    const { getByTestId, queryByText } = renderStep('background');
-    expect(getByTestId('background-picker').getAttribute('data-gate')).toBe('locked');
-    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
-    expect(queryByText('bg:hold-cutouts')).toBeNull();
+    const { getByTestId, queryAllByRole, getByText } = renderStep('background');
+    expect(getByText(/sprayBackground\.note\.lockedRetake/)).toBeTruthy();
+    expect(getByTestId('background-preview').getAttribute('data-value')).toBe('photo');
+    expect(queryAllByRole('radio')).toHaveLength(0);
     finishBackground();
     await act(async () => {
       pressHeaderTrailing(saveButton());
@@ -372,7 +444,7 @@ describe('spray Look wall background', () => {
     // The way past a save that will not land, inline under the sentence.
     expect(getByText('sprayWizard.look.continueWithout')).toBeTruthy();
     fireEvent.click(getByText('Back to background'));
-    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
+    expect(getByTestId('background-preview').getAttribute('data-value')).toBe('photo');
   });
 });
 
@@ -380,7 +452,7 @@ describe('two look steps keep choices local until final confirmation', () => {
   it('preserves background, hold look and dimming through Back and stores them together', async () => {
     controls.art = artAnswer('GOOD');
     const { getByText, getByTestId, getByRole } = renderStep('background');
-    fireEvent.click(getByText('bg:hold-cutouts'));
+    fireEvent.click(backgroundRadio('holdCutouts'));
     finishBackground();
     const alternative = SPRAY_WALL_LOOK_OPTIONS.find(
       (option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID && option.id !== 'classic',
@@ -388,7 +460,7 @@ describe('two look steps keep choices local until final confirmation', () => {
     fireEvent.click(getByRole('radio', { name: alternative.labelI18nKey }));
     act(() => controls.dimProps?.onCommit(0.65));
     fireEvent.click(getByText('Back to background'));
-    expect(getByTestId('background-picker').getAttribute('data-value')).toBe('hold-cutouts');
+    expect(getByTestId('background-preview').getAttribute('data-value')).toBe('hold-cutouts');
     expect(controls.save).not.toHaveBeenCalled();
     finishBackground();
     expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
@@ -433,22 +505,62 @@ describe('two look steps keep choices local until final confirmation', () => {
     controls.preview = { boardWidth: 500, boardHeight: 700 };
     controls.unavailable = false;
     renderStep();
-    expect(controls.sliderProps?.options.map((option) => option.id)).toEqual(
+    expect(controls.carouselProps?.options.map((option) => option.id)).toEqual(
       SPRAY_WALL_LOOK_OPTIONS.map((option) => option.id),
     );
-    expect(controls.sliderProps?.boardseshRendererAvailable).toBe(false);
-    expect(controls.sliderProps).not.toHaveProperty('previewUnderlay');
+    expect(controls.carouselProps?.boardseshRendererAvailable).toBe(false);
+    expect(controls.carouselProps).not.toHaveProperty('previewUnderlay');
   });
 });
 
-it('updates the selected hold preview while dimming before writing settings', () => {
-  controls.preview = { boardWidth: 500, boardHeight: 700 };
-  controls.unavailable = false;
-  renderStep();
-  act(() => controls.dimProps?.onLiveChange(0.7));
-  const settings = boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID, controls.sliderProps?.options);
-  expect(settings?.boardsesh.veilOpacity).toBe(0.7);
-  expect(controls.save).not.toHaveBeenCalled();
+describe('the dim slider row', () => {
+  function dimRow() {
+    const row = modelRow('dim');
+    if (row?.kind !== 'slider') throw new Error('no dim slider row');
+    return row;
+  }
+
+  it('redraws only the selected card while dragging, and writes nothing', () => {
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    renderStep();
+    const before = controls.carouselProps?.options;
+    act(() => dimRow().onValueChange(0.7));
+    const after = controls.carouselProps?.options ?? [];
+    const selected = boardLookOptionWallDefault(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID, after);
+    expect(selected?.boardsesh.veilOpacity).toBe(0.7);
+    // Every other card is the same object it was, so it does not re-render.
+    after
+      .filter((option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)
+      .forEach((option) => expect(before).toContain(option));
+    expect(dimRow().value).toBe(0.7);
+    expect(controls.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps the released value, rounded to a step, and stores it with the look', async () => {
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    renderStep();
+    act(() => dimRow().onCommit(0.15000000000000002));
+    expect(dimRow().value).toBe(0.15);
+    await act(async () => pressHeaderTrailing('sprayWizard.next'));
+    expect(controls.save.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        renderSettings: expect.objectContaining({ boardsesh: expect.objectContaining({ veilOpacity: 0.15 }) }),
+      }),
+    );
+  });
+
+  it('says a failed save in the form, with the way past it', async () => {
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    controls.save.mockRejectedValueOnce(new Error('offline'));
+    const { getByText, getByRole, onConfirmed } = renderStep();
+    await act(async () => pressHeaderTrailing('sprayWizard.next'));
+    expect(getByText('sprayWizard.look.failed')).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: 'sprayWizard.look.continueWithout' }));
+    expect(onConfirmed).toHaveBeenCalledOnce();
+  });
 });
 
 describe('the wizard names the forward action and keeps the choice', () => {
@@ -459,8 +571,8 @@ describe('the wizard names the forward action and keeps the choice', () => {
 
   it('reports the confirmed choice, so Back from the details step can bring it back', async () => {
     controls.art = artAnswer('GOOD');
-    const { getByText, getByRole, onConfirmed } = renderStep('background');
-    fireEvent.click(getByText('bg:hold-cutouts'));
+    const { getByRole, onConfirmed } = renderStep('background');
+    fireEvent.click(backgroundRadio('holdCutouts'));
     finishBackground();
     const alternative = SPRAY_WALL_LOOK_OPTIONS.find(
       (option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID && option.id !== 'classic',

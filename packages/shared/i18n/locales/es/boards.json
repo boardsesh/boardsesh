@@ -997,18 +997,21 @@
     "stepCounter": "Paso {{current}} de {{total}}",
     "back": "Atrás",
     "next": "Siguiente",
+    "notSaved": "Sin guardar",
     "photo": {
-      "title": "Fotografía el muro",
-      "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
       "helpLink": "Cómo hacer la foto",
       "helpLinkHint": "Abre la guía de fotos en tu navegador",
-      "library": "Elegir una foto",
-      "camera": "Hacer una foto",
-      "pickAnother": "Elegir otra foto",
       "adjust": "Recortar o girar",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
       "failed": "Esa foto no se abre. Prueba con otra.",
-      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
+      "tip": "Aléjate, ponte de frente al muro y encuadra las cuatro esquinas.",
+      "heroTitle": "Haz una foto de tu muro",
+      "heroBody": "Toca para abrir la cámara",
+      "heroTitleLibrary": "Elige una foto de tu muro",
+      "heroBodyLibrary": "Toca para abrir tus fotos",
+      "fromLibrary": "Elegir de tus fotos",
+      "retake": "Repetir",
+      "change": "Cambiar foto"
     },
     "adjust": {
       "title": "Recorta y gira",
@@ -1032,14 +1035,14 @@
     },
     "anchors": {
       "title": "Marca las esquinas",
-      "body": "Arrastra los cuatro círculos a las esquinas del muro. Sáltatelo si disparaste de frente.",
+      "body": "Arrastra los círculos a las esquinas del muro. ¿La hiciste de frente? Toca Siguiente.",
       "hint": "Arriba izquierda, arriba derecha, abajo derecha, abajo izquierda.",
       "crossed": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden.",
       "cornerTopLeft": "Esquina superior izquierda",
       "cornerTopRight": "Esquina superior derecha",
       "cornerBottomRight": "Esquina inferior derecha",
       "cornerBottomLeft": "Esquina inferior izquierda",
-      "clear": "Empezar las esquinas de nuevo",
+      "clear": "Restablecer esquinas",
       "quality": {
         "good": "Bien de frente. El muro se enderezará limpio.",
         "soft": "Un poco inclinada. Repítela de frente para un aspecto más nítido.",
@@ -1056,7 +1059,8 @@
       "offlineMode": "El modo sin conexión está activado, así que tu foto no puede subirse. Desactívalo y vuelve a intentarlo.",
       "noSignal": "Sin cobertura, así que tu foto no se ha subido. Vuelve a intentarlo cuando tengas conexión.",
       "serverUnreachable": "Ahora mismo no se puede conectar con Boardsesh. Tu foto sigue aquí, así que vuelve a intentarlo en un minuto.",
-      "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
+      "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura.",
+      "resumeHint": "Puedes salir y retomarlo más tarde."
     },
     "detect": {
       "title": "Buscando presas"
@@ -1074,17 +1078,18 @@
       "retry": "Reintentar"
     },
     "look": {
-      "title": "¿Cómo quieres que se iluminen tus presas?",
-      "body": "Los escaladores verán tu muro así, salvo quienes hayan elegido usar su propio aspecto en los muros de spray.",
+      "title": "¿Cómo se iluminan las presas?",
+      "body": "Desliza para probar un aspecto. Los escaladores verán tu muro así.",
       "loading": "Cargando tu muro…",
       "unavailable": "Aquí no se puede mostrar la foto de tu muro, pero puedes elegir el aspecto igualmente.",
       "saving": "Guardando el aspecto…",
-      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
+      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o sigue sin él.",
       "publishWithout": "Publicar igualmente",
       "continueWithout": "Seguir igualmente",
       "dimTitle": "Oscurecer el resto del muro",
       "dimOff": "Desactivado",
-      "previewPhoto": "La iluminación de las presas se muestra sobre la foto original. Al publicar se usará {{background}}."
+      "previewPhoto": "La iluminación de las presas se muestra sobre la foto original. Al publicar se usará {{background}}.",
+      "failedPublish": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo sin él."
     },
     "details": {
       "title": "Ponle nombre a tu muro",
@@ -1092,14 +1097,16 @@
       "angle": "Ángulo",
       "angleValue": "{{angle}}°",
       "angleHint": "Queda fijo al publicar.",
-      "anglePreview": "Muro a {{angle}} grados",
-      "more": "Más",
       "save": "Guardar",
       "saving": "Guardando tu muro…",
-      "saveFailed": "No se pudieron guardar los datos del muro. Inténtalo de nuevo."
+      "saveFailed": "No se pudieron guardar los datos del muro. Inténtalo de nuevo.",
+      "name": "Nombre",
+      "renameTitle": "Cambia el nombre del muro",
+      "renameDone": "Listo",
+      "renameHint": "Abre un campo para escribir otro nombre"
     },
     "publish": {
-      "title": "Añádelo a tus plafones",
+      "title": "Añadiéndolo a tus plafones",
       "working": "Publicando tu muro…",
       "failed": "No se pudo publicar el muro.",
       "stalled": "Tu muro está guardado, pero prepararlo tardó demasiado. Inténtalo de nuevo.",
@@ -1133,13 +1140,14 @@
       "startFailed": "No se pudo empezar el reseteo. Inténtalo otra vez.",
       "resumeTitle": "Tienes un reseteo a medias",
       "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El muro sigue activo hasta que se publique el nuevo.",
-      "photoTitle": "Fotografía el muro tal como está ahora",
-      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
-      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
+      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan.",
+      "heroTitle": "Haz una foto nueva del muro",
+      "heroTitleLibrary": "Elige una foto nueva del muro",
+      "photoNote": "Mismo nombre y ángulo que antes."
     },
     "background": {
       "title": "¿Qué debería mostrar el muro?",
-      "body": "Desliza entre la foto, el muro y las presas antes de elegir cómo se iluminan.",
+      "body": "Muestra la foto, solo el muro o solo las presas.",
       "unsupported": "Ahora solo está disponible la foto. Aún puedes terminar tu muro."
     }
   },

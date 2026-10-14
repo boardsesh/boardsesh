@@ -50,17 +50,30 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Alert: { alert: alertMock },
   BackHandler: { addEventListener: () => ({ remove() {} }) },
-  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
-  Pressable: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    testID,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    testID?: string;
+  }) => createElement('div', { 'data-testid': testID, onClick: disabled ? undefined : onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     hairlineWidth: 1,
+    absoluteFill: {},
     absoluteFillObject: {},
     create: (styles: unknown) => styles,
   },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  Switch: () => null,
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
@@ -87,14 +100,16 @@ vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
+  cardCorners: { borderRadius: 12 },
 }));
+vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   // useHeaderActions reads the variant and the brand tint for the native confirm.
   useTheme: () => ({
     variant: 'liquidGlass',
-    brandColors: { primary: '#6D28D9', error: '#C81E1E' },
+    brandColors: { primary: '#6D28D9', error: '#C81E1E', warning: '#B45309' },
     systemColors: { secondaryLabel: '#888', tertiaryLabel: '#666', separator: '#222' },
   }),
 }));
@@ -179,6 +194,8 @@ vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivity
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
+vi.mock('../SprayWallNameSheet', () => ({ SprayWallNameSheet: () => null }));
+vi.mock('../SprayScanPhoto', () => ({ SprayScanPhoto: () => null }));
 vi.mock('../SprayCropMarker', () => ({ SprayCropMarker: () => createElement('div', { 'data-testid': 'crop' }) }));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
@@ -260,11 +277,11 @@ afterEach(cleanup);
 describe('the wizard header, with the real useHeaderActions', () => {
   it('leaves Cancel and Done to the crop step, and takes the header back after it', async () => {
     render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs' }));
-    expect(screen.getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(screen.getByTestId('spray-photo-tile')).toBeTruthy();
     expect(lastSlotProps('headerLeft')?.kind).toBe('close');
     expect(trailingLabel()).toBe('sprayWizard.next');
     pickLibraryMock.mockResolvedValueOnce({ outcome: 'picked', photo: PHOTO });
-    await act(async () => fireEvent.click(screen.getByText('sprayWizard.photo.library')));
+    await act(async () => fireEvent.click(screen.getByText('sprayWizard.photo.heroTitleLibrary')));
 
     const writesBeforeCrop = setOptionsMock.mock.calls.length;
     fireEvent.click(screen.getByText('sprayWizard.photo.adjust'));
@@ -280,7 +297,7 @@ describe('the wizard header, with the real useHeaderActions', () => {
     // Done with nothing changed is Cancel: back on the photo, the first step,
     // with its X and Next.
     act(() => done.onPress());
-    expect(screen.getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(screen.getByTestId('spray-photo-tile')).toBeTruthy();
     expect(lastSlotProps('headerLeft')?.kind).toBe('close');
     expect(trailingLabel()).toBe('sprayWizard.next');
   });
@@ -324,7 +341,7 @@ describe('the wizard header, with the real useHeaderActions', () => {
 
     // The details step: the wizard's own Save, and a chevron back to the look.
     pressTrailing();
-    expect(screen.getByText('sprayWizard.details.title')).toBeTruthy();
+    expect(screen.getByTestId('spray-details-step')).toBeTruthy();
     expect(trailingLabel()).toBe('sprayWizard.details.save');
     expect((lastSlotProps('headerRight')?.trailing as { kind?: string } | undefined)?.kind).toBe('confirm');
     expect(lastSlotProps('headerLeft')?.kind).toBe('back');

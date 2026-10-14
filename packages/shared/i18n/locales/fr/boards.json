@@ -997,18 +997,21 @@
     "stepCounter": "Étape {{current}} sur {{total}}",
     "back": "Retour",
     "next": "Suivant",
+    "notSaved": "Pas enregistré",
     "photo": {
-      "title": "Photographie le mur",
-      "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
       "helpLink": "Bien prendre la photo",
       "helpLinkHint": "Ouvre le guide photo dans ton navigateur",
-      "library": "Choisir une photo",
-      "camera": "Prendre une photo",
-      "pickAnother": "Choisir une autre photo",
       "adjust": "Recadrer ou pivoter",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre.",
-      "tip": "Recule, place-toi bien en face du mur et cadre les 4 coins."
+      "tip": "Recule, place-toi bien en face du mur et cadre les quatre coins.",
+      "heroTitle": "Prends ton mur en photo",
+      "heroBody": "Touche pour ouvrir l'appareil photo",
+      "heroTitleLibrary": "Choisis une photo de ton mur",
+      "heroBodyLibrary": "Touche pour ouvrir tes photos",
+      "fromLibrary": "Choisir dans tes photos",
+      "retake": "Reprendre",
+      "change": "Changer de photo"
     },
     "adjust": {
       "title": "Recadre et pivote",
@@ -1032,14 +1035,14 @@
     },
     "anchors": {
       "title": "Marque les coins",
-      "body": "Fais glisser les quatre cercles sur les coins du mur. Passe si tu as shooté bien en face.",
+      "body": "Fais glisser les cercles sur les coins du mur. Photo prise bien en face ? Touche Suivant.",
       "hint": "En haut à gauche, en haut à droite, en bas à droite, en bas à gauche.",
       "crossed": "Ces coins se croisent. Place-les autour du mur dans l'ordre.",
       "cornerTopLeft": "Coin en haut à gauche",
       "cornerTopRight": "Coin en haut à droite",
       "cornerBottomRight": "Coin en bas à droite",
       "cornerBottomLeft": "Coin en bas à gauche",
-      "clear": "Recommencer les coins",
+      "clear": "Réinitialiser les coins",
       "quality": {
         "good": "Bien en face. Le mur sera redressé proprement.",
         "soft": "Un peu de biais. Reprends-la bien en face pour un rendu plus net.",
@@ -1056,7 +1059,8 @@
       "offlineMode": "Le mode hors ligne est activé, ta photo ne peut donc pas être mise en ligne. Désactive-le, puis réessaie.",
       "noSignal": "Pas de réseau, ta photo n'a donc pas été mise en ligne. Réessaie dès que tu as du réseau.",
       "serverUnreachable": "Impossible de joindre Boardsesh pour l'instant. Ta photo est toujours là, réessaie dans une minute.",
-      "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
+      "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau.",
+      "resumeHint": "Tu peux quitter et reprendre plus tard."
     },
     "detect": {
       "title": "Recherche des prises"
@@ -1074,17 +1078,18 @@
       "retry": "Réessayer"
     },
     "look": {
-      "title": "Comment allumer tes prises ?",
-      "body": "Les grimpeurs verront ton mur comme ça, sauf ceux qui ont choisi d'utiliser leur propre rendu sur les murs de spray.",
+      "title": "Comment allumer les prises ?",
+      "body": "Fais glisser pour essayer un rendu. Les grimpeurs verront ton mur comme ça.",
       "loading": "Chargement de ton mur…",
       "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
       "saving": "Enregistrement du rendu…",
-      "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
+      "failed": "Impossible d'enregistrer le rendu. Réessaie ou continue sans.",
       "publishWithout": "Publier quand même",
       "continueWithout": "Continuer quand même",
       "dimTitle": "Assombrir le reste du mur",
       "dimOff": "Désactivé",
-      "previewPhoto": "L’éclairage des prises est prévisualisé sur ta photo d’origine. {{background}} sera utilisé à la publication."
+      "previewPhoto": "L’éclairage des prises est prévisualisé sur ta photo d’origine. {{background}} sera utilisé à la publication.",
+      "failedPublish": "Impossible d'enregistrer le rendu. Réessaie ou publie sans."
     },
     "details": {
       "title": "Donne un nom à ton mur",
@@ -1092,14 +1097,16 @@
       "angle": "Angle",
       "angleValue": "{{angle}}°",
       "angleHint": "Figé une fois publié.",
-      "anglePreview": "Mur à {{angle}} degrés",
-      "more": "Plus",
       "save": "Enregistrer",
       "saving": "Enregistrement de ton mur…",
-      "saveFailed": "Impossible d'enregistrer les infos du mur. Réessaie."
+      "saveFailed": "Impossible d'enregistrer les infos du mur. Réessaie.",
+      "name": "Nom",
+      "renameTitle": "Renomme ton mur",
+      "renameDone": "OK",
+      "renameHint": "Ouvre un champ pour saisir un nouveau nom"
     },
     "publish": {
-      "title": "Ajoute-le à tes boards",
+      "title": "Ajout à tes boards",
       "working": "Publication de ton mur…",
       "failed": "La publication du mur a échoué.",
       "stalled": "Ton mur est enregistré, mais sa préparation a pris trop de temps. Réessaie.",
@@ -1133,13 +1140,14 @@
       "startFailed": "Impossible de lancer la réinitialisation. Réessaie.",
       "resumeTitle": "Tu as une réinitialisation en cours",
       "resumeBody": "La nouvelle photo de « {{name}} » n'est pas finie. Reprends où tu t'es arrêté, ou recommence. Le mur reste en ligne jusqu'à ce que le nouveau le remplace.",
-      "photoTitle": "Photographie le mur tel qu'il est maintenant",
-      "photoBody": "Même nom et même angle qu’avant. Prends tout le mur en photo, puis marque chaque prise.",
-      "archiveNotice": "Quand ce mur sera en ligne, l'ancien sera archivé. Ses blocs et ses croix restent."
+      "archiveNotice": "Quand ce mur sera en ligne, l'ancien sera archivé. Ses blocs et ses croix restent.",
+      "heroTitle": "Prends une nouvelle photo du mur",
+      "heroTitleLibrary": "Choisis une nouvelle photo du mur",
+      "photoNote": "Même nom et même angle qu’avant."
     },
     "background": {
       "title": "Que doit montrer le mur ?",
-      "body": "Fais glisser le curseur entre la photo, le mur et les prises avant de choisir leur éclairage.",
+      "body": "Affiche la photo, le mur seul ou les prises seules.",
       "unsupported": "Seule la photo est disponible pour le moment. Tu peux quand même terminer ton mur."
     }
   },
