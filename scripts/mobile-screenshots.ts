@@ -2313,7 +2313,12 @@ export function renderCppMaestroFlow(
           // before using the Climbs tab, which UIKit also exposes when collapsed.
           '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}\n      selected: true\n    timeout: 90000',
           '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n      selected: false\n    timeout: 90000',
-          '- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n    selected: false',
+          // Retained French tablet traces hit this unique enabled tab correctly,
+          // but the first tap sometimes leaves Session selected. Recheck native
+          // selection before each bounded retry; a completed tap is not readiness.
+          target === 'spray'
+            ? '- tapOn:\n    text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n    selected: false'
+            : '- repeat:\n    times: 3\n    while:\n      visible:\n        text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n        selected: false\n        enabled: true\n    commands:\n      - tapOn:\n          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n          selected: false\n          enabled: true\n      - waitForAnimationToEnd:\n          timeout: 10000',
           '- extendedWaitUntil:\n    visible:\n      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}\n      selected: true\n    timeout: 90000',
         );
     }

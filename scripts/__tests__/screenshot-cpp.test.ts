@@ -1906,6 +1906,18 @@ describe('custom product page captures', () => {
         },
       },
     ];
+    const unselectedClimbs = { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: false, enabled: true };
+    const manufacturerHandoff = expectedHandoff.map((step, index) =>
+      index === 2
+        ? {
+            repeat: {
+              times: 3,
+              while: { visible: unselectedClimbs },
+              commands: [{ tapOn: unselectedClimbs }, { waitForAnimationToEnd: { timeout: 10000 } }],
+            },
+          }
+        : step,
+    );
     for (const target of CPP_TARGETS) {
       const { coverage } = scenario(target);
       for (const device of IOS_SCREENSHOT_DEVICES) {
@@ -1919,12 +1931,69 @@ describe('custom product page captures', () => {
           );
           expect(joinTap).toBeGreaterThan(-1);
           expect(queueCommand).toBeGreaterThan(joinTap);
-          expect(steps.slice(joinTap + 2, queueCommand)).toEqual(device.name.startsWith('iPad') ? expectedHandoff : []);
+          expect(steps.slice(joinTap + 2, queueCommand)).toEqual(
+            device.name.startsWith('iPad') ? (target === 'spray' ? expectedHandoff : manufacturerHandoff) : [],
+          );
           expect(steps[queueCommand + 1]).toMatchObject({
             retry: { maxRetries: 3, commands: [{}, { assertTrue: '${output.cppAcknowledged == output.cppSequence}' }] },
           });
         }
       }
+    }
+  });
+  it('recovers missed native Blocs taps without retapping a selected or disabled tab', () => {
+    // Run38542196580, French jobs115780941395/115780941344 first-attempt
+    // failure hierarchies: one enabled Blocs parent, Session still selected.
+    // Both second attempts select the same parent at the same bounds.
+    const retainedTabs = [
+      { text: 'Blocs', enabled: true, selected: false, bounds: '[846,36][895,72]' },
+      { text: 'Blocs', enabled: true, selected: false, bounds: '[929,36][978,72]' },
+    ];
+    type TabSelector = { text: string; selected: boolean; enabled?: boolean };
+    const { coverage } = scenario('tension');
+    for (const device of IOS_SCREENSHOT_DEVICES.filter((candidate) => candidate.name.startsWith('iPad'))) {
+      const steps = parseAllDocuments(renderCppMaestroFlow('tension', device, coverage, 'fr'))[1].toJS() as Record<
+        string,
+        unknown
+      >[];
+      const queueCommand = steps.findIndex(
+        (step) => typeof step.evalScript === 'string' && step.evalScript.includes("'/set?scene=queue'"),
+      );
+      const recovery = steps[queueCommand - 2].repeat as {
+        times: number;
+        while: { visible: TabSelector };
+        commands: [{ tapOn: TabSelector }, { waitForAnimationToEnd: { timeout: number } }];
+      };
+      const readiness = steps[queueCommand - 1].extendedWaitUntil as { visible: TabSelector; timeout: number };
+      const run = (tab: (typeof retainedTabs)[number], missedTaps: number) => {
+        let selected = tab.selected;
+        let taps = 0;
+        let settleBudget = 0;
+        const matches = (selector: TabSelector) =>
+          new RegExp(selector.text.replace('${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', 'Blocs')).test(tab.text) &&
+          selected === selector.selected &&
+          (selector.enabled === undefined || tab.enabled === selector.enabled);
+        for (let attempt = 0; attempt < recovery.times && matches(recovery.while.visible); attempt += 1) {
+          expect(matches(recovery.commands[0].tapOn)).toBe(true);
+          taps += 1;
+          if (taps > missedTaps) selected = true;
+          settleBudget += recovery.commands[1].waitForAnimationToEnd.timeout;
+        }
+        return { taps, ready: matches(readiness.visible), settleBudget };
+      };
+      for (const tab of retainedTabs) {
+        expect(run(tab, 0)).toEqual({ taps: 1, ready: true, settleBudget: 10000 });
+        expect(run(tab, 1)).toEqual({ taps: 2, ready: true, settleBudget: 20000 });
+        expect(run(tab, 2)).toEqual({ taps: 3, ready: true, settleBudget: 30000 });
+        expect(run(tab, 3)).toEqual({ taps: 3, ready: false, settleBudget: 30000 });
+        expect(run({ ...tab, selected: true }, 0)).toEqual({ taps: 0, ready: true, settleBudget: 0 });
+        expect(run({ ...tab, enabled: false }, 0)).toEqual({ taps: 0, ready: false, settleBudget: 0 });
+        expect(run({ ...tab, text: 'Search' }, 0)).toEqual({ taps: 0, ready: false, settleBudget: 0 });
+      }
+      expect(readiness).toEqual({
+        visible: { text: '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}', selected: true },
+        timeout: 90000,
+      });
     }
   });
   it('requires the closed tablet sidebar before the queue modal can hide its controls', () => {

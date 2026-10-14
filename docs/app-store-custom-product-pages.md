@@ -265,6 +265,12 @@ tab's selected state, then waits for and taps the existing localized unselected
 Climbs tab, which UIKit also exposes with its sidebar collapsed. It verifies
 Climbs is selected before issuing the queue command;
 the exact route, sequence, private-session and content gates still apply.
+Manufacturer tablet captures allow at most three taps of that enabled,
+unselected native tab, checking its selection before each tap and settling for
+up to ten seconds afterward. The final 90-second selected-state assertion stays
+mandatory. Retained French Tension traces showed the unique correct target
+remaining unselected after a completed tap, then succeeding unchanged on a fresh
+attempt; the retry does not change the app or repair missing fixture assets.
 Before each tablet frame, capture closes only the exact open-state Hide Sidebar
 control. Up to three state-checked taps handle a native tap that finishes without
 closing; each tap settles, and the final closed-state assertion still must pass.
