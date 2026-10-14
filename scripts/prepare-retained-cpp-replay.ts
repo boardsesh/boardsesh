@@ -40,6 +40,70 @@ const REVIEWABLE_RUNTIME_PATHS = new Set([
   'packages/mobile/src/providers/queue-provider.tsx',
   'packages/mobile/src/data/changelog.generated.json',
 ]);
+const FOLLOWING_RUNTIME_PATHS = new Set([
+  'packages/mobile/src/components/offline-sync-bridge.tsx',
+  'packages/mobile/src/lib/graphql/hooks/use-followed-authors.ts',
+]);
+const FOLLOWING_RUNTIME_ADDITION = 'packages/mobile/src/lib/graphql/author-query-invalidation.ts';
+// Independently reviewed #6461 edits are outside the CPP execution graph. These
+// exact old/new byte pairs still require approval; this is not a path exclusion.
+const REVIEWED_SHOWCASE_PAIRS = new Map<string, readonly [string, string]>([
+  [
+    'packages/mobile/.maestro/showcase/crew-join.yaml',
+    [
+      '52026c245b2b3c1602717c9efdc4f4d96b9598cec0ee1ec99522f6286ba9166b',
+      'ca84eb1ce1c718dd481e66e2287f3bea1b19a4664cb1092eb79d86db395da2de',
+    ],
+  ],
+  [
+    'packages/mobile/.maestro/showcase/crew-start.yaml',
+    [
+      'bf19c0f3be2ca62e6b43e4fa21dc9812f257ff3a39105e9bed0f707c1b6c7099',
+      'b06b3f22d9a21411e10b17f0bd65ae6e84418cdcfa65ed6271bb70aede62229e',
+    ],
+  ],
+  [
+    'packages/mobile/.maestro/showcase/crew.yaml',
+    [
+      'cb6991dae991e07b322a7ab22495ac2e84ba48cf7554bf1dafb0d67e9837a7e8',
+      '1039d08d7012495b4ccffa9cc0a497d0ea0027769f795e5f2c2e21b99cf1f642',
+    ],
+  ],
+  [
+    'packages/mobile/.maestro/showcase/session-end.yaml',
+    [
+      'fdae995074170134130f5e9589220d0b3909d1999fd710d166719edb59723d57',
+      '14273655c227272b244bebba2351a1a971be67b61755955e57a25baae3183ee9',
+    ],
+  ],
+  [
+    'scripts/lib/showcase-video/record.ts',
+    [
+      'e214819230f6599076e8ff48385fd30f8c9bd5ccdb54bc9d6317e5a1d89839ce',
+      'a4606ef3e7880016652edacc9f30a5e73bb918a2dc714701dc07f69bca5f2135',
+    ],
+  ],
+  [
+    'scripts/lib/showcase-video/render.ts',
+    [
+      'c2be58c7761480c913fcad02ed1870a9a80295cfb41fc71217cd7093c07038c6',
+      '3234e38e0af260dfd92dd2162acd3729d6297dae80f851689e6baf8bab9dc877',
+    ],
+  ],
+]);
+export function isReviewedShowcasePair(path: string, producerSha256: string, currentSha256: string): boolean {
+  const pair = REVIEWED_SHOWCASE_PAIRS.get(path);
+  return pair?.[0] === producerSha256 && pair[1] === currentSha256;
+}
+const MAX_REPLAY_ATTEMPTS = 10;
+const SKIPPED_CAPTURE_JOBS = [
+  'cpp-bootstrap',
+  'cpp-prepare-record',
+  'cpp-finalize',
+  'cpp-create',
+  'cpp-plan',
+  'ios-finalize',
+];
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
 const STORE_LOCALES: Record<string, string[]> = {
   'en-US': ['en-US'],
@@ -128,17 +192,193 @@ export interface ReplayArtifact {
 }
 export interface ReplayProducer {
   runId: number;
-  attempt: 1;
+  attempt: number;
   producerSha: string;
   jobIds: number[];
   artifacts: ReplayArtifact[];
   captureContractSha256: string;
-  runtimeDrift?: {
-    version: 1;
-    producerSha: string;
-    files: Array<{ path: string; producerSha256: string; currentSha256: string }>;
-    approvedSha256: string;
+  runtimeDrift?: RuntimeDrift & { approvedSha256: string };
+  retryHistory?: ReplayRetryHistory;
+}
+
+type RuntimeDrift =
+  | {
+      version: 1;
+      producerSha: string;
+      files: Array<{ path: string; producerSha256: string; currentSha256: string }>;
+    }
+  | {
+      version: 2;
+      producerSha: string;
+      files: Array<{
+        path: string;
+        producerPresent: boolean;
+        producerSha256: string | null;
+        currentPresent: true;
+        currentSha256: string;
+      }>;
+    };
+
+interface ReplayExecution {
+  name: string;
+  jobId: number;
+  attempt: number;
+  conclusion: string;
+  startedAt: string;
+  completedAt: string;
+  signatureSha256: string;
+}
+interface ReplayRetryHistory {
+  version: 1;
+  attempts: Array<{ attempt: number; jobsSha256: string }>;
+  selectedExecutions: Array<ReplayExecution & { latestJobId: number }>;
+  excludedArtifacts: Array<{
+    id: number;
+    name: string;
+    digest: string;
+    createdAt: string;
+    jobId: number;
+    attempt: number;
+  }>;
+}
+
+function execution(job: Record<string, unknown>): ReplayExecution {
+  const startedAt = job.started_at;
+  const completedAt = job.completed_at;
+  if (
+    typeof job.name !== 'string' ||
+    !id(job.id) ||
+    !id(job.run_attempt) ||
+    typeof startedAt !== 'string' ||
+    typeof completedAt !== 'string' ||
+    !Number.isFinite(Date.parse(startedAt)) ||
+    !Number.isFinite(Date.parse(completedAt)) ||
+    Date.parse(startedAt) > Date.parse(completedAt) ||
+    !['success', 'failure'].includes(String(job.conclusion))
+  )
+    return fail();
+  const steps = list(job.steps);
+  if (!steps.length || new Set(steps.map((step) => step.number)).size !== steps.length) return fail();
+  for (const step of steps) {
+    if (
+      !id(step.number) ||
+      typeof step.name !== 'string' ||
+      !step.name ||
+      step.status !== 'completed' ||
+      !(
+        job.conclusion === 'success' ? ['success', 'skipped'] : ['success', 'skipped', 'failure', 'cancelled']
+      ).includes(String(step.conclusion))
+    )
+      return fail();
+    if (step.conclusion === 'skipped' && step.started_at === null && step.completed_at === null) continue;
+    if (
+      typeof step.started_at !== 'string' ||
+      typeof step.completed_at !== 'string' ||
+      !Number.isFinite(Date.parse(step.started_at)) ||
+      !Number.isFinite(Date.parse(step.completed_at)) ||
+      Date.parse(step.started_at) < Date.parse(startedAt) ||
+      Date.parse(step.completed_at) > Date.parse(completedAt) ||
+      Date.parse(step.started_at) > Date.parse(step.completed_at)
+    )
+      return fail();
+  }
+  if (job.name.startsWith('cpp-capture') && job.conclusion === 'success') {
+    const captures = steps.filter((step) => step.name === 'Capture target-specific native scenes');
+    if (captures.length !== 1 || captures[0].conclusion !== 'success') return fail();
+  }
+  // Rerun inventories clone carried successes with new IDs and attempt numbers.
+  // Only the exact execution window and ordered step outcomes identify the original job.
+  return {
+    name: job.name,
+    jobId: job.id,
+    attempt: job.run_attempt,
+    conclusion: String(job.conclusion),
+    startedAt,
+    completedAt,
+    signatureSha256: replayHash(
+      canonicalJson({
+        name: job.name,
+        headSha: job.head_sha,
+        status: job.status,
+        conclusion: job.conclusion,
+        startedAt,
+        completedAt,
+        steps: steps.map((step) => ({
+          number: step.number,
+          name: step.name,
+          status: step.status,
+          conclusion: step.conclusion,
+          startedAt: step.started_at,
+          completedAt: step.completed_at,
+        })),
+      }),
+    ),
   };
+}
+
+function replayHistory(
+  prefix: string,
+  runId: number,
+  attempt: number,
+  producerSha: string,
+  latestJobs: Record<string, unknown>[],
+  client: ReplayClient,
+): { history: ReplayRetryHistory; executions: ReplayExecution[] } {
+  const history: ReplayRetryHistory = { version: 1, attempts: [], selectedExecutions: [], excludedArtifacts: [] };
+  const executions = new Map<string, ReplayExecution>();
+  const allJobIds = new Set<number>();
+  const names = latestJobs.map((job) => String(job.name)).sort();
+  if (names.length > 100 || new Set(names).size !== names.length) return fail();
+  for (let number = 1; number <= attempt; number++) {
+    const jobs =
+      number === attempt
+        ? latestJobs
+        : client.pages(`${prefix}/runs/${runId}/attempts/${number}/jobs?per_page=100`, 'jobs');
+    if (canonicalJson(jobs.map((job) => String(job.name)).sort()) !== canonicalJson(names)) return fail();
+    for (const job of jobs) {
+      if (
+        !id(job.id) ||
+        allJobIds.has(job.id) ||
+        typeof job.name !== 'string' ||
+        !job.name ||
+        job.run_id !== runId ||
+        job.run_attempt !== number ||
+        job.head_sha !== producerSha ||
+        job.status !== 'completed' ||
+        !['success', 'skipped', 'failure'].includes(String(job.conclusion)) ||
+        (SKIPPED_CAPTURE_JOBS.includes(String(job.name)) && job.conclusion !== 'skipped')
+      )
+        return fail();
+      allJobIds.add(job.id);
+      if (job.conclusion !== 'skipped') {
+        const actual = execution(job);
+        // Earlier matching records retain the real execution ID; later clones add no new execution.
+        if (!executions.has(actual.signatureSha256)) executions.set(actual.signatureSha256, actual);
+      }
+    }
+    history.attempts.push({
+      attempt: number,
+      jobsSha256: replayHash(
+        canonicalJson(
+          [...jobs]
+            .sort((left, right) => (String(left.name) < String(right.name) ? -1 : 1))
+            .map((job) => ({
+              id: job.id,
+              name: job.name,
+              attempt: job.run_attempt,
+              runId: job.run_id,
+              headSha: job.head_sha,
+              status: job.status,
+              conclusion: job.conclusion,
+              startedAt: job.started_at,
+              completedAt: job.completed_at,
+              steps: job.steps,
+            })),
+        ),
+      ),
+    });
+  }
+  return { history, executions: [...executions.values()] };
 }
 
 /** A successful artifact upload alone is insufficient: uploads also run after failed captures. */
@@ -168,12 +408,14 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
     run.event !== 'workflow_dispatch' ||
     run.status !== 'completed' ||
     run.conclusion !== 'success' ||
-    run.run_attempt !== 1 ||
+    !id(run.run_attempt) ||
+    run.run_attempt > MAX_REPLAY_ATTEMPTS ||
     !sha(run.head_sha) ||
     !client.isAncestor(run.head_sha, options.sourceSha)
   )
     return fail();
   const producerSha = run.head_sha;
+  const attempt = run.run_attempt;
   const sourceWorkflow: unknown = parse(client.source(producerSha, WORKFLOW).toString());
   const currentWorkflow: unknown = parse(readFileSync(join(options.repoRoot, WORKFLOW), 'utf8'));
   function contract(workflowDocument: unknown): unknown {
@@ -195,33 +437,74 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
   const currentContract = contract(currentWorkflow);
   if (canonicalJson(contract(sourceWorkflow)) !== canonicalJson(currentContract)) return fail();
   const fileHashes: Record<string, string> = {};
-  const runtimeFiles: Array<{ path: string; producerSha256: string; currentSha256: string }> = [];
+  const runtimeFiles: Array<{ path: string; producerSha256: string | null; currentSha256: string }> = [];
   const paths = client.files(options.sourceSha).filter(isReplayCapturePath).sort();
   const priorPaths = client.files(producerSha).filter(isReplayCapturePath).sort();
-  if (!paths.length || new Set(paths).size !== paths.length || canonicalJson(paths) !== canonicalJson(priorPaths))
+  const priorSet = new Set(priorPaths);
+  const currentSet = new Set(paths);
+  if (
+    !paths.length ||
+    !priorPaths.length ||
+    currentSet.size !== paths.length ||
+    priorSet.size !== priorPaths.length ||
+    priorPaths.some((path) => !currentSet.has(path)) ||
+    paths.some((path) => !priorSet.has(path) && path !== FOLLOWING_RUNTIME_ADDITION)
+  )
     return fail();
   for (const path of paths) {
     const current = readFileSync(join(options.repoRoot, path));
+    if (!priorSet.has(path)) {
+      runtimeFiles.push({ path, producerSha256: null, currentSha256: replayHash(current) });
+      continue;
+    }
     const original = client.source(producerSha, path);
     fileHashes[path] = replayHash(original);
     if (!original.equals(current)) {
-      if (!REVIEWABLE_RUNTIME_PATHS.has(path)) return fail();
-      runtimeFiles.push({ path, producerSha256: replayHash(original), currentSha256: replayHash(current) });
+      const producerSha256 = fileHashes[path];
+      const currentSha256 = replayHash(current);
+      if (
+        !REVIEWABLE_RUNTIME_PATHS.has(path) &&
+        !FOLLOWING_RUNTIME_PATHS.has(path) &&
+        !isReviewedShowcasePair(path, producerSha256, currentSha256)
+      )
+        return fail();
+      runtimeFiles.push({ path, producerSha256, currentSha256 });
     }
   }
-  const runtimeDrift = { version: 1 as const, producerSha, files: runtimeFiles };
+  // Preserve existing v1 approval bytes. Only the exact Following delta uses
+  // v2's explicit presence proof, including absence of the one added helper.
+  const runtimeDrift: RuntimeDrift = runtimeFiles.some(
+    (entry) =>
+      entry.producerSha256 === null ||
+      FOLLOWING_RUNTIME_PATHS.has(entry.path) ||
+      REVIEWED_SHOWCASE_PAIRS.has(entry.path),
+  )
+    ? {
+        version: 2,
+        producerSha,
+        files: runtimeFiles.map((entry) => ({
+          ...entry,
+          producerPresent: entry.producerSha256 !== null,
+          currentPresent: true,
+        })),
+      }
+    : {
+        version: 1,
+        producerSha,
+        files: runtimeFiles.map((entry) => ({ ...entry, producerSha256: entry.producerSha256 ?? fail() })),
+      };
   const runtimeDriftSha256 = replayHash(`${canonicalJson(runtimeDrift)}\n`);
   if (
     (runtimeFiles.length > 0 && options.approvedRuntimeDrift !== runtimeDriftSha256) ||
     (runtimeFiles.length === 0 && options.approvedRuntimeDrift !== undefined)
   )
     return fail();
-  const jobs = client.pages(`${prefix}/runs/${options.runId}/attempts/1/jobs?per_page=100`, 'jobs');
+  const jobs = client.pages(`${prefix}/runs/${options.runId}/attempts/${attempt}/jobs?per_page=100`, 'jobs');
   if (
     jobs.some(
       (job) =>
         !id(job.id) ||
-        job.run_attempt !== 1 ||
+        job.run_attempt !== attempt ||
         job.status !== 'completed' ||
         !['success', 'skipped'].includes(String(job.conclusion)),
     ) ||
@@ -234,12 +517,23 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
     return matches[0];
   }
   const required = [requireJob('setup', 'success'), requireJob('ios-build', 'success')];
-  for (const name of ['cpp-bootstrap', 'cpp-prepare-record', 'cpp-finalize', 'cpp-create', 'cpp-plan', 'ios-finalize'])
-    requireJob(name, 'skipped');
+  for (const name of SKIPPED_CAPTURE_JOBS) requireJob(name, 'skipped');
   if (jobs.filter((job) => String(job.name).startsWith('cpp-capture')).length !== 16) return fail();
+  const retry = attempt > 1 ? replayHistory(prefix, options.runId, attempt, producerSha, jobs, client) : undefined;
+  function originalJob(job: Record<string, unknown>): ReplayExecution | undefined {
+    if (!retry) return undefined;
+    const signature = execution(job).signatureSha256;
+    const original = retry.executions.find((entry) => entry.signatureSha256 === signature);
+    if (!original || original.conclusion !== 'success') return fail();
+    retry.history.selectedExecutions.push({ ...original, latestJobId: Number(job.id) });
+    return original;
+  }
+  const selectedJobIds = required.map((job) => originalJob(job)?.jobId ?? Number(job.id));
   const available = client.pages(`${prefix}/runs/${options.runId}/artifacts?per_page=100`, 'artifacts');
+  const cppArtifactCount = available.filter((artifact) => String(artifact.name).startsWith('ios-cpp-')).length;
   if (
-    available.filter((artifact) => String(artifact.name).startsWith('ios-cpp-')).length !== 16 ||
+    (!retry && cppArtifactCount !== 16) ||
+    (retry && cppArtifactCount > 16 * attempt) ||
     available.some((artifact) => String(artifact.name).startsWith('screenshot-fixtures-cpp-capture-'))
   )
     return fail();
@@ -247,9 +541,46 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
   for (const locale of LOCALES)
     for (const [deviceName, device] of RETAINED_CPP_DEVICES) {
       const job = requireJob(`cpp-capture (${options.target}, ${locale}, ${deviceName}, ${device})`, 'success');
-      required.push(job);
+      const original = originalJob(job);
+      selectedJobIds.push(original?.jobId ?? Number(job.id));
       const name = `ios-cpp-${options.target}-cpp-capture-${locale}-${device}`;
-      const matches = available.filter((artifact) => artifact.name === name);
+      const candidates = available.filter((artifact) => artifact.name === name);
+      const matches = retry
+        ? candidates.filter((artifact) => {
+            if (
+              !id(artifact.id) ||
+              artifact.expired !== false ||
+              typeof artifact.digest !== 'string' ||
+              !/^sha256:[a-f\d]{64}$/.test(artifact.digest) ||
+              !object(artifact.workflow_run) ||
+              artifact.workflow_run.id !== options.runId ||
+              artifact.workflow_run.head_sha !== producerSha ||
+              typeof artifact.created_at !== 'string' ||
+              !Number.isFinite(Date.parse(artifact.created_at))
+            )
+              return fail();
+            const created = Date.parse(artifact.created_at);
+            const executions = retry.executions.filter(
+              (entry) =>
+                entry.name === job.name &&
+                created >= Date.parse(entry.startedAt) &&
+                created <= Date.parse(entry.completedAt),
+            );
+            if (executions.length !== 1) return fail();
+            const matched = executions[0];
+            if (matched.signatureSha256 === original?.signatureSha256) return true;
+            if (matched.conclusion !== 'failure') return fail();
+            retry.history.excludedArtifacts.push({
+              id: artifact.id,
+              name,
+              digest: artifact.digest,
+              createdAt: artifact.created_at,
+              jobId: matched.jobId,
+              attempt: matched.attempt,
+            });
+            return false;
+          })
+        : candidates;
       const artifact = matches[0];
       if (
         matches.length !== 1 ||
@@ -267,17 +598,36 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
         Date.parse(String(artifact.created_at)) > Date.parse(String(job.completed_at))
       )
         return fail();
-      artifacts.push({ id: artifact.id, name, digest: artifact.digest, locale, device, jobId: Number(job.id) });
+      artifacts.push({
+        id: artifact.id,
+        name,
+        digest: artifact.digest,
+        locale,
+        device,
+        jobId: original?.jobId ?? Number(job.id),
+      });
     }
   if (new Set(artifacts.map((artifact) => artifact.id)).size !== 16) return fail();
+  if (retry) {
+    const known = [...artifacts, ...retry.history.excludedArtifacts];
+    const cppArtifacts = available.filter((artifact) => String(artifact.name).startsWith('ios-cpp-'));
+    if (
+      known.length !== cppArtifacts.length ||
+      new Set(known.map((artifact) => artifact.id)).size !== known.length ||
+      cppArtifacts.some((artifact) => !known.some((entry) => entry.id === artifact.id))
+    )
+      return fail();
+    retry.history.excludedArtifacts.sort((left, right) => left.id - right.id);
+  }
   return {
     runId: options.runId,
-    attempt: 1,
+    attempt,
     producerSha,
-    jobIds: required.map((job) => Number(job.id)),
+    jobIds: selectedJobIds,
     artifacts,
     captureContractSha256: replayHash(canonicalJson({ workflow: currentContract, files: fileHashes })),
     ...(runtimeFiles.length > 0 ? { runtimeDrift: { ...runtimeDrift, approvedSha256: runtimeDriftSha256 } } : {}),
+    ...(retry ? { retryHistory: retry.history } : {}),
   };
 }
 

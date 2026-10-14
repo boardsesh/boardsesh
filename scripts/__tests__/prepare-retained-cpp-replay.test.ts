@@ -16,6 +16,7 @@ import * as capture from '../mobile-screenshots';
 import {
   createReplayClient,
   isReplayCapturePath,
+  isReviewedShowcasePair,
   verifyReplayFixture,
   prepareRetainedReplay,
   replayHash,
@@ -46,6 +47,15 @@ const trackedPaths = [
   'packages/mobile/src/components/play-drawer/QueueList.tsx',
   'packages/mobile/src/providers/queue-provider.tsx',
   'packages/mobile/src/data/changelog.generated.json',
+  'packages/mobile/src/components/offline-sync-bridge.tsx',
+  'packages/mobile/src/lib/graphql/hooks/use-followed-authors.ts',
+  'packages/mobile/src/lib/graphql/author-query-invalidation.ts',
+  'packages/mobile/.maestro/showcase/crew-join.yaml',
+  'packages/mobile/.maestro/showcase/crew-start.yaml',
+  'packages/mobile/.maestro/showcase/crew.yaml',
+  'packages/mobile/.maestro/showcase/session-end.yaml',
+  'scripts/lib/showcase-video/record.ts',
+  'scripts/lib/showcase-video/render.ts',
   'packages/shared/board-render/src/index.ts',
   'package.json',
   'pnpm-lock.yaml',
@@ -157,6 +167,57 @@ function sample() {
   return { options, run, jobs, artifacts, client };
 }
 
+function retrySource(attempts = 2) {
+  const source = sample();
+  source.run.run_attempt = attempts;
+  const histories = new Map<number, Array<Record<string, unknown>>>();
+  const timestamp = (attempt: number, minute: number) =>
+    `2026-10-14T${String(attempt - 1).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    histories.set(
+      attempt,
+      source.jobs.map((job, index) => {
+        const retriedCell = index === source.jobs.length - 1;
+        const executedAttempt = retriedCell ? attempt : 1;
+        const conclusion = retriedCell && attempt < attempts ? 'failure' : job.conclusion;
+        return {
+          ...job,
+          id: job.id + (attempt - 1) * 100,
+          run_id: runId,
+          run_attempt: attempt,
+          head_sha: producerSha,
+          conclusion,
+          started_at: timestamp(executedAttempt, 0),
+          completed_at: timestamp(executedAttempt, 5),
+          steps:
+            conclusion === 'skipped'
+              ? []
+              : [
+                  {
+                    name: job.name.startsWith('cpp-capture') ? 'Capture target-specific native scenes' : job.name,
+                    number: 1,
+                    status: 'completed',
+                    conclusion,
+                    started_at: timestamp(executedAttempt, 1),
+                    completed_at: timestamp(executedAttempt, 4),
+                  },
+                ],
+        };
+      }),
+    );
+  }
+  const latestArtifact = source.artifacts.at(-1)!;
+  latestArtifact.created_at = timestamp(attempts, 4);
+  for (let attempt = 1; attempt < attempts; attempt++)
+    source.artifacts.push({ ...latestArtifact, id: 1000 + attempt, created_at: timestamp(attempt, 4) });
+  source.client.pages = (path, field) => {
+    if (field === 'artifacts') return source.artifacts;
+    const attempt = Number(path.match(/\/attempts\/(\d+)\/jobs/)?.[1]);
+    return histories.get(attempt) ?? [];
+  };
+  return { ...source, histories };
+}
+
 describe('original native replay provenance', () => {
   it('accepts exactly sixteen successful native replay shards, one immutable artifact each', () => {
     const source = sample();
@@ -164,6 +225,9 @@ describe('original native replay provenance', () => {
     expect(proof.artifacts).toHaveLength(16);
     expect(proof.jobIds).toHaveLength(18);
     expect(proof.attempt).toBe(1);
+    expect(Object.keys(proof).sort()).toEqual(
+      ['runId', 'attempt', 'producerSha', 'jobIds', 'artifacts', 'captureContractSha256'].sort(),
+    );
   });
   it.each([
     [
@@ -173,7 +237,7 @@ describe('original native replay provenance', () => {
       },
     ],
     [
-      'rerun',
+      'rerun without complete original execution history',
       (source: ReturnType<typeof sample>) => {
         source.run.run_attempt = 2;
       },
@@ -392,6 +456,352 @@ describe('original native replay provenance', () => {
   });
 });
 
+describe('explicit presence and exact compatibility approval', () => {
+  const added = 'packages/mobile/src/lib/graphql/author-query-invalidation.ts';
+  const following = [
+    'packages/mobile/src/components/offline-sync-bridge.tsx',
+    'packages/mobile/src/lib/graphql/hooks/use-followed-authors.ts',
+  ];
+  function followingSource() {
+    const source = sample();
+    const priorPaths = trackedPaths.filter((path) => path !== added);
+    source.client.files = () => priorPaths;
+    const originalProof = verifyReplayProducer(source.options, source.client);
+    source.client.files = (commit) => (commit === producerSha ? priorPaths : trackedPaths);
+    source.options.repoRoot = directory();
+    for (const path of trackedPaths) put(source.options.repoRoot, path, readFileSync(join(ROOT, path)));
+    for (const path of following)
+      put(
+        source.options.repoRoot,
+        path,
+        Buffer.concat([readFileSync(join(ROOT, path)), Buffer.from('\n// reviewed\n')]),
+      );
+    const drift = {
+      version: 2,
+      producerSha,
+      files: [...following, added].sort().map((path) => ({
+        path,
+        producerPresent: path !== added,
+        producerSha256: path === added ? null : replayHash(readFileSync(join(ROOT, path))),
+        currentPresent: true,
+        currentSha256: replayHash(readFileSync(join(source.options.repoRoot, path))),
+      })),
+    };
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(drift)}\n`);
+    return { ...source, originalProof, drift };
+  }
+  it('accepts only the exact approved Following addition and modified bytes without changing original hashes', () => {
+    const source = followingSource();
+    const originalSource = source.client.source.bind(source.client);
+    source.client.source = (commit, path) => {
+      if (path === added) throw new Error('Absent producer file must never be fetched or fabricated');
+      return originalSource(commit, path);
+    };
+    const proof = verifyReplayProducer(source.options, source.client);
+    expect(proof.captureContractSha256).toBe(source.originalProof.captureContractSha256);
+    expect(proof.runtimeDrift).toEqual({ ...source.drift, approvedSha256: source.options.approvedRuntimeDrift });
+    expect(proof.runtimeDrift?.files.find((entry) => entry.path === added)?.producerSha256).toBeNull();
+  });
+  it.each(['missing', 'v1', 'false-presence', 'omitted-addition', 'later-bytes'])(
+    'rejects %s approval of the new runtime helper',
+    (kind) => {
+      const source = followingSource();
+      if (kind === 'missing') source.options.approvedRuntimeDrift = undefined;
+      if (kind === 'v1') {
+        const drift = {
+          version: 1,
+          producerSha,
+          files: source.drift.files.map(({ path, producerSha256, currentSha256 }) => ({
+            path,
+            producerSha256,
+            currentSha256,
+          })),
+        };
+        source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(drift)}\n`);
+      }
+      if (kind === 'false-presence') {
+        source.drift.files.find((entry) => entry.path === added)!.producerPresent = true;
+        source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      }
+      if (kind === 'omitted-addition') {
+        source.drift.files = source.drift.files.filter((entry) => entry.path !== added);
+        source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      }
+      if (kind === 'later-bytes') put(source.options.repoRoot, added, 'another version after approval');
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it.each(['addition', 'deletion', 'rename', 'duplicate'])(
+    'rejects unrelated capture path %s even alongside the approved addition',
+    (kind) => {
+      const source = followingSource();
+      const original = source.client.files.bind(source.client);
+      source.client.files = (commit) => {
+        const paths = original(commit);
+        if (commit === producerSha) return paths;
+        if (kind === 'addition') return [...paths, 'scripts/lib/new-capture.ts'];
+        if (kind === 'deletion') return paths.filter((path) => path !== following[0]);
+        if (kind === 'rename') return paths.filter((path) => path !== added).concat(`${added}.renamed.ts`);
+        return [...paths, added];
+      };
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it('cannot approve arbitrary edits when the new helper already existed at the producer', () => {
+    const source = followingSource();
+    source.client.files = () => trackedPaths;
+    put(source.options.repoRoot, added, 'later implementation');
+    const entry = source.drift.files.find((candidate) => candidate.path === added)!;
+    entry.producerPresent = true;
+    entry.producerSha256 = replayHash(readFileSync(join(ROOT, added)));
+    entry.currentSha256 = replayHash(readFileSync(join(source.options.repoRoot, added)));
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  // Frozen independently reviewed #6461 pairs; no historical Git objects are required in CI.
+  const showcasePairs = [
+    [
+      'packages/mobile/.maestro/showcase/crew-join.yaml',
+      '52026c245b2b3c1602717c9efdc4f4d96b9598cec0ee1ec99522f6286ba9166b',
+      'ca84eb1ce1c718dd481e66e2287f3bea1b19a4664cb1092eb79d86db395da2de',
+    ],
+    [
+      'packages/mobile/.maestro/showcase/crew-start.yaml',
+      'bf19c0f3be2ca62e6b43e4fa21dc9812f257ff3a39105e9bed0f707c1b6c7099',
+      'b06b3f22d9a21411e10b17f0bd65ae6e84418cdcfa65ed6271bb70aede62229e',
+    ],
+    [
+      'packages/mobile/.maestro/showcase/crew.yaml',
+      'cb6991dae991e07b322a7ab22495ac2e84ba48cf7554bf1dafb0d67e9837a7e8',
+      '1039d08d7012495b4ccffa9cc0a497d0ea0027769f795e5f2c2e21b99cf1f642',
+    ],
+    [
+      'packages/mobile/.maestro/showcase/session-end.yaml',
+      'fdae995074170134130f5e9589220d0b3909d1999fd710d166719edb59723d57',
+      '14273655c227272b244bebba2351a1a971be67b61755955e57a25baae3183ee9',
+    ],
+    [
+      'scripts/lib/showcase-video/record.ts',
+      'e214819230f6599076e8ff48385fd30f8c9bd5ccdb54bc9d6317e5a1d89839ce',
+      'a4606ef3e7880016652edacc9f30a5e73bb918a2dc714701dc07f69bca5f2135',
+    ],
+    [
+      'scripts/lib/showcase-video/render.ts',
+      'c2be58c7761480c913fcad02ed1870a9a80295cfb41fc71217cd7093c07038c6',
+      '3234e38e0af260dfd92dd2162acd3729d6297dae80f851689e6baf8bab9dc877',
+    ],
+  ] as const;
+  it.each(showcasePairs)('accepts only the exact independently reviewed showcase pair: %s', (path, prior, current) => {
+    expect(isReplayCapturePath(path)).toBe(true);
+    expect(isReviewedShowcasePair(path, prior, current)).toBe(true);
+    expect(isReviewedShowcasePair(path, prior, replayHash('future bytes'))).toBe(false);
+    expect(isReviewedShowcasePair(path, replayHash('different producer'), current)).toBe(false);
+    expect(isReviewedShowcasePair(`${path}.renamed`, prior, current)).toBe(false);
+  });
+  it.each(showcasePairs)(
+    'rejects arbitrary bytes at showcase path %s despite an exact token for those bytes',
+    (path) => {
+      const source = followingSource();
+      put(source.options.repoRoot, path, 'unreviewed future showcase implementation');
+      source.drift.files.push({
+        path,
+        producerPresent: true,
+        producerSha256: replayHash(readFileSync(join(ROOT, path))),
+        currentPresent: true,
+        currentSha256: replayHash(readFileSync(join(source.options.repoRoot, path))),
+      });
+      source.drift.files.sort((left, right) => (left.path < right.path ? -1 : 1));
+      source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it('keeps real CPP tooling ineligible even if a showcase hash pair is supplied', () => {
+    const [_path, prior, current] = showcasePairs[0];
+    expect(isReviewedShowcasePair('scripts/mobile-screenshots.ts', prior, current)).toBe(false);
+    expect(isReviewedShowcasePair('packages/mobile/.maestro/app-store-cpp.yaml', prior, current)).toBe(false);
+  });
+});
+
+describe('strict native replay retry history', () => {
+  it.each([2, 3])('recovers carried executions and the one genuinely retried success from %s attempts', (attempts) => {
+    const source = retrySource(attempts);
+    const proof = verifyReplayProducer(source.options, source.client);
+    expect(proof.attempt).toBe(attempts);
+    expect(proof.artifacts).toHaveLength(16);
+    expect(proof.artifacts[0].jobId).toBe(source.jobs[8].id);
+    expect(proof.artifacts.at(-1)!.jobId).toBe(source.jobs.at(-1)!.id + (attempts - 1) * 100);
+    expect(proof.retryHistory?.selectedExecutions).toHaveLength(18);
+    expect(proof.retryHistory?.selectedExecutions.filter((entry) => entry.attempt === 1)).toHaveLength(17);
+    expect(proof.retryHistory?.excludedArtifacts).toHaveLength(attempts - 1);
+    expect(proof.retryHistory?.excludedArtifacts.map((entry) => entry.attempt)).toEqual(
+      Array.from({ length: attempts - 1 }, (_, index) => index + 1),
+    );
+    expect(proof.retryHistory?.attempts).toHaveLength(attempts);
+  });
+  it.each([
+    [
+      'unbounded attempts',
+      (source: ReturnType<typeof retrySource>) => {
+        source.run.run_attempt = 11;
+      },
+    ],
+    [
+      'missing earlier inventory',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.delete(1);
+      },
+    ],
+    [
+      'missing final native cell',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(2)!.pop();
+      },
+    ],
+    [
+      'failed latest native job',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(2)!.at(-1)!.conclusion = 'failure';
+      },
+    ],
+    [
+      'failed latest run',
+      (source: ReturnType<typeof retrySource>) => {
+        source.run.conclusion = 'failure';
+      },
+    ],
+    [
+      'wrong historical head',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![8].head_sha = 'e'.repeat(40);
+      },
+    ],
+    [
+      'wrong historical run',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![8].run_id = 999;
+      },
+    ],
+    [
+      'wrong historical attempt',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![8].run_attempt = 2;
+      },
+    ],
+    [
+      'duplicate job IDs',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(2)![8].id = source.histories.get(1)![8].id;
+      },
+    ],
+    [
+      'unknown matrix name',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![8].name = 'cpp-capture (wrong)';
+      },
+    ],
+    [
+      'historical record execution',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![2].conclusion = 'success';
+      },
+    ],
+    [
+      'missing steps',
+      (source: ReturnType<typeof retrySource>) => {
+        source.histories.get(1)![8].steps = [];
+      },
+    ],
+    [
+      'changed carried step signature',
+      (source: ReturnType<typeof retrySource>) => {
+        (source.histories.get(2)![8].steps as Array<Record<string, unknown>>)[0].number = 2;
+      },
+    ],
+    [
+      'changed carried step timestamp within the same job window',
+      (source: ReturnType<typeof retrySource>) => {
+        (source.histories.get(2)![8].steps as Array<Record<string, unknown>>)[0].started_at = '2026-10-14T00:02:00Z';
+      },
+    ],
+    [
+      'step outside execution window',
+      (source: ReturnType<typeof retrySource>) => {
+        (source.histories.get(1)![8].steps as Array<Record<string, unknown>>)[0].completed_at = '2026-10-15T00:00:00Z';
+      },
+    ],
+    [
+      'partial artifact outside known failure',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.at(-1)!.created_at = '2026-10-14T00:30:00Z';
+      },
+    ],
+    [
+      'unknown extra artifact',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.push({ ...source.artifacts[0], id: 9000, name: 'ios-cpp-other' });
+      },
+    ],
+    [
+      'duplicate successful artifact',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.push({ ...source.artifacts[0], id: 9000 });
+      },
+    ],
+    [
+      'duplicate artifact ID',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.at(-1)!.id = source.artifacts[0].id;
+      },
+    ],
+    [
+      'expired failed artifact',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.at(-1)!.expired = true;
+      },
+    ],
+    [
+      'mismatched failed artifact head',
+      (source: ReturnType<typeof retrySource>) => {
+        source.artifacts.at(-1)!.workflow_run = { id: runId, head_sha: 'e'.repeat(40) };
+      },
+    ],
+    [
+      'extra earlier successful artifact',
+      (source: ReturnType<typeof retrySource>) => {
+        const earlier = source.histories.get(1)!.at(-1)!;
+        earlier.conclusion = 'success';
+        (earlier.steps as Array<Record<string, unknown>>)[0].conclusion = 'success';
+      },
+    ],
+    [
+      'overlapping failed and successful windows',
+      (source: ReturnType<typeof retrySource>) => {
+        const earlier = source.histories.get(1)!.at(-1)!;
+        const later = source.histories.get(2)!.at(-1)!;
+        earlier.started_at = later.started_at;
+        earlier.completed_at = later.completed_at;
+        earlier.steps = structuredClone(later.steps);
+        (earlier.steps as Array<Record<string, unknown>>)[0].conclusion = 'failure';
+      },
+    ],
+  ] as const)('rejects %s instead of qualifying partial or ambiguous replay', (_name, mutate) => {
+    const source = retrySource();
+    mutate(source);
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  it('binds excluded failure history and retained artifact identities to the reviewed receipt', () => {
+    const source = retrySource();
+    const proof = verifyReplayProducer(source.options, source.client);
+    const expected = requireReviewedReceipt(proof, undefined, false);
+    const failed = source.histories.get(1)!.at(-1)!;
+    (failed.steps as Array<Record<string, unknown>>)[0].name = 'Changed failure evidence';
+    const changed = verifyReplayProducer(source.options, source.client);
+    expect(() => requireReviewedReceipt(changed, expected, true)).toThrow();
+    source.artifacts.at(-1)!.digest = `sha256:${'e'.repeat(64)}`;
+    expect(() => requireReviewedReceipt(verifyReplayProducer(source.options, source.client), expected, true)).toThrow();
+  });
+});
+
 function png(device: string, marker: string): Buffer {
   const bytes = Buffer.alloc(65536, 1);
   Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes);
@@ -494,8 +904,7 @@ describe('replay pixels and reviewed byte binding', () => {
     expect(() => requireReviewedReceipt({ ...receipt, runId: 999 }, expected, true)).toThrow();
     expect(requireReviewedReceipt(receipt, expected, true)).toBe(expected);
   });
-  function preparedSource() {
-    const source = sample();
+  function preparedSource(source = sample()) {
     const root = directory();
     source.options.repoRoot = root;
     source.options.receipt = join(root, 'receipt.json');
@@ -511,8 +920,10 @@ describe('replay pixels and reviewed byte binding', () => {
     vi.spyOn(logbookCoverage, 'assertCppLogbookAttemptsReady').mockReturnValue(undefined);
     vi.spyOn(capture, 'readIosCampaignBoards').mockReturnValue([]);
     vi.spyOn(readiness, 'assertCppCaptureReady').mockImplementation(() => {});
-    for (const artifact of source.artifacts)
-      artifact.digest = `sha256:${replayHash(archives.get(Number(artifact.id))!)}`;
+    for (const artifact of source.artifacts) {
+      const archive = archives.get(Number(artifact.id));
+      if (archive) artifact.digest = `sha256:${replayHash(archive)}`;
+    }
     source.client.bytes = (path) => archives.get(Number(path.split('/').at(-2)))!;
     return source;
   }
@@ -535,6 +946,40 @@ describe('replay pixels and reviewed byte binding', () => {
     second.options.expectedReceipt = digest;
     expect(await prepareRetainedReplay(second.options, second.client)).toBe(digest);
   });
+  it('assembles all sixteen successful retried shards without downloading excluded failed artifacts', async () => {
+    const source = preparedSource(retrySource());
+    const requested: number[] = [];
+    const original = source.client.bytes.bind(source.client);
+    source.client.bytes = (path) => {
+      requested.push(Number(path.split('/').at(-2)));
+      return original(path);
+    };
+    const digest = await prepareRetainedReplay(source.options, source.client);
+    expect(requested).toEqual(validArtifacts.map((artifact) => artifact.id));
+    const receipt = JSON.parse(readFileSync(source.options.receipt, 'utf8')) as {
+      screenshots: number;
+      retryHistory: { excludedArtifacts: unknown[] };
+    };
+    expect(receipt.screenshots).toBe(180);
+    expect(receipt.retryHistory.excludedArtifacts).toHaveLength(1);
+    const staged = preparedSource(retrySource());
+    staged.options.stage = true;
+    staged.options.expectedReceipt = digest;
+    expect(await prepareRetainedReplay(staged.options, staged.client)).toBe(digest);
+  });
+  it('rechecks successful retry history after downloads and removes unreviewed assembled output', async () => {
+    const retry = retrySource();
+    const source = preparedSource(retry);
+    const original = source.client.bytes.bind(source.client);
+    source.client.bytes = (path) => {
+      const failed = retry.histories.get(1)!.at(-1)!;
+      (failed.steps as Array<Record<string, unknown>>)[0].name = 'Changed failed execution during download';
+      return original(path);
+    };
+    await expect(prepareRetainedReplay(source.options, source.client)).rejects.toThrow();
+    expect(existsSync(source.options.receipt)).toBe(false);
+    expect(existsSync(join(source.options.repoRoot, 'app-stores/apple/cpp', target))).toBe(false);
+  });
   it('rejects replaced ZIP bytes, a changed reviewed receipt and a late producer rerun', async () => {
     const corrupt = preparedSource();
     corrupt.client.bytes = () => Buffer.from('replaced ZIP');
@@ -553,7 +998,7 @@ describe('replay pixels and reviewed byte binding', () => {
     };
     await expect(prepareRetainedReplay(late.options, late.client)).rejects.toThrow();
     expect(existsSync(late.options.receipt)).toBe(false);
-  });
+  }, 20_000);
   it.each([false, true])('restores the prior fixture pin after receipt mismatch (existing: %s)', async (existing) => {
     const source = preparedSource();
     const reference = join(source.options.repoRoot, 'app-stores/apple/cpp-fixtures/moonboard.json');

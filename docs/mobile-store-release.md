@@ -541,8 +541,8 @@ after the shipped fingerprint moves on.
 
 `mobile-cpp-retained-replay.yml` reuses the original native replay artifacts. It
 never builds, captures, frames, publishes fixtures, edits keywords, or submits
-review. Use one target per run. The producer must be a successful first-attempt,
-manual, capture-only run of `mobile-screenshots-ios.yml` in this repository, with
+review. Use one target per run. The producer must be a successful manual,
+capture-only run of `mobile-screenshots-ios.yml` in this repository, with
 all 16 locale/device replay jobs successful. Its source must be an ancestor of
 main with the same capture contract, including capture libraries, Maestro flows,
 presentation/caption/font assets, mobile app/runtime source, and shared renderer
@@ -552,8 +552,18 @@ require fresh replay; adding importer tooling alone does not invalidate prior
 captures. UI changes also require fresh replay unless the exact limited runtime
 delta is approved as described below. Current fixture
 scene readiness, grade-count proofs, and every required detail response are also
-checked again. Recording runs, partial matrices, reruns,
+checked again. Recording runs, partial matrices, unverified retry histories,
 expired or ambiguous artifacts, and changed capture code fail closed.
+
+A failed-job retry must still end with all 16 native replay jobs successful.
+GitHub assigns new job IDs to carried-forward successes without rerunning them.
+The verifier reconciles up to ten attempts to the original successful
+execution using its exact job and step timestamps and results. Each image artifact
+must belong to that execution. A failed attempt's partial artifact is excluded
+only when its origin is unambiguous; unknown, duplicate successful, or overlapping
+artifact bindings stop verification. Retry receipts retain the original execution
+attempts and IDs, latest job identities, and excluded failed artifacts. A changed
+history invalidates the receipt. Existing first-attempt receipts keep their format.
 
 1. Publish the sanitized immutable fixture and complete the normal full replay.
    Dispatch **Stage Reviewed CPP Replay** from `main` with `mode: verify`, its
@@ -579,8 +589,10 @@ expired or ambiguous artifacts, and changed capture code fail closed.
 For retry, preserve the same producer, fixture and reviewed receipt. After a
 failed staging attempt, audit Apple first. The existing lane can resume compatible
 partial assets or return unchanged for identical complete assets; conflicting
-assets fail without deletion. Never rerun the producer to repair an upload: a
-producer rerun is deliberately ineligible. A different capture or changed fixture,
+assets fail without deletion. Do not rerun native captures to repair an upload.
+Retry only failed native jobs, after inspecting their diagnostics and allowing
+the current attempt to finish. Successful cells remain tied to their original
+executions. A different capture or changed fixture,
 CPP manifest, or capture contract needs a new verification and visual review.
 Expired producer artifacts also require a fresh complete capture. This path stages
 screenshots and promotional text only; approved keyword assignment and review
@@ -590,18 +602,32 @@ submission remain separate operations.
 
 The default still requires identical capture source. If the release owner accepts
 the older screenshots, `approved_runtime_drift_sha256` can bind an independently
-reviewed exception for exactly these files: `QueueList.tsx` under
-`packages/mobile/src/components/play-drawer/`, `queue-provider.tsx` under
-`packages/mobile/src/providers/`, and `changelog.generated.json` under
-`packages/mobile/src/data/`. Other runtime files, screenshot readiness helpers,
-native configuration, shared renderers, workflow jobs, presentation assets and
-the CPP manifest must remain identical. Added or removed capture files fail.
+reviewed exception for the queue-attribution and changelog files, plus the
+Following-query change from #6450. The exact modified paths are listed in
+`REVIEWABLE_RUNTIME_PATHS` and `FOLLOWING_RUNTIME_PATHS` in
+`scripts/prepare-retained-cpp-replay.ts`. The only
+permitted addition is `packages/mobile/src/lib/graphql/author-query-invalidation.ts`;
+its absence in the producer must be recorded explicitly. Every other addition,
+deletion or unknown changed path fails. Screenshot readiness helpers, native
+configuration, shared renderers, workflow jobs, presentation assets and the CPP
+manifest remain identical.
+
+The six showcase-video changes from #6461 are outside the CPP execution path.
+The verifier accepts only their independently reviewed path and original/current
+SHA256 pairs in `REVIEWED_SHOWCASE_PAIRS`, still included in the explicit approval
+token. This is not a general
+exception for video or Maestro files: any further byte change fails, even with a
+new token. The original producer's complete capture contract remains retained.
 
 Review the actual producer-to-current diff and confirm that the retained images
 still describe the submitted app. Build a record with `version: 1`, the full
 `producerSha`, and `files` sorted by repository path. Each changed file contains
 `path`, `producerSha256` and `currentSha256`, hashing its original and current
-bytes. Hash `canonicalJson(record) + '\n'` with SHA256 (the helper is in
+bytes. The #6450 or #6461 exceptions use `version: 2`; every file also records
+`producerPresent` and `currentPresent`. The allowed addition has
+`producerPresent: false`, `producerSha256: null`, `currentPresent: true` and its
+actual `currentSha256`. Modified files have both presence fields set to `true`
+and both byte hashes. Hash `canonicalJson(record) + '\n'` with SHA256 (the helper is in
 `scripts/lib/screenshot-fixtures.ts`). The digest approves those exact changes;
 a producer SHA alone cannot approve subsequent edits.
 
@@ -609,6 +635,6 @@ Pass that same digest to both verification and staging. The verified receipt
 retains the complete delta and approval digest alongside the original producer's
 capture-contract hash. A new edit changes the digest and receipt, stopping
 staging before Apple credentials. A token with no actual runtime delta also
-fails. Ancestry, successful first-attempt native jobs, immutable fixture and
+fails. Ancestry, all 16 successful native executions with verified attempt history, immutable fixture and
 artifact checks, all 180 image bytes, independent visual review, and Apple
 readback remain required. No image is recaptured, reframed or rewritten here.

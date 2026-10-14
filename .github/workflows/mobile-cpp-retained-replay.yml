@@ -20,7 +20,7 @@ on:
         options: [kilter, tension, moonboard, spray]
         required: true
       replay_run_id:
-        description: 'Successful first-attempt mobile-screenshots-ios.yml capture-only replay run.'
+        description: 'Successful complete mobile-screenshots-ios.yml capture-only replay, including verified failed-job retries.'
         type: string
         required: true
       fixture_snapshot:
@@ -32,7 +32,7 @@ on:
         type: string
         default: ''
       approved_runtime_drift_sha256:
-        description: 'Optional SHA256 of the independently reviewed queue-attribution/changelog source delta; see the runbook.'
+        description: 'Optional SHA256 of an independently reviewed, allowlisted runtime source delta; see the runbook.'
         type: string
         default: ''
 
