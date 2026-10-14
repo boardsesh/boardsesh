@@ -314,13 +314,24 @@ export function withSprayWallDim(options: readonly BoardLookOption[], dim: numbe
  * Callers MUST memoize this on `live`: the identities in the returned map feed
  * `renderSettingsOverride`, and a fresh object every render would re-fire every
  * card's overlay effect on every tick.
+ *
+ * `previous` is the last call's inputs and answer. An option that is the same
+ * object as before, under the same `live`, keeps the entry it had, so a caller
+ * that replaces one option (the spray look step's dim drag) re-draws one card,
+ * not the rail.
  */
 export function buildBoardLookPreviewSettings(
   options: readonly BoardLookOption[],
   live: BoardRenderSettings,
+  previous?: BoardLookPreviewSettingsMemo | null,
 ): ReadonlyMap<BoardLookOptionId, BoardRenderSettings | undefined> {
+  const reusable = previous && previous.live === live ? previous : null;
   const previews = new Map<BoardLookOptionId, BoardRenderSettings | undefined>();
   for (const option of options) {
+    if (reusable && reusable.options.includes(option) && reusable.settings.has(option.id)) {
+      previews.set(option.id, reusable.settings.get(option.id));
+      continue;
+    }
     previews.set(
       option.id,
       option.previewSettings ? mergePresetPreservingAccessibility(option.previewSettings, live) : undefined,
@@ -328,6 +339,13 @@ export function buildBoardLookPreviewSettings(
   }
   return previews;
 }
+
+/** What `buildBoardLookPreviewSettings` was last given and gave back. */
+export type BoardLookPreviewSettingsMemo = {
+  options: readonly BoardLookOption[];
+  live: BoardRenderSettings;
+  settings: ReadonlyMap<BoardLookOptionId, BoardRenderSettings | undefined>;
+};
 
 /**
  * Which card the climber's current settings sit on.

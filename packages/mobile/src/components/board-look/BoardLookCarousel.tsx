@@ -9,6 +9,7 @@ import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { ensureBoardseshSupportProbed } from '../../hooks/use-native-climb-render';
 import {
   buildBoardLookPreviewSettings,
+  type BoardLookPreviewSettingsMemo,
   type BoardLookOption,
   type BoardLookOptionId,
 } from '../../lib/board-render/board-look-options';
@@ -113,8 +114,15 @@ export function BoardLookCarousel({
 
   // Memoized because these identities become `renderSettingsOverride` on a
   // memoized image: a fresh map per render would re-fire every card's overlay
-  // effect on every tick.
-  const previewSettingsById = useMemo(() => buildBoardLookPreviewSettings(options, settings), [options, settings]);
+  // effect on every tick. The last answer is handed back in, so an `options`
+  // array that swaps one option (a dim drag on the selected card) keeps every
+  // other card's override, and only that one card re-draws.
+  const previewSettingsMemoRef = useRef<BoardLookPreviewSettingsMemo | null>(null);
+  const previewSettingsById = useMemo(() => {
+    const next = buildBoardLookPreviewSettings(options, settings, previewSettingsMemoRef.current);
+    previewSettingsMemoRef.current = { options, live: settings, settings: next };
+    return next;
+  }, [options, settings]);
 
   const layout = useMemo<BoardLookCardLayout>(() => {
     const aspect = preview.boardWidth / preview.boardHeight;
