@@ -809,3 +809,13 @@ Climbs list → Filters reopen; the complete controls must then become visible
 before `grade-filter-shown`. If reopening stays blank, the flow fails and the
 take remains unvalidated. The recorder reads labels from all four real catalogs;
 it supplies no grade endpoints, synthetic result count or app-code overlay.
+
+The iPhone 16 Pro Max crew flow keeps accessibility labels first. If its native
+player omits Queue controls, verified Kilter/default slot 0 uses the measured
+10%,84% Queue button; verified Tension layout 10 in slot 1 uses its lower-right
+91%,90% Queue button. Tension’s primary first slot is Mirror and is never used
+as Queue. Layout 11 cannot mirror and is rejected. Android, other families,
+missing layouts/resolutions and mismatched boards
+receive no coordinate fallback. The existing first-upcoming row coordinate
+remains Kilter/default-only until genuine Tension row geometry is measured;
+real peer-avatar and Play next anchors remain required before validation.

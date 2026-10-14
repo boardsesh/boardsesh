@@ -986,6 +986,38 @@ describe('observed native crew queue fallback', () => {
     expect(crewQueueFallbackPoint('default', 'ios', `${kilterResolved}\n[screenshot] WARN board[0] no wall`)).toBe('');
   });
 
+  it('uses the measured lower-right Tension Queue target only for verified iOS slot 1', () => {
+    const tensionSlot = '[screenshot] board[1] "High Point" -> "High Point" (L10 S6 @40°, tension)';
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot)).toBe('91%,90%');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('(L10', '(Tension 2 Mirror L10'))).toBe(
+      '91%,90%',
+    );
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot)).not.toMatch(/\d+\.\d+%/);
+    expect(crewQueueFallbackPoint('tension', 'android', tensionSlot)).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('(L10', '(L11'))).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('(L10', '(L9'))).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('(L10 S6', '(S6'))).toBe('');
+    expect(
+      crewQueueFallbackPoint(
+        'tension',
+        'ios',
+        tensionSlot.replace('High Point', 'L10 S6 @40°, tension').replace('(L10', '(L11'),
+      ),
+    ).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', `${tensionSlot}\n${tensionSlot.replace('(L10', '(L11')}`)).toBe('');
+
+    expect(crewQueueFallbackPoint('tension', 'ios', '')).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('board[1]', 'board[0]'))).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', tensionSlot.replace('tension)', 'kilter)'))).toBe('');
+    expect(crewQueueFallbackPoint('tension', 'ios', `${tensionSlot}\n[screenshot] WARN board[1] no wall`)).toBe('');
+    expect(
+      crewQueueFallbackPoint('tension', 'ios', `${tensionSlot}\n${tensionSlot.replace('tension)', 'kilter)')}`),
+    ).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', tensionSlot)).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'android', tensionSlot)).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', '')).toBe('');
+  });
+
   it('prefers accessibility and gates coordinates before the queue-open mark', () => {
     const source = readFileSync(showcaseFlowPath('crew.yaml'), 'utf8');
     const labelBranch = source.indexOf("visible: '${SHOWCASE_QUEUE_LABEL}'");
