@@ -43,10 +43,14 @@ capture under another app locale.
    in a private temporary directory. Select the intended app language and verify
    it in the app before each locale capture. Set a suitable real photo or native
    stock wallpaper through iOS; never replace the background in an image editor.
-2. Select the actual target board and start a private recording session. Add real
-   climbs without clearing an existing queue. Connect the approved development
-   controller. Previous/Next must appear on the genuine Live Activity; a
-   disconnected card is not proof of outside-app navigation.
+2. Verify the recording device's queue before starting a session. Use an empty
+   recording queue, or retain a complete private backup and a verified restoration
+   procedure for its ordered items, current item and board. Select the actual
+   target board and start a private recording session. Save its exact session
+   reference privately. Add real climbs without clearing an existing queue.
+   Connect the approved development controller. Previous/Next must appear on
+   the genuine Live Activity; a disconnected card is not proof of outside-app
+   navigation.
 3. Dismiss unrelated notifications and accept Live Activity permission before
    recording. Lock the phone, keep its screen awake, and save a complete native
    **PNG** showing the clock, wallpaper and full Live Activity. Confirm Next
@@ -65,8 +69,18 @@ capture under another app locale.
 
 5. Regenerate the normal screenshot presentation with `vp run mobile:screenshots`
    or `vp exec tsx scripts/frame-screenshots.ts` using that run's raw captures.
-   Review the contact sheet and `presentation.json` source provenance. End only
-   the session created for this recording and restore the recording app language.
+   Review the contact sheet and `presentation.json` source provenance. Save the
+   capture session's full queue privately before ending it. End only the session
+   created for this recording, restore the recording app language and temporary
+   Focus settings, and verify any pre-existing queue against its complete backup.
+
+Starting or ending a session can replace or clear the device's saved solo queue.
+The Queue sheet's History rows belong to that same queue; logged sends and
+attempts are separate records. A displayed total, a saved board selection, or an
+active session identifier does not establish that the original queue survived.
+If its ordered items and current item cannot be verified, report preservation as
+unverified and stop further queue changes. Keep queue backups and session
+references private; they do not belong in the committed screenshot manifest.
 
 The full-screen importer preserves the original PNG without cropping, resizing,
 alpha extraction or re-encoding. It computes the hashes and checks dimensions,
