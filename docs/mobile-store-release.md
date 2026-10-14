@@ -451,9 +451,18 @@ with the expected source checksums.
 
 Submit with the same selection and the artifact's `snapshotSha256`. The helper
 rechecks exact metadata, image order/checksums, attached build, current CPP versions,
-keyword membership and review membership before submitting. It requires the review
-submission's app-version context to match even for CPP-only submissions, preserves
-manual app release, and changes no CPP visibility or keywords. Stage CPP assets
+keyword membership and review membership before submitting. Submissions containing
+the app version require that exact version as their review context. Standalone CPP
+submissions use the latest approved app version's review information, as described
+in [Apple's review information rules](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information/).
+For a CPP-only plan, set `cpp_review_context_version_id` to the exact approved
+app-version ID observed in Apple's review context. Inspect the resolved context
+identity in the plan artifact, then use the same input and snapshot hash to submit.
+The helper still binds the intended release version/build and all selected CPP
+content; the approved review context is separately verified and included in the
+snapshot. A changed, missing, or unapproved context stops submission. Omit this
+input when the selected surfaces include `default`.
+The helper preserves manual app release and changes no CPP visibility or keywords. Stage CPP assets
 without assigning search terms that Apple has not approved.
 
 Afterward, read the receipt and repeat the independent audit to confirm actual

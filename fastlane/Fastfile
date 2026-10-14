@@ -237,7 +237,8 @@ platform :ios do
       ).run
     end
     result = BoardseshStoreReview::Runner.new(
-      client: client, audit: audit, manifest: manifest, metadata_root: APPLE_METADATA_DIR, selected: selected
+      client: client, audit: audit, manifest: manifest, metadata_root: APPLE_METADATA_DIR, selected: selected,
+      cpp_review_context_version_id: ENV["CPP_REVIEW_CONTEXT_VERSION_ID"]
     ).run(action: (options[:action] || "plan").to_s, expected_sha256: ENV["REVIEW_SNAPSHOT_SHA256"])
     File.write(ENV.fetch("STORE_REVIEW_OUTPUT"), JSON.pretty_generate(result) + "\n")
     UI.success("Review #{result.fetch('action')}: snapshot #{result.fetch('snapshotSha256')}")

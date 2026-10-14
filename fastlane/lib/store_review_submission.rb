@@ -10,6 +10,8 @@ module BoardseshStoreReview
   REQUIRES_RESOLUTION = %w[REJECTED METADATA_REJECTED DEVELOPER_REJECTED].freeze
   SUBMITTED = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED APPROVED PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION READY_FOR_SALE].freeze
   REVIEW_ACTIVE = %w[WAITING_FOR_REVIEW IN_REVIEW COMPLETING COMPLETE].freeze
+  CPP_CONTEXT_APPROVED = %w[READY_FOR_DISTRIBUTION PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE].freeze
+  CPP_CONTEXT_NOT_APPROVED = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW WAITING_FOR_REVIEW IN_REVIEW REJECTED METADATA_REJECTED DEVELOPER_REJECTED INVALID_BINARY REPLACED_WITH_NEW_VERSION NOT_APPLICABLE].freeze
   METADATA_FILES = { "description" => "description.txt", "keywords" => "keywords.txt", "marketingUrl" => "marketing_url.txt", "promotionalText" => "promotional_text.txt", "supportUrl" => "support_url.txt", "whatsNew" => "release_notes.txt" }.freeze
 
   # POST and the final submission PATCH must never be retried automatically.
@@ -48,11 +50,16 @@ module BoardseshStoreReview
   end
 
   class Runner
-    def initialize(client:, audit:, manifest:, metadata_root:, selected:)
+    def initialize(client:, audit:, manifest:, metadata_root:, selected:, cpp_review_context_version_id: nil)
       @client, @audit, @manifest, @metadata_root = client, audit, manifest, metadata_root
       @selected = selected.sort
       known = ["default"] + manifest.fetch("targets").keys
       raise Error, "Select unique known review surfaces" if @selected.empty? || @selected.uniq != @selected || (@selected - known).any?
+      @cpp_context_id = cpp_review_context_version_id.to_s
+      unless @cpp_context_id.empty?
+        raise Error, "An explicit CPP review context is only allowed for CPP-only submissions" if @selected.include?("default")
+        raise Error, "Invalid CPP review context version ID" unless resource_id?(@cpp_context_id)
+      end
     end
 
     def run(action:, expected_sha256: nil)
@@ -74,8 +81,8 @@ module BoardseshStoreReview
         candidates = submissions.select { |entry| REVIEW_ACTIVE.include?(entry.fetch("state")) && entry.fetch("items") == desired.sort_by { |item| item_key(item) } }
         raise Error, "No unique existing review submission matches these exact surfaces" unless candidates.length == 1
         assert_snapshot(expected_sha256)
-        verify_submission(candidates.first.fetch("id"), desired, snapshot.fetch("appId"), snapshot.fetch("version").fetch("id"), REVIEW_ACTIVE)
         verify_current_bindings(snapshot, submitted: true)
+        verify_submission(candidates.first.fetch("id"), desired, snapshot.fetch("appId"), review_context_id(snapshot), REVIEW_ACTIVE)
         return result.merge("action" => "already-submitted", "reviewSubmissionId" => candidates.first.fetch("id"))
       end
       overlapping = submissions.select { |entry| (entry.fetch("items") & desired).any? }
@@ -86,7 +93,10 @@ module BoardseshStoreReview
         raise Error, "An unowned empty review draft exists; inspect it before creating another"
       end
       submission = candidates.first
-      review_items(submission.fetch("id")) if submission
+      if submission
+        review_items(submission.fetch("id"))
+        verify_context(submission.fetch("id"), review_context_id(snapshot))
+      end
       unless submission
         resource = create("reviewSubmissions", { "platform" => "IOS" }, { "app" => linkage("apps", snapshot.fetch("appId")) })
         submission = { "id" => resource.fetch("id"), "items" => [], "state" => resource.dig("attributes", "state") }
@@ -101,16 +111,16 @@ module BoardseshStoreReview
       # These are the final reads before the only irreversible write. No listing,
       # keyword, visibility, rollout, or asset endpoint is ever mutated.
       assert_snapshot(expected_sha256, editable: true)
-      verify_submission(submission.fetch("id"), desired, snapshot.fetch("appId"), snapshot.fetch("version").fetch("id"), ["READY_FOR_REVIEW"])
       verify_current_bindings(snapshot, submitted: false)
+      verify_submission(submission.fetch("id"), desired, snapshot.fetch("appId"), review_context_id(snapshot), ["READY_FOR_REVIEW"])
       @client.request_once("PATCH", "/v1/reviewSubmissions/#{submission.fetch('id')}", {
         "data" => { "type" => "reviewSubmissions", "id" => submission.fetch("id"), "attributes" => { "submitted" => true } }
       })
       final = @client.request("GET", "/v1/reviewSubmissions/#{submission.fetch('id')}?include=app,appStoreVersionForReview").fetch("data")
       raise Error, "Submission write returned but review state is not confirmed; rerun plan" unless REVIEW_ACTIVE.include?(final.dig("attributes", "state"))
       assert_snapshot(expected_sha256)
-      verify_submission(submission.fetch("id"), desired, snapshot.fetch("appId"), snapshot.fetch("version").fetch("id"), REVIEW_ACTIVE)
       verify_current_bindings(snapshot, submitted: true)
+      verify_submission(submission.fetch("id"), desired, snapshot.fetch("appId"), review_context_id(snapshot), REVIEW_ACTIVE)
       result.merge("action" => "submitted", "reviewSubmissionId" => submission.fetch("id"), "reviewState" => final.dig("attributes", "state"))
     end
 
@@ -126,6 +136,7 @@ module BoardseshStoreReview
         "version" => version.reject { |key, _entry| %w[appStoreState appVersionState].include?(key) },
         "build" => build.reject { |key, _entry| key == "uploadedDate" }, "surfaces" => []
       }
+      snapshot["cppReviewContext"] = read_cpp_review_context(snapshot.fetch("appId")) unless @cpp_context_id.empty?
       states = {}
       @selected.each do |target|
         if target == "default"
@@ -254,6 +265,90 @@ module BoardseshStoreReview
       submission
     end
 
+    def resource_id?(id)
+      id.is_a?(String) && id.match?(/\A[A-Za-z0-9-]{1,128}\z/)
+    end
+
+    def review_context_id(snapshot)
+      snapshot.dig("cppReviewContext", "version", "id") || snapshot.fetch("version").fetch("id")
+    end
+
+    def context_state(version)
+      attributes = version.fetch("attributes")
+      normalize = ->(state) { state == "READY_FOR_SALE" ? "READY_FOR_DISTRIBUTION" : state }
+      modern, legacy = attributes["appVersionState"], attributes["appStoreState"]
+      if modern && legacy && normalize.call(modern) != normalize.call(legacy)
+        raise Error, "CPP review context has conflicting app version states"
+      end
+      state = normalize.call(modern || legacy)
+      raise Error, "CPP review context has no app version state" unless state.is_a?(String) && !state.empty?
+      state
+    end
+
+    # Apple chooses the latest approved iOS version for an items-only review.
+    # Pin that separate context explicitly; never replace the release/build or
+    # screenshot bindings in the main snapshot with an older approved binary.
+    def read_cpp_review_context(app_id)
+      versions = @client.list("/v1/apps/#{app_id}/appStoreVersions?filter[platform]=IOS&limit=200")
+      ids = versions.map { |version| version["id"] }
+      unless ids.all? { |id| resource_id?(id) } && ids.uniq == ids
+        raise Error, "CPP review context version inventory is ambiguous"
+      end
+      dated = versions.map do |version|
+        unless version["type"] == "appStoreVersions" && version.dig("attributes", "platform") == "IOS"
+          raise Error, "CPP review context inventory contains a different resource or platform"
+        end
+        begin
+          created = Time.iso8601(version.fetch("attributes").fetch("createdDate"))
+        rescue ArgumentError, TypeError, KeyError
+          raise Error, "CPP review context version creation date is missing or invalid"
+        end
+        [version, created, context_state(version)]
+      end
+      approved = dated.select { |_version, _created, state| CPP_CONTEXT_APPROVED.include?(state) }
+      raise Error, "CPP review context has no supported approved iOS version" if approved.empty?
+      latest_date = approved.map { |_version, created, _state| created }.max
+      latest = approved.select { |_version, created, _state| created == latest_date }
+      unless latest.length == 1 && latest.first.first.fetch("id") == @cpp_context_id
+        raise Error, "Explicit CPP review context is not the unique latest approved iOS version"
+      end
+      if dated.any? { |_version, created, state| created >= latest_date && !(CPP_CONTEXT_APPROVED + CPP_CONTEXT_NOT_APPROVED).include?(state) }
+        raise Error, "A newer iOS version has an unresolved approval state; inspect the CPP review context"
+      end
+      selected = latest.first.first
+      version = @client.request("GET", "/v1/appStoreVersions/#{@cpp_context_id}?include=app,build").fetch("data")
+      fields = %w[versionString platform appStoreState appVersionState createdDate]
+      unless version.is_a?(Hash) && version["type"] == "appStoreVersions" && version["id"] == @cpp_context_id &&
+          version.dig("relationships", "app", "data") == { "type" => "apps", "id" => app_id } &&
+          version.fetch("attributes").slice(*fields) == selected.fetch("attributes").slice(*fields)
+        raise Error, "CPP review context app/version binding changed"
+      end
+      attributes = version.fetch("attributes")
+      unless attributes["versionString"].is_a?(String) && attributes["versionString"].match?(/\A\d+(?:\.\d+){0,2}\z/) && CPP_CONTEXT_APPROVED.include?(context_state(version))
+        raise Error, "CPP review context is not an approved iOS app version"
+      end
+      binding = version.dig("relationships", "build", "data")
+      unless binding.is_a?(Hash) && binding["type"] == "builds" && resource_id?(binding["id"])
+        raise Error, "CPP review context has no attached build"
+      end
+      build = @client.request("GET", "/v1/appStoreVersions/#{@cpp_context_id}/build").fetch("data")
+      unless build.is_a?(Hash) && build["type"] == "builds" && build["id"] == binding.fetch("id") &&
+          build.dig("attributes", "processingState") == "VALID" && build.dig("attributes", "expired") == false &&
+          build.dig("attributes", "version").is_a?(String) && build.dig("attributes", "version").match?(/\A[1-9]\d*\z/)
+        raise Error, "CPP review context build is missing, changed, expired, or invalid"
+      end
+      prerelease = @client.request("GET", "/v1/builds/#{build.fetch('id')}/preReleaseVersion").fetch("data")
+      unless prerelease.is_a?(Hash) && prerelease["type"] == "preReleaseVersions" && resource_id?(prerelease["id"]) &&
+          prerelease.dig("attributes", "version") == attributes.fetch("versionString") && prerelease.dig("attributes", "platform") == "IOS"
+        raise Error, "CPP review context build belongs to a different prerelease version"
+      end
+      {
+        "version" => { "id" => version.fetch("id") }.merge(attributes.slice(*fields)),
+        "build" => { "id" => build.fetch("id") }.merge(build.fetch("attributes").slice("version", "processingState", "expired", "minOsVersion"))
+          .merge("preReleaseVersion" => { "id" => prerelease.fetch("id") }.merge(prerelease.fetch("attributes").slice("version", "platform")))
+      }
+    end
+
     def verify_submission(id, desired, app_id, version_id, allowed_states)
       raise Error, "Review draft membership changed" unless review_items(id) == desired.sort_by { |item| item_key(item) }
       submission = verify_context(id, version_id)
@@ -292,6 +387,9 @@ module BoardseshStoreReview
         unless current.fetch("id") == surface.fetch("item").fetch("id") && current.dig("attributes", "version") == surface.fetch("version") && allowed_states.include?(current.dig("attributes", "state"))
           raise Error, "Current CPP version or review state changed"
         end
+      end
+      if snapshot["cppReviewContext"] && read_cpp_review_context(snapshot.fetch("appId")) != snapshot.fetch("cppReviewContext")
+        raise Error, "Current approved CPP review context or build changed"
       end
     end
 

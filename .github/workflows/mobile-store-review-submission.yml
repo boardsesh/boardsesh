@@ -22,7 +22,11 @@ on:
         description: 'Expected attached iOS build'
         type: string
         required: true
-        default: '17'
+        default: '18'
+      cpp_review_context_version_id:
+        description: 'CPP-only: exact approved app-version ID Apple uses for review information; omit when submitting an app version'
+        type: string
+        required: false
       snapshot_sha256:
         description: 'Required for submit: SHA-256 from the visually reviewed plan artifact'
         type: string
@@ -64,6 +68,7 @@ jobs:
           REVIEW_ACTION: ${{ inputs.action }}
           REVIEW_SURFACES: ${{ inputs.surfaces }}
           REVIEW_SNAPSHOT_SHA256: ${{ inputs.snapshot_sha256 }}
+          CPP_REVIEW_CONTEXT_VERSION_ID: ${{ inputs.cpp_review_context_version_id }}
           RELEASE_VERSION: ${{ inputs.version }}
           IOS_BUILD_NUMBER: ${{ inputs.ios_build }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}

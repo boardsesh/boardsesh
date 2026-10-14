@@ -8,15 +8,24 @@ require_relative "../lib/store_review_submission"
 class StoreReviewSubmissionTest < Minitest::Test
   class FakeApple
     attr_reader :writes, :submissions
-    attr_accessor :keywords, :context_version, :after_write, :attached_build_id, :new_cpp_version
+    attr_accessor :keywords, :context_version, :after_write, :attached_build_id, :new_cpp_version,
+      :approved_version, :approved_build, :approved_prerelease, :context_versions, :before_read
 
     def initialize(report)
       @report, @writes, @submissions, @keywords = report, [], {}, ["keyword-1"]
       @context_version = "app-version"
+      @approved_version = { "type" => "appStoreVersions", "id" => "approved-version", "attributes" => {
+        "versionString" => "2.5.0", "platform" => "IOS", "appStoreState" => "READY_FOR_SALE", "appVersionState" => "READY_FOR_DISTRIBUTION", "createdDate" => "2026-09-01T00:00:00Z"
+      }, "relationships" => { "app" => { "data" => { "type" => "apps", "id" => "app" } }, "build" => { "data" => { "type" => "builds", "id" => "approved-build" } } } }
+      @approved_build = { "type" => "builds", "id" => "approved-build", "attributes" => { "version" => "12", "processingState" => "VALID", "expired" => false, "minOsVersion" => "16.4" } }
+      @approved_prerelease = { "type" => "preReleaseVersions", "id" => "approved-prerelease", "attributes" => { "version" => "2.5.0", "platform" => "IOS" } }
+      @context_versions = [Marshal.load(Marshal.dump(@approved_version))]
     end
 
     def list(path)
+      @before_read&.call(path)
       case path
+      when "/v1/apps/app/appStoreVersions?filter[platform]=IOS&limit=200" then @context_versions
       when /\/reviewSubmissions\?/
         @submissions.map { |id, entry| { "id" => id, "attributes" => { "platform" => "IOS", "state" => entry.fetch("state") } } }
       when %r{/reviewSubmissions/([^/]+)/items\?}
@@ -33,7 +42,11 @@ class StoreReviewSubmissionTest < Minitest::Test
 
     def request(method, path)
       raise "Only reads belong here" unless method == "GET"
+      @before_read&.call(path)
       case path
+      when "/v1/appStoreVersions/approved-version?include=app,build" then { "data" => @approved_version }
+      when "/v1/appStoreVersions/approved-version/build" then { "data" => @approved_build }
+      when "/v1/builds/approved-build/preReleaseVersion" then { "data" => @approved_prerelease }
       when "/v1/appStoreVersions/app-version?include=app,build"
         { "data" => { "id" => "app-version", "attributes" => @report.fetch("version").reject { |key, _entry| key == "id" }, "relationships" => {
           "app" => { "data" => { "type" => "apps", "id" => "app" } },
@@ -43,7 +56,7 @@ class StoreReviewSubmissionTest < Minitest::Test
         id = Regexp.last_match(1)
         { "data" => { "id" => id, "attributes" => { "platform" => "IOS", "state" => @submissions.fetch(id).fetch("state") }, "relationships" => {
           "app" => { "data" => { "type" => "apps", "id" => "app" } },
-          "appStoreVersionForReview" => { "data" => { "type" => "appStoreVersions", "id" => @context_version } }
+          "appStoreVersionForReview" => { "data" => @context_version && { "type" => "appStoreVersions", "id" => @context_version } }
         } } }
       when %r{/appCustomProductPages/([^?]+)\?}
         page = @report.fetch("customProductPages").find { |entry| entry.fetch("id") == Regexp.last_match(1) }
@@ -146,16 +159,16 @@ class StoreReviewSubmissionTest < Minitest::Test
     end
   end
 
-  def runner(selected = ["default"])
-    BoardseshStoreReview::Runner.new(client: @client, audit: -> { @audit_calls += 1; Marshal.load(Marshal.dump(@report)) }, manifest: @manifest, metadata_root: @directory, selected: selected)
+  def runner(selected = ["default"], context: nil)
+    BoardseshStoreReview::Runner.new(client: @client, audit: -> { @audit_calls += 1; Marshal.load(Marshal.dump(@report)) }, manifest: @manifest, metadata_root: @directory, selected: selected, cpp_review_context_version_id: context)
   end
 
-  def plan(selected = ["default"])
-    runner(selected).run(action: "plan")
+  def plan(selected = ["default"], context: nil)
+    runner(selected, context: context).run(action: "plan")
   end
 
-  def submit(hash, selected = ["default"])
-    runner(selected).run(action: "submit", expected_sha256: hash)
+  def submit(hash, selected = ["default"], context: nil)
+    runner(selected, context: context).run(action: "submit", expected_sha256: hash)
   end
 
   def test_default_plan_ignores_unselected_incomplete_cpp_and_preserves_screenshot_order
@@ -362,6 +375,251 @@ class StoreReviewSubmissionTest < Minitest::Test
     @client.submissions["bad"]["items"] = [item.merge("relationships" => item.fetch("relationships").merge("appEvent" => { "data" => { "type" => "appEvents", "id" => "event" } }))]
     assert_raises(BoardseshStoreReview::Error) { submit(digest) }
     assert_empty @client.writes
+  end
+
+  def standalone_plan
+    plan(["moonboard"], context: "approved-version")
+  end
+
+  def standalone_submit(digest)
+    submit(digest, ["moonboard"], context: "approved-version")
+  end
+
+  def test_explicit_standalone_context_keeps_release_build_and_180_assets_separate
+    @report["build"]["version"] = "18"
+    strict = plan(["moonboard"])
+    result = standalone_plan
+    assert_equal strict.fetch("snapshot"), result.fetch("snapshot").reject { |key, _entry| key == "cppReviewContext" }
+    assert_equal "2.6.0", result.dig("snapshot", "version", "versionString")
+    assert_equal "18", result.dig("snapshot", "build", "version")
+    assert_equal "2.5.0", result.dig("snapshot", "cppReviewContext", "version", "versionString")
+    assert_equal "12", result.dig("snapshot", "cppReviewContext", "build", "version")
+    assert_equal "approved-prerelease", result.dig("snapshot", "cppReviewContext", "build", "preReleaseVersion", "id")
+    assert_equal 180, result.dig("snapshot", "surfaces", 0, "localizations").sum { |locale| locale.fetch("screenshotSets").sum { |set| set.fetch("count") } }
+    refute_equal strict.fetch("snapshotSha256"), result.fetch("snapshotSha256")
+    assert_empty @client.writes
+  end
+
+  def test_context_override_is_rejected_for_default_mixed_and_invalid_ids
+    [["default"], %w[default moonboard]].each do |selected|
+      error = assert_raises(BoardseshStoreReview::Error) { plan(selected, context: "approved-version") }
+      assert_match(/CPP-only/, error.message)
+    end
+    ["../approved-version", "approved?query=1", " ", "x" * 129].each do |id|
+      assert_raises(BoardseshStoreReview::Error) { plan(["moonboard"], context: id) }
+    end
+    assert_equal 0, @audit_calls
+    assert_empty @client.writes
+    assert_equal plan.fetch("snapshotSha256"), plan(context: "").fetch("snapshotSha256")
+  end
+
+  def test_standalone_existing_ready_draft_resumes_and_noops_without_touching_default
+    @report["version"]["appStoreState"] = "WAITING_FOR_REVIEW"
+    @client.context_version = "approved-version"
+    @client.submissions["default-review"] = { "state" => "WAITING_FOR_REVIEW", "items" => [@client.item("appStoreVersion", "app-version")] }
+    @client.submissions["moon-draft"] = { "state" => "READY_FOR_REVIEW", "items" => [@client.item("appCustomProductPageVersion", "version-moonboard")] }
+    original_default = Marshal.load(Marshal.dump(@client.submissions.fetch("default-review")))
+    digest = standalone_plan.fetch("snapshotSha256")
+    result = standalone_submit(digest)
+    assert_equal "submitted", result.fetch("action")
+    assert_equal "moon-draft", result.fetch("reviewSubmissionId")
+    assert_equal [["PATCH", "/v1/reviewSubmissions/moon-draft"]], @client.writes.map { |method, path, _body| [method, path] }
+    assert_equal original_default, @client.submissions.fetch("default-review")
+    assert_equal "WAITING_FOR_REVIEW", @report.dig("version", "appStoreState")
+    assert_equal "MANUAL", @report.dig("version", "releaseType")
+    assert_equal "already-submitted", standalone_submit(digest).fetch("action")
+    assert_equal 1, @client.writes.length
+  end
+
+  def test_standalone_wrong_or_null_existing_draft_context_stops_before_any_write
+    @client.submissions["moon-draft"] = { "state" => "READY_FOR_REVIEW", "items" => [@client.item("appCustomProductPageVersion", "version-moonboard")] }
+    digest = standalone_plan.fetch("snapshotSha256")
+    [nil, "app-version", "other-approved-version"].each do |context|
+      @client.context_version = context
+      error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+      assert_match(/different or unknown app version/, error.message)
+      assert_empty @client.writes
+    end
+  end
+
+  def test_standalone_wrong_owner_resource_platform_or_unapproved_version_fails_closed
+    original = Marshal.load(Marshal.dump(@client.approved_version))
+    mutations = [
+      ->(version) { version["relationships"]["app"]["data"]["id"] = "another-app" },
+      ->(version) { version["id"] = "another-version" },
+      ->(version) { version["type"] = "builds" },
+      ->(version) { version["attributes"]["platform"] = "MAC_OS" },
+      ->(version) { version["attributes"]["versionString"] = "unknown" },
+      ->(version) { version["attributes"]["appVersionState"] = "WAITING_FOR_REVIEW" },
+      ->(version) { version["relationships"]["build"]["data"] = nil }
+    ]
+    mutations.each do |mutate|
+      @client.approved_version = Marshal.load(Marshal.dump(original))
+      mutate.call(@client.approved_version)
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+      assert_empty @client.writes
+    end
+    @client.approved_version = nil
+    assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+  end
+
+  def test_standalone_context_requires_matching_valid_build_and_prerelease
+    original = Marshal.load(Marshal.dump(@client.approved_build))
+    [nil, original.merge("id" => "wrong-build"), original.merge("type" => "apps"),
+      original.merge("attributes" => original.fetch("attributes").merge("expired" => true)),
+      original.merge("attributes" => original.fetch("attributes").merge("processingState" => "PROCESSING")),
+      original.merge("attributes" => original.fetch("attributes").merge("version" => ""))].each do |build|
+      @client.approved_build = build
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+      assert_empty @client.writes
+    end
+    @client.approved_build = original
+    prerelease = Marshal.load(Marshal.dump(@client.approved_prerelease))
+    [nil, prerelease.merge("id" => nil), prerelease.merge("type" => "builds"),
+      prerelease.merge("attributes" => { "version" => "2.6.0", "platform" => "IOS" }),
+      prerelease.merge("attributes" => { "version" => "2.5.0", "platform" => "MAC_OS" })].each do |entry|
+      @client.approved_prerelease = entry
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+      assert_empty @client.writes
+    end
+  end
+
+  def test_stale_context_pin_and_ambiguous_latest_approved_inventory_fail_closed
+    original = Marshal.load(Marshal.dump(@client.context_versions))
+    newer = Marshal.load(Marshal.dump(original.first))
+    newer["id"] = "newer-approved"
+    newer["attributes"]["createdDate"] = "2026-10-01T00:00:00Z"
+    %w[PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE READY_FOR_DISTRIBUTION].each do |state|
+      newer["attributes"]["appVersionState"] = state
+      newer["attributes"]["appStoreState"] = state
+      @client.context_versions = original + [Marshal.load(Marshal.dump(newer))]
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+    end
+    [original + original, original + [original.first.merge("id" => "tied-approved")], []].each do |versions|
+      @client.context_versions = versions
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+    end
+    @client.context_versions = original
+    [nil, "invalid"].each do |created|
+      @client.context_versions.first["attributes"]["createdDate"] = created
+      assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+    end
+    assert_empty @client.writes
+  end
+
+  def test_newer_uncertain_approval_state_never_silently_selects_older_ready_version
+    newer = Marshal.load(Marshal.dump(@client.approved_version))
+    newer["id"] = "newer-version"
+    newer["attributes"]["createdDate"] = "2026-10-01T00:00:00Z"
+    %w[ACCEPTED PROCESSING_FOR_DISTRIBUTION WAITING_FOR_EXPORT_COMPLIANCE NEW_APPLE_STATE].each do |state|
+      newer["attributes"]["appVersionState"] = state
+      newer["attributes"]["appStoreState"] = state
+      @client.context_versions = [@client.approved_version, newer]
+      error = assert_raises(BoardseshStoreReview::Error) { standalone_plan }
+      assert_match(/unresolved approval state/, error.message)
+      assert_empty @client.writes
+    end
+  end
+
+  def test_newer_unapproved_release_does_not_replace_explicit_approved_context
+    newer = Marshal.load(Marshal.dump(@client.approved_version))
+    newer["id"] = "app-version"
+    newer["attributes"].merge!("versionString" => "2.6.0", "createdDate" => "2026-10-01T00:00:00Z", "appStoreState" => "WAITING_FOR_REVIEW", "appVersionState" => "WAITING_FOR_REVIEW")
+    @client.context_versions << newer
+    assert_equal "approved-version", standalone_plan.dig("snapshot", "cppReviewContext", "version", "id")
+    assert_empty @client.writes
+  end
+
+  def test_same_release_can_be_explicit_context_once_approved_for_manual_release
+    @client.approved_version["attributes"].merge!("versionString" => "2.6.0", "appStoreState" => "PENDING_DEVELOPER_RELEASE", "appVersionState" => "PENDING_DEVELOPER_RELEASE", "releaseType" => "MANUAL")
+    @client.context_versions = [Marshal.load(Marshal.dump(@client.approved_version))]
+    @client.approved_prerelease["attributes"]["version"] = "2.6.0"
+    @report["version"].merge!("id" => "approved-version", "appStoreState" => "PENDING_DEVELOPER_RELEASE")
+    @report["build"].merge!("id" => "approved-build", "version" => "12")
+    result = standalone_plan
+    assert_equal result.dig("snapshot", "version", "id"), result.dig("snapshot", "cppReviewContext", "version", "id")
+    assert_equal "MANUAL", result.dig("snapshot", "version", "releaseType")
+    assert_empty @client.writes
+  end
+
+  def test_context_build_change_after_plan_rejects_stale_snapshot_without_writes
+    digest = standalone_plan.fetch("snapshotSha256")
+    @client.approved_build["attributes"]["version"] = "13"
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/differs from the reviewed snapshot/, error.message)
+    assert_empty @client.writes
+  end
+
+  def test_final_context_reread_catches_drift_after_last_asset_scan
+    @client.context_version = "approved-version"
+    @client.submissions["moon-draft"] = { "state" => "READY_FOR_REVIEW", "items" => [@client.item("appCustomProductPageVersion", "version-moonboard")] }
+    digest = standalone_plan.fetch("snapshotSha256")
+    @client.before_read = ->(path) { @client.approved_build["attributes"]["version"] = "13" if path == "/v1/appCustomProductPages/page-moonboard/appCustomProductPageVersions?limit=200" }
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/Current approved CPP review context or build changed/, error.message)
+    assert_empty @client.writes
+  end
+
+  def test_noop_requires_fresh_context_even_after_matching_asset_snapshot
+    @client.context_version = "approved-version"
+    digest = standalone_plan.fetch("snapshotSha256")
+    standalone_submit(digest)
+    writes = @client.writes.length
+    @client.before_read = ->(path) { @client.approved_build["attributes"]["version"] = "13" if path == "/v1/appCustomProductPages/page-moonboard/appCustomProductPageVersions?limit=200" }
+    assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_equal writes, @client.writes.length
+  end
+
+  def test_context_change_after_submission_is_reported_without_retry
+    @client.context_version = "approved-version"
+    digest = standalone_plan.fetch("snapshotSha256")
+    @client.after_write = ->(method, _path) { @client.context_version = "another-context" if method == "PATCH" }
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/different or unknown app version/, error.message)
+    assert_equal 1, @client.writes.count { |method, _path, _body| method == "PATCH" }
+    assert_equal "WAITING_FOR_REVIEW", @client.submissions.values.first.fetch("state")
+  end
+
+  def change_review_context_during_final_context_scan
+    reads = 0
+    @client.before_read = lambda do |path|
+      next unless path == "/v1/apps/app/appStoreVersions?filter[platform]=IOS&limit=200"
+      reads += 1
+      @client.context_version = "unexpected-context" if reads == 3
+    end
+  end
+
+  def test_review_context_is_rechecked_after_the_final_context_resource_scan_before_patch
+    @client.context_version = "approved-version"
+    @client.submissions["moon-draft"] = { "state" => "READY_FOR_REVIEW", "items" => [@client.item("appCustomProductPageVersion", "version-moonboard")] }
+    digest = standalone_plan.fetch("snapshotSha256")
+    change_review_context_during_final_context_scan
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/different or unknown app version/, error.message)
+    assert_empty @client.writes
+  end
+
+  def test_review_context_is_rechecked_after_the_final_context_resource_scan_before_noop
+    @client.context_version = "approved-version"
+    digest = standalone_plan.fetch("snapshotSha256")
+    standalone_submit(digest)
+    writes = @client.writes.length
+    change_review_context_during_final_context_scan
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/different or unknown app version/, error.message)
+    assert_equal writes, @client.writes.length
+  end
+
+  def test_context_override_never_bypasses_release_build_or_cpp_current_version_checks
+    @client.context_version = "approved-version"
+    digest = standalone_plan.fetch("snapshotSha256")
+    @client.attached_build_id = "different-release-build"
+    assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
+    @client.attached_build_id = nil
+    @client.new_cpp_version = true
+    assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
   end
 
   class TimeoutTransport
