@@ -107,6 +107,26 @@ const SPRAY_WALL_FIELDS = `
   }
 `;
 
+/**
+ * What the add-a-wall wizard's details step prefills from, beyond the shared
+ * fragment: the visibility parked for the first publish (owner only) and the
+ * wall's location. Selected only by the two operations that step reads, so the
+ * render path and every listing stay as they are. The second `board` selection
+ * merges with the fragment's.
+ */
+const SPRAY_WALL_DETAILS_FIELDS = `
+  pendingVisibility {
+    isPublic
+    isUnlisted
+  }
+  board {
+    locationName
+    latitude
+    longitude
+    hideLocation
+  }
+`;
+
 export const GET_SPRAY_WALL = gql`
   query GetSprayWall($uuid: ID!) {
     sprayWall(uuid: $uuid) {
@@ -131,6 +151,7 @@ export const GET_SPRAY_WALL_WITH_VERSIONS = gql`
   query GetSprayWallWithVersions($uuid: ID!) {
     sprayWall(uuid: $uuid) {
       ${SPRAY_WALL_FIELDS}
+      ${SPRAY_WALL_DETAILS_FIELDS}
       versions {
         ${SPRAY_WALL_VERSION_FIELDS}
       }
@@ -301,7 +322,7 @@ export const RESET_SPRAY_WALL = gql`
 `;
 
 /**
- * Rename, share, re-gym or re-angle a wall.
+ * Rename, share, re-gym, re-place or re-angle a wall.
  *
  * Sharing is the point: a wall is created PRIVATE, so without this one it could
  * never be shown to anybody. The angle is only accepted while the wall has no
@@ -311,6 +332,7 @@ export const UPDATE_SPRAY_WALL = gql`
   mutation UpdateSprayWall($input: UpdateSprayWallInput!) {
     updateSprayWall(input: $input) {
       ${SPRAY_WALL_FIELDS}
+      ${SPRAY_WALL_DETAILS_FIELDS}
     }
   }
 `;

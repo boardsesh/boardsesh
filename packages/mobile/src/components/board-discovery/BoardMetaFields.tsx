@@ -125,9 +125,7 @@ export function BoardIdentityFields({
    */
   onOpenGymPicker: () => void;
 }) {
-  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
-  const { systemColors } = useTheme();
 
   return (
     <>
@@ -145,6 +143,29 @@ export function BoardIdentityFields({
         returnKeyType="done"
       />
 
+      <BoardGymField selectedGym={builder.selectedGym} onOpenGymPicker={onOpenGymPicker} />
+    </>
+  );
+}
+
+/**
+ * The gym row on its own, labelled: `BoardIdentityFields` draws it under the
+ * name, and the add-a-wall wizard's details step puts it under "More".
+ */
+export function BoardGymField({
+  selectedGym,
+  onOpenGymPicker,
+}: {
+  selectedGym: { name: string } | null;
+  /** Open the gym picker. The sheet is the host's, as for `BoardIdentityFields`. */
+  onOpenGymPicker: () => void;
+}) {
+  const styles = useTypographyStyles(createStyles);
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+
+  return (
+    <>
       <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
       <PressableSurface
         onPress={onOpenGymPicker}
@@ -160,11 +181,11 @@ export function BoardIdentityFields({
       >
         <Text
           variant="body"
-          color={builder.selectedGym ? systemColors.label : systemColors.secondaryLabel}
+          color={selectedGym ? systemColors.label : systemColors.secondaryLabel}
           numberOfLines={1}
           style={styles.gymRowLabel}
         >
-          {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
+          {selectedGym?.name ?? t('mobile.create.gymNone')}
         </Text>
         <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
       </PressableSurface>

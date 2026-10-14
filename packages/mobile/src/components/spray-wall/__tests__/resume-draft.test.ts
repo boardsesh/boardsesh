@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  detailsSeedFromWall,
   findOpenDraft,
   findResumableWall,
   planUploadRetry,
@@ -160,5 +161,72 @@ describe('planUploadRetry', () => {
     // A read that failed is not "there is no draft".
     expect(planUploadRetry(null, 1)).toEqual({ action: 'blocked' });
     expect(planUploadRetry(null, 5)).toEqual({ action: 'blocked' });
+  });
+});
+
+describe('detailsSeedFromWall', () => {
+  const BOARD = {
+    name: 'Garage wall',
+    angle: 35,
+    isPublic: false,
+    isUnlisted: false,
+    hideLocation: true,
+    locationName: 'The Castle',
+    latitude: 51.5,
+    longitude: -0.1,
+    gymUuid: 'gym-1',
+    gymName: 'The Castle',
+  };
+
+  it('prefills from the board row', () => {
+    expect(detailsSeedFromWall({ board: BOARD })).toEqual({
+      name: 'Garage wall',
+      angle: 35,
+      isPublic: false,
+      isUnlisted: false,
+      hideLocation: true,
+      locationName: 'The Castle',
+      coords: { latitude: 51.5, longitude: -0.1 },
+      gym: { uuid: 'gym-1', name: 'The Castle' },
+    });
+  });
+
+  // The row stays private until the first publish, so it alone would tell a
+  // climber who chose Public last time that they chose Private.
+  it('prefers the visibility parked for the first publish over the private row', () => {
+    const seed = detailsSeedFromWall({ board: BOARD, pendingVisibility: { isPublic: true, isUnlisted: false } });
+    expect(seed).toMatchObject({ isPublic: true, isUnlisted: false });
+    const unlisted = detailsSeedFromWall({ board: BOARD, pendingVisibility: { isPublic: false, isUnlisted: true } });
+    expect(unlisted).toMatchObject({ isPublic: false, isUnlisted: true });
+  });
+
+  it('falls back to the row when nothing is parked', () => {
+    expect(detailsSeedFromWall({ board: { ...BOARD, isUnlisted: true }, pendingVisibility: null })).toMatchObject({
+      isPublic: false,
+      isUnlisted: true,
+    });
+  });
+
+  it('snaps an angle off the list to the nearest one the slider shows', () => {
+    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 37 } }).angle).toBe(35);
+    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 38 } }).angle).toBe(40);
+    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 90 } }).angle).toBe(70);
+  });
+
+  it('says no gym, no point and no location name when the wall has none', () => {
+    const seed = detailsSeedFromWall({
+      board: { ...BOARD, gymUuid: null, gymName: null, latitude: null, longitude: null, locationName: null },
+    });
+    expect(seed.gym).toBeNull();
+    expect(seed.coords).toBeNull();
+    expect(seed.locationName).toBe('');
+  });
+
+  // The create response selects fewer fields than were sent: what it leaves
+  // out, the builder keeps.
+  it('leaves out what the read did not select', () => {
+    const seed = detailsSeedFromWall({ board: { name: 'Garage wall', angle: 40, isPublic: false, isUnlisted: false } });
+    expect(seed).toEqual({ name: 'Garage wall', angle: 40, isPublic: false, isUnlisted: false });
+    expect(detailsSeedFromWall({ board: null })).toEqual({});
   });
 });

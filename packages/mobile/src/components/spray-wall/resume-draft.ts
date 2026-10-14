@@ -14,11 +14,14 @@
 //     offers it back.
 //  2. **Where it rejoins depends on how far it got.** A wall whose draft already
 //     carries a photo rejoins at the hold editor; a bare wall rejoins at the
-//     photo step, since its name, angle and visibility are already on the row.
+//     photo step. Either way the details step comes later, prefilled from the
+//     wall (`detailsSeedFromWall`).
 //
 // The alternative — always creating a fresh wall — is what makes ten abandoned
 // attempts lock a climber out of their own feature.
 
+import { SPRAY_ANGLES } from '@boardsesh/board-config';
+import type { SprayWallDetailsSeed } from '../board-discovery/use-spray-wall-builder';
 import type { CreatedWall, CreatedWallDraft } from './add-wall-machine';
 
 /** The slice of `SprayWall` this module reads. Structural, so the query shape can grow. */
@@ -179,4 +182,75 @@ export function planUploadRetry(
     return { action: 'adopt', draft: target.draft, savedHoldCount: target.savedHoldCount };
   }
   return { action: 'upload' };
+}
+
+/** The slice of a wall `detailsSeedFromWall` reads. Every field optional: reads differ in what they select. */
+export type DetailsSourceWall = {
+  /**
+   * What the first publish will apply: null for a wall left private, or once
+   * published. Only the owner is told; a backend without the field omits it.
+   */
+  pendingVisibility?: { isPublic: boolean; isUnlisted: boolean } | null;
+  board?: {
+    name?: string | null;
+    angle?: number | null;
+    isPublic?: boolean | null;
+    isUnlisted?: boolean | null;
+    hideLocation?: boolean | null;
+    locationName?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    gymUuid?: string | null;
+    gymName?: string | null;
+  } | null;
+};
+
+/** The legal angle nearest `angle`; the lower one on a tie. */
+function snapSprayAngle(angle: number): number {
+  let nearest: number = SPRAY_ANGLES[0];
+  for (const candidate of SPRAY_ANGLES) {
+    if (Math.abs(candidate - angle) < Math.abs(nearest - angle)) nearest = candidate;
+  }
+  return nearest;
+}
+
+/**
+ * The details step's prefill, from the wall as the server holds it.
+ *
+ * The visibility comes from `pendingVisibility` when the server has one waiting:
+ * an unfinished wall's board row stays private until its first publish, so the
+ * row alone would tell a climber who chose Public last time that they chose
+ * Private. Without it (left private, or a backend that predates the field) the
+ * row's flags are the answer.
+ *
+ * A field the read did not select is left out, so the builder keeps its own
+ * value (`SprayWallDetailsSeed`). An angle off the list (none should exist, but
+ * the column is a plain integer) snaps to the nearest one the slider can show.
+ */
+export function detailsSeedFromWall(wall: DetailsSourceWall): SprayWallDetailsSeed {
+  const board = wall.board ?? null;
+  const seed: SprayWallDetailsSeed = {};
+  if (!board) return seed;
+  if (board.name != null) seed.name = board.name;
+  if (board.angle != null && Number.isFinite(board.angle)) seed.angle = snapSprayAngle(board.angle);
+  const visibility = wall.pendingVisibility ?? null;
+  if (visibility) {
+    seed.isPublic = visibility.isPublic;
+    seed.isUnlisted = visibility.isUnlisted;
+  } else {
+    if (board.isPublic != null) seed.isPublic = board.isPublic;
+    if (board.isUnlisted != null) seed.isUnlisted = board.isUnlisted;
+  }
+  if (board.hideLocation != null) seed.hideLocation = board.hideLocation;
+  if (board.locationName !== undefined) seed.locationName = board.locationName ?? '';
+  if (board.latitude !== undefined || board.longitude !== undefined) {
+    seed.coords =
+      board.latitude != null && board.longitude != null
+        ? { latitude: board.latitude, longitude: board.longitude }
+        : null;
+  }
+  if (board.gymUuid !== undefined) {
+    seed.gym = board.gymUuid ? { uuid: board.gymUuid, name: board.gymName ?? '' } : null;
+  }
+  return seed;
 }

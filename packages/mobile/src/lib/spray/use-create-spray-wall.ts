@@ -29,6 +29,7 @@ import type {
   CreateSprayWallVersionInput,
   SprayWall,
   SprayWallVersion,
+  UpdateSprayWallInput,
 } from '@boardsesh/graphql/generated/graphql';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
@@ -64,6 +65,18 @@ export const sprayWallWithVersionsQueryKey = (wallUuid: string | null) => ['spra
  * `UserBoard` to hand to `useActivateBoard`.
  */
 export type CreatedSprayWall = Omit<SprayWall, 'board'> & { board: UserBoard };
+
+/**
+ * The details-step fields `updateSprayWall` takes, each one sent only when it
+ * changed. Null clears a gym, a location name or a point (latitude and
+ * longitude always travel together). Picked from the schema's own input, so a
+ * field the backend does not take fails to compile rather than as a refused
+ * request.
+ */
+export type SprayWallDetailsUpdate = Pick<
+  UpdateSprayWallInput,
+  'name' | 'angle' | 'gymUuid' | 'locationName' | 'latitude' | 'longitude' | 'hideLocation' | 'isPublic' | 'isUnlisted'
+>;
 
 type CreateWallResponse = { createSprayWall: CreatedSprayWall };
 type ResetWallResponse = { resetSprayWall: CreatedSprayWall };
@@ -262,6 +275,34 @@ export function useUpdateSprayWallVisibility() {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
+    },
+  });
+}
+
+/**
+ * Save the add-a-wall wizard's details step: name, angle, gym, location and
+ * visibility, in ONE `updateSprayWall` that carries only the fields that changed
+ * (`useSprayWallBuilder().buildDetailsUpdate`).
+ *
+ * One call rather than one per field, so a save that fails fails whole and Save
+ * sends the same set again. The location rides with the gym on purpose: the
+ * server checks a nearby public gym against the coordinates this same call sets.
+ * On a wall that has never been published the visibility is held for the first
+ * publish, which applies it, so nobody is shown the wall before there is
+ * something to see.
+ */
+export function useUpdateSprayWallDetails() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateSprayWallInput): Promise<CreatedSprayWall> => {
+      const response = await getHttpClient().request<UpdateWallResponse>(UPDATE_SPRAY_WALL, { input });
+      return response.updateSprayWall;
+    },
+    onSuccess: (_wall, { uuid }) => {
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayImportProgress'] });
+      void queryClient.invalidateQueries({ queryKey: sprayWallWithVersionsQueryKey(uuid) });
     },
   });
 }
