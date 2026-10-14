@@ -436,6 +436,41 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_empty @client.writes
   end
 
+  def test_public_selection_validator_accepts_only_explicit_cpp_or_exact_release_context
+    cases = [
+      [["default"], nil], [["default"], ""], [%w[default moonboard], nil],
+      [["moonboard"], "approved-version"], [%w[spray kilter], "approved-version"]
+    ]
+    cases.each do |selected, context|
+      original = selected.dup
+      assert_equal true, BoardseshStoreReview::Runner.validate_selection!(selected: selected, manifest: @manifest, cpp_review_context_version_id: context)
+      assert_equal original, selected
+    end
+    assert_equal 0, @audit_calls
+    assert_empty @client.writes
+  end
+
+  def test_public_selection_validator_and_constructor_share_all_failure_rules_before_reads
+    reads = []
+    @client.before_read = ->(path) { reads << path }
+    cases = [
+      [[], nil], [["unknown"], nil], [%w[moonboard moonboard], "approved-version"],
+      [["moonboard"], nil], [["moonboard"], ""], [["moonboard"], " "],
+      [["moonboard"], "../approved"], [["moonboard"], "approved?query=1"], [["moonboard"], "x" * 129],
+      [["default"], "approved-version"], [%w[default moonboard], "approved-version"]
+    ]
+    cases.each do |selected, context|
+      early_error = assert_raises(BoardseshStoreReview::Error) do
+        BoardseshStoreReview::Runner.validate_selection!(selected: selected, manifest: @manifest, cpp_review_context_version_id: context)
+      end
+      constructor_error = assert_raises(BoardseshStoreReview::Error) { runner(selected, context: context) }
+      assert_equal early_error.message, constructor_error.message
+    end
+    assert_equal 0, @audit_calls
+    assert_empty reads
+    assert_empty @client.writes
+  end
+
   def test_expired_testflight_context_can_plan_resume_and_noop_with_unexpired_release
     @client.approved_build["attributes"]["expired"] = true
     @client.context_version = "approved-version"

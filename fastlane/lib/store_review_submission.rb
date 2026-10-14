@@ -50,19 +50,30 @@ module BoardseshStoreReview
   end
 
   class Runner
-    def initialize(client:, audit:, manifest:, metadata_root:, selected:, cpp_review_context_version_id: nil)
-      @client, @audit, @manifest, @metadata_root = client, audit, manifest, metadata_root
-      @selected = selected.sort
+    def self.resource_id?(id)
+      id.is_a?(String) && id.match?(/\A[A-Za-z0-9-]{1,128}\z/)
+    end
+
+    def self.validate_selection!(selected:, manifest:, cpp_review_context_version_id: nil)
+      selected = selected.sort
       known = ["default"] + manifest.fetch("targets").keys
-      raise Error, "Select unique known review surfaces" if @selected.empty? || @selected.uniq != @selected || (@selected - known).any?
-      @cpp_context_id = cpp_review_context_version_id.to_s
-      if !@selected.include?("default") && @cpp_context_id.empty?
+      raise Error, "Select unique known review surfaces" if selected.empty? || selected.uniq != selected || (selected - known).any?
+      context_id = cpp_review_context_version_id.to_s
+      if !selected.include?("default") && context_id.empty?
         raise Error, "CPP-only plan and submit require an explicit approved review context version ID"
       end
-      unless @cpp_context_id.empty?
-        raise Error, "An explicit CPP review context is only allowed for CPP-only submissions" if @selected.include?("default")
-        raise Error, "Invalid CPP review context version ID" unless resource_id?(@cpp_context_id)
+      unless context_id.empty?
+        raise Error, "An explicit CPP review context is only allowed for CPP-only submissions" if selected.include?("default")
+        raise Error, "Invalid CPP review context version ID" unless resource_id?(context_id)
       end
+      true
+    end
+
+    def initialize(client:, audit:, manifest:, metadata_root:, selected:, cpp_review_context_version_id: nil)
+      self.class.validate_selection!(selected: selected, manifest: manifest, cpp_review_context_version_id: cpp_review_context_version_id)
+      @client, @audit, @manifest, @metadata_root = client, audit, manifest, metadata_root
+      @selected = selected.sort
+      @cpp_context_id = cpp_review_context_version_id.to_s
     end
 
     def run(action:, expected_sha256: nil)
@@ -269,7 +280,7 @@ module BoardseshStoreReview
     end
 
     def resource_id?(id)
-      id.is_a?(String) && id.match?(/\A[A-Za-z0-9-]{1,128}\z/)
+      self.class.resource_id?(id)
     end
 
     def review_context_id(snapshot)
