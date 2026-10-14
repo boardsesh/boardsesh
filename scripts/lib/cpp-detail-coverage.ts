@@ -11,6 +11,12 @@ import { CPP_BOOTSTRAP_PROFILE_QUERY, createTransport, resolveBootstrapUpstream 
 import { createScreenshotBackend, readScreenshotFixtureManifest } from './screenshot-backend';
 import { isCppClimbId, isCppTarget, readCppPage, type CppBoard } from './screenshot-cpp';
 import { assertCppGradeCountProof } from './cpp-grade-count';
+import {
+  assertCppThumbnailRequestLimit,
+  cppBetaThumbnailRequest,
+  createCppThumbnailRecording,
+  inspectCppThumbnailImage,
+} from './cpp-beta-thumbnails';
 import { resolveCppLogbookRead, assertCppLogbookResponse, assertCppLogbookAttemptsReady } from './cpp-logbook-coverage';
 import { isCppWallConfirmation } from './screenshot-campaign-session';
 import {
@@ -24,6 +30,7 @@ import {
   STATIC_KEY_LENGTH,
   type GraphqlFixtureFile,
   type ScreenshotFixtureManifest,
+  type StaticManifestEntry,
 } from './screenshot-fixtures';
 
 const sha256 = (contents: string | Buffer): string => createHash('sha256').update(contents).digest('hex');
@@ -424,6 +431,54 @@ export interface CppDetailRecordingOptions {
   log?: (line: string) => void;
 }
 
+const staticRequest = (entry: StaticManifestEntry): string =>
+  entry.query ? `${entry.path}?${entry.query}` : entry.path;
+
+/** Only thumbnails named by the verified native detail reads may extend a recording. */
+export function resolveCppBetaThumbnailRequests(
+  manifest: ScreenshotFixtureManifest,
+  fixtures: GraphqlFixtureFile[],
+): Map<string, GraphqlFixtureFile[]> {
+  const requests = new Map<string, GraphqlFixtureFile[]>();
+  for (const expected of resolveCppDetailReads(manifest, fixtures)) {
+    if (expected.operationName !== 'GetBetaLinks') continue;
+    const fixture = fixtures.find(
+      (candidate) =>
+        candidate.operationName === expected.operationName && candidate.variablesHash === expected.variablesHash,
+    );
+    if (!fixture) continue;
+    assertDetailResponse(fixture, expected);
+    const response = fixture.response as { data: { betaLinks: { thumbnail: string | null }[] } };
+    for (const row of response.data.betaLinks) {
+      const request = cppBetaThumbnailRequest(row.thumbnail);
+      if (request !== null) {
+        const sources = requests.get(request) ?? [];
+        if (!sources.includes(fixture)) sources.push(fixture);
+        requests.set(request, sources);
+      }
+    }
+  }
+  assertCppThumbnailRequestLimit(new Set(requests.keys()));
+  return requests;
+}
+
+async function assertRecordedThumbnailImages(
+  directory: string,
+  manifest: ScreenshotFixtureManifest,
+  requests: ReadonlyMap<string, GraphqlFixtureFile[]>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const entry of manifest.static) {
+    const request = staticRequest(entry);
+    if (seen.has(request)) throw new Error('CPP detail static recording contains duplicate requests');
+    seen.add(request);
+    if (!requests.has(request)) continue;
+    const bytes = readFileSync(join(directory, entry.file));
+    if (bytes.length !== entry.bytes) throw new Error('CPP beta thumbnail recorded size differs');
+    await inspectCppThumbnailImage(bytes, entry.contentType);
+  }
+}
+
 async function authenticateDetails(origin: string, options: CppDetailRecordingOptions) {
   try {
     return await createTransport(origin, options.email, options.password);
@@ -446,6 +501,8 @@ export async function withCppDetailCoverage<T>(
   const detailReads = resolveCppDetailReads(manifest, fixtures);
   const logbookRead = resolveCppLogbookRead(manifest, fixtures);
   const reads = [...detailReads, ...(logbookRead ? [logbookRead] : [])];
+  const existingThumbnails = resolveCppBetaThumbnailRequests(manifest, fixtures);
+  await assertRecordedThumbnailImages(input, manifest, existingThumbnails);
   const existingLogbook =
     logbookRead &&
     fixtures.find(
@@ -481,7 +538,10 @@ export async function withCppDetailCoverage<T>(
             fixture.operationName === expected.operationName && fixture.variablesHash === expected.variablesHash,
         ),
     );
-    if (missing.length === 0) {
+    const missingExistingThumbnails = [...existingThumbnails.keys()].filter(
+      (request) => !manifest.static.some((entry) => staticRequest(entry) === request),
+    );
+    if (missing.length === 0 && missingExistingThumbnails.length === 0) {
       // A resumed complete candidate needs fresh owner verification, but no
       // duplicate recording should move its provenance clock or original bytes.
       const { accountUserId } = await authenticateDetails(upstream, options);
@@ -491,6 +551,8 @@ export async function withCppDetailCoverage<T>(
       return await prepare(recording);
     }
     let rejectedResponse = false;
+    const allowedThumbnails = new Set<string>();
+    const thumbnailRecording = createCppThumbnailRecording(upstream, allowedThumbnails);
     recorder = createScreenshotBackend({
       mode: 'record',
       fixturesDir: recording,
@@ -499,6 +561,7 @@ export async function withCppDetailCoverage<T>(
       flow: manifest.flow,
       fresh: false,
       pseudonymise: true,
+      staticRecording: thumbnailRecording,
       log: (line) => {
         if (line.includes('UPSTREAM-ERROR') || line.includes('REDACTED') || line.includes('MISS '))
           rejectedResponse = true;
@@ -516,6 +579,20 @@ export async function withCppDetailCoverage<T>(
       } catch {
         throw new Error(`CPP detail ${expected.operationName} read failed`);
       }
+    }
+    const detailManifest = readManifest(recording);
+    if (!detailManifest) throw new Error('CPP detail recording manifest is missing after native reads');
+    const thumbnailRequests = resolveCppBetaThumbnailRequests(detailManifest, readFixtures(recording, detailManifest));
+    for (const request of thumbnailRequests.keys())
+      if (!manifest.static.some((entry) => staticRequest(entry) === request)) allowedThumbnails.add(request);
+    // Sequential requests keep the byte budget exact and avoid a CDN fan-out.
+    for (const request of allowedThumbnails) {
+      const response = await fetch(`http://127.0.0.1:${port}${request}`, { signal: AbortSignal.timeout(45_000) });
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        throw new Error('CPP beta thumbnail was not recorded from its genuine source');
+      }
+      await response.arrayBuffer();
     }
     const stats = recorder.stats();
     await recorder.close();
@@ -537,14 +614,31 @@ export async function withCppDetailCoverage<T>(
       else assertDetailResponse(fixture, expected);
     }
     assertCppLogbookAttemptsReady(completed, completedFixtures);
+    await assertRecordedThumbnailImages(recording, completed, thumbnailRequests);
+    const addedStatic = completed.static.filter(
+      (entry) => !manifest.static.some((previous) => staticRequest(previous) === staticRequest(entry)),
+    );
+    if (
+      completed.static.length !== manifest.static.length + allowedThumbnails.size ||
+      addedStatic.length !== allowedThumbnails.size ||
+      addedStatic.some((entry) => !allowedThumbnails.has(staticRequest(entry))) ||
+      manifest.static.some(
+        (entry) => !completed.static.some((candidate) => canonicalJson(candidate) === canonicalJson(entry)),
+      ) ||
+      thumbnailRecording.proofs.length !== allowedThumbnails.size ||
+      thumbnailRecording.proofs.some((proof) => !proof.recordedAt)
+    )
+      throw new Error('CPP beta thumbnail recorder changed static scope or original metadata');
     const {
       graphql: _originalGraphql,
+      static: _originalStatic,
       recordedAt: _originalAt,
       frozenNow: _originalNow,
       ...originalMetadata
     } = manifest;
     const {
       graphql: _completedGraphql,
+      static: _completedStatic,
       recordedAt: _completedAt,
       frozenNow: _completedNow,
       ...completedMetadata
@@ -575,17 +669,35 @@ export async function withCppDetailCoverage<T>(
     if (
       canonicalJson(originalMetadata) !== canonicalJson(completedMetadata) ||
       completed.frozenNow !==
-        finalizeRecordingFrozenNow(
-          manifest.frozenNow,
-          incoming.map((fixture) => fixture.recordedAt),
-        ) ||
+        finalizeRecordingFrozenNow(manifest.frozenNow, [
+          ...incoming.map((fixture) => fixture.recordedAt),
+          ...thumbnailRecording.proofs.map((proof) => proof.recordedAt!),
+        ]) ||
       !Number.isFinite(Date.parse(completed.recordedAt)) ||
       Date.parse(completed.recordedAt) > Date.parse(completed.frozenNow)
     )
       throw new Error('CPP detail recorder changed source identity, scope or clock provenance');
     assertOriginalFiles(input, recording, originalHashes);
+    for (const proof of thumbnailRecording.proofs) {
+      const entry = completed.static.find((candidate) => staticRequest(candidate) === proof.request)!;
+      if (sha256(readFileSync(join(recording, entry.file))) !== proof.sha256)
+        throw new Error('CPP beta thumbnail bytes differ from the actual recorded response');
+      const sourceFixtures = thumbnailRequests.get(proof.request)!.map((fixture) => {
+        const source = completed.graphql.find(
+          (candidate) =>
+            candidate.operationName === fixture.operationName && candidate.variablesHash === fixture.variablesHash,
+        )!;
+        return {
+          file: source.file,
+          sha256: sha256(readFileSync(join(recording, source.file))),
+          documentHash: fixture.documentHash,
+          variablesHash: fixture.variablesHash,
+        };
+      });
+      options.log?.(`CPP thumbnail evidence: ${JSON.stringify({ ...proof, file: entry.file, sourceFixtures })}`);
+    }
     options.log?.(
-      `CPP detail coverage verified: ${detailReads.length} exact native reads${logbookRead ? ' plus one genuine MoonBoard Attempts page' : ''}.`,
+      `CPP detail coverage verified: ${detailReads.length} exact native reads${logbookRead ? ' plus one genuine MoonBoard Attempts page' : ''}; ${thumbnailRequests.size} referenced thumbnails complete (${addedStatic.length} recorded).`,
     );
     return await prepare(recording);
   } finally {

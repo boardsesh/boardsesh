@@ -41,6 +41,28 @@ and FullSync item, and canonical primary-board search evidence. Hero provenance
 is checked separately. Unrelated queue items never expand this scope.
 Explicitly empty spray wall editor scenes are skipped.
 
+Preparation also completes the cached beta thumbnails named by those verified
+`GetBetaLinks` responses. It deduplicates the exact native `?size=280` requests,
+keeps existing valid image bytes, and records missing images through the same
+proxy. Only backend-relative Instagram/TikTok cache paths qualify. A backend
+redirect may lead only to that object's exact 280px variant on
+`https://media.boardsesh.com`; additional redirects, other hosts and original-size
+fallbacks are rejected. These public image reads carry no account credentials.
+Every image must return HTTP 200 and decode completely with its declared raster
+MIME type. Limits are 256 distinct requests, 2 MiB per image, 32 MiB of new image
+bytes, 16 million decoded pixels per image, and 30 seconds per download.
+Missing, malformed or unsupported thumbnails stop the candidate; preparation
+never removes beta rows or manufactures replacement images.
+
+The recorder preserves the actual downloaded bytes and uses their real recording
+timestamps when advancing `frozenNow`. Each `CPP thumbnail evidence` log entry
+binds the native request, final public source URL, response timestamps, MIME type,
+dimensions, byte count and SHA-256 to the exact source GraphQL file and query
+hashes. Retain these logs with candidate QA. A complete candidate resumes without
+downloading its images again or moving its clock. Completing an older candidate
+changes its immutable digest: publish the new snapshot and replay the complete
+locale/device matrix before uploading any images captured against it.
+
 MoonBoard preparation also records exactly one native grouped-logbook query for
 **Status → Attempts**: the same screenshot account, `boardType: moonboard`,
 `statusMode: attempt`, `flashOnly: false`, recent descending, limit 20, offset 0.

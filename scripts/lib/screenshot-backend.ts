@@ -118,6 +118,11 @@ export type ScreenshotBackendServerOptions = {
   pseudonymise?: boolean;
   /** Which capture flow is being recorded. Stored in the manifest for provenance. */
   flow?: string;
+  /** Record-only bounded download/receipt policy for authorized CPP detail assets. */
+  staticRecording?: {
+    download: (pathname: string, query: string) => Promise<{ bytes: Buffer; contentType: string }>;
+    recorded: (entry: StaticManifestEntry, recordedAt: string) => void;
+  };
 };
 
 export type ScreenshotBackendStats = {
@@ -1371,12 +1376,21 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const subject = query ? `${pathname}?${query}` : pathname;
     // PROD answers /static/* with a 302 to a CDN. Follow it for the bytes, but
     // key by what the app asked for — the CDN URL is not stable.
-    const upstreamResponse = await fetch(`${upstreamUrl}${subject}`, { redirect: 'follow' });
-    const bytes = Buffer.from(await upstreamResponse.arrayBuffer());
-    const contentType = upstreamResponse.headers.get('content-type') ?? 'application/octet-stream';
-    response.writeHead(upstreamResponse.status, { 'content-type': contentType, 'content-length': bytes.length });
+    let bytes: Buffer;
+    let contentType: string;
+    let status: number;
+    if (options.staticRecording) {
+      ({ bytes, contentType } = await options.staticRecording.download(pathname, query));
+      status = 200;
+    } else {
+      const upstreamResponse = await fetch(`${upstreamUrl}${subject}`, { redirect: 'follow' });
+      bytes = Buffer.from(await upstreamResponse.arrayBuffer());
+      contentType = upstreamResponse.headers.get('content-type') ?? 'application/octet-stream';
+      status = upstreamResponse.status;
+    }
+    response.writeHead(status, { 'content-type': contentType, 'content-length': bytes.length });
     response.end(bytes);
-    if (!upstreamResponse.ok) return;
+    if (status < 200 || status >= 300) return;
     if (staticIndex.has(subject)) return;
 
     const key = staticFixtureKey(pathname, new URLSearchParams(query), sha256Hex);
@@ -1386,7 +1400,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const entry: StaticManifestEntry = { path: pathname, query, file: relativeFile, contentType, bytes: bytes.length };
     manifest.static.push(entry);
     staticIndex.set(subject, entry);
-    recordedAtInstants.push(new Date().toISOString());
+    const recordedAt = new Date().toISOString();
+    options.staticRecording?.recorded(entry, recordedAt);
+    recordedAtInstants.push(recordedAt);
     recorded += 1;
     emit({ event: 'recorded', kind: 'static', subject, file: relativeFile });
     rewriteManifest();

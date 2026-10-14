@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse, getOperationAST } from 'graphql';
+import sharp from 'sharp';
 import {
   GET_MY_BOARDS,
   SEARCH_CLIMBS,
@@ -14,7 +15,11 @@ import {
 import { JOIN_SESSION } from '../../packages/shared/graphql/src/operations/queue-session';
 import { GET_USER_GROUPED_ASCENTS_FEED } from '../../packages/shared/graphql/src/operations/ticks';
 import { assertCppLogbookAttemptsReady, resolveCppLogbookRead } from '../lib/cpp-logbook-coverage';
-import { resolveCppDetailReads, withCppDetailCoverage } from '../lib/cpp-detail-coverage';
+import {
+  resolveCppBetaThumbnailRequests,
+  resolveCppDetailReads,
+  withCppDetailCoverage,
+} from '../lib/cpp-detail-coverage';
 import { readCppPage, type CppTarget } from '../lib/screenshot-cpp';
 import { prepareCppCampaignFixtures } from '../prepare-ios-campaign-fixtures';
 import { mergeFixtureSets, graphqlFixtureContentHash } from '../screenshot-fixtures-merge';
@@ -403,14 +408,24 @@ async function upstream(
     subject?: string;
     profileId?: string;
     hangOperation?: string;
+    staticResponse?: (request: string) => { status?: number; body: Buffer; contentType: string };
     response?: (operationName: string, variables: Record<string, unknown>) => { status?: number; body: unknown };
   } = {},
 ) {
   const requests: Array<{ query: string; operationName: string; variables: Record<string, unknown> }> = [];
+  const staticRequests: Array<{ path: string; authorization: string | undefined }> = [];
   let authRequests = 0;
   const token = `header.${Buffer.from(JSON.stringify({ sub: options.subject ?? owner })).toString('base64url')}.secret-native-jwt`;
   const server = createServer((request, response) => {
     void (async () => {
+      if (request.url?.startsWith('/static/')) {
+        staticRequests.push({ path: request.url, authorization: request.headers.authorization });
+        const image = options.staticResponse?.(request.url);
+        response.statusCode = image ? (image.status ?? 200) : 404;
+        response.setHeader('content-type', image?.contentType ?? 'text/plain');
+        response.end(image?.body ?? Buffer.from('not found'));
+        return;
+      }
       let raw = '';
       for await (const chunk of request) raw += String(chunk);
       response.setHeader('content-type', 'application/json');
@@ -449,6 +464,7 @@ async function upstream(
   return {
     origin: `http://127.0.0.1:${port}`,
     requests,
+    staticRequests,
     token,
     get authRequests() {
       return authRequests;
@@ -610,6 +626,145 @@ describe('CPP selected detail source evidence', () => {
       { data: { myBoards: { boards: [{ ...source.boards[0], ownerId: 'foreign' }] } } },
     );
     expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('unique recorded owner');
+  });
+});
+
+describe('CPP genuine beta thumbnail completion', () => {
+  const thumbnail = '/static/beta-link-thumbnails/instagram/C6-VpKiLFfN.jpg';
+  const secondThumbnail = '/static/beta-link-thumbnails/tiktok/native_beta.jpg';
+  const withThumbnails = (operationName: string, variables: Record<string, unknown>, thumbnails = [thumbnail]) => {
+    const contents = reply(operationName, variables);
+    if (operationName !== 'GetBetaLinks') return contents;
+    const rows = (contents as { betaLinks: Record<string, unknown>[] }).betaLinks;
+    return { betaLinks: thumbnails.map((source) => ({ ...rows[0], thumbnail: source })) };
+  };
+  const imageBytes = () =>
+    sharp({ create: { width: 3, height: 2, channels: 3, background: '#234567' } })
+      .png()
+      .toBuffer();
+
+  it('records every distinct referenced native request through the real proxy, retaining original bytes and clocks', async () => {
+    const image = await imageBytes();
+    const api = await upstream({
+      response: (operationName, variables) => ({
+        body: { data: withThumbnails(operationName, variables, [thumbnail, secondThumbnail, thumbnail]) },
+      }),
+      staticResponse: () => ({ body: image, contentType: 'image/png' }),
+    });
+    const source = sample();
+    const { input, output } = save(source, api.origin);
+    const sourceManifest = readFileSync(join(input, 'manifest.json'));
+    const originalFiles = source.manifest.graphql.map((entry) => readFileSync(join(input, entry.file)));
+    const logs: string[] = [];
+    await prepareCppCampaignFixtures(input, output, {
+      upstream: api.origin,
+      email,
+      password,
+      log: (line) => logs.push(line),
+    });
+    const completed = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    expect(api.staticRequests).toEqual([
+      { path: `${thumbnail}?size=280`, authorization: undefined },
+      { path: `${secondThumbnail}?size=280`, authorization: undefined },
+    ]);
+    expect(completed.static).toHaveLength(2);
+    for (const entry of completed.static) {
+      expect(entry.query).toBe('size=280');
+      expect(entry.bytes).toBe(image.length);
+      expect(readFileSync(join(output, entry.file))).toEqual(image);
+    }
+    expect(readFileSync(join(input, 'manifest.json'))).toEqual(sourceManifest);
+    expect(source.manifest.graphql.map((entry) => readFileSync(join(output, entry.file)))).toEqual(originalFiles);
+    const proofLines = logs.filter((line) => line.startsWith('CPP thumbnail evidence: '));
+    expect(proofLines).toHaveLength(2);
+    for (const line of proofLines) {
+      const proof = JSON.parse(line.slice('CPP thumbnail evidence: '.length)) as {
+        recordedAt: string;
+        sha256: string;
+        sourceFixtures: { file: string; sha256: string }[];
+      };
+      expect(proof.sha256).toBe(sha256(image));
+      expect(Date.parse(completed.frozenNow)).toBeGreaterThanOrEqual(Date.parse(proof.recordedAt));
+      for (const fixture of proof.sourceFixtures)
+        expect(sha256(readFileSync(join(output, fixture.file)))).toBe(fixture.sha256);
+    }
+    expect(logs.join('\n')).not.toContain(password);
+    expect(logs.join('\n')).not.toContain(api.token);
+  });
+
+  it('completes existing detail rows without refetching GraphQL, then resumes without replacing any bytes', async () => {
+    const image = await imageBytes();
+    const api = await upstream({ staticResponse: () => ({ body: image, contentType: 'image/png' }) });
+    const source = sample();
+    for (const request of resolveCppDetailReads(source.manifest, source.fixtures))
+      source.append(
+        request.query,
+        request.variables,
+        pseudonymiseResponse({ data: withThumbnails(request.operationName, request.variables) }, { ownUserId: owner })
+          .response,
+      );
+    expect(resolveCppBetaThumbnailRequests(source.manifest, source.fixtures).size).toBe(1);
+    const { input, output } = save(source, api.origin);
+    await prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password });
+    expect(api.requests.map((request) => request.operationName)).toEqual(['CppBootstrapProfile']);
+    expect(api.staticRequests).toHaveLength(1);
+    const prepared = JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')) as ScreenshotFixtureManifest;
+    const preparedBytes = readFileSync(join(output, 'manifest.json'));
+    const resumed = join(dirname(output), 'resumed');
+    await prepareCppCampaignFixtures(output, resumed, { upstream: api.origin, email, password });
+    expect(api.staticRequests).toHaveLength(1);
+    expect(readFileSync(join(resumed, 'manifest.json'))).toEqual(preparedBytes);
+    for (const entry of [...prepared.graphql, ...prepared.static])
+      expect(readFileSync(join(resumed, entry.file))).toEqual(readFileSync(join(output, entry.file)));
+  });
+
+  it.each(['404', 'html', 'truncated', 'mime mismatch'])(
+    'refuses %s source responses without creating a candidate or altering the input',
+    async (failure) => {
+      const image = await imageBytes();
+      const api = await upstream({
+        response: (operationName, variables) => ({ body: { data: withThumbnails(operationName, variables) } }),
+        staticResponse: () => ({
+          status: failure === '404' ? 404 : 200,
+          body:
+            failure === 'html'
+              ? Buffer.from('<html>upstream-private-response</html>')
+              : failure === 'truncated'
+                ? image.subarray(0, 20)
+                : image,
+          contentType: failure === 'html' ? 'text/html' : failure === 'mime mismatch' ? 'image/jpeg' : 'image/png',
+        }),
+      });
+      const source = sample();
+      const { input, output } = save(source, api.origin);
+      const before = readFileSync(join(input, 'manifest.json'));
+      await expect(
+        prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password }),
+      ).rejects.toThrow('CPP beta thumbnail');
+      expect(existsSync(output)).toBe(false);
+      expect(readFileSync(join(input, 'manifest.json'))).toEqual(before);
+    },
+  );
+
+  it('rejects unsupported thumbnail scope before credentials on a complete source', async () => {
+    const api = await upstream();
+    const source = sample();
+    for (const request of resolveCppDetailReads(source.manifest, source.fixtures))
+      source.append(
+        request.query,
+        request.variables,
+        pseudonymiseResponse(
+          { data: withThumbnails(request.operationName, request.variables, ['https://untrusted.invalid/image.jpg']) },
+          { ownUserId: owner },
+        ).response,
+      );
+    const { input, output } = save(source, api.origin);
+    await expect(prepareCppCampaignFixtures(input, output, { upstream: api.origin, email, password })).rejects.toThrow(
+      'cached native source',
+    );
+    expect(api.authRequests).toBe(0);
+    expect(api.staticRequests).toHaveLength(0);
+    expect(existsSync(output)).toBe(false);
   });
 });
 
