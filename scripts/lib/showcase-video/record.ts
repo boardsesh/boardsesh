@@ -712,6 +712,23 @@ export function findBoardSlotProblem(logText: string, slot: number, kind: Showca
   return null;
 }
 
+/** Match a localized peer attribution label in a queue row's accessibility text. */
+export function crewPeerRowPattern(addedByLabel: string, positionLabel: string): string {
+  const fragments = addedByLabel.split('{{name}}');
+  if (fragments.length !== 2) throw new Error('Queue attribution label must contain one {{name}} placeholder');
+  const escapeFragment = (fragment: string): string => fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `^.*[,] ${escapeFragment(positionLabel)}, ${escapeFragment(fragments[0])}.+${escapeFragment(fragments[1])}.*$`;
+}
+
+/** Observed first upcoming Kilter row, away from its trailing drag handle. */
+export function crewPeerRowFallbackPoint(
+  kind: ShowcaseVariantKind,
+  platform: ShowcasePlatform,
+  logText: string,
+): string {
+  return crewQueueFallbackPoint(kind, platform, logText) ? '50%,78%' : '';
+}
+
 /** Observed iOS Kilter queue target when its native drawer exposes no accessibility controls. */
 export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: ShowcasePlatform, logText: string): string {
   if (platform !== 'ios' || (kind !== 'default' && kind !== 'kilter')) return '';

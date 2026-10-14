@@ -100,6 +100,8 @@ import {
   countHomeReady,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
+  crewPeerRowFallbackPoint,
+  crewPeerRowPattern,
   ensureCaptureSessionClosed,
   differingPixelRatio,
   findBoardHandoffProblem,
@@ -1211,6 +1213,16 @@ function showcaseCloseLabel(locale: ShowcaseRecordArgs['locales'][number]): stri
   return catalog.ariaLabels.close;
 }
 
+function showcasePeerQueueRowLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as { mobile: { queue: { addedByAria: string; positionLabel: string } } };
+  return crewPeerRowPattern(
+    catalog.mobile.queue.addedByAria,
+    catalog.mobile.queue.positionLabel.replace('{{position}}', '2'),
+  );
+}
+
 async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
   return runMaestro({
     udid: context.primary.device.udid,
@@ -1219,6 +1231,12 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
     signalUrl: context.signal.url,
     env: {
       SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
+      SHOWCASE_CREW_PEER_ROW_LABEL: showcasePeerQueueRowLabel(context.args.locales[0]),
+      SHOWCASE_CREW_PEER_ROW_FALLBACK_POINT: crewPeerRowFallbackPoint(
+        context.args.kind,
+        context.primary.platform,
+        existsSync(context.primary.metroLog) ? readFileSync(context.primary.metroLog, 'utf8') : '',
+      ),
       SHOWCASE_CREW_QUEUE_FALLBACK_POINT: crewQueueFallbackPoint(
         context.args.kind,
         context.primary.platform,

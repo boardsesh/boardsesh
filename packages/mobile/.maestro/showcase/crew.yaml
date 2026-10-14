@@ -34,7 +34,7 @@ name: showcase take - a friend adds a climb
 #                       the native drawer exposes no Queue accessibility label
 #                       and the recorder verifies board slot 0 is actually Kilter
 #   (mirror boards retain the label path; their first slot is Mirror)
-#   50%,<y>%            the second phone's new row, y from the recorder (see below)
+#   50%,78%             verified Kilter first-upcoming row, after its avatar logs
 #   50%,7%              the backdrop above the reaction menu
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -81,15 +81,38 @@ name: showcase take - a friend adds a climb
     timeout: 5000
     optional: true
 
-# Long press the new row: the reaction menu, with "Play next". Where the row
-# lands depends on how much history the queue shows above it (60% with none,
-# 73% under one history row), so this reads the row's `queue-row-avatar`
-# anchor, which the recorder publishes as `anchor-queue-row-avatar-cy` (centre,
-# points). The anchor is measured inside the queue sheet's own window, whose
-# top sits 322 pt down the 956 pt screen at this detent, hence the offset.
-- evalScript: ${output.rowY = Math.round((Number(http.get(SHOWCASE_SIGNAL_URL + '/value/anchor-queue-row-avatar-cy').body.trim() || '252') + 322) / 956 * 100)}
-- longPressOn:
-    point: '50%,${output.rowY}%'
+# Require the genuine friend's avatar before selecting their row. Native sheet
+# anchors are local coordinates; the old fixed 322pt offset hit the header.
+- evalScript: ${output.peerAvatarY = ''}
+- repeat:
+    times: 40
+    while:
+      true: ${output.peerAvatarY === ''}
+    commands:
+      - evalScript: ${output.peerAvatarY = http.get(SHOWCASE_SIGNAL_URL + '/value/anchor-queue-row-avatar-cy').body.trim()}
+      - extendedWaitUntil:
+          visible: 'zzz-showcase-pause'
+          timeout: 200
+          optional: true
+- assertTrue: ${output.peerAvatarY !== '' && !isNaN(Number(output.peerAvatarY))}
+
+# Prefer the attributed row's localized accessibility label. If XCTest omits
+# sheet controls, use the observed first-upcoming Kilter row's text, never ≡.
+- evalScript: ${output.peerRowPressed = false}
+- runFlow:
+    when:
+      visible: '${SHOWCASE_CREW_PEER_ROW_LABEL}'
+    commands:
+      - longPressOn: '${SHOWCASE_CREW_PEER_ROW_LABEL}'
+      - evalScript: ${output.peerRowPressed = true}
+- runFlow:
+    when:
+      true: ${!output.peerRowPressed && SHOWCASE_CREW_PEER_ROW_FALLBACK_POINT !== ''}
+    commands:
+      - longPressOn:
+          point: '${SHOWCASE_CREW_PEER_ROW_FALLBACK_POINT}'
+      - evalScript: ${output.peerRowPressed = true}
+- assertTrue: ${output.peerRowPressed}
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/play-next-menu')}
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'

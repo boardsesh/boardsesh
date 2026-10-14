@@ -23,6 +23,8 @@ import {
   countHomeReady,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
+  crewPeerRowPattern,
+  crewPeerRowFallbackPoint,
   ensureCaptureSessionClosed,
   findBoardHandoffProblem,
   findKeychainTeamProblem,
@@ -937,6 +939,55 @@ describe('observed native crew queue fallback', () => {
     expect(fallbackBranch).toBeGreaterThan(labelBranch);
     expect(openedProof).toBeGreaterThan(fallbackBranch);
     expect(openedProof).toBeLessThan(source.indexOf("'/mark/queue-open'"));
+    expect(parseAllDocuments(source).every((document) => document.errors.length === 0)).toBe(true);
+  });
+});
+
+describe('crew peer row targeting', () => {
+  it.each(SHOWCASE_LOCALES)('matches only attributed rows in %s', (locale) => {
+    const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+      mobile: { queue: { addedByAria: string; positionLabel: string } };
+    };
+    const label = catalog.mobile.queue.addedByAria;
+    const positionLabel = catalog.mobile.queue.positionLabel.replace('{{position}}', '2');
+    const pattern = new RegExp(crewPeerRowPattern(label, positionLabel));
+    expect(pattern.test(`Guessing Games, ${positionLabel}, ${label.replace('{{name}}', 'Crew friend')}`)).toBe(true);
+    expect(pattern.test('Guessing Games, V4')).toBe(false);
+    expect(pattern.test(`Guessing Games, ${positionLabel}, ${label.replace('{{name}}', '')}`)).toBe(false);
+    expect(pattern.test(`Old row, ${positionLabel.replace('2', '1')}, ${label.replace('{{name}}', 'Friend')}`)).toBe(
+      false,
+    );
+  });
+
+  it('escapes catalog punctuation and rejects missing or repeated placeholders', () => {
+    const pattern = new RegExp(crewPeerRowPattern('Added (by) [{{name}}].', 'position 2'));
+    expect(pattern.test('Climb, position 2, Added (by) [Friend].')).toBe(true);
+    expect(pattern.test('Added by Friend!')).toBe(false);
+    expect(() => crewPeerRowPattern('Added by', 'position 2')).toThrow('one {{name}} placeholder');
+    expect(() => crewPeerRowPattern('{{name}} {{name}}', 'position 2')).toThrow('one {{name}} placeholder');
+  });
+
+  it('only enables the observed peer row for verified iOS Kilter', () => {
+    const log = '[screenshot] board[0] "Kilter" -> "Kilter" (L8 S25 @35°, kilter)';
+    expect(crewPeerRowFallbackPoint('kilter', 'ios', log)).toBe('50%,78%');
+    expect(crewPeerRowFallbackPoint('default', 'ios', log)).toBe('50%,78%');
+    expect(crewPeerRowFallbackPoint('kilter', 'android', log)).toBe('');
+    expect(crewPeerRowFallbackPoint('tension', 'ios', log)).toBe('');
+    expect(crewPeerRowFallbackPoint('kilter', 'ios', '')).toBe('');
+    expect(crewPeerRowFallbackPoint('kilter', 'ios', log.replace('kilter)', 'tension)'))).toBe('');
+  });
+
+  it('requires the peer avatar before trying the attributed row or measured point', () => {
+    const source = readFileSync(showcaseFlowPath('crew.yaml'), 'utf8');
+    const avatarProof = source.indexOf('- assertTrue: ${output.peerAvatarY');
+    const labelBranch = source.indexOf("visible: '${SHOWCASE_CREW_PEER_ROW_LABEL}'");
+    const fallbackBranch = source.indexOf(
+      "true: ${!output.peerRowPressed && SHOWCASE_CREW_PEER_ROW_FALLBACK_POINT !== ''}",
+    );
+    expect(avatarProof).toBeGreaterThan(-1);
+    expect(labelBranch).toBeGreaterThan(avatarProof);
+    expect(fallbackBranch).toBeGreaterThan(labelBranch);
+    expect(source).not.toContain('|| 252');
     expect(parseAllDocuments(source).every((document) => document.errors.length === 0)).toBe(true);
   });
 });
