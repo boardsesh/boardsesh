@@ -59,6 +59,7 @@ import {
 } from '../outline-editor/SprayHoldEditorScreen';
 import { useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { Icon } from '../Icon';
+import type { IconName } from '../icon-map';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -83,7 +84,6 @@ import { openExternalUrl } from '../../lib/open-url';
 import { buildHelpUrl } from '../../lib/help-url';
 import {
   extractGraphqlCode,
-  extractGraphqlMessage,
   isSprayWallVisibilityOwnerOnlyError,
   sprayWallLifecycleRefusal,
 } from '../../lib/graphql/extract-error-message';
@@ -255,7 +255,9 @@ export function SprayWallWizardScreen({
       if (cap) return sprayCapMessage(cap, t);
       const lifecycle = sprayWallLifecycleRefusal(error);
       if (lifecycle) return sprayWallLifecycleMessage(lifecycle, t);
-      return extractGraphqlMessage(error) ?? fallback;
+      // Never the server's own words: without a code we map, the message can be
+      // anything up to a raw SQL statement with its parameters.
+      return fallback;
     },
     [t],
   );
@@ -1643,7 +1645,7 @@ export function SprayWallWizardScreen({
   const isResetRun = resetOfWallUuid != null;
   const photo = state.photo;
   const tileTitle = photo
-    ? t('sprayWizard.photo.adjust')
+    ? t('sprayWizard.photo.tileLabel')
     : isResetRun
       ? cameraAvailable
         ? t('sprayWizard.reset.heroTitle')
@@ -1709,7 +1711,9 @@ export function SprayWallWizardScreen({
             disabled={photoControlsBusy}
             accessibilityRole="button"
             accessibilityLabel={tileTitle}
-            accessibilityHint={photo ? undefined : tileBody}
+            // Picked, the tile is the photo and a tap crops it: said as a hint,
+            // so it is not a second "Crop or rotate" beside the button below.
+            accessibilityHint={photo ? t('sprayWizard.photo.adjust') : tileBody}
             testID="spray-photo-tile"
             style={[
               styles.tile,
@@ -1753,9 +1757,12 @@ export function SprayWallWizardScreen({
                 disabled={photoControlsBusy}
                 testID="spray-photo-adjust"
               />
-              {/* Only on a binary whose Info.plist declares the camera. On an
-                  older one iOS does not deny the request, it terminates. */}
-              {cameraAvailable ? (
+              {/* The way the photo came in: Retake opens the camera, so it is
+                  offered only for a camera shot (and only on a binary whose
+                  Info.plist declares the camera: on an older one iOS does not
+                  deny the request, it terminates). A library pick changes it
+                  from the library. */}
+              {cameraAvailable && photo.source === 'camera' ? (
                 <Button
                   title={t('sprayWizard.photo.retake')}
                   icon="camera"
@@ -1826,9 +1833,19 @@ export function SprayWallWizardScreen({
 
           {/* The photo is the step that decides how many holds the finder
               misses: one tip here, and the long version a tap away. Gone once
-              there is a photo, when it is too late to help. */}
+              there is a photo, when it is too late to help. Above them, what
+              the next few minutes hold, so the first tap is not a leap. */}
           {photo ? null : (
             <>
+              <HowItWorks
+                steps={[
+                  { icon: 'camera', label: t('sprayWizard.photo.howItWorks.snap') },
+                  { icon: 'hand.tap', label: t('sprayWizard.photo.howItWorks.holds') },
+                  { icon: 'edit', label: t('sprayWizard.photo.howItWorks.name') },
+                ]}
+                numberLabel={(number, label) => t('sprayWizard.photo.howItWorks.step', { number, label })}
+                width={previewWidth}
+              />
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
                 {t('sprayWizard.photo.tip')}
               </Text>
@@ -1924,6 +1941,42 @@ function discardPickedPhoto(photo: { uri: string; base: { uri: string } }): void
 }
 
 /**
+ * Three small numbered steps under the opener's tile: the shape of the whole
+ * flow in one glance. Quiet on purpose (secondary label, footnote size), and
+ * one element to a screen reader.
+ */
+function HowItWorks({
+  steps,
+  numberLabel,
+  width,
+}: {
+  steps: readonly { icon: IconName; label: string }[];
+  numberLabel: (number: number, label: string) => string;
+  /** The tile's width, so the row lines up under it. */
+  width: number;
+}) {
+  const { systemColors } = useTheme();
+  const labels = steps.map((step, index) => numberLabel(index + 1, step.label));
+  return (
+    <View
+      style={[styles.howItWorks, { width }]}
+      accessible
+      accessibilityLabel={labels.join(', ')}
+      testID="spray-photo-how-it-works"
+    >
+      {steps.map((step, index) => (
+        <View key={step.icon} style={styles.howItWorksStep}>
+          <Icon name={step.icon} size={22} color={systemColors.secondaryLabel} />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
+            {labels[index]}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
  * How tall to draw the picked photo at `width`.
  *
  * A picker that could not report a size hands back zeros (`predictCompressedSize`
@@ -1989,10 +2042,24 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     gap: spacing[3],
   },
-  // The opener breathes a little more, and centres its column on the tile.
+  // The opener breathes a little more, centres its column on the tile, and
+  // sits in the middle of the screen rather than leaving its bottom third bare.
   photoContent: {
     gap: spacing[4],
     alignItems: 'center',
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  howItWorks: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing[3],
+    paddingHorizontal: spacing[2],
+  },
+  howItWorksStep: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing[1],
   },
   // A full-screen iPad cover: the form keeps a readable column, centred.
   tabletContent: {

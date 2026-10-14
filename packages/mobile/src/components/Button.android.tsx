@@ -61,6 +61,8 @@ const BUTTON_ICON_SOURCE: Partial<Record<IconName, ImageSourcePropType>> = {
   share: require('../../assets/material-icons/share.xml'),
   transfer: require('../../assets/material-icons/transfer.xml'),
   camera: require('../../assets/material-icons/camera.xml'),
+  'crop.free': require('../../assets/material-icons/crop-free.xml'),
+  photo: require('../../assets/material-icons/image.xml'),
   add: require('../../assets/material-icons/add.xml'),
   refresh: require('../../assets/material-icons/refresh.xml'),
   instagram: require('../../assets/material-icons/instagram.xml'),
@@ -205,7 +207,10 @@ export function Button({
               modifiers={[padding(0, 0, 8, 0), size(config.iconSize, config.iconSize)]}
             />
           ) : iconSource ? (
-            <Icon source={iconSource} size={config.iconSize} modifiers={[padding(0, 0, 8, 0)]} />
+            // Sized by modifier after the padding, as the spinner above is: the
+            // `size` prop lands before the padding, so the 8dp end margin came
+            // out of the glyph's own 16dp box and drew it at half size.
+            <Icon source={iconSource} modifiers={[padding(0, 0, 8, 0), size(config.iconSize, config.iconSize)]} />
           ) : null}
           <Text style={labelStyle}>{title}</Text>
         </Row>

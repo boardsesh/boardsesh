@@ -1011,7 +1011,14 @@
       "heroBodyLibrary": "Tippe, um deine Fotos zu öffnen",
       "fromLibrary": "Aus deinen Fotos wählen",
       "retake": "Neu aufnehmen",
-      "change": "Foto ändern"
+      "change": "Foto ändern",
+      "tileLabel": "Dein Wandfoto",
+      "howItWorks": {
+        "snap": "Wand fotografieren",
+        "holds": "Griffe markieren",
+        "name": "Benennen",
+        "step": "{{number}}. {{label}}"
+      }
     },
     "adjust": {
       "title": "Zuschneiden und drehen",
@@ -1035,7 +1042,7 @@
     },
     "anchors": {
       "title": "Markiere die Ecken",
-      "body": "Zieh die Ringe auf die Ecken der Wand. Frontal fotografiert? Tippe einfach auf Weiter.",
+      "body": "Zieh die Ringe auf die Ecken der Wand. Das entzerrt das Foto und schaltet Nur Wand und Nur Griffe frei. Du kannst das überspringen.",
       "hint": "Oben links, oben rechts, unten rechts, unten links.",
       "crossed": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand.",
       "cornerTopLeft": "Ecke oben links",

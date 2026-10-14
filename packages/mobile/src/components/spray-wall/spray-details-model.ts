@@ -11,14 +11,21 @@ export type SprayDetailsModelInput = {
   defaultName: string;
   onRename: () => void;
   visibility: SprayWallVisibility;
-  onVisibilityChange: (visibility: SprayWallVisibility) => void;
+  /**
+   * A segment was picked, by key. Handed straight to the control, so it must be
+   * stable; `parseSprayVisibility` turns the key back into a visibility.
+   */
+  onVisibilitySelect: (key: string) => void;
   /** The angle the slider shows: the drag in progress, else the builder's. */
   angle: number;
   /** The offered angles, ascending and evenly spaced (`SPRAY_ANGLE_OPTIONS`). */
   angles: readonly number[];
-  /** Per drag frame. Local draft only. */
+  /**
+   * Per drag frame. Local draft only. Handed straight to the slider, so it must
+   * be stable, and it snaps (`snapSprayAngle`) itself.
+   */
   onAngleChange: (angle: number) => void;
-  /** On release, already snapped to an offered angle. The one builder write. */
+  /** On release: the one builder write. Stable, and snaps itself, as above. */
   onAngleCommit: (angle: number) => void;
   /** "40°". Referentially stable: the slider labels its value and both ends with it. */
   formatAngle: (angle: number) => string;
@@ -47,6 +54,11 @@ export function sprayAngleStep(angles: readonly number[]): number {
 }
 
 const VISIBILITY_KEYS: readonly SprayWallVisibility[] = ['private', 'unlisted', 'public'];
+
+/** A segment key back as a visibility, or null for a key that is not one. */
+export function parseSprayVisibility(key: string): SprayWallVisibility | null {
+  return VISIBILITY_KEYS.find((candidate) => candidate === key) ?? null;
+}
 
 function visibilityOptions(t: Translate): (MoreOption & { key: SprayWallVisibility })[] {
   return [
@@ -112,10 +124,7 @@ export function buildSprayDetailsModel(input: SprayDetailsModelInput): MoreFormM
         label: t('mobile.sprayVisibility.label'),
         options,
         selectedKey: input.visibility,
-        onSelect: (key) => {
-          const next = VISIBILITY_KEYS.find((candidate) => candidate === key);
-          if (next && next !== input.visibility) input.onVisibilityChange(next);
-        },
+        onSelect: input.onVisibilitySelect,
       },
     ],
   });
@@ -134,8 +143,8 @@ export function buildSprayDetailsModel(input: SprayDetailsModelInput): MoreFormM
         min: angles[0] ?? 0,
         max: angles[angles.length - 1] ?? 0,
         step: sprayAngleStep(angles),
-        onValueChange: (value) => input.onAngleChange(snapSprayAngle(value, angles)),
-        onCommit: (value) => input.onAngleCommit(snapSprayAngle(value, angles)),
+        onValueChange: input.onAngleChange,
+        onCommit: input.onAngleCommit,
       },
     ],
   });

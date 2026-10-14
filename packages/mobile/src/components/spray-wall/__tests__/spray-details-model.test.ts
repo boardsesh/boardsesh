@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildSprayDetailsModel,
+  parseSprayVisibility,
   snapSprayAngle,
   sprayAngleStep,
   type SprayDetailsModelInput,
@@ -17,7 +18,7 @@ function makeInput(overrides: Partial<SprayDetailsModelInput> = {}): SprayDetail
     defaultName: "Marco's Spray wall",
     onRename: vi.fn(),
     visibility: 'private',
-    onVisibilityChange: vi.fn(),
+    onVisibilitySelect: vi.fn(),
     angle: 40,
     angles: ANGLES,
     onAngleChange: vi.fn(),
@@ -86,19 +87,17 @@ describe('buildSprayDetailsModel', () => {
     expect(section?.footer).toBe(hint);
   });
 
-  it('offers the three visibilities in one control and hands on a change only', () => {
-    const onVisibilityChange = vi.fn();
-    const row = findRow(makeInput({ onVisibilityChange }), 'visibility');
+  it('offers the three visibilities in one control, wired to the stable handler it is given', () => {
+    const onVisibilitySelect = vi.fn();
+    const row = findRow(makeInput({ onVisibilitySelect }), 'visibility');
     if (row.kind !== 'segmented') throw new Error('visibility is not segmented');
     expect(row.options.map((option) => option.key)).toEqual(['private', 'unlisted', 'public']);
     expect(row.selectedKey).toBe('private');
-    row.onSelect('private');
-    row.onSelect('everyone');
-    row.onSelect('public');
-    expect(onVisibilityChange).toHaveBeenCalledExactlyOnceWith('public');
+    // The same function, not a fresh closure per build: the form rebuilds on every drag frame.
+    expect(row.onSelect).toBe(onVisibilitySelect);
   });
 
-  it('steps the angle slider by the gap between offered angles, snapping both drag and release', () => {
+  it('steps the angle slider by the gap between offered angles, with the stable handlers it is given', () => {
     const onAngleChange = vi.fn();
     const onAngleCommit = vi.fn();
     const row = findRow(makeInput({ onAngleChange, onAngleCommit }), 'angle');
@@ -110,10 +109,8 @@ describe('buildSprayDetailsModel', () => {
       value: 40,
     });
     expect(row.format(45)).toBe('45°');
-    row.onValueChange(43.2);
-    row.onCommit(46.9);
-    expect(onAngleChange).toHaveBeenCalledExactlyOnceWith(45);
-    expect(onAngleCommit).toHaveBeenCalledExactlyOnceWith(45);
+    expect(row.onValueChange).toBe(onAngleChange);
+    expect(row.onCommit).toBe(onAngleCommit);
   });
 
   it('says the angle is fixed once published', () => {
@@ -135,6 +132,15 @@ describe('buildSprayDetailsModel', () => {
 
     const sections = buildSprayDetailsModel(makeInput()).sections;
     expect(sections.at(-1)?.footer).toBe('sprayCaps.wallsHint:{"max":10}');
+  });
+});
+
+describe('parseSprayVisibility', () => {
+  it('reads the three keys back and refuses anything else', () => {
+    expect(parseSprayVisibility('private')).toBe('private');
+    expect(parseSprayVisibility('unlisted')).toBe('unlisted');
+    expect(parseSprayVisibility('public')).toBe('public');
+    expect(parseSprayVisibility('everyone')).toBeNull();
   });
 });
 

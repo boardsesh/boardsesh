@@ -1011,7 +1011,14 @@
       "heroBodyLibrary": "Tap to open your photos",
       "fromLibrary": "Choose from your photos",
       "retake": "Retake",
-      "change": "Change photo"
+      "change": "Change photo",
+      "tileLabel": "Your wall photo",
+      "howItWorks": {
+        "snap": "Snap the wall",
+        "holds": "Mark the holds",
+        "name": "Name it",
+        "step": "{{number}}. {{label}}"
+      }
     },
     "adjust": {
       "title": "Crop and rotate",
@@ -1035,7 +1042,7 @@
     },
     "anchors": {
       "title": "Mark the corners",
-      "body": "Drag the rings onto the wall's corners. Shot it square on? Just tap Next.",
+      "body": "Drag the rings onto the wall's corners. It straightens the photo and unlocks the Wall only and Holds only looks. You can skip it.",
       "hint": "Top left, top right, bottom right, bottom left.",
       "crossed": "Those corners cross over each other. Put them round the wall in order.",
       "cornerTopLeft": "Top left corner",

@@ -17,10 +17,11 @@ import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
 import { SPRAY_ANGLE_OPTIONS, type SprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { useDraftNumber } from '../../hooks/use-committed-slider-value';
 import { hapticSelection } from '../../lib/haptics';
-import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
+import { sprayWallVisibility } from '../../lib/spray/spray-share';
 import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
-import { buildSprayDetailsModel } from './spray-details-model';
+import { buildSprayDetailsModel, parseSprayVisibility, snapSprayAngle } from './spray-details-model';
 import { SprayWallNameSheet } from './SprayWallNameSheet';
+import { opacity } from '../../theme/tokens';
 
 type SprayWallDetailsStepProps = {
   builder: Pick<
@@ -78,17 +79,27 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
   }, []);
   const closeGymPicker = useCallback(() => setGymPickerOpen(false), []);
 
-  const changeVisibility = useCallback(
-    (next: SprayWallVisibility) => {
+  // Every callback the form hands a native control is stable: the model is
+  // rebuilt on every drag frame, and a fresh closure each time would re-bind
+  // the control's handlers per frame.
+  const selectVisibility = useCallback(
+    (key: string) => {
+      const next = parseSprayVisibility(key);
+      if (!next || next === visibility) return;
       hapticSelection();
       setIsPublic(next === 'public');
       setIsUnlisted(next === 'unlisted');
     },
-    [setIsPublic, setIsUnlisted],
+    [visibility, setIsPublic, setIsUnlisted],
   );
 
+  const changeAngle = useCallback(
+    (value: number) => setDraftAngle(snapSprayAngle(value, SPRAY_ANGLE_OPTIONS)),
+    [setDraftAngle],
+  );
   const commitAngle = useCallback(
-    (angle: number) => {
+    (value: number) => {
+      const angle = snapSprayAngle(value, SPRAY_ANGLE_OPTIONS);
       setDraftAngle(angle);
       setAngle(angle);
     },
@@ -104,10 +115,10 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
         defaultName,
         onRename: openRename,
         visibility,
-        onVisibilityChange: changeVisibility,
+        onVisibilitySelect: selectVisibility,
         angle: draftAngle,
         angles: SPRAY_ANGLE_OPTIONS,
-        onAngleChange: setDraftAngle,
+        onAngleChange: changeAngle,
         onAngleCommit: commitAngle,
         formatAngle,
         gymName: builder.selectedGym?.name ?? null,
@@ -121,9 +132,9 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
       defaultName,
       openRename,
       visibility,
-      changeVisibility,
+      selectVisibility,
       draftAngle,
-      setDraftAngle,
+      changeAngle,
       commitAngle,
       formatAngle,
       builder.selectedGym,
@@ -134,9 +145,8 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
 
   return (
     <View
-      style={styles.root}
+      style={[styles.root, saving ? styles.saving : null]}
       pointerEvents={saving ? 'none' : 'auto'}
-      accessibilityState={{ busy: saving }}
       testID="spray-details-step"
     >
       <MoreForm model={model} />
@@ -170,5 +180,9 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  // Nothing here moves under a save in flight, and the form says so.
+  saving: {
+    opacity: opacity.disabled,
   },
 });

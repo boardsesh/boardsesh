@@ -28,14 +28,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+const sheetProps = vi.hoisted(() => ({ last: null as null | Record<string, unknown> }));
 vi.mock('react-native', () => ({
+  Platform: platform,
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, header, visible }: { children?: ReactNode; header?: ReactNode; visible: boolean }) =>
-    createElement('div', { 'data-sheet': 'true', 'data-visible': String(visible) }, header, children),
+  Sheet: (props: { children?: ReactNode; header?: ReactNode; visible: boolean }) => {
+    sheetProps.last = props;
+    return createElement(
+      'div',
+      { 'data-sheet': 'true', 'data-visible': String(props.visible) },
+      props.header,
+      props.children,
+    );
+  },
 }));
+vi.mock('../../sheet-snap-points', () => ({ MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'] }));
 vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../hooks/use-typography-styles', () => ({
@@ -50,7 +61,10 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 }, borderRadiu
 
 const { SprayWallNameSheet } = await import('../SprayWallNameSheet');
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  platform.OS = 'ios';
+});
 
 function renderSheet(props: Partial<Parameters<typeof SprayWallNameSheet>[0]> = {}) {
   const onDone = vi.fn();
@@ -101,5 +115,24 @@ describe('SprayWallNameSheet', () => {
     rerenderSheet({ visible: false });
     rerenderSheet({ visible: true, name: 'Garage wall' });
     expect(input(container).value).toBe('Garage wall');
+  });
+});
+
+describe('SprayWallNameSheet sizing', () => {
+  it('fits the field on iOS, and keeps fixed detents on Android so the keyboard cannot push it full screen', () => {
+    renderSheet();
+    expect(sheetProps.last).toMatchObject({ enableDynamicSizing: true, androidContentSized: true });
+    cleanup();
+    platform.OS = 'android';
+    renderSheet();
+    expect(sheetProps.last?.snapPoints).toEqual(['50%', '90%']);
+    expect(sheetProps.last?.enableDynamicSizing).toBeUndefined();
+  });
+
+  it('names its Cancel for screen readers', () => {
+    const { container } = renderSheet();
+    expect(container.querySelector('[data-testid="sheet-top-bar-leading"]')?.getAttribute('aria-label')).toBe(
+      'comment.cancel',
+    );
   });
 });

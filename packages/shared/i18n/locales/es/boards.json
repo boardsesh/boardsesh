@@ -1011,7 +1011,14 @@
       "heroBodyLibrary": "Toca para abrir tus fotos",
       "fromLibrary": "Elegir de tus fotos",
       "retake": "Repetir",
-      "change": "Cambiar foto"
+      "change": "Cambiar foto",
+      "tileLabel": "La foto de tu muro",
+      "howItWorks": {
+        "snap": "Fotografía el muro",
+        "holds": "Marca las presas",
+        "name": "Ponle nombre",
+        "step": "{{number}}. {{label}}"
+      }
     },
     "adjust": {
       "title": "Recorta y gira",
@@ -1035,7 +1042,7 @@
     },
     "anchors": {
       "title": "Marca las esquinas",
-      "body": "Arrastra los círculos a las esquinas del muro. ¿La hiciste de frente? Toca Siguiente.",
+      "body": "Arrastra los círculos a las esquinas del muro. Así se endereza la foto y se desbloquean Solo el muro y Solo las presas. Puedes saltártelo.",
       "hint": "Arriba izquierda, arriba derecha, abajo derecha, abajo izquierda.",
       "crossed": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden.",
       "cornerTopLeft": "Esquina superior izquierda",

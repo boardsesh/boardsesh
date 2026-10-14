@@ -1,10 +1,11 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Sheet } from '../Sheet';
 import { SheetTopBar } from '../SheetTopBar';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useTheme } from '../../providers/theme-provider';
 import { SPRAY_WALL_NAME_MAX_LENGTH } from '../board-discovery/use-spray-wall-builder';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -32,6 +33,7 @@ type SprayWallNameSheetProps = {
 export function SprayWallNameSheet({ visible, name, placeholder, onDone, onClose }: SprayWallNameSheetProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
+  const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
   const [draft, setDraft] = useState(name);
 
@@ -52,7 +54,7 @@ export function SprayWallNameSheet({ visible, name, placeholder, onDone, onClose
   const header = (
     <SheetTopBar
       title={t('sprayWizard.details.renameTitle')}
-      leading={{ kind: 'cancel', onPress: onClose }}
+      leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: tCommon('comment.cancel') }}
       trailing={{
         kind: 'confirm',
         label: t('sprayWizard.details.renameDone'),
@@ -64,8 +66,17 @@ export function SprayWallNameSheet({ visible, name, placeholder, onDone, onClose
     />
   );
 
+  // iOS fits the sheet to the field and lifts it over the keyboard. On Android
+  // a content-fitted sheet grew by the keyboard's height to the full screen,
+  // which put its top bar under the status bar and the drag handle below the
+  // bar; fixed detents (the session edit sheet's) keep it below both.
+  const sizing =
+    Platform.OS === 'android'
+      ? { snapPoints: MEDIUM_LARGE_SNAP_POINTS }
+      : { enableDynamicSizing: true, androidContentSized: true };
+
   return (
-    <Sheet visible={visible} enableDynamicSizing androidContentSized onClose={onClose} header={header}>
+    <Sheet visible={visible} {...sizing} onClose={onClose} header={header}>
       <View style={styles.body}>
         <BottomSheetTextInput
           value={draft}

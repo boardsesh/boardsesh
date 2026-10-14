@@ -167,8 +167,15 @@ vi.mock('react-native', () => ({
     absoluteFillObject: {},
     create: (styles: unknown) => styles,
   },
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
+  View: ({
+    children,
+    testID,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    accessibilityLabel?: string;
+  }) => createElement('div', { 'data-testid': testID, 'aria-label': accessibilityLabel }, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
 vi.mock('expo-image', () => ({
@@ -248,7 +255,9 @@ vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn(), addErrorB
 // expo-web-browser, whose native event emitter does not exist under node.
 vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
-  extractGraphqlMessage: () => undefined,
+  // What the real one does: hands back the server's own words. The wizard must
+  // never show them, so a test error carries some (#6495, raw SQL on screen).
+  extractGraphqlMessage: (error: unknown) => (error instanceof Error ? error.message : undefined),
   // A test error names its code directly; the real extraction has its own suite.
   extractGraphqlCode: (error: unknown) => (error as { code?: string } | null)?.code ?? null,
   isSprayWallVisibilityOwnerOnlyError: (error: unknown) =>
@@ -1092,6 +1101,29 @@ describe('the opener', () => {
     expect(getByTestId('crop')).toBeTruthy();
   });
 
+  it('names the picked photo tile apart from the crop button, with crop as its hint', async () => {
+    const { getByText, getByTestId } = mountAtPhoto();
+    expect(getByTestId('spray-photo-how-it-works').getAttribute('aria-label')).toBe(
+      'sprayWizard.photo.howItWorks.step, sprayWizard.photo.howItWorks.step, sprayWizard.photo.howItWorks.step',
+    );
+    await pickLibraryPhoto(getByText);
+    expect(getByTestId('spray-photo-tile').getAttribute('aria-label')).toBe('sprayWizard.photo.tileLabel');
+    expect(screen.queryByTestId('spray-photo-how-it-works')).toBeNull();
+  });
+
+  it('offers Change photo, not Retake, for a library pick on a camera build', async () => {
+    camera.available = true;
+    const wallPhoto = await import('../../../lib/spray/wall-photo');
+    vi.mocked(wallPhoto.pickWallPhotoFromLibrary).mockResolvedValueOnce({
+      outcome: 'picked',
+      photo: PICKED_PHOTO,
+    } as unknown as Awaited<ReturnType<typeof wallPhoto.pickWallPhotoFromLibrary>>);
+    const { getByText, queryByText } = mountAtPhoto();
+    await act(async () => getByText('sprayWizard.photo.fromLibrary').click());
+    expect(getByText('sprayWizard.photo.change')).toBeTruthy();
+    expect(queryByText('sprayWizard.photo.retake')).toBeNull();
+  });
+
   it('says Retake where there is a camera', async () => {
     camera.available = true;
     const wallPhoto = await import('../../../lib/spray/wall-photo');
@@ -1224,6 +1256,23 @@ describe('the details step', () => {
     expect(publishMock).toHaveBeenCalledExactlyOnceWith('v-1');
   });
 
+  it("says a failed save in our words, never the server's", async () => {
+    updateDetailsMock.mockRejectedValueOnce(new Error('Failed query: insert into "board_layouts" params: spray,1,1'));
+    const { getByText, queryByText } = await reachDetails();
+    rename('The Cave');
+    await act(async () => header.trailing?.onPress());
+    expect(getByText('sprayWizard.details.saveFailed')).toBeTruthy();
+    expect(queryByText(/Failed query/)).toBeNull();
+  });
+
+  it("says a failed publish in our words, never the server's", async () => {
+    publishMock.mockRejectedValueOnce(new Error('Failed query: insert into "board_layouts" params: spray,1,1'));
+    const { getByText, queryByText } = await reachDetails();
+    await act(async () => header.trailing?.onPress());
+    expect(getByText('sprayWizard.publish.failed')).toBeTruthy();
+    expect(queryByText(/Failed query/)).toBeNull();
+  });
+
   it('says the owner-only refusal in our words', async () => {
     updateDetailsMock.mockRejectedValueOnce({ code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' });
     const { getByText } = await reachDetails();
@@ -1329,6 +1378,12 @@ describe('creating the wall at the upload', () => {
     createWallMock.mockRejectedValue(new Error('boom'));
     await reachUpload();
     expect(header.trailing?.label).toBe('sprayWizard.upload.retry');
+  });
+
+  it("never shows the server's own words for a failure we have no code for", async () => {
+    createWallMock.mockRejectedValue(new Error('Failed query: insert into "board_layouts" params: spray,1,1'));
+    const { getByTestId } = await reachUpload();
+    expect(getByTestId('scan-photo').textContent).toBe('sprayWizard.upload.failed');
   });
 
   it('keeps the photo on screen while it goes up, and says leaving is safe once the wall exists', async () => {

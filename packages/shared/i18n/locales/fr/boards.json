@@ -1011,7 +1011,14 @@
       "heroBodyLibrary": "Touche pour ouvrir tes photos",
       "fromLibrary": "Choisir dans tes photos",
       "retake": "Reprendre",
-      "change": "Changer de photo"
+      "change": "Changer de photo",
+      "tileLabel": "La photo de ton mur",
+      "howItWorks": {
+        "snap": "Photographie le mur",
+        "holds": "Marque les prises",
+        "name": "Donne-lui un nom",
+        "step": "{{number}}. {{label}}"
+      }
     },
     "adjust": {
       "title": "Recadre et pivote",
@@ -1035,7 +1042,7 @@
     },
     "anchors": {
       "title": "Marque les coins",
-      "body": "Fais glisser les cercles sur les coins du mur. Photo prise bien en face ? Touche Suivant.",
+      "body": "Fais glisser les cercles sur les coins du mur. Ça redresse la photo et débloque Mur seul et Prises seules. Tu peux passer cette étape.",
       "hint": "En haut à gauche, en haut à droite, en bas à droite, en bas à gauche.",
       "crossed": "Ces coins se croisent. Place-les autour du mur dans l'ordre.",
       "cornerTopLeft": "Coin en haut à gauche",

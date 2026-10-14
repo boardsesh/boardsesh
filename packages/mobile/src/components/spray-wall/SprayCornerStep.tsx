@@ -36,6 +36,7 @@ import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../../theme/tokens';
 import { SprayCornerMarker } from './SprayCornerMarker';
 import { StepCounter } from './StepCounter';
@@ -82,7 +83,13 @@ export function SprayCornerStep({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
-  const bottomInset = useWindowBottomInset();
+  // The larger of the window's inset and this screen's own: on Android the
+  // published window inset read 0 here, and the hint under the photo sat under
+  // the gesture bar. The flow is a full-screen route, never inside a tab, so the
+  // local inset carries no tab bar to over-pad by.
+  const windowBottomInset = useWindowBottomInset();
+  const { bottom: localBottomInset } = useSafeAreaInsets();
+  const bottomInset = Math.max(windowBottomInset, localBottomInset);
 
   // The measured stage, the scroll-when-it-must rule and the hold-still-while-
   // dragging lock, shared with the crop step.
