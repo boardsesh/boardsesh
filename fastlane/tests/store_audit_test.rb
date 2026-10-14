@@ -7,7 +7,7 @@ require_relative "../lib/store_audit"
 class StoreAuditTest < Minitest::Test
   class FakeApple
     attr_reader :requests
-    attr_accessor :build_number, :prerelease_version, :screenshots, :order, :versions, :cpp_pages
+    attr_accessor :build_number, :prerelease_version, :screenshots, :order, :versions, :cpp_pages, :review_submissions, :review_items
 
     def initialize
       @requests = []
@@ -22,6 +22,7 @@ class StoreAuditTest < Minitest::Test
         } }
       end
       @order = %w[second first]
+      @review_submissions, @review_items = [], {}
     end
 
     def list(path)
@@ -29,6 +30,8 @@ class StoreAuditTest < Minitest::Test
       case path
       when /\/apps\/app\/appStoreVersions\?/ then @versions
       when /\/apps\/app\/appCustomProductPages\?/ then @cpp_pages
+      when /\/apps\/app\/reviewSubmissions\?/ then @review_submissions
+      when %r{\A/v1/reviewSubmissions/([^/]+)/items\?} then @review_items.fetch(Regexp.last_match(1))
       when /\/appCustomProductPages\/cpp\/appCustomProductPageVersions\?/
         [{ "id" => "cpp-version", "attributes" => { "version" => "1", "state" => "PREPARE_FOR_SUBMISSION" } }]
       when /\/(appStoreVersionLocalizations|appCustomProductPageLocalizations)\?/
@@ -125,6 +128,93 @@ class StoreAuditTest < Minitest::Test
   def test_changing_screenshot_relationship_fails_instead_of_reporting_invented_order
     client = FakeApple.new
     client.order = %w[first third]
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+  end
+
+  def review_submission(id, state, context: "release")
+    { "id" => id, "type" => "reviewSubmissions", "attributes" => { "platform" => "IOS", "state" => state, "reviewNotes" => "secret" },
+      "relationships" => { "app" => { "data" => { "type" => "apps", "id" => "app" } },
+        "appStoreVersionForReview" => { "data" => context && { "type" => "appStoreVersions", "id" => context } },
+        "submittedByActor" => { "data" => { "type" => "actors", "id" => "private-actor" } } } }
+  end
+
+  def review_item(id, state, relationship = "appStoreVersion", resource_id = "release")
+    { "id" => id, "type" => "reviewSubmissionItems", "attributes" => { "state" => state, "reviewNotes" => "secret" },
+      "relationships" => { relationship => { "data" => { "type" => BoardseshStoreAudit::Apple::REVIEW_ITEM_TYPES.fetch(relationship), "id" => resource_id } } } }
+  end
+
+  def test_review_inventory_keeps_separate_app_cpp_and_removed_history_without_actor_data
+    client = FakeApple.new
+    client.review_submissions = [review_submission("app-review", "WAITING_FOR_REVIEW"), review_submission("cpp-review", "IN_REVIEW"), review_submission("old-review", "COMPLETE")]
+    client.review_items = { "app-review" => [review_item("app-item", "READY_FOR_REVIEW")],
+      "cpp-review" => [review_item("cpp-item", "READY_FOR_REVIEW", "appCustomProductPageVersion", "cpp-version")],
+      "old-review" => [review_item("old-item", "REMOVED")] }
+    report = apple(client).run
+    reviews = report.fetch("reviewSubmissions")
+    assert_equal %w[WAITING_FOR_REVIEW IN_REVIEW COMPLETE], reviews.map { |review| review.fetch("state") }
+    assert_equal "release", reviews[1].dig("appStoreVersionForReview", "id")
+    assert_equal "appCustomProductPageVersion", reviews[1].dig("items", 0, "resources", 0, "relationship")
+    assert_equal "REMOVED", reviews[2].dig("items", 0, "state")
+    assert reviews.none? { |review| review.fetch("membershipAmbiguous") }
+    refute_match(/secret|private-actor|submittedByActor/, JSON.generate(report))
+    assert client.requests.all? { |method, _path| method == "GET" }
+  end
+
+  def test_review_inventory_preserves_other_item_types_and_unknown_states
+    client = FakeApple.new
+    client.review_submissions = [review_submission("items-review", "FUTURE_STATE", context: nil)]
+    client.review_items = { "items-review" => BoardseshStoreAudit::Apple::REVIEW_ITEM_TYPES.keys.each_with_index.map { |relationship, index| review_item("item-#{index}", "READY_FOR_REVIEW", relationship, "resource-#{index}") } }
+    review = apple(client).run.fetch("reviewSubmissions").first
+    assert_nil review.fetch("appStoreVersionForReview")
+    assert_equal "FUTURE_STATE", review.fetch("state")
+    assert_equal BoardseshStoreAudit::Apple::REVIEW_ITEM_TYPES.keys, review.fetch("items").flat_map { |item| item.fetch("resources").map { |resource| resource.fetch("relationship") } }
+  end
+
+  def test_review_inventory_marks_empty_null_and_mixed_membership_ambiguous
+    client = FakeApple.new
+    client.review_submissions = [review_submission("draft", "READY_FOR_REVIEW", context: nil)]
+    client.review_items = { "draft" => [] }
+    assert apple(client).run.fetch("reviewSubmissions").first.fetch("membershipAmbiguous")
+    item = review_item("item", "REMOVED")
+    item["relationships"]["appStoreVersion"]["data"] = nil
+    client.review_items["draft"] = [item]
+    assert apple(client).run.fetch("reviewSubmissions").first.dig("items", 0, "bindingAmbiguous")
+    item = review_item("item", "READY_FOR_REVIEW")
+    item["relationships"].merge!(review_item("other", "READY_FOR_REVIEW", "appEvent", "event").fetch("relationships"))
+    client.review_items["draft"] = [item]
+    review = apple(client).run.fetch("reviewSubmissions").first
+    assert review.fetch("membershipAmbiguous")
+    assert_equal 2, review.dig("items", 0, "resources").length
+  end
+
+  def test_review_inventory_rejects_duplicate_ids_membership_and_wrong_app
+    client = FakeApple.new
+    submission = review_submission("review", "WAITING_FOR_REVIEW")
+    item = review_item("item", "READY_FOR_REVIEW")
+    client.review_submissions = [submission, submission]
+    client.review_items = { "review" => [item] }
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+    client.review_submissions = [submission]
+    client.review_items["review"] = [item, item]
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+    client.review_items["review"] = [item, review_item("different-item", "READY_FOR_REVIEW")]
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+    client.review_items["review"] = [item]
+    submission["relationships"]["app"]["data"]["id"] = "wrong-app"
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+  end
+
+  def test_review_inventory_rejects_missing_or_malformed_linkage_and_state
+    client = FakeApple.new
+    submission = review_submission("review", "WAITING_FOR_REVIEW")
+    client.review_submissions = [submission]
+    client.review_items = { "review" => [review_item("item", "READY_FOR_REVIEW")] }
+    submission["relationships"]["appStoreVersionForReview"] = {}
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+    submission["relationships"]["appStoreVersionForReview"] = { "data" => nil }
+    client.review_items["review"].first["relationships"]["appStoreVersion"]["data"]["type"] = "actors"
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
+    client.review_items["review"] = [review_item("item", { "contact" => "secret" })]
     assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
   end
 

@@ -466,6 +466,17 @@ resolve rejected items through their existing submission in App Store Connect.
 The helper submits only initial `PREPARE_FOR_SUBMISSION` or resumable
 `READY_FOR_REVIEW` drafts and never cancels another review.
 
+The GET-only audit also retains every iOS review submission and its item states
+and resource identities, including completed and removed history. It omits actor
+identities and review contact information. Immediately before a separate CPP
+submission, inspect this inventory: Apple permits one app-version review and one
+items-only review at a time. Classify reviews by their actual items;
+`appStoreVersionForReview` is context and also exists on CPP-only reviews. Wait
+while another items-only review is active. Empty, mixed, unknown, or unresolved
+membership needs inspection, not an assumption that a review slot is free. The
+audit marks ambiguous bindings and fails on malformed or duplicate identities;
+it does not cancel reviews or reserve a slot against simultaneous Console edits.
+
 Android review remains a separate operation. Before sending a production release
 for review, verify managed publishing in Play Console and establish whether approval
 should publish immediately or wait. Existing metadata and draft lanes skip Android
