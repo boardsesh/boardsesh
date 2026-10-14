@@ -12,10 +12,12 @@
 //
 // The screen (more.tsx) precomputes every string + handler (incl. haptics), so
 // this tree only renders props. Each row kind maps to the idiomatic SwiftUI
-// control: nav → a Button row with a leading symbol, title/subtitle, optional
-// badge, and a trailing chevron; toggle → Toggle; segmented → segmented Picker;
-// select → menu-style Picker; info → read-only copy; button → Button
-// (destructive colours it red).
+// control: nav → a Button row whose leading symbol + title/subtitle go through a
+// SwiftUI `Label` (so titles line up whatever the glyph's width), an optional
+// badge and value, and a trailing chevron (an outward arrow when it leaves the
+// app); toggle → Toggle; segmented → segmented Picker; select → menu-style
+// Picker; info → read-only copy; value → a label with a trailing value or
+// spinner; button → Button (destructive colours it red).
 
 import type { ComponentProps } from 'react';
 import { Host } from '@expo/ui';
@@ -31,6 +33,8 @@ import {
   VStack,
   Spacer,
   Slider,
+  Label,
+  ProgressView,
   RNHostView,
 } from '@expo/ui/swift-ui';
 import {
@@ -43,6 +47,7 @@ import {
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
   accessibilityValue as accessibilityValueModifier,
+  accessibilityHint as accessibilityHintModifier,
   frame,
   listRowInsets,
   listRowSeparator,
@@ -52,10 +57,18 @@ import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import { assertNeverRow } from './MoreForm.logic';
+import { assertNeverRow, guardedButtonPress, isButtonRowPressable, useOpensOutsideAppHint } from './MoreForm.logic';
 import { makeSelectHandler } from './SegmentedControl.logic';
 import { useSliderCommit } from './MoreForm.slider';
-import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow, MoreSliderRow } from './MoreForm.types';
+import type {
+  MoreButtonRow,
+  MoreFormProps,
+  MoreIconName,
+  MoreNavRow,
+  MoreRow,
+  MoreSliderRow,
+  MoreValueRow,
+} from './MoreForm.types';
 
 // Hierarchical foreground styles for the system label colours SwiftUI uses in a
 // Settings list. Reused across rows so the palette can't drift.
@@ -83,8 +96,12 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   moderation: 'checkmark.shield',
   playlists: 'music.note.list',
   gyms: 'building.2',
-  integrations: 'heart',
-  watch: 'applewatch',
+  // The integrations page links outside accounts (Strava and friends), so a
+  // chain link, not the heart it used to borrow from Health.
+  integrations: 'link',
+  // The watch row pairs a Garmin, so an analog watch face rather than the Apple
+  // Watch silhouette.
+  watch: 'watch.analog',
   // Sliders — a tuning glyph for the render + accessibility knobs, not the
   // wheelchair accessibility symbol the row used to be (it isn't a system
   // accessibility setting).
@@ -100,28 +117,101 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   featureFlags: 'flag',
   branchSwitcher: 'arrow.triangle.branch',
   editProfile: 'person.crop.circle',
+  privacy: 'hand.raised',
+  account: 'person.crop.circle',
+  offline: 'icloud.and.arrow.down',
+  general: 'gearshape',
+  climbs: 'list.bullet.rectangle',
+  boardLighting: 'lightbulb',
+  earlyAccess: 'testtube.2',
+  developer: 'hammer',
+  export: 'square.and.arrow.up',
+  policy: 'doc.text',
 };
 
 function NavRow({ row }: { row: MoreNavRow }) {
+  const opensOutsideAppHint = useOpensOutsideAppHint();
+  const modifiers = [
+    ...(row.badge ? [badgeModifier(row.badge)] : []),
+    ...(row.external ? [accessibilityHintModifier(opensOutsideAppHint)] : []),
+  ];
   return (
     // A row Button. Every child sets an explicit foregroundStyle so the row reads
     // as a Settings row (label/secondary/tertiary), not the default accent-tinted
     // button content. `badge(...)` adds the standard trailing badge (the "New"
     // pill); the manual chevron is the disclosure indicator.
-    <Button onPress={row.onPress} modifiers={row.badge ? [badgeModifier(row.badge)] : []}>
+    //
+    // The icon and title go through a SwiftUI `Label`: inside a Form, Label gives
+    // every icon the same column width, so titles line up down the section even
+    // though `gearshape` and `list.bullet.rectangle` are different widths. With no
+    // icon the Label falls back to title-only.
+    <Button onPress={row.onPress} modifiers={modifiers}>
       <HStack spacing={spacing[3]}>
-        {row.icon ? (
-          <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[SECONDARY_LABEL]} />
-        ) : null}
-        <VStack alignment="leading" spacing={spacing[1]}>
-          <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
-          {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
-        </VStack>
+        <Label
+          icon={
+            row.icon ? (
+              <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[SECONDARY_LABEL]} />
+            ) : undefined
+          }
+        >
+          <VStack alignment="leading" spacing={spacing[1]}>
+            <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+            {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
+          </VStack>
+        </Label>
         <Spacer />
-        <Image systemName="chevron.right" modifiers={[FOOTNOTE, TERTIARY_LABEL]} />
+        {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
+        <Image systemName={row.external ? 'arrow.up.right' : 'chevron.right'} modifiers={[FOOTNOTE, TERTIARY_LABEL]} />
       </HStack>
     </Button>
   );
+}
+
+/**
+ * A label with a trailing value or spinner — the SwitcherForm info row plus its
+ * status row's `busy` spinner. Tappable rows wrap it in a Button for the press
+ * highlight; there is no chevron because the row does not navigate.
+ */
+function ValueRow({ row }: { row: MoreValueRow }) {
+  const body = (
+    <HStack spacing={spacing[3]}>
+      <VStack alignment="leading" spacing={spacing[1]}>
+        <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+        {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
+      </VStack>
+      <Spacer />
+      {row.busy ? <ProgressView /> : null}
+      {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
+    </HStack>
+  );
+  if (row.onPress) return <Button onPress={row.onPress}>{body}</Button>;
+  return body;
+}
+
+/**
+ * A standalone action. `destructive` colours the label red; the action lives in
+ * the screen. A `subtle` button keeps its colour but drops to footnote size so a
+ * secondary destructive action (Delete Account) reads quieter than the primary
+ * one (Sign Out) stacked above it, instead of two equal-weight red rows.
+ *
+ * `disabled` and `loading` both disable the native Button; `loading` also puts a
+ * spinner beside the label so the climber can see the press landed.
+ */
+function ButtonRow({ row }: { row: MoreButtonRow }) {
+  const role = row.role === 'destructive' ? 'destructive' : undefined;
+  const modifiers = [...(row.emphasis === 'subtle' ? [FOOTNOTE] : []), disabledModifier(!isButtonRowPressable(row))];
+  const handlePress = guardedButtonPress(row);
+  if (row.loading) {
+    return (
+      <Button role={role} onPress={handlePress} modifiers={modifiers}>
+        <HStack spacing={spacing[2]}>
+          <ProgressView />
+          <Text>{row.label}</Text>
+        </HStack>
+      </Button>
+    );
+  }
+  return <Button role={role} label={row.label} onPress={handlePress} modifiers={modifiers} />;
 }
 
 function renderRow(row: MoreRow, accent: string) {
@@ -153,7 +243,7 @@ function renderRow(row: MoreRow, accent: string) {
           key={row.key}
           selection={row.selectedKey}
           onSelectionChange={(value) => {
-            if (typeof value !== 'string') return;
+            if (typeof value !== 'string' || row.disabled) return;
             // A SwiftUI segmented Picker cannot grey out one segment, so a
             // disabled key is enforced by ignoring the tap — same degrade, and
             // the same helper, as SegmentedControl.ios.
@@ -162,6 +252,7 @@ function renderRow(row: MoreRow, accent: string) {
           modifiers={[
             pickerStyle('segmented'),
             tint(accent),
+            disabledModifier(row.disabled ?? false),
             ...(row.label ? [accessibilityLabelModifier(row.label)] : []),
           ]}
         >
@@ -181,9 +272,9 @@ function renderRow(row: MoreRow, accent: string) {
           label={row.label}
           selection={row.selectedKey}
           onSelectionChange={(value) => {
-            if (typeof value === 'string') row.onSelect(value);
+            if (typeof value === 'string' && !row.disabled) row.onSelect(value);
           }}
-          modifiers={[pickerStyle('menu'), tint(accent)]}
+          modifiers={[pickerStyle('menu'), tint(accent), disabledModifier(row.disabled ?? false)]}
         >
           {row.options.map((option) => (
             <Text key={option.key} modifiers={[tag(option.key)]}>
@@ -204,20 +295,10 @@ function renderRow(row: MoreRow, accent: string) {
           ) : null}
         </VStack>
       );
+    case 'value':
+      return <ValueRow key={row.key} row={row} />;
     case 'button':
-      // `destructive` colours the label red; the action lives in the screen. A
-      // `subtle` button keeps the red but drops to footnote size so a secondary
-      // destructive action (Delete Account) reads quieter than the primary one
-      // (Sign Out) stacked above it, instead of two equal-weight red rows.
-      return (
-        <Button
-          key={row.key}
-          role={row.role === 'destructive' ? 'destructive' : undefined}
-          label={row.label}
-          onPress={row.onPress}
-          modifiers={row.emphasis === 'subtle' ? [FOOTNOTE] : []}
-        />
-      );
+      return <ButtonRow key={row.key} row={row} />;
     case 'slider':
       return <SliderRow key={row.key} row={row} accent={accent} />;
     case 'custom':

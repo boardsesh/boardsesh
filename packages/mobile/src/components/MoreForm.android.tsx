@@ -8,9 +8,9 @@
 // which per-row controls use to report intrinsic height back to RN).
 //
 // Each section becomes: an optional title `Text`, then either a Material `Card`
-// wrapping its rows (nav / toggle / segmented / select / info) OR standalone
-// `Button`s (an all-button section like the account actions), then an optional
-// footer `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
+// wrapping its rows (nav / toggle / segmented / select / info / value) OR
+// standalone `Button`s (an all-button section like the account actions), then an
+// optional footer `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
 // surface/label colours come from the Compose Material theme the Host sets up.
 //
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
@@ -38,9 +38,10 @@ import {
   BasicTextField,
   Slider,
   RNHostView,
+  CircularProgressIndicator,
   useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, alpha, weight, clickable, height } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding, alpha, weight, clickable, height, size } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import {
@@ -49,11 +50,26 @@ import {
   switchBrandColors,
   type BrandControlColors,
 } from '../theme/expo-ui-modifiers';
-import { spacing } from '../theme/tokens';
+import { material, spacing } from '../theme/tokens';
 import { materialTextStyles } from '../theme/typography';
-import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
+import {
+  assertNeverRow,
+  guardedButtonPress,
+  isButtonRowPressable,
+  selectedOptionLabel,
+  useOpensOutsideAppHint,
+} from './MoreForm.logic';
 import { materialStepCount, useSliderCommit } from './MoreForm.slider';
-import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow, MoreSliderRow } from './MoreForm.types';
+import type {
+  MoreButtonRow,
+  MoreFormProps,
+  MoreIconName,
+  MoreNavRow,
+  MoreRow,
+  MoreSelectRow,
+  MoreSliderRow,
+  MoreValueRow,
+} from './MoreForm.types';
 
 // Semantic icon → Material XML vector drawable. The `.xml` files are bundled as
 // ASSETS (metro.config.js adds `xml` to resolver.assetExts), so `require()` gives
@@ -66,10 +82,11 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   moderation: require('../../assets/material-icons/moderation.xml'),
   playlists: require('../../assets/material-icons/playlists.xml'),
   gyms: require('../../assets/material-icons/gyms.xml'),
-  integrations: require('../../assets/material-icons/integrations.xml'),
-  // No smartwatch glyph in the bundled Material set; the chain-link icon reads as
-  // "pair / link a device", the closest sensible fit for the watch-pairing row.
-  watch: require('../../assets/material-icons/link.xml'),
+  // The integrations page links outside accounts, so Material's chain link —
+  // the same glyph iOS draws (`link`).
+  integrations: require('../../assets/material-icons/link.xml'),
+  // Material's `watch` (outlined), for the Garmin pairing row.
+  watch: require('../../assets/material-icons/watch.xml'),
   // Sliders — a tuning glyph for the render + accessibility knobs, not the
   // wheelchair accessibility drawable the row used to be.
   boardLook: require('../../assets/material-icons/tune.xml'),
@@ -86,15 +103,33 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   featureFlags: require('../../assets/material-icons/featureFlags.xml'),
   branchSwitcher: require('../../assets/material-icons/branchSwitcher.xml'),
   editProfile: require('../../assets/material-icons/editProfile.xml'),
+  privacy: require('../../assets/material-icons/lock.xml'),
+  // The rest are Material Icons Outlined (24dp), matching the glyphs iOS draws:
+  // account_circle, cloud_download, settings, format_list_bulleted, lightbulb,
+  // science, build, ios_share and description.
+  account: require('../../assets/material-icons/account.xml'),
+  offline: require('../../assets/material-icons/offline.xml'),
+  general: require('../../assets/material-icons/general.xml'),
+  climbs: require('../../assets/material-icons/climbs.xml'),
+  boardLighting: require('../../assets/material-icons/boardLighting.xml'),
+  earlyAccess: require('../../assets/material-icons/earlyAccess.xml'),
+  developer: require('../../assets/material-icons/developer.xml'),
+  export: require('../../assets/material-icons/export.xml'),
+  policy: require('../../assets/material-icons/policy.xml'),
 };
+
+// Material's open_in_new, in place of the chevron on a row that leaves the app.
+const OPEN_EXTERNAL_ICON_SOURCE: ImageSourcePropType = require('../../assets/material-icons/open-external.xml');
 
 // Trailing disclosure chevron. The Compose `Icon` needs a vector-drawable source,
 // so a muted `›` glyph stands in for the disclosure indicator on these nav rows.
 const CHEVRON = '›';
+// M3's disabled-content opacity, for a select row that cannot open.
+const DISABLED_ROW = alpha(material.disabledContentOpacity);
 const ROW_PADDING = padding(spacing[4], spacing[3], spacing[4], spacing[3]);
 
 type RowColors = {
-  brandColors: BrandControlColors & { error: string };
+  brandColors: BrandControlColors & { error: string; primary: string };
   switchColors: ReturnType<typeof switchBrandColors>;
   segmentColors: ReturnType<typeof segmentedBrandColors>;
   /** Tint for a nav row's leading Material icon — the secondary-label colour. */
@@ -120,10 +155,15 @@ type RowColors = {
 function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
   const [expanded, setExpanded] = useState(false);
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
+  // A disabled row drops its click target (the menu can't open) and dims to
+  // M3's disabled-content opacity.
+  const triggerModifiers = row.disabled
+    ? [fillMaxWidth(), ROW_PADDING, DISABLED_ROW]
+    : [fillMaxWidth(), clickable(() => setExpanded(true)), ROW_PADDING];
   return (
-    <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
+    <DropdownMenu expanded={expanded && !row.disabled} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
-        <Row modifiers={[fillMaxWidth(), clickable(() => setExpanded(true)), ROW_PADDING]} verticalAlignment="center">
+        <Row modifiers={triggerModifiers} verticalAlignment="center">
           <Column modifiers={[weight(1)]}>
             <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
           </Column>
@@ -143,7 +183,7 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
             // slot need setting — see the `RowColors.itemColor` doc comment.
             elementColors={{ textColor: colors.itemColor }}
             onClick={() => {
-              row.onSelect(option.key);
+              if (!row.disabled) row.onSelect(option.key);
               setExpanded(false);
             }}
           >
@@ -174,42 +214,148 @@ function SelectableInfoText({ text, detail = false }: { text: string; detail?: b
   );
 }
 
+function NavRow({ row, colors }: { row: MoreNavRow; colors: RowColors }) {
+  const opensOutsideAppHint = useOpensOutsideAppHint();
+  return (
+    <Row modifiers={[fillMaxWidth(), clickable(row.onPress), ROW_PADDING]} verticalAlignment="center">
+      {/* Leading Material icon (a bundled XML vector drawable), tinted to the
+          secondary-label colour with a trailing gap before the label column —
+          the normal Material list-row layout. Omitted when the row has no icon. */}
+      {row.icon ? (
+        <Icon
+          source={MORE_ICON_SOURCE[row.icon]}
+          size={22}
+          tint={colors.iconTint}
+          contentDescription={undefined}
+          modifiers={[padding(0, 0, spacing[3], 0)]}
+        />
+      ) : null}
+      {/* M3 puts a setting's current value in the supporting text under its
+          label, not trailing like iOS. */}
+      <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
+        <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+        {row.value ? (
+          <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
+            {row.value}
+          </Text>
+        ) : null}
+        {row.subtitle ? (
+          <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            {row.subtitle}
+          </Text>
+        ) : null}
+      </Column>
+      {row.badge ? (
+        <Badge containerColor={colors.brandColors.primaryFill} contentColor={colors.brandColors.onPrimary}>
+          <Text style={{ typography: 'labelSmall' }}>{row.badge}</Text>
+        </Badge>
+      ) : null}
+      <Spacer modifiers={[padding(spacing[2], 0, 0, 0)]} />
+      {row.external ? (
+        // The clickable Row merges its children's semantics, so TalkBack reads
+        // this description after the label: the row's only hint mechanism here.
+        <Icon
+          source={OPEN_EXTERNAL_ICON_SOURCE}
+          size={18}
+          tint={colors.iconTint}
+          contentDescription={opensOutsideAppHint}
+        />
+      ) : (
+        <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.4)]}>
+          {CHEVRON}
+        </Text>
+      )}
+    </Row>
+  );
+}
+
+/**
+ * A label with a trailing value or spinner: SwitcherForm's info row, with its
+ * status row's `busy` spinner. Clickable (ripple, no chevron) only when the row
+ * has an action.
+ */
+function ValueRow({ row }: { row: MoreValueRow }) {
+  return (
+    <Row
+      modifiers={[fillMaxWidth(), ...(row.onPress ? [clickable(row.onPress)] : []), ROW_PADDING]}
+      verticalAlignment="center"
+    >
+      <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
+        <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+        {row.subtitle ? (
+          <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            {row.subtitle}
+          </Text>
+        ) : null}
+      </Column>
+      {row.busy ? (
+        // Padding before size, not after — see Button.android.tsx for why the
+        // reverse order draws the indicator shrunk and off-centre.
+        <CircularProgressIndicator modifiers={[padding(spacing[2], 0, 0, 0), size(20, 20)]} strokeWidth={2} />
+      ) : null}
+      {row.value ? (
+        <Text style={{ typography: 'bodyMedium' }} modifiers={[padding(spacing[2], 0, 0, 0), alpha(0.6)]}>
+          {row.value}
+        </Text>
+      ) : null}
+    </Row>
+  );
+}
+
+/** A button's label, with a leading spinner while its action is in flight. */
+function ButtonLabel({ row, spinnerColor }: { row: MoreButtonRow; spinnerColor: string }) {
+  if (!row.loading) return <Text>{row.label}</Text>;
+  return (
+    <Row verticalAlignment="center">
+      <CircularProgressIndicator
+        color={spinnerColor}
+        strokeWidth={2}
+        modifiers={[padding(0, 0, spacing[2], 0), size(18, 18)]}
+      />
+      <Text>{row.label}</Text>
+    </Row>
+  );
+}
+
+/**
+ * A `subtle` button is always a TEXT button — red for a destructive action
+ * (Delete Account), the brand colour otherwise (a board-look Reset) — so a
+ * secondary action never reads as a heavy filled block. `primary` stays a filled
+ * button, red when destructive. `disabled` and `loading` both switch the native
+ * button off.
+ */
+function ButtonRow({ row, colors }: { row: MoreButtonRow; colors: RowColors }) {
+  const isDestructive = row.role === 'destructive';
+  const enabled = isButtonRowPressable(row);
+  const handlePress = guardedButtonPress(row);
+  if (row.emphasis === 'subtle') {
+    const contentColor = isDestructive ? colors.brandColors.error : colors.brandColors.primary;
+    return (
+      <TextButton onClick={handlePress} enabled={enabled} modifiers={[fillMaxWidth()]} colors={{ contentColor }}>
+        <ButtonLabel row={row} spinnerColor={contentColor} />
+      </TextButton>
+    );
+  }
+  return (
+    <Button
+      onClick={handlePress}
+      enabled={enabled}
+      modifiers={[fillMaxWidth()]}
+      colors={
+        isDestructive
+          ? { containerColor: colors.brandColors.error, contentColor: colors.brandColors.onPrimary }
+          : undefined
+      }
+    >
+      <ButtonLabel row={row} spinnerColor={colors.brandColors.onPrimary} />
+    </Button>
+  );
+}
+
 function renderRow(row: MoreRow, colors: RowColors): ReactNode {
   switch (row.kind) {
     case 'nav':
-      return (
-        <Row key={row.key} modifiers={[fillMaxWidth(), clickable(row.onPress), ROW_PADDING]} verticalAlignment="center">
-          {/* Leading Material icon (a bundled XML vector drawable), tinted to the
-              secondary-label colour with a trailing gap before the label column —
-              the normal Material list-row layout. Omitted when the row has no icon. */}
-          {row.icon ? (
-            <Icon
-              source={MORE_ICON_SOURCE[row.icon]}
-              size={22}
-              tint={colors.iconTint}
-              contentDescription={undefined}
-              modifiers={[padding(0, 0, spacing[3], 0)]}
-            />
-          ) : null}
-          <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
-            <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
-            {row.subtitle ? (
-              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
-                {row.subtitle}
-              </Text>
-            ) : null}
-          </Column>
-          {row.badge ? (
-            <Badge containerColor={colors.brandColors.primaryFill} contentColor={colors.brandColors.onPrimary}>
-              <Text style={{ typography: 'labelSmall' }}>{row.badge}</Text>
-            </Badge>
-          ) : null}
-          <Spacer modifiers={[padding(spacing[2], 0, 0, 0)]} />
-          <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.4)]}>
-            {CHEVRON}
-          </Text>
-        </Row>
-      );
+      return <NavRow key={row.key} row={row} colors={colors} />;
     case 'toggle':
       return (
         <Row key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalAlignment="center">
@@ -239,8 +385,10 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               <SegmentedButton
                 key={option.key}
                 selected={option.key === row.selectedKey}
-                enabled={!row.disabledKeys?.has(option.key)}
-                onClick={() => row.onSelect(option.key)}
+                enabled={!row.disabled && !row.disabledKeys?.has(option.key)}
+                onClick={() => {
+                  if (!row.disabled) row.onSelect(option.key);
+                }}
                 colors={colors.segmentColors}
               >
                 <SegmentedButton.Label>
@@ -275,37 +423,10 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
           ) : null}
         </Column>
       );
+    case 'value':
+      return <ValueRow key={row.key} row={row} />;
     case 'button':
-      // A `subtle` destructive action (Delete Account) renders as a TEXT button
-      // whose label is the error colour — a quieter, secondary affordance — so it
-      // doesn't read as a second heavy filled-red block next to the primary
-      // destructive action (Sign Out). Both stay red; only the weight differs.
-      if (row.role === 'destructive' && row.emphasis === 'subtle') {
-        return (
-          <TextButton
-            key={row.key}
-            onClick={row.onPress}
-            modifiers={[fillMaxWidth()]}
-            colors={{ contentColor: colors.brandColors.error }}
-          >
-            <Text>{row.label}</Text>
-          </TextButton>
-        );
-      }
-      return (
-        <Button
-          key={row.key}
-          onClick={row.onPress}
-          modifiers={[fillMaxWidth()]}
-          colors={
-            row.role === 'destructive'
-              ? { containerColor: colors.brandColors.error, contentColor: colors.brandColors.onPrimary }
-              : undefined
-          }
-        >
-          <Text>{row.label}</Text>
-        </Button>
-      );
+      return <ButtonRow key={row.key} row={row} colors={colors} />;
     case 'slider':
       return <SliderRow key={row.key} row={row} colors={colors} />;
     case 'custom':

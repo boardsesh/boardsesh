@@ -7,26 +7,82 @@
 // This is a FAITHFUL PASSTHROUGH (not a null stub): it renders every row's visible
 // label and wires its handler to a plain React Native primitive with a sensible
 // accessibility role (nav/button → button, toggle → switch, segmented/select →
-// radiogroup of radios), so screen tests' label / role assertions and handler
-// invocations keep working. Component tests that assert MoreForm internals can
-// register their own vi.mock, which takes precedence over this alias.
+// radiogroup of radios, a tappable value row → button), so screen tests' label /
+// role assertions and handler invocations keep working. Disabled and loading
+// rows refuse presses through the same `MoreForm.logic` guards the real
+// renderers use, so a screen test can assert that a busy "Sign out" ignores a
+// second tap. Component tests that assert MoreForm internals can register their
+// own vi.mock, which takes precedence over this alias.
 
 import { Pressable, Switch, Text, View } from 'react-native';
-import { assertNeverRow, selectedOptionLabel } from '../src/components/MoreForm.logic';
+import {
+  assertNeverRow,
+  disabledOptionKeys,
+  guardedButtonPress,
+  isButtonRowPressable,
+  selectedOptionLabel,
+  useOpensOutsideAppHint,
+} from '../src/components/MoreForm.logic';
 // The shared props type has no native imports, so it's safe in the node-env stub —
 // keeps the stub's contract from drifting from the real component.
-import type { MoreFormProps, MoreRow } from '../src/components/MoreForm.types';
+import type { MoreFormProps, MoreNavRow, MoreRow } from '../src/components/MoreForm.types';
+
+function NavRowBody({ row }: { row: MoreNavRow }) {
+  return (
+    <>
+      <Text>{row.label}</Text>
+      {row.subtitle ? <Text>{row.subtitle}</Text> : null}
+      {row.badge ? <Text>{row.badge}</Text> : null}
+      {row.value ? <Text>{row.value}</Text> : null}
+    </>
+  );
+}
+
+// Its own component so only an `external` row reads a translation: a suite whose
+// react-i18next mock has no `useTranslation` keeps working until it renders one.
+function ExternalNavRow({ row }: { row: MoreNavRow }) {
+  const opensOutsideAppHint = useOpensOutsideAppHint();
+  return (
+    <Pressable
+      onPress={row.onPress}
+      accessibilityRole="button"
+      accessibilityLabel={row.label}
+      accessibilityHint={opensOutsideAppHint}
+    >
+      <NavRowBody row={row} />
+    </Pressable>
+  );
+}
 
 function StubRow({ row }: { row: MoreRow }) {
   switch (row.kind) {
     case 'nav':
+      if (row.external) return <ExternalNavRow row={row} />;
       return (
         <Pressable onPress={row.onPress} accessibilityRole="button" accessibilityLabel={row.label}>
-          <Text>{row.label}</Text>
-          {row.subtitle ? <Text>{row.subtitle}</Text> : null}
-          {row.badge ? <Text>{row.badge}</Text> : null}
+          <NavRowBody row={row} />
         </Pressable>
       );
+    case 'value': {
+      const body = (
+        <>
+          <Text>{row.label}</Text>
+          {row.subtitle ? <Text>{row.subtitle}</Text> : null}
+          {row.value ? <Text>{row.value}</Text> : null}
+        </>
+      );
+      if (!row.onPress) return <View accessibilityState={{ busy: row.busy ?? false }}>{body}</View>;
+      return (
+        <Pressable
+          onPress={row.onPress}
+          accessibilityRole="button"
+          accessibilityLabel={row.label}
+          accessibilityState={{ busy: row.busy ?? false }}
+        >
+          {body}
+        </Pressable>
+      );
+    }
     case 'toggle':
       return (
         <View>
@@ -36,27 +92,35 @@ function StubRow({ row }: { row: MoreRow }) {
         </View>
       );
     case 'segmented':
-    case 'select':
+    case 'select': {
+      const refusedKeys = disabledOptionKeys(
+        row.options,
+        row.disabled,
+        row.kind === 'segmented' ? row.disabledKeys : undefined,
+      );
       return (
         <View accessibilityRole="radiogroup" accessibilityLabel={row.label}>
           {row.kind === 'select' ? <Text>{selectedOptionLabel(row.options, row.selectedKey)}</Text> : null}
-          {row.options.map((option) => (
-            <Pressable
-              key={option.key}
-              onPress={() => row.onSelect(option.key)}
-              accessibilityRole="radio"
-              disabled={row.kind === 'segmented' && row.disabledKeys?.has(option.key)}
-              accessibilityState={{
-                selected: option.key === row.selectedKey,
-                disabled: row.kind === 'segmented' && row.disabledKeys?.has(option.key),
-              }}
-              accessibilityLabel={option.label}
-            >
-              <Text>{option.label}</Text>
-            </Pressable>
-          ))}
+          {row.options.map((option) => {
+            const optionDisabled = refusedKeys?.has(option.key) ?? false;
+            return (
+              <Pressable
+                key={option.key}
+                onPress={() => {
+                  if (!optionDisabled) row.onSelect(option.key);
+                }}
+                accessibilityRole="radio"
+                disabled={optionDisabled}
+                accessibilityState={{ selected: option.key === row.selectedKey, disabled: optionDisabled }}
+                accessibilityLabel={option.label}
+              >
+                <Text>{option.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       );
+    }
     case 'info':
       return (
         <View>
@@ -67,7 +131,13 @@ function StubRow({ row }: { row: MoreRow }) {
       );
     case 'button':
       return (
-        <Pressable onPress={row.onPress} accessibilityRole="button" accessibilityLabel={row.label}>
+        <Pressable
+          onPress={guardedButtonPress(row)}
+          disabled={!isButtonRowPressable(row)}
+          accessibilityRole="button"
+          accessibilityLabel={row.label}
+          accessibilityState={{ disabled: !isButtonRowPressable(row), busy: row.loading ?? false }}
+        >
           <Text>{row.label}</Text>
         </Pressable>
       );

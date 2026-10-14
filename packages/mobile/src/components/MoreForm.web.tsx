@@ -13,13 +13,19 @@ import { useTypographyStyles, type TypographyScale } from '../hooks/use-typograp
 
 import { useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Divider, List, Menu, Surface, Switch, Text } from 'react-native-paper';
+import { ActivityIndicator, Divider, List, Menu, Surface, Switch, Text } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
 import { MarkerMultiplierSlider } from './settings/MarkerMultiplierSlider';
-import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
+import {
+  assertNeverRow,
+  disabledOptionKeys,
+  guardedButtonPress,
+  selectedOptionLabel,
+  useOpensOutsideAppHint,
+} from './MoreForm.logic';
 import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
 
 // Semantic leading-icon name → MaterialCommunityIcons glyph (Paper routes `icon`
@@ -29,8 +35,8 @@ const MORE_ICON: Record<MoreIconName, string> = {
   notifications: 'bell-outline',
   playlists: 'playlist-music',
   gyms: 'office-building',
-  integrations: 'puzzle-outline',
-  watch: 'link-variant',
+  integrations: 'link-variant',
+  watch: 'watch',
   boardLook: 'tune',
   accessibility: 'human',
   storage: 'database-outline',
@@ -43,6 +49,16 @@ const MORE_ICON: Record<MoreIconName, string> = {
   branchSwitcher: 'source-branch',
   editProfile: 'account-edit-outline',
   moderation: 'gavel',
+  privacy: 'lock-outline',
+  account: 'account-circle-outline',
+  offline: 'cloud-download-outline',
+  general: 'cog-outline',
+  climbs: 'format-list-bulleted',
+  boardLighting: 'lightbulb-outline',
+  earlyAccess: 'flask-outline',
+  developer: 'wrench-outline',
+  export: 'export-variant',
+  policy: 'file-document-outline',
 };
 
 function SelectRow({ row }: { row: MoreSelectRow }) {
@@ -52,12 +68,17 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
   return (
     <Menu
-      visible={visible}
+      visible={visible && !row.disabled}
       onDismiss={() => setVisible(false)}
       anchor={
         <List.Item
           title={row.label}
-          onPress={() => setVisible(true)}
+          disabled={row.disabled}
+          style={row.disabled ? styles.disabledRow : undefined}
+          aria-disabled={row.disabled ?? false}
+          onPress={() => {
+            if (!row.disabled) setVisible(true);
+          }}
           right={() => (
             <Text style={[styles.selectValue, { color: systemColors.secondaryLabel as string }]}>{currentLabel}</Text>
           )}
@@ -70,7 +91,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
           title={option.label}
           onPress={() => {
             setVisible(false);
-            row.onSelect(option.key);
+            if (!row.disabled) row.onSelect(option.key);
           }}
         />
       ))}
@@ -80,6 +101,8 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
 
 function RenderRow({ row }: { row: MoreRow }): ReactNode {
   const styles = useTypographyStyles(createStyles);
+  const { systemColors } = useTheme();
+  const opensOutsideAppHint = useOpensOutsideAppHint();
   switch (row.kind) {
     case 'nav':
       return (
@@ -88,11 +111,37 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           title={row.label}
           description={row.subtitle}
           onPress={row.onPress}
+          accessibilityHint={row.external ? opensOutsideAppHint : undefined}
           left={row.icon ? (props) => <List.Icon {...props} icon={MORE_ICON[row.icon as MoreIconName]} /> : undefined}
           right={(props) => (
             <View style={styles.trailing}>
               {row.badge ? <Text style={styles.badge}>{row.badge}</Text> : null}
-              <List.Icon {...props} icon="chevron-right" />
+              {row.value ? (
+                <Text style={[styles.trailingValue, { color: systemColors.secondaryLabel as string }]}>
+                  {row.value}
+                </Text>
+              ) : null}
+              <List.Icon {...props} icon={row.external ? 'open-in-new' : 'chevron-right'} />
+            </View>
+          )}
+        />
+      );
+    case 'value':
+      return (
+        <List.Item
+          key={row.key}
+          title={row.label}
+          description={row.subtitle}
+          onPress={row.onPress}
+          aria-busy={row.busy ?? false}
+          right={() => (
+            <View style={styles.trailing}>
+              {row.busy ? <ActivityIndicator size="small" /> : null}
+              {row.value ? (
+                <Text style={[styles.trailingValue, { color: systemColors.secondaryLabel as string }]}>
+                  {row.value}
+                </Text>
+              ) : null}
             </View>
           )}
         />
@@ -121,7 +170,7 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
             options={row.options.map((option) => ({ key: option.key, label: option.label }))}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
-            disabledKeys={row.disabledKeys}
+            disabledKeys={disabledOptionKeys(row.options, row.disabled, row.disabledKeys)}
             accessibilityLabel={row.label}
           />
         </View>
@@ -142,20 +191,22 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           ) : null}
         </View>
       );
-    case 'button': {
-      const isSubtleDestructive = row.role === 'destructive' && row.emphasis === 'subtle';
+    case 'button':
+      // `subtle` is always a text button, whatever the role: red for Delete
+      // Account, the brand colour for a board-look Reset.
       return (
         <View key={row.key} style={styles.buttonRow}>
           <Button
             title={row.label}
-            onPress={row.onPress}
-            variant={isSubtleDestructive ? 'text' : 'filled'}
+            onPress={guardedButtonPress(row)}
+            variant={row.emphasis === 'subtle' ? 'text' : 'filled'}
             role={row.role === 'destructive' ? 'destructive' : 'default'}
+            disabled={row.disabled ?? false}
+            loading={row.loading ?? false}
             style={styles.fullWidth}
           />
         </View>
       );
-    }
     case 'slider':
       return (
         <View key={row.key} style={styles.sliderRow}>
@@ -234,6 +285,7 @@ export function MoreForm({ model }: MoreFormProps) {
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
     disabledToggle: { opacity: 0.4 },
+    disabledRow: { opacity: 0.4 },
     scroll: {
       flex: 1,
     },
@@ -269,6 +321,10 @@ const createStyles = (textStyles: TypographyScale) =>
     badge: {
       fontSize: textStyles.caption1.fontSize,
       fontWeight: '600',
+    },
+    trailingValue: {
+      alignSelf: 'center',
+      fontSize: textStyles.subheadline.fontSize,
     },
     selectValue: {
       alignSelf: 'center',

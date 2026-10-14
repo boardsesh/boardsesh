@@ -1,3 +1,4 @@
+import { useCallback, type ComponentProps } from 'react';
 import { Stack, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { HeaderLeadingButton } from '../../src/components/HeaderActionButtons';
@@ -16,6 +17,23 @@ function leaveSettings() {
   }
 }
 
+type SettingsScreenOptionsFactory = Extract<
+  ComponentProps<typeof Stack>['screenOptions'],
+  (...args: never[]) => unknown
+>;
+type SettingsScreenOptionsArgs = Parameters<SettingsScreenOptionsFactory>[0];
+
+/**
+ * Whether `route` is the bottom screen of this stack. Compares the route's key
+ * with the stack's first route rather than reading the focused `index`: options
+ * are worked out for every screen in the stack, including the one covered by a
+ * push, and the covered root must keep its back button for the back-swipe that
+ * reveals it.
+ */
+function isStackRoot({ navigation, route }: Pick<SettingsScreenOptionsArgs, 'navigation' | 'route'>): boolean {
+  return navigation.getState().routes[0]?.key === route.key;
+}
+
 /**
  * Settings, as a ROOT stack rather than a branch of the You tab.
  *
@@ -28,10 +46,13 @@ function leaveSettings() {
  *
  * So Settings is a destination of its own now — pushed over the tabs like
  * `about` / `changelog`, covering the tab bar, with its sub-pages registered
- * flat in THIS stack. The first screen draws its own back chevron: it is the
- * only screen in this native stack, so iOS gives its header no back button
- * (the root stack's `HeaderBackContext` does not reach the native bar), and
- * without one Settings was a dead end.
+ * flat in THIS stack. Whichever screen sits at the bottom of this stack draws
+ * its own back chevron: it is the only screen in this native stack, so iOS gives
+ * its header no back button (the root stack's `HeaderBackContext` does not reach
+ * the native bar), and without one it was a dead end. That is usually the
+ * Settings index, but a sub-page opened directly (Edit profile from the You tab,
+ * Climb list from the climb view's eye, Manage access from a privacy control)
+ * is the bottom screen too. A screen pushed on top keeps the native back chevron.
  *
  * One consequence to keep in mind when adding a row: a `router.push` aimed at a
  * TAB route from here stacks a second `(tabs)` instance on top of Settings (the
@@ -42,19 +63,26 @@ function leaveSettings() {
 export default function SettingsLayout() {
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
-  const screenOptions = useStackScreenOptions();
+  const stackScreenOptions = useStackScreenOptions();
+  const backLabel = t('ariaLabels.back');
+  // Memoised: a `screenOptions` that changes identity every render re-applies
+  // every screen's header.
+  const screenOptions = useCallback(
+    ({ navigation, route }: SettingsScreenOptionsArgs) =>
+      isStackRoot({ navigation, route })
+        ? {
+            ...stackScreenOptions,
+            headerLeft: () => (
+              <HeaderLeadingButton kind="back" onPress={leaveSettings} accessibilityLabel={backLabel} />
+            ),
+          }
+        : stackScreenOptions,
+    [stackScreenOptions, backLabel],
+  );
 
   return (
     <Stack screenOptions={screenOptions}>
-      <Stack.Screen
-        name="index"
-        options={{
-          title: t('mobile.settings.title'),
-          headerLeft: () => (
-            <HeaderLeadingButton kind="back" onPress={leaveSettings} accessibilityLabel={t('ariaLabels.back')} />
-          ),
-        }}
-      />
+      <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
       {/* Board look is a parent plus two leaves: the parent asks "which look?",
           and everything you can tune about one lives a tap away. Registered flat
           in this stack (no nested layout) so back-swipe and the header keep
@@ -65,15 +93,7 @@ export default function SettingsLayout() {
         name="board-look/accessibility"
         options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
       />
-      <Stack.Screen
-        name="climb-list"
-        options={{
-          title: t('mobile.settings.climbList.title'),
-          headerLeft: () => (
-            <HeaderLeadingButton kind="back" onPress={leaveSettings} accessibilityLabel={t('ariaLabels.back')} />
-          ),
-        }}
-      />
+      <Stack.Screen name="climb-list" options={{ title: t('mobile.settings.climbList.title') }} />
       <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
       <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
       <Stack.Screen name="privacy" options={{ title: tSettings('privacy.title') }} />

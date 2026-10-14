@@ -11,7 +11,8 @@
       "thisClimber": "this climber"
     },
     "a11y": {
-      "clearSearch": "Clear search"
+      "clearSearch": "Clear search",
+      "opensOutsideApp": "Opens outside Boardsesh"
     },
     "settings": {
       "title": "Settings",

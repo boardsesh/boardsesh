@@ -11,7 +11,8 @@
       "thisClimber": "dieser Person"
     },
     "a11y": {
-      "clearSearch": "Suche löschen"
+      "clearSearch": "Suche löschen",
+      "opensOutsideApp": "Öffnet sich außerhalb von Boardsesh"
     },
     "settings": {
       "title": "Einstellungen",

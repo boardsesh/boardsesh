@@ -180,6 +180,11 @@ export const SHARED_EVENTS = {
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
   // Props: { kind: 'field' | 'preset', field?, value?, preset? }. Controller interactions only.
   ClimbRowDisplayChanged: 'Climb Row Display Changed',
+  // A climber changed a toggle, select or segmented control on a Settings page.
+  // Props: { page, key, value } — `value` is the boolean or the option key, never
+  // free text. Fired by `withSettingTracking` (mobile settings-analytics.ts) so
+  // every settings row reports the same way; it is what ranks the Settings root.
+  SettingChanged: 'Setting Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',

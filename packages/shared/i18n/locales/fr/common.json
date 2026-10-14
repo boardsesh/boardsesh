@@ -11,7 +11,8 @@
       "thisClimber": "ce grimpeur"
     },
     "a11y": {
-      "clearSearch": "Effacer la recherche"
+      "clearSearch": "Effacer la recherche",
+      "opensOutsideApp": "S’ouvre en dehors de Boardsesh"
     },
     "settings": {
       "title": "Paramètres",

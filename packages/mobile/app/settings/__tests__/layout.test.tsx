@@ -11,13 +11,31 @@ import { createElement, type ReactNode } from 'react';
 
 type Children = { children?: ReactNode };
 type HeaderLeft = (props: { tintColor?: string }) => ReactNode;
-type ScreenProps = { name: string; options?: { title?: string; headerShown?: boolean; headerLeft?: HeaderLeft } };
+type ScreenOptions = { title?: string; headerShown?: boolean; headerTintColor?: string; headerLeft?: HeaderLeft };
+type ScreenProps = { name: string; options?: ScreenOptions };
+// The slice of native-stack's `screenOptions({ navigation, route })` call the
+// settings layout reads: which routes the stack holds, and which one this is.
+type ScreenOptionsArgs = {
+  navigation: { getState: () => { index: number; routes: { key: string; name: string }[] } };
+  route: { key: string; name: string };
+};
+type ScreenOptionsFactory = (args: ScreenOptionsArgs) => ScreenOptions;
 
-const screens = vi.hoisted(() => ({ names: [] as string[], options: new Map<string, unknown>() }));
+const screens = vi.hoisted(() => ({
+  names: [] as string[],
+  options: new Map<string, unknown>(),
+  stackScreenOptions: undefined as unknown,
+}));
 const routerMock = vi.hoisted(() => ({ back: vi.fn(), canGoBack: vi.fn(() => true), replace: vi.fn() }));
+// A recognisable header style, so the tests can tell the shared stack options
+// survive the per-screen back button being merged in.
+const sharedStackOptions = vi.hoisted(() => ({ headerTintColor: '#123456' }));
 
 vi.mock('expo-router', () => {
-  const Stack = ({ children }: Children) => createElement('div', null, children);
+  const Stack = ({ children, screenOptions }: Children & { screenOptions?: unknown }) => {
+    screens.stackScreenOptions = screenOptions;
+    return createElement('div', null, children);
+  };
   Stack.Screen = (props: ScreenProps) => {
     screens.names.push(props.name);
     screens.options.set(props.name, props.options);
@@ -52,7 +70,7 @@ vi.mock('../../../src/components/HeaderActionButtons', () => ({
     createElement('button', { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'data-kind': kind }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../src/hooks/use-stack-screen-options', () => ({ useStackScreenOptions: () => ({}) }));
+vi.mock('../../../src/hooks/use-stack-screen-options', () => ({ useStackScreenOptions: () => sharedStackOptions }));
 vi.mock('../../../src/hooks/use-pop-to-top-on-tab-blur', () => ({ usePopToTopOnTabBlur: () => undefined }));
 vi.mock('../../../src/components/navigation/NativeTabContentInsetProbe', () => ({
   NativeTabContentInsetProbe: () => null,
@@ -67,8 +85,31 @@ const { default: ProfileLayout } = await import('../../(tabs)/profile/_layout');
 function screenNames(layout: () => ReactNode): string[] {
   screens.names = [];
   screens.options.clear();
+  screens.stackScreenOptions = undefined;
   render(createElement(layout));
   return screens.names;
+}
+
+/**
+ * Resolve the options native-stack would give `routeName` when the settings
+ * stack holds `stack` (bottom first): the layout's `screenOptions` function,
+ * overlaid with that screen's own `<Stack.Screen options>` the way React
+ * Navigation merges them.
+ */
+function resolvedOptions(routeName: string, stack: string[]): ScreenOptions {
+  screenNames(SettingsLayout);
+  const factory = screens.stackScreenOptions as ScreenOptionsFactory;
+  expect(factory).toBeTypeOf('function');
+  const routes = stack.map((name) => ({ key: `${name}-key`, name }));
+  const route = routes.find((candidate) => candidate.name === routeName);
+  if (!route) throw new Error(`${routeName} is not in the stack`);
+  const fromStack = factory({ navigation: { getState: () => ({ index: routes.length - 1, routes }) }, route });
+  return { ...fromStack, ...(screens.options.get(routeName) as ScreenOptions | undefined) };
+}
+
+function pressHeaderBack(options: ScreenOptions) {
+  render(createElement('div', null, options.headerLeft?.({ tintColor: '#000' })));
+  fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
 }
 
 // Every page a Settings row can reach inside its own stack. A page missing here
@@ -114,33 +155,53 @@ describe('the settings stack', () => {
   it('gives the first Settings screen a back button, since iOS draws none for it', () => {
     // Settings is the only screen in its own native stack, so iOS shows no back
     // chevron on it. Without this button the page was a dead end.
-    screenNames(SettingsLayout);
-    const options = screens.options.get('index') as ScreenProps['options'];
-    expect(options?.headerLeft).toBeTypeOf('function');
+    const options = resolvedOptions('index', ['index']);
+    expect(options.title).toBe('mobile.settings.title');
+    expect(options.headerLeft).toBeTypeOf('function');
 
     routerMock.canGoBack.mockReturnValueOnce(true);
-    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
-    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
+    pressHeaderBack(options);
     expect(routerMock.back).toHaveBeenCalledTimes(1);
     expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
-  it('gives direct eye entry into Climb list a back button', () => {
+  it.each(['climb-list', 'edit', 'integrations', 'privacy-access'])(
+    'gives %s a back button when it is opened directly, with no Settings under it',
+    (page) => {
+      const options = resolvedOptions(page, [page]);
+      expect(options.headerLeft).toBeTypeOf('function');
+      routerMock.canGoBack.mockReturnValueOnce(true);
+      pressHeaderBack(options);
+      expect(routerMock.back).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('leaves a page pushed from Settings to the native back chevron', () => {
+    const options = resolvedOptions('edit', ['index', 'edit']);
+    expect(options.headerLeft).toBeUndefined();
+    expect(options.title).toBe('profile.editAction');
+    expect(options.headerTintColor).toBe(sharedStackOptions.headerTintColor);
+  });
+
+  it('keeps the back button on the Settings screen a push has covered', () => {
+    // Options are worked out for every screen in the stack, not just the focused
+    // one; the covered root must keep its button for the swipe back to it.
+    const options = resolvedOptions('index', ['index', 'storage']);
+    expect(options.headerLeft).toBeTypeOf('function');
+    expect(options.headerTintColor).toBe(sharedStackOptions.headerTintColor);
+  });
+
+  it('sets the back button once, for the whole stack, rather than per screen', () => {
     screenNames(SettingsLayout);
-    const options = screens.options.get('climb-list') as ScreenProps['options'];
-    expect(options?.headerLeft).toBeTypeOf('function');
-    routerMock.canGoBack.mockReturnValueOnce(true);
-    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
-    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
-    expect(routerMock.back).toHaveBeenCalledOnce();
+    for (const page of SETTINGS_PAGES) {
+      expect((screens.options.get(page) as ScreenOptions | undefined)?.headerLeft).toBeUndefined();
+    }
   });
 
   it('goes Home when Settings was opened with nothing underneath', () => {
-    screenNames(SettingsLayout);
-    const options = screens.options.get('index') as ScreenProps['options'];
+    const options = resolvedOptions('index', ['index']);
     routerMock.canGoBack.mockReturnValueOnce(false);
-    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
-    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
+    pressHeaderBack(options);
     expect(routerMock.back).not.toHaveBeenCalled();
     expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/home');
   });

@@ -14,33 +14,83 @@ import { PressableSurface } from './PressableSurface';
 // files is one Host per control rather than one Host for the whole form — which
 // is exactly what every settings screen in the app did before MoreForm existed.
 
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { ListRow } from './ListRow';
 import { SectionHeader } from './SectionHeader';
 import { SegmentedControl } from './SegmentedControl';
 import { SwitchRow } from './SwitchRow';
 import { MarkerMultiplierSlider } from './settings/MarkerMultiplierSlider';
-import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
+import {
+  assertNeverRow,
+  disabledOptionKeys,
+  guardedButtonPress,
+  isButtonRowPressable,
+  selectedOptionLabel,
+  useOpensOutsideAppHint,
+} from './MoreForm.logic';
 import type { MoreFormProps, MoreRow, MoreSection } from './MoreForm.types';
 
 function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
   const { systemColors } = useTheme();
+  const opensOutsideAppHint = useOpensOutsideAppHint();
 
   switch (row.kind) {
-    case 'nav':
+    case 'nav': {
+      // Badge, then the current value, then (for a row that leaves the app) the
+      // outward arrow that replaces the chevron.
+      const hasTrailing = Boolean(row.badge || row.value || row.external);
       return (
         <ListRow
           title={row.label}
           subtitle={row.subtitle}
-          trailing={row.badge ? <Text variant="caption2">{row.badge}</Text> : undefined}
-          showChevron
+          trailing={
+            hasTrailing ? (
+              <View style={styles.trailingGroup}>
+                {row.badge ? <Text variant="caption2">{row.badge}</Text> : null}
+                {row.value ? (
+                  <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                    {row.value}
+                  </Text>
+                ) : null}
+                {row.external ? <Icon name="open.external" size={14} color={systemColors.tertiaryLabel} /> : null}
+              </View>
+            ) : undefined
+          }
+          showChevron={!row.external}
           onPress={row.onPress}
+          accessibilityHint={row.external ? opensOutsideAppHint : undefined}
           showSeparator={!isLast}
         />
       );
+    }
+    case 'value': {
+      const hasTrailing = Boolean(row.busy || row.value);
+      return (
+        <ListRow
+          title={row.label}
+          subtitle={row.subtitle}
+          trailing={
+            hasTrailing ? (
+              <View style={styles.trailingGroup}>
+                {row.busy ? <ActivityIndicator size="small" /> : null}
+                {row.value ? (
+                  <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                    {row.value}
+                  </Text>
+                ) : null}
+              </View>
+            ) : undefined
+          }
+          onPress={row.onPress}
+          accessibilityState={row.busy ? { busy: true } : undefined}
+          showSeparator={!isLast}
+        />
+      );
+    }
     case 'toggle':
       return (
         <View style={styles.padded}>
@@ -60,7 +110,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
             options={row.options}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
-            disabledKeys={row.disabledKeys}
+            disabledKeys={disabledOptionKeys(row.options, row.disabled, row.disabledKeys)}
             accessibilityLabel={row.label}
           />
         </View>
@@ -78,6 +128,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
             options={row.options}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
+            disabledKeys={disabledOptionKeys(row.options, row.disabled)}
             accessibilityLabel={`${row.label}, ${selectedOptionLabel(row.options, row.selectedKey)}`}
           />
         </View>
@@ -98,17 +149,25 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
           ) : null}
         </View>
       );
-    case 'button':
+    case 'button': {
+      const labelColor = row.role === 'destructive' ? systemColors.error : systemColors.accent;
       return (
-        <PressableSurface accessibilityRole="button" onPress={row.onPress} style={styles.buttonRow}>
-          <Text
-            variant={row.emphasis === 'subtle' ? 'footnote' : 'subheadline'}
-            color={row.role === 'destructive' ? systemColors.error : systemColors.accent}
-          >
-            {row.label}
-          </Text>
+        <PressableSurface
+          accessibilityRole="button"
+          onPress={guardedButtonPress(row)}
+          disabled={!isButtonRowPressable(row)}
+          accessibilityState={{ busy: row.loading ?? false }}
+          style={styles.buttonRow}
+        >
+          <View style={styles.trailingGroup}>
+            {row.loading ? <ActivityIndicator size="small" color={labelColor} /> : null}
+            <Text variant={row.emphasis === 'subtle' ? 'footnote' : 'subheadline'} color={labelColor}>
+              {row.label}
+            </Text>
+          </View>
         </PressableSurface>
       );
+    }
     case 'slider':
       return (
         <View style={styles.padded}>
@@ -194,6 +253,11 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     gap: spacing[1],
+  },
+  trailingGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
   },
   buttonRow: {
     alignSelf: 'flex-start',

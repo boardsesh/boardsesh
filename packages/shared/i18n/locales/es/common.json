@@ -283,7 +283,8 @@
       "thisClimber": "este escalador"
     },
     "a11y": {
-      "clearSearch": "Borrar la búsqueda"
+      "clearSearch": "Borrar la búsqueda",
+      "opensOutsideApp": "Se abre fuera de Boardsesh"
     },
     "settings": {
       "title": "Ajustes",
