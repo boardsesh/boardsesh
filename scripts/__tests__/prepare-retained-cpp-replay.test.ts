@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { parse } from 'yaml';
 import { ACCEPTED_SIZES } from '../assert-screenshot-dimensions';
 import { CPP_MANIFEST_PATH, cppCaptureNames, readCppPage } from '../lib/screenshot-cpp';
-import type { ScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
+import { canonicalJson, type ScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
 import * as snapshots from '../lib/screenshot-fixture-snapshot';
 import * as records from '../prepare-retained-cpp-record';
 import * as readiness from '../lib/screenshot-cpp';
@@ -29,6 +29,7 @@ import {
 
 const ROOT = process.cwd();
 const trackedPaths = [
+  'app-stores/apple/custom-product-pages.json',
   '.github/workflows/mobile-screenshots-ios.yml',
   '.github/actions/ios-screenshot-shard/action.yml',
   'scripts/mobile-screenshots.ts',
@@ -42,6 +43,9 @@ const trackedPaths = [
   'packages/mobile/src/components/play-drawer/SwipeBoardCarousel.tsx',
   'packages/mobile/app/(tabs)/climbs/index.tsx',
   'packages/mobile/src/components/ScreenshotSmokeMarker.tsx',
+  'packages/mobile/src/components/play-drawer/QueueList.tsx',
+  'packages/mobile/src/providers/queue-provider.tsx',
+  'packages/mobile/src/data/changelog.generated.json',
   'packages/shared/board-render/src/index.ts',
   'package.json',
   'pnpm-lock.yaml',
@@ -297,6 +301,74 @@ describe('original native replay provenance', () => {
     source.client.files = (commit) =>
       trackedPaths.filter((path) => commit !== producerSha || path !== 'scripts/lib/cpp-detail-coverage.ts');
     expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  function changedRuntime(paths = ['packages/mobile/src/components/play-drawer/QueueList.tsx']) {
+    const source = sample();
+    const originalProof = verifyReplayProducer(source.options, source.client);
+    source.options.repoRoot = directory();
+    for (const path of trackedPaths) put(source.options.repoRoot, path, readFileSync(join(ROOT, path)));
+    const files = paths.sort().map((path) => {
+      const original = readFileSync(join(ROOT, path));
+      const changed = Buffer.concat([original, Buffer.from('\n// reviewed runtime change\n')]);
+      put(source.options.repoRoot, path, changed);
+      return { path, producerSha256: replayHash(original), currentSha256: replayHash(changed) };
+    });
+    const drift = { version: 1, producerSha, files };
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(drift)}\n`);
+    return { ...source, originalProof, drift };
+  }
+  it('binds the exact accepted runtime delta while retaining the original capture contract', () => {
+    const source = changedRuntime([
+      'packages/mobile/src/providers/queue-provider.tsx',
+      'packages/mobile/src/components/play-drawer/QueueList.tsx',
+      'packages/mobile/src/data/changelog.generated.json',
+    ]);
+    const proof = verifyReplayProducer(source.options, source.client);
+    expect(proof.captureContractSha256).toBe(source.originalProof.captureContractSha256);
+    expect(proof.runtimeDrift).toEqual({ ...source.drift, approvedSha256: source.options.approvedRuntimeDrift });
+    expect(() => requireReviewedReceipt(proof, replayHash(`${canonicalJson(source.originalProof)}\n`), true)).toThrow();
+  });
+  it.each([undefined, '', '0'.repeat(64), 'malformed'])(
+    'rejects runtime drift without the exact approval: %s',
+    (approval) => {
+      const source = changedRuntime();
+      source.options.approvedRuntimeDrift = approval;
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
+  it('rejects an approval token when the runtime is unchanged', () => {
+    const source = sample();
+    source.options.approvedRuntimeDrift = '0'.repeat(64);
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  it('rejects later runtime edits and a different producer despite the prior approval', () => {
+    const source = changedRuntime();
+    put(source.options.repoRoot, source.drift.files[0].path, 'changed after review');
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    const otherProducer = changedRuntime();
+    otherProducer.run.head_sha = 'f'.repeat(40);
+    expect(() => verifyReplayProducer(otherProducer.options, otherProducer.client)).toThrow();
+  });
+  it.each([
+    'packages/mobile/src/components/ScreenshotSmokeMarker.tsx',
+    'packages/mobile/src/lib/screenshot-climb-selection.ts',
+    'packages/mobile/src/components/LayeredClimbImage.tsx',
+    'packages/mobile/app.config.ts',
+    'scripts/lib/screenshot-presentation.ts',
+    'app-stores/apple/custom-product-pages.json',
+  ])('cannot approve drift in a capture gate, renderer, native config or manifest: %s', (path) => {
+    expect(() => {
+      const source = changedRuntime([path]);
+      verifyReplayProducer(source.options, source.client);
+    }).toThrow();
+  });
+  it('still requires all native jobs and source ancestry when runtime drift is approved', () => {
+    const source = changedRuntime();
+    source.jobs.pop();
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    const divergent = changedRuntime();
+    divergent.client.isAncestor = () => false;
+    expect(() => verifyReplayProducer(divergent.options, divergent.client)).toThrow();
   });
   it('reads the committed native archives larger than four MiB through the real bounded source client', () => {
     const client = createReplayClient();

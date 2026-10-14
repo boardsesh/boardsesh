@@ -32,6 +32,14 @@ import {
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const WORKFLOW = '.github/workflows/mobile-screenshots-ios.yml';
+const CPP_MANIFEST = 'app-stores/apple/custom-product-pages.json';
+// Release operators may explicitly accept older queue-attribution UI and release
+// notes after reviewing this exact byte delta. Capture gates remain immutable.
+const REVIEWABLE_RUNTIME_PATHS = new Set([
+  'packages/mobile/src/components/play-drawer/QueueList.tsx',
+  'packages/mobile/src/providers/queue-provider.tsx',
+  'packages/mobile/src/data/changelog.generated.json',
+]);
 const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
 const STORE_LOCALES: Record<string, string[]> = {
   'en-US': ['en-US'],
@@ -43,7 +51,8 @@ const STORE_LOCALES: Record<string, string[]> = {
 // Tooling-only changes stay reusable; any UI or shared renderer change needs fresh replay.
 export function isReplayCapturePath(path: string): boolean {
   return (
-    (path === '.github/actions/ios-screenshot-shard/action.yml' ||
+    (path === CPP_MANIFEST ||
+      path === '.github/actions/ios-screenshot-shard/action.yml' ||
       path === 'scripts/mobile-screenshots.ts' ||
       path === 'scripts/frame-screenshots.ts' ||
       [
@@ -106,6 +115,7 @@ export interface ReplayOptions {
   receipt: string;
   fixtureSnapshot?: string;
   expectedReceipt?: string;
+  approvedRuntimeDrift?: string;
   stage: boolean;
 }
 export interface ReplayArtifact {
@@ -123,6 +133,12 @@ export interface ReplayProducer {
   jobIds: number[];
   artifacts: ReplayArtifact[];
   captureContractSha256: string;
+  runtimeDrift?: {
+    version: 1;
+    producerSha: string;
+    files: Array<{ path: string; producerSha256: string; currentSha256: string }>;
+    approvedSha256: string;
+  };
 }
 
 /** A successful artifact upload alone is insufficient: uploads also run after failed captures. */
@@ -179,15 +195,27 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
   const currentContract = contract(currentWorkflow);
   if (canonicalJson(contract(sourceWorkflow)) !== canonicalJson(currentContract)) return fail();
   const fileHashes: Record<string, string> = {};
+  const runtimeFiles: Array<{ path: string; producerSha256: string; currentSha256: string }> = [];
   const paths = client.files(options.sourceSha).filter(isReplayCapturePath).sort();
   const priorPaths = client.files(producerSha).filter(isReplayCapturePath).sort();
   if (!paths.length || new Set(paths).size !== paths.length || canonicalJson(paths) !== canonicalJson(priorPaths))
     return fail();
   for (const path of paths) {
     const current = readFileSync(join(options.repoRoot, path));
-    if (!client.source(producerSha, path).equals(current)) return fail();
-    fileHashes[path] = replayHash(current);
+    const original = client.source(producerSha, path);
+    fileHashes[path] = replayHash(original);
+    if (!original.equals(current)) {
+      if (!REVIEWABLE_RUNTIME_PATHS.has(path)) return fail();
+      runtimeFiles.push({ path, producerSha256: replayHash(original), currentSha256: replayHash(current) });
+    }
   }
+  const runtimeDrift = { version: 1 as const, producerSha, files: runtimeFiles };
+  const runtimeDriftSha256 = replayHash(`${canonicalJson(runtimeDrift)}\n`);
+  if (
+    (runtimeFiles.length > 0 && options.approvedRuntimeDrift !== runtimeDriftSha256) ||
+    (runtimeFiles.length === 0 && options.approvedRuntimeDrift !== undefined)
+  )
+    return fail();
   const jobs = client.pages(`${prefix}/runs/${options.runId}/attempts/1/jobs?per_page=100`, 'jobs');
   if (
     jobs.some(
@@ -249,6 +277,7 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
     jobIds: required.map((job) => Number(job.id)),
     artifacts,
     captureContractSha256: replayHash(canonicalJson({ workflow: currentContract, files: fileHashes })),
+    ...(runtimeFiles.length > 0 ? { runtimeDrift: { ...runtimeDrift, approvedSha256: runtimeDriftSha256 } } : {}),
   };
 }
 
@@ -488,6 +517,7 @@ export async function main(argv: string[]): Promise<void> {
       receipt: resolve(argv[1]),
       fixtureSnapshot: process.env.FIXTURE_SNAPSHOT_URL || undefined,
       expectedReceipt: process.env.EXPECTED_RECEIPT_SHA256 || undefined,
+      approvedRuntimeDrift: process.env.APPROVED_RUNTIME_DRIFT_SHA256 || undefined,
       stage: process.env.CPP_REPLAY_MODE === 'stage-assets',
     },
     createReplayClient(),

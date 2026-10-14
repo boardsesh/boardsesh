@@ -31,6 +31,10 @@ on:
         description: 'Required for stage-assets: receipt SHA256 from the exact images visually reviewed.'
         type: string
         default: ''
+      approved_runtime_drift_sha256:
+        description: 'Optional SHA256 of the independently reviewed queue-attribution/changelog source delta; see the runbook.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -82,6 +86,7 @@ jobs:
           CPP_REPLAY_MODE: verify
           FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
           EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
+          APPROVED_RUNTIME_DRIFT_SHA256: ${{ inputs.approved_runtime_drift_sha256 }}
         run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
       - name: Retain exact images and native sources for visual review
         uses: actions/upload-artifact@v4
@@ -122,6 +127,7 @@ jobs:
           CPP_REPLAY_MODE: stage-assets
           FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
           EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
+          APPROVED_RUNTIME_DRIFT_SHA256: ${{ inputs.approved_runtime_drift_sha256 }}
         run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
       - name: Stage the unchanged reviewed files into existing CPP drafts
         uses: ./.github/actions/asc-cpp

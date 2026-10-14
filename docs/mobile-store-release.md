@@ -535,8 +535,10 @@ all 16 locale/device replay jobs successful. Its source must be an ancestor of
 main with the same capture contract, including capture libraries, Maestro flows,
 presentation/caption/font assets, mobile app/runtime source, and shared renderer
 dependencies. Native build scripts/configuration, task commands and dependency
-lockfiles are bound too. UI or capture/build configuration changes require fresh
-replay; adding importer tooling alone does not invalidate prior captures. Current fixture
+lockfiles and the CPP manifest are bound too. Capture/build configuration changes
+require fresh replay; adding importer tooling alone does not invalidate prior
+captures. UI changes also require fresh replay unless the exact limited runtime
+delta is approved as described below. Current fixture
 scene readiness, grade-count proofs, and every required detail response are also
 checked again. Recording runs, partial matrices, reruns,
 expired or ambiguous artifacts, and changed capture code fail closed.
@@ -571,3 +573,30 @@ CPP manifest, or capture contract needs a new verification and visual review.
 Expired producer artifacts also require a fresh complete capture. This path stages
 screenshots and promotional text only; approved keyword assignment and review
 submission remain separate operations.
+
+#### Retain captures after an explicitly accepted minor runtime change
+
+The default still requires identical capture source. If the release owner accepts
+the older screenshots, `approved_runtime_drift_sha256` can bind an independently
+reviewed exception for exactly these files: `QueueList.tsx` under
+`packages/mobile/src/components/play-drawer/`, `queue-provider.tsx` under
+`packages/mobile/src/providers/`, and `changelog.generated.json` under
+`packages/mobile/src/data/`. Other runtime files, screenshot readiness helpers,
+native configuration, shared renderers, workflow jobs, presentation assets and
+the CPP manifest must remain identical. Added or removed capture files fail.
+
+Review the actual producer-to-current diff and confirm that the retained images
+still describe the submitted app. Build a record with `version: 1`, the full
+`producerSha`, and `files` sorted by repository path. Each changed file contains
+`path`, `producerSha256` and `currentSha256`, hashing its original and current
+bytes. Hash `canonicalJson(record) + '\n'` with SHA256 (the helper is in
+`scripts/lib/screenshot-fixtures.ts`). The digest approves those exact changes;
+a producer SHA alone cannot approve subsequent edits.
+
+Pass that same digest to both verification and staging. The verified receipt
+retains the complete delta and approval digest alongside the original producer's
+capture-contract hash. A new edit changes the digest and receipt, stopping
+staging before Apple credentials. A token with no actual runtime delta also
+fails. Ancestry, successful first-attempt native jobs, immutable fixture and
+artifact checks, all 180 image bytes, independent visual review, and Apple
+readback remain required. No image is recaptured, reframed or rewritten here.
