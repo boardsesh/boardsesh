@@ -18,6 +18,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
   Input for submitAppFeedback mutation.
   """
   input SubmitAppFeedbackInput {
+    releaseContext: ReleaseContextInput
     """
     1–5 star rating. Null for bug reports.
     """
@@ -126,6 +127,7 @@ export const feedbackTypeDefs = /* GraphQL */ `
   reporter's identity and triage state.
   """
   type AppFeedbackReport {
+    releaseContext: ReleaseContext
     id: ID!
     source: String!
     rating: Int

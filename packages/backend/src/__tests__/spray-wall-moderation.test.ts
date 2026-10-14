@@ -306,6 +306,24 @@ afterEach(() => {
 });
 
 describe('reporting a wall', () => {
+  it('stores running release identity for the admin report queue', async () => {
+    const { wall } = await createPublishedWall({ isPublic: true });
+    const releaseContext = {
+      channel: 'production',
+      branch: 'pr-beta',
+      updateId: 'beta-update',
+      runtimeVersion: 'fingerprint',
+      isEmbeddedLaunch: false,
+    };
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'OTHER', releaseContext } },
+      ctxFor(STRANGER),
+    );
+    const reports = await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN));
+    expect(reports[0].releaseContext).toEqual({ ...releaseContext, automaticCanary: false, canaryCheckedAt: null });
+  });
+
   it('records one report per climber and answers the second the same way', async () => {
     const { wall } = await createPublishedWall({ isPublic: true });
 

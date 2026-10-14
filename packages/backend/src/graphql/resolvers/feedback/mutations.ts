@@ -13,6 +13,7 @@ import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
+import { enrichReleaseContext } from '../../../services/mobile-release-status';
 
 export const feedbackMutations = {
   submitAppFeedback: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
@@ -28,7 +29,9 @@ export const feedbackMutations = {
     const setIds = validated.setIds ?? null;
     const angle = validated.angle ?? null;
     const contactConsent = validated.contactConsent ?? null;
-    const context = normalizeContext(validated.context);
+    const releaseContext = await enrichReleaseContext(validated.releaseContext, validated.platform);
+    const feedbackContext = normalizeContext(validated.context);
+    const context = releaseContext ? { ...feedbackContext, releaseContext } : feedbackContext;
     // Stored as the keys the client sent, not as URLs: the public base is a
     // deploy-time detail, and a CDN domain change must not strand every row
     // written before it.
@@ -84,6 +87,7 @@ export const feedbackMutations = {
             setIds,
             angle,
             context,
+            releaseContext,
             contactConsent,
             screenshotUrls: screenshotPublicUrls(screenshotKeys),
           });
@@ -178,7 +182,7 @@ function normalizeContext(input: FeedbackContextInput | null | undefined): Feedb
   if (!input) return null;
   const out: FeedbackContext = {};
   for (const [k, v] of Object.entries(input) as Array<[keyof FeedbackContext, unknown]>) {
-    if (typeof v === 'string' && v.length > 0) {
+    if (k !== 'releaseContext' && typeof v === 'string' && v.length > 0) {
       out[k] = v;
     }
   }

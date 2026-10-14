@@ -65,7 +65,10 @@ vi.mock('react-i18next', () => ({
           'qa.pick.trySurfHint': 'It may not have a preview this build can load.',
           'qa.pick.notServableToast': 'No preview of #{{prNumber}} for this build — it may need a rebase onto main',
         }[key] ?? key;
-      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => {
+        const replacement = values?.[name];
+        return typeof replacement === 'string' || typeof replacement === 'number' ? String(replacement) : '';
+      });
     },
   }),
 }));
@@ -206,11 +209,11 @@ vi.mock('../../../lib/qa/use-qa-previews', () => ({
 
 import { QaPickScreen } from '../QaPickScreen';
 
-function renderScreen() {
+function renderScreen(presentation: 'prompt' | 'page' = 'prompt') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <QaPickScreen />
+      <QaPickScreen presentation={presentation} />
     </QueryClientProvider>,
   );
 }
@@ -247,60 +250,21 @@ beforeEach(() => {
 });
 
 describe('QaPickScreen', () => {
-  it('offers production and a compatible staging update beside PR previews', async () => {
+  it('uses native page navigation and never counts leaving the page as a skipped launch', async () => {
+    const mounted = renderScreen('page');
+    expect(await screen.findByText('pr-4792')).toBeTruthy();
+    expect(screen.queryByText('Skip')).toBeNull();
+    expect(screen.queryByText('Test a PR')).toBeNull();
+    mounted.unmount();
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
+  });
+
+  it('keeps release choices out of the PR list', async () => {
     qa.staging = { lastUpdateAt: '2026-08-26T11:00:00.000Z' };
     renderScreen();
-    fireEvent.click(await screen.findByLabelText('qa.pick.stagingTitle'));
-    expect(qa.surfToStaging).toHaveBeenCalledOnce();
-    expect(qa.surfToProduction).not.toHaveBeenCalled();
-  });
-
-  it('offers production even when no PR or staging update is available', async () => {
-    qa.listPrBranches.mockResolvedValue([]);
-    renderScreen();
-    fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
-    expect(qa.surfToProduction).toHaveBeenCalledOnce();
-  });
-
-  it('takes an early-updates member back to early updates, not to production', async () => {
-    earlyUpdates.member = true;
-    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
-    qa.listPrBranches.mockResolvedValue([]);
-    renderScreen();
-
-    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
-
-    // No production surf, so no reload.
-    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
-    expect(qa.surfToProduction).not.toHaveBeenCalled();
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.pick.earlyUpdatesNextLaunch', 'info'));
-    expect(screen.getByText('qa.pick.earlyUpdatesBody')).toBeTruthy();
+    expect(await screen.findByText('pr-4792')).toBeTruthy();
+    expect(screen.queryByLabelText('qa.pick.stagingTitle')).toBeNull();
     expect(screen.queryByLabelText('qa.pick.productionTitle')).toBeNull();
-  });
-
-  it('hands the screen back to a member after the pin, so they can still pick a PR', async () => {
-    earlyUpdates.member = true;
-    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
-    renderScreen();
-
-    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
-    await waitFor(() => expect(showToast).toHaveBeenCalled());
-
-    fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
-    expect(qa.surfToPr).toHaveBeenCalledExactlyOnceWith(4792);
-  });
-
-  it('says so, and hands the screen back, when the switch to early updates cannot be made', async () => {
-    earlyUpdates.member = true;
-    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
-    earlyUpdates.joinEarlyUpdates.mockRejectedValue(new Error('Could not reach the update server (502).'));
-    renderScreen();
-
-    fireEvent.click(await screen.findByLabelText('qa.pick.earlyUpdatesTitle'));
-
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Could not reach the update server (502).', 'error'));
-    fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
-    expect(qa.surfToPr).toHaveBeenCalledExactlyOnceWith(4792);
   });
 
   it('acts once on the server switching surfing off, outside the query', async () => {
@@ -324,27 +288,6 @@ describe('QaPickScreen', () => {
     renderScreen();
     expect(await screen.findByText('pr-4792')).toBeTruthy();
     expect(earlyUpdates.noteBranchSurfingOff).not.toHaveBeenCalled();
-  });
-
-  it('keeps the row as Production for a member while the server has no early update for this build', async () => {
-    // Their track is production for now, and tapping it reloads onto it. A row
-    // called "Early updates" promising no reload would be wrong on both counts.
-    earlyUpdates.member = true;
-    renderScreen();
-
-    fireEvent.click(await screen.findByLabelText('qa.pick.productionTitle'));
-
-    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
-    expect(qa.surfToProduction).toHaveBeenCalledOnce();
-    expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
-  });
-
-  it('never labels the row early updates for someone who has not joined', async () => {
-    qa.earlyUpdates = { lastUpdateAt: '2026-10-05T09:00:00.000Z' };
-    renderScreen();
-
-    expect(await screen.findByLabelText('qa.pick.productionTitle')).toBeTruthy();
-    expect(screen.queryByLabelText('qa.pick.earlyUpdatesTitle')).toBeNull();
   });
 
   it('renders a tappable row per loadable branch even with no PR metadata', async () => {

@@ -19,6 +19,7 @@ import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { toQaVerdict } from './queries';
 import { logger } from '../../../utils/logger';
+import { enrichReleaseContext } from '../../../services/mobile-release-status';
 
 /**
  * The author's Boardsesh display name, for the public PR comment. Falls back to
@@ -108,6 +109,7 @@ export const qaMutations = {
 
     const headCommittedAt = toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
     const bundleCreatedAt = toUtcTimestamp(validated.bundleCreatedAt);
+    const releaseContext = await enrichReleaseContext(validated.releaseContext, validated.platform);
 
     const [row] = await db
       .insert(dbSchema.qaVerdicts)
@@ -127,6 +129,7 @@ export const qaMutations = {
         updateId: validated.updateId ?? null,
         runtimeVersion: validated.runtimeVersion ?? null,
         bundleCreatedAt,
+        releaseContext,
         // Stored as the keys the client sent, not as URLs: the public base is a
         // deploy-time detail, and a CDN domain change must not strand every row
         // that was written before it.
@@ -170,6 +173,7 @@ export const qaMutations = {
           appVersion: row.appVersion,
           updateId: row.updateId,
           runtimeVersion: row.runtimeVersion,
+          releaseContext: row.releaseContext,
           // The UTC values from above, not the row's — Postgres hands a
           // `timestamp` column back as `2026-08-26 07:30:00`, which reads as
           // local time to `Date.parse` and as a typo to a human.

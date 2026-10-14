@@ -1,3 +1,39 @@
+"Identity of the running bundle; excludes a pending download or requested track."
+input ReleaseContextInput {
+  channel: String
+  branch: String
+  updateId: String
+  runtimeVersion: String
+  isEmbeddedLaunch: Boolean
+}
+
+input MobileReleaseStatusInput {
+  platform: String!
+  channel: String
+  branch: String
+  updateId: String
+  runtimeVersion: String
+  isEmbeddedLaunch: Boolean
+}
+
+"Running identity with backend-verified current automatic canary membership."
+type ReleaseContext {
+  channel: String
+  branch: String
+  updateId: String
+  runtimeVersion: String
+  isEmbeddedLaunch: Boolean
+  "Null when current rollout membership could not be checked."
+  automaticCanary: Boolean
+  canaryCheckedAt: String
+}
+
+"Release diagnostics attached to a report reason, visible only to scoped admins."
+type ProposalReportReleaseContext {
+  commentUuid: ID!
+  releaseContext: ReleaseContext!
+}
+
 input AppleAdsConsentInput {
   analytics: String!
   version: Int!
@@ -5167,6 +5203,7 @@ enum ReportClimbStatus {
 }
 
 input ReportClimbInput {
+  releaseContext: ReleaseContextInput
   climbUuid: String!
   boardType: String!
   "Required for grade reports; ignored for hide"
@@ -7082,6 +7119,7 @@ type SprayWallReportResult {
 }
 
 input ReportSprayWallInput {
+  releaseContext: ReleaseContextInput
   wallUuid: ID!
   reason: SprayWallReportReason!
 }
@@ -7101,6 +7139,7 @@ type SprayWallModerationResult {
 
 "One pending report, for the admin queue."
 type SprayWallReport {
+  releaseContext: ReleaseContext
   id: ID!
   wallUuid: ID!
   wallName: String!
@@ -7884,6 +7923,10 @@ type Query {
   the comment, with offset pagination.
   """
   adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
+  "Current release context. Available without signing in."
+  mobileReleaseStatus(input: MobileReleaseStatusInput!): ReleaseContext!
+  "Stored report release diagnostics; empty for callers without an admin role on this board."
+  proposalReportReleaseContexts(proposalUuid: ID!): [ProposalReportReleaseContext!]!
 
   """
   Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
@@ -10009,6 +10052,7 @@ input FeedbackContextInput {
 Input for submitAppFeedback mutation.
 """
 input SubmitAppFeedbackInput {
+  releaseContext: ReleaseContextInput
   """
   1–5 star rating. Null for bug reports.
   """
@@ -10117,6 +10161,7 @@ A single feedback row as seen by the admin dashboard, enriched with the
 reporter's identity and triage state.
 """
 type AppFeedbackReport {
+  releaseContext: ReleaseContext
   id: ID!
   source: String!
   rating: Int
@@ -10300,6 +10345,7 @@ Input for submitQaVerdict. Everything but the verdict is device context the
 app fills in so the GitHub comment can say what was tested where.
 """
 input SubmitQaVerdictInput {
+  releaseContext: ReleaseContextInput
   prNumber: Int!
   """
   Must equal `pr-<prNumber>` — the branch the tester actually ran.

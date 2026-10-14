@@ -2437,9 +2437,11 @@ Its floating edge target and light-only sheet were removed for #5287 after repor
 the sheet opening while closing climb search.
 
 Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
-user drawer and under **Previews** on the More tab. Both open the themed preview screen,
-which lists compatible PR branches, Staging when available, and Production to return
-to the live feed. It explains "Previews are switched off" or "Nothing
+user drawer, under **Previews** on the More tab, and in **What’s New → App updates**.
+The What’s New row pushes a searchable PR destination with native Back navigation; the
+other shortcuts retain their existing presentation. PR lists contain compatible PR branches.
+Staging and returning to the chosen release track live in What’s New’s **Change release** menu.
+The list explains "Previews are switched off" or "Nothing
 to test right now" when appropriate. The row is hidden only on a binary that cannot surf.
 
 A user whose profile has `isTester` is also *prompted* without asking: on every cold
@@ -2487,7 +2489,7 @@ available under More → Preview Build.
 The retired custom channel switcher, GraphQL GitHub proxy, preview route, and web QR page were
 removed. The Android `/preview` intent filter remains only as a compatibility ingress, so existing
 `/preview/pr-N` links still land safely on What's New, including after login; branch selection happens
-through **Test a PR preview** in More or the user drawer. Sentry crash tools now live at More → Development → Sentry
+through **Test a PR preview** in What’s New, More, or the user drawer. Sentry crash tools now live at More → Development → Sentry
 Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
@@ -2497,7 +2499,7 @@ in PostHog/Sentry. Diagnostic eligibility uses the same manifest field, classifi
 
 ## Early updates ("Get updates early")
 
-A switch in More → **App updates** that any climber on a surfing-capable binary can turn on. A phone
+A switch in More → **What’s New → App updates** that any climber on a surfing-capable binary can turn on. A phone
 with it on sends `xprem-branch: pr-beta` (`EARLY_UPDATES_OTA_BRANCH`) and so follows the branch that
 receives every merge to `main`; a phone with it off follows `production`. It is called "early
 updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
@@ -2512,7 +2514,8 @@ native expo-updates behaviour that unit tests model but cannot prove.
 
 After that serialization fix, pilot QA does not require enabling the flag for everyone.
 On a tester's phone, leave any PR or staging
-preview, then set **More → Feature Flags → Early updates → On** and **Get updates early → On**.
+preview, then set **More → Feature Flags → Early updates → On**, followed by
+**More → What’s New → Get updates early → On**.
 The tester-only per-phone override persists across restart and wins over PostHog. After testing,
 turn Get updates early off and wait for the leave to complete before resetting the override to Default.
 
@@ -2577,9 +2580,9 @@ Consequences:
 | Header writes, the pin record and journal, the queue, `/branch_lists` | `src/lib/qa/qa-surf.ts` |
 | The sync decision (pure), the sync, the switch, leaving a preview | `src/lib/qa/early-updates.ts` |
 | Launch sync (renders nothing) | `src/components/qa/EarlyUpdatesLaunchSync.tsx` |
-| Row state for More, membership, the flag-off confirmation | `src/lib/qa/use-early-updates.ts` |
+| Row state for What’s New, membership, the flag-off confirmation | `src/lib/qa/use-early-updates.ts` |
 | The picker's branch query and its surfing-off effect | `src/lib/qa/use-qa-branches.ts` |
-| The More section | `src/components/early-updates-section.ts` |
+| The early-updates card section | `src/components/early-updates-section.ts` |
 | The model of the rules above, and every sequence run against it per platform | `src/lib/qa/__tests__/ota-track-sequences.test.ts` |
 
 ### State
@@ -2673,7 +2676,7 @@ offers `pr-beta` again (so pinned launches stop pre-fetching regular updates) an
 then publishes. No safe way to force it from JS was found: dropping the pin would launch the
 embedded bundle on Android (the build's original JS) until the next regular release, and may leave
 nothing launchable on iOS. The same applies to a non-member whose PR preview branch was deleted: the
-dead pin cannot be dropped, the phone is on regular updates in effect, and the switch in More is
+dead pin cannot be dropped, the phone is on regular updates in effect, and the switch in What’s New is
 offered as usual (joining needs no leave).
 
 ### Coexisting with PR previews
@@ -2979,3 +2982,74 @@ Keep all legacy objects and credentials during the retention period;
 see [the R2 reader acceptance PR](https://github.com/boardsesh/boardsesh/pull/5989) and issue #5912. An already
 published R2 update requires reverse copy and complete verification before an OTA
 storage rollback; changing only the endpoint is insufficient.
+
+
+## Release controls in What’s New
+
+What’s New (`/changelog`) places an App updates card before the changelog, including when
+there are no changelog entries. It shows the running release and native/OTA build details,
+checks for updates, and offers a native Change release menu. The menu returns early-update
+members to early updates when that branch is available for their binary; otherwise it returns
+to regular production. Staging appears only when a compatible staging update is listed.
+Get updates early lives in this card, retaining its feature gate, deferred choice messaging,
+and read-only explanation while a PR or staging preview is active.
+
+Test a PR preview pushes `/qa/previews`, a searchable destination with native Back navigation.
+It shares the PR list with `/qa/pick`, which remains the launch prompt modal and retains its
+launch-only skip analytics. Release choices no longer appear inside either PR list. Finish
+testing opens the existing brief for a running PR whose verdict has not been submitted.
+
+The card uses running manifest identity rather than a requested pin or a downloaded update.
+A confirmed automatic production canary displays “Canary release” and explains that bug reports
+include this automatically. Voluntary early updates have a separate label. An unavailable
+canary lookup displays a neutral status message while update controls remain usable.
+
+### Server credentials and deployment order
+
+The backend serves `mobileReleaseStatus` without requiring sign-in. It compares the running
+update UUID, runtime and platform with the active production rollout. Physical channel
+`production` is shared by regular, early-update and PR-preview devices; a requested branch or
+downloaded bundle never proves what is running. A missing branch marker is accepted when the
+physical channel and running OTA identity are available, because matching the production
+rollout UUID is the authority. Completed or reverted rollouts stop being canaries after the
+60-second evidence cache refreshes.
+
+Configure these **only on the backend**, with a dedicated read-only xprem dashboard viewer:
+
+| Variable | Purpose |
+| --- | --- |
+| `OTA_STATUS_URL` | xprem server base URL, or its `/manifest` URL. |
+| `OTA_STATUS_APP_ID` | Boardsesh app ID on that server. |
+| `OTA_STATUS_EMAIL` | The viewer account email; treat it as a secret. |
+| `OTA_STATUS_PASSWORD` | The viewer account password. |
+
+The service signs in at `/auth/login` and reads the rollout and update-details APIs. A publishing
+API token cannot read those routes. Never expose dashboard credentials to the mobile app or
+reuse the release-controller admin account. Lookup requests share a 60-second cache per
+runtime/platform and a two-second total deadline. Missing credentials, denied access, invalid
+responses and network failures produce unknown canary membership and preserve report submission.
+
+Deploy migration `0277_release_context` first, then the backend schema/resolvers and these
+server credentials, then the mobile OTA. The migration adds nullable JSONB diagnostics to QA
+verdicts, climb report comments and spray wall reports; app feedback uses its existing context
+column. Old rows have no diagnostics and remain readable. The mobile release status hook
+handles an older backend as unknown, but report input fields and admin query selections require
+the new schema before publishing the OTA.
+
+Bug reports, feedback and QA verdicts preserve the running identity at submission; the backend
+adds verified canary membership and its check time. GitHub bug issues and QA comments include
+that metadata. Admin feedback details show it, spray moderation shows each distinct reported
+release, and expanded climb report reasons show it for scoped admins. The separate
+`proposalReportReleaseContexts` query checks the proposal's actual board and comment visibility;
+ordinary comment queries and live comment events never contain the diagnostics. Its mobile
+cache is cleared on collapse, role loss or session change.
+
+For simulator screenshots only, set `EXPO_PUBLIC_SCREENSHOT_MODE=1` together with
+`EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO=regular` or `canary`. This supplies the card's visual
+model in an updates-disabled dev client and makes release controls read-only. PR-list navigation
+remains available. Native update identity and report metadata are never overridden by this
+fixture. The image captures the intended presentation, not a live rollout assignment.
+
+Captured on an iPhone 17 Pro simulator running iOS 26.5:
+[regular release](images/whats-new-release-controls/regular-ios.png) and
+[automatic canary](images/whats-new-release-controls/canary-ios.png).

@@ -11,6 +11,8 @@
  * truncated: a client that asks for one too many gets no metadata for any PR,
  * and the whole pick list degrades to bare `pr-N` rows.
  */
+import type { ReleaseContextInput } from './release-context';
+
 export const QA_PREVIEWS_MAX_PR_NUMBERS = 200;
 
 export type QaVerdictKind = 'approved' | 'declined';
@@ -73,6 +75,7 @@ export type QaPreview = {
 };
 
 export type SubmitQaVerdictInput = {
+  releaseContext?: ReleaseContextInput | null;
   prNumber: number;
   /** Must equal `pr-<prNumber>`. */
   branch: string;

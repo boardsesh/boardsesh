@@ -17,9 +17,7 @@ import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import { qaSurfingAvailable, readRefusedPrNumber, surfToPr, surfToStaging } from '../../lib/qa/qa-surf';
-import { returnToOwnTrack } from '../../lib/qa/early-updates';
-import { useEarlyUpdatesMember } from '../../lib/qa/use-early-updates';
+import { qaSurfingAvailable, readRefusedPrNumber, surfToPr } from '../../lib/qa/qa-surf';
 import { useQaBranches } from '../../lib/qa/use-qa-branches';
 import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
@@ -63,7 +61,7 @@ const keyExtractor = (row: QaPickRow) => row.branch;
  * decorates it. A backend or GitHub failure therefore degrades to bare `pr-N`
  * rows that still surf — testing is never blocked on metadata.
  */
-export function QaPickScreen() {
+export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prompt' | 'page' }) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -99,7 +97,6 @@ export function QaPickScreen() {
   const unlistedPr = useMemo(() => unlistedPrNumber(rows, query), [rows, query]);
 
   const [surfingPrNumber, setSurfingPrNumber] = useState<number | null>(null);
-  const [surfingChannel, setSurfingChannel] = useState<'staging' | 'production' | null>(null);
   // Swipe-dismiss pops the route without touching Skip, so the "left without
   // choosing" signal is recorded on unmount — one place, both exits, no
   // double-count when a pick did happen.
@@ -110,7 +107,7 @@ export function QaPickScreen() {
   // only fire for a launch that was actually prompted. The drawer's "Test a PR
   // preview" row and the dev More row open the same screen on purpose — counting
   // those as skips inflated the denominator and made the funnel unreadable.
-  const isLaunchPrompt = params.origin === LAUNCH_ORIGIN;
+  const isLaunchPrompt = presentation === 'prompt' && params.origin === LAUNCH_ORIGIN;
   // Armed on "a launch prompt was actually shown". `QaTesterGate` is the only
   // thing that sets `origin=launch`, and only for a tester — but that is a
   // convention, and the screen is now reachable by anyone (including a
@@ -131,43 +128,6 @@ export function QaPickScreen() {
   );
 
   const surfingAvailable = qaSurfingAvailable();
-  // A "Get updates early" member's own track is the early-updates branch, so
-  // the row that leaves previews takes them back there, not to production. Only
-  // while the server offers that branch for this binary: without it their track
-  // is production for now, and the row must not say otherwise.
-  const member = useEarlyUpdatesMember();
-  const earlyUpdatesMember = member && branchList !== null && branchList.earlyUpdates !== null;
-
-  const handleChannelPick = useCallback(
-    (channel: 'staging' | 'production') => {
-      if (!surfingAvailable || surfInFlightRef.current) return;
-      surfInFlightRef.current = true;
-      pickedRef.current = true;
-      setSurfingChannel(channel);
-      const switchBranch = channel === 'staging' ? surfToStaging() : returnToOwnTrack(earlyUpdatesMember);
-      void switchBranch
-        .then((outcome) => {
-          // 'reloading' never gets here in practice: the app is restarting.
-          if (outcome === 'reloading') return;
-          surfInFlightRef.current = false;
-          setSurfingChannel(null);
-          if (outcome === 'early-updates-next-launch') {
-            showToast(t('qa.pick.earlyUpdatesNextLaunch'), 'info');
-            return;
-          }
-          showToast(t(channel === 'staging' ? 'qa.pick.stagingNextLaunch' : 'qa.pick.productionNextLaunch'), 'info');
-        })
-        .catch((error: unknown) => {
-          surfInFlightRef.current = false;
-          setSurfingChannel(null);
-          pickedRef.current = false;
-          reportHandledError(error, { tags: { source: 'qa', op: `surf-to-${channel}` } });
-          showToast(error instanceof Error && error.message ? error.message : t('qa.pick.unreachableTitle'), 'error');
-        });
-    },
-    [earlyUpdatesMember, showToast, surfingAvailable, t],
-  );
-
   const handlePick = useCallback(
     (row: QaPickRow) => {
       // A ref, not `surfingPrNumber`: two taps inside one React batch both see
@@ -293,7 +253,7 @@ export function QaPickScreen() {
   // Every row goes flat while a surf is in flight, not just the one that was
   // tapped: the app is on its way to another bundle and a second choice cannot
   // be honoured, so offering it would be a lie.
-  const rowsDisabled = !surfingAvailable || surfingPrNumber !== null || surfingChannel !== null;
+  const rowsDisabled = !surfingAvailable || surfingPrNumber !== null;
 
   const renderItem = useCallback(
     ({ item }: { item: QaPickRow }) => (
@@ -328,23 +288,30 @@ export function QaPickScreen() {
     ) : null;
 
   return (
-    <View style={[styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text variant="title3" style={styles.headerTitle}>
-          {t('qa.pick.title')}
-        </Text>
-        <PressableSurface
-          onPress={() => router.back()}
-          feedback="opacity"
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('qa.pick.skip')}
-        >
-          <Text variant="subheadline" color={brandColors.primary}>
-            {t('qa.pick.skip')}
+    <View
+      style={[
+        styles.root,
+        { backgroundColor: systemColors.groupedBackground, paddingTop: presentation === 'prompt' ? insets.top : 0 },
+      ]}
+    >
+      {presentation === 'prompt' ? (
+        <View style={styles.header}>
+          <Text variant="title3" style={styles.headerTitle}>
+            {t('qa.pick.title')}
           </Text>
-        </PressableSurface>
-      </View>
+          <PressableSurface
+            onPress={() => router.back()}
+            feedback="opacity"
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t('qa.pick.skip')}
+          >
+            <Text variant="subheadline" color={brandColors.primary}>
+              {t('qa.pick.skip')}
+            </Text>
+          </PressableSurface>
+        </View>
+      ) : null}
 
       {!surfingAvailable ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.hint}>
@@ -360,41 +327,6 @@ export function QaPickScreen() {
             placeholder={t('qa.pick.searchPlaceholder')}
             clearAccessibilityLabel={t('qa.pick.clearSearch')}
           />
-        </View>
-      ) : null}
-
-      {surfingAvailable ? (
-        <View style={styles.channelChoices}>
-          {branchList?.staging ? (
-            <PressableSurface
-              onPress={() => handleChannelPick('staging')}
-              feedback="opacity"
-              disabled={rowsDisabled}
-              accessibilityRole="button"
-              accessibilityLabel={t('qa.pick.stagingTitle')}
-              style={[styles.row, styles.channelRow, { backgroundColor: systemColors.elevatedSurface }]}
-            >
-              <Text variant="body">{t('qa.pick.stagingTitle')}</Text>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('qa.pick.stagingBody')}
-              </Text>
-            </PressableSurface>
-          ) : null}
-          <PressableSurface
-            onPress={() => handleChannelPick('production')}
-            feedback="opacity"
-            disabled={rowsDisabled}
-            accessibilityRole="button"
-            accessibilityLabel={t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesTitle' : 'qa.pick.productionTitle')}
-            style={[styles.row, styles.channelRow, { backgroundColor: systemColors.elevatedSurface }]}
-          >
-            <Text variant="body">
-              {t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesTitle' : 'qa.pick.productionTitle')}
-            </Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t(earlyUpdatesMember ? 'qa.pick.earlyUpdatesBody' : 'qa.pick.productionBody')}
-            </Text>
-          </PressableSurface>
         </View>
       ) : null}
 
@@ -698,14 +630,6 @@ const styles = StyleSheet.create({
     padding: spacing[3],
     marginBottom: spacing[2],
     borderRadius: borderRadius.lg,
-  },
-  channelChoices: {
-    paddingHorizontal: spacing[3],
-  },
-  channelRow: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: spacing[1],
   },
   rowDimmed: {
     opacity: opacity.disabled,

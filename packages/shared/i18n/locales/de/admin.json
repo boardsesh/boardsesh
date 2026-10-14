@@ -85,7 +85,16 @@
       "userAgent": "User-Agent",
       "screenshots": "Screenshots",
       "screenshotAlt": "Screenshot {{index}}",
-      "resolvedBy": "Erledigt von"
+      "resolvedBy": "Erledigt von",
+      "releaseChannel": "Veröffentlichungskanal",
+      "releaseBranch": "Laufender Branch",
+      "updateId": "Update-ID",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Automatische Canary-Version",
+      "canaryYes": "Ja",
+      "canaryNo": "Nein",
+      "canaryUnknown": "Unbekannt",
+      "canaryCheckedAt": "Canary geprüft"
     },
     "empty": "Kein Feedback passt zu diesen Filtern.",
     "error": "Das Feedback ließ sich nicht laden.",

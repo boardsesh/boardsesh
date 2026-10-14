@@ -24,7 +24,7 @@ vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock })
 
 import { browseProposalsKey, climbProposalsKey } from '../use-browse-proposals';
 import { CLIMB_EFFECT_QUERY_KEYS } from '../proposal-cache';
-import { PROPOSALS_QUERY_KEY } from '../use-report-climb';
+import { PROPOSALS_QUERY_KEY } from '../../query-keys';
 import { useVoteOnProposal } from '../use-vote-on-proposal';
 
 const BROWSE_KEY = browseProposalsKey({ boardType: null, status: 'open' });

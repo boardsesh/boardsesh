@@ -19,6 +19,15 @@ const state = vi.hoisted(() => ({
       hidden: false,
       createdAt: '',
       photo: null,
+      releaseContext: {
+        channel: 'production',
+        branch: 'pr-beta',
+        updateId: 'beta-update',
+        runtimeVersion: 'fingerprint',
+        isEmbeddedLaunch: false,
+        automaticCanary: false,
+        canaryCheckedAt: null,
+      },
     },
     {
       id: '2',
@@ -134,6 +143,7 @@ describe('SprayWallReportsScreen', () => {
     const screen = render(<SprayWallReportsScreen />);
     expect(screen.getByText('sprayModeration.unavailable')).toBeTruthy();
     expect(screen.queryByText('Crew wall')).toBeNull();
+    expect(screen.queryByText('mobile.reportRelease.title')).toBeNull();
     expect(queryInput).toHaveBeenCalledWith(false, 7);
   });
   it('groups pending reasons under one wall and offers hide and keep-visible decisions', async () => {
@@ -141,6 +151,8 @@ describe('SprayWallReportsScreen', () => {
     expect(screen.getAllByText('Crew wall')).toHaveLength(1);
     expect(screen.getByText('sprayModeration.reasons.other')).toBeTruthy();
     expect(screen.getByText('sprayModeration.reasons.personalInfo')).toBeTruthy();
+    expect(screen.getByText('mobile.reportRelease.title')).toBeTruthy();
+    expect(screen.getByText(/beta-update/)).toBeTruthy();
     fireEvent.click(screen.getByText('sprayModeration.hide'));
     expect(mutate).toHaveBeenLastCalledWith({ input: { uuid: 'wall-a', hidden: true } });
     await waitFor(() =>

@@ -143,7 +143,7 @@ const readVerdictRow = async (id: string) => {
   // clock exactly, without a driver's Date parsing in the middle.
   const result = await db.execute(sql`
     SELECT github_comment_id, github_comment_url, head_sha, verdict, comment,
-           device_model, os_version, app_version, update_id, runtime_version, screenshot_keys,
+           device_model, os_version, app_version, update_id, runtime_version, screenshot_keys, release_context,
            to_char(head_committed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS head_committed_at_text,
            to_char(bundle_created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS bundle_created_at_text
     FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1
@@ -160,6 +160,7 @@ const readVerdictRow = async (id: string) => {
       app_version: string | null;
       update_id: string | null;
       runtime_version: string | null;
+      release_context: { branch: string; channel: string; automaticCanary: boolean | null } | null;
       screenshot_keys: string[] | null;
       head_committed_at_text: string | null;
       bundle_created_at_text: string | null;
@@ -319,6 +320,27 @@ describe('qaPreviews', () => {
 });
 
 describe('submitQaVerdict', () => {
+  it('keeps release context on a verdict and in its GitHub metadata', async () => {
+    const releaseContext = {
+      channel: 'production',
+      branch: 'pr-4792',
+      updateId: 'update-abc',
+      runtimeVersion: 'fingerprint-1',
+      isEmbeddedLaunch: false,
+    };
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput({ releaseContext }) }, authCtx(TESTER));
+    expect((await readVerdictRow(verdict.id)).release_context).toEqual({
+      ...releaseContext,
+      automaticCanary: false,
+      canaryCheckedAt: null,
+    });
+    await vi.waitFor(() => expect(postVerdictCommentMock).toHaveBeenCalledTimes(1));
+    const body = postVerdictCommentMock.mock.calls[0]?.[1] as string;
+    expect(body).toContain('| Release channel | production |');
+    expect(body).toContain('| Running branch | pr-4792 |');
+    expect(body).toContain('| Automatic canary | false |');
+  });
+
   it('rejects an unauthenticated caller', async () => {
     await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, anonCtx())).rejects.toThrow(
       'Authentication required',

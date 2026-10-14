@@ -87,6 +87,7 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
       ? { userId: row.reporterId, email: row.reporterEmail ?? null, name: row.reporterName ?? null }
       : null,
     context: row.context ?? null,
+    releaseContext: row.context?.releaseContext ?? null,
     // The dashboard renders the pictures; the keys stay server-side. An
     // unmintable key, or a media bucket with no public base, resolves to no
     // screenshots rather than an error.

@@ -11,6 +11,7 @@ import {
   ReportClimbInputSchema,
 } from '../../../../validation/schemas';
 import { logger } from '../../../../utils/logger';
+import { enrichReleaseContext } from '../../../../services/mobile-release-status';
 import { publishSocialEvent } from '../../../../events/index';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { requireAdminOrLeader, getUserVoteWeight } from '../roles';
@@ -219,6 +220,8 @@ export const socialProposalMutations = {
     await assertNotFrozen(climbUuid, angle, boardType);
     await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
+    const releaseContext = await enrichReleaseContext(validated.releaseContext, ctx.clientIdentity?.platform);
+
     const outcome = await withProposalLock(climbUuid, type, async (tx) => {
       const openProposal = await findOpenProposal({ climbUuid, boardType, type, angle, proposedValue, executor: tx });
 
@@ -266,6 +269,7 @@ export const socialProposalMutations = {
               entityType: 'proposal',
               entityId: openProposal.uuid,
               body: reason,
+              releaseContext,
               executor: tx,
             });
         return { status: 'added' as const, proposal: openProposal, comment };
@@ -298,6 +302,7 @@ export const socialProposalMutations = {
         entityType: 'proposal',
         entityId: created.uuid,
         body: reason,
+        releaseContext,
         executor: tx,
       });
       return { status: 'created' as const, proposal: created, comment };

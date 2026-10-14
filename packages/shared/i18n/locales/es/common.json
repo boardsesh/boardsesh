@@ -104,9 +104,7 @@
       "crashedChip": "Se cerró al abrir",
       "nothingNewToast": "No hay nada nuevo para el #{{prNumber}} en esta versión — su próxima publicación se aplicará al reabrir",
       "stagingTitle": "Pruebas",
-      "stagingBody": "Prueba la próxima actualización antes de que llegue a producción.",
       "productionTitle": "Producción",
-      "productionBody": "Recibirás las actualizaciones públicas; esta versión puede seguir hasta que haya otra nueva.",
       "stagingNextLaunch": "Pruebas seleccionado: la próxima actualización se aplicará al reabrir",
       "productionNextLaunch": "Producción seleccionada; esta versión puede seguir hasta una actualización nueva",
       "buildingChip": "Compilando",
@@ -121,7 +119,6 @@
       "trySurfHint": "Puede que no tenga una preview que esta versión pueda cargar.",
       "notServableToast": "No hay preview del #{{prNumber}} para esta versión — quizá necesite un rebase sobre main",
       "earlyUpdatesTitle": "Actualizaciones anticipadas",
-      "earlyUpdatesBody": "Vuelve a las actualizaciones anticipadas. Se aplica la próxima vez que abras la app.",
       "earlyUpdatesNextLaunch": "Las actualizaciones anticipadas vuelven la próxima vez que abras la app"
     },
     "brief": {
@@ -890,6 +887,21 @@
       "checkError": {
         "title": "No se pudo buscar actualizaciones",
         "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
+      },
+      "updates": {
+        "title": "Actualizaciones de la app",
+        "regular": "Versión estable",
+        "canary": "Versión canary",
+        "canaryBody": "Has recibido esta actualización como parte de un despliegue gradual. Los informes de errores incluyen este dato automáticamente.",
+        "statusUnknown": "No se ha podido confirmar el estado del despliegue. Los informes incluyen la versión que estás usando.",
+        "early": "Actualizaciones anticipadas",
+        "staging": "Versión de pruebas",
+        "preview": "Vista previa de la PR #{{prNumber}}",
+        "native": "Versión instalada",
+        "other": "Versión {{channel}}",
+        "changeRelease": "Cambiar versión",
+        "testPreview": "Probar una vista previa de PR",
+        "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}"
       }
     },
     "launchUpdate": {
@@ -947,6 +959,19 @@
       "googlePlay": "Disponible en Google Play",
       "appStore": "Descárgala en el App Store",
       "dismiss": "Ahora no"
+    },
+    "reportRelease": {
+      "title": "Detalles de la versión",
+      "channel": "Canal",
+      "branch": "Rama",
+      "updateId": "ID de actualización",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automático",
+      "embedded": "Paquete integrado",
+      "checkedAt": "Canary comprobado",
+      "yes": "Sí",
+      "no": "No",
+      "unknown": "Desconocido"
     }
   },
   "lightControl": {

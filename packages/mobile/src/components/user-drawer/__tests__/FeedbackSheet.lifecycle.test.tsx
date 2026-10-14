@@ -116,6 +116,14 @@ vi.mock('../../../providers/auth-provider', () => ({
 const request = vi.hoisted(() => vi.fn().mockResolvedValue({ submitAppFeedback: true }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('expo-application', () => ({ nativeApplicationVersion: '2.5.0', nativeBuildVersion: '1' }));
+const releaseContext = vi.hoisted(() => ({
+  channel: 'production',
+  branch: 'production',
+  updateId: 'running-before-upload',
+  runtimeVersion: 'runtime-1',
+  isEmbeddedLaunch: false,
+}));
+vi.mock('../../../lib/release-context', () => ({ readMobileReleaseContext: () => ({ ...releaseContext }) }));
 
 const metadata = vi.hoisted(() => ({
   pathname: '/home',
@@ -230,6 +238,7 @@ function mountFeedback(initialVisible = false) {
 beforeEach(() => {
   confirmDiscard.mockReset().mockResolvedValue(false);
   request.mockReset().mockResolvedValue({ submitAppFeedback: true });
+  releaseContext.updateId = 'running-before-upload';
   uploadFeedbackScreenshots.mockReset().mockResolvedValue(['screenshot-key']);
   closeRequested.mockClear();
   showToast.mockClear();
@@ -308,6 +317,7 @@ it('reads current board, route, session, and queue after a dismissed screenshot 
   });
   // Queue-only change: no metadata render publishes a new reader closure.
   metadata.climbUuid = 'queue-only-latest';
+  releaseContext.updateId = 'running-at-submission';
   await act(async () => {
     finishUpload(['screenshot-key']);
   });
@@ -317,6 +327,7 @@ it('reads current board, route, session, and queue after a dismissed screenshot 
       boardName: 'tension',
       screenshotKeys: ['screenshot-key'],
       context: { url: '/climbs', sessionId: 'session-after', climbUuid: 'queue-only-latest' },
+      releaseContext: { ...releaseContext, updateId: 'running-at-submission' },
     },
   });
   expect(metadata.subscriptions).toBe(3);
@@ -362,4 +373,21 @@ it('refuses submission before metadata is mounted instead of filing stale contex
     ).rejects.toThrow('Feedback metadata is not ready');
   });
   expect(request).not.toHaveBeenCalled();
+});
+
+it.each(['prompt', 'drawer-feedback'] as const)('attaches the running release to %s ratings', async (source) => {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const { result } = renderHook(
+    () =>
+      useSubmitMobileAppFeedback({
+        current: () => ({ activeBoard: null, currentClimbQueueItem: null, sessionId: null, pathname: '/home' }),
+      }),
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    },
+  );
+  await act(() => result.current.mutateAsync({ source, rating: 4, comment: null }));
+  expect(request.mock.calls[0][1]).toMatchObject({ input: { source, rating: 4, releaseContext } });
 });

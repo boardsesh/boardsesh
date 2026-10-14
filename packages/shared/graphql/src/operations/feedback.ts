@@ -48,6 +48,15 @@ export const ADMIN_APP_FEEDBACK = gql`
         resolvedBy
         githubIssueNumber
         githubIssueUrl
+        releaseContext {
+          channel
+          branch
+          updateId
+          runtimeVersion
+          isEmbeddedLaunch
+          automaticCanary
+          canaryCheckedAt
+        }
         reporter {
           userId
           email
@@ -94,6 +103,15 @@ export const UPDATE_APP_FEEDBACK_STATUS = gql`
       resolvedBy
       githubIssueNumber
       githubIssueUrl
+      releaseContext {
+        channel
+        branch
+        updateId
+        runtimeVersion
+        isEmbeddedLaunch
+        automaticCanary
+        canaryCheckedAt
+      }
       reporter {
         userId
         email

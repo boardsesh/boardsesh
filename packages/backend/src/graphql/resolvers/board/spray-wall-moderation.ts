@@ -5,6 +5,7 @@ import { SPRAY_WALL_PHOTO_RETENTION_DAYS } from '@boardsesh/board-config';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
+import { enrichReleaseContext } from '../../../services/mobile-release-status';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { requireAdmin } from '../social/roles';
 import { ReportSprayWallInputSchema, SetSprayWallHiddenInputSchema, UUIDSchema } from '../../../validation/schemas';
@@ -138,9 +139,10 @@ export const sprayWallModerationMutations = {
     if (!loaded || !(await viewerCanReport(loaded.wall, loaded.board, ctx.userId!))) throw notFoundError();
 
     const reason = REPORT_REASON_BY_WIRE_NAME[validated.reason];
+    const releaseContext = await enrichReleaseContext(validated.releaseContext, ctx.clientIdentity?.platform);
     const inserted = await db
       .insert(dbSchema.sprayWallReports)
-      .values({ wallId: loaded.wall.id, reporterId: ctx.userId!, reason })
+      .values({ wallId: loaded.wall.id, reporterId: ctx.userId!, reason, releaseContext })
       // The `where` is not optional here: `spray_wall_reports_wall_reporter_idx` is
       // PARTIAL (`reporter_id IS NOT NULL`), and Postgres refuses to infer a
       // partial index from a bare column list — `ON CONFLICT (wall_id,
@@ -476,6 +478,7 @@ export const sprayWallModerationQueries = {
       .select({
         id: dbSchema.sprayWallReports.id,
         reason: dbSchema.sprayWallReports.reason,
+        releaseContext: dbSchema.sprayWallReports.releaseContext,
         createdAt: dbSchema.sprayWallReports.createdAt,
         wallUuid: dbSchema.sprayWalls.boardUuid,
         wallName: dbSchema.userBoards.name,
@@ -555,6 +558,7 @@ export const sprayWallModerationQueries = {
       photo: photos.get(row.wallId) ?? null,
       layoutId: row.layoutId,
       reason: reportReasonWireName(row.reason),
+      releaseContext: row.releaseContext,
       hidden: row.hiddenAt != null,
       createdAt: row.createdAt.toISOString(),
     }));

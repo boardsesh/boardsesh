@@ -11,7 +11,12 @@
  * `redactSensitiveText` before they land in a world-readable issue.
  */
 
-import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
+import type {
+  AppFeedbackPlatform,
+  AppFeedbackSource,
+  FeedbackContextInput,
+  ReleaseContext,
+} from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { GithubRequestError, readGithubErrorDetail } from '../lib/github-error';
@@ -39,6 +44,7 @@ export type FeedbackIssuePayload = {
   setIds?: number[] | null;
   angle?: number | null;
   context?: FeedbackContextInput | null;
+  releaseContext?: ReleaseContext | null;
   contactConsent?: boolean | null;
   /**
    * Public URLs of the reporter's screenshots, already resolved from their
@@ -100,6 +106,19 @@ function buildMetadataTable(payload: FeedbackIssuePayload): string {
   const rows: Array<[string, string | null]> = [
     ['Platform', payload.platform],
     ['App version', payload.appVersion ?? null],
+    ['Release channel', payload.releaseContext?.channel ?? null],
+    ['Running branch', payload.releaseContext?.branch ?? null],
+    ['Running update', payload.releaseContext?.updateId ?? null],
+    ['Runtime', payload.releaseContext?.runtimeVersion ?? null],
+    [
+      'Embedded bundle',
+      payload.releaseContext?.isEmbeddedLaunch == null ? null : String(payload.releaseContext.isEmbeddedLaunch),
+    ],
+    [
+      'Automatic canary',
+      payload.releaseContext?.automaticCanary == null ? null : String(payload.releaseContext.automaticCanary),
+    ],
+    ['Canary checked', payload.releaseContext?.canaryCheckedAt ?? null],
     ['Source', payload.source],
     ['Board', formatBoard(payload)],
     ['Climb', formatClimb(payload.context)],

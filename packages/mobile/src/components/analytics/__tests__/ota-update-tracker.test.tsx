@@ -10,6 +10,10 @@ const health = vi.hoisted(() => ({
 }));
 vi.mock('../../../lib/anonymous-ota-health', () => ({ reportAnonymousOtaStatus: health.reportStatus }));
 const sentry = vi.hoisted(() => ({ setOtaSentryTags: vi.fn() }));
+const release = vi.hoisted(() => ({ automaticCanary: null as boolean | null, canaryCheckedAt: null as string | null }));
+vi.mock('../../../lib/use-mobile-release-status', () => ({
+  useMobileReleaseStatus: () => ({ releaseContext: release, isPending: false }),
+}));
 
 // Drives Updates.useUpdates() per test. The constants below mirror an OTA'd
 // production launch; `current` is swapped to exercise the downloaded-bundle
@@ -60,12 +64,43 @@ beforeEach(() => {
   analytics.registerSuperProperties.mockClear();
   sentry.setOtaSentryTags.mockClear();
   updates.current = { isUpdatePending: false, downloadedUpdate: undefined };
+  Object.assign(release, { automaticCanary: null, canaryCheckedAt: null });
   // The status guard is module-scoped (once per launch); reset it so each test
   // starts from a clean "nothing reported yet" state.
   resetOtaStatusReportedForTests();
 });
 
 describe('OtaUpdateTracker', () => {
+  it('enriches running bundle diagnostics with verified canary status and clears unknown status', () => {
+    release.automaticCanary = true;
+    release.canaryCheckedAt = '2026-10-14T02:00:00.000Z';
+    updates.current = { isUpdatePending: true, downloadedUpdate: { updateId: 'pending-download' } };
+    const { rerender } = render(createElement(OtaUpdateTracker));
+    expect(sentry.setOtaSentryTags).toHaveBeenLastCalledWith({
+      channel: 'production',
+      branch: 'pr-3327',
+      updateId: 'a1b2c3d4-0000-0000-0000-000000000000',
+      runtimeVersion: 'abcdef123456',
+      isEmbeddedLaunch: false,
+      automaticCanary: true,
+      canaryCheckedAt: '2026-10-14T02:00:00.000Z',
+    });
+    expect(analytics.registerSuperProperties).toHaveBeenLastCalledWith({
+      ota_automatic_canary: true,
+      ota_canary_checked_at: '2026-10-14T02:00:00.000Z',
+    });
+    Object.assign(release, { automaticCanary: null, canaryCheckedAt: null });
+    rerender(createElement(OtaUpdateTracker));
+    expect(analytics.registerSuperProperties).toHaveBeenLastCalledWith({
+      ota_automatic_canary: null,
+      ota_canary_checked_at: null,
+    });
+    expect(sentry.setOtaSentryTags.mock.calls.at(-1)?.[0]).toMatchObject({
+      automaticCanary: null,
+      canaryCheckedAt: null,
+    });
+  });
+
   it('reports the running bundle once and registers the OTA cohort', () => {
     render(createElement(OtaUpdateTracker));
 

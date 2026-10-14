@@ -11,10 +11,11 @@ import {
 import type { SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
+import { readMobileReleaseContext } from '../release-context';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
   SubmitAppFeedbackInput,
-  'platform' | 'appVersion' | 'boardName' | 'layoutId' | 'sizeId' | 'setIds' | 'angle' | 'context'
+  'platform' | 'appVersion' | 'boardName' | 'layoutId' | 'sizeId' | 'setIds' | 'angle' | 'context' | 'releaseContext'
 >;
 
 /**
@@ -53,6 +54,7 @@ export function useSubmitMobileAppFeedback(readerRef: RefObject<FeedbackMetadata
         ...enrichment,
         platform: getMobilePlatform(),
         appVersion: getNativeAppVersion(),
+        releaseContext: readMobileReleaseContext(),
       });
     },
   });

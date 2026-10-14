@@ -34,6 +34,27 @@ const bugPayload = (overrides: Partial<FeedbackIssuePayload> = {}): FeedbackIssu
 });
 
 describe('buildFeedbackIssue', () => {
+  it('includes the running release and verified automatic canary in bug metadata', () => {
+    const draft = buildFeedbackIssue(
+      bugPayload({
+        releaseContext: {
+          channel: 'production',
+          branch: null,
+          updateId: 'running-update',
+          runtimeVersion: 'fingerprint',
+          isEmbeddedLaunch: false,
+          automaticCanary: true,
+          canaryCheckedAt: '2026-10-14T09:00:00Z',
+        },
+      }),
+    );
+    expect(draft?.body).toContain('| Release channel | production |');
+    expect(draft?.body).toContain('| Running update | running-update |');
+    expect(draft?.body).toContain('| Automatic canary | true |');
+    expect(draft?.body).toContain('| Canary checked | 2026-10-14T09:00:00Z |');
+    expect(draft?.body).toContain('| Running branch | unknown |');
+  });
+
   it('returns null for rating sources (they do not become issues)', () => {
     expect(buildFeedbackIssue(bugPayload({ source: 'drawer-feedback', rating: 5, comment: null }))).toBeNull();
     expect(buildFeedbackIssue(bugPayload({ source: 'prompt', rating: 4, comment: null }))).toBeNull();

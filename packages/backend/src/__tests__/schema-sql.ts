@@ -1156,6 +1156,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "entity_id" text NOT NULL,
     "parent_comment_id" bigint,
     "body" text NOT NULL,
+    "release_context" jsonb,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp
@@ -1460,6 +1461,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "app_version" text,
     "update_id" text,
     "runtime_version" text,
+    "release_context" jsonb,
     "bundle_created_at" timestamp,
     "screenshot_keys" jsonb,
     "github_comment_id" bigint,
@@ -1950,6 +1952,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
     "reporter_id" text REFERENCES "users"("id") ON DELETE SET NULL,
     "reason" spray_wall_report_reason NOT NULL,
+    "release_context" jsonb,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "reviewed_at" timestamp,
     "reviewed_by" text REFERENCES "users"("id") ON DELETE SET NULL

@@ -1,7 +1,9 @@
 import { pgTable, text, integer, timestamp, bigserial, index, jsonb, boolean, pgEnum } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
+import type { ReleaseContext } from '@boardsesh/shared-schema';
 
 export type FeedbackContext = {
+  releaseContext?: ReleaseContext;
   climbUuid?: string;
   climbName?: string;
   difficulty?: string;

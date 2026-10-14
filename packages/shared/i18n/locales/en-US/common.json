@@ -615,6 +615,21 @@
       "checkError": {
         "title": "Couldn't check for updates",
         "message": "Something went wrong getting the latest version. Try again in a bit."
+      },
+      "updates": {
+        "title": "App updates",
+        "regular": "Regular release",
+        "canary": "Canary release",
+        "canaryBody": "You received this update as part of a gradual rollout. Bug reports include this automatically.",
+        "statusUnknown": "Rollout status could not be confirmed. Reports still include your running release.",
+        "early": "Early updates",
+        "staging": "Staging release",
+        "preview": "PR #{{prNumber}} preview",
+        "native": "Installed build",
+        "other": "{{channel}} release",
+        "changeRelease": "Change release",
+        "testPreview": "Test a PR preview",
+        "finishTesting": "Finish testing PR #{{prNumber}}"
       }
     },
     "launchUpdate": {
@@ -672,6 +687,19 @@
       "googlePlay": "Get it on Google Play",
       "appStore": "Download on the App Store",
       "dismiss": "Not now"
+    },
+    "reportRelease": {
+      "title": "Release details",
+      "channel": "Channel",
+      "branch": "Branch",
+      "updateId": "Update ID",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Automatic canary",
+      "embedded": "Embedded bundle",
+      "checkedAt": "Canary checked",
+      "yes": "Yes",
+      "no": "No",
+      "unknown": "Unknown"
     }
   },
   "lightControl": {
@@ -786,9 +814,7 @@
       "crashedChip": "Crashed on launch",
       "nothingNewToast": "Nothing new for #{{prNumber}} on this build — its next publish applies on relaunch",
       "stagingTitle": "Staging",
-      "stagingBody": "Try the next mobile update before it reaches production.",
       "productionTitle": "Production",
-      "productionBody": "Use live updates going forward; this bundle may remain until a newer one ships.",
       "stagingNextLaunch": "Staging is selected — its next update applies on relaunch",
       "productionNextLaunch": "Production is selected; this bundle may remain until a newer update ships",
       "buildingChip": "Building",
@@ -803,7 +829,6 @@
       "trySurfHint": "It may not have a preview this build can load.",
       "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main",
       "earlyUpdatesTitle": "Early updates",
-      "earlyUpdatesBody": "Go back to early updates. Applies next time you open the app.",
       "earlyUpdatesNextLaunch": "Early updates are back on next time you open the app"
     },
     "brief": {

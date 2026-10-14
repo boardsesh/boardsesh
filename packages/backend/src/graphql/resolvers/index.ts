@@ -83,6 +83,7 @@ import {
 } from './social/notifications';
 import { socialCommentSubscriptions } from './social/comment-subscriptions';
 import { socialProposalQueries, socialProposalMutations } from './social/proposals';
+import { proposalReportReleaseContextQueries } from './social/proposals/report-release-contexts';
 import { socialRoleQueries, socialRoleMutations } from './social/roles';
 import { socialCommunitySettingsQueries, socialCommunitySettingsMutations } from './social/community-settings';
 import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions';
@@ -90,6 +91,7 @@ import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { boardPresenceResolvers } from './board-presence';
 import { feedbackMutations } from './feedback/mutations';
 import { feedbackQueries } from './feedback/queries';
+import { mobileReleaseStatusQueries } from './mobile-release-status';
 import { qaMutations } from './qa/mutations';
 import { qaQueries } from './qa/queries';
 import { integrationQueries } from './integrations/queries';
@@ -107,6 +109,7 @@ export const resolvers = {
 
   // Root operation types
   Query: {
+    ...mobileReleaseStatusQueries,
     ...privacyQueries,
     ...boardShareLinkQueries,
     ...sessionQueries,
@@ -152,6 +155,7 @@ export const resolvers = {
     ...crewFeedQueries,
     ...socialNotificationQueries,
     ...socialProposalQueries,
+    ...proposalReportReleaseContextQueries,
     ...socialRoleQueries,
     ...socialCommunitySettingsQueries,
     ...newClimbSubscriptionResolvers.Query,

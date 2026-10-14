@@ -26,7 +26,7 @@ import { getHttpClient } from '../client';
 import { useToast } from '../../../providers/toast-provider';
 import { writeProposalToCaches } from './use-browse-proposals';
 import { invalidateAppliedProposalCaches } from './proposal-cache';
-import { PROPOSALS_QUERY_KEY } from './use-report-climb';
+import { PROPOSALS_QUERY_KEY } from '../query-keys';
 
 export type ResolveProposalInput = {
   proposalUuid: string;

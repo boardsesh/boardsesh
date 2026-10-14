@@ -499,6 +499,37 @@ export default function FeedbackPanel() {
                           <DetailRow label={t('feedback.detail.session')} value={report.context?.sessionName} />
                           <DetailRow label={t('feedback.detail.url')} value={report.context?.url} />
                           <DetailRow label={t('feedback.detail.userAgent')} value={report.context?.userAgent} />
+                          {report.releaseContext && (
+                            <>
+                              <DetailRow
+                                label={t('feedback.detail.releaseChannel')}
+                                value={report.releaseContext.channel}
+                              />
+                              <DetailRow
+                                label={t('feedback.detail.releaseBranch')}
+                                value={report.releaseContext.branch}
+                              />
+                              <DetailRow label={t('feedback.detail.updateId')} value={report.releaseContext.updateId} />
+                              <DetailRow
+                                label={t('feedback.detail.runtimeVersion')}
+                                value={report.releaseContext.runtimeVersion}
+                              />
+                              <DetailRow
+                                label={t('feedback.detail.automaticCanary')}
+                                value={
+                                  report.releaseContext.automaticCanary === true
+                                    ? t('feedback.detail.canaryYes')
+                                    : report.releaseContext.automaticCanary === false
+                                      ? t('feedback.detail.canaryNo')
+                                      : t('feedback.detail.canaryUnknown')
+                                }
+                              />
+                              <DetailRow
+                                label={t('feedback.detail.canaryCheckedAt')}
+                                value={report.releaseContext.canaryCheckedAt}
+                              />
+                            </>
+                          )}
                           {report.screenshotUrls.length > 0 && (
                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                               <Typography

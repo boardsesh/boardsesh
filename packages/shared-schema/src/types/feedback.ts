@@ -1,3 +1,5 @@
+import type { ReleaseContext, ReleaseContextInput } from './release-context';
+
 export type AppFeedbackPlatform = 'ios' | 'android' | 'web';
 export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'drawer-bug';
 /**
@@ -23,6 +25,7 @@ export type FeedbackContextInput = {
 };
 
 export type SubmitAppFeedbackInput = {
+  releaseContext?: ReleaseContextInput | null;
   rating?: number | null;
   comment?: string | null;
   platform: AppFeedbackPlatform;
@@ -85,6 +88,7 @@ export type AppFeedbackContext = {
 
 /** A feedback row enriched for the admin dashboard. */
 export type AppFeedbackReport = {
+  releaseContext?: ReleaseContext | null;
   id: string;
   source: AppFeedbackSource;
   rating?: number | null;

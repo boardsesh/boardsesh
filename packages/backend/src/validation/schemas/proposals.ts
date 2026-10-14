@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OptionalReleaseContextInputSchema } from './release-context';
 import { BOULDER_GRADES, MOONBOARD_BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { UUIDSchema, ExternalUUIDSchema, BoardNameSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
@@ -163,6 +164,7 @@ export const BrowseProposalsInputSchema = z.object({
  */
 export const ReportClimbInputSchema = z
   .object({
+    releaseContext: OptionalReleaseContextInputSchema,
     climbUuid: ExternalUUIDSchema,
     boardType: BoardNameSchema,
     angle: z.number().int().min(-5).max(90).optional().nullable(),

@@ -7,11 +7,24 @@ export type SprayWallReportGroup = {
   photo: SprayWallReportData['photo'];
   reasons: SprayWallReportReason[];
   reportCount: number;
+  reportReleaseContexts: Array<{
+    reportId: string;
+    releaseContext: NonNullable<SprayWallReportData['releaseContext']>;
+  }>;
 };
 
 export function groupSprayWallReports(reports: readonly SprayWallReportData[]): SprayWallReportGroup[] {
   const grouped = new Map<string, SprayWallReportGroup>();
+  const releaseContextsByWall = new Map<string, Map<string, SprayWallReportGroup['reportReleaseContexts'][number]>>();
   for (const report of reports) {
+    if (report.releaseContext) {
+      const { channel, branch, updateId, runtimeVersion, isEmbeddedLaunch, automaticCanary } = report.releaseContext;
+      const identity = JSON.stringify([channel, branch, updateId, runtimeVersion, isEmbeddedLaunch, automaticCanary]);
+      const contexts = releaseContextsByWall.get(report.wallUuid) ?? new Map();
+      if (!contexts.has(identity))
+        contexts.set(identity, { reportId: report.id, releaseContext: report.releaseContext });
+      releaseContextsByWall.set(report.wallUuid, contexts);
+    }
     const group = grouped.get(report.wallUuid);
     if (group) {
       group.reportCount += 1;
@@ -24,8 +37,12 @@ export function groupSprayWallReports(reports: readonly SprayWallReportData[]): 
         photo: report.photo,
         reasons: [report.reason],
         reportCount: 1,
+        reportReleaseContexts: [],
       });
     }
   }
-  return [...grouped.values()];
+  return [...grouped.values()].map((group) => ({
+    ...group,
+    reportReleaseContexts: [...(releaseContextsByWall.get(group.wallUuid)?.values() ?? [])],
+  }));
 }

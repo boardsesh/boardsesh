@@ -33,6 +33,10 @@ vi.mock('expo-device', () => ({
 }));
 
 vi.mock('expo-updates', () => ({
+  isEnabled: true,
+  isEmbeddedLaunch: false,
+  channel: 'production',
+  manifest: { extra: { branch: 'pr-4792' } },
   updateId: 'update-abc',
   runtimeVersion: 'fingerprint-1',
   createdAt: new Date('2026-08-26T09:30:00.000Z'),
@@ -93,6 +97,13 @@ describe('useSubmitQaVerdict', () => {
         runtimeVersion: 'fingerprint-1',
         screenshotKeys: null,
         bundleCreatedAt: '2026-08-26T09:30:00.000Z',
+        releaseContext: {
+          channel: 'production',
+          branch: 'pr-4792',
+          updateId: 'update-abc',
+          runtimeVersion: 'fingerprint-1',
+          isEmbeddedLaunch: false,
+        },
       },
     });
   });

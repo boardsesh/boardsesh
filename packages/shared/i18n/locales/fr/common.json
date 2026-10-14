@@ -615,6 +615,21 @@
       "checkError": {
         "title": "Impossible de rechercher des mises à jour",
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
+      },
+      "updates": {
+        "title": "Mises à jour de l’app",
+        "regular": "Version stable",
+        "canary": "Version canary",
+        "canaryBody": "Tu as reçu cette mise à jour dans le cadre d’un déploiement progressif. Les signalements de bugs incluent cette information automatiquement.",
+        "statusUnknown": "Le statut du déploiement n’a pas pu être confirmé. Les signalements incluent toujours ta version actuelle.",
+        "early": "Mises à jour anticipées",
+        "staging": "Version de test",
+        "preview": "Aperçu de la PR #{{prNumber}}",
+        "native": "Version installée",
+        "other": "Version {{channel}}",
+        "changeRelease": "Changer de version",
+        "testPreview": "Tester un aperçu de PR",
+        "finishTesting": "Terminer le test de la PR #{{prNumber}}"
       }
     },
     "launchUpdate": {
@@ -672,6 +687,19 @@
       "googlePlay": "Disponible sur Google Play",
       "appStore": "Télécharger dans l'App Store",
       "dismiss": "Pas maintenant"
+    },
+    "reportRelease": {
+      "title": "Détails de la version",
+      "channel": "Canal",
+      "branch": "Branche",
+      "updateId": "ID de mise à jour",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automatique",
+      "embedded": "Version intégrée",
+      "checkedAt": "Canary vérifié",
+      "yes": "Oui",
+      "no": "Non",
+      "unknown": "Inconnu"
     }
   },
   "lightControl": {
@@ -786,9 +814,7 @@
       "crashedChip": "Plantage au lancement",
       "nothingNewToast": "Rien de nouveau pour le #{{prNumber}} sur cette version — sa prochaine publication s'appliquera au prochain relancement",
       "stagingTitle": "Préproduction",
-      "stagingBody": "Essaie la prochaine mise à jour avant sa sortie.",
       "productionTitle": "Production",
-      "productionBody": "Reçois les mises à jour publiques ; cette version peut rester jusqu’à la prochaine.",
       "stagingNextLaunch": "Préproduction choisie : la prochaine mise à jour s’appliquera au redémarrage",
       "productionNextLaunch": "Production choisie ; cette version peut rester jusqu’à une nouvelle mise à jour",
       "buildingChip": "En cours de build",
@@ -803,7 +829,6 @@
       "trySurfHint": "Elle n'a peut-être pas de preview que cette version peut charger.",
       "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main",
       "earlyUpdatesTitle": "Mises à jour anticipées",
-      "earlyUpdatesBody": "Reviens aux mises à jour anticipées. S'applique à la prochaine ouverture de l'app.",
       "earlyUpdatesNextLaunch": "Les mises à jour anticipées reprennent à la prochaine ouverture de l'app"
     },
     "brief": {

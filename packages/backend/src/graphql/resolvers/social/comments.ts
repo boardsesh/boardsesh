@@ -1,7 +1,7 @@
 import { setContentPrivacy } from '../../../services/privacy';
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SocialEntityType, ReleaseContext } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -446,6 +446,7 @@ export async function insertComment(params: {
   parentCommentId?: number | null;
   parentCommentUuid?: string | null;
   executor?: CommentExecutor;
+  releaseContext?: ReleaseContext | null;
 }) {
   const {
     userId,
@@ -466,6 +467,7 @@ export async function insertComment(params: {
       entityId,
       parentCommentId,
       body,
+      releaseContext: params.releaseContext ?? null,
     })
     .returning();
 

@@ -55,6 +55,9 @@ export const SEARCH_CLIMBS_QUERY_KEY = ['searchClimbs'] as const;
 export const INFINITE_SEARCH_CLIMBS_QUERY_KEY = ['infiniteSearchClimbs'] as const;
 export const SEARCH_CLIMBS_COUNT_QUERY_KEY = ['searchClimbsCount'] as const;
 
+/** Shared root for moderation lists and per-climb proposals, invalidated by reports and votes. */
+export const PROPOSALS_QUERY_KEY = ['proposals'] as const;
+
 /**
  * Live sessions ("Climbing now" on Home, "Climbing here now" in the board sheet).
  *

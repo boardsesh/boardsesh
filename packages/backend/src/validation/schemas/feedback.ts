@@ -1,5 +1,6 @@
 import { FEEDBACK_SCREENSHOT_KEY_PATTERN, FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 import { z } from 'zod';
+import { OptionalReleaseContextInputSchema } from './release-context';
 
 const RATING_SOURCES = ['prompt', 'drawer-feedback'] as const;
 const BUG_SOURCES = ['shake-bug', 'drawer-bug'] as const;
@@ -69,6 +70,7 @@ export const SubmitAppFeedbackInputSchema = z
     ),
     angle: bestEffort(z.number().int().min(-5).max(180)),
     context: bestEffort(FeedbackContextInputSchema),
+    releaseContext: OptionalReleaseContextInputSchema,
     contactConsent: bestEffort(z.boolean()),
     // Screenshots are an attachment on the report, not the report — so they
     // degrade like every other non-payload field here rather than costing the

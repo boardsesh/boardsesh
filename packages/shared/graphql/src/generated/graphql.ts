@@ -270,6 +270,7 @@ export type AppFeedbackReport = {
   id: Scalars['ID']['output'];
   platform: Scalars['String']['output'];
   rating?: Maybe<Scalars['Int']['output']>;
+  releaseContext?: Maybe<ReleaseContext>;
   reporter?: Maybe<AppFeedbackReporter>;
   resolvedAt?: Maybe<Scalars['String']['output']>;
   resolvedBy?: Maybe<Scalars['String']['output']>;
@@ -4025,6 +4026,15 @@ export type MergeGymsResult = {
   results: Array<GymMergeDuplicateResult>;
 };
 
+export type MobileReleaseStatusInput = {
+  branch?: InputMaybe<Scalars['String']['input']>;
+  channel?: InputMaybe<Scalars['String']['input']>;
+  isEmbeddedLaunch?: InputMaybe<Scalars['Boolean']['input']>;
+  platform: Scalars['String']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MoonBoardClimbDuplicateCandidateInput = {
   clientKey: Scalars['String']['input'];
   holds: MoonBoardHoldsInput;
@@ -6314,6 +6324,13 @@ export type ProposalConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** Release diagnostics attached to a report reason, visible only to scoped admins. */
+export type ProposalReportReleaseContext = {
+  __typename?: 'ProposalReportReleaseContext';
+  commentUuid: Scalars['ID']['output'];
+  releaseContext: ReleaseContext;
+};
+
 export type ProposalStatus = 'approved' | 'open' | 'rejected' | 'superseded';
 
 export type ProposalType = 'benchmark' | 'classic' | 'grade' | 'hide';
@@ -6872,6 +6889,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Current release context. Available without signing in. */
+  mobileReleaseStatus: ReleaseContext;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -6963,6 +6982,8 @@ export type Query = {
    * Returns null if not authenticated.
    */
   profile?: Maybe<UserProfile>;
+  /** Stored report release diagnostics; empty for callers without an admin role on this board. */
+  proposalReportReleaseContexts: Array<ProposalReportReleaseContext>;
   /**
    * What a reset WOULD do: match the detections from a new photo against the
    * holds on the wall today and report kept / removed / added.
@@ -7694,6 +7715,11 @@ export type QueryIsFollowingArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryMobileReleaseStatusArgs = {
+  input: MobileReleaseStatusInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryMyBoardSerialConfigsArgs = {
   serialNumbers: Array<Scalars['String']['input']>;
 };
@@ -7780,6 +7806,11 @@ export type QueryPopularBoardConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryPrivacyRelationshipArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryProposalReportReleaseContextsArgs = {
+  proposalUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8356,6 +8387,28 @@ export type RegisterNotificationDeviceInput = {
   token: Scalars['String']['input'];
 };
 
+/** Running identity with backend-verified current automatic canary membership. */
+export type ReleaseContext = {
+  __typename?: 'ReleaseContext';
+  /** Null when current rollout membership could not be checked. */
+  automaticCanary?: Maybe<Scalars['Boolean']['output']>;
+  branch?: Maybe<Scalars['String']['output']>;
+  canaryCheckedAt?: Maybe<Scalars['String']['output']>;
+  channel?: Maybe<Scalars['String']['output']>;
+  isEmbeddedLaunch?: Maybe<Scalars['Boolean']['output']>;
+  runtimeVersion?: Maybe<Scalars['String']['output']>;
+  updateId?: Maybe<Scalars['String']['output']>;
+};
+
+/** Identity of the running bundle; excludes a pending download or requested track. */
+export type ReleaseContextInput = {
+  branch?: InputMaybe<Scalars['String']['input']>;
+  channel?: InputMaybe<Scalars['String']['input']>;
+  isEmbeddedLaunch?: InputMaybe<Scalars['Boolean']['input']>;
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Input for removing a climb from a playlist. */
 export type RemoveClimbFromPlaylistInput = {
   /** Climb UUID to remove */
@@ -8427,6 +8480,7 @@ export type ReportClimbInput = {
   proposedGrade?: InputMaybe<Scalars['String']['input']>;
   /** Why you are reporting (10..500 chars) */
   reason: Scalars['String']['input'];
+  releaseContext?: InputMaybe<ReleaseContextInput>;
 };
 
 /** What a report asks for: hide the climb outright, or change its grade. */
@@ -8465,6 +8519,7 @@ export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
 
 export type ReportSprayWallInput = {
   reason: SprayWallReportReason;
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -10150,6 +10205,7 @@ export type SprayWallReport = {
   /** Admin-only preview, including private and hidden walls; null when unavailable. */
   photo?: Maybe<SprayWallPhoto>;
   reason: SprayWallReportReason;
+  releaseContext?: Maybe<ReleaseContext>;
   wallName: Scalars['String']['output'];
   wallUuid: Scalars['ID']['output'];
 };
@@ -10347,6 +10403,7 @@ export type SubmitAppFeedbackInput = {
   platform: Scalars['String']['input'];
   /** 1–5 star rating. Null for bug reports. */
   rating?: InputMaybe<Scalars['Int']['input']>;
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
    * FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
@@ -10385,6 +10442,7 @@ export type SubmitQaVerdictInput = {
   /** 'ios' | 'android' | 'web'. */
   platform: Scalars['String']['input'];
   prNumber: Scalars['Int']['input'];
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   runtimeVersion?: InputMaybe<Scalars['String']['input']>;
   /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
@@ -12643,6 +12701,16 @@ export type AdminAppFeedbackQuery = {
       githubIssueNumber?: number | null;
       githubIssueUrl?: string | null;
       screenshotUrls: Array<string>;
+      releaseContext?: {
+        __typename?: 'ReleaseContext';
+        channel?: string | null;
+        branch?: string | null;
+        updateId?: string | null;
+        runtimeVersion?: string | null;
+        isEmbeddedLaunch?: boolean | null;
+        automaticCanary?: boolean | null;
+        canaryCheckedAt?: string | null;
+      } | null;
       reporter?: {
         __typename?: 'AppFeedbackReporter';
         userId?: string | null;
@@ -12693,6 +12761,16 @@ export type UpdateAppFeedbackStatusMutation = {
     resolvedBy?: string | null;
     githubIssueNumber?: number | null;
     githubIssueUrl?: string | null;
+    releaseContext?: {
+      __typename?: 'ReleaseContext';
+      channel?: string | null;
+      branch?: string | null;
+      updateId?: string | null;
+      runtimeVersion?: string | null;
+      isEmbeddedLaunch?: boolean | null;
+      automaticCanary?: boolean | null;
+      canaryCheckedAt?: string | null;
+    } | null;
     reporter?: {
       __typename?: 'AppFeedbackReporter';
       userId?: string | null;
@@ -14564,6 +14642,46 @@ export type SubmitQaVerdictMutation = {
     createdAt: string;
     githubCommentUrl?: string | null;
   };
+};
+
+export type MobileReleaseStatusQueryVariables = Exact<{
+  input: MobileReleaseStatusInput;
+}>;
+
+export type MobileReleaseStatusQuery = {
+  __typename?: 'Query';
+  mobileReleaseStatus: {
+    __typename?: 'ReleaseContext';
+    channel?: string | null;
+    branch?: string | null;
+    updateId?: string | null;
+    runtimeVersion?: string | null;
+    isEmbeddedLaunch?: boolean | null;
+    automaticCanary?: boolean | null;
+    canaryCheckedAt?: string | null;
+  };
+};
+
+export type ProposalReportReleaseContextsQueryVariables = Exact<{
+  proposalUuid: Scalars['ID']['input'];
+}>;
+
+export type ProposalReportReleaseContextsQuery = {
+  __typename?: 'Query';
+  proposalReportReleaseContexts: Array<{
+    __typename?: 'ProposalReportReleaseContext';
+    commentUuid: string;
+    releaseContext: {
+      __typename?: 'ReleaseContext';
+      channel?: string | null;
+      branch?: string | null;
+      updateId?: string | null;
+      runtimeVersion?: string | null;
+      isEmbeddedLaunch?: boolean | null;
+      automaticCanary?: boolean | null;
+      canaryCheckedAt?: string | null;
+    };
+  }>;
 };
 
 export type SavedClimbDocumentsQueryVariables = Exact<{
@@ -18849,6 +18967,22 @@ export const AdminAppFeedbackDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'githubIssueUrl' } },
                       {
                         kind: 'Field',
+                        name: { kind: 'Name', value: 'releaseContext' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'channel' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'updateId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'runtimeVersion' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isEmbeddedLaunch' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'automaticCanary' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'canaryCheckedAt' } },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'Field',
                         name: { kind: 'Name', value: 'reporter' },
                         selectionSet: {
                           kind: 'SelectionSet',
@@ -18950,6 +19084,22 @@ export const UpdateAppFeedbackStatusDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'githubIssueNumber' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'githubIssueUrl' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'releaseContext' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'channel' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updateId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'runtimeVersion' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isEmbeddedLaunch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'automaticCanary' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'canaryCheckedAt' } },
+                    ],
+                  },
+                },
                 {
                   kind: 'Field',
                   name: { kind: 'Name', value: 'reporter' },
@@ -23951,6 +24101,109 @@ export const SubmitQaVerdictDocument = {
     },
   ],
 } as unknown as DocumentNode<SubmitQaVerdictMutation, SubmitQaVerdictMutationVariables>;
+export const MobileReleaseStatusDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'MobileReleaseStatus' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'MobileReleaseStatusInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'mobileReleaseStatus' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'channel' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updateId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'runtimeVersion' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isEmbeddedLaunch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'automaticCanary' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canaryCheckedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MobileReleaseStatusQuery, MobileReleaseStatusQueryVariables>;
+export const ProposalReportReleaseContextsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ProposalReportReleaseContexts' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'proposalUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'proposalReportReleaseContexts' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'proposalUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'proposalUuid' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'commentUuid' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'releaseContext' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'channel' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'branch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'updateId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'runtimeVersion' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isEmbeddedLaunch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'automaticCanary' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'canaryCheckedAt' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ProposalReportReleaseContextsQuery, ProposalReportReleaseContextsQueryVariables>;
 export const SavedClimbDocumentsDocument = {
   kind: 'Document',
   definitions: [

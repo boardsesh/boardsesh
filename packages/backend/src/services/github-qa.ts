@@ -16,7 +16,14 @@
  */
 
 import { parseRisk, parseTestPlan } from '@boardsesh/pr-body';
-import type { QaLabel, QaOtaBuildState, QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
+import type {
+  QaLabel,
+  QaOtaBuildState,
+  QaPreview,
+  QaVerdict,
+  QaVerdictKind,
+  ReleaseContext,
+} from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { ensureLabels, githubRequest, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { screenshotMarkdownSection } from './feedback-screenshot-urls';
@@ -92,6 +99,7 @@ export type VerdictCommentPayload = {
   appVersion: string | null;
   updateId: string | null;
   runtimeVersion: string | null;
+  releaseContext?: ReleaseContext | null;
   /** ISO 8601 publish time of the bundle the author ran. */
   bundleCreatedAt: string | null;
   headSha: string | null;
@@ -583,6 +591,17 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
     ['App version', payload.appVersion],
     ['Update id', payload.updateId],
     ['Runtime', payload.runtimeVersion],
+    ['Release channel', payload.releaseContext?.channel ?? null],
+    ['Running branch', payload.releaseContext?.branch ?? null],
+    [
+      'Embedded bundle',
+      payload.releaseContext?.isEmbeddedLaunch == null ? null : String(payload.releaseContext.isEmbeddedLaunch),
+    ],
+    [
+      'Automatic canary',
+      payload.releaseContext?.automaticCanary == null ? null : String(payload.releaseContext.automaticCanary),
+    ],
+    ['Canary checked', payload.releaseContext?.canaryCheckedAt ?? null],
     ['Bundle published', payload.bundleCreatedAt],
     // Named for what it is: the PR's head when the verdict was filed, which on
     // an outdated verdict is NOT the revision the author ran.

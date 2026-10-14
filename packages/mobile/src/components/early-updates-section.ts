@@ -9,15 +9,15 @@ type EarlyUpdatesSectionInput = {
   environment: EarlyUpdatesSyncEnvironment;
   /** The change is stored but could not be applied yet; the screen says so. */
   onDeferred: (enabled: boolean) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onError?: (error: unknown) => void;
 };
 
 /**
- * More's "App updates" section: the "Get updates early" switch.
+ * What’s New’s "App updates" section: the "Get updates early" switch.
  *
- * Extracted from `app/settings/index.tsx` like `buildOfflineModeRow`: the More
- * screen hands its model to a platform-split native form that cannot mount
- * under Vitest, and what is worth a test here is which line each state shows
- * and that a flip goes through `setEarlyUpdatesChoice`.
+ * Builds the platform-neutral switch model shared by the native card and its
+ * tests. A flip goes through the existing early-update operation owner.
  *
  * The switch shows the CHOICE and flips at once. The line under it says where
  * the phone actually is, which lags the choice whenever the switch-over needs a
@@ -30,7 +30,7 @@ type EarlyUpdatesSectionInput = {
  */
 export function buildEarlyUpdatesSection(
   t: TFunction<'common'>,
-  { state, environment, onDeferred }: EarlyUpdatesSectionInput,
+  { state, environment, onDeferred, onBusyChange, onError }: EarlyUpdatesSectionInput,
 ): MoreSection {
   const section = {
     key: 'earlyUpdates',
@@ -69,10 +69,14 @@ export function buildEarlyUpdatesSection(
         subtitle: subtitles[state],
         value: state === 'on' || state === 'waiting',
         onValueChange: (next) => {
+          onBusyChange?.(true);
           hapticSelection();
-          void setEarlyUpdatesChoice(next, environment).then((outcome) => {
-            if (outcome === 'deferred' || outcome === 'blocked') onDeferred(next);
-          });
+          void setEarlyUpdatesChoice(next, environment)
+            .then((outcome) => {
+              if (outcome === 'deferred' || outcome === 'blocked') onDeferred(next);
+            })
+            .catch((error: unknown) => onError?.(error))
+            .finally(() => onBusyChange?.(false));
         },
       },
     ],

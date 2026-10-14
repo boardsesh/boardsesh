@@ -198,7 +198,16 @@
       "userAgent": "Agente de usuario",
       "screenshots": "Capturas de pantalla",
       "screenshotAlt": "Captura de pantalla {{index}}",
-      "resolvedBy": "Resuelto por"
+      "resolvedBy": "Resuelto por",
+      "releaseChannel": "Canal de publicación",
+      "releaseBranch": "Rama en ejecución",
+      "updateId": "ID de actualización",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automático",
+      "canaryYes": "Sí",
+      "canaryNo": "No",
+      "canaryUnknown": "Desconocido",
+      "canaryCheckedAt": "Canary comprobado"
     },
     "empty": "Ningún comentario coincide con estos filtros.",
     "error": "No se pudieron cargar los comentarios.",

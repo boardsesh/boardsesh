@@ -14,6 +14,28 @@ const report = (overrides: Partial<SprayWallReportData> = {}): SprayWallReportDa
   ...overrides,
 });
 describe('groupSprayWallReports', () => {
+  it('keeps distinct releases and collapses repeats for the same wall', () => {
+    const releaseContext = {
+      channel: 'production',
+      branch: 'production',
+      updateId: 'update-a',
+      runtimeVersion: 'fingerprint',
+      isEmbeddedLaunch: false,
+      automaticCanary: true,
+      canaryCheckedAt: '2026-10-14T09:00:00Z',
+    };
+    const [group] = groupSprayWallReports([
+      report({ releaseContext }),
+      report({ id: '2', releaseContext: { ...releaseContext, canaryCheckedAt: '2026-10-14T08:00:00Z' } }),
+      report({ id: '3', releaseContext: { ...releaseContext, branch: 'pr-beta', automaticCanary: false } }),
+      report({ id: '4', releaseContext: null }),
+    ]);
+    expect(group.reportCount).toBe(4);
+    expect(group.reportReleaseContexts).toHaveLength(2);
+    expect(group.reportReleaseContexts[0].releaseContext).toEqual(releaseContext);
+    expect(group.reportReleaseContexts[1].releaseContext.branch).toBe('pr-beta');
+  });
+
   it('groups reports by wall while counting repeated reasons once in the display', () => {
     const grouped = groupSprayWallReports([
       report(),

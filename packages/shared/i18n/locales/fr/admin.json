@@ -85,7 +85,16 @@
       "userAgent": "Agent utilisateur",
       "screenshots": "Captures d'écran",
       "screenshotAlt": "Capture d'écran {{index}}",
-      "resolvedBy": "Résolu par"
+      "resolvedBy": "Résolu par",
+      "releaseChannel": "Canal de publication",
+      "releaseBranch": "Branche en cours",
+      "updateId": "ID de mise à jour",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automatique",
+      "canaryYes": "Oui",
+      "canaryNo": "Non",
+      "canaryUnknown": "Inconnu",
+      "canaryCheckedAt": "Canary vérifié"
     },
     "empty": "Aucun retour ne correspond à ces filtres.",
     "error": "Impossible de charger les retours.",

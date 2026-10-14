@@ -273,6 +273,7 @@ export type AppFeedbackReport = {
   id: Scalars['ID']['output'];
   platform: Scalars['String']['output'];
   rating?: Maybe<Scalars['Int']['output']>;
+  releaseContext?: Maybe<ReleaseContext>;
   reporter?: Maybe<AppFeedbackReporter>;
   resolvedAt?: Maybe<Scalars['String']['output']>;
   resolvedBy?: Maybe<Scalars['String']['output']>;
@@ -4028,6 +4029,15 @@ export type MergeGymsResult = {
   results: Array<GymMergeDuplicateResult>;
 };
 
+export type MobileReleaseStatusInput = {
+  branch?: InputMaybe<Scalars['String']['input']>;
+  channel?: InputMaybe<Scalars['String']['input']>;
+  isEmbeddedLaunch?: InputMaybe<Scalars['Boolean']['input']>;
+  platform: Scalars['String']['input'];
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MoonBoardClimbDuplicateCandidateInput = {
   clientKey: Scalars['String']['input'];
   holds: MoonBoardHoldsInput;
@@ -6317,6 +6327,13 @@ export type ProposalConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** Release diagnostics attached to a report reason, visible only to scoped admins. */
+export type ProposalReportReleaseContext = {
+  __typename?: 'ProposalReportReleaseContext';
+  commentUuid: Scalars['ID']['output'];
+  releaseContext: ReleaseContext;
+};
+
 export type ProposalStatus = 'approved' | 'open' | 'rejected' | 'superseded';
 
 export type ProposalType = 'benchmark' | 'classic' | 'grade' | 'hide';
@@ -6875,6 +6892,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Current release context. Available without signing in. */
+  mobileReleaseStatus: ReleaseContext;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -6966,6 +6985,8 @@ export type Query = {
    * Returns null if not authenticated.
    */
   profile?: Maybe<UserProfile>;
+  /** Stored report release diagnostics; empty for callers without an admin role on this board. */
+  proposalReportReleaseContexts: Array<ProposalReportReleaseContext>;
   /**
    * What a reset WOULD do: match the detections from a new photo against the
    * holds on the wall today and report kept / removed / added.
@@ -7697,6 +7718,11 @@ export type QueryIsFollowingArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryMobileReleaseStatusArgs = {
+  input: MobileReleaseStatusInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryMyBoardSerialConfigsArgs = {
   serialNumbers: Array<Scalars['String']['input']>;
 };
@@ -7783,6 +7809,11 @@ export type QueryPopularBoardConfigsArgs = {
 /** Root query type for all read operations. */
 export type QueryPrivacyRelationshipArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryProposalReportReleaseContextsArgs = {
+  proposalUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8359,6 +8390,28 @@ export type RegisterNotificationDeviceInput = {
   token: Scalars['String']['input'];
 };
 
+/** Running identity with backend-verified current automatic canary membership. */
+export type ReleaseContext = {
+  __typename?: 'ReleaseContext';
+  /** Null when current rollout membership could not be checked. */
+  automaticCanary?: Maybe<Scalars['Boolean']['output']>;
+  branch?: Maybe<Scalars['String']['output']>;
+  canaryCheckedAt?: Maybe<Scalars['String']['output']>;
+  channel?: Maybe<Scalars['String']['output']>;
+  isEmbeddedLaunch?: Maybe<Scalars['Boolean']['output']>;
+  runtimeVersion?: Maybe<Scalars['String']['output']>;
+  updateId?: Maybe<Scalars['String']['output']>;
+};
+
+/** Identity of the running bundle; excludes a pending download or requested track. */
+export type ReleaseContextInput = {
+  branch?: InputMaybe<Scalars['String']['input']>;
+  channel?: InputMaybe<Scalars['String']['input']>;
+  isEmbeddedLaunch?: InputMaybe<Scalars['Boolean']['input']>;
+  runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  updateId?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Input for removing a climb from a playlist. */
 export type RemoveClimbFromPlaylistInput = {
   /** Climb UUID to remove */
@@ -8430,6 +8483,7 @@ export type ReportClimbInput = {
   proposedGrade?: InputMaybe<Scalars['String']['input']>;
   /** Why you are reporting (10..500 chars) */
   reason: Scalars['String']['input'];
+  releaseContext?: InputMaybe<ReleaseContextInput>;
 };
 
 /** What a report asks for: hide the climb outright, or change its grade. */
@@ -8468,6 +8522,7 @@ export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
 
 export type ReportSprayWallInput = {
   reason: SprayWallReportReason;
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -10153,6 +10208,7 @@ export type SprayWallReport = {
   /** Admin-only preview, including private and hidden walls; null when unavailable. */
   photo?: Maybe<SprayWallPhoto>;
   reason: SprayWallReportReason;
+  releaseContext?: Maybe<ReleaseContext>;
   wallName: Scalars['String']['output'];
   wallUuid: Scalars['ID']['output'];
 };
@@ -10350,6 +10406,7 @@ export type SubmitAppFeedbackInput = {
   platform: Scalars['String']['input'];
   /** 1–5 star rating. Null for bug reports. */
   rating?: InputMaybe<Scalars['Int']['input']>;
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
    * FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
@@ -10388,6 +10445,7 @@ export type SubmitQaVerdictInput = {
   /** 'ios' | 'android' | 'web'. */
   platform: Scalars['String']['input'];
   prNumber: Scalars['Int']['input'];
+  releaseContext?: InputMaybe<ReleaseContextInput>;
   runtimeVersion?: InputMaybe<Scalars['String']['input']>;
   /**
    * Object keys returned by `POST /api/feedback-screenshots`, at most
@@ -11736,6 +11794,7 @@ export type ResolversTypes = ResolversObject<{
   LoggedSetter: ResolverTypeWrapper<LoggedSetter>;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
+  MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
@@ -11789,6 +11848,7 @@ export type ResolversTypes = ResolversObject<{
   ProfileStats: ResolverTypeWrapper<ProfileStats>;
   Proposal: ResolverTypeWrapper<Proposal>;
   ProposalConnection: ResolverTypeWrapper<ProposalConnection>;
+  ProposalReportReleaseContext: ResolverTypeWrapper<ProposalReportReleaseContext>;
   ProposalStatus: ProposalStatus;
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
@@ -11818,6 +11878,8 @@ export type ResolversTypes = ResolversObject<{
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
+  ReleaseContext: ResolverTypeWrapper<ReleaseContext>;
+  ReleaseContextInput: ReleaseContextInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -12236,6 +12298,7 @@ export type ResolversParentTypes = ResolversObject<{
   LoggedSetter: LoggedSetter;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: MergeGymsResult;
+  MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: MoonBoardClimbDuplicateMatch;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
@@ -12281,6 +12344,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProfileStats: ProfileStats;
   Proposal: Proposal;
   ProposalConnection: ProposalConnection;
+  ProposalReportReleaseContext: ProposalReportReleaseContext;
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ProviderSyncRequest;
@@ -12306,6 +12370,8 @@ export type ResolversParentTypes = ResolversObject<{
   RecordBoardSerialInput: RecordBoardSerialInput;
   RegisterControllerInput: RegisterControllerInput;
   RegisterNotificationDeviceInput: RegisterNotificationDeviceInput;
+  ReleaseContext: ReleaseContext;
+  ReleaseContextInput: ReleaseContextInput;
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
@@ -12615,6 +12681,7 @@ export type AppFeedbackReportResolvers<
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   platform?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   rating?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  releaseContext?: Resolver<Maybe<ResolversTypes['ReleaseContext']>, ParentType, ContextType>;
   reporter?: Resolver<Maybe<ResolversTypes['AppFeedbackReporter']>, ParentType, ContextType>;
   resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   resolvedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -15917,6 +15984,16 @@ export type ProposalConnectionResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ProposalReportReleaseContextResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ProposalReportReleaseContext'] =
+    ResolversParentTypes['ProposalReportReleaseContext'],
+> = ResolversObject<{
+  commentUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  releaseContext?: Resolver<ResolversTypes['ReleaseContext'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ProposalVoteSummaryResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ProposalVoteSummary'] = ResolversParentTypes['ProposalVoteSummary'],
@@ -16424,6 +16501,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryIsFollowingArgs, 'userId'>
   >;
+  mobileReleaseStatus?: Resolver<
+    ResolversTypes['ReleaseContext'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryMobileReleaseStatusArgs, 'input'>
+  >;
   myAnalyticsConsent?: Resolver<Maybe<ResolversTypes['AnalyticsConsent']>, ParentType, ContextType>;
   myBoardSerialConfigs?: Resolver<
     Array<ResolversTypes['BoardSerialConfig']>,
@@ -16520,6 +16603,12 @@ export type QueryResolvers<
   >;
   privacySettings?: Resolver<ResolversTypes['PrivacySettings'], ParentType, ContextType>;
   profile?: Resolver<Maybe<ResolversTypes['UserProfile']>, ParentType, ContextType>;
+  proposalReportReleaseContexts?: Resolver<
+    Array<ResolversTypes['ProposalReportReleaseContext']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryProposalReportReleaseContextsArgs, 'proposalUuid'>
+  >;
   proposeSprayWallReset?: Resolver<
     Maybe<ResolversTypes['SprayWallResetProposal']>,
     ParentType,
@@ -17040,6 +17129,20 @@ export type RecentBetaLinkResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ReleaseContextResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ReleaseContext'] = ResolversParentTypes['ReleaseContext'],
+> = ResolversObject<{
+  automaticCanary?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  branch?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  canaryCheckedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  channel?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  isEmbeddedLaunch?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  runtimeVersion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  updateId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17882,6 +17985,7 @@ export type SprayWallReportResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   photo?: Resolver<Maybe<ResolversTypes['SprayWallPhoto']>, ParentType, ContextType>;
   reason?: Resolver<ResolversTypes['SprayWallReportReason'], ParentType, ContextType>;
+  releaseContext?: Resolver<Maybe<ResolversTypes['ReleaseContext']>, ParentType, ContextType>;
   wallName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -18592,6 +18696,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProfileStats?: ProfileStatsResolvers<ContextType>;
   Proposal?: ProposalResolvers<ContextType>;
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
+  ProposalReportReleaseContext?: ProposalReportReleaseContextResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
@@ -18609,6 +18714,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueState?: QueueStateResolvers<ContextType>;
   ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
+  ReleaseContext?: ReleaseContextResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
   ReportClimbResult?: ReportClimbResultResolvers<ContextType>;
   ReportGymDuplicateResult?: ReportGymDuplicateResultResolvers<ContextType>;

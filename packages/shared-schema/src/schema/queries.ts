@@ -762,6 +762,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     the comment, with offset pagination.
     """
     adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
+    "Current release context. Available without signing in."
+    mobileReleaseStatus(input: MobileReleaseStatusInput!): ReleaseContext!
+    "Stored report release diagnostics; empty for callers without an admin role on this board."
+    proposalReportReleaseContexts(proposalUuid: ID!): [ProposalReportReleaseContext!]!
 
     """
     Crowdsourced QA: the open pull requests among \`prNumbers\` (the tester's

@@ -1,4 +1,15 @@
 import type { LaunchUpdateOutcome, LaunchUpdatePhase, LaunchUpdateTrigger } from './launch-update-gate';
+import type { ReleaseContext } from '@boardsesh/shared-schema';
+
+export function buildOtaCanaryProperties(context: Pick<ReleaseContext, 'automaticCanary' | 'canaryCheckedAt'>): {
+  ota_automatic_canary: boolean | null;
+  ota_canary_checked_at: string | null;
+} {
+  return {
+    ota_automatic_canary: context.automaticCanary,
+    ota_canary_checked_at: context.canaryCheckedAt,
+  };
+}
 
 // OTA-adoption telemetry. Mobile-only (web has no OTA), so the event names stay
 // free-string constants rather than entries in @boardsesh/analytics'

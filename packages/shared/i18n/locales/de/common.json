@@ -615,6 +615,21 @@
       "checkError": {
         "title": "Update-Suche fehlgeschlagen",
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
+      },
+      "updates": {
+        "title": "App-Updates",
+        "regular": "Stabile Version",
+        "canary": "Canary-Version",
+        "canaryBody": "Du hast dieses Update im Rahmen einer schrittweisen Veröffentlichung erhalten. Fehlerberichte enthalten diese Information automatisch.",
+        "statusUnknown": "Der Veröffentlichungsstatus konnte nicht bestätigt werden. Berichte enthalten trotzdem deine laufende Version.",
+        "early": "Frühe Updates",
+        "staging": "Testversion",
+        "preview": "Vorschau von PR #{{prNumber}}",
+        "native": "Installierte Version",
+        "other": "Version {{channel}}",
+        "changeRelease": "Version wechseln",
+        "testPreview": "Eine PR-Vorschau testen",
+        "finishTesting": "Test von PR #{{prNumber}} abschließen"
       }
     },
     "launchUpdate": {
@@ -672,6 +687,19 @@
       "googlePlay": "Jetzt bei Google Play",
       "appStore": "Laden im App Store",
       "dismiss": "Jetzt nicht"
+    },
+    "reportRelease": {
+      "title": "Versionsdetails",
+      "channel": "Kanal",
+      "branch": "Branch",
+      "updateId": "Update-ID",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Automatische Canary-Version",
+      "embedded": "Integrierte Version",
+      "checkedAt": "Canary geprüft",
+      "yes": "Ja",
+      "no": "Nein",
+      "unknown": "Unbekannt"
     }
   },
   "lightControl": {
@@ -786,9 +814,7 @@
       "crashedChip": "Beim Start abgestürzt",
       "nothingNewToast": "Nichts Neues für #{{prNumber}} in diesem Build — die nächste Veröffentlichung greift beim nächsten Neustart",
       "stagingTitle": "Testversion",
-      "stagingBody": "Teste das nächste App-Update vor der Veröffentlichung.",
       "productionTitle": "Produktion",
-      "productionBody": "Künftige öffentliche Updates laden; diese Version bleibt eventuell bis zum nächsten Update.",
       "stagingNextLaunch": "Testversion ausgewählt – das nächste Update greift beim Neustart",
       "productionNextLaunch": "Produktion ausgewählt; diese Version bleibt eventuell bis zum nächsten Update",
       "buildingChip": "Wird gebaut",
@@ -803,7 +829,6 @@
       "trySurfHint": "Vielleicht gibt es keine Preview, die dieser Build laden kann.",
       "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main",
       "earlyUpdatesTitle": "Frühe Updates",
-      "earlyUpdatesBody": "Zurück zu den frühen Updates. Greift beim nächsten Öffnen der App.",
       "earlyUpdatesNextLaunch": "Frühe Updates laufen beim nächsten Öffnen der App wieder"
     },
     "brief": {

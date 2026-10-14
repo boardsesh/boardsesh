@@ -85,7 +85,16 @@
       "userAgent": "User agent",
       "screenshots": "Screenshots",
       "screenshotAlt": "Screenshot {{index}}",
-      "resolvedBy": "Resolved by"
+      "resolvedBy": "Resolved by",
+      "releaseChannel": "Release channel",
+      "releaseBranch": "Running branch",
+      "updateId": "Update ID",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Automatic canary",
+      "canaryYes": "Yes",
+      "canaryNo": "No",
+      "canaryUnknown": "Unknown",
+      "canaryCheckedAt": "Canary checked"
     },
     "empty": "No feedback matches these filters.",
     "error": "Couldn't load feedback.",

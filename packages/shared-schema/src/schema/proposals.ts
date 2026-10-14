@@ -250,6 +250,7 @@ export const proposalsTypeDefs = /* GraphQL */ `
   }
 
   input ReportClimbInput {
+    releaseContext: ReleaseContextInput
     climbUuid: String!
     boardType: String!
     "Required for grade reports; ignored for hide"

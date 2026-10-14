@@ -5,10 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
   useReviewSprayWall,
+  useReportSprayWall,
   useSprayModerationAccess,
   useSprayWallReports,
   SPRAY_REPORTS_QUERY_KEY,
 } from '../use-spray-moderation';
+import { REPORT_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 
 const state = vi.hoisted(() => ({
   authToken: 'session-a' as string | null,
@@ -18,6 +20,14 @@ const state = vi.hoisted(() => ({
 }));
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request }) }));
+const releaseContext = vi.hoisted(() => ({
+  channel: 'production',
+  branch: 'production',
+  updateId: 'running-update',
+  runtimeVersion: 'runtime-1',
+  isEmbeddedLaunch: false,
+}));
+vi.mock('../../release-context', () => ({ readMobileReleaseContext: () => ({ ...releaseContext }) }));
 vi.mock('../../graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: state.authToken }) }));
 vi.mock('../../graphql/hooks/use-my-roles', () => ({ useMyRoles: () => state.roles }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -83,6 +93,17 @@ describe('spray moderation access', () => {
   });
 });
 describe('private spray report query', () => {
+  it('files a wall report with the running release identity', async () => {
+    const { client, wrapper } = harness();
+    request.mockResolvedValue({ reportSprayWall: { status: 'CREATED' } });
+    const { result, unmount } = renderHook(useReportSprayWall, { wrapper });
+    await act(() => result.current.mutateAsync({ input: { wallUuid: 'wall-a', reason: 'OTHER' } }));
+    expect(request).toHaveBeenCalledWith(REPORT_SPRAY_WALL, {
+      input: { wallUuid: 'wall-a', reason: 'OTHER', releaseContext },
+    });
+    unmount();
+    client.clear();
+  });
   it('retains all reports when a review mutation fails', async () => {
     const { client, wrapper } = harness();
     client.setQueryData([...SPRAY_REPORTS_QUERY_KEY, 1], [report]);

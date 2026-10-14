@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request';
 import { BOARD_FIELDS } from './boards';
 import type { SprayWallPhoto, SprayWallReportReason } from '../generated/graphql';
+import type { ReleaseContext, ReleaseContextInput } from '@boardsesh/shared-schema';
 
 export type { SprayWallReportReason } from '../generated/graphql';
 
@@ -569,6 +570,15 @@ export const REPORT_SPRAY_WALL = gql`
 export const GET_SPRAY_WALL_REPORTS = gql`
   query GetSprayWallReports($uuid: ID) {
     sprayWallReports(uuid: $uuid) {
+      releaseContext {
+        channel
+        branch
+        updateId
+        runtimeVersion
+        isEmbeddedLaunch
+        automaticCanary
+        canaryCheckedAt
+      }
       id
       wallUuid
       wallName
@@ -598,6 +608,7 @@ export const SET_SPRAY_WALL_HIDDEN = gql`
 export type SprayWallPhotoData = Required<Pick<SprayWallPhoto, 'url' | 'thumbUrl' | 'width' | 'height' | 'expiresAt'>>;
 
 export type SprayWallReportData = {
+  releaseContext?: ReleaseContext | null;
   id: string;
   wallUuid: string;
   wallName: string;
@@ -609,7 +620,7 @@ export type SprayWallReportData = {
 };
 
 export type ReportSprayWallMutationVariables = {
-  input: { wallUuid: string; reason: SprayWallReportReason };
+  input: { wallUuid: string; reason: SprayWallReportReason; releaseContext?: ReleaseContextInput | null };
 };
 
 export type ReportSprayWallMutationResponse = {

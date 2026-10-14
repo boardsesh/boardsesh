@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // The two things `useReportClimb` owes its callers, neither visible in a render
-// test: it posts the shared REPORT_CLIMB document with the input verbatim, and a
+// test: it posts REPORT_CLIMB with running release identity, and a
 // landed report invalidates the proposal lists (the moderation feed reads
 // `['proposals']`) plus the climb detail, whose `is_hidden` the report can flip.
 //
@@ -18,8 +18,17 @@ import type { ReportClimbInput } from '@boardsesh/shared-schema';
 const requestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+const releaseContext = vi.hoisted(() => ({
+  channel: 'production',
+  branch: 'pr-beta',
+  updateId: 'running-update',
+  runtimeVersion: 'runtime-1',
+  isEmbeddedLaunch: false,
+}));
+vi.mock('../../../release-context', () => ({ readMobileReleaseContext: () => ({ ...releaseContext }) }));
 
-import { PROPOSALS_QUERY_KEY, useReportClimb } from '../use-report-climb';
+import { PROPOSALS_QUERY_KEY } from '../../query-keys';
+import { useReportClimb } from '../use-report-climb';
 
 function makeWrapper() {
   const queryClient = new QueryClient({
@@ -59,7 +68,7 @@ describe('useReportClimb', () => {
     result.current.mutate({ input: hideInput });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requestMock).toHaveBeenCalledWith(REPORT_CLIMB, { input: hideInput });
+    expect(requestMock).toHaveBeenCalledWith(REPORT_CLIMB, { input: { ...hideInput, releaseContext } });
     expect(result.current.data).toEqual(reportResult.reportClimb);
   });
 

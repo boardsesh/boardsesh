@@ -91,8 +91,11 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'HoldHeatmap',
   'HoldOutlines',
   'IncomingFollowRequests',
+  // Captures use a dev client: expo-updates is disabled, so no rollout lookup runs.
+  'MobileReleaseStatus',
   'PrivacyRelationship',
   'ProfilePrivacy',
+  'ProposalReportReleaseContexts', // Only expanded report reasons for scoped admins.
   'QaPreviews',
   'ResourceAccessRequests',
   'ResourcePrivacy',

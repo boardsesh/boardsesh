@@ -19,6 +19,7 @@ import {
 } from '../../lib/spray/use-spray-moderation';
 import { groupSprayWallReports, type SprayWallReportGroup } from '../spray-wall/spray-report-presenters';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { ReportReleaseContextDetails } from './ReportReleaseContextDetails';
 
 type ReviewState = 'pending' | 'error';
 type ReportRow = { group: SprayWallReportGroup; reviewState?: ReviewState };
@@ -98,6 +99,9 @@ const SprayWallReportCard = memo(function SprayWallReportCard({
         <Text key={reason} color={systemColors.secondaryLabel}>
           {labels[reason]}
         </Text>
+      ))}
+      {group.reportReleaseContexts.map((report) => (
+        <ReportReleaseContextDetails key={report.reportId} releaseContext={report.releaseContext} />
       ))}
       <AppMenu label={t('sprayModeration.review')} actions={actions} onSelectIndex={choose} />
       {reviewState === 'pending' ? <ActivityIndicator /> : null}

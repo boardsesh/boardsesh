@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ConnectionContext, ReleaseContext } from '@boardsesh/shared-schema';
 import type { FeedbackIssuePayload } from '../../../../services/github-feedback';
 
 const { createFeedbackGithubIssueMock, sendBugReportIssueEmailMock } = vi.hoisted(() => ({
@@ -94,6 +94,7 @@ type StoredRow = {
   rating: number | null;
   platform: string;
   contact_consent: boolean | null;
+  context: { releaseContext?: ReleaseContext } | null;
   screenshot_keys: string[] | null;
   github_issue_number: number | null;
   github_issue_url: string | null;
@@ -102,7 +103,7 @@ type StoredRow = {
 const readLatestRow = async (): Promise<StoredRow> => {
   const result = await db.execute(sql`
     SELECT id, user_id, source, comment, rating, platform, contact_consent,
-           screenshot_keys, github_issue_number, github_issue_url
+           screenshot_keys, github_issue_number, github_issue_url, context
     FROM app_feedback ORDER BY id DESC LIMIT 1
   `);
   return Array.from(result as Iterable<StoredRow>)[0];
@@ -125,6 +126,26 @@ beforeEach(async () => {
 });
 
 describe('submitAppFeedback', () => {
+  it('stores running release identity and mirrors server-derived canary status', async () => {
+    const reporter = await freshReporter();
+    const releaseContext = {
+      channel: 'production',
+      branch: 'pr-beta',
+      updateId: 'running-beta',
+      runtimeVersion: 'fingerprint',
+      isEmbeddedLaunch: false,
+    };
+    await feedbackMutations.submitAppFeedback(
+      null,
+      { input: bugInput({ releaseContext: { ...releaseContext, automaticCanary: true } }) },
+      authCtx(reporter),
+    );
+    await vi.waitFor(() => expect(createFeedbackGithubIssueMock).toHaveBeenCalledTimes(1));
+    const stored = (await readLatestRow()).context?.releaseContext;
+    expect(stored).toEqual({ ...releaseContext, automaticCanary: false, canaryCheckedAt: null });
+    expect(issuePayload().releaseContext).toEqual(stored);
+  });
+
   it('stores a bug report, opens an issue, and writes the issue link back onto the row', async () => {
     const reporter = await freshReporter();
 

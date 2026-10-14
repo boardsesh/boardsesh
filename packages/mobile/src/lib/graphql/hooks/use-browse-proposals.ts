@@ -19,7 +19,7 @@ import {
 } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal, ProposalConnection, ProposalStatus } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
-import { PROPOSALS_QUERY_KEY } from './use-report-climb';
+import { PROPOSALS_QUERY_KEY } from '../query-keys';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 /** Proposals per page. Matches the notifications feed's page size. */

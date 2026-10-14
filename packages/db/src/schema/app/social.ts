@@ -9,9 +9,11 @@ import {
   uniqueIndex,
   check,
   pgEnum,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from '../auth/users';
+import type { ReleaseContext } from '@boardsesh/shared-schema';
 
 export const socialEntityTypeEnum = pgEnum('social_entity_type', [
   'playlist_climb',
@@ -36,6 +38,7 @@ export const comments = pgTable(
     entityId: text('entity_id').notNull(),
     parentCommentId: bigint('parent_comment_id', { mode: 'number' }),
     body: text('body').notNull(),
+    releaseContext: jsonb('release_context').$type<ReleaseContext>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),

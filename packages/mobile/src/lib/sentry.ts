@@ -480,6 +480,8 @@ export type OtaTagFields = {
   updateId?: string | null;
   runtimeVersion?: string | null;
   isEmbeddedLaunch?: boolean;
+  automaticCanary?: boolean | null;
+  canaryCheckedAt?: string | null;
 };
 
 /**
@@ -498,6 +500,8 @@ export function applyOtaTagsToScope(scope: TagScope, fields: OtaTagFields): void
   scope.setTag('ota_update_id', fields.updateId || undefined);
   scope.setTag('ota_runtime_version', fields.runtimeVersion || undefined);
   scope.setTag('ota_is_embedded', fields.isEmbeddedLaunch === undefined ? undefined : String(fields.isEmbeddedLaunch));
+  scope.setTag('ota_automatic_canary', fields.automaticCanary == null ? undefined : String(fields.automaticCanary));
+  scope.setTag('ota_canary_checked_at', fields.canaryCheckedAt || undefined);
 }
 
 /**

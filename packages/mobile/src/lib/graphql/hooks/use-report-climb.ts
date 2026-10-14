@@ -13,14 +13,10 @@ import {
   type ReportClimbVariables,
 } from '@boardsesh/graphql/operations/proposals';
 import { getHttpClient } from '../client';
+import { readMobileReleaseContext } from '../../release-context';
+import { PROPOSALS_QUERY_KEY } from '../query-keys';
 
-/**
- * Root key for every proposal list — the moderation feed and the per-climb
- * proposal queries all key under it, so invalidating the prefix refreshes each
- * of them after a report lands. Exported so those hooks import the same array
- * rather than re-typing the string.
- */
-export const PROPOSALS_QUERY_KEY = ['proposals'] as const;
+export { PROPOSALS_QUERY_KEY } from '../query-keys';
 
 /** Key `useClimb` writes under; a report can flip `is_hidden` on the climb. */
 const CLIMB_QUERY_KEY = ['climb'] as const;
@@ -32,10 +28,10 @@ export function useReportClimb() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (variables: ReportClimbVariables) => {
-      const response = await getHttpClient().request<ReportClimbResponse, ReportClimbVariables>(
-        REPORT_CLIMB,
-        variables,
-      );
+      const response = await getHttpClient().request<ReportClimbResponse, ReportClimbVariables>(REPORT_CLIMB, {
+        ...variables,
+        input: { ...variables.input, releaseContext: readMobileReleaseContext() },
+      });
       return response.reportClimb;
     },
     onSuccess: (result) => {

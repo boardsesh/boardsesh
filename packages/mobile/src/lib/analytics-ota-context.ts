@@ -5,7 +5,7 @@ let launchProperties: OtaSuperProperties | null = null;
 
 /** Remember build context before the consent-controlled SDK has been constructed. */
 export function rememberOtaSuperProperties(properties: OtaSuperProperties): void {
-  launchProperties = properties;
+  launchProperties = { ...launchProperties, ...properties };
 }
 
 export function reregisterOtaSuperProperties(client: Pick<PostHog, 'register'>): void {

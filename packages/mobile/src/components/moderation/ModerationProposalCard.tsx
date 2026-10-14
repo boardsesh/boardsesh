@@ -17,7 +17,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Proposal } from '@boardsesh/shared-schema';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
-import { rolesGrantAdminOrLeader, type CommunityRoleScope } from '@boardsesh/community-roles';
+import { rolesGrantAdmin, rolesGrantAdminOrLeader, type CommunityRoleScope } from '@boardsesh/community-roles';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Card } from '../Card';
@@ -86,6 +86,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
   const progress = voteProgress(proposal);
   const isOpen = proposal.status === 'open';
   const canModerate = rolesGrantAdminOrLeader(roles, proposal.boardType);
+  const canReadReleaseContext = isSignedIn && rolesGrantAdmin(roles, proposal.boardType);
   // The reporter's reason is quoted above the expander AND stored as their first
   // comment, so it is not one of the "more reasons" left to read.
   const extraReasons = extraReasonCount(proposal);
@@ -268,7 +269,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         {/* Later reporters join an existing proposal and leave their reason as a
             comment, so the count is "how many OTHER people said something" —
             the proposer's own comment is the quote already rendered above. */}
-        {extraReasons > 0 ? (
+        {extraReasons > 0 || (canReadReleaseContext && proposal.commentCount > 0) ? (
           <PressableSurface
             onPress={handleToggleReasons}
             feedback="opacity"
@@ -277,7 +278,9 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
             style={styles.expander}
           >
             <Text variant="footnote" color={brandColors.primary}>
-              {t('mobile.moderation.moreReasons', { count: extraReasons })}
+              {extraReasons > 0
+                ? t('mobile.moderation.moreReasons', { count: extraReasons })
+                : tCommon('mobile.reportRelease.title')}
             </Text>
             <Icon name={reasonsExpanded ? 'chevron.up' : 'chevron.down'} size={12} color={brandColors.primary} />
           </PressableSurface>
@@ -288,6 +291,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
           proposerId={proposal.proposerId}
           reason={proposal.reason}
           expanded={reasonsExpanded}
+          canReadReleaseContext={canReadReleaseContext}
         />
 
         <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.voteLine}>

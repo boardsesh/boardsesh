@@ -11,6 +11,7 @@ import {
   pgEnum,
 } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
+import type { ReleaseContext } from '@boardsesh/shared-schema';
 
 /**
  * A user's call on a pull-request preview: it works, or it doesn't. See
@@ -73,6 +74,7 @@ export const qaVerdicts = pgTable(
     appVersion: text('app_version'),
     updateId: text('update_id'),
     runtimeVersion: text('runtime_version'),
+    releaseContext: jsonb('release_context').$type<ReleaseContext>(),
     /** expo-updates `createdAt` of the bundle the author was running. */
     bundleCreatedAt: timestamp('bundle_created_at', { mode: 'string' }),
     /**

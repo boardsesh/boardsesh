@@ -21,10 +21,6 @@ import type { Proposal } from '@boardsesh/shared-schema';
 const requestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
-// B1a owns the root key; stubbed so this suite doesn't drag the report mutation
-// into a jsdom run. `use-browse-proposals` (the key builder + page size) is the
-// real module, which is the point — the keys must not drift.
-vi.mock('../use-report-climb', () => ({ PROPOSALS_QUERY_KEY: ['proposals'] as const }));
 vi.mock('@boardsesh/graphql/operations/proposals', () => ({
   GET_CLIMB_PROPOSALS: 'GET_CLIMB_PROPOSALS',
   BROWSE_PROPOSALS: 'BROWSE_PROPOSALS',

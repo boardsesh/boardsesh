@@ -279,6 +279,19 @@ describe('applyOtaTagsToScope', () => {
     return { setTag: vi.fn() };
   }
 
+  it.each([true, false, null])('preserves verified canary=%s and clears unknown membership', (automaticCanary) => {
+    const scope = makeScope();
+    applyOtaTagsToScope(scope, { automaticCanary, canaryCheckedAt: '2026-10-14T02:00:00.000Z' });
+    expect(scope.setTag).toHaveBeenCalledWith(
+      'ota_automatic_canary',
+      automaticCanary === null ? undefined : String(automaticCanary),
+    );
+    expect(scope.setTag).toHaveBeenCalledWith('ota_canary_checked_at', '2026-10-14T02:00:00.000Z');
+    applyOtaTagsToScope(scope, {});
+    expect(scope.setTag).toHaveBeenLastCalledWith('ota_canary_checked_at', undefined);
+    expect(scope.setTag).toHaveBeenCalledWith('ota_automatic_canary', undefined);
+  });
+
   it('sets each provided tag and stringifies the embedded boolean for filter-friendliness', () => {
     const scope = makeScope();
     applyOtaTagsToScope(scope, {

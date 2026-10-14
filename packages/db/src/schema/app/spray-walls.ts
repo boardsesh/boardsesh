@@ -17,7 +17,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { SprayDetectionResult } from '@boardsesh/shared-schema';
+import type { SprayDetectionResult, ReleaseContext } from '@boardsesh/shared-schema';
 import type { BoardseshRenderSettings } from '@boardsesh/board-look';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
@@ -400,6 +400,7 @@ export const sprayWallReports = pgTable(
       .references(() => sprayWalls.id, { onDelete: 'cascade' }),
     reporterId: text('reporter_id').references(() => users.id, { onDelete: 'set null' }),
     reason: sprayWallReportReasonEnum('reason').notNull(),
+    releaseContext: jsonb('release_context').$type<ReleaseContext>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     /** Stamped when an admin acts — whether they hid the wall or decided not to. */
     reviewedAt: timestamp('reviewed_at'),

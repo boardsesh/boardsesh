@@ -17,8 +17,8 @@ import {
   SEARCH_CLIMBS_QUERY_KEY,
   INFINITE_SEARCH_CLIMBS_QUERY_KEY,
   SEARCH_CLIMBS_COUNT_QUERY_KEY,
+  PROPOSALS_QUERY_KEY,
 } from '../query-keys';
-import { PROPOSALS_QUERY_KEY } from './use-report-climb';
 
 /**
  * Every root key holding climb rows a proposal's effect changes: the detail

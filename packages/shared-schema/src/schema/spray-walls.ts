@@ -645,6 +645,7 @@ export const sprayWallModerationTypeDefs = /* GraphQL */ `
   }
 
   input ReportSprayWallInput {
+    releaseContext: ReleaseContextInput
     wallUuid: ID!
     reason: SprayWallReportReason!
   }
@@ -664,6 +665,7 @@ export const sprayWallModerationTypeDefs = /* GraphQL */ `
 
   "One pending report, for the admin queue."
   type SprayWallReport {
+    releaseContext: ReleaseContext
     id: ID!
     wallUuid: ID!
     wallName: String!

@@ -37,8 +37,10 @@ import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
+import { releaseContextTypeDefs } from './release-context';
 
 export const typeDefs = [
+  releaseContextTypeDefs,
   appleAdsAttributionTypeDefs,
   privacyTypeDefs,
   scalarTypeDefs,

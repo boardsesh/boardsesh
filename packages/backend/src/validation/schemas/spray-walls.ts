@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OptionalReleaseContextInputSchema } from './release-context';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
@@ -360,6 +361,7 @@ export type RemoveSprayWallHoldsInput = z.infer<typeof RemoveSprayWallHoldsInput
 export const SPRAY_WALL_REPORT_REASONS = ['INAPPROPRIATE', 'NOT_A_WALL', 'PERSONAL_INFO', 'OTHER'] as const;
 
 export const ReportSprayWallInputSchema = z.object({
+  releaseContext: OptionalReleaseContextInputSchema,
   wallUuid: UUIDSchema,
   reason: z.enum(SPRAY_WALL_REPORT_REASONS),
 });

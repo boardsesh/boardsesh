@@ -1,4 +1,5 @@
 // Community Proposals + Admin Roles types
+import type { ReleaseContextInput } from './release-context';
 
 export type ProposalType = 'grade' | 'classic' | 'benchmark' | 'hide';
 export type ProposalStatus = 'open' | 'approved' | 'rejected' | 'superseded';
@@ -193,6 +194,7 @@ export type ReportClimbKind = 'hide' | 'grade';
 export type ReportClimbStatus = 'created' | 'added' | 'already_reported';
 
 export type ReportClimbInput = {
+  releaseContext?: ReleaseContextInput | null;
   climbUuid: string;
   boardType: string;
   /** Required for grade reports; ignored for hide. */
