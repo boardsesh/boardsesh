@@ -7,6 +7,12 @@ on:
       - '.github/workflows/mobile-cpp-retained-replay.yml'
       - 'scripts/prepare-retained-cpp-replay.ts'
       - 'scripts/__tests__/prepare-retained-cpp-replay.test.ts'
+      - 'scripts/assert-cpp-screenshots.ts'
+      - 'scripts/__tests__/assert-cpp-screenshots.test.ts'
+      - '.github/actions/asc-cpp/action.yml'
+      - 'fastlane/Fastfile'
+      - 'fastlane/lib/custom_product_pages.rb'
+      - 'fastlane/tests/custom_product_pages_test.rb'
   workflow_dispatch:
     inputs:
       mode:
@@ -25,6 +31,10 @@ on:
         required: true
       fixture_snapshot:
         description: 'Published immutable fixture reference used by that replay; empty uses the committed pin.'
+        type: string
+        default: ''
+      capture_contract_ref:
+        description: 'Optional full ancestor commit for explicitly accepted older captures; current publication gates still apply.'
         type: string
         default: ''
       expected_receipt_sha256:
@@ -61,7 +71,11 @@ jobs:
           node-version: '22.x'
           cache: true
       - run: vp install --frozen-lockfile
-      - run: vp test run scripts/__tests__/prepare-retained-cpp-replay.test.ts --reporter=agent
+      - run: vp test run scripts/__tests__/prepare-retained-cpp-replay.test.ts scripts/__tests__/assert-cpp-screenshots.test.ts --reporter=agent
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+      - run: vp exec ruby fastlane/tests/custom_product_pages_test.rb
 
   verify:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'verify'
@@ -85,6 +99,7 @@ jobs:
           CPP_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
           CPP_REPLAY_MODE: verify
           FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
+          CAPTURE_CONTRACT_REF: ${{ inputs.capture_contract_ref }}
           EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
           APPROVED_RUNTIME_DRIFT_SHA256: ${{ inputs.approved_runtime_drift_sha256 }}
         run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
@@ -126,6 +141,7 @@ jobs:
           CPP_REPLAY_RUN_ID: ${{ inputs.replay_run_id }}
           CPP_REPLAY_MODE: stage-assets
           FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot }}
+          CAPTURE_CONTRACT_REF: ${{ inputs.capture_contract_ref }}
           EXPECTED_RECEIPT_SHA256: ${{ inputs.expected_receipt_sha256 }}
           APPROVED_RUNTIME_DRIFT_SHA256: ${{ inputs.approved_runtime_drift_sha256 }}
         run: vp exec tsx scripts/prepare-retained-cpp-replay.ts --receipt "$RUNNER_TEMP/cpp-replay-receipt.json"
@@ -135,6 +151,10 @@ jobs:
           target: ${{ inputs.target }}
           action: stage-assets
           keyword-ids: ''
+          retained-receipt: ${{ inputs.capture_contract_ref != '' && format('{0}/cpp-replay-receipt.json', runner.temp) || '' }}
+          retained-receipt-sha256: ${{ inputs.capture_contract_ref != '' && inputs.expected_receipt_sha256 || '' }}
+          retained-replay-run-id: ${{ inputs.capture_contract_ref != '' && inputs.replay_run_id || '' }}
+          capture-contract-ref: ${{ inputs.capture_contract_ref }}
           key-id: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           key-base64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}

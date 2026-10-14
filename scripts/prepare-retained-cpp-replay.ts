@@ -6,7 +6,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, r
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
-import { assertCppScreenshots } from './assert-cpp-screenshots';
+import { assertCppScreenshots, readCppCaptureSource, verifyCppCaptureCompatibility } from './assert-cpp-screenshots';
 import { readIosCampaignBoards } from './mobile-screenshots';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
 import { resolveCppDetailReads } from './lib/cpp-detail-coverage';
@@ -255,6 +255,7 @@ export interface ReplayClient {
   bytes(path: string): Buffer;
   source(commit: string, path: string): Buffer;
   files(commit: string): string[];
+  isCommit(commit: string): boolean;
   isAncestor(producer: string, consumer: string): boolean;
 }
 export interface ReplayOptions {
@@ -267,6 +268,7 @@ export interface ReplayOptions {
   fixtureSnapshot?: string;
   expectedReceipt?: string;
   approvedRuntimeDrift?: string;
+  captureContractRef?: string;
   stage: boolean;
 }
 export interface ReplayArtifact {
@@ -474,7 +476,11 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
     options.repository !== 'boardsesh/boardsesh' ||
     !id(options.runId) ||
     !sha(options.sourceSha) ||
-    !isCppTarget(options.target)
+    !isCppTarget(options.target) ||
+    (options.captureContractRef !== undefined &&
+      (!sha(options.captureContractRef) ||
+        !client.isCommit(options.captureContractRef) ||
+        !client.isAncestor(options.captureContractRef, options.sourceSha)))
   )
     return fail();
   const prefix = `repos/${options.repository}/actions`;
@@ -498,13 +504,18 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
     !id(run.run_attempt) ||
     run.run_attempt > MAX_REPLAY_ATTEMPTS ||
     !sha(run.head_sha) ||
-    !client.isAncestor(run.head_sha, options.sourceSha)
+    !client.isAncestor(run.head_sha, options.captureContractRef ?? options.sourceSha)
   )
     return fail();
   const producerSha = run.head_sha;
   const attempt = run.run_attempt;
+  // The current helper remains authoritative. Only the source contract being
+  // compared is versioned; omitted input retains the original v1 verification.
+  const contractRef = options.captureContractRef ?? options.sourceSha;
+  const contractSource = (path: string) =>
+    options.captureContractRef ? client.source(contractRef, path) : readFileSync(join(options.repoRoot, path));
   const sourceWorkflow: unknown = parse(client.source(producerSha, WORKFLOW).toString());
-  const currentWorkflow: unknown = parse(readFileSync(join(options.repoRoot, WORKFLOW), 'utf8'));
+  const currentWorkflow: unknown = parse(contractSource(WORKFLOW).toString());
   function contract(workflowDocument: unknown): unknown {
     if (!object(workflowDocument) || !object(workflowDocument.jobs)) return fail();
     const jobs = workflowDocument.jobs;
@@ -525,7 +536,7 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
   if (canonicalJson(contract(sourceWorkflow)) !== canonicalJson(currentContract)) return fail();
   const fileHashes: Record<string, string> = {};
   const runtimeFiles: Array<{ path: string; producerSha256: string | null; currentSha256: string }> = [];
-  const paths = client.files(options.sourceSha).filter(isReplayCapturePath).sort();
+  const paths = client.files(contractRef).filter(isReplayCapturePath).sort();
   const priorPaths = client.files(producerSha).filter(isReplayCapturePath).sort();
   const priorSet = new Set(priorPaths);
   const currentSet = new Set(paths);
@@ -539,7 +550,7 @@ export function verifyReplayProducer(options: ReplayOptions, client: ReplayClien
   )
     return fail();
   for (const path of paths) {
-    const current = readFileSync(join(options.repoRoot, path));
+    const current = contractSource(path);
     if (!priorSet.has(path)) {
       runtimeFiles.push({ path, producerSha256: null, currentSha256: replayHash(current) });
       continue;
@@ -817,6 +828,12 @@ export async function prepareRetainedReplay(options: ReplayOptions, client: Repl
   )
     return fail();
   const producer = verifyReplayProducer(options, client);
+  const captureSource = options.captureContractRef
+    ? readCppCaptureSource(options.target, options.captureContractRef, (path) =>
+        client.source(options.captureContractRef!, path),
+      )
+    : undefined;
+  const compatibility = captureSource ? verifyCppCaptureCompatibility(options.target, captureSource) : undefined;
   const page = readCppPage(options.target);
   if (page.fixtureReference !== `app-stores/apple/cpp-fixtures/${options.target}.json`) return fail();
   const referencePath = join(options.repoRoot, page.fixtureReference);
@@ -832,8 +849,8 @@ export async function prepareRetainedReplay(options: ReplayOptions, client: Repl
   const scratch = mkdtempSync(join(dirname(destination), '.retained-replay-'));
   const previousReference = existsSync(referencePath) ? readFileSync(referencePath) : undefined;
   let referenceWritten = false;
-  const assembled = join(scratch, 'assembled');
-  mkdirSync(assembled);
+  const assembled = join(scratch, 'app-stores/apple/cpp', options.target);
+  mkdirSync(assembled, { recursive: true });
   let installed = false;
   try {
     for (const artifact of producer.artifacts) {
@@ -851,17 +868,15 @@ export async function prepareRetainedReplay(options: ReplayOptions, client: Repl
         cpSync(join(shard, path), output, { errorOnExist: true, force: false });
       }
     }
-    // This local pin mirrors the existing candidate override; it never publishes a fixture or rewrites pixels.
-    mkdirSync(dirname(referencePath), { recursive: true });
-    referenceWritten = true;
-    writeFileSync(referencePath, `${JSON.stringify(reference, null, 2)}\n`);
-    mkdirSync(dirname(destination), { recursive: true });
-    renameSync(assembled, destination);
-    installed = true;
-    if (assertCppScreenshots(options.target, options.repoRoot) !== 180) return fail();
+    const scratchReference = join(scratch, page.fixtureReference);
+    mkdirSync(dirname(scratchReference), { recursive: true });
+    writeFileSync(scratchReference, `${JSON.stringify(reference, null, 2)}\n`, { flag: 'wx' });
+    // Run every current image gate before installing even a local fixture pin.
+    if (assertCppScreenshots(options.target, options.repoRoot, { captureSource, inputRoot: scratch }) !== 180)
+      return fail();
     const inventory = Object.fromEntries(
-      listFixtureFiles(destination).map((path) => {
-        const bytes = readFileSync(join(destination, path));
+      listFixtureFiles(assembled).map((path) => {
+        const bytes = readFileSync(join(assembled, path));
         return [
           path,
           {
@@ -873,11 +888,12 @@ export async function prepareRetainedReplay(options: ReplayOptions, client: Repl
       }),
     );
     const receipt = {
-      version: 1,
+      version: captureSource ? 2 : 1,
       repository: options.repository,
       target: options.target,
       ...producer,
-      manifestSha256: replayHash(readFileSync(CPP_MANIFEST_PATH)),
+      manifestSha256: captureSource ? replayHash(captureSource.manifest) : replayHash(readFileSync(CPP_MANIFEST_PATH)),
+      ...(captureSource ? { captureSource, verifierSha: options.sourceSha, compatibility } : {}),
       fixture: reference,
       fixtureManifestSha256: replayHash(readFileSync(join(fixturesDirectory, 'manifest.json'))),
       screenshots: 180,
@@ -886,6 +902,17 @@ export async function prepareRetainedReplay(options: ReplayOptions, client: Repl
     const digest = requireReviewedReceipt(receipt, options.expectedReceipt, options.stage);
     // Catch reruns, artifact replacement/expiry, or changed job metadata during downloads.
     if (canonicalJson(verifyReplayProducer(options, client)) !== canonicalJson(producer)) return fail();
+    if (
+      captureSource &&
+      canonicalJson(verifyCppCaptureCompatibility(options.target, captureSource)) !== canonicalJson(compatibility)
+    )
+      return fail();
+    // This local pin mirrors the existing candidate override; it never publishes a fixture or rewrites pixels.
+    mkdirSync(dirname(referencePath), { recursive: true });
+    referenceWritten = true;
+    writeFileSync(referencePath, `${JSON.stringify(reference, null, 2)}\n`);
+    renameSync(assembled, destination);
+    installed = true;
     writeFileSync(options.receipt, `${canonicalJson(receipt)}\n`, { flag: 'wx' });
     writeFileSync(`${options.receipt}.sha256`, `${digest}\n`, { flag: 'wx' });
     return digest;
@@ -934,6 +961,13 @@ export function createReplayClient(): ReplayClient {
         return false;
       }
     },
+    isCommit: (commit) => {
+      try {
+        return execFileSync('git', ['cat-file', '-t', commit], { encoding: 'utf8', stdio: 'pipe' }).trim() === 'commit';
+      } catch {
+        return false;
+      }
+    },
   };
 }
 export async function main(argv: string[]): Promise<void> {
@@ -959,6 +993,7 @@ export async function main(argv: string[]): Promise<void> {
       fixtureSnapshot: process.env.FIXTURE_SNAPSHOT_URL || undefined,
       expectedReceipt: process.env.EXPECTED_RECEIPT_SHA256 || undefined,
       approvedRuntimeDrift: process.env.APPROVED_RUNTIME_DRIFT_SHA256 || undefined,
+      captureContractRef: process.env.CAPTURE_CONTRACT_REF || undefined,
       stage: process.env.CPP_REPLAY_MODE === 'stage-assets',
     },
     createReplayClient(),

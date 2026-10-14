@@ -4,6 +4,7 @@ require "json"
 require "digest"
 require "net/http"
 require "uri"
+require "open3"
 require_relative "asc_client"
 
 # Wire shapes verified against Apple's App Store Connect OpenAPI (2026-10-06):
@@ -12,6 +13,91 @@ module BoardseshCPP
   Error = BoardseshASC::Error
 
   Client = BoardseshASC::Client
+
+  # Independent readback of the reviewed v2 receipt. A manifest digest alone is
+  # never an override: the original Git bytes, current semantics and every input
+  # file must still agree before the current lane can use the original provenance.
+  def self.verify_retained_source(repo_root:, manifest:, target:, receipt_path:, expected_sha256:, capture_contract_ref:, replay_run_id:)
+    reject = -> { raise Error, "Retained CPP source context, current publication inputs, or reviewed bytes changed" }
+    full_sha = ->(candidate) { candidate.is_a?(String) && candidate.match?(/\A[a-f0-9]{40}\z/) }
+    reject.call unless expected_sha256.to_s.match?(/\A[a-f0-9]{64}\z/) && full_sha.call(capture_contract_ref) && replay_run_id.to_s.match?(/\A[1-9][0-9]*\z/)
+    bytes = File.binread(receipt_path)
+    reject.call unless Digest::SHA256.hexdigest(bytes) == expected_sha256
+    receipt = JSON.parse(bytes)
+    context = receipt.fetch("captureSource")
+    reject.call unless receipt["version"] == 2 && receipt["repository"] == "boardsesh/boardsesh" && receipt["target"] == target && receipt["runId"].to_s == replay_run_id.to_s && receipt["screenshots"] == 180
+    reject.call unless context.is_a?(Hash) && context.keys.sort == %w[captions manifest sourceSha target version] && context["version"] == 1 && context["target"] == target && context["sourceSha"] == capture_contract_ref && context["manifest"].is_a?(String)
+    reject.call unless full_sha.call(receipt["producerSha"]) && full_sha.call(receipt["verifierSha"])
+    reject.call unless ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch" && ENV["GITHUB_REF"] == "refs/heads/main" && ENV["GITHUB_SHA"] == receipt["verifierSha"]
+    git = lambda do |*args|
+      output, status = Open3.capture2e("git", "-C", repo_root, *args)
+      reject.call unless status.success?
+      output
+    end
+    reject.call unless git.call("rev-parse", "HEAD").strip == receipt["verifierSha"] && git.call("cat-file", "-t", capture_contract_ref).strip == "commit"
+    git.call("merge-base", "--is-ancestor", receipt.fetch("producerSha"), capture_contract_ref)
+    git.call("merge-base", "--is-ancestor", capture_contract_ref, receipt.fetch("verifierSha"))
+    manifest_path = "app-stores/apple/custom-product-pages.json"
+    original_bytes = git.call("show", "#{capture_contract_ref}:#{manifest_path}")
+    current_bytes = File.read(File.join(repo_root, manifest_path))
+    reject.call unless original_bytes == context["manifest"] && git.call("show", "#{receipt.fetch('producerSha')}:#{manifest_path}") == original_bytes
+    reject.call unless git.call("show", "#{receipt.fetch('verifierSha')}:#{manifest_path}") == current_bytes && JSON.parse(current_bytes) == manifest
+    original = JSON.parse(original_bytes)
+    globals = ->(document) { document.reject { |key, _value| key == "targets" } }
+    reject.call unless original["version"] == 1 && manifest["version"] == 1 && original.fetch("targets").fetch(target) == manifest.fetch("targets").fetch(target) && globals.call(original) == globals.call(manifest)
+    page = manifest.fetch("targets").fetch(target)
+    recipes = %w[phone ipad].flat_map do |device|
+      device_recipes = page.fetch("recipes").fetch(device)
+      reject.call unless device_recipes.is_a?(Array) && device_recipes.length == 9
+      device_recipes
+    end
+    caption_ids = recipes.map { |recipe| recipe.fetch("caption") }.uniq.sort
+    locales = %w[en-US es fr de]
+    reject.call unless context["captions"].is_a?(Hash) && context["captions"].keys.sort == locales.sort
+    used_captions = locales.to_h do |locale|
+      path = "app-stores/presentation/#{locale}.json"
+      prior_bytes = git.call("show", "#{capture_contract_ref}:#{path}")
+      catalog_bytes = File.read(File.join(repo_root, path))
+      reject.call unless context.fetch("captions")[locale] == prior_bytes && git.call("show", "#{receipt.fetch('producerSha')}:#{path}") == prior_bytes && git.call("show", "#{receipt.fetch('verifierSha')}:#{path}") == catalog_bytes
+      prior, catalog = JSON.parse(prior_bytes), JSON.parse(catalog_bytes)
+      selected = caption_ids.to_h do |caption|
+        copy = catalog.fetch(caption)
+        reject.call unless copy.is_a?(Hash) && copy["headline"].is_a?(String) && !copy["headline"].strip.empty? && copy["description"].is_a?(String) && !copy["description"].strip.empty? && prior.fetch(caption) == copy
+        [caption, copy]
+      end
+      [locale, selected]
+    end
+    canonical = lambda do |value|
+      case value
+      when Hash then value.keys.sort.to_h { |key| [key, canonical.call(value.fetch(key))] }
+      when Array then value.map { |entry| canonical.call(entry) }
+      else value
+      end
+    end
+    semantic_hash = ->(value) { Digest::SHA256.hexdigest(JSON.generate(canonical.call(value))) }
+    original_hash = Digest::SHA256.hexdigest(original_bytes)
+    compatibility = {
+      "version" => 1, "target" => target, "sourceSha" => capture_contract_ref,
+      "sourceManifestSha256" => original_hash, "currentManifestSha256" => Digest::SHA256.hexdigest(current_bytes),
+      "targetSha256" => semantic_hash.call(page), "globalsSha256" => semantic_hash.call(globals.call(manifest)), "captionsSha256" => semantic_hash.call(used_captions)
+    }
+    reject.call unless receipt["manifestSha256"] == original_hash && receipt["compatibility"] == compatibility
+    fixture_path = "app-stores/apple/cpp-fixtures/#{target}.json"
+    reject.call unless page["fixtureReference"] == fixture_path && JSON.parse(File.read(File.join(repo_root, fixture_path))) == receipt["fixture"]
+    base = File.join(repo_root, "app-stores/apple/cpp", target)
+    paths = Dir.glob(File.join(base, "**", "*"), File::FNM_DOTMATCH).reject { |path| [".", ".."].include?(File.basename(path)) }
+    reject.call if paths.any? { |path| File.symlink?(path) || (!File.directory?(path) && !File.file?(path)) }
+    inventory = paths.select { |path| File.file?(path) }.to_h do |path|
+      relative = path.delete_prefix("#{base}/")
+      file = { "sha256" => Digest::SHA256.file(path).hexdigest, "bytes" => File.size(path) }
+      file["md5"] = Digest::MD5.file(path).hexdigest if path.end_with?(".png")
+      [relative, file]
+    end
+    reject.call unless receipt["inventory"] == inventory && inventory.keys.count { |path| path.start_with?("screenshots/") && path.end_with?(".png") } == 180
+    original_hash
+  rescue JSON::ParserError, KeyError, TypeError, NoMethodError, Errno::ENOENT, Errno::ENOTDIR, ArgumentError
+    raise Error, "Retained CPP source context, current publication inputs, or reviewed bytes changed"
+  end
 
   class Runner
     EDITABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW REJECTED].freeze
@@ -23,14 +109,19 @@ module BoardseshCPP
       "APP_IPAD_PRO_3GEN_11" => [[1668, 2388], [1668, 2420], [2388, 1668], [2420, 1668]]
     }.freeze
 
-    def initialize(client:, repo_root:, manifest:, app_id:, manifest_sha256: nil, keyword_ids: {}, log: ->(_message) {}, sleeper: ->(seconds) { sleep(seconds) })
+    def initialize(client:, repo_root:, manifest:, app_id:, manifest_sha256: nil, keyword_ids: {}, retained_source: nil, log: ->(_message) {}, sleeper: ->(seconds) { sleep(seconds) })
       @client, @root, @manifest, @app_id = client, repo_root, manifest, app_id
       @manifest_sha256 = manifest_sha256 || Digest::SHA256.hexdigest(JSON.generate(manifest))
       @keyword_ids, @log, @sleeper = keyword_ids, log, sleeper
+      @retained_source = retained_source
     end
 
     def run(target: "all", action: "plan")
       raise Error, "CPP action must be plan, create, stage-assets, upload, or submit" unless %w[plan create stage-assets upload submit].include?(action)
+      if @retained_source
+        raise Error, "Retained CPP source is restricted to one stage-assets target" unless action == "stage-assets" && target != "all"
+        @manifest_sha256 = BoardseshCPP.verify_retained_source(repo_root: @root, manifest: @manifest, target: target, **@retained_source)
+      end
       targets = @manifest.fetch("targets")
       selected = target == "all" ? targets.keys : [target]
       raise Error, "Unknown CPP target #{target}" unless selected.all? { |name| targets.key?(name) }

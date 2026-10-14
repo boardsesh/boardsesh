@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import sharp from 'sharp';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { assertCppScreenshots } from '../assert-cpp-screenshots';
+import {
+  assertCppScreenshots,
+  readCppCaptureSource,
+  verifyCppCaptureCompatibility,
+  CPP_SOURCE_MANIFEST,
+} from '../assert-cpp-screenshots';
 import {
   ACCEPTED_SIZES,
   EXPECTED_APP_STORE_DEVICE_SLUGS,
@@ -175,6 +180,107 @@ function replaceHardlink(filename: string, bytes: Buffer): void {
   unlinkSync(filename);
   writeFileSync(filename, bytes);
 }
+
+describe('versioned CPP source compatibility', () => {
+  const readCurrent = (path: string) => readFileSync(join(process.cwd(), path));
+  const source = () => readCppCaptureSource('tension', 'a'.repeat(40), readCurrent);
+  const manifest = () =>
+    JSON.parse(readCurrent(CPP_SOURCE_MANIFEST).toString()) as Record<string, unknown> & {
+      targets: Record<string, { recipes: { phone: Array<Record<string, unknown>> }; [key: string]: unknown }>;
+    };
+
+  it('permits another target and unused captions to change, retaining the exact original manifest digest', () => {
+    const context = source();
+    const prior = manifest();
+    prior.targets.kilter.referenceName = 'Prior unrelated target';
+    context.manifest = JSON.stringify(prior);
+    const captions = JSON.parse(context.captions.fr) as Record<string, unknown>;
+    captions.unused = { headline: 'Prior copy', description: 'Unused by Tension' };
+    context.captions.fr = JSON.stringify(captions);
+    const proof = verifyCppCaptureCompatibility('tension', context);
+    expect(proof.sourceManifestSha256).toBe(digest(Buffer.from(context.manifest)));
+    expect(proof.sourceManifestSha256).not.toBe(proof.currentManifestSha256);
+  });
+
+  it.each([
+    'target',
+    'promotional text',
+    'fixture',
+    'order',
+    'layout',
+    'sources',
+    'board labels',
+    'globals',
+    'caption',
+  ])('rejects changed %s without a hash exception', (kind) => {
+    const context = source();
+    const prior = manifest();
+    const page = prior.targets.tension;
+    if (kind === 'target') page.referenceName = 'Different page';
+    if (kind === 'promotional text') page.localizations = { 'en-US': { promotionalText: 'Different promise' } };
+    if (kind === 'fixture') page.fixtureReference = 'other.json';
+    if (kind === 'order') page.recipes.phone.reverse();
+    if (kind === 'layout') page.recipes.phone[0].layout = 'screen';
+    if (kind === 'sources') page.recipes.phone[0].sources = ['other.png'];
+    if (kind === 'board labels') page.recipes.phone[0].boardLabels = ['Wrong board'];
+    if (kind === 'globals') prior.devices = {};
+    if (kind === 'caption') {
+      const catalog = JSON.parse(context.captions.es) as Record<string, { headline: string }>;
+      catalog.cppTensionLayouts.headline = 'Unsupported promise';
+      context.captions.es = JSON.stringify(catalog);
+    }
+    context.manifest = JSON.stringify(prior);
+    expect(() => verifyCppCaptureCompatibility('tension', context)).toThrow();
+  });
+
+  it.each(['version', 'extra', 'target', 'sha', 'missing catalog', 'malformed manifest'])(
+    'rejects malformed source context: %s',
+    (kind) => {
+      const context = source();
+      if (kind === 'version') Object.assign(context, { version: 2 });
+      if (kind === 'extra') Object.assign(context, { manifestSha256: 'b'.repeat(64) });
+      if (kind === 'target') context.target = 'kilter';
+      if (kind === 'sha') context.sourceSha = 'main';
+      if (kind === 'missing catalog') delete context.captions.de;
+      if (kind === 'malformed manifest') context.manifest = '{}';
+      expect(() => verifyCppCaptureCompatibility('tension', context)).toThrow();
+    },
+  );
+
+  it('validates all 180 original-source images with current guards and rejects altered native bytes', () => {
+    const root = createTree(['tension']);
+    const context = source();
+    const prior = manifest();
+    prior.targets.kilter.referenceName = 'Prior unrelated target';
+    context.manifest = JSON.stringify(prior);
+    for (const locale of EXPECTED_APP_STORE_LOCALES)
+      for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
+        const path = join(root, 'app-stores/apple/cpp/tension/screenshots', locale, device, 'presentation.json');
+        const presentation = JSON.parse(readFileSync(path, 'utf8')) as TestPresentation;
+        presentation.cpp.manifestSha256 = digest(Buffer.from(context.manifest));
+        writeFileSync(path, JSON.stringify(presentation));
+      }
+    expect(() => assertCppScreenshots('tension', root)).toThrow('provenance');
+    expect(assertCppScreenshots('tension', root, { captureSource: context })).toBe(180);
+    const raw = readCppPage('tension').recipes.phone[0].sources[0];
+    replaceHardlink(
+      join(root, 'app-stores/apple/cpp/tension/raw-screenshots/en-US/iphone-16-pro-max', raw),
+      Buffer.from('changed'),
+    );
+    expect(() => assertCppScreenshots('tension', root, { captureSource: context })).toThrow('native pixels');
+  });
+
+  it('retains the current required Live Activity identity guard with an explicit source', () => {
+    const root = createTree();
+    const context = readCppCaptureSource('kilter', 'a'.repeat(40), readCurrent);
+    expect(assertCppScreenshots('kilter', root, { captureSource: context })).toBe(180);
+    mutatePresentation(root, (presentation) => {
+      const recipe = readCppPage('kilter').recipes.phone.find((recipe) => recipe.liveActivity)!;
+      delete presentation.files[recipe.output].liveActivity;
+    });
+    expect(() => assertCppScreenshots('kilter', root, { captureSource: context })).toThrow('Live Activity provenance');
+  });
+});
 
 describe('CPP screenshot upload integrity', () => {
   it('accepts all four complete targets across every locale and device', () => {

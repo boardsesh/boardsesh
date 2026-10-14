@@ -5,6 +5,227 @@ require "tmpdir"
 require "fileutils"
 require_relative "../lib/custom_product_pages"
 
+class RetainedCppSourceTest < Minitest::Test
+  MANIFEST_PATH = "app-stores/apple/custom-product-pages.json"
+
+  def git(*args)
+    output, status = Open3.capture2e("git", "-C", @root, *args)
+    raise output unless status.success?
+    output.strip
+  end
+
+  def put(path, bytes)
+    full = File.join(@root, path)
+    FileUtils.mkdir_p(File.dirname(full))
+    File.binwrite(full, bytes)
+  end
+
+  def canonical(value)
+    case value
+    when Hash then value.keys.sort.to_h { |key| [key, canonical(value.fetch(key))] }
+    when Array then value.map { |entry| canonical(entry) }
+    else value
+    end
+  end
+
+  def semantic_hash(value)
+    Digest::SHA256.hexdigest(JSON.generate(canonical(value)))
+  end
+
+  def commit
+    git("add", ".")
+    git("-c", "user.name=CPP Test", "-c", "user.email=cpp@example.test", "commit", "-qm", "Test source")
+    git("rev-parse", "HEAD")
+  end
+
+  def setup
+    @root = Dir.mktmpdir("cpp-retained-source-")
+    repository = File.expand_path("../..", __dir__)
+    @manifest_bytes = File.read(File.join(repository, MANIFEST_PATH))
+    @manifest = JSON.parse(@manifest_bytes)
+    original = JSON.parse(@manifest_bytes)
+    original.fetch("targets").fetch("kilter")["referenceName"] = "Earlier unrelated Kilter page"
+    @original_bytes = JSON.generate(original)
+    put(MANIFEST_PATH, @original_bytes)
+    @captions = %w[en-US es fr de].to_h do |locale|
+      path = "app-stores/presentation/#{locale}.json"
+      bytes = File.read(File.join(repository, path))
+      put(path, bytes)
+      [locale, bytes]
+    end
+    git("init", "-q")
+    @pin = commit
+    put(MANIFEST_PATH, @manifest_bytes)
+    @head = commit
+    @environment = %w[GITHUB_EVENT_NAME GITHUB_REF GITHUB_SHA].to_h { |key| [key, ENV[key]] }
+    ENV.update("GITHUB_EVENT_NAME" => "workflow_dispatch", "GITHUB_REF" => "refs/heads/main", "GITHUB_SHA" => @head)
+    page = @manifest.fetch("targets").fetch("tension")
+    fixture = { "version" => 1, "url" => "https://example.test/fixture.json.gz", "sha256" => "a" * 64, "bytes" => 1, "files" => 1 }
+    put(page.fetch("fixtureReference"), JSON.generate(fixture))
+    @manifest.fetch("locales").each do |locale, store_locales|
+      store_locales.each do |store_locale|
+        @manifest.fetch("devices").each do |device, display|
+          recipes = page.fetch("recipes").fetch(device.start_with?("ipad") ? "ipad" : "phone")
+          folder = "app-stores/apple/cpp/tension/screenshots/#{store_locale}/#{device}"
+          width, height = BoardseshCPP::Runner::DISPLAY_DIMENSIONS.fetch(display).first
+          png = "\x89PNG\r\n\x1a\n".b + [13].pack("N") + "IHDR" + [width, height].pack("NN")
+          files = recipes.to_h do |recipe|
+            put("#{folder}/#{recipe.fetch('output')}", png)
+            metadata = { "rawBytes" => 100_000, "rawSha256" => "b" * 64, "framedSha256" => Digest::SHA256.hexdigest(png) }
+            if recipe.fetch("sources").length > 1
+              metadata["sources"] = recipe.fetch("sources").to_h { |source| [source, { "rawBytes" => 100_000, "rawSha256" => "b" * 64 }] }
+            end
+            [recipe.fetch("output"), metadata]
+          end
+          put("#{folder}/presentation.json", JSON.generate({ "version" => 1, "locale" => locale, "cpp" => { "target" => "tension", "fixtureSha256" => fixture.fetch("sha256"), "manifestSha256" => Digest::SHA256.hexdigest(@original_bytes) }, "files" => files }))
+        end
+      end
+    end
+    base = File.join(@root, "app-stores/apple/cpp/tension")
+    inventory = Dir.glob(File.join(base, "**", "*")).select { |path| File.file?(path) }.to_h do |path|
+      metadata = { "sha256" => Digest::SHA256.file(path).hexdigest, "bytes" => File.size(path) }
+      metadata["md5"] = Digest::MD5.file(path).hexdigest if path.end_with?(".png")
+      [path.delete_prefix("#{base}/"), metadata]
+    end
+    caption_ids = page.fetch("recipes").values.flatten.map { |recipe| recipe.fetch("caption") }.uniq
+    used_captions = @captions.to_h { |locale, bytes| [locale, JSON.parse(bytes).select { |caption, _copy| caption_ids.include?(caption) }] }
+    @receipt = {
+      "version" => 2, "repository" => "boardsesh/boardsesh", "target" => "tension", "runId" => 1234, "producerSha" => @pin, "verifierSha" => @head, "screenshots" => 180,
+      "manifestSha256" => Digest::SHA256.hexdigest(@original_bytes), "fixture" => fixture, "inventory" => inventory,
+      "captureSource" => { "version" => 1, "target" => "tension", "sourceSha" => @pin, "manifest" => @original_bytes, "captions" => @captions },
+      "compatibility" => { "version" => 1, "target" => "tension", "sourceSha" => @pin, "sourceManifestSha256" => Digest::SHA256.hexdigest(@original_bytes), "currentManifestSha256" => Digest::SHA256.hexdigest(@manifest_bytes), "targetSha256" => semantic_hash(page), "globalsSha256" => semantic_hash(@manifest.reject { |key, _value| key == "targets" }), "captionsSha256" => semantic_hash(used_captions) }
+    }
+  end
+
+  def teardown
+    @environment.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    FileUtils.remove_entry(@root)
+  end
+
+  def source_options
+    bytes = JSON.generate(@receipt) + "\n"
+    path = File.join(@root, "receipt.json")
+    File.write(path, bytes)
+    { receipt_path: path, expected_sha256: Digest::SHA256.hexdigest(bytes), capture_contract_ref: @pin, replay_run_id: "1234" }
+  end
+
+  def verify(**options)
+    BoardseshCPP.verify_retained_source(repo_root: @root, manifest: @manifest, target: "tension", **source_options.merge(options))
+  end
+
+  def test_accepts_exact_git_context_and_all_180_original_images_without_rewriting_sidecars
+    before = Dir.glob(File.join(@root, "app-stores/apple/cpp/tension/**/presentation.json")).to_h { |path| [path, File.binread(path)] }
+    assert_equal Digest::SHA256.hexdigest(@original_bytes), verify
+    before.each { |path, bytes| assert_equal bytes, File.binread(path) }
+    instance = BoardseshCPP::Runner.new(client: CustomProductPagesTest::FakeApple.new, repo_root: @root, manifest: @manifest, app_id: "app", retained_source: source_options)
+    # All local inputs pass; the absent draft stops before any write.
+    error = assert_raises(BoardseshCPP::Error) { instance.run(target: "tension", action: "stage-assets") }
+    assert_match(/exactly one existing page/, error.message)
+  end
+
+  def test_rejects_changed_review_digest_run_target_and_main_context
+    assert_raises(BoardseshCPP::Error) { verify(expected_sha256: "e" * 64) }
+    assert_raises(BoardseshCPP::Error) { verify(replay_run_id: "999") }
+    @receipt["target"] = "kilter"
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["target"] = "tension"
+    ENV["GITHUB_REF"] = "refs/heads/other"
+    assert_raises(BoardseshCPP::Error) { verify }
+    ENV["GITHUB_REF"] = "refs/heads/main"
+    ENV["GITHUB_SHA"] = @pin
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_fabricated_original_bytes_unknown_context_and_missing_caption
+    @receipt["captureSource"]["manifest"] += "\n"
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["captureSource"]["manifest"] = @original_bytes
+    @receipt["captureSource"]["unverifiedHash"] = "a" * 64
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["captureSource"].delete("unverifiedHash")
+    @receipt["captureSource"]["version"] = 2
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["captureSource"]["version"] = 1
+    @receipt["captureSource"]["captions"].delete("de")
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_annotated_tag_objects_and_newer_pin
+    git("-c", "user.name=CPP Test", "-c", "user.email=cpp@example.test", "tag", "-a", "accepted", @pin, "-m", "Tag is not a commit")
+    tag = git("rev-parse", "accepted")
+    @receipt["captureSource"]["sourceSha"] = tag
+    assert_raises(BoardseshCPP::Error) { verify(capture_contract_ref: tag) }
+    @receipt["captureSource"]["sourceSha"] = @head
+    @receipt["verifierSha"] = @pin
+    ENV["GITHUB_SHA"] = @pin
+    assert_raises(BoardseshCPP::Error) { verify(capture_contract_ref: @head) }
+  end
+
+  def test_rejects_producer_newer_than_the_accepted_pin
+    @receipt["producerSha"] = @head
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_partial_handoff_and_nonstaging_actions_before_remote_reads
+    assert_raises(BoardseshCPP::Error) { verify(capture_contract_ref: "") }
+    assert_raises(BoardseshCPP::Error) { verify(expected_sha256: "") }
+    assert_raises(BoardseshCPP::Error) { verify(replay_run_id: "") }
+    client = CustomProductPagesTest::FakeApple.new
+    instance = BoardseshCPP::Runner.new(client: client, repo_root: @root, manifest: @manifest, app_id: "app", retained_source: source_options)
+    %w[plan create upload submit].each do |action|
+      assert_raises(BoardseshCPP::Error) { instance.run(target: "tension", action: action) }
+    end
+    assert_raises(BoardseshCPP::Error) { instance.run(target: "all", action: "stage-assets") }
+    assert_empty client.reads
+    assert_empty client.writes
+  end
+
+  def test_rejects_current_semantic_drift_even_when_committed_and_receipt_head_refreshed
+    @manifest.fetch("targets").fetch("tension").fetch("recipes").fetch("phone").reverse!
+    put(MANIFEST_PATH, JSON.generate(@manifest))
+    @receipt["verifierSha"] = commit
+    ENV["GITHUB_SHA"] = @receipt["verifierSha"]
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_current_caption_drift_after_genuine_commit
+    path = "app-stores/presentation/fr.json"
+    captions = JSON.parse(File.read(File.join(@root, path)))
+    captions.fetch("cppTensionLayouts")["headline"] = "Different promise"
+    put(path, JSON.generate(captions))
+    @receipt["verifierSha"] = commit
+    ENV["GITHUB_SHA"] = @receipt["verifierSha"]
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_current_global_drift_after_genuine_commit
+    @manifest.fetch("locales")["es"].reverse!
+    put(MANIFEST_PATH, JSON.generate(@manifest))
+    @receipt["verifierSha"] = commit
+    ENV["GITHUB_SHA"] = @receipt["verifierSha"]
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+
+  def test_rejects_altered_image_inventory_fixture_or_compatibility
+    fixture_path = @manifest.fetch("targets").fetch("tension").fetch("fixtureReference")
+    put(fixture_path, JSON.generate(@receipt.fetch("fixture").merge("sha256" => "e" * 64)))
+    assert_raises(BoardseshCPP::Error) { verify }
+    put(fixture_path, JSON.generate(@receipt.fetch("fixture")))
+    @receipt["inventory"]["extra.png"] = { "bytes" => 1 }
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["inventory"].delete("extra.png")
+    @receipt["compatibility"]["captionsSha256"] = "e" * 64
+    assert_raises(BoardseshCPP::Error) { verify }
+    @receipt["compatibility"]["captionsSha256"] = semantic_hash(@captions.to_h do |locale, bytes|
+      ids = @manifest.fetch("targets").fetch("tension").fetch("recipes").values.flatten.map { |recipe| recipe.fetch("caption") }
+      [locale, JSON.parse(bytes).select { |key, _value| ids.include?(key) }]
+    end)
+    path = @receipt.fetch("inventory").keys.find { |entry| entry.end_with?(".png") }
+    put("app-stores/apple/cpp/tension/#{path}", "changed")
+    assert_raises(BoardseshCPP::Error) { verify }
+  end
+end
+
 class CustomProductPagesTest < Minitest::Test
   class FakeTransport
     attr_accessor :use_ssl, :open_timeout, :read_timeout

@@ -276,6 +276,16 @@ platform :ios do
     UI.user_error!("CPP action must be plan, create, stage-assets, upload, or submit") unless %w[plan create stage-assets upload submit].include?(action)
     manifest_bytes = File.read(File.join(REPO_ROOT, "app-stores", "apple", "custom-product-pages.json"))
     manifest = JSON.parse(manifest_bytes)
+    retained_source = {
+      receipt_path: ENV.fetch("ASC_CPP_RETAINED_RECEIPT", ""), expected_sha256: ENV.fetch("ASC_CPP_RETAINED_RECEIPT_SHA256", ""),
+      capture_contract_ref: ENV.fetch("ASC_CPP_CAPTURE_CONTRACT_REF", ""), replay_run_id: ENV.fetch("ASC_CPP_RETAINED_REPLAY_RUN_ID", "")
+    }
+    if retained_source.values.any? { |value| !value.empty? }
+      UI.user_error!("Retained CPP source is restricted to one stage-assets target") unless action == "stage-assets" && target != "all"
+      BoardseshCPP.verify_retained_source(repo_root: REPO_ROOT, manifest: manifest, target: target, **retained_source)
+    else
+      retained_source = nil
+    end
     asc_api_key
     app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
     UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
@@ -284,7 +294,7 @@ platform :ios do
     client = BoardseshCPP::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
     results = BoardseshCPP::Runner.new(
       client: client, repo_root: REPO_ROOT, manifest: manifest, manifest_sha256: Digest::SHA256.hexdigest(manifest_bytes), app_id: app.id,
-      keyword_ids: keyword_ids, log: ->(message) { UI.message(message) }
+      keyword_ids: keyword_ids, retained_source: retained_source, log: ->(message) { UI.message(message) }
     ).run(target: target, action: action)
     results.each do |result|
       line = "CPP #{result.fetch('target')}: #{result.fetch('action')} | #{result['state'] || 'new page'} | #{result['url'] || 'URL available after creation'}"

@@ -543,7 +543,7 @@ after the shipped fingerprint moves on.
 never builds, captures, frames, publishes fixtures, edits keywords, or submits
 review. Use one target per run. The producer must be a successful manual,
 capture-only run of `mobile-screenshots-ios.yml` in this repository, with
-all 16 locale/device replay jobs successful. Its source must be an ancestor of
+all 16 locale/device replay jobs successful. By default, its source must be an ancestor of
 main with the same capture contract, including capture libraries, Maestro flows,
 presentation/caption/font assets, mobile app/runtime source, and shared renderer
 dependencies. Native build scripts/configuration, task commands and dependency
@@ -597,6 +597,39 @@ CPP manifest, or capture contract needs a new verification and visual review.
 Expired producer artifacts also require a fresh complete capture. This path stages
 screenshots and promotional text only; approved keyword assignment and review
 submission remain separate operations.
+
+#### Verify an explicitly accepted older capture contract
+
+When the release owner accepts genuine older captures, set `capture_contract_ref`
+to the full lowercase 40-character commit SHA of their verified source contract.
+The workflow still runs from `main` with the current helper and current Apple
+action. The pin must be a commit ancestor of that workflow's main commit, and the
+producer must be its ancestor. The existing complete capture path, workflow and
+byte comparison runs from producer to pin; the pin does not waive that check.
+If `approved_runtime_drift_sha256` is also supplied, its existing limited delta
+is evaluated from producer to this pin, with every other capture byte unchanged.
+
+The current verifier additionally requires the entire selected target object,
+every manifest global field, and every used caption object in all four catalogs
+to match the verified source. This includes promotional text, fixture reference,
+ordered recipes, slots, layouts, source images and board labels. Other targets
+and unused captions may evolve. A changed required Live Activity recipe is a
+target change and fails. Every current fixture, native-image and framed-image
+guard still runs before local installation or upload. Original sidecars and
+pixels remain unchanged and retain the original manifest hash.
+
+Explicit pins produce a v2 receipt containing the original manifest and caption
+bytes, pin, current verifier commit, semantic compatibility hashes and the usual
+complete artifact and image inventory. Fastlane independently reads the Git
+source, ancestry, current target/captions and every inventoried byte against the
+reviewed receipt before staging. No caller-supplied manifest hash can authorize
+older assets. Pass the same pin to verification and staging. If main advances
+between them, run read-only verification again and review its new receipt; the
+current verifier commit is part of the expected digest. This accepts the older
+capture's source explicitly and does not claim its runtime matches current main.
+
+Leaving the input empty preserves the existing v1 receipt and strict comparison
+against current main. Neither path builds or recaptures successful native jobs.
 
 #### Retain captures after an explicitly accepted minor runtime change
 

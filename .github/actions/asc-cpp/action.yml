@@ -10,6 +10,18 @@ inputs:
   keyword-ids:
     default: ''
     description: 'Verified locale -> keyword -> Apple resource ID JSON.'
+  retained-receipt:
+    default: ''
+    description: 'Verified v2 retained replay receipt; only for stage-assets.'
+  retained-receipt-sha256:
+    default: ''
+    description: 'Exact independently reviewed receipt digest.'
+  retained-replay-run-id:
+    default: ''
+    description: 'Original complete replay bound by the retained receipt.'
+  capture-contract-ref:
+    default: ''
+    description: 'Accepted full ancestor commit bound by the retained receipt.'
   key-id:
     required: true
     description: 'App Store Connect API key ID.'
@@ -40,6 +52,10 @@ runs:
         APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.issuer-id }}
         CPP_PRIVATE_KEY_BASE64: ${{ inputs.key-base64 }}
         ASC_CPP_KEYWORD_IDS_JSON: ${{ inputs.keyword-ids }}
+        ASC_CPP_RETAINED_RECEIPT: ${{ inputs.retained-receipt }}
+        ASC_CPP_RETAINED_RECEIPT_SHA256: ${{ inputs.retained-receipt-sha256 }}
+        ASC_CPP_RETAINED_REPLAY_RUN_ID: ${{ inputs.retained-replay-run-id }}
+        ASC_CPP_CAPTURE_CONTRACT_REF: ${{ inputs.capture-contract-ref }}
         FASTLANE_SKIP_UPDATE_CHECK: '1'
         FASTLANE_DISABLE_ANIMATION: '1'
       run: |

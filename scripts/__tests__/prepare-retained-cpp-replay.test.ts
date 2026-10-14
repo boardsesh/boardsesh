@@ -167,6 +167,7 @@ function sample() {
     },
     source: (_commit, path) => readFileSync(join(ROOT, path)),
     files: () => trackedPaths,
+    isCommit: () => true,
     isAncestor: () => true,
   };
   return { options, run, jobs, artifacts, client };
@@ -442,11 +443,67 @@ describe('original native replay provenance', () => {
   it('reads the committed native archives larger than four MiB through the real bounded source client', () => {
     const client = createReplayClient();
     const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    expect(client.isCommit(commit)).toBe(true);
+    expect(client.isCommit(execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim())).toBe(false);
     const archives = client.files(commit).filter((path) => isReplayCapturePath(path) && path.endsWith('.a'));
     const large = archives.filter((path) => readFileSync(join(ROOT, path)).length > 4 * 1024 * 1024);
     expect(large.length).toBeGreaterThan(0);
     for (const path of large)
       expect(replayHash(client.source(commit, path))).toBe(replayHash(readFileSync(join(ROOT, path))));
+  });
+  it('compares every capture path against the explicit ancestor pin, preserving the v1 contract digest', () => {
+    const source = sample();
+    const original = verifyReplayProducer(source.options, source.client);
+    source.options.captureContractRef = 'b'.repeat(40);
+    // Current capture files may differ, but no current checkout file is accepted
+    // as evidence for the older producer→pin contract.
+    source.options.repoRoot = directory();
+    const isAncestor = vi.fn(() => true);
+    source.client.isAncestor = isAncestor;
+    expect(verifyReplayProducer(source.options, source.client)).toEqual(original);
+    expect(isAncestor).toHaveBeenCalledWith(producerSha, source.options.captureContractRef);
+    expect(isAncestor).toHaveBeenCalledWith(source.options.captureContractRef, source.options.sourceSha);
+  });
+  it.each([
+    'short',
+    'uppercase',
+    'tag object',
+    'nonancestor pin',
+    'producer after pin',
+    'manifest',
+    'caption',
+    'workflow',
+    'file addition',
+    'file removal',
+  ])('rejects invalid versioned contract: %s', (kind) => {
+    const source = sample();
+    const pin = 'b'.repeat(40);
+    source.options.captureContractRef = pin;
+    if (kind === 'short') source.options.captureContractRef = 'b'.repeat(7);
+    if (kind === 'uppercase') source.options.captureContractRef = 'B'.repeat(40);
+    if (kind === 'tag object') source.client.isCommit = () => false;
+    if (kind === 'nonancestor pin') source.client.isAncestor = (ancestor) => ancestor !== pin;
+    if (kind === 'producer after pin') source.client.isAncestor = (ancestor) => ancestor !== producerSha;
+    const changed =
+      kind === 'manifest'
+        ? 'app-stores/apple/custom-product-pages.json'
+        : kind === 'caption'
+          ? 'app-stores/presentation/en-US.json'
+          : kind === 'workflow'
+            ? '.github/workflows/mobile-screenshots-ios.yml'
+            : undefined;
+    const original = source.client.source.bind(source.client);
+    source.client.source = (commit, path) =>
+      commit === pin && path === changed
+        ? Buffer.from(kind === 'workflow' ? 'jobs: {}' : `${original(commit, path).toString()}\n`)
+        : original(commit, path);
+    if (kind === 'file addition')
+      source.client.files = (commit) =>
+        commit === pin ? [...trackedPaths, 'scripts/lib/unreviewed.ts'] : trackedPaths;
+    if (kind === 'file removal')
+      source.client.files = (commit) =>
+        commit === pin ? trackedPaths.filter((path) => path !== 'scripts/mobile-screenshots.ts') : trackedPaths;
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
   });
   it('rejects source checkout changes in the producer workflow', () => {
     const source = sample();
@@ -1220,10 +1277,14 @@ describe('replay pixels and reviewed byte binding', () => {
     const receipt = readFileSync(first.options.receipt);
     expect(replayHash(receipt)).toBe(digest);
     const parsed = JSON.parse(receipt.toString()) as {
+      version: number;
       screenshots: number;
       inventory: Record<string, { sha256: string }>;
     };
     expect(parsed.screenshots).toBe(180);
+    expect(parsed.version).toBe(1);
+    expect(parsed).not.toHaveProperty('captureSource');
+    expect(parsed).not.toHaveProperty('verifierSha');
     for (const [path, proof] of Object.entries(parsed.inventory))
       expect(replayHash(readFileSync(join(first.options.repoRoot, 'app-stores/apple/cpp', target, path)))).toBe(
         proof.sha256,
@@ -1232,6 +1293,34 @@ describe('replay pixels and reviewed byte binding', () => {
     second.options.stage = true;
     second.options.expectedReceipt = digest;
     expect(await prepareRetainedReplay(second.options, second.client)).toBe(digest);
+  });
+  it('binds explicit source bytes, current verifier and compatibility into a v2 reviewed receipt', async () => {
+    const first = preparedSource();
+    first.options.captureContractRef = 'b'.repeat(40);
+    const digest = await prepareRetainedReplay(first.options, first.client);
+    const receipt = JSON.parse(readFileSync(first.options.receipt, 'utf8')) as Record<string, unknown>;
+    expect(receipt.version).toBe(2);
+    expect(receipt.verifierSha).toBe(first.options.sourceSha);
+    expect(receipt.captureSource).toMatchObject({
+      version: 1,
+      target,
+      sourceSha: first.options.captureContractRef,
+      manifest: readFileSync(CPP_MANIFEST_PATH, 'utf8'),
+    });
+    expect(receipt.compatibility).toMatchObject({ version: 1, target, sourceSha: first.options.captureContractRef });
+    const staged = preparedSource();
+    staged.options.captureContractRef = first.options.captureContractRef;
+    staged.options.expectedReceipt = digest;
+    staged.options.stage = true;
+    expect(await prepareRetainedReplay(staged.options, staged.client)).toBe(digest);
+    const advanced = preparedSource();
+    advanced.options.captureContractRef = first.options.captureContractRef;
+    advanced.options.sourceSha = 'd'.repeat(40);
+    advanced.options.expectedReceipt = digest;
+    advanced.options.stage = true;
+    await expect(prepareRetainedReplay(advanced.options, advanced.client)).rejects.toThrow();
+    expect(existsSync(join(advanced.options.repoRoot, 'app-stores/apple/cpp', target))).toBe(false);
+    expect(existsSync(join(advanced.options.repoRoot, 'app-stores/apple/cpp-fixtures', `${target}.json`))).toBe(false);
   });
   it('assembles all sixteen successful retried shards without downloading excluded failed artifacts', async () => {
     const source = preparedSource(retrySource());
@@ -1373,6 +1462,29 @@ describe('workflow isolation', () => {
     expect(writer).toBeGreaterThan(verify);
     expect(steps[writer].with?.action).toBe('stage-assets');
     expect(steps[writer].with?.['keyword-ids']).toBe('');
+    expect(steps[writer].with?.['capture-contract-ref']).toBe('${{ inputs.capture_contract_ref }}');
+    expect(String(steps[writer].with?.['retained-receipt-sha256'])).toContain('inputs.expected_receipt_sha256');
+    expect(String(steps[writer].with?.['retained-replay-run-id'])).toContain('inputs.replay_run_id');
+    for (const name of ['verify', 'stage']) {
+      expect(JSON.stringify(workflow.jobs[name])).toContain('CAPTURE_CONTRACT_REF');
+      expect(JSON.stringify(workflow.jobs[name])).toContain('${{ github.sha }}');
+    }
     expect(JSON.stringify(workflow)).not.toContain('ios-screenshot-shard');
+  });
+  it('independently validates any partial source handoff before Fastlane authentication and preserves normal lanes', () => {
+    const fastfile = readFileSync('fastlane/Fastfile', 'utf8').split('lane :cpp do |options|')[1];
+    expect(fastfile).toContain('retained_source.values.any?');
+    expect(fastfile).toContain('retained_source = nil');
+    expect(fastfile.indexOf('BoardseshCPP.verify_retained_source')).toBeLessThan(fastfile.indexOf('asc_api_key'));
+    const action = parse(readFileSync('.github/actions/asc-cpp/action.yml', 'utf8')) as {
+      inputs: Record<string, { default?: string }>;
+    };
+    for (const name of [
+      'retained-receipt',
+      'retained-receipt-sha256',
+      'retained-replay-run-id',
+      'capture-contract-ref',
+    ])
+      expect(action.inputs[name].default).toBe('');
   });
 });
