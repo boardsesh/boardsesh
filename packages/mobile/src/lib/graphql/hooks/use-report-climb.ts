@@ -15,6 +15,7 @@ import {
 import { getHttpClient } from '../client';
 import { readMobileReleaseContext } from '../../release-context';
 import { PROPOSALS_QUERY_KEY } from '../query-keys';
+import { requestReport } from '../request-report';
 
 export { PROPOSALS_QUERY_KEY } from '../query-keys';
 
@@ -28,10 +29,12 @@ export function useReportClimb() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (variables: ReportClimbVariables) => {
-      const response = await getHttpClient().request<ReportClimbResponse, ReportClimbVariables>(REPORT_CLIMB, {
-        ...variables,
-        input: { ...variables.input, releaseContext: readMobileReleaseContext() },
-      });
+      const response = await requestReport(
+        (requestVariables: ReportClimbVariables) =>
+          getHttpClient().request<ReportClimbResponse, ReportClimbVariables>(REPORT_CLIMB, requestVariables),
+        { ...variables, input: { ...variables.input, releaseContext: readMobileReleaseContext() } },
+        'ReportClimbInput',
+      );
       return response.reportClimb;
     },
     onSuccess: (result) => {

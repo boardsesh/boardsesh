@@ -12,6 +12,7 @@ import type { SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
 import { readMobileReleaseContext } from '../release-context';
+import { requestReport } from '../graphql/request-report';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
   SubmitAppFeedbackInput,
@@ -37,7 +38,12 @@ export function getNativeAppVersion(): string | null {
 
 async function submitMobileAppFeedback(payload: SubmitAppFeedbackInput): Promise<boolean> {
   const variables: SubmitAppFeedbackMutationVariables = { input: payload };
-  const response = await getHttpClient().request<SubmitAppFeedbackMutationResponse>(SUBMIT_APP_FEEDBACK, variables);
+  const response = await requestReport(
+    (requestVariables: SubmitAppFeedbackMutationVariables) =>
+      getHttpClient().request<SubmitAppFeedbackMutationResponse>(SUBMIT_APP_FEEDBACK, requestVariables),
+    variables,
+    'SubmitAppFeedbackInput',
+  );
   return response.submitAppFeedback;
 }
 

@@ -17,6 +17,7 @@ import { useAuthToken } from '../graphql/use-auth-token';
 import { useMyRoles } from '../graphql/hooks/use-my-roles';
 import { useClimbModerationEnabled, useFeatureFlagsResolved } from '../../providers/feature-flags-provider';
 import { readMobileReleaseContext } from '../release-context';
+import { requestReport } from '../graphql/request-report';
 
 export const SPRAY_REPORTS_QUERY_KEY = ['sprayWallReports'] as const;
 let nextSessionScope = 0;
@@ -70,9 +71,14 @@ export function useReportSprayWall() {
   return useMutation({
     mutationFn: async (variables: ReportSprayWallMutationVariables) =>
       (
-        await getHttpClient().request<ReportSprayWallMutationResponse, ReportSprayWallMutationVariables>(
-          REPORT_SPRAY_WALL,
+        await requestReport(
+          (requestVariables: ReportSprayWallMutationVariables) =>
+            getHttpClient().request<ReportSprayWallMutationResponse, ReportSprayWallMutationVariables>(
+              REPORT_SPRAY_WALL,
+              requestVariables,
+            ),
           { ...variables, input: { ...variables.input, releaseContext: readMobileReleaseContext() } },
+          'ReportSprayWallInput',
         )
       ).reportSprayWall,
     onSuccess: () => {

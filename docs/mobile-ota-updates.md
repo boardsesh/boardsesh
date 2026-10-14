@@ -189,6 +189,15 @@ A third path rides the **same self-hosted server**: per-PR `pr-<number>` branche
 validate a specific PR on a compatible store/TestFlight build via **Test a PR preview** —
 see [Per-PR preview branches](#per-pr-preview-branches-self-hosted) below.
 
+PR previews use the production backend, so a preview can run before an additive GraphQL input
+field has deployed. Mobile bug reports, ratings, QA verdicts, climb reports and spray-wall reports
+first send their running `releaseContext`. If every structured GraphQL error rejects only that
+unknown field on the matching report input type before execution, the client retries once with
+only `releaseContext` removed. The original report text and attachments are preserved, and the
+resolver executes once. Network, authentication, unrelated validation and resolver errors are not
+retried. Older backends accept the report without release diagnostics; verified channel and canary
+diagnostics require the updated backend.
+
 The split is decided in `packages/mobile/app.config.ts` (`resolveUpdatesConfig`): when
 `EAS_BUILD` is set it returns the EAS URL; otherwise it uses the self-hosted server — but **only
 when both `EXPO_UPDATES_URL` and the signing cert `certs/certificate.pem` are present** (fail
