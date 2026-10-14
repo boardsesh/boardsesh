@@ -45,7 +45,6 @@ import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-inp
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import {
-  canAddClimbToBoard,
   classifyClimbBoardCompatibility,
   toBoardName,
   type ActiveBoardForCompatibility,
@@ -532,7 +531,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // closure must read the latest value — mirrors web's usernameRef/avatarUrlRef
   // in persistent-session/hooks/session-connection-ports.ts.
   const {
-    profile: partyProfile,
     username: partyUsername,
     avatarUrl: partyAvatarUrl,
     authenticatedUserId,
@@ -613,12 +611,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const announcedIdentityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined } | null>(null);
 
   // The attribution this device stamps onto a queue item IT introduces, or null
-  // while signed out / before the party profile resolves. Assigned during render
+  // while signed out / before the authenticated account profile resolves.
+  // Assigned during render
   // (same pattern as identityRef) so the queue callbacks — memoized on
   // `mutations`, not on identity — always read the latest.
   //
-  // Requires BOTH a profile id and a non-empty username: an anonymous phone must
-  // not push a blank-named avatar onto every peer's queue row.
+  // Backend privacy checks resolve addedByUser.id against users.id. The device
+  // party-profile UUID is only local identity and must never author queue rows.
+  // Wait for the signed-in account ID and a non-blank display name; do not borrow
+  // a remembered account or device ID during hydration or sign-out.
   //
   // Assigned during render, so there is a window between a session join landing
   // a new `clientId` and the next render where a stamp would carry
@@ -627,10 +628,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // clientId field is absent. Same trade the other during-render refs here make.
   const selfAttributionRef = useRef<QueueItemAttribution | null>(null);
   selfAttributionRef.current =
-    partyProfile?.id && partyUsername
+    isAuthenticated && authenticatedUserId && partyUsername?.trim()
       ? {
           addedBy: sessionRuntimeStateRef.current.clientId || null,
-          addedByUser: { id: partyProfile.id, username: partyUsername, avatarUrl: partyAvatarUrl ?? null },
+          addedByUser: { id: authenticatedUserId, username: partyUsername, avatarUrl: partyAvatarUrl ?? null },
         }
       : null;
 

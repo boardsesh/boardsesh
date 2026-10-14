@@ -159,6 +159,8 @@ vi.mock('../../providers/queue/use-board-continuation-feed', () => ({
   useBoardContinuationFeed: () => ({ climbs: [{ uuid: 'suggested', name: 'Suggested climb' }], isSettled: true }),
 }));
 vi.mock('../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: null }) }));
+vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isLoading: false }) }));
+
 vi.mock('../../providers/party-profile-provider', () => ({
   usePartyProfile: () => ({ profile: null, isLoading: false }),
 }));

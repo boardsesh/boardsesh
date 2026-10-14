@@ -23,6 +23,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbRowDisplay } from '../../lib/climb-row-display-preference';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
+import { useAuth } from '../../providers/auth-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { useBoardContinuationFeed } from '../../providers/queue/use-board-continuation-feed';
 import { useQueueDrag } from './use-queue-drag';
@@ -110,14 +111,14 @@ function QueueListComponent({
   // session would show the viewer's own face on every row. Neither value is read
   // from the live `sessionUsers` roster, which is recreated by every session
   // stats push.
-  // Gated on isLoading as well: `profile` and `sessionId` hydrate on racing async
-  // paths, so a cold launch into a restored session can resolve the session first
-  // and leave viewerUserId null for a frame — long enough to flash the viewer's
-  // own face on their own rows before self-exclusion can suppress it.
+  // Account identity can hydrate after the session. Hold faces until it is
+  // known so the viewer's account-stamped rows never flash their own avatar.
+  // Anonymous viewers can still see public peer attribution without a profile.
   const { sessionId } = useQueueSessionId();
-  const { profile, isLoading: isPartyProfileLoading } = usePartyProfile();
-  const showAddedBy = sessionId != null && !isPartyProfileLoading;
-  const viewerUserId = profile?.id ?? null;
+  const { authenticatedUserId, isAuthenticated } = usePartyProfile();
+  const { isLoading: isAuthLoading } = useAuth();
+  const showAddedBy = sessionId != null && !isAuthLoading && (!isAuthenticated || !!authenticatedUserId);
+  const viewerUserId = isAuthenticated ? authenticatedUserId : null;
 
   // Clear the queue toolbar (styles.listContent's spacing[10]) AND the Android
   // edge-to-edge navigation bar, so the last row never sits under the 3-button nav

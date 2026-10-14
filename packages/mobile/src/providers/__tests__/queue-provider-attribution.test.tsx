@@ -52,6 +52,13 @@ const ws = vi.hoisted(() => {
 const graph = vi.hoisted(() => ({ execute: vi.fn() }));
 const http = vi.hoisted(() => ({ request: vi.fn() }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+const partyIdentity = vi.hoisted(() => ({
+  profile: { id: 'device-party-uuid' },
+  authenticatedUserId: 'account-user-uuid' as string | null,
+  isAuthenticated: true,
+  username: 'Marco' as string | undefined,
+  avatarUrl: 'https://example.test/marco.png',
+}));
 const errorReporter = vi.hoisted(() => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
 
 const activeBoard = vi.hoisted(() => ({
@@ -161,11 +168,7 @@ vi.mock('../queue/use-cross-board-add-gate', () => ({
   useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
 }));
 vi.mock('../party-profile-provider', () => ({
-  usePartyProfile: () => ({
-    profile: { id: 'party-uuid-1' },
-    username: 'Marco',
-    avatarUrl: 'https://example.test/marco.png',
-  }),
+  usePartyProfile: () => partyIdentity,
 }));
 vi.mock('../../lib/error-reporting', () => ({
   reportError: errorReporter.reportError,
@@ -188,7 +191,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
 import { QueueProvider, useQueue } from '../queue-provider';
 
 const SELF_ATTRIBUTION = {
-  id: 'party-uuid-1',
+  id: 'account-user-uuid',
   username: 'Marco',
   avatarUrl: 'https://example.test/marco.png',
 };
@@ -297,7 +300,7 @@ function wireFullSync(sequence: number, stateHash: string, queue: WirePeerItem[]
 
 /** Render, join, and push a FullSync carrying the given peer items. */
 async function renderWithPeerQueue(snapshots: Snapshot[], peerItems: WirePeerItem[]) {
-  renderProvider((snapshot) => snapshots.push(snapshot));
+  const view = renderProvider((snapshot) => snapshots.push(snapshot));
   await waitFor(() => {
     expect(ws.getQueueUpdatesSink()).not.toBeNull();
     expect(snapshots.at(-1)?.sessionId).toBe('session-1');
@@ -310,10 +313,16 @@ async function renderWithPeerQueue(snapshots: Snapshot[], peerItems: WirePeerIte
   await waitFor(() => {
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(peerItems.map((item) => item.uuid));
   });
+  return view;
 }
 
 describe('QueueProvider queue-item attribution (#3995)', () => {
   beforeEach(() => {
+    Object.assign(partyIdentity, {
+      authenticatedUserId: 'account-user-uuid',
+      isAuthenticated: true,
+      username: 'Marco',
+    });
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -338,21 +347,78 @@ describe('QueueProvider queue-item attribution (#3995)', () => {
     });
   });
 
-  it('stamps the local climber onto a climb queued from this phone', async () => {
+  it('stamps the authenticated account rather than the distinct device identity', async () => {
     const snapshots: Snapshot[] = [];
     await renderWithPeerQueue(snapshots, []);
 
-    act(() => {
-      snapshots.at(-1)?.addToQueue(makeQueueItem('mine-1'));
+    await act(async () => {
+      await snapshots.at(-1)?.addToQueue(makeQueueItem('mine-1'));
     });
 
     await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
     const broadcastItem = queueMutations.addQueueItem.mock.calls[0]?.[0];
     expect(broadcastItem?.addedByUser).toEqual(SELF_ATTRIBUTION);
+    expect(broadcastItem?.addedByUser?.id).not.toBe(partyIdentity.profile.id);
     expect(broadcastItem?.addedBy).toBe('client-self');
     // Local state and broadcast must agree — a phone that shows no author on its
     // own row while peers see one is the same bug from the other side.
     expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'mine-1')?.addedByUser).toEqual(SELF_ATTRIBUTION);
+  });
+
+  it.each([
+    ['account hydration', true, null, 'Marco'],
+    ['sign-out with a cached profile', false, 'account-user-uuid', 'Marco'],
+    ['blank display name', true, 'account-user-uuid', '   '],
+    ['unresolved display name', true, 'account-user-uuid', undefined],
+  ] as const)(
+    'does not borrow device attribution during %s',
+    async (_phase, isAuthenticated, authenticatedUserId, username) => {
+      const snapshots: Snapshot[] = [];
+      const view = await renderWithPeerQueue(snapshots, []);
+      Object.assign(partyIdentity, { isAuthenticated, authenticatedUserId, username });
+      view.rerender(
+        createElement(
+          QueueProvider,
+          null,
+          createElement(Probe, { onSnapshot: (snapshot: Snapshot) => snapshots.push(snapshot) }),
+        ),
+      );
+      await act(async () => {
+        await snapshots.at(-1)?.addToQueue(makeQueueItem('not-attributed'));
+      });
+      await waitFor(() =>
+        expect(snapshots.at(-1)?.state.queue.some((item) => item.uuid === 'not-attributed')).toBe(true),
+      );
+      const addedItem = snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'not-attributed');
+      expect(addedItem?.addedByUser).toBeUndefined();
+      expect(addedItem?.addedBy).toBeFalsy();
+    },
+  );
+
+  it('uses the new account through an existing memoized callback after switching', async () => {
+    const snapshots: Snapshot[] = [];
+    const view = await renderWithPeerQueue(snapshots, [wirePeerItem('peer-before-switch')]);
+    const addFromBeforeSwitch = snapshots.at(-1)?.addToQueue;
+    Object.assign(partyIdentity, { authenticatedUserId: 'account-b', username: 'Bea' });
+    view.rerender(
+      createElement(
+        QueueProvider,
+        null,
+        createElement(Probe, { onSnapshot: (snapshot: Snapshot) => snapshots.push(snapshot) }),
+      ),
+    );
+    await act(async () => {
+      await addFromBeforeSwitch?.(makeQueueItem('mine-after-switch'));
+    });
+    await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledOnce());
+    expect(queueMutations.addQueueItem.mock.calls[0]?.[0].addedByUser).toEqual({
+      ...SELF_ATTRIBUTION,
+      id: 'account-b',
+      username: 'Bea',
+    });
+    expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'peer-before-switch')?.addedByUser).toEqual(
+      PEER_ATTRIBUTION,
+    );
   });
 
   it('does not claim a climb a peer added, on a whole-queue write', async () => {
@@ -418,8 +484,8 @@ describe('QueueProvider queue-item attribution (#3995)', () => {
     const snapshots: Snapshot[] = [];
     await renderWithPeerQueue(snapshots, []);
 
-    act(() => {
-      snapshots.at(-1)?.addToQueue({ ...makeQueueItem('mine-2'), suggested: true });
+    await act(async () => {
+      await snapshots.at(-1)?.addToQueue({ ...makeQueueItem('mine-2'), suggested: true });
     });
     await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
 

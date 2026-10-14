@@ -30,7 +30,14 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 // starts mid-queue" test would prove nothing. A store notification re-renders
 // QueueList through the memo, exactly the way a real context change does.
 const session = vi.hoisted(() => {
-  type Snapshot = { sessionId: string | null; profile: { id: string } | null; isLoading?: boolean };
+  type Snapshot = {
+    sessionId: string | null;
+    profile: { id: string } | null;
+    isLoading?: boolean;
+    authenticatedUserId?: string | null;
+    isAuthenticated?: boolean;
+    isAuthLoading?: boolean;
+  };
   const listeners = new Set<() => void>();
   let snapshot: Snapshot = { sessionId: null, profile: null };
   return {
@@ -146,17 +153,38 @@ vi.mock('../../../providers/queue-provider', async () => {
   };
 });
 
+vi.mock('../../../providers/auth-provider', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+  return {
+    useAuth: () => ({
+      isLoading:
+        React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot).isAuthLoading ?? false,
+    }),
+  };
+});
+
 vi.mock('../../../providers/party-profile-provider', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
   return {
     usePartyProfile: () => {
       const snapshot = React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-      return { profile: snapshot.profile, isLoading: snapshot.isLoading ?? false };
+      return {
+        profile: snapshot.profile,
+        isLoading: snapshot.isLoading ?? false,
+        isAuthenticated: snapshot.isAuthenticated ?? !!snapshot.profile,
+        authenticatedUserId:
+          snapshot.authenticatedUserId === undefined
+            ? snapshot.profile
+              ? 'account-me'
+              : null
+            : snapshot.authenticatedUserId,
+      };
     },
   };
 });
 
 import { QueueList } from '../QueueList';
+import { resolveQueueRowAttribution } from '../../../lib/queue-attribution';
 import { applyClimbRowPreset, resetClimbRowDisplayForTests } from '../../../lib/climb-row-display-preference';
 import { publishWindowInsetBottom, resetWindowInsetForTests } from '../../../lib/window-inset-store';
 
@@ -214,7 +242,7 @@ describe('QueueList added-by wiring', () => {
 
     for (const props of capturedRows.props) {
       expect(props.showAddedBy).toBe(true);
-      expect(props.viewerUserId).toBe('me');
+      expect(props.viewerUserId).toBe('account-me');
     }
   });
 
@@ -242,7 +270,7 @@ describe('QueueList added-by wiring', () => {
     expect(capturedRows.props).toHaveLength(3);
     for (const props of capturedRows.props) {
       expect(props.showAddedBy).toBe(true);
-      expect(props.viewerUserId).toBe('me');
+      expect(props.viewerUserId).toBe('account-me');
     }
   });
 
@@ -257,12 +285,17 @@ describe('QueueList added-by wiring', () => {
     }
   });
 
-  it('holds every face back until the party profile has resolved', () => {
+  it('holds every face back until the authenticated account has resolved', () => {
     // A cold launch into a restored session resolves sessionId before the party
     // profile, so viewerUserId is null for a frame. Without this gate the
     // viewer's OWN face flashes on their own rows, because the queue provider
     // stamps solo adds with this device's identity too.
-    session.set({ sessionId: 'session-1', profile: null, isLoading: true });
+    session.set({
+      sessionId: 'session-1',
+      profile: { id: 'device-party' },
+      isAuthenticated: true,
+      authenticatedUserId: null,
+    });
     renderList();
 
     expect(capturedRows.props).toHaveLength(3);
@@ -277,8 +310,103 @@ describe('QueueList added-by wiring', () => {
     expect(capturedRows.props).toHaveLength(3);
     for (const props of capturedRows.props) {
       expect(props.showAddedBy).toBe(true);
-      expect(props.viewerUserId).toBe('me');
+      expect(props.viewerUserId).toBe('account-me');
     }
+  });
+});
+
+describe('QueueList authenticated account identity transitions', () => {
+  it('holds faces during unresolved authentication then permits genuine anonymous peers', () => {
+    capturedRows.props = [];
+    session.set({
+      sessionId: 'session-1',
+      profile: { id: 'device-party' },
+      isAuthenticated: false,
+      isAuthLoading: true,
+    });
+    renderList();
+    expect(capturedRows.props.every((props) => props.showAddedBy === false)).toBe(true);
+    capturedRows.props = [];
+    act(() =>
+      session.set({
+        sessionId: 'session-1',
+        profile: { id: 'device-party' },
+        isAuthenticated: false,
+        isAuthLoading: false,
+      }),
+    );
+    expect(capturedRows.props.every((props) => props.showAddedBy === true && props.viewerUserId === null)).toBe(true);
+  });
+
+  it('hides account-owned faces, retains peers, and waits through account refresh and switching', () => {
+    const ownItem = {
+      ...makeItem('a'),
+      addedByUser: { id: 'account-a', username: 'Marco', avatarUrl: 'https://example.test/marco.png' },
+    };
+    const peerItem = {
+      ...makeItem('b'),
+      addedByUser: { id: 'account-b', username: 'Mina', avatarUrl: 'https://example.test/mina.png' },
+    };
+    capturedRows.props = [];
+    session.set({
+      sessionId: 'session-1',
+      profile: { id: 'device-party' },
+      isAuthenticated: true,
+      authenticatedUserId: null,
+    });
+    renderList([ownItem, peerItem]);
+    expect(capturedRows.props.every((props) => props.showAddedBy === false)).toBe(true);
+    const visibleAuthors = () =>
+      capturedRows.props.map((props) =>
+        resolveQueueRowAttribution((props.item as ClimbQueueItem).addedByUser, {
+          showAddedBy: props.showAddedBy as boolean,
+          viewerUserId: props.viewerUserId as string | null,
+        }),
+      );
+    capturedRows.props = [];
+    act(() =>
+      session.set({
+        sessionId: 'session-1',
+        profile: { id: 'device-party' },
+        isAuthenticated: true,
+        authenticatedUserId: 'account-a',
+      }),
+    );
+    expect(visibleAuthors()).toEqual([null, { name: 'Mina', avatarUrl: 'https://example.test/mina.png' }]);
+    capturedRows.props = [];
+    act(() =>
+      session.set({
+        sessionId: 'session-1',
+        profile: { id: 'device-party' },
+        isAuthenticated: true,
+        authenticatedUserId: null,
+      }),
+    );
+    expect(visibleAuthors()).toEqual([null, null]);
+    capturedRows.props = [];
+    act(() =>
+      session.set({
+        sessionId: 'session-1',
+        profile: { id: 'device-party' },
+        isAuthenticated: true,
+        authenticatedUserId: 'account-b',
+      }),
+    );
+    expect(visibleAuthors()).toEqual([{ name: 'Marco', avatarUrl: 'https://example.test/marco.png' }, null]);
+    capturedRows.props = [];
+    act(() =>
+      session.set({
+        sessionId: 'session-1',
+        profile: { id: 'device-party' },
+        isAuthenticated: false,
+        authenticatedUserId: 'account-b',
+      }),
+    );
+    expect(capturedRows.props.every((props) => props.viewerUserId === null)).toBe(true);
+    expect(visibleAuthors()).toEqual([
+      { name: 'Marco', avatarUrl: 'https://example.test/marco.png' },
+      { name: 'Mina', avatarUrl: 'https://example.test/mina.png' },
+    ]);
   });
 });
 
