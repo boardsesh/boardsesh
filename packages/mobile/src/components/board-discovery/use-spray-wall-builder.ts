@@ -42,7 +42,7 @@ export const DEFAULT_SPRAY_ANGLE = 40;
 export const SPRAY_ANGLE_OPTIONS: readonly number[] = SPRAY_ANGLES;
 
 /** Longest a wall's name may be, matching the board name column. */
-const MAX_NAME_LENGTH = 100;
+export const SPRAY_WALL_NAME_MAX_LENGTH = 100;
 
 /** True when `value` is one of the angles the server will actually accept. */
 export function isValidSprayAngle(value: number): boolean {
@@ -166,7 +166,7 @@ export function useSprayWallBuilder(
    * builder holds.
    */
   const baselineRef = useRef<SprayWallDetails>({
-    name: name.trim().slice(0, MAX_NAME_LENGTH),
+    name: name.trim().slice(0, SPRAY_WALL_NAME_MAX_LENGTH),
     angle,
     isPublic,
     isUnlisted,
@@ -179,7 +179,7 @@ export function useSprayWallBuilder(
   /** The fields as they stand, in the server's terms (trimmed name). */
   const snapshot = useCallback(
     (): SprayWallDetails => ({
-      name: name.trim().slice(0, MAX_NAME_LENGTH),
+      name: name.trim().slice(0, SPRAY_WALL_NAME_MAX_LENGTH),
       angle,
       isPublic,
       isUnlisted,
@@ -268,7 +268,7 @@ export function useSprayWallBuilder(
    * moves.
    */
   const buildCreateInput = useCallback((): CreateSprayWallInput | null => {
-    const trimmedName = name.trim().slice(0, MAX_NAME_LENGTH);
+    const trimmedName = name.trim().slice(0, SPRAY_WALL_NAME_MAX_LENGTH);
     if (trimmedName.length === 0 || !isValidSprayAngle(angle)) return null;
     return {
       name: trimmedName,

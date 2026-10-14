@@ -1,0 +1,105 @@
+// @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', () => ({
+  AccessibleBottomSheetTextInput: ({
+    value,
+    onChangeText,
+    onSubmitEditing,
+    placeholder,
+    maxLength,
+  }: {
+    value?: string;
+    onChangeText?: (text: string) => void;
+    onSubmitEditing?: () => void;
+    placeholder?: string;
+    maxLength?: number;
+  }) =>
+    createElement('input', {
+      'data-testid': 'name-input',
+      'data-placeholder': placeholder ?? '',
+      'data-maxlength': maxLength === undefined ? '' : String(maxLength),
+      value: value ?? '',
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      onKeyDown: (event: { key: string }) => {
+        if (event.key === 'Enter') onSubmitEditing?.();
+      },
+    }),
+}));
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+
+vi.mock('react-native', () => ({
+  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+}));
+vi.mock('../../Sheet', () => ({
+  Sheet: ({ children, header, visible }: { children?: ReactNode; header?: ReactNode; visible: boolean }) =>
+    createElement('div', { 'data-sheet': 'true', 'data-visible': String(visible) }, header, children),
+}));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../../../hooks/use-typography-styles', () => ({
+  useTypographyStyles: (create: (textStyles: { callout: { fontSize: number } }) => unknown) =>
+    create({ callout: { fontSize: 16 } }),
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { fill: '#eee', label: '#000', tertiaryLabel: '#aaa' } }),
+}));
+vi.mock('../../board-discovery/use-spray-wall-builder', () => ({ SPRAY_WALL_NAME_MAX_LENGTH: 100 }));
+vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 }, borderRadius: { lg: 12 } }));
+
+const { SprayWallNameSheet } = await import('../SprayWallNameSheet');
+
+afterEach(cleanup);
+
+function renderSheet(props: Partial<Parameters<typeof SprayWallNameSheet>[0]> = {}) {
+  const onDone = vi.fn();
+  const onClose = vi.fn();
+  const all = { visible: true, name: 'Garage wall', placeholder: "Marco's Spray wall", onDone, onClose, ...props };
+  const view = render(createElement(SprayWallNameSheet, all));
+  return {
+    ...view,
+    onDone,
+    onClose,
+    rerenderSheet: (next: Partial<typeof all>) => view.rerender(createElement(SprayWallNameSheet, { ...all, ...next })),
+  };
+}
+
+const input = (root: HTMLElement) => root.querySelector('[data-testid="name-input"]') as HTMLInputElement;
+const done = (root: HTMLElement) => root.querySelector('[data-testid="sheet-top-bar-trailing"]') as HTMLButtonElement;
+
+describe('SprayWallNameSheet', () => {
+  it('opens on the current name, with the default as the placeholder and the name cap', () => {
+    const { container } = renderSheet();
+    expect(input(container).value).toBe('Garage wall');
+    expect(input(container).getAttribute('data-placeholder')).toBe("Marco's Spray wall");
+    expect(input(container).getAttribute('data-maxlength')).toBe('100');
+  });
+
+  it('hands back the trimmed name on Done, and on the keyboard return', () => {
+    const { container, onDone } = renderSheet();
+    fireEvent.change(input(container), { target: { value: '  The Cave  ' } });
+    fireEvent.click(done(container));
+    fireEvent.keyDown(input(container), { key: 'Enter' });
+    expect(onDone).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenNthCalledWith(1, 'The Cave');
+  });
+
+  it('refuses an empty name', () => {
+    const { container, onDone } = renderSheet();
+    fireEvent.change(input(container), { target: { value: '   ' } });
+    expect(done(container).disabled).toBe(true);
+    fireEvent.keyDown(input(container), { key: 'Enter' });
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('throws away what was typed when it is cancelled and opened again', () => {
+    const { container, onClose, rerenderSheet } = renderSheet();
+    fireEvent.change(input(container), { target: { value: 'scratch' } });
+    fireEvent.click(container.querySelector('[data-testid="sheet-top-bar-leading"]') as HTMLButtonElement);
+    expect(onClose).toHaveBeenCalledOnce();
+    rerenderSheet({ visible: false });
+    rerenderSheet({ visible: true, name: 'Garage wall' });
+    expect(input(container).value).toBe('Garage wall');
+  });
+});
