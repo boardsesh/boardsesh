@@ -626,11 +626,20 @@ older capture does not claim identical current pixels: its original source and
 image bytes stay bound. Only the exact reviewed path/old/new hashes qualify;
 future changes, additions or deletions of shared code still fail.
 
+The seven publication changes from #6355 have a separate exact-byte exception
+for Kilter, Tension and MoonBoard only in
+`REVIEWED_MANUFACTURER_PUBLICATION_PAIRS`. Their capture flows do not open the
+changed climb editor or notification list. Spray does open the editor, so this
+exception rejects Spray even with a matching approval token. It preserves older
+manufacturer images explicitly accepted for the submitted build; it does not
+claim that the changed live backend returns identical searches or grades.
+Current recordings still require genuine successful responses and native gates.
+
 Review the actual producer-to-current diff and confirm that the retained images
 still describe the submitted app. Build a record with `version: 1`, the full
 `producerSha`, and `files` sorted by repository path. Each changed file contains
 `path`, `producerSha256` and `currentSha256`, hashing its original and current
-bytes. The #6450, #6461 or #6452 exceptions use `version: 2`; every file also records
+bytes. The #6450, #6461, #6452 or #6355 exceptions use `version: 2`; every file also records
 `producerPresent` and `currentPresent`. The allowed addition has
 `producerPresent: false`, `producerSha256: null`, `currentPresent: true` and its
 actual `currentSha256`. Modified files have both presence fields set to `true`

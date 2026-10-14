@@ -18,6 +18,7 @@ import {
   isReplayCapturePath,
   isReviewedShowcasePair,
   isReviewedOfflineDrainPair,
+  isReviewedManufacturerPublicationPair,
   verifyReplayFixture,
   prepareRetainedReplay,
   replayHash,
@@ -59,6 +60,7 @@ const trackedPaths = [
   'scripts/lib/showcase-video/render.ts',
   'packages/shared/offline-sync/src/database.ts',
   'packages/shared/offline-sync/src/mutation-queue/drainer.ts',
+  'packages/shared/privacy/src/index.ts',
   'packages/shared/board-render/src/index.ts',
   'package.json',
   'pnpm-lock.yaml',
@@ -795,6 +797,116 @@ describe('explicit presence and exact compatibility approval', () => {
     incomplete.jobs.at(-1)!.conclusion = 'failure';
     expect(() => verifyReplayProducer(incomplete.options, incomplete.client)).toThrow();
   });
+});
+
+describe('manufacturer-only publication source approval', () => {
+  const fixtureRoot = join(ROOT, 'scripts/__tests__/fixtures/cpp-publication-6355');
+  const pairs = JSON.parse(readFileSync(join(fixtureRoot, 'pairs.json'), 'utf8')) as Array<{
+    path: string;
+    producerSha256: string;
+    currentSha256: string;
+  }>;
+  it.each(pairs)('freezes both bytes and the allowed targets for $path', (pair) => {
+    expect(isReplayCapturePath(pair.path)).toBe(true);
+    for (const selectedTarget of ['kilter', 'tension', 'moonboard'] as const) {
+      expect(
+        isReviewedManufacturerPublicationPair(selectedTarget, pair.path, pair.producerSha256, pair.currentSha256),
+      ).toBe(true);
+      expect(
+        isReviewedManufacturerPublicationPair(selectedTarget, pair.path, pair.currentSha256, pair.producerSha256),
+      ).toBe(false);
+      expect(
+        isReviewedManufacturerPublicationPair(selectedTarget, pair.path, pair.producerSha256, replayHash('future')),
+      ).toBe(false);
+      expect(
+        isReviewedManufacturerPublicationPair(selectedTarget, pair.path, replayHash('unknown'), pair.currentSha256),
+      ).toBe(false);
+    }
+    expect(isReviewedManufacturerPublicationPair('spray', pair.path, pair.producerSha256, pair.currentSha256)).toBe(
+      false,
+    );
+    expect(
+      isReviewedManufacturerPublicationPair(
+        'kilter',
+        'scripts/mobile-screenshots.ts',
+        pair.producerSha256,
+        pair.currentSha256,
+      ),
+    ).toBe(false);
+  });
+
+  function publicationSource(selectedTarget: ReplayOptions['target']) {
+    const source = sample();
+    source.options.target = selectedTarget;
+    for (const job of source.jobs) job.name = job.name.replace('(moonboard,', `(${selectedTarget},`);
+    for (const artifact of source.artifacts)
+      artifact.name = String(artifact.name).replace('ios-cpp-moonboard-', `ios-cpp-${selectedTarget}-`);
+    const path = 'packages/shared/privacy/src/index.ts';
+    const original = readFileSync(join(fixtureRoot, 'privacy.producer.txt'));
+    const current = readFileSync(join(fixtureRoot, 'privacy.current.txt'));
+    const expected = pairs.find((pair) => pair.path === path)!;
+    expect(replayHash(original)).toBe(expected.producerSha256);
+    expect(replayHash(current)).toBe(expected.currentSha256);
+    source.client.source = (_commit, candidate) =>
+      candidate === path ? original : readFileSync(join(ROOT, candidate));
+    source.options.repoRoot = directory();
+    for (const candidate of trackedPaths)
+      put(source.options.repoRoot, candidate, source.client.source(producerSha, candidate));
+    const originalProof = verifyReplayProducer(source.options, source.client);
+    put(source.options.repoRoot, path, current);
+    const drift = {
+      version: 2,
+      producerSha,
+      files: [{ ...expected, producerPresent: true, currentPresent: true }],
+    };
+    source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(drift)}\n`);
+    return { ...source, originalProof, drift, path };
+  }
+  it.each(['kilter', 'tension', 'moonboard'] as const)(
+    'retains the original contract for an explicitly approved %s replay',
+    (selectedTarget) => {
+      const source = publicationSource(selectedTarget);
+      const proof = verifyReplayProducer(source.options, source.client);
+      expect(proof.artifacts).toHaveLength(16);
+      expect(proof.captureContractSha256).toBe(source.originalProof.captureContractSha256);
+      expect(proof.runtimeDrift).toEqual({ ...source.drift, approvedSha256: source.options.approvedRuntimeDrift });
+      expect(() =>
+        requireReviewedReceipt(proof, replayHash(`${canonicalJson(source.originalProof)}\n`), true),
+      ).toThrow();
+    },
+  );
+  it('rejects the same exact approved bytes for an otherwise valid complete Spray replay', () => {
+    const source = publicationSource('spray');
+    expect(source.originalProof.artifacts).toHaveLength(16);
+    expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+  });
+  it.each(['missing', 'v1', 'future', 'failed-native'])(
+    'rejects %s despite a known manufacturer publication path',
+    (kind) => {
+      const source = publicationSource('kilter');
+      if (kind === 'missing') source.options.approvedRuntimeDrift = undefined;
+      if (kind === 'v1') {
+        source.options.approvedRuntimeDrift = replayHash(
+          `${canonicalJson({
+            version: 1,
+            producerSha,
+            files: source.drift.files.map(({ path, producerSha256, currentSha256 }) => ({
+              path,
+              producerSha256,
+              currentSha256,
+            })),
+          })}\n`,
+        );
+      }
+      if (kind === 'future') {
+        put(source.options.repoRoot, source.path, 'future shared code');
+        source.drift.files[0].currentSha256 = replayHash('future shared code');
+        source.options.approvedRuntimeDrift = replayHash(`${canonicalJson(source.drift)}\n`);
+      }
+      if (kind === 'failed-native') source.jobs.at(-1)!.conclusion = 'failure';
+      expect(() => verifyReplayProducer(source.options, source.client)).toThrow();
+    },
+  );
 });
 
 describe('strict native replay retry history', () => {

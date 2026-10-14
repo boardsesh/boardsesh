@@ -1,0 +1,37 @@
+[
+  {
+    "path": "packages/mobile/src/components/create-climb/CreateDrawer.tsx",
+    "producerSha256": "bf5374b831170b25c204b1a99316a229add524f7272d910defdb4a84a6ca6165",
+    "currentSha256": "570bf0554d7309cb5b8a456d6a4e895c7d976619e6e157fa21bc25a3039aab8a"
+  },
+  {
+    "path": "packages/mobile/src/components/create-climb/use-create-climb-screen.ts",
+    "producerSha256": "dea13e38294aae25d154bad0bce6f7cabe999a6629ac1f1145fc5b66d6ff012b",
+    "currentSha256": "5d6611231f43fbd496e2a936feff39ef30f62b27456aa81054edb501c7fdb3dc"
+  },
+  {
+    "path": "packages/mobile/src/components/notifications/notification-copy.ts",
+    "producerSha256": "e554ad2eabe49df157cf1193822fed14fa75697a4e1a87e3f38a0126226c48f9",
+    "currentSha256": "4d204cbd2b4df306459cf1250ce4e763098018e126878e08dde28756038c2632"
+  },
+  {
+    "path": "packages/shared/board-react/src/climb-helpers.ts",
+    "producerSha256": "3e42cca3dd806c0ddd85b1fadf8b27f44718fa577cefd2e4e86cb2c46a080db9",
+    "currentSha256": "f73d411952f506f39a9ba025ea9cbe287a47767ae909b3ee26deafa57efde885"
+  },
+  {
+    "path": "packages/shared/graphql/src/generated/graphql.ts",
+    "producerSha256": "cc119ff580c4ebba2953bb81e484a64c3423e33efea10d32839047b93b13706d",
+    "currentSha256": "70e56a1e3f55cc56deb267e0dba3ddcda46ae5e32fc4e3b9cd93d83695060ce9"
+  },
+  {
+    "path": "packages/shared/graphql/src/operations/privacy.ts",
+    "producerSha256": "7ccfcbe04237f1870fdcf7ee366f29a297381187c4210639bb6e554a5674b065",
+    "currentSha256": "7994901d1f545e31862c10464f2e631e57dba6977b56e97425303148120937b7"
+  },
+  {
+    "path": "packages/shared/privacy/src/index.ts",
+    "producerSha256": "b0838636f0d46be2d097ae9a401acd854159280eb2ad563719fe12be2c65fa7e",
+    "currentSha256": "d9d4aba795919662bacd16832b83a1e7ad9c2a988970e95a3824e34b280236e4"
+  }
+]
