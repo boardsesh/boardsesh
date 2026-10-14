@@ -160,7 +160,7 @@ class StoreAuditTest < Minitest::Test
     assert client.requests.all? { |method, _path| method == "GET" }
   end
 
-  def test_review_item_inventory_uses_linkage_without_expanding_resources
+  def test_review_item_inventory_explicitly_requests_app_and_cpp_linkage
     client = FakeApple.new
     client.review_submissions = [review_submission("cpp-review", "IN_REVIEW")]
     client.review_items = { "cpp-review" => [review_item("cpp-item", "READY_FOR_REVIEW", "appCustomProductPageVersion", "cpp-version")] }
@@ -168,9 +168,28 @@ class StoreAuditTest < Minitest::Test
     report = apple(client).run
 
     item_requests = client.requests.select { |_method, path| path.start_with?("/v1/reviewSubmissions/") }
-    assert_equal [["GET", "/v1/reviewSubmissions/cpp-review/items?limit=200"]], item_requests
+    assert_equal [["GET", "/v1/reviewSubmissions/cpp-review/items?include=appStoreVersion,appCustomProductPageVersion&limit=200"]], item_requests
     assert_equal "cpp-version", report.dig("reviewSubmissions", 0, "items", 0, "resources", 0, "id")
     refute report.dig("reviewSubmissions", 0, "membershipAmbiguous")
+  end
+
+  def test_unexpanded_review_items_remain_visible_and_ambiguous_in_active_and_historical_reviews
+    client = FakeApple.new
+    client.review_submissions = [review_submission("active", "IN_REVIEW"), review_submission("history", "COMPLETE")]
+    active = review_item("active-item", "READY_FOR_REVIEW")
+    active.delete("relationships")
+    historical = review_item("old-item", "REMOVED")
+    historical["relationships"] = { "appStoreVersion" => { "data" => nil }, "appCustomProductPageVersion" => { "data" => nil } }
+    client.review_items = { "active" => [active], "history" => [historical] }
+
+    reviews = apple(client).run.fetch("reviewSubmissions")
+
+    assert_equal %w[IN_REVIEW COMPLETE], reviews.map { |review| review.fetch("state") }
+    assert_equal %w[active-item old-item], reviews.map { |review| review.dig("items", 0, "id") }
+    assert reviews.all? { |review| review.fetch("membershipAmbiguous") }
+    assert reviews.all? { |review| review.dig("items", 0, "bindingAmbiguous") && review.dig("items", 0, "resources").empty? }
+    active["relationships"] = nil
+    assert_raises(BoardseshStoreAudit::Error) { apple(client).run }
   end
 
   def test_review_inventory_preserves_other_item_types_and_unknown_states

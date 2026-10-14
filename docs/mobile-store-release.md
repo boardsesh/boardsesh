@@ -476,6 +476,12 @@ while another items-only review is active. Empty, mixed, unknown, or unresolved
 membership needs inspection, not an assumption that a review slot is free. The
 audit marks ambiguous bindings and fails on malformed or duplicate identities;
 it does not cancel reviews or reserve a slot against simultaneous Console edits.
+Apple requires explicit expansion to return review-item linkage. The audit uses
+the app-version and CPP expansion already used by submission tooling; expanding
+every documented resource type is rejected by the live API. Other item kinds may
+remain unresolved: their IDs and states are retained with ambiguous membership,
+including historical items. Inspect unresolved active reviews in App Store
+Connect before concluding that an items-only review slot is available.
 
 Android review remains a separate operation. Before sending a production release
 for review, verify managed publishing in Play Console and establish whether approval
