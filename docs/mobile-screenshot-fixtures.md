@@ -135,6 +135,19 @@ The newest genuine merged response must pass; older positive snapshots never
 repair a newer negative result. Empty spray editor scenes retain their explicit
 no-JoinSession behavior.
 
+Spray tablet editor captures enter the real Climbs list before opening its native
+Create action. Preparation records the exact default list request for each
+explicitly empty editor wall: page 0, page size 30, ascents descending, boulders,
+and `crossAngleStats: false`. The original native page-size-6 seed response must
+prove that the same owned, editable, private wall is empty. Both that original
+response and the newly authenticated list response must contain no climbs and
+`hasMore: false`; changed content stops preparation rather than expanding into
+more pages or detail queries. Page-size-6 bytes are never copied into another
+request key. When preparation records missing coverage, `CPP editor list evidence`
+logs bind each included list response to its file hash, native document, variables
+hash and recording time. Original recording bytes stay unchanged, and a new complete replay must
+still verify modal visibility and the actual images.
+
 The recorder extends a temporary copy, preserves the original fixture and static
 bytes, and advances `frozenNow` using actual response timestamps. Existing exact
 responses are retained; collisions, missing responses, malformed data, changed

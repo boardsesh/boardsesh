@@ -21,6 +21,7 @@ import {
   withCppDetailCoverage,
 } from '../lib/cpp-detail-coverage';
 import { readCppPage, type CppTarget } from '../lib/screenshot-cpp';
+import { readScreenshotFixtureManifest } from '../lib/screenshot-backend';
 import { prepareCppCampaignFixtures } from '../prepare-ios-campaign-fixtures';
 import { mergeFixtureSets, graphqlFixtureContentHash } from '../screenshot-fixtures-merge';
 import {
@@ -216,12 +217,16 @@ function sample(target: CppTarget = 'tension', emptySpray = false) {
           setIds: board.setIds,
           angle: board.angle,
           page: 0,
-          pageSize: 10,
+          pageSize: emptySpray && board.boardType === 'spray' ? 6 : 10,
+          ...(emptySpray && board.boardType === 'spray'
+            ? { sortBy: 'ascents', sortOrder: 'desc', boulders: true }
+            : {}),
         },
       },
       {
         data: {
           searchClimbs: {
+            ...(emptySpray && board.boardType === 'spray' ? { hasMore: false } : {}),
             climbs: selected.map((climb) => ({
               uuid: climb.climbId,
               name: climb.readyText,
@@ -358,6 +363,7 @@ function save(source: ReturnType<typeof sample>, upstream?: string) {
 }
 
 function reply(operationName: string, variables: Record<string, unknown>): Record<string, unknown> {
+  if (operationName === 'SearchClimbs') return { searchClimbs: { climbs: [], hasMore: false } };
   if (operationName === 'GetUserGroupedAscentsFeed') return moonLogbookResponse();
   if (operationName === 'GetBetaLinks')
     return {
@@ -530,12 +536,124 @@ describe('CPP selected detail source evidence', () => {
       'cf674193689d8a15e0955b9160ed62aadade5d4f2651f9aa99b5edacc68c37d9',
     ]);
   });
-  it('skips only explicitly empty spray editor walls while retaining other three genuine heroes', () => {
+  it('records exact empty editor list reads while retaining other three genuine heroes', () => {
     const source = sample('spray', true);
-    expect(resolveCppDetailReads(source.manifest, source.fixtures)).toHaveLength(9);
+    const reads = resolveCppDetailReads(source.manifest, source.fixtures);
+    expect(reads.filter((request) => request.operationName !== 'SearchClimbs')).toHaveLength(9);
+    const searches = reads.filter((request) => request.operationName === 'SearchClimbs');
+    expect(searches).toHaveLength(3);
+    expect(searches.map((request) => request.variables)).toEqual(
+      source.boards
+        .filter((board) => board.boardType === 'spray')
+        .map((board) => ({
+          input: {
+            boardName: 'spray',
+            layoutId: board.layoutId,
+            sizeId: board.sizeId,
+            setIds: board.setIds,
+            angle: board.angle,
+            page: 0,
+            pageSize: 30,
+            sortBy: 'ascents',
+            sortOrder: 'desc',
+            boulders: true,
+            crossAngleStats: false,
+          },
+        })),
+    );
     source.manifest.capture!.cpp!.boardClimbCounts!['spray-liz'] = 1;
     expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('explicitly empty');
   });
+  it.each(['public', 'uneditable', 'missing-seed', 'nonempty-seed', 'more-pages'])(
+    'rejects editor list completion from %s source evidence',
+    (fault) => {
+      const source = sample('spray', true);
+      const board = source.boards.find((candidate) => candidate.boardType === 'spray')!;
+      const seed = source.fixtures.find(
+        (fixture) =>
+          fixture.operationName === 'SearchClimbs' &&
+          (fixture.variables as { input: { layoutId: number } }).input.layoutId === board.layoutId,
+      )!;
+      if (fault === 'public') board.isPublic = true;
+      if (fault === 'uneditable') board.canEdit = false;
+      if (fault === 'missing-seed') {
+        const index = source.fixtures.indexOf(seed);
+        source.fixtures.splice(index, 1);
+        source.manifest.graphql.splice(index, 1);
+      }
+      const response = seed.response as { data: { searchClimbs: { climbs: unknown[]; hasMore: boolean } } };
+      if (fault === 'nonempty-seed') response.data.searchClimbs.climbs.push({ uuid: 'unexpected' });
+      if (fault === 'more-pages') response.data.searchClimbs.hasMore = true;
+      expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow();
+    },
+  );
+  it('rejects an existing editor list that no longer matches the empty source', () => {
+    const source = sample('spray', true);
+    const request = resolveCppDetailReads(source.manifest, source.fixtures).find(
+      (candidate) => candidate.operationName === 'SearchClimbs',
+    )!;
+    source.append(request.query, request.variables, {
+      data: { searchClimbs: { climbs: [{ uuid: 'new' }], hasMore: false } },
+    });
+    expect(() => resolveCppDetailReads(source.manifest, source.fixtures)).toThrow('genuinely empty');
+  });
+  it('records real editor lists without replacing the distinct seed response bytes', async () => {
+    const source = sample('spray', true);
+    const service = await upstream();
+    const { input } = save(source, service.origin);
+    const originals = new Map(
+      source.manifest.graphql.map((entry) => [entry.file, readFileSync(join(input, entry.file))]),
+    );
+    const logs: string[] = [];
+    await withCppDetailCoverage(
+      input,
+      { upstream: service.origin, email, password: 'test', log: (line) => logs.push(line) },
+      async (recording) => {
+        const completed = readScreenshotFixtureManifest(recording)!;
+        const searches = service.requests.filter((request) => request.operationName === 'SearchClimbs');
+        expect(searches).toHaveLength(3);
+        expect(searches.every((request) => (request.variables.input as { pageSize: number }).pageSize === 30)).toBe(
+          true,
+        );
+        for (const [file, bytes] of originals) expect(readFileSync(join(recording, file))).toEqual(bytes);
+        expect(completed.graphql.filter((entry) => entry.operationName === 'SearchClimbs')).toHaveLength(9);
+      },
+    );
+    expect(logs.filter((line) => line.startsWith('CPP editor list evidence:'))).toHaveLength(3);
+  });
+  it.each(['nonempty', 'more-pages', 'errors', 'http-failure'])(
+    'refuses an upstream editor list with %s without preparing a candidate',
+    async (fault) => {
+      const source = sample('spray', true);
+      const service = await upstream({
+        response: (operation, variables) => {
+          if (operation !== 'SearchClimbs') return { body: { data: reply(operation, variables) } };
+          return {
+            status: fault === 'http-failure' ? 503 : 200,
+            body:
+              fault === 'errors'
+                ? { errors: [{ message: 'failed' }] }
+                : {
+                    data: {
+                      searchClimbs: {
+                        climbs: fault === 'nonempty' ? [{ uuid: 'new' }] : [],
+                        hasMore: fault === 'more-pages',
+                      },
+                    },
+                  },
+          };
+        },
+      });
+      const { input } = save(source, service.origin);
+      let prepared = false;
+      await expect(
+        withCppDetailCoverage(input, { upstream: service.origin, email, password: 'test' }, async () => {
+          prepared = true;
+        }),
+      ).rejects.toThrow();
+      expect(prepared).toBe(false);
+    },
+  );
   it.each([
     [
       'owner',
@@ -911,7 +1029,10 @@ describe('CPP genuine detail recording and candidate preparation', () => {
       expect(existsSync(output)).toBe(false);
     });
     expect(api.authRequests).toBe(1);
-    expect(api.requests.filter((request) => request.operationName !== 'CppBootstrapProfile')).toHaveLength(9);
+    expect(api.requests.filter((request) => request.operationName === 'SearchClimbs')).toHaveLength(3);
+    expect(
+      api.requests.filter((request) => !['CppBootstrapProfile', 'SearchClimbs'].includes(request.operationName)),
+    ).toHaveLength(9);
   });
   it.each(['join false', 'participant false', 'missing JoinSession', 'missing QueueUpdates', 'complete resume false'])(
     'rejects manufacturer leader source %s before any authentication or detail query',

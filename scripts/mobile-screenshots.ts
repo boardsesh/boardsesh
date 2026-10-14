@@ -706,6 +706,20 @@ function cppRuntimeNavigationCommands(
   resultsRoute.searchParams.delete('screenshotOpenFilters');
   resultsRoute.searchParams.set('screenshotCppScene', 'search-results');
   commands['search-results'] = { ...commands.search, route: `${resultsRoute.pathname}${resultsRoute.search}` };
+  if (coverage.target === 'spray') {
+    // Cherry and Bowlo can be verified empty walls. On iPad, replacing the
+    // stack root with their editor renders it inline beside the previous player.
+    // Enter the owned list first; the real Create control pushes its modal.
+    for (const index of [1, 2]) {
+      if (coverage.boardHeroModes?.[page.heroBoards[index].id] !== 'wall-editor') continue;
+      const scene = `hero-${index + 1}`;
+      const alias = `${scene}-editor-list`;
+      commands[alias] = {
+        ...commands[scene],
+        route: `/climbs?screenshotBoardIndex=${index}&screenshotCppScene=${alias}`,
+      };
+    }
+  }
   if (coverage.target !== 'spray') commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
   if (coverage.target !== 'spray') {
     const tabletStatus = new URL(commands.island.route, 'http://localhost');
@@ -2277,7 +2291,15 @@ export function renderCppMaestroFlow(
       .join('\n')}\n    timeout: 15000`,
     '- waitForAnimationToEnd:\n    timeout: 30000',
   ];
+  const editorCatalog =
+    target === 'spray' && ipad
+      ? (JSON.parse(readFileSync(join(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'climbs.json'), 'utf8')) as {
+          mobile: { create: { fab: { ariaLabel: string }; actions: { close: string } } };
+        })
+      : undefined;
   for (const scene of scenes) {
+    const tabletWallEditor = target === 'spray' && ipad && scene.wallEditor;
+    const navigationScene = tabletWallEditor ? `${scene.command}-editor-list` : scene.command;
     const selectedHero =
       scene.command === 'accessory-prepare'
         ? coverage.accessoryClimb
@@ -2289,7 +2311,7 @@ export function renderCppMaestroFlow(
         ? ['queue-join', scene.command]
         : scene.command === 'search'
           ? [scene.command, ...(gradeSelectors ? ['search-grade'] : []), 'search-results']
-          : [scene.command];
+          : [navigationScene];
     for (const command of sceneCommands) {
       if (!navigation[command]) throw new Error(`CPP ${target} has no native navigation command for ${command}`);
     }
@@ -2323,9 +2345,18 @@ export function renderCppMaestroFlow(
         );
     }
     commands.push(
-      `- evalScript: \${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=${scene.command}').body).sequence}`,
+      `- evalScript: \${output.cppSequence = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/set?scene=${navigationScene}').body).sequence}`,
       "- retry:\n    maxRetries: 3\n    commands:\n      - evalScript: ${output.cppAcknowledged = JSON.parse(http.get(SCREENSHOT_CPP_URL + '/status?waitFor=' + output.cppSequence).body).acknowledged}\n      - assertTrue: ${output.cppAcknowledged == output.cppSequence}",
     );
+    if (tabletWallEditor) {
+      const create = { text: `^${cppReadinessSelector(editorCatalog!.mobile.create.fab.ariaLabel)}$`, enabled: true };
+      commands.push(
+        '- extendedWaitUntil:\n    visible:\n      id: "^climbs-screen$"\n    timeout: 90000',
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(cppBoardHeaderReadinessSelector(scene.variant!, coverage))}\n    timeout: 90000`,
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(create)}\n    timeout: 90000`,
+        `- tapOn: ${JSON.stringify(create)}`,
+      );
+    }
     if (selectedHero && !scene.wallEditor) {
       if (!isCppClimbId(selectedHero.climbId) || selectedHero.boardId !== coverage.boardIds?.[scene.variant!.id])
         throw new Error(`CPP ${scene.command} requires a genuine selected climb on its actual board`);
@@ -2458,6 +2489,11 @@ export function renderCppMaestroFlow(
       commands.push('- extendedWaitUntil:\n    visible:\n      id: spray-hold-editor-board\n    timeout: 60000');
     if (scene.wallEditor)
       commands.push('- extendedWaitUntil:\n    visible:\n      id: create-climb-editor\n    timeout: 60000');
+    if (tabletWallEditor)
+      commands.push(
+        '- extendedWaitUntil:\n    notVisible:\n      id: "^play-drawer-board-overlay$"\n    timeout: 60000',
+        '- extendedWaitUntil:\n    notVisible:\n      id: "^board-sheet-stats$"\n    timeout: 60000',
+      );
     if (scene.command === 'search')
       commands.push('- extendedWaitUntil:\n    visible:\n      id: climb-filter-column\n    timeout: 60000');
     if (scene.command === 'search' && gradeSelectors) {
@@ -2560,6 +2596,14 @@ export function renderCppMaestroFlow(
       );
     if (ipad) commands.push(...collapseSidebarCommands);
     if (scene.filename) commands.push(`- takeScreenshot: ${scene.filename}`);
+    if (tabletWallEditor) {
+      const close = { text: `^${cppReadinessSelector(editorCatalog!.mobile.create.actions.close)}$`, enabled: true };
+      commands.push(
+        `- extendedWaitUntil:\n    visible: ${JSON.stringify(close)}\n    timeout: 60000`,
+        `- tapOn: ${JSON.stringify(close)}`,
+        '- extendedWaitUntil:\n    notVisible:\n      id: "^create-climb-editor$"\n    timeout: 60000',
+      );
+    }
     if (mirrorSelectors && selectedHero)
       commands.push(
         `- tapOn: ${JSON.stringify(mirrorSelectors.unmirror)}`,

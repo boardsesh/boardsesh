@@ -198,6 +198,18 @@ The acknowledged route, actual board identity, accessory-climb checks and
 90-second content deadline remain required. A visible row does not replace the
 recorded Projects response or subsequent full replay and image review.
 
+For the verified empty Cherry and Bowlo spray walls, iPad capture first enters
+that wall's actual Climbs list through a distinct acknowledged scene. It checks
+the real list and exact owned-board header, then taps the localized enabled
+Create a climb control. The app's existing push opens the native editor modal;
+replacing the stack root directly with the editor can leave the previous wall's
+player beside it. The editor content remains required, and capture waits for
+both the player overlay and board statistics pane to disappear. After the image,
+the flow closes the editor through its real control and verifies dismissal before
+the next scene. Phone and populated-wall navigation keep their existing routes.
+The extra list queries need genuine recorded responses; native replay and image
+review must still confirm all three correct wall photos and the final layout.
+
 CPP shard retries retain their failure evidence in separate
 `capture-debug/attempt-1/` and `capture-debug/attempt-2/` directories. Metro,
 backend, native-process diagnostics and partial captures belong to that attempt;

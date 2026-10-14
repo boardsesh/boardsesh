@@ -156,7 +156,10 @@ function ownedBoard(
       (row) =>
         row.ownerId !== manifest.accountUserId ||
         canonicalJson(geometry(row)) !== canonicalJson(geometry(board)) ||
-        row.name !== board.name,
+        row.name !== board.name ||
+        (coverage.target === 'spray' &&
+          coverage.boardHeroModes?.[variant.id] === 'wall-editor' &&
+          (row.isPublic !== false || row.canEdit !== true)),
     )
   )
     throw new Error('CPP detail identity lacks a unique recorded owner and geometry');
@@ -175,6 +178,40 @@ function detailReads(boardType: string, climbUuid: string): CppDetailRead[] {
   ].map((request) => ({ ...request, ...graphqlFixtureKey(request, sha256) }));
 }
 
+function editorListRead(board: Record<string, unknown>, fixtures: readonly GraphqlFixtureFile[]): CppDetailRead {
+  const seedInput = {
+    boardName: 'spray',
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+    setIds: board.setIds,
+    angle: board.angle,
+    page: 0,
+    pageSize: 6,
+    sortBy: 'ascents',
+    sortOrder: 'desc',
+    boulders: true,
+  };
+  const seed = fixtures.find(
+    (fixture) =>
+      fixture.operationName === 'SearchClimbs' &&
+      canonicalJson(fixture.variables) === canonicalJson({ input: seedInput }),
+  );
+  if (!seed) throw new Error('CPP editor list lacks its genuine empty native seed search');
+  assertEmptyEditorSearch(seed);
+  const request = {
+    operationName: 'SearchClimbs',
+    query: SEARCH_CLIMBS,
+    variables: { input: { ...seedInput, pageSize: 30, crossAngleStats: false } },
+  };
+  return { ...request, ...graphqlFixtureKey(request, sha256) };
+}
+
+function assertEmptyEditorSearch(fixture: GraphqlFixtureFile): void {
+  const result = fields(fixture, 'searchClimbs');
+  if (!Array.isArray(result.climbs) || result.climbs.length !== 0 || result.hasMore !== false)
+    throw new Error('CPP editor list must remain a genuinely empty spray wall');
+}
+
 function assertDetailResponse(fixture: GraphqlFixtureFile, expected: CppDetailRead): void {
   if (
     normalizeDocument(fixture.query) !== normalizeDocument(expected.query) ||
@@ -185,6 +222,7 @@ function assertDetailResponse(fixture: GraphqlFixtureFile, expected: CppDetailRe
   const response = fixture.response;
   if (!record(response) || !record(response.data) || response.errors !== undefined)
     throw new Error('CPP detail response is invalid');
+  if (expected.operationName === 'SearchClimbs') assertEmptyEditorSearch(fixture);
   const contents = response.data;
   const input = record(expected.variables.input) ? expected.variables.input : expected.variables;
   const climbId = input.climbUuid;
@@ -297,6 +335,10 @@ export function resolveCppDetailReads(
         (variant.id === page.primaryBoard.id && coverage.accessoryClimb)
       )
         throw new Error('CPP detail wall editor is not an explicitly empty spray wall');
+      if (coverage.target === 'spray') {
+        const request = editorListRead(board, fixtures);
+        reads.set(`${request.operationName}\n${request.variablesHash}`, request);
+      }
       continue;
     }
     const hero = coverage.heroClimbs?.[variant.id];
@@ -678,6 +720,25 @@ export async function withCppDetailCoverage<T>(
     )
       throw new Error('CPP detail recorder changed source identity, scope or clock provenance');
     assertOriginalFiles(input, recording, originalHashes);
+    for (const expected of detailReads.filter((request) => request.operationName === 'SearchClimbs')) {
+      const entry = completed.graphql.find(
+        (candidate) =>
+          candidate.operationName === expected.operationName && candidate.variablesHash === expected.variablesHash,
+      )!;
+      const fixture = completedFixtures.find(
+        (candidate) =>
+          candidate.operationName === expected.operationName && candidate.variablesHash === expected.variablesHash,
+      )!;
+      options.log?.(
+        `CPP editor list evidence: ${JSON.stringify({
+          file: entry.file,
+          sha256: sha256(readFileSync(join(recording, entry.file))),
+          documentHash: fixture.documentHash,
+          variablesHash: fixture.variablesHash,
+          recordedAt: fixture.recordedAt,
+        })}`,
+      );
+    }
     for (const proof of thumbnailRecording.proofs) {
       const entry = completed.static.find((candidate) => staticRequest(candidate) === proof.request)!;
       if (sha256(readFileSync(join(recording, entry.file))) !== proof.sha256)

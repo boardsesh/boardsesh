@@ -2127,7 +2127,7 @@ describe('custom product page captures', () => {
       const cherryCapture = source.slice(source.indexOf('scene=hero-2'), source.indexOf('takeScreenshot: hero-2'));
       expect(cherryCapture).toContain('Bouldername');
       expect(cherryCapture).toContain('create-climb-editor');
-      expect(cherryCapture).not.toContain('play-drawer-board-overlay');
+      if (!device.name.startsWith('iPad')) expect(cherryCapture).not.toContain('play-drawer-board-overlay');
       expect(cherryCapture).not.toContain('swipe:');
       expect(parseAllDocuments(source).flatMap((document) => document.errors)).toEqual([]);
     }
@@ -2140,6 +2140,123 @@ describe('custom product page captures', () => {
     expect(() => assertCppCaptureReady('kilter', kilter.page, kilter.coverage, kilter.boards)).toThrow(
       'explicit empty spray wall',
     );
+  });
+  it('opens empty Spray tablet editors from the acknowledged owned list and closes each native modal', () => {
+    const { page, boards, coverage } = scenario('spray');
+    const editorBoards = page.heroBoards.slice(1);
+    coverage.boardHeroModes = Object.fromEntries(editorBoards.map((board) => [board.id, 'wall-editor']));
+    coverage.boardClimbCounts = Object.fromEntries(editorBoards.map((board) => [board.id, 0]));
+    const transport = readinessCommandTransport();
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const catalog = JSON.parse(readFileSync(join('packages/shared/i18n/locales', locale, 'climbs.json'), 'utf8')) as {
+        mobile: { create: { fab: { ariaLabel: string }; actions: { close: string } } };
+      };
+      const create = { text: `^${cppReadinessSelector(catalog.mobile.create.fab.ariaLabel)}$`, enabled: true };
+      const close = { text: `^${cppReadinessSelector(catalog.mobile.create.actions.close)}$`, enabled: true };
+      const env = buildScreenshotEnv(
+        { ...parseArgs(['--cpp', 'spray', '--fixtures', 'record']), cppCoverage: coverage, cppRecordedBoards: boards },
+        { NODE_ENV: 'test' },
+        locale,
+        '2026-10-14T00:00:00Z',
+        8090,
+      );
+      const registry = JSON.parse(env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS!) as Record<string, CppNavigationCommand>;
+      for (const [index, board] of editorBoards.entries()) {
+        const scene = `hero-${index + 2}`;
+        const alias = `${scene}-editor-list`;
+        expect(registry[alias]).toEqual({
+          ...registry[scene],
+          route: `/climbs?screenshotBoardIndex=${index + 1}&screenshotCppScene=${alias}`,
+        });
+        expect(registry[alias].identity.uuid).toBe(coverage.boardIds![board.id]);
+        expect(registry[alias].route).not.toContain('screenshotOpenFirst');
+        const response = transport(`/cpp/set?scene=${alias}`);
+        expect(response.status).toBe(200);
+        const command = JSON.parse(response.body) as { sequence: number; scene: string };
+        expect(command.scene).toBe(alias);
+        expect(JSON.parse(transport(`/cpp/ack?sequence=${command.sequence}`).body).acknowledged).toBe(command.sequence);
+      }
+      for (const device of IOS_SCREENSHOT_DEVICES)
+        for (const recording of [false, true]) {
+          const documents = parseAllDocuments(renderCppMaestroFlow('spray', device, coverage, locale, recording));
+          expect(documents.flatMap((document) => document.errors)).toEqual([]);
+          const steps = documents[1].toJS() as Record<string, unknown>[];
+          expect(steps.filter((step) => step.takeScreenshot)).toHaveLength(13);
+          for (const [index, board] of editorBoards.entries()) {
+            const scene = `hero-${index + 2}`;
+            const alias = `${scene}-editor-list`;
+            const tablet = device.name.startsWith('iPad');
+            const start = steps.findIndex(
+              (step) =>
+                typeof step.evalScript === 'string' &&
+                step.evalScript.includes(`/set?scene=${tablet ? alias : scene}'`),
+            );
+            const capture = steps.findIndex((step) => step.takeScreenshot === scene);
+            expect(start).toBeGreaterThan(-1);
+            expect(capture).toBeGreaterThan(start);
+            const preparation = steps.slice(start, capture);
+            expect(preparation[1]).toMatchObject({
+              retry: {
+                maxRetries: 3,
+                commands: [{}, { assertTrue: '${output.cppAcknowledged == output.cppSequence}' }],
+              },
+            });
+            if (!tablet) {
+              expect(preparation).not.toContainEqual({ tapOn: create });
+              expect(requestedCppScenes(steps)).not.toContain(alias);
+              continue;
+            }
+            const tap = preparation.findIndex((step) => JSON.stringify(step) === JSON.stringify({ tapOn: create }));
+            expect(tap).toBeGreaterThan(1);
+            expect(preparation.slice(2, tap)).toEqual([
+              { extendedWaitUntil: { visible: { id: '^climbs-screen$' }, timeout: 90000 } },
+              { extendedWaitUntil: { visible: cppBoardHeaderReadinessSelector(board, coverage), timeout: 90000 } },
+              { extendedWaitUntil: { visible: create, timeout: 90000 } },
+            ]);
+            expect(preparation).toContainEqual({
+              extendedWaitUntil: { visible: cppReadinessSelector(coverage.boardReadyText[board.id]), timeout: 90000 },
+            });
+            const editor = preparation.findIndex(
+              (step) =>
+                JSON.stringify(step) ===
+                JSON.stringify({ extendedWaitUntil: { visible: { id: 'create-climb-editor' }, timeout: 60000 } }),
+            );
+            expect(editor).toBeGreaterThan(tap);
+            expect(preparation.slice(editor + 1, editor + 3)).toEqual([
+              { extendedWaitUntil: { notVisible: { id: '^play-drawer-board-overlay$' }, timeout: 60000 } },
+              { extendedWaitUntil: { notVisible: { id: '^board-sheet-stats$' }, timeout: 60000 } },
+            ]);
+            expect(steps.slice(capture + 1, capture + 4)).toEqual([
+              { extendedWaitUntil: { visible: close, timeout: 60000 } },
+              { tapOn: close },
+              { extendedWaitUntil: { notVisible: { id: '^create-climb-editor$' }, timeout: 60000 } },
+            ]);
+            const matchesCreate = (text: string, enabled: boolean) =>
+              new RegExp(create.text).test(text) && enabled === create.enabled;
+            expect(matchesCreate(catalog.mobile.create.fab.ariaLabel, true)).toBe(true);
+            expect(matchesCreate(catalog.mobile.create.fab.ariaLabel, false)).toBe(false);
+            expect(matchesCreate(`Other ${catalog.mobile.create.fab.ariaLabel}`, true)).toBe(false);
+          }
+        }
+    }
+    for (const alias of ['hero-1-editor-list', 'hero-2-editor-list-other-board', 'other-1-editor-list'])
+      expect(transport(`/cpp/set?scene=${alias}`).status).toBe(400);
+    expect(transport('/cpp/set?scene=hero-2-editor-list', '192.0.2.1').status).toBe(403);
+    for (const target of CPP_TARGETS) {
+      const populated = scenario(target);
+      const env = buildScreenshotEnv(
+        {
+          ...parseArgs(['--cpp', target, '--fixtures', 'record']),
+          cppCoverage: populated.coverage,
+          cppRecordedBoards: populated.boards,
+        },
+        { NODE_ENV: 'test' },
+        'en-US',
+        '2026-10-14T00:00:00Z',
+        8090,
+      );
+      expect(env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS).not.toContain('-editor-list');
+    }
   });
   it('uses localized content gates for screens without user-generated labels', () => {
     const { page, boards, coverage, fixturesDir } = scenario('kilter');
