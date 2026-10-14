@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { parse, getOperationAST, buildSchema, validate } from 'graphql';
+import { parse, getOperationAST, getVariableValues, buildSchema, validate } from 'graphql';
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -2177,96 +2177,115 @@ describe('genuine grouped logbook coverage', () => {
 });
 
 describe('real spray-photo provenance', () => {
-  it('uses the original photo and real detector result through version/hold/publish APIs', async () => {
-    const harness = manufacturerHarness();
-    const variant = readCppPage('spray').heroBoards[1];
-    const original = readFileSync(variant.photo!);
-    const sourceSha256 = createHash('sha256').update(original).digest('hex');
-    const wall = {
-      uuid: testUuid(700),
-      board: { ...harness.owned[0], uuid: testUuid(700), boardType: 'spray' },
-      currentVersion: null,
-      holdCount: 0,
-    };
-    const photoSize = await sharp(original).metadata();
-    const version = {
-      id: '40',
-      number: 1,
-      status: 'DRAFT',
-      homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-      photo: { url: 'https://photo.example.test/original', width: photoSize.width!, height: photoSize.height! },
-    };
-    const detection = {
-      id: 'detector-job',
-      status: 'done',
-      error: null,
-      result: {
-        width: photoSize.width!,
-        height: photoSize.height!,
-        candidates: [{ cx: 100.2, cy: 200.3, r: 15.1, confidence: 0.96 }],
-      },
-    };
-    const writes: Array<{ name: string; variables: Record<string, unknown> }> = [];
-    harness.options.apply = true;
-    harness.options.checkpoint.boards[variant.id] = { uuid: wall.uuid };
-    harness.options.transport = {
-      ...harness.options.transport,
-      upload: vi.fn(async (_uuid, bytes) => {
-        expect(bytes).toEqual(original);
-        return { photoId: testUuid(702) };
-      }),
-      bytes: vi.fn(async () => original),
-      async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-        expect(validate(API_SCHEMA, parse(query))).toEqual([]);
-        const name = getOperationAST(parse(query))?.name?.value ?? '';
-        validateActualInput(name, variables);
-        writes.push({ name, variables });
-        let response: unknown;
-        switch (name) {
-          case 'GetSprayWallWithVersions':
-            response = { sprayWall: { ...wall, versions: [] } };
-            break;
-          case 'CreateSprayWallVersion':
-            response = { createSprayWallVersion: version };
-            break;
-          case 'SprayDetection':
-            response = { sprayWallDetectionForVersion: null };
-            break;
-          case 'RequestSprayDetection':
-            response = { requestSprayWallDetection: detection };
-            break;
-          case 'GetSprayWallDraftRenderData':
-            response = { sprayWallRenderData: { holds: [] } };
-            break;
-          case 'UpsertSprayWallHolds':
-            response = { upsertSprayWallHolds: [{ id: 7 }] };
-            break;
-          case 'PublishSprayWallVersion':
-            response = { publishSprayWallVersion: { ...version, status: 'PUBLISHED' } };
-            break;
-          default:
-            throw new Error(`Unexpected operation ${name}`);
-        }
-        return response as T;
-      },
-    };
-    expect(await ensureSprayPhoto(harness.options, variant, wall, [])).toBeNull();
-    expect(writes.find((entry) => entry.name === 'CreateSprayWallVersion')?.variables.input).toEqual({
-      wallUuid: wall.uuid,
-      photoId: testUuid(702),
-    });
-    expect(writes.find((entry) => entry.name === 'UpsertSprayWallHolds')?.variables.input).toMatchObject({
-      wallUuid: wall.uuid,
-      versionId: version.id,
-      holds: [{ cx: 100, cy: 200, r: 15, source: 'AUTO', confidence: 0.96 }],
-    });
-    expect(writes.at(-1)?.name).toBe('PublishSprayWallVersion');
-    expect(harness.options.checkpoint.boards[variant.id]).toMatchObject({
-      sourceSha256,
-      photoId: testUuid(702),
-      versionId: '40',
-    });
-  });
+  it.each(['new', 'checkpoint-owned'] as const)(
+    'uses the original photo and real detector result with a %s draft',
+    async (draftSource) => {
+      const harness = manufacturerHarness();
+      const variant = readCppPage('spray').heroBoards[1];
+      const original = readFileSync(variant.photo!);
+      const sourceSha256 = createHash('sha256').update(original).digest('hex');
+      const wall = {
+        uuid: testUuid(700),
+        board: { ...harness.owned[0], uuid: testUuid(700), boardType: 'spray' },
+        currentVersion: null,
+        holdCount: 0,
+      };
+      const photoSize = await sharp(original).metadata();
+      const version = {
+        id: '40',
+        number: 1,
+        status: 'DRAFT',
+        homography: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        photo: { url: 'https://photo.example.test/original', width: photoSize.width!, height: photoSize.height! },
+      };
+      const detection = {
+        id: 'detector-job',
+        status: 'done',
+        error: null,
+        result: {
+          width: photoSize.width!,
+          height: photoSize.height!,
+          candidates: [{ cx: 100.2, cy: 200.3, r: 15.1, confidence: 0.96 }],
+        },
+      };
+      const writes: Array<{ name: string; variables: Record<string, unknown> }> = [];
+      const resumeDraft = draftSource === 'checkpoint-owned';
+      harness.options.apply = true;
+      harness.options.checkpoint.boards[variant.id] = {
+        uuid: wall.uuid,
+        ...(resumeDraft ? { sourceSha256, photoId: testUuid(702), versionId: version.id } : {}),
+      };
+      harness.options.transport = {
+        ...harness.options.transport,
+        upload: vi.fn(async (_uuid, bytes) => {
+          expect(bytes).toEqual(original);
+          return { photoId: testUuid(702) };
+        }),
+        bytes: vi.fn(async () => original),
+        async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+          const document = parse(query);
+          expect(validate(API_SCHEMA, document)).toEqual([]);
+          const operation = getOperationAST(document)!;
+          // Document validation and Zod parsing do not reject extra GraphQL input fields.
+          expect(getVariableValues(API_SCHEMA, operation.variableDefinitions ?? [], variables).errors).toBeUndefined();
+          const name = operation.name?.value ?? '';
+          validateActualInput(name, variables);
+          writes.push({ name, variables });
+          let response: unknown;
+          switch (name) {
+            case 'GetSprayWallWithVersions':
+              response = { sprayWall: { ...wall, versions: resumeDraft ? [version] : [] } };
+              break;
+            case 'CreateSprayWallVersion':
+              response = { createSprayWallVersion: version };
+              break;
+            case 'SprayDetection':
+              response = { sprayWallDetectionForVersion: resumeDraft ? detection : null };
+              break;
+            case 'RequestSprayDetection':
+              response = { requestSprayWallDetection: detection };
+              break;
+            case 'GetSprayWallDraftRenderData':
+              response = { sprayWallRenderData: { holds: resumeDraft ? [{ id: 7 }] : [] } };
+              break;
+            case 'UpsertSprayWallHolds':
+              response = { upsertSprayWallHolds: [{ id: 7 }] };
+              break;
+            case 'PublishSprayWallVersion':
+              response = { publishSprayWallVersion: { ...version, status: 'PUBLISHED' } };
+              break;
+            default:
+              throw new Error(`Unexpected operation ${name}`);
+          }
+          return response as T;
+        },
+      };
+      expect(await ensureSprayPhoto(harness.options, variant, wall, [])).toBeNull();
+      if (resumeDraft) {
+        expect(harness.options.transport.upload).not.toHaveBeenCalled();
+        expect(writes.map((entry) => entry.name)).not.toContain('CreateSprayWallVersion');
+        expect(writes.map((entry) => entry.name)).not.toContain('RequestSprayDetection');
+        expect(writes.map((entry) => entry.name)).not.toContain('UpsertSprayWallHolds');
+      } else {
+        expect(harness.options.transport.upload).toHaveBeenCalledOnce();
+        expect(writes.find((entry) => entry.name === 'CreateSprayWallVersion')?.variables.input).toEqual({
+          wallUuid: wall.uuid,
+          photoId: testUuid(702),
+        });
+        expect(writes.find((entry) => entry.name === 'UpsertSprayWallHolds')?.variables.input).toMatchObject({
+          wallUuid: wall.uuid,
+          versionId: version.id,
+          holds: [{ cx: 100, cy: 200, r: 15, source: 'AUTO', confidence: 0.96 }],
+        });
+      }
+      expect(writes.at(-1)?.name).toBe('PublishSprayWallVersion');
+      expect(harness.options.checkpoint.boards[variant.id]).toMatchObject({
+        sourceSha256,
+        photoId: testUuid(702),
+        versionId: '40',
+      });
+    },
+  );
 
   it('records explicit visual acceptance separately from byte identity and never replaces a published photo', async () => {
     const harness = manufacturerHarness();

@@ -282,6 +282,9 @@ the backend’s idempotent tick operation. No send is invented. Cherry and Bowlo
 can appear in the real new-climb editor before either wall has climbs.
 The checkpoint is bound to the authenticated account and backend and cached for
 resuming interrupted recognition or queue setup.
+An interrupted photo publication resumes only the checkpointed draft after
+rechecking ownership, original-photo bytes and actual detected holds. The publish
+request sends the existing version ID, as required by the GraphQL input contract.
 
 Liz's Wall reuses the existing owned Home Spray Wall with its UUID unchanged.
 After ownership, private visibility, published photo provenance, and real holds

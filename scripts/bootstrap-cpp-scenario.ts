@@ -781,7 +781,7 @@ export async function ensureSprayPhoto(
     });
   }
   await options.transport.request(PUBLISH_SPRAY_WALL_VERSION, {
-    input: { wallUuid: wall.uuid, versionId: version.id },
+    input: { versionId: version.id },
   });
   actions.push(`${variant.id}: published actual supplied photo and detected holds`);
   return null;
