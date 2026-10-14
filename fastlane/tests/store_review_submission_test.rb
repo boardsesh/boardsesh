@@ -192,23 +192,24 @@ class StoreReviewSubmissionTest < Minitest::Test
   end
 
   def test_cpp_snapshot_binds_keywords_and_has_180_images
-    result = plan(["kilter"])
+    result = plan(["kilter"], context: "approved-version")
     locale = result.dig("snapshot", "surfaces", 0, "localizations", 0)
     assert_equal ["keyword-1"], locale.fetch("keywordIds")
     assert_equal 180, result.dig("snapshot", "surfaces", 0, "localizations").sum { |entry| entry.fetch("screenshotSets").sum { |set| set.fetch("count") } }
     @client.keywords = ["keyword-2"]
-    assert_raises(BoardseshStoreReview::Error) { submit(result.fetch("snapshotSha256"), ["kilter"]) }
+    assert_raises(BoardseshStoreReview::Error) { submit(result.fetch("snapshotSha256"), ["kilter"], context: "approved-version") }
     assert_empty @client.writes
   end
 
-  def test_cpp_only_submission_and_retry_bind_exact_app_version
-    digest = plan(["kilter"]).fetch("snapshotSha256")
-    assert_equal "submitted", submit(digest, ["kilter"]).fetch("action")
+  def test_cpp_only_submission_and_retry_bind_explicit_approved_context
+    @client.context_version = "approved-version"
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
+    assert_equal "submitted", submit(digest, ["kilter"], context: "approved-version").fetch("action")
     writes = @client.writes.length
-    assert_equal "already-submitted", submit(digest, ["kilter"]).fetch("action")
+    assert_equal "already-submitted", submit(digest, ["kilter"], context: "approved-version").fetch("action")
     assert_equal writes, @client.writes.length
     @client.context_version = "old-2.5-version"
-    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     assert_equal writes, @client.writes.length
   end
 
@@ -230,19 +231,21 @@ class StoreReviewSubmissionTest < Minitest::Test
   end
 
   def test_newer_cpp_after_asset_scan_blocks_submission
-    digest = plan(["kilter"]).fetch("snapshotSha256")
+    @client.context_version = "approved-version"
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
     @client.after_write = ->(_method, path) { @client.new_cpp_version = true if path == "/v1/reviewSubmissionItems" }
-    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     assert_match(/Current CPP version/, error.message)
     refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
   end
 
   def test_newer_cpp_prevents_successful_noop
-    digest = plan(["kilter"]).fetch("snapshotSha256")
-    submit(digest, ["kilter"])
+    @client.context_version = "approved-version"
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
+    submit(digest, ["kilter"], context: "approved-version")
     writes = @client.writes.length
     @client.new_cpp_version = true
-    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     assert_equal writes, @client.writes.length
   end
 
@@ -272,10 +275,10 @@ class StoreReviewSubmissionTest < Minitest::Test
   end
 
   def test_rejected_cpp_requires_resolution_before_any_write
-    digest = plan(["kilter"]).fetch("snapshotSha256")
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
     @report.fetch("customProductPages").first.fetch("versions").first["state"] = "REJECTED"
     @client.submissions["rejected"] = { "state" => "UNRESOLVED_ISSUES", "items" => [@client.item("appCustomProductPageVersion", "version-kilter", "REJECTED")] }
-    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    error = assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     assert_match(/requires rejection resolution in App Store Connect/, error.message)
     assert_empty @client.writes
   end
@@ -345,10 +348,10 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_empty @client.writes
   end
 
-  def test_cpp_review_context_must_be_exact_app_version
+  def test_cpp_review_context_must_match_explicit_approved_version
     @client.context_version = "old-2.5-version"
-    digest = plan(["kilter"]).fetch("snapshotSha256")
-    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
   end
 
@@ -360,9 +363,10 @@ class StoreReviewSubmissionTest < Minitest::Test
   end
 
   def test_keyword_change_after_item_creation_is_never_overwritten_or_submitted
-    digest = plan(["kilter"]).fetch("snapshotSha256")
+    @client.context_version = "approved-version"
+    digest = plan(["kilter"], context: "approved-version").fetch("snapshotSha256")
     @client.after_write = ->(_method, path) { @client.keywords = ["changed"] if path == "/v1/reviewSubmissionItems" }
-    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"]) }
+    assert_raises(BoardseshStoreReview::Error) { submit(digest, ["kilter"], context: "approved-version") }
     assert_equal ["changed"], @client.keywords
     refute @client.writes.any? { |method, _path, _body| method == "PATCH" }
   end
@@ -387,16 +391,17 @@ class StoreReviewSubmissionTest < Minitest::Test
 
   def test_explicit_standalone_context_keeps_release_build_and_180_assets_separate
     @report["build"]["version"] = "18"
-    strict = plan(["moonboard"])
+    strict = plan(%w[default moonboard]).fetch("snapshot")
+    strict["surfaces"].reject! { |surface| surface.fetch("target") == "default" }
     result = standalone_plan
-    assert_equal strict.fetch("snapshot"), result.fetch("snapshot").reject { |key, _entry| key == "cppReviewContext" }
+    assert_equal strict, result.fetch("snapshot").reject { |key, _entry| key == "cppReviewContext" }
     assert_equal "2.6.0", result.dig("snapshot", "version", "versionString")
     assert_equal "18", result.dig("snapshot", "build", "version")
     assert_equal "2.5.0", result.dig("snapshot", "cppReviewContext", "version", "versionString")
     assert_equal "12", result.dig("snapshot", "cppReviewContext", "build", "version")
     assert_equal "approved-prerelease", result.dig("snapshot", "cppReviewContext", "build", "preReleaseVersion", "id")
     assert_equal 180, result.dig("snapshot", "surfaces", 0, "localizations").sum { |locale| locale.fetch("screenshotSets").sum { |set| set.fetch("count") } }
-    refute_equal strict.fetch("snapshotSha256"), result.fetch("snapshotSha256")
+    refute_equal BoardseshStoreReview.digest(strict), result.fetch("snapshotSha256")
     assert_empty @client.writes
   end
 
@@ -411,6 +416,63 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_equal 0, @audit_calls
     assert_empty @client.writes
     assert_equal plan.fetch("snapshotSha256"), plan(context: "").fetch("snapshotSha256")
+  end
+
+  def test_cpp_only_missing_or_blank_context_fails_before_reads_or_writes_for_plan_and_submit
+    reads = []
+    @client.before_read = ->(path) { reads << path }
+    [["moonboard"], %w[kilter moonboard]].each do |selected|
+      [nil, "", " ", "\t\n"].each do |context|
+        %w[plan submit].each do |action|
+          error = assert_raises(BoardseshStoreReview::Error) do
+            runner(selected, context: context).run(action: action, expected_sha256: "0" * 64)
+          end
+          assert_match(/explicit approved review context|Invalid CPP review context/, error.message)
+        end
+      end
+    end
+    assert_equal 0, @audit_calls
+    assert_empty reads
+    assert_empty @client.writes
+  end
+
+  def test_expired_testflight_context_can_plan_resume_and_noop_with_unexpired_release
+    @client.approved_build["attributes"]["expired"] = true
+    @client.context_version = "approved-version"
+    @report["build"]["version"] = "18"
+    @report["version"]["appStoreState"] = "WAITING_FOR_REVIEW"
+    @client.submissions["moon-draft"] = { "state" => "READY_FOR_REVIEW", "items" => [@client.item("appCustomProductPageVersion", "version-moonboard")] }
+    result = standalone_plan
+    assert_equal true, result.dig("snapshot", "cppReviewContext", "build", "expired")
+    assert_equal false, result.dig("snapshot", "build", "expired")
+    assert_equal "18", result.dig("snapshot", "build", "version")
+    assert_equal "submitted", standalone_submit(result.fetch("snapshotSha256")).fetch("action")
+    assert_equal [["PATCH", "/v1/reviewSubmissions/moon-draft"]], @client.writes.map { |method, path, _body| [method, path] }
+    assert_equal "already-submitted", standalone_submit(result.fetch("snapshotSha256")).fetch("action")
+    assert_equal 1, @client.writes.length
+    assert_equal "WAITING_FOR_REVIEW", @report.dig("version", "appStoreState")
+    assert_equal "MANUAL", @report.dig("version", "releaseType")
+  end
+
+  def test_expired_target_release_is_rejected_even_with_valid_historical_context
+    @client.approved_build["attributes"]["expired"] = true
+    digest = standalone_plan.fetch("snapshotSha256")
+    @report["build"]["expired"] = true
+    %w[plan submit].each do |action|
+      error = assert_raises(BoardseshStoreReview::Error) do
+        runner(["moonboard"], context: "approved-version").run(action: action, expected_sha256: digest)
+      end
+      assert_match(/Attached release build is not valid/, error.message)
+    end
+    assert_empty @client.writes
+  end
+
+  def test_context_testflight_expiration_change_remains_bound_to_reviewed_snapshot
+    digest = standalone_plan.fetch("snapshotSha256")
+    @client.approved_build["attributes"]["expired"] = true
+    error = assert_raises(BoardseshStoreReview::Error) { standalone_submit(digest) }
+    assert_match(/differs from the reviewed snapshot/, error.message)
+    assert_empty @client.writes
   end
 
   def test_standalone_existing_ready_draft_resumes_and_noops_without_touching_default
@@ -466,7 +528,8 @@ class StoreReviewSubmissionTest < Minitest::Test
   def test_standalone_context_requires_matching_valid_build_and_prerelease
     original = Marshal.load(Marshal.dump(@client.approved_build))
     [nil, original.merge("id" => "wrong-build"), original.merge("type" => "apps"),
-      original.merge("attributes" => original.fetch("attributes").merge("expired" => true)),
+      original.merge("attributes" => original.fetch("attributes").merge("expired" => nil)),
+      original.merge("attributes" => original.fetch("attributes").merge("expired" => "false")),
       original.merge("attributes" => original.fetch("attributes").merge("processingState" => "PROCESSING")),
       original.merge("attributes" => original.fetch("attributes").merge("version" => ""))].each do |build|
       @client.approved_build = build

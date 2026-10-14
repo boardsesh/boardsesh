@@ -56,6 +56,9 @@ module BoardseshStoreReview
       known = ["default"] + manifest.fetch("targets").keys
       raise Error, "Select unique known review surfaces" if @selected.empty? || @selected.uniq != @selected || (@selected - known).any?
       @cpp_context_id = cpp_review_context_version_id.to_s
+      if !@selected.include?("default") && @cpp_context_id.empty?
+        raise Error, "CPP-only plan and submit require an explicit approved review context version ID"
+      end
       unless @cpp_context_id.empty?
         raise Error, "An explicit CPP review context is only allowed for CPP-only submissions" if @selected.include?("default")
         raise Error, "Invalid CPP review context version ID" unless resource_id?(@cpp_context_id)
@@ -332,10 +335,11 @@ module BoardseshStoreReview
         raise Error, "CPP review context has no attached build"
       end
       build = @client.request("GET", "/v1/appStoreVersions/#{@cpp_context_id}/build").fetch("data")
+      # Apple's expired flag controls TestFlight availability, not the approval of this historical context.
       unless build.is_a?(Hash) && build["type"] == "builds" && build["id"] == binding.fetch("id") &&
-          build.dig("attributes", "processingState") == "VALID" && build.dig("attributes", "expired") == false &&
+          build.dig("attributes", "processingState") == "VALID" && [true, false].include?(build.dig("attributes", "expired")) &&
           build.dig("attributes", "version").is_a?(String) && build.dig("attributes", "version").match?(/\A[1-9]\d*\z/)
-        raise Error, "CPP review context build is missing, changed, expired, or invalid"
+        raise Error, "CPP review context build is missing, changed, or invalid"
       end
       prerelease = @client.request("GET", "/v1/builds/#{build.fetch('id')}/preReleaseVersion").fetch("data")
       unless prerelease.is_a?(Hash) && prerelease["type"] == "preReleaseVersions" && resource_id?(prerelease["id"]) &&

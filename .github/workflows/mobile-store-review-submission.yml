@@ -24,7 +24,7 @@ on:
         required: true
         default: '18'
       cpp_review_context_version_id:
-        description: 'CPP-only: exact approved app-version ID Apple uses for review information; omit when submitting an app version'
+        description: 'Required for CPP-only: exact approved app-version ID Apple uses for review information; omit when submitting an app version'
         type: string
         required: false
       snapshot_sha256:
