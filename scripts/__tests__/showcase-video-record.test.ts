@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parseAllDocuments } from 'yaml';
 import {
   SHOWCASE_TAKE_IDS,
   SHOWCASE_LOCALES,
@@ -663,6 +664,61 @@ describe('take registry', () => {
       for (const flow of flows.filter(isShowcaseFlow)) expect(existsSync(showcaseFlowPath(flow)), flow).toBe(true);
       expect(readFileSync(showcaseFlowPath(take.flow), 'utf8')).toContain("'/mark/flow-start'");
     }
+  });
+
+  it('targets existing crew controls in every recording locale, including the moved exit confirm', () => {
+    type Selector = { text?: string; id?: string; index?: number };
+    type FlowStep = { tapOn?: Selector | string; extendedWaitUntil?: { visible: Selector | string } };
+    const startSteps = parseAllDocuments(
+      readFileSync(showcaseFlowPath('crew-start.yaml'), 'utf8'),
+    )[1].toJS() as FlowStep[];
+    const endSteps = parseAllDocuments(
+      readFileSync(showcaseFlowPath('session-end.yaml'), 'utf8'),
+    )[1].toJS() as FlowStep[];
+    const joinSteps = parseAllDocuments(
+      readFileSync(showcaseFlowPath('crew-join.yaml'), 'utf8'),
+    )[1].toJS() as FlowStep[];
+    const joinSelector = joinSteps.find((step) => typeof step.tapOn === 'object' && step.tapOn.text)?.tapOn as Selector;
+    const startSelectors = startSteps.flatMap((step) =>
+      typeof step.tapOn === 'object' && step.tapOn.text ? [new RegExp(step.tapOn.text)] : [],
+    );
+    const endSelector = endSteps.find((step) => typeof step.tapOn === 'object' && step.tapOn.text?.startsWith('^'))
+      ?.tapOn as Selector;
+    for (const locale of SHOWCASE_LOCALES) {
+      const catalog = JSON.parse(
+        readFileSync(new URL(`../../packages/shared/i18n/locales/${locale}/session.json`, import.meta.url), 'utf8'),
+      ) as {
+        mobile: { session: { preStart: string; invite: string; inviteCopyLink: string; inEndSession: string } };
+        mobileJoin: { join: string };
+      };
+      for (const label of [
+        catalog.mobile.session.preStart,
+        catalog.mobile.session.invite,
+        catalog.mobile.session.inviteCopyLink,
+      ]) {
+        expect(
+          startSelectors.some((selector) => selector.test(label)),
+          `${locale}: ${label}`,
+        ).toBe(true);
+        expect(startSelectors.some((selector) => selector.test(`${label} unrelated`))).toBe(false);
+      }
+      expect(new RegExp(endSelector.text ?? '').test(catalog.mobile.session.inEndSession)).toBe(true);
+      expect(new RegExp(joinSelector.text ?? '').test(catalog.mobileJoin.join)).toBe(true);
+    }
+    const sheetWait = endSteps.findIndex(
+      (step) =>
+        typeof step.extendedWaitUntil?.visible === 'object' &&
+        step.extendedWaitUntil.visible.id === 'end-session-content',
+    );
+    const confirmTap = endSteps.findIndex(
+      (step) => typeof step.tapOn === 'object' && step.tapOn.id === 'sheet-top-bar-trailing',
+    );
+    expect(sheetWait).toBeGreaterThan(-1);
+    expect(confirmTap).toBeGreaterThan(sheetWait);
+    expect(readFileSync(showcaseFlowPath('crew-start.yaml'), 'utf8')).not.toContain('point:');
+    expect(readFileSync(showcaseFlowPath('session-end.yaml'), 'utf8')).not.toContain('point:');
+    expect(readFileSync(showcaseFlowPath('crew-join.yaml'), 'utf8')).not.toContain('point:');
+    expect(readFileSync(showcaseFlowPath('crew.yaml'), 'utf8')).toContain("- tapOn: '${SHOWCASE_CLOSE_LABEL}'");
   });
 
   it('keeps every flow percentage a whole number', () => {

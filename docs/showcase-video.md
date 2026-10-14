@@ -105,6 +105,13 @@ fallback. It:
    the crew take's live session is ended, Metro, the backend it started and the
    simulators are stopped. Ctrl-C does the same.
 
+Crew setup uses the existing localized Start, Invite climbers, and Copy link
+accessibility labels across all four locales. The second phone waits for the
+localized Join session button on the join card. The invitation closes through its
+localized Close control. Session teardown waits for `end-session-content` and taps
+`sheet-top-bar-trailing`, the confirmation in the sheet header; these actions
+follow the current UI instead of relying on old sheet coordinates.
+
 ### Board-specific store footage
 
 ```sh

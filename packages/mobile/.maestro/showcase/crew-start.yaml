@@ -8,13 +8,12 @@ name: showcase setup - crew, start the session and copy the invite
 # `xcrun simctl pbpaste`, takes the session id from it, and sends the second
 # phone to ://join/<id>. The sheet stays open, so recording starts on the QR.
 #
-# Coordinates (iPhone 16 Pro Max portrait):
-#   84%,82%  Start, the pill above the tab bar on the pre-session Record tab
-#   50%,29%  the "Invite climbers" row on the in-session Record tab
-#   28%,83%  "Copy link" in the invite sheet
+# Existing accessibility labels cover all four recording locales. Match the
+# controls rather than screen coordinates: InviteSheet actions live in its body
+# and move when the native detent or localized content height changes.
 
 - tapOn:
-    point: '84%,82%'
+    text: '^(Start|Empezar|Démarrer|Starten)$'
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
@@ -29,11 +28,15 @@ name: showcase setup - crew, start the session and copy the invite
 - waitForAnimationToEnd
 
 - tapOn:
-    point: '50%,29%'
+    text: '^(Invite climbers|Invitar escaladores|Inviter des grimpeurs|Kletterer\*innen einladen)$'
+    index: 0
 - waitForAnimationToEnd
 
+- extendedWaitUntil:
+    visible: '^(Copy link|Copiar enlace|Copier le lien|Link kopieren)$'
+    timeout: 15000
 - tapOn:
-    point: '28%,83%'
+    text: '^(Copy link|Copiar enlace|Copier le lien|Link kopieren)$'
 
 # Let the "copied" toast fade before the recorder starts filming the QR.
 - extendedWaitUntil:

@@ -9,15 +9,14 @@ name: showcase setup - crew, the second phone joins
 # matching one if it has none) and joins. The recorder then opens ://climbs,
 # where crew-secondary.yaml swipes a row into the queue.
 #
-# Coordinates (iPhone 16 Pro Max portrait):
-#   24%,61%  "Join session", the filled button on the left of the session card
+# The latest join card stacks its actions; use the native button's localized
+# accessibility label rather than the older left-column coordinate.
 
 - extendedWaitUntil:
-    visible: 'zzz-showcase-pause'
-    timeout: 2500
-    optional: true
+    visible: '^(Join session|Unirse a la sesión|Rejoindre la session|Session beitreten)$'
+    timeout: 15000
 - tapOn:
-    point: '24%,61%'
+    text: '^(Join session|Unirse a la sesión|Rejoindre la session|Session beitreten)$'
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
