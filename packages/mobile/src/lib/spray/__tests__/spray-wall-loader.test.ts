@@ -36,6 +36,7 @@ const invalidateQueriesMock = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
 
 const {
+  REGISTERED_WALL_REVALIDATE_MS,
   clearSprayWallRegistry,
   ensureSprayWallLoaded,
   markSprayWallArchived,
@@ -1083,8 +1084,35 @@ describe('loadSprayWall', () => {
 
       await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
 
-      expect(getSprayWall(LAYOUT_ID)).toBe(held);
+      // Same registration, only its revalidation stamp moved.
+      expect(getSprayWall(LAYOUT_ID)).toEqual({ ...held, registeredAtMs: expect.any(Number) });
+      expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true);
       expect(sprayWallRemovalGeneration(LAYOUT_ID)).toBe(removalBefore);
+    });
+
+    it('revalidates a kept draft once per window, not on every ask', async () => {
+      const start = 1_800_000_000_000;
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(start);
+      try {
+        registerInitialDraft();
+        const later = start + REGISTERED_WALL_REVALIDATE_MS + 60_000;
+        nowSpy.mockReturnValue(later);
+        const loader = vi.fn((layoutId: number) => loadSprayWall(fakeQueryClient(), layoutId));
+        setSprayWallLoader(loader);
+        answerNothingPublished();
+
+        ensureSprayWallLoaded(LAYOUT_ID);
+        expect(loader).toHaveBeenCalledTimes(1);
+        await loader.mock.results[0]?.value;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true);
+        expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(later);
+        ensureSprayWallLoaded(LAYOUT_ID);
+        expect(loader).toHaveBeenCalledTimes(1);
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it('a cold null payload for an unpublished wall does not bump removal', async () => {

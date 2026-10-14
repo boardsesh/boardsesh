@@ -50,6 +50,8 @@ import {
   getSprayWall,
   registerSprayWall,
   resetSprayWallViewerAccess,
+  setSprayWallPrivacyCleanup,
+  sprayWallViewerCanEdit,
   unregisterSprayWall,
   withdrawAllSprayWalls,
 } from '../spray-wall-registry';
@@ -286,6 +288,70 @@ describe('draft render ownership', () => {
     expect(requestMock).toHaveBeenCalledTimes(3);
   });
 
+  it('reads once more under the new account after an account change, and registers that answer', async () => {
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+    renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true));
+    const fresh = payload('30', true);
+    fresh.photo.url = 'https://private.example/30.jpg?signature=new-account';
+    requestMock.mockResolvedValue({ sprayWallRenderData: fresh });
+    // Sign-in on the same session: the viewer generation moves, the session does not.
+    act(() => {
+      resetSprayWallViewerAccess();
+    });
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
+    await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.photoUrl).toContain('signature=new-account'));
+    expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(true);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
+    // Stamped 0 only for a payload read under another viewer generation.
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  describe('a draft the server stops vouching for', () => {
+    afterEach(() => setSprayWallPrivacyCleanup(() => {}));
+
+    it('withdraws the registered draft, files included, when a refetch comes back null', async () => {
+      const privacyCleanup = vi.fn();
+      setSprayWallPrivacyCleanup(privacyCleanup);
+      requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+      const { result } = renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+      await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true));
+      requestMock.mockResolvedValue({ sprayWallRenderData: null });
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: sprayWallDraftQueryKey('wall-1', 3, '30') });
+      });
+      await waitFor(() => expect(getSprayWall(LAYOUT_ID)).toBeNull());
+      expect(privacyCleanup).toHaveBeenCalledWith(LAYOUT_ID);
+      expect(result.current.wall).toBeNull();
+    });
+
+    it('withdraws the registered draft when its number now names another row', async () => {
+      requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+      renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+      await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true));
+      requestMock.mockResolvedValue({ sprayWallRenderData: payload('31', true) });
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: sprayWallDraftQueryKey('wall-1', 3, '30') });
+      });
+      await waitFor(() => expect(getSprayWall(LAYOUT_ID)).toBeNull());
+    });
+
+    it('keeps the registered draft through a refetch that fails', async () => {
+      requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+      renderHook(() => useSprayWallDraft(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+      await waitFor(() => expect(getSprayWall(LAYOUT_ID)?.draft).toBe(true));
+      const held = getSprayWall(LAYOUT_ID);
+      requestMock.mockRejectedValue(new Error('network unavailable'));
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: sprayWallDraftQueryKey('wall-1', 3, '30') });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(getSprayWall(LAYOUT_ID)).toBe(held);
+    });
+  });
+
   it('does not refresh an old editor’s wall when sign-out and unmount happen together', async () => {
     registerPublished();
     requestMock.mockResolvedValue({ sprayWallRenderData: payload() });
@@ -324,6 +390,29 @@ describe('draft render ownership', () => {
     registerPublished();
     renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
     expect(getSprayWall(LAYOUT_ID)?.versionId).toBe(20);
+  });
+
+  it('does not turn the published registration of a just-published draft back into a draft', async () => {
+    // The cached payload still says DRAFT with nothing published; the registry
+    // already holds the published version under the same row id.
+    requestMock.mockResolvedValue({ sprayWallRenderData: payload('30', true) });
+    await prefetchSprayWallDraft(client, LAYOUT_ID, 'wall-1', 3, '30');
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-1',
+      version: 3,
+      versionId: 30,
+      angle: 40,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'published-photo',
+      photoThumbUrl: null,
+      photoExpiresAt: 'later',
+      holds: [{ id: 99, cx: 90, cy: 80, r: 7 }],
+    });
+    const published = getSprayWall(LAYOUT_ID);
+    renderHook(() => useKeepSprayDraftRegistered(LAYOUT_ID, 'wall-1', 3, '30'), { wrapper });
+    expect(getSprayWall(LAYOUT_ID)).toBe(published);
+    expect(getSprayWall(LAYOUT_ID)?.draft).toBeUndefined();
   });
 
   it('does not reinstate an initial draft after wall removal', async () => {

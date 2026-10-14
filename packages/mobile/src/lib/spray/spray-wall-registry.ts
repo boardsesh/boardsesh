@@ -784,7 +784,13 @@ export function settleSprayWallDiscoveryMiss(layoutId: number): void {
  */
 export function settleSprayWallRenderMiss(layoutId: number, wallUuid: string): void {
   const held = walls.get(layoutId);
-  if (held?.draft && held.wallUuid === wallUuid && held.viewerCanEdit) return;
+  if (held?.draft && held.wallUuid === wallUuid && held.viewerCanEdit) {
+    // Revalidated: fresh for another window, so `ensureSprayWallLoaded` stops
+    // re-running a load that can only answer null again. No notify, nothing a
+    // surface draws has changed.
+    walls.set(layoutId, { ...held, registeredAtMs: now() });
+    return;
+  }
   if (held) unregisterSprayWall(layoutId);
   else markUnavailable(layoutId);
 }

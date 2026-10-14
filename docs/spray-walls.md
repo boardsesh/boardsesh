@@ -3093,12 +3093,21 @@ Everything else still withdraws a draft:
   to false on every registration, and a payload read for another account
   registers with it false too;
 - the layout no longer resolving (`sprayWallByLayout` null), or resolving to a
-  different wall uuid.
+  different wall uuid;
+- the draft read itself coming back null, or naming another row under the
+  version number: the draft hook is the registration's only owner, so it
+  withdraws the draft there.
+
+A kept draft is stamped fresh, so the loader asks again once per 10-minute
+revalidation window rather than on every surface's ask. A draft left behind by
+an add-a-wall flow closed without publishing or Start over stays registered for
+the rest of the session, since no draft hook is mounted to withdraw it.
 
 A cold null with nothing registered only marks the layout unavailable. It does
 not bump the removal generation, so a draft read already in flight still lands.
-A draft payload whose stamp went stale because this wall alone was withdrawn is
-read again once per viewer and removal generation pair, as a fresh
+It erases nothing either: cached photo files from an earlier session are left
+to the 14-day age sweep (`SPRAY_PHOTO_MAX_AGE_MS`). A draft payload whose stamp
+went stale because this wall alone was withdrawn is read again once, as a fresh
 server-authorised read. A payload read before a sign-out is never read again.
 
 Session and per-wall generations fence pending downloads and render results.
