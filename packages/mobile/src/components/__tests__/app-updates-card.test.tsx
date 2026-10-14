@@ -33,7 +33,10 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({ router: { push: state.push } }));
 vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children) }));
-vi.mock('../Icon', () => ({ Icon: () => null }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../Button', () => ({ Button: () => null }));
 vi.mock('../PressableSurface', () => ({
   PressableSurface: ({
@@ -41,12 +44,19 @@ vi.mock('../PressableSurface', () => ({
     onPress,
     disabled,
     accessibilityLabel,
+    accessibilityState,
   }: {
     children?: ReactNode;
     onPress: () => void;
     disabled?: boolean;
     accessibilityLabel: string;
-  }) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
+    accessibilityState?: { expanded?: boolean };
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'aria-expanded': accessibilityState?.expanded },
+      children,
+    ),
 }));
 vi.mock('../AppMenu', () => ({
   AppMenu: ({
@@ -133,6 +143,10 @@ vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColo
 import { AppUpdatesCard } from '../AppUpdatesCard';
 import { appReleaseLabel, screenshotReleaseScenario } from '../AppUpdatesCard.logic';
 
+function expandOptions() {
+  fireEvent.click(screen.getByLabelText('mobile.changelog.updates.options'));
+}
+
 function renderCard() {
   return render(
     createElement(AppUpdatesCard, {
@@ -196,6 +210,7 @@ describe('App updates card', () => {
     state.member = true;
     state.returnToOwnTrack.mockResolvedValue('early-updates-next-launch');
     renderCard();
+    expandOptions();
     fireEvent.click(screen.getByText('qa.pick.earlyUpdatesTitle'));
     expect(state.returnToOwnTrack).toHaveBeenCalledExactlyOnceWith(true);
     await waitFor(() => expect(state.showToast).toHaveBeenCalledWith('qa.pick.earlyUpdatesNextLaunch', 'info'));
@@ -204,6 +219,7 @@ describe('App updates card', () => {
     state.member = true;
     state.earlyAvailable = false;
     renderCard();
+    expandOptions();
     fireEvent.click(screen.getByText('qa.pick.productionTitle'));
     expect(state.returnToOwnTrack).toHaveBeenCalledExactlyOnceWith(false);
     await waitFor(() => expect(state.showToast).toHaveBeenCalledWith('qa.pick.productionNextLaunch', 'info'));
@@ -211,6 +227,7 @@ describe('App updates card', () => {
   it('hides staging when no compatible update exists', () => {
     state.stagingAvailable = false;
     renderCard();
+    expandOptions();
     expect(screen.queryByText('qa.pick.stagingTitle')).toBeNull();
   });
   it('locks release operations while a switch is in flight and recovers after failure', async () => {
@@ -222,6 +239,7 @@ describe('App updates card', () => {
         }),
     );
     renderCard();
+    expandOptions();
     fireEvent.click(screen.getByText('qa.pick.stagingTitle'));
     fireEvent.click(screen.getByText('qa.pick.productionTitle'));
     expect(state.surfToStaging).toHaveBeenCalledOnce();
@@ -235,6 +253,7 @@ describe('App updates card', () => {
     state.earlyState = 'waiting';
     state.setEarlyUpdatesChoice.mockResolvedValue('deferred');
     renderCard();
+    expandOptions();
     const toggle = screen.getByLabelText('mobile.settings.earlyUpdates.title') as HTMLInputElement;
     expect(toggle.checked).toBe(true);
     fireEvent.click(toggle);
@@ -244,7 +263,13 @@ describe('App updates card', () => {
   });
   it('prevents release changes and early flips during an update check', async () => {
     renderCard();
+    expandOptions();
     fireEvent.click(screen.getByText('Check now'));
+    const disclosure = screen.getByLabelText('mobile.changelog.updates.options') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(true);
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Done checking')).toBeTruthy();
     fireEvent.click(screen.getByText('qa.pick.stagingTitle'));
     fireEvent.click(screen.getByRole('checkbox'));
     expect(state.surfToStaging).not.toHaveBeenCalled();
@@ -258,16 +283,68 @@ describe('App updates card', () => {
   it('explains preview precedence without offering the early toggle', () => {
     state.earlyState = 'testing';
     renderCard();
+    expandOptions();
     expect(screen.getByText('mobile.settings.earlyUpdates.testingBody')).toBeTruthy();
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
-  it('pushes the PR destination and keeps finish testing available', () => {
+  it('prioritizes finishing the active PR and reveals switching previews on expansion', () => {
     state.prNumber = 12;
+    state.context.branch = 'pr-12';
     renderCard();
-    fireEvent.click(screen.getByLabelText('mobile.changelog.updates.testPreview'));
-    expect(state.push).toHaveBeenCalledWith('/qa/previews');
+    expect(screen.getByText('mobile.changelog.updates.preview')).toBeTruthy();
+    expect(screen.queryByLabelText('mobile.changelog.updates.testPreview')).toBeNull();
     fireEvent.click(screen.getByLabelText('mobile.changelog.updates.finishTesting'));
     expect(state.push).toHaveBeenCalledWith('/qa/brief');
+    expandOptions();
+    fireEvent.click(screen.getByLabelText('mobile.changelog.updates.testPreview'));
+    expect(state.push).toHaveBeenCalledWith('/qa/previews');
+    expect(screen.getAllByLabelText('mobile.changelog.updates.finishTesting')).toHaveLength(1);
+  });
+  it('keeps the regular summary compact and exposes options with an accessible disclosure', () => {
+    const { container } = renderCard();
+    const disclosure = screen.getByLabelText('mobile.changelog.updates.options');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText('mobile.changelog.updates.regular')).toBeTruthy();
+    expect(screen.getByText('Build details')).toBeTruthy();
+    expect(screen.queryByText('Check now')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(container.querySelector('[data-icon="success"]')).toBeNull();
+    expect(screen.getAllByLabelText('mobile.changelog.updates.testPreview')).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText('mobile.changelog.updates.testPreview'));
+    expect(state.push).toHaveBeenCalledWith('/qa/previews');
+    expandOptions();
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Check now')).toBeTruthy();
+    expect(screen.getByRole('checkbox')).toBeTruthy();
+    expect(screen.getAllByLabelText('mobile.changelog.updates.testPreview')).toHaveLength(1);
+    expandOptions();
+    expect(screen.queryByText('Check now')).toBeNull();
+  });
+  it('shows the canary explanation even while update options stay collapsed', () => {
+    state.context.automaticCanary = true;
+    const { container } = renderCard();
+    expect(screen.getByText('mobile.changelog.updates.canaryBody')).toBeTruthy();
+    expect(screen.queryByText('Check now')).toBeNull();
+    expect(container.querySelector('[data-icon="info"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="success"]')).toBeNull();
+  });
+  it('renders the readonly preview fixture without changing running report identity', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO', 'preview');
+    expect(screenshotReleaseScenario()).toBe('preview');
+    renderCard();
+    expect(screen.getByText('mobile.changelog.updates.preview')).toBeTruthy();
+    expect(screen.queryByLabelText('mobile.changelog.updates.testPreview')).toBeNull();
+    fireEvent.click(screen.getByLabelText('mobile.changelog.updates.finishTesting'));
+    expect(state.push).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('mobile.changelog.updates.finishTesting') as HTMLButtonElement).disabled).toBe(true);
+    expandOptions();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText('mobile.settings.earlyUpdates.testingBody')).toBeTruthy();
+    fireEvent.click(screen.getByText('qa.pick.productionTitle'));
+    expect(state.returnToOwnTrack).not.toHaveBeenCalled();
+    expect(state.context.branch).toBeNull();
+    expect(state.context.automaticCanary).toBe(false);
   });
   it('requires screenshot mode for fixtures and does not change report identity', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO', 'canary');
@@ -276,6 +353,7 @@ describe('App updates card', () => {
     state.earlyOffered = false;
     state.surfingAvailable = false;
     renderCard();
+    expandOptions();
     expect(screen.getByText('mobile.changelog.updates.canary')).toBeTruthy();
     expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(screen.getByText('qa.pick.productionTitle'));

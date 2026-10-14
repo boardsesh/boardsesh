@@ -584,9 +584,9 @@
     },
     "changelog": {
       "title": "What's New",
-      "intro": "Recent updates and fixes, newest first.",
-      "currentBuild": "You're on the build from {{date}}",
-      "currentBuildVersion": "You're on version {{version}}",
+      "intro": "Latest changes",
+      "currentBuild": "Updated {{date}}",
+      "currentBuildVersion": "Version {{version}}",
       "category": {
         "new": "New",
         "improved": "Improved",
@@ -617,19 +617,20 @@
         "message": "Something went wrong getting the latest version. Try again in a bit."
       },
       "updates": {
-        "title": "App updates",
         "regular": "Regular release",
         "canary": "Canary release",
-        "canaryBody": "You received this update as part of a gradual rollout. Bug reports include this automatically.",
-        "statusUnknown": "Rollout status could not be confirmed. Reports still include your running release.",
+        "canaryBody": "Automatically selected for this rollout. Reports include your release.",
+        "statusUnknown": "Rollout status could not be confirmed.",
         "early": "Early updates",
         "staging": "Staging release",
         "preview": "PR #{{prNumber}} preview",
         "native": "Installed build",
         "other": "{{channel}} release",
-        "changeRelease": "Change release",
+        "changeRelease": "Release",
         "testPreview": "Test a PR preview",
-        "finishTesting": "Finish testing PR #{{prNumber}}"
+        "finishTesting": "Finish testing PR #{{prNumber}}",
+        "options": "Update options",
+        "earlyUpdatesHelp": "Early updates may have rough edges. Changes apply next launch."
       }
     },
     "launchUpdate": {

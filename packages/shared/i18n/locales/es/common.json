@@ -856,9 +856,9 @@
     },
     "changelog": {
       "title": "Novedades",
-      "intro": "Últimas mejoras y correcciones, las más recientes primero.",
-      "currentBuild": "Estás en la versión del {{date}}",
-      "currentBuildVersion": "Estás en la versión {{version}}",
+      "intro": "Últimos cambios",
+      "currentBuild": "Actualizado {{date}}",
+      "currentBuildVersion": "Versión {{version}}",
       "category": {
         "new": "Nuevo",
         "improved": "Mejorado",
@@ -889,19 +889,20 @@
         "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
       },
       "updates": {
-        "title": "Actualizaciones de la app",
         "regular": "Versión estable",
         "canary": "Versión canary",
-        "canaryBody": "Has recibido esta actualización como parte de un despliegue gradual. Los informes de errores incluyen este dato automáticamente.",
-        "statusUnknown": "No se ha podido confirmar el estado del despliegue. Los informes incluyen la versión que estás usando.",
+        "canaryBody": "Selección automática para este despliegue. Los informes incluyen tu versión.",
+        "statusUnknown": "No se pudo confirmar el estado del despliegue.",
         "early": "Actualizaciones anticipadas",
         "staging": "Versión de pruebas",
         "preview": "Vista previa de la PR #{{prNumber}}",
         "native": "Versión instalada",
         "other": "Versión {{channel}}",
-        "changeRelease": "Cambiar versión",
+        "changeRelease": "Versión",
         "testPreview": "Probar una vista previa de PR",
-        "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}"
+        "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}",
+        "options": "Opciones de actualización",
+        "earlyUpdatesHelp": "Las actualizaciones anticipadas pueden tener fallos. Los cambios se aplican al volver a abrir la app."
       }
     },
     "launchUpdate": {

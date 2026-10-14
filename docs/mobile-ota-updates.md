@@ -2446,10 +2446,10 @@ Its floating edge target and light-only sheet were removed for #5287 after repor
 the sheet opening while closing climb search.
 
 Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
-user drawer, under **Previews** on the More tab, and in **What’s New → App updates**.
+user drawer, under **Previews** on the More tab, and in **What’s New**.
 The What’s New row pushes a searchable PR destination with native Back navigation; the
 other shortcuts retain their existing presentation. PR lists contain compatible PR branches.
-Staging and returning to the chosen release track live in What’s New’s **Change release** menu.
+Staging and returning to the chosen release track live in **What’s New → Update options → Release** menu.
 The list explains "Previews are switched off" or "Nothing
 to test right now" when appropriate. The row is hidden only on a binary that cannot surf.
 
@@ -2508,7 +2508,7 @@ in PostHog/Sentry. Diagnostic eligibility uses the same manifest field, classifi
 
 ## Early updates ("Get updates early")
 
-A switch in More → **What’s New → App updates** that any climber on a surfing-capable binary can turn on. A phone
+A switch in More → **What’s New → Update options** that any climber on a surfing-capable binary can turn on. A phone
 with it on sends `xprem-branch: pr-beta` (`EARLY_UPDATES_OTA_BRANCH`) and so follows the branch that
 receives every merge to `main`; a phone with it off follows `production`. It is called "early
 updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
@@ -2524,7 +2524,7 @@ native expo-updates behaviour that unit tests model but cannot prove.
 After that serialization fix, pilot QA does not require enabling the flag for everyone.
 On a tester's phone, leave any PR or staging
 preview, then set **More → Feature Flags → Early updates → On**, followed by
-**More → What’s New → Get updates early → On**.
+**More → What’s New → Update options → Get updates early → On**.
 The tester-only per-phone override persists across restart and wins over PostHog. After testing,
 turn Get updates early off and wait for the leave to complete before resetting the override to Default.
 
@@ -2995,18 +2995,19 @@ storage rollback; changing only the endpoint is insufficient.
 
 ## Release controls in What’s New
 
-What’s New (`/changelog`) places an App updates card before the changelog, including when
-there are no changelog entries. It shows the running release and native/OTA build details,
-checks for updates, and offers a native Change release menu. The menu returns early-update
+What’s New (`/changelog`) keeps a compact running-release summary above the changelog,
+including when there are no changelog entries. Build details and automatic canary status
+stay visible. **Update options** expands the update check, native release menu, and early-update
+preference without taking over the release notes. The menu returns early-update
 members to early updates when that branch is available for their binary; otherwise it returns
 to regular production. Staging appears only when a compatible staging update is listed.
-Get updates early lives in this card, retaining its feature gate, deferred choice messaging,
+Get updates early lives under Update options, retaining its feature gate, deferred choice messaging,
 and read-only explanation while a PR or staging preview is active.
 
 Test a PR preview pushes `/qa/previews`, a searchable destination with native Back navigation.
 It shares the PR list with `/qa/pick`, which remains the launch prompt modal and retains its
-launch-only skip analytics. Release choices no longer appear inside either PR list. Finish
-testing opens the existing brief for a running PR whose verdict has not been submitted.
+launch-only skip analytics. Release choices no longer appear inside either PR list. When a PR is active, Finish testing is the direct action and Test a PR preview moves
+under Update options. Finish testing opens the existing brief for a running PR whose verdict has not been submitted.
 
 The card uses running manifest identity rather than a requested pin or a downloaded update.
 A confirmed automatic production canary displays “Canary release” and explains that bug reports
@@ -3054,11 +3055,13 @@ ordinary comment queries and live comment events never contain the diagnostics. 
 cache is cleared on collapse, role loss or session change.
 
 For simulator screenshots only, set `EXPO_PUBLIC_SCREENSHOT_MODE=1` together with
-`EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO=regular` or `canary`. This supplies the card's visual
+`EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO=regular`, `canary`, or `preview`. This supplies the card's visual
 model in an updates-disabled dev client and makes release controls read-only. PR-list navigation
 remains available. Native update identity and report metadata are never overridden by this
 fixture. The image captures the intended presentation, not a live rollout assignment.
 
 Captured on an iPhone 17 Pro simulator running iOS 26.5:
 [regular release](images/whats-new-release-controls/regular-ios.png) and
-[automatic canary](images/whats-new-release-controls/canary-ios.png).
+[automatic canary](images/whats-new-release-controls/canary-ios.png),
+[active preview](images/whats-new-release-controls/preview-ios.png), and
+[expanded options](images/whats-new-release-controls/options-ios.png).

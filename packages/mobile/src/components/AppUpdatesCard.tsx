@@ -31,7 +31,7 @@ export function AppUpdatesCard({
   checkForUpdates: (disabled: boolean, onBusyChange: (busy: boolean) => void) => ReactNode;
 }) {
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { showToast } = useToast();
   const { releaseContext, isPending } = useMobileReleaseStatus();
   const [runningContext] = useState(readMobileReleaseContext);
@@ -43,11 +43,18 @@ export function AppUpdatesCard({
   const earlyUpdatesMember = member && branchList !== null && branchList.earlyUpdates !== null;
   const screenshotScenario = screenshotReleaseScenario();
   const fixture = screenshotScenario !== null;
+  const currentPrNumber = screenshotScenario === 'preview' ? 6476 : qaMenu.prNumber;
   const context = fixture
-    ? { ...runningContext, channel: 'production', branch: null, automaticCanary: screenshotScenario === 'canary' }
+    ? {
+        ...runningContext,
+        channel: 'production',
+        branch: screenshotScenario === 'preview' ? 'pr-6476' : null,
+        automaticCanary: screenshotScenario === 'canary',
+      }
     : (releaseContext ?? { ...runningContext, automaticCanary: null });
   const releaseLabel = appReleaseLabel(context);
   const [busy, setBusy] = useState(false);
+  const [optionsExpanded, setOptionsExpanded] = useState(false);
   const inFlight = useRef(false);
   const available = qaSurfingAvailable();
   const handleBusyChange = useCallback((nextBusy: boolean) => {
@@ -88,7 +95,7 @@ export function AppUpdatesCard({
   );
 
   const earlySection = buildEarlyUpdatesSection(t, {
-    state: fixture ? 'off' : earlyUpdates.state,
+    state: screenshotScenario === 'preview' ? 'testing' : fixture ? 'off' : earlyUpdates.state,
     environment: earlyUpdates.environment,
     onDeferred: (enabled) =>
       showToast(
@@ -124,21 +131,15 @@ export function AppUpdatesCard({
 
   return (
     <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-      <Text variant="headline">{t('mobile.changelog.updates.title')}</Text>
-      <View style={styles.releaseLine}>
-        <Icon
-          name={context.automaticCanary === true ? 'info' : 'success'}
-          size={18}
-          color={context.automaticCanary === true ? brandColors.warning : brandColors.primary}
-        />
-        <Text variant="body" style={styles.releaseLabel}>
-          {translateAppReleaseLabel(releaseLabel, t)}
-        </Text>
-      </View>
+      <Text variant="body">{translateAppReleaseLabel(releaseLabel, t)}</Text>
+      {buildDetails}
       {context.automaticCanary === true ? (
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {t('mobile.changelog.updates.canaryBody')}
-        </Text>
+        <View style={styles.canaryNote}>
+          <Icon name="info" size={16} color={systemColors.secondaryLabel} />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.releaseLabel}>
+            {t('mobile.changelog.updates.canaryBody')}
+          </Text>
+        </View>
       ) : !isPending &&
         context.automaticCanary === null &&
         context.channel === 'production' &&
@@ -147,84 +148,113 @@ export function AppUpdatesCard({
           {t('mobile.changelog.updates.statusUnknown')}
         </Text>
       ) : null}
-      {buildDetails}
-      <View style={styles.controls}>
-        {fixture ? (
-          <Button
-            title={t('mobile.changelog.checkForUpdates')}
-            variant="tonal"
-            size="small"
-            icon="refresh"
-            disabled
-            onPress={() => undefined}
-          />
-        ) : (
-          checkForUpdates(busy, handleBusyChange)
-        )}
-        {available || fixture ? (
-          <AppMenu
-            label={t('mobile.changelog.updates.changeRelease')}
-            actions={actions}
-            onSelectIndex={handleChannelPick}
-          />
-        ) : null}
-      </View>
-      {showEarlyUpdates && earlyRow ? (
-        <View style={[styles.section, { borderTopColor: systemColors.separator }]}>
-          {earlyRow.kind === 'toggle' ? (
-            <SwitchRow
-              label={earlyRow.label}
-              description={earlyRow.subtitle}
-              wrapDescription
-              value={earlyRow.value}
-              disabled={busy || fixture}
-              onValueChange={(next) => {
-                if (!inFlight.current && !fixture) earlyRow.onValueChange(next);
-              }}
-            />
-          ) : earlyRow.kind === 'info' ? (
-            <>
-              <Text variant="subheadline">{earlyRow.label}</Text>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {earlyRow.body}
-              </Text>
-            </>
+      <PressableSurface
+        feedback="opacity"
+        onPress={() => setOptionsExpanded((expanded) => !expanded)}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.changelog.updates.options')}
+        accessibilityState={{ expanded: optionsExpanded, disabled: busy }}
+        style={styles.navigationRow}
+      >
+        <Text variant="body" style={styles.releaseLabel}>
+          {t('mobile.changelog.updates.options')}
+        </Text>
+        <Icon name={optionsExpanded ? 'chevron.up' : 'chevron.down'} size={16} color={systemColors.tertiaryLabel} />
+      </PressableSurface>
+      {optionsExpanded ? (
+        <View style={styles.options}>
+          <View style={styles.controls}>
+            {fixture ? (
+              <Button
+                title={t('mobile.changelog.checkForUpdates')}
+                variant="tonal"
+                size="small"
+                icon="refresh"
+                disabled
+                onPress={() => undefined}
+              />
+            ) : (
+              checkForUpdates(busy, handleBusyChange)
+            )}
+            {available || fixture ? (
+              <AppMenu
+                label={t('mobile.changelog.updates.changeRelease')}
+                actions={actions}
+                onSelectIndex={handleChannelPick}
+              />
+            ) : null}
+          </View>
+          {showEarlyUpdates && earlyRow ? (
+            <View style={[styles.section, { borderTopColor: systemColors.separator }]}>
+              {earlyRow.kind === 'toggle' ? (
+                <SwitchRow
+                  label={earlyRow.label}
+                  description={earlyUpdates.state === 'off' || fixture ? undefined : earlyRow.subtitle}
+                  wrapDescription
+                  value={earlyRow.value}
+                  disabled={busy || fixture}
+                  onValueChange={(next) => {
+                    if (!inFlight.current && !fixture) earlyRow.onValueChange(next);
+                  }}
+                />
+              ) : earlyRow.kind === 'info' ? (
+                <>
+                  <Text variant="subheadline">{earlyRow.label}</Text>
+                  <Text variant="footnote" color={systemColors.secondaryLabel}>
+                    {earlyRow.body}
+                  </Text>
+                </>
+              ) : null}
+              {earlyRow.kind === 'toggle' ? (
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('mobile.changelog.updates.earlyUpdatesHelp')}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {earlySection.footer}
-          </Text>
-        </View>
-      ) : null}
-      {qaMenu.show || fixture ? (
-        <View style={[styles.section, { borderTopColor: systemColors.separator }]}>
-          <PressableSurface
-            feedback="opacity"
-            onPress={() => router.push('/qa/previews')}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.changelog.updates.testPreview')}
-            style={styles.navigationRow}
-          >
-            <Text variant="body" style={styles.releaseLabel}>
-              {t('mobile.changelog.updates.testPreview')}
-            </Text>
-            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-          {qaMenu.prNumber !== null ? (
+          {(qaMenu.show || fixture) && currentPrNumber !== null ? (
             <PressableSurface
               feedback="opacity"
-              onPress={() => router.push('/qa/brief')}
-              disabled={busy || fixture}
+              onPress={() => router.push('/qa/previews')}
+              disabled={busy}
               accessibilityRole="button"
-              accessibilityLabel={t('mobile.changelog.updates.finishTesting', { prNumber: qaMenu.prNumber })}
+              accessibilityLabel={t('mobile.changelog.updates.testPreview')}
               style={styles.navigationRow}
             >
               <Text variant="body" style={styles.releaseLabel}>
-                {t('mobile.changelog.updates.finishTesting', { prNumber: qaMenu.prNumber })}
+                {t('mobile.changelog.updates.testPreview')}
               </Text>
               <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
             </PressableSurface>
           ) : null}
+        </View>
+      ) : null}
+      {qaMenu.show || fixture ? (
+        <View style={[styles.navigationSection, { borderTopColor: systemColors.separator }]}>
+          <PressableSurface
+            feedback="opacity"
+            onPress={() => router.push(currentPrNumber !== null ? '/qa/brief' : '/qa/previews')}
+            disabled={busy || (fixture && currentPrNumber !== null)}
+            accessibilityRole="button"
+            accessibilityLabel={t(
+              currentPrNumber !== null
+                ? 'mobile.changelog.updates.finishTesting'
+                : 'mobile.changelog.updates.testPreview',
+              { prNumber: currentPrNumber },
+            )}
+            style={styles.navigationRow}
+          >
+            <Text variant="body" style={styles.releaseLabel}>
+              {t(
+                currentPrNumber !== null
+                  ? 'mobile.changelog.updates.finishTesting'
+                  : 'mobile.changelog.updates.testPreview',
+                { prNumber: currentPrNumber },
+              )}
+            </Text>
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          </PressableSurface>
         </View>
       ) : null}
     </View>
@@ -232,10 +262,12 @@ export function AppUpdatesCard({
 }
 
 const styles = StyleSheet.create({
-  card: { padding: spacing[4], borderRadius: borderRadius.lg, gap: spacing[3] },
-  releaseLine: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  card: { padding: spacing[4], borderRadius: borderRadius.lg, gap: spacing[1] },
+  canaryNote: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
   releaseLabel: { flex: 1 },
   controls: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing[3] },
+  options: { gap: spacing[3], paddingBottom: spacing[2] },
+  navigationSection: { borderTopWidth: StyleSheet.hairlineWidth },
   section: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing[3], gap: spacing[2] },
   navigationRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: spacing[2] },
 });

@@ -584,9 +584,9 @@
     },
     "changelog": {
       "title": "Nouveautés",
-      "intro": "Dernières améliorations et corrections, les plus récentes en premier.",
-      "currentBuild": "Vous utilisez la version du {{date}}",
-      "currentBuildVersion": "Vous utilisez la version {{version}}",
+      "intro": "Derniers changements",
+      "currentBuild": "Mis à jour le {{date}}",
+      "currentBuildVersion": "Version {{version}}",
       "category": {
         "new": "Nouveau",
         "improved": "Amélioré",
@@ -617,19 +617,20 @@
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       },
       "updates": {
-        "title": "Mises à jour de l’app",
         "regular": "Version stable",
         "canary": "Version canary",
-        "canaryBody": "Tu as reçu cette mise à jour dans le cadre d’un déploiement progressif. Les signalements de bugs incluent cette information automatiquement.",
-        "statusUnknown": "Le statut du déploiement n’a pas pu être confirmé. Les signalements incluent toujours ta version actuelle.",
+        "canaryBody": "Sélection automatique pour ce déploiement. Les signalements incluent ta version.",
+        "statusUnknown": "Le statut du déploiement n’a pas pu être confirmé.",
         "early": "Mises à jour anticipées",
         "staging": "Version de test",
         "preview": "Aperçu de la PR #{{prNumber}}",
         "native": "Version installée",
         "other": "Version {{channel}}",
-        "changeRelease": "Changer de version",
+        "changeRelease": "Version",
         "testPreview": "Tester un aperçu de PR",
-        "finishTesting": "Terminer le test de la PR #{{prNumber}}"
+        "finishTesting": "Terminer le test de la PR #{{prNumber}}",
+        "options": "Options de mise à jour",
+        "earlyUpdatesHelp": "Les mises à jour anticipées peuvent avoir des bugs. Les changements s’appliquent au prochain lancement."
       }
     },
     "launchUpdate": {

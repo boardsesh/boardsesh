@@ -584,9 +584,9 @@
     },
     "changelog": {
       "title": "Neuigkeiten",
-      "intro": "Aktuelle Updates und Fixes, neueste zuerst.",
-      "currentBuild": "Du bist auf dem Build vom {{date}}",
-      "currentBuildVersion": "Du bist auf Version {{version}}",
+      "intro": "Neueste Änderungen",
+      "currentBuild": "Aktualisiert am {{date}}",
+      "currentBuildVersion": "Version {{version}}",
       "category": {
         "new": "Neu",
         "improved": "Verbessert",
@@ -617,19 +617,20 @@
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       },
       "updates": {
-        "title": "App-Updates",
         "regular": "Stabile Version",
         "canary": "Canary-Version",
-        "canaryBody": "Du hast dieses Update im Rahmen einer schrittweisen Veröffentlichung erhalten. Fehlerberichte enthalten diese Information automatisch.",
-        "statusUnknown": "Der Veröffentlichungsstatus konnte nicht bestätigt werden. Berichte enthalten trotzdem deine laufende Version.",
+        "canaryBody": "Automatisch für diesen Rollout ausgewählt. Meldungen enthalten deine Version.",
+        "statusUnknown": "Der Rollout-Status konnte nicht bestätigt werden.",
         "early": "Frühe Updates",
         "staging": "Testversion",
         "preview": "Vorschau von PR #{{prNumber}}",
         "native": "Installierte Version",
         "other": "Version {{channel}}",
-        "changeRelease": "Version wechseln",
+        "changeRelease": "Version",
         "testPreview": "Eine PR-Vorschau testen",
-        "finishTesting": "Test von PR #{{prNumber}} abschließen"
+        "finishTesting": "Test von PR #{{prNumber}} abschließen",
+        "options": "Update-Optionen",
+        "earlyUpdatesHelp": "Frühe Updates können Fehler haben. Änderungen gelten beim nächsten App-Start."
       }
     },
     "launchUpdate": {

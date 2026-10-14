@@ -51,11 +51,11 @@ const CATEGORY_ICONS: Record<ChangelogCategory, IconName> = {
   fixed: 'success',
 };
 
-// Header chip showing which build the user is running. On an OTA-updated build,
+// Quiet detail showing which build the user is running. On an OTA-updated build,
 // `Updates.createdAt` is the publish time of the JS bundle; on an embedded launch
 // (no OTA applied yet) fall back to the native app version. Kept tiny + memoized
 // so it never re-renders with the list.
-const CurrentBuildChip = memo(function CurrentBuildChip() {
+const CurrentBuildDetails = memo(function CurrentBuildDetails() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
 
@@ -72,12 +72,9 @@ const CurrentBuildChip = memo(function CurrentBuildChip() {
 
   if (!buildLabel) return null;
   return (
-    <View style={[styles.buildChip, { backgroundColor: systemColors.fill }]}>
-      <Icon name="info" size={14} color={systemColors.secondaryLabel} />
-      <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
-        {buildLabel}
-      </Text>
-    </View>
+    <Text variant="footnote" color={systemColors.secondaryLabel}>
+      {buildLabel}
+    </Text>
   );
 });
 
@@ -303,12 +300,12 @@ export default function ChangelogScreen() {
           ListHeaderComponent={
             <View style={styles.listHeader}>
               <AppUpdatesCard
-                buildDetails={<CurrentBuildChip />}
+                buildDetails={<CurrentBuildDetails />}
                 checkForUpdates={(disabled, onBusyChange) => (
                   <CheckForUpdatesButton disabled={disabled} onBusyChange={onBusyChange} />
                 )}
               />
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.intro}>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
                 {t('mobile.changelog.intro')}
               </Text>
               {/* Pinned above the generated timeline — see OfflineSpotlightCard
@@ -348,16 +345,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   intro: {
+    fontWeight: '600',
     lineHeight: 20,
-  },
-  buildChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.full,
   },
   separator: {
     height: spacing[3],
