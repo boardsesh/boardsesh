@@ -255,28 +255,31 @@ describe('useSprayWallBuilder — the details step', () => {
     expect(result.current.buildDetailsUpdate()).toBeNull();
   });
 
-  it('has nothing left to send once a save has landed', () => {
+  // After a save the screen hydrates from the server's ANSWER, which a policy
+  // can clamp: the builder then shows and diffs from what the server holds.
+  it('follows a clamped answer rather than what was sent', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.hydrate(SERVER_WALL));
-    act(() => result.current.setName('The Cave'));
-    act(() => result.current.markSaved());
+    act(() => result.current.setIsPublic(true));
+    expect(result.current.buildDetailsUpdate()).toEqual({ isPublic: true, isUnlisted: false });
+    act(() => result.current.hydrate({ ...SERVER_WALL, isPublic: false, isUnlisted: false }));
+    expect(result.current.isPublic).toBe(false);
     expect(result.current.buildDetailsUpdate()).toBeNull();
-    // And diffs from there.
-    act(() => result.current.setAngle(50));
-    expect(result.current.buildDetailsUpdate()).toEqual({ angle: 50 });
+    expect(result.current.pendingVisibility()).toBeNull();
   });
 
-  it('keeps hydrate and markSaved stable, so callbacks built on them are too', () => {
+  it('keeps hydrate stable, so callbacks built on it are too', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
-    const { hydrate, markSaved } = result.current;
+    const { hydrate } = result.current;
     act(() => result.current.setName('The Cave'));
     expect(result.current.hydrate).toBe(hydrate);
-    expect(result.current.markSaved).toBe(markSaved);
   });
 
-  it('ignores a hydrated angle the server would refuse', () => {
+  it('shows a legal angle for one the server would refuse, and Save writes it', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.hydrate({ ...SERVER_WALL, angle: 37 }));
     expect(result.current.angle).toBe(DEFAULT_SPRAY_ANGLE);
+    // 37 is what the wall holds, so the angle on screen is a change.
+    expect(result.current.buildDetailsUpdate()).toEqual({ angle: DEFAULT_SPRAY_ANGLE });
   });
 });

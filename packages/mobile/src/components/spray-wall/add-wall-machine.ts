@@ -456,8 +456,17 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
     case 'RESUMED_AT_PHOTO':
       // The wall exists but no photo was ever adopted onto it, so the flow
       // rejoins at the photo. A photo picked while the check ran is kept: the
-      // wall has none of its own.
-      return { ...state, step: 'photo', resumeCheck: 'settled', wall: action.wall, draft: null };
+      // wall has none of its own, and so is a crop the climber is in (as for
+      // `RESUME_DECLINED`). The busy flag is cleared either way: a resume must
+      // never leave the flow stuck busy, with Back and leaving refused.
+      return {
+        ...state,
+        step: state.step === 'adjust' ? 'adjust' : 'photo',
+        resumeCheck: 'settled',
+        wall: action.wall,
+        draft: null,
+        photoProcessing: false,
+      };
 
     case 'RESUMED_AT_REVIEW': {
       // A draft version with a photo: the holds are the only thing left. No
@@ -475,6 +484,8 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         ...state,
         step: 'review',
         resumeCheck: 'settled',
+        // A crop render the resume overtook has nothing left to land on.
+        photoProcessing: false,
         photo: keepsLocalPhoto ? state.photo : null,
         anchors: keepsLocalPhoto ? state.anchors : null,
         anchorRejection: keepsLocalPhoto ? state.anchorRejection : null,

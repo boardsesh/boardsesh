@@ -37,8 +37,9 @@ export type WallBoardRow = {
 /**
  * What the details step answered, as saved, or null when this run never ran it.
  *
- * Nullable on purpose — null IS the resumed case, and making the caller say so
- * is what keeps a defaulted builder from being mistaken for a real answer.
+ * Nullable on purpose — null is a run without a details step (a reset), and
+ * making the caller say so is what keeps a defaulted builder from being
+ * mistaken for a real answer.
  */
 export type WallCreatedMeta = {
   angle: number;
@@ -52,15 +53,21 @@ export type WallCreatedEventInput = {
   layoutId: number;
   /** The wall's board row, when it arrived. Authoritative for everything it carries. */
   board: WallBoardRow | null;
-  /** The details step's own answers, or null when this run never saved them. */
+  /** The details step's answers as the server took them, or null on a run without that step (a reset). */
   meta: WallCreatedMeta | null;
-  /** The visibility about to be applied by `updateSprayWall`, or null when the wall stays private. */
+  /**
+   * The visibility the wall is about to have (parked by the details save and
+   * applied by the publish, then re-stated by the repair write), or null when
+   * it stays private or the run does not set it (a reset).
+   */
   pendingVisibility: { isPublic: boolean; isUnlisted: boolean } | null;
   /** The wall is a reset's replacement (`resetSprayWall`), not a new wall. */
   isReset: boolean;
   /**
-   * The wall was picked back up from an earlier sitting. Left out, it is read
-   * off `meta`: a run that never answered the details step is a resumed one.
+   * The wall was picked back up from an earlier sitting (the resume prompt, a
+   * targeted open, a reset's clone with a photo already on it). The wizard
+   * always says. Left out, it is read off `meta` as it used to be, for a caller
+   * from before every run had a details step.
    */
   resumed?: boolean;
 };
@@ -78,9 +85,9 @@ export type WallCreatedEventProperties = {
    * the wall it replaces. The row cannot say which, and false would be wrong.
    */
   isPublic?: boolean;
-  /** Absent on a resumed run — see `resumed`. */
+  /** Absent when the run had no details step (a reset). */
   hasLocationName?: boolean;
-  /** Absent on a resumed run — see `resumed`. */
+  /** Absent when the run had no details step (a reset). */
   hasCoords?: boolean;
   hasGym: boolean;
   gymUuid?: string;
@@ -97,17 +104,15 @@ export type WallCreatedEventProperties = {
 export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCreatedEventProperties {
   const { layoutId, board, meta, pendingVisibility, isReset, resumed } = input;
 
-  // The row wins wherever it can. On a resumed wall it is the only honest
-  // source; on a fresh one it holds the value the details step just saved, so
-  // preferring it costs nothing and removes the branch.
+  // The row wins wherever it can: it holds what the details step saved, as
+  // the server answered, and on a reset it is the only honest source.
   const angle = board?.angle ?? meta?.angle ?? 0;
   const gymUuid = board?.gymUuid ?? meta?.gymUuid ?? null;
 
-  // The END state, not the state at creation. EVERY wall is created private
-  // whatever the climber chose (`use-spray-wall-builder.ts`), and the chosen
-  // visibility is applied by `updateSprayWall` in the same publish that fires
-  // this event — so the pending write, when there is one, is what the wall is
-  // about to be. A resumed run has no pending write and the row is the answer.
+  // The END state, not the row as it stands: an unpublished wall's row stays
+  // private whatever the climber chose, and the publish that fires this event
+  // applies the parked choice — so the pending pair, when there is one, is what
+  // the wall is about to be. Without one the row is the answer.
   const isPublic = pendingVisibility?.isPublic ?? (isReset ? undefined : (board?.isPublic ?? false));
 
   return {
@@ -129,9 +134,8 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     // resolvable from it and this payload carries no free text.
     ...(gymUuid != null ? { gymUuid } : {}),
     source: 'spray_wizard',
-    // Splits the funnel's two populations. A resumed wall carries neither
-    // location property, so an analyst who pools the two reads a denominator
-    // that is missing rows rather than one that is wrong.
+    // Splits the funnel's two populations: walls finished in one sitting, and
+    // walls picked back up.
     resumed: resumed ?? meta == null,
     isReset,
   };

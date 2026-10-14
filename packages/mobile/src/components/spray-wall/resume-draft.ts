@@ -20,7 +20,6 @@
 // The alternative — always creating a fresh wall — is what makes ten abandoned
 // attempts lock a climber out of their own feature.
 
-import { SPRAY_ANGLES } from '@boardsesh/board-config';
 import type { SprayWallDetailsSeed } from '../board-discovery/use-spray-wall-builder';
 import type { CreatedWall, CreatedWallDraft } from './add-wall-machine';
 
@@ -188,7 +187,8 @@ export function planUploadRetry(
 export type DetailsSourceWall = {
   /**
    * What the first publish will apply: null for a wall left private, or once
-   * published. Only the owner is told; a backend without the field omits it.
+   * published. Only the owner is told. Optional because not every read
+   * selects it (the create response does not).
    */
   pendingVisibility?: { isPublic: boolean; isUnlisted: boolean } | null;
   board?: {
@@ -205,15 +205,6 @@ export type DetailsSourceWall = {
   } | null;
 };
 
-/** The legal angle nearest `angle`; the lower one on a tie. */
-function snapSprayAngle(angle: number): number {
-  let nearest: number = SPRAY_ANGLES[0];
-  for (const candidate of SPRAY_ANGLES) {
-    if (Math.abs(candidate - angle) < Math.abs(nearest - angle)) nearest = candidate;
-  }
-  return nearest;
-}
-
 /**
  * The details step's prefill, from the wall as the server holds it.
  *
@@ -224,15 +215,17 @@ function snapSprayAngle(angle: number): number {
  * row's flags are the answer.
  *
  * A field the read did not select is left out, so the builder keeps its own
- * value (`SprayWallDetailsSeed`). An angle off the list (none should exist, but
- * the column is a plain integer) snaps to the nearest one the slider can show.
+ * value (`SprayWallDetailsSeed`). The angle is passed as stored, even off the
+ * list (none should exist, but the column is a plain integer): the builder
+ * shows a legal one and keeps the stored one as its baseline, so Save writes
+ * the angle on screen rather than leaving the wall at one it cannot show.
  */
 export function detailsSeedFromWall(wall: DetailsSourceWall): SprayWallDetailsSeed {
   const board = wall.board ?? null;
   const seed: SprayWallDetailsSeed = {};
   if (!board) return seed;
   if (board.name != null) seed.name = board.name;
-  if (board.angle != null && Number.isFinite(board.angle)) seed.angle = snapSprayAngle(board.angle);
+  if (board.angle != null && Number.isFinite(board.angle)) seed.angle = board.angle;
   const visibility = wall.pendingVisibility ?? null;
   if (visibility) {
     seed.isPublic = visibility.isPublic;

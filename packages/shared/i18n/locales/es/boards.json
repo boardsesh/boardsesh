@@ -1094,6 +1094,7 @@
     "details": {
       "title": "Ponle nombre a tu muro",
       "namePlaceholder": "Mi muro de spray",
+      "defaultName": "Muro de spray de {{name}}",
       "angle": "Ángulo",
       "angleValue": "{{angle}}°",
       "angleHint": "Queda fijo al publicar.",

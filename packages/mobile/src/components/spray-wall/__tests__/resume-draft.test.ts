@@ -207,10 +207,10 @@ describe('detailsSeedFromWall', () => {
     });
   });
 
-  it('snaps an angle off the list to the nearest one the slider shows', () => {
-    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 37 } }).angle).toBe(35);
-    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 38 } }).angle).toBe(40);
-    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 90 } }).angle).toBe(70);
+  // The builder refuses to show it and keeps it as the baseline, so Save
+  // writes the angle on screen; a snapped seed would hide the mismatch.
+  it('passes an angle off the list through as stored', () => {
+    expect(detailsSeedFromWall({ board: { ...BOARD, angle: 37 } }).angle).toBe(37);
   });
 
   it('says no gym, no point and no location name when the wall has none', () => {

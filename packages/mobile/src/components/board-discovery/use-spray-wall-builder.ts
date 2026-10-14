@@ -98,8 +98,9 @@ function sameCoords(
  * The wall is CREATED before the climber sees that step (the photo upload needs
  * a wall they own), with whatever this holds then: the default name, 40° and
  * private. So the step is an edit of a wall that exists. `hydrate` records what
- * the server holds, `buildDetailsUpdate` sends only what changed since, and
- * `markSaved` moves the record on after a save.
+ * the server holds, and `buildDetailsUpdate` sends only what changed since.
+ * After a save the screen hydrates again from the server's ANSWER, never from
+ * what it sent: the server may clamp a choice (a visibility policy).
  *
  * Pure of any rendering, like `useBoardBuilder`, so the stepper can be unit
  * tested without a renderer.
@@ -161,7 +162,7 @@ export function useSprayWallBuilder(
   const canCreate = name.trim().length > 0 && isValidSprayAngle(angle);
 
   /**
-   * What the server holds, as of the last `hydrate` or `markSaved`. Starts as
+   * What the server holds, as of the last `hydrate`. Starts as
    * the constructor's own values, which is what a wall created from an untouched
    * builder holds.
    */
@@ -190,7 +191,7 @@ export function useSprayWallBuilder(
     }),
     [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym],
   );
-  // Read by `hydrate` and `markSaved`, which are stable on purpose: the screen
+  // Read by `hydrate`, which is stable on purpose: the screen
   // calls them from resume callbacks that effects depend on, and a callback
   // that changed on every keystroke would restart those effects.
   const snapshotRef = useRef(snapshot);
@@ -203,9 +204,13 @@ export function useSprayWallBuilder(
    */
   const hydrate = useCallback((wallSeed: SprayWallDetailsSeed) => {
     const current = snapshotRef.current();
+    // An angle the slider cannot show is not shown (the builder keeps its own),
+    // but it IS what the server holds, so it stays the baseline and Save writes
+    // the angle on screen.
+    const seededAngle = wallSeed.angle;
     const next: SprayWallDetails = {
       name: wallSeed.name ?? current.name,
-      angle: wallSeed.angle != null && isValidSprayAngle(wallSeed.angle) ? wallSeed.angle : current.angle,
+      angle: seededAngle != null && isValidSprayAngle(seededAngle) ? seededAngle : current.angle,
       isPublic: wallSeed.isPublic ?? current.isPublic,
       isUnlisted: wallSeed.isUnlisted ?? current.isUnlisted,
       hideLocation: wallSeed.hideLocation ?? current.hideLocation,
@@ -224,7 +229,7 @@ export function useSprayWallBuilder(
     // A location name that is the gym's own was filled from the gym, so a
     // later gym change may replace it, as it would have in this sitting.
     autoFilledLocationRef.current = next.gym && next.locationName === next.gym.name ? next.gym.name : null;
-    baselineRef.current = next;
+    baselineRef.current = seededAngle != null ? { ...next, angle: seededAngle } : next;
   }, []);
 
   /**
@@ -253,11 +258,6 @@ export function useSprayWallBuilder(
     }
     return Object.keys(update).length > 0 ? update : null;
   }, [snapshot]);
-
-  /** The fields as they stand are now what the server holds. */
-  const markSaved = useCallback(() => {
-    baselineRef.current = snapshotRef.current();
-  }, []);
 
   /**
    * The validated `createSprayWallInput`, or null while the step is incomplete.
@@ -334,7 +334,6 @@ export function useSprayWallBuilder(
       pendingVisibility,
       hydrate,
       buildDetailsUpdate,
-      markSaved,
     }),
     [
       name,
@@ -352,7 +351,6 @@ export function useSprayWallBuilder(
       pendingVisibility,
       hydrate,
       buildDetailsUpdate,
-      markSaved,
     ],
   );
 }

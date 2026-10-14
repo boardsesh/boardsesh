@@ -21,6 +21,7 @@ import {
   RESET_SPRAY_WALL,
   SET_SPRAY_WALL_RENDER_SETTINGS,
   UPDATE_SPRAY_WALL,
+  UPDATE_SPRAY_WALL_DETAILS,
   type GetMySprayWallLifecycleQueryResponse,
   type SprayWallLifecycleRow,
 } from '@boardsesh/graphql/operations/spray-walls';
@@ -295,7 +296,7 @@ export function useUpdateSprayWallDetails() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: UpdateSprayWallInput): Promise<CreatedSprayWall> => {
-      const response = await getHttpClient().request<UpdateWallResponse>(UPDATE_SPRAY_WALL, { input });
+      const response = await getHttpClient().request<UpdateWallResponse>(UPDATE_SPRAY_WALL_DETAILS, { input });
       return response.updateSprayWall;
     },
     onSuccess: (_wall, { uuid }) => {

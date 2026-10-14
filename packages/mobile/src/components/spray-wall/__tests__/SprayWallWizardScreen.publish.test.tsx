@@ -211,7 +211,6 @@ const builder = vi.hoisted(() => ({
   // Nothing changed on the details step: Save publishes with no write.
   buildDetailsUpdate: () => null,
   hydrate: () => {},
-  markSaved: () => {},
   name: 'Garage wall',
   setName: () => {},
   canCreate: true,
@@ -502,7 +501,11 @@ describe('SprayWallWizardScreen — publishing a reset', () => {
 
     expect(mocks.publishVersion).toHaveBeenCalledWith('clone-v1');
     expect(mocks.settleArchived).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'old-wall', 'clone-1');
-    expect(mocks.track).toHaveBeenCalledWith('Board Created', expect.objectContaining({ isReset: true }));
+    // Picked back up from a clone that already had its photo.
+    expect(mocks.track).toHaveBeenCalledWith(
+      'Board Created',
+      expect.objectContaining({ isReset: true, resumed: true }),
+    );
     expect(mocks.activate).toHaveBeenCalledWith(expect.anything(), 'clone-1', mocks.finish, expect.anything());
   });
 

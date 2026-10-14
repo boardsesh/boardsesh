@@ -1094,6 +1094,7 @@
     "details": {
       "title": "Gib deiner Wand einen Namen",
       "namePlaceholder": "Meine Spraywand",
+      "defaultName": "Spraywand von {{name}}",
       "angle": "Winkel",
       "angleValue": "{{angle}}°",
       "angleHint": "Nach dem Veröffentlichen fest.",

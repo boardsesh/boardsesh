@@ -1055,3 +1055,30 @@ describe('addWallReducer — a final upload refusal', () => {
     expect(addWallReducer(refused, { type: 'UPLOAD_STARTED' }).upload.final).toBe(false);
   });
 });
+
+describe('addWallReducer — a resume answer that lands during the crop', () => {
+  function cropping(): AddWallState {
+    return run(
+      [{ type: 'PHOTO_PICKED', photo: PHOTO }, { type: 'ADJUST_OPENED' }, { type: 'PHOTO_PROCESSING_STARTED' }],
+      initialAddWallState(),
+    );
+  }
+
+  it('never leaves the flow stuck busy when it resumes a draft', () => {
+    expect(cropping().photoProcessing).toBe(true);
+    const resumed = addWallReducer(cropping(), { type: 'RESUMED_AT_REVIEW', draft: DRAFT });
+    expect(resumed.photoProcessing).toBe(false);
+    expect(isBusy(resumed)).toBe(false);
+    expect(resumed.step).toBe('review');
+  });
+
+  it('keeps the crop open, and not busy, when it resumes a bare wall', () => {
+    const resumed = addWallReducer(cropping(), {
+      type: 'RESUMED_AT_PHOTO',
+      wall: { wallUuid: 'wall-1', layoutId: 9001, viewerCanEdit: true },
+    });
+    expect(resumed.step).toBe('adjust');
+    expect(resumed.photoProcessing).toBe(false);
+    expect(resumed.photo).toEqual(PHOTO);
+  });
+});

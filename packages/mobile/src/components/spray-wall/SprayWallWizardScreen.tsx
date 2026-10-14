@@ -58,7 +58,6 @@ import {
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
 import { useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
-import { formatDefaultBoardName } from '../board-discovery/board-builder-labels';
 import { Icon } from '../Icon';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAuth } from '../../providers/auth-provider';
@@ -269,17 +268,18 @@ export function SprayWallWizardScreen({
   const formColumnCapped = isIpadSprayFlow();
   const bottomInset = useWindowBottomInset();
 
-  // The name a wall gets when nobody types one, as Create board does it
-  // ("Marco's Spray wall"). The wall is created with it at the upload, so a
+  // The name a wall gets when nobody types one ("Marco's spray wall"), in the
+  // climber's language. The wall is created with it at the upload, so a
   // climber who never types still gets a wall with a name. Without a display
-  // name, our own words rather than the board type's English label.
+  // name, "My spray wall". A profile that lands after the wall was created
+  // leaves that name alone: the details step shows what the wall holds.
   const { isAuthenticated } = useAuth();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const profileName = profile?.displayName?.trim();
   const defaultWallName = useMemo(
     () =>
       profileName
-        ? formatDefaultBoardName({ userName: profileName, boardName: 'spray', layoutName: 'spray', size: null })
+        ? t('sprayWizard.details.defaultName', { name: profileName })
         : t('sprayWizard.details.namePlaceholder'),
     [profileName, t],
   );
@@ -293,7 +293,17 @@ export function SprayWallWizardScreen({
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
   const connectivityReason = useConnectivityField(selectConnectivityReason);
   const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
+  // Read at the moment a late answer lands (the resume prompt, a leave dialog).
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [pickerBusy, setPickerBusy] = useState(false);
+  /**
+   * The climber answered the resume prompt and the answer is still being acted
+   * on (the version read, a start-over's discard). The pickers and the crop
+   * wait: a photo picked or a crop started now would be overtaken by the answer.
+   */
+  const [resumeDeciding, setResumeDeciding] = useState(false);
+  const photoControlsBusy = pickerBusy || resumeDeciding;
 
   const createWall = useCreateSprayWall();
   const createVersion = useCreateSprayWallVersion();
@@ -547,13 +557,30 @@ export function SprayWallWizardScreen({
       resumedHereRef.current = true;
       const target = resumeTargetFor(resumable, full.versions ?? []);
       if (target.at === 'review') {
+        // A photo picked behind the check is not the draft's, and the machine
+        // drops it; the file goes with it.
+        const dropped = stateRef.current.photo;
         dispatch({ type: 'RESUMED_AT_REVIEW', draft: target.draft, savedHoldCount: target.savedHoldCount });
+        if (dropped) discardPickedPhoto(dropped);
         if (target.savedHoldCount === 0) dispatch({ type: 'DETECTION_STARTED' });
       } else {
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
     [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable, hydrateDetails],
+  );
+
+  /** The prompt's answer, with the photo controls held until it has been acted on. */
+  const answerResume = useCallback(
+    async (resumable: NonNullable<ReturnType<typeof findResumableWall>>, choice: 'resume' | 'startOver') => {
+      setResumeDeciding(true);
+      try {
+        await decideResume(resumable, choice);
+      } finally {
+        if (mountedRef.current) setResumeDeciding(false);
+      }
+    },
+    [decideResume],
   );
 
   const [targetAttempt, setTargetAttempt] = useState(0);
@@ -610,9 +637,9 @@ export function SprayWallWizardScreen({
         {
           text: t('sprayWizard.resume.startOver'),
           style: 'destructive',
-          onPress: () => void decideResume(resumable, 'startOver'),
+          onPress: () => void answerResume(resumable, 'startOver'),
         },
-        { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
+        { text: t('sprayWizard.resume.pickUp'), onPress: () => void answerResume(resumable, 'resume') },
       ]);
     if (cloneOf.has(resumable.uuid)) {
       askToResume();
@@ -628,9 +655,10 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUME_DECLINED' });
         return;
       }
-      // The picker opened while the read was out: ask again once it closes
-      // (the effect re-runs on `pickerBusy`).
-      if (pickerBusyRef.current) {
+      // The picker opened, or the climber went into the crop, while the read
+      // was out: ask again once they are back on the photo step with the
+      // picker closed (the effect re-runs on both).
+      if (pickerBusyRef.current || stateRef.current.step !== 'photo') {
         resumeAskedRef.current = false;
         return;
       }
@@ -646,7 +674,7 @@ export function SprayWallWizardScreen({
     lifecycleSettled,
     lifecycleRows,
     walls,
-    decideResume,
+    answerResume,
     t,
   ]);
 
@@ -700,6 +728,8 @@ export function SprayWallWizardScreen({
     }
     const pickUp = () => {
       if (!mountedRef.current) return;
+      // A clone with a photo draft is one an earlier sitting started.
+      resumedHereRef.current = true;
       dispatch({ type: 'RESUMED_AT_REVIEW', draft: target.draft, savedHoldCount: target.savedHoldCount });
       if (target.savedHoldCount === 0) dispatch({ type: 'DETECTION_STARTED' });
     };
@@ -752,7 +782,7 @@ export function SprayWallWizardScreen({
 
   const pickPhoto = useCallback(
     async (source: 'library' | 'camera') => {
-      if (pickerBusy) return;
+      if (photoControlsBusy) return;
       setPickerBusy(true);
       hapticSelection();
       try {
@@ -772,7 +802,7 @@ export function SprayWallWizardScreen({
         setPickerBusy(false);
       }
     },
-    [pickerBusy, showToast, t],
+    [photoControlsBusy, showToast, t],
   );
 
   /** The empty tile's tap: the camera where this binary and phone have one, the library otherwise. */
@@ -1011,21 +1041,23 @@ export function SprayWallWizardScreen({
    * the publish follows by itself (`DETAILS_SAVED` lands on `publish`).
    *
    * A failure stays on the step with the fields as typed, so Save sends the
-   * same diff again; the baseline only moves once a save has landed.
+   * same diff again. A save that lands re-hydrates from the server's ANSWER,
+   * which may differ from what was sent (a visibility policy can clamp it), so
+   * the publish's repair write and the funnel follow what the server holds.
    */
   const saveDetails = useCallback(async () => {
     const { wall } = state;
     if (state.step !== 'details' || state.details.saving || !wall || !builder.canCreate) return;
     hapticSelection();
-    // What the funnel reports: the answers as saved, whether or not they changed.
-    detailsMetaRef.current = {
-      angle: builder.angle,
-      hasLocationName: builder.locationName.trim().length > 0,
-      hasCoords: builder.coords != null,
-      gymUuid: builder.selectedGym?.uuid ?? null,
-    };
     const update = builder.buildDetailsUpdate();
     if (!update) {
+      // Nothing to send: the fields ARE what the server holds.
+      detailsMetaRef.current = {
+        angle: builder.angle,
+        hasLocationName: builder.locationName.trim().length > 0,
+        hasCoords: builder.coords != null,
+        gymUuid: builder.selectedGym?.uuid ?? null,
+      };
       dispatch({ type: 'DETAILS_SAVED' });
       return;
     }
@@ -1035,7 +1067,15 @@ export function SprayWallWizardScreen({
       const saved = await updateDetailsAsync({ uuid: wall.wallUuid, ...update });
       if (!mountedRef.current) return;
       boardRef.current = saved.board;
-      builder.markSaved();
+      hydrateDetails(saved);
+      // What the funnel reports: the wall as the server answered.
+      const answered = saved.board;
+      detailsMetaRef.current = {
+        angle: answered.angle,
+        hasLocationName: (answered.locationName ?? '').trim().length > 0,
+        hasCoords: answered.latitude != null && answered.longitude != null,
+        gymUuid: answered.gymUuid ?? null,
+      };
       dispatch({ type: 'DETAILS_SAVED' });
     } catch (error) {
       if (!mountedRef.current) return;
@@ -1050,7 +1090,7 @@ export function SprayWallWizardScreen({
       // `accessibilityLiveRegion` is Android-only; VoiceOver needs telling.
       AccessibilityInfo.announceForAccessibility(message);
     }
-  }, [state, builder, updateDetailsAsync, capOrServerMessage, t]);
+  }, [state, builder, updateDetailsAsync, hydrateDetails, capOrServerMessage, t]);
 
   // ============================================
   // Step 7 — publish, bind, leave
@@ -1104,9 +1144,10 @@ export function SprayWallWizardScreen({
               meta: detailsMetaRef.current,
               pendingVisibility: visibility,
               isReset: resetOfWallUuid != null,
-              // Said outright on a run that saved the details: such a run has
-              // `meta` whether it created the wall or picked it back up.
-              resumed: detailsMetaRef.current ? resumedHereRef.current : undefined,
+              // Said outright: every run but a reset now has `meta`, so it no
+              // longer tells a resumed run from a fresh one, and a reset that
+              // built its clone in this run is not a resumed one either.
+              resumed: resumedHereRef.current,
             }),
           );
         } catch (error) {
@@ -1216,9 +1257,6 @@ export function SprayWallWizardScreen({
     (): EditorLeaveState => ({ dirty: editorDirtyRef.current, handingOver: editorHandingOverRef.current }),
     [],
   );
-
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   /**
    * Ask, then run `onConfirm` — or run it straight away when there is nothing to
@@ -1668,7 +1706,7 @@ export function SprayWallWizardScreen({
               photo the tile shows it, and a tap opens the crop. */}
           <PressableSurface
             onPress={photo ? openAdjust : pickFromTile}
-            disabled={pickerBusy}
+            disabled={photoControlsBusy}
             accessibilityRole="button"
             accessibilityLabel={tileTitle}
             accessibilityHint={photo ? undefined : tileBody}
@@ -1712,7 +1750,7 @@ export function SprayWallWizardScreen({
                 variant="tonal"
                 size="small"
                 onPress={openAdjust}
-                disabled={pickerBusy}
+                disabled={photoControlsBusy}
                 testID="spray-photo-adjust"
               />
               {/* Only on a binary whose Info.plist declares the camera. On an
@@ -1724,7 +1762,7 @@ export function SprayWallWizardScreen({
                   variant="tonal"
                   size="small"
                   onPress={() => void pickPhoto('camera')}
-                  disabled={pickerBusy}
+                  disabled={photoControlsBusy}
                   testID="spray-photo-retake"
                 />
               ) : (
@@ -1734,7 +1772,7 @@ export function SprayWallWizardScreen({
                   variant="tonal"
                   size="small"
                   onPress={() => void pickPhoto('library')}
-                  disabled={pickerBusy}
+                  disabled={photoControlsBusy}
                   testID="spray-photo-change"
                 />
               )}
@@ -1744,7 +1782,7 @@ export function SprayWallWizardScreen({
               title={t('sprayWizard.photo.fromLibrary')}
               variant="text"
               onPress={() => void pickPhoto('library')}
-              disabled={pickerBusy}
+              disabled={photoControlsBusy}
               testID="spray-photo-library"
             />
           ) : null}
@@ -1873,6 +1911,16 @@ export function SprayWallWizardScreen({
       ) : null}
     </ScrollView>
   );
+}
+
+/**
+ * Delete the local files of a photo nobody will upload: the current render and
+ * the compressed base it was cut from. Never the picker's original, which may
+ * be the climber's own library file.
+ */
+function discardPickedPhoto(photo: { uri: string; base: { uri: string } }): void {
+  discardLocalPhoto(photo.uri);
+  if (photo.base.uri !== photo.uri) discardLocalPhoto(photo.base.uri);
 }
 
 /**

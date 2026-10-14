@@ -72,6 +72,10 @@ const createWallMock = vi.hoisted(() => vi.fn());
 const updateDetailsMock = vi.hoisted(() => vi.fn());
 const publishMock = vi.hoisted(() => vi.fn());
 const uploadPhotoMock = vi.hoisted(() => vi.fn());
+const createVersionMock = vi.hoisted(() => vi.fn());
+const updateVisibilityMock = vi.hoisted(() => vi.fn(async () => ({})));
+const trackMock = vi.hoisted(() => vi.fn());
+const detectionProps = vi.hoisted(() => ({ last: null as null | { onManual: () => void } }));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
 const resetWallMock = vi.hoisted(() => vi.fn());
 const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
@@ -197,7 +201,10 @@ const stableQueryClient = vi.hoisted(() => ({}));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => stableQueryClient }));
 // `t` is stable across renders, as in the app: the targeted-open effect lists it
 // as a dependency, so a fresh function per render would refetch on every render.
-const stableT = vi.hoisted(() => (key: string) => key);
+const stableT = vi.hoisted(
+  () => (key: string, options?: { name?: string }) =>
+    key === 'sprayWizard.details.defaultName' ? `${options?.name}'s spray wall` : key,
+);
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: stableT, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
 }));
@@ -226,7 +233,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
-vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: {},
   sprayHoldsReviewed: () => ({ name: 'r', properties: {} }),
@@ -236,7 +243,7 @@ vi.mock('@boardsesh/analytics', () => ({
 const trackSprayMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: trackSprayMock }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
-vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn(), addErrorBreadcrumb: vi.fn() }));
 // The photo step's shooting-guide link (#6141). The real module loads
 // expo-web-browser, whose native event emitter does not exist under node.
 vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
@@ -255,15 +262,17 @@ vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
 vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: vi.fn() }));
 const stableActivateBoard = vi.hoisted(() => () => {});
 vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => stableActivateBoard }));
-vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: vi.fn() }));
+vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({
+  activatePublishedSprayWall: vi.fn(async () => {}),
+}));
 const resetSourceMock = vi.hoisted(() => vi.fn(async (): Promise<string | null | undefined> => undefined));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({
-  invalidateSprayWallRenderData: vi.fn(),
+  invalidateSprayWallRenderData: vi.fn(async () => {}),
   fetchSprayWallResetSource: resetSourceMock,
 }));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ prefetchSprayWallDraft: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: uploadPhotoMock }));
-// The default name: "Marco's Spray wall", as Create board would suggest it.
+// The default name: "Marco's spray wall", from the localised template.
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { displayName: 'Marco' } }) }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
@@ -289,9 +298,9 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
     return { ...wallsQuery.current, refetch: vi.fn() };
   },
   useCreateSprayWall: () => ({ mutateAsync: createWallMock }),
-  useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
+  useCreateSprayWallVersion: () => ({ mutateAsync: createVersionMock }),
   usePublishSprayWallVersion: () => ({ mutateAsync: publishMock }),
-  useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
+  useUpdateSprayWallVisibility: () => ({ mutateAsync: updateVisibilityMock }),
   useUpdateSprayWallDetails: () => ({ mutateAsync: updateDetailsMock }),
   useDiscardSprayWallDraft: () => ({ mutateAsync: discardDraftMock }),
   useResetSprayWall: () => ({ mutateAsync: resetWallMock }),
@@ -339,7 +348,12 @@ vi.mock('../SprayPhotoAdjustStep', () => ({
     return createElement('div', { 'data-testid': 'crop' });
   },
 }));
-vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
+vi.mock('../SprayDetectionStep', () => ({
+  SprayDetectionStep: (props: { onManual: () => void }) => {
+    detectionProps.last = props;
+    return null;
+  },
+}));
 vi.mock('../SprayWallLookStep', () => ({
   SprayWallLookStep: (props: NonNullable<typeof lookProps.last>) => {
     lookProps.last = props;
@@ -441,6 +455,8 @@ beforeEach(() => {
   // A publish that never answers: the run stays on the publish step.
   publishMock.mockImplementation(() => new Promise(() => {}));
   uploadPhotoMock.mockReset();
+  createVersionMock.mockReset();
+  detectionProps.last = null;
   listEnabled.walls = [];
   listEnabled.lifecycle = [];
   header.leading = null;
@@ -1224,6 +1240,37 @@ describe('the details step', () => {
     expect(routerMock.back).not.toHaveBeenCalled();
   });
 
+  // The parked Public pair is what the wall is about to be: the repair write
+  // after the publish re-states it, and the funnel reports it.
+  it('publishes a resumed wall Public on an untouched Save, repairing it after the publish', async () => {
+    publishMock.mockImplementation(async () => ({ id: 'v-1' }));
+    await reachDetails();
+    await act(async () => header.trailing?.onPress());
+    expect(updateDetailsMock).not.toHaveBeenCalled();
+    expect(publishMock).toHaveBeenCalledExactlyOnceWith('v-1');
+    expect(updateVisibilityMock).toHaveBeenCalledWith({ uuid: 'wall-1', isPublic: true, isUnlisted: false });
+    expect(trackMock).toHaveBeenCalledWith(undefined, expect.objectContaining({ isPublic: true, resumed: true }));
+  });
+
+  // A visibility policy can clamp the choice: the server's answer, not what was
+  // sent, is what the repair write and the funnel follow.
+  it('follows the save response when the server clamps the visibility', async () => {
+    publishMock.mockImplementation(async () => ({ id: 'v-1' }));
+    updateDetailsMock.mockResolvedValue({
+      ...RESUMED,
+      board: { ...RESUMED.board, name: 'The Cave', isPublic: false, isUnlisted: false },
+      pendingVisibility: null,
+    });
+    await reachDetails();
+    rename('The Cave');
+    await act(async () => header.trailing?.onPress());
+    expect(updateDetailsMock).toHaveBeenCalledExactlyOnceWith({ uuid: 'wall-1', name: 'The Cave' });
+    expect(publishMock).toHaveBeenCalledExactlyOnceWith('v-1');
+    // Clamped to private: nothing to re-state, and the event says private.
+    expect(updateVisibilityMock).not.toHaveBeenCalled();
+    expect(trackMock).toHaveBeenCalledWith(undefined, expect.objectContaining({ isPublic: false }));
+  });
+
   it('holds the form still while a save is out', async () => {
     updateDetailsMock.mockImplementation(() => new Promise(() => {}));
     await reachDetails();
@@ -1250,12 +1297,12 @@ describe('creating the wall at the upload', () => {
       uuid: 'wall-9',
       layoutId: 9,
       viewerCanEdit: true,
-      board: { uuid: 'wall-9', name: "Marco's Spray wall", angle: 40, isPublic: false, isUnlisted: false },
+      board: { uuid: 'wall-9', name: "Marco's spray wall", angle: 40, isPublic: false, isUnlisted: false },
     });
     uploadPhotoMock.mockImplementation(() => new Promise(() => {}));
     await reachUpload();
     expect(createWallMock).toHaveBeenCalledExactlyOnceWith({
-      name: "Marco's Spray wall",
+      name: "Marco's spray wall",
       angle: 40,
       isPublic: false,
       isUnlisted: false,
@@ -1289,10 +1336,75 @@ describe('creating the wall at the upload', () => {
       uuid: 'wall-9',
       layoutId: 9,
       viewerCanEdit: true,
-      board: { uuid: 'wall-9', name: "Marco's Spray wall", angle: 40, isPublic: false, isUnlisted: false },
+      board: { uuid: 'wall-9', name: "Marco's spray wall", angle: 40, isPublic: false, isUnlisted: false },
     });
     uploadPhotoMock.mockImplementation(() => new Promise(() => {}));
     const { getByTestId } = await reachUpload();
     expect(getByTestId('scan-photo').textContent).toBe('sprayWizard.upload.working sprayWizard.upload.resumeHint');
+  });
+});
+
+describe('the details step on every road in', () => {
+  const PHOTO_UPLOAD = { photoId: 'photo-1', width: 4032, height: 3024, determinate: true };
+
+  // A wall created in this run: what `createSprayWall` answered is the
+  // baseline, so a Save that touches nothing sends nothing.
+  it('sends no update on an untouched Save after creating the wall', async () => {
+    createWallMock.mockResolvedValue({
+      uuid: 'wall-9',
+      layoutId: 9,
+      viewerCanEdit: true,
+      board: { uuid: 'wall-9', name: "Marco's spray wall", angle: 40, isPublic: false, isUnlisted: false },
+    });
+    uploadPhotoMock.mockResolvedValue(PHOTO_UPLOAD);
+    createVersionMock.mockResolvedValue({ id: 'v-9', number: 1 });
+    setWalls({ data: [], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const view = mountWizard();
+    await pickLibraryPhoto(view.getByText);
+    act(() => header.trailing?.onPress()); // photo → corners
+    await act(async () => header.trailing?.onPress()); // corners → upload → detect
+    expect(createVersionMock).toHaveBeenCalledOnce();
+    act(() => detectionProps.last?.onManual());
+    act(() => editorProps.last?.onCommitted?.({ written: 3, removed: 0, holdCount: 3 }));
+    act(() => lookProps.last?.onBackgroundConfirmed());
+    act(() =>
+      lookProps.last?.onConfirmed({
+        selectedId: 'aura-outline',
+        dim: null,
+        background: 'photo',
+        backgroundTouched: false,
+      }),
+    );
+    expect(view.getByTestId('spray-details-step')).toBeTruthy();
+    await act(async () => header.trailing?.onPress());
+    expect(updateDetailsMock).not.toHaveBeenCalled();
+    expect(publishMock).toHaveBeenCalledExactlyOnceWith('v-9');
+  });
+
+  it('prefills the details from the wall a targeted open names', async () => {
+    fetchVersionsMock.mockResolvedValue({
+      ...UNFINISHED_WALL,
+      board: { uuid: 'wall-1', name: 'Garage wall', angle: 45, isPublic: false, isUnlisted: false },
+      pendingVisibility: { isPublic: false, isUnlisted: true },
+      versions: [{ id: 'v-1', number: 1, status: 'DRAFT', photo: { url: 'https://img/w.jpg' }, addedHoldCount: 2 }],
+    });
+    const view = render(<SprayWallWizardScreen returnTo="/(tabs)/climbs" wallUuid="wall-1" versionId="v-1" />);
+    await act(async () => {});
+    act(() => editorProps.last?.onCommitted?.({ written: 0, removed: 0, holdCount: 2 }));
+    act(() => lookProps.last?.onBackgroundConfirmed());
+    act(() =>
+      lookProps.last?.onConfirmed({
+        selectedId: 'aura-outline',
+        dim: null,
+        background: 'photo',
+        backgroundTouched: false,
+      }),
+    );
+    expect(view.getByRole('button', { name: 'sprayWizard.details.name' }).textContent).toContain('Garage wall');
+    expect(view.getByRole('radio', { name: 'mobile.sprayVisibility.unlisted' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    await act(async () => header.trailing?.onPress());
+    expect(updateDetailsMock).not.toHaveBeenCalled();
   });
 });

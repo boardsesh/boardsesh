@@ -1094,6 +1094,7 @@
     "details": {
       "title": "Name your wall",
       "namePlaceholder": "My spray wall",
+      "defaultName": "{{name}}'s spray wall",
       "angle": "Angle",
       "angleValue": "{{angle}}°",
       "angleHint": "Fixed once you publish.",

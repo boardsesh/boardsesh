@@ -110,9 +110,14 @@ const SPRAY_WALL_FIELDS = `
 /**
  * What the add-a-wall wizard's details step prefills from, beyond the shared
  * fragment: the visibility parked for the first publish (owner only) and the
- * wall's location. Selected only by the two operations that step reads, so the
- * render path and every listing stay as they are. The second `board` selection
- * merges with the fragment's.
+ * wall's location. The second `board` selection merges with the fragment's.
+ *
+ * Only the wizard's resume read and its details save select these. A backend
+ * that does not know `pendingVisibility` (or the new `updateSprayWall` input
+ * fields) fails the WHOLE operation at validation, it does not leave the field
+ * out, so they stay out of the shared fragment, out of Edit board's update and
+ * out of the post-publish visibility repair: an old backend must never fail a
+ * publish that has already landed. The backend half (#6494) ships first.
  */
 const SPRAY_WALL_DETAILS_FIELDS = `
   pendingVisibility {
@@ -330,6 +335,19 @@ export const RESET_SPRAY_WALL = gql`
  */
 export const UPDATE_SPRAY_WALL = gql`
   mutation UpdateSprayWall($input: UpdateSprayWallInput!) {
+    updateSprayWall(input: $input) {
+      ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/**
+ * The add-a-wall wizard's details save: the same mutation, answering with what
+ * the details step re-reads (`SPRAY_WALL_DETAILS_FIELDS`), so the step's
+ * baseline is the server's answer rather than what was sent.
+ */
+export const UPDATE_SPRAY_WALL_DETAILS = gql`
+  mutation UpdateSprayWallDetails($input: UpdateSprayWallInput!) {
     updateSprayWall(input: $input) {
       ${SPRAY_WALL_FIELDS}
       ${SPRAY_WALL_DETAILS_FIELDS}
