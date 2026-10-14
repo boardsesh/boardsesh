@@ -30,9 +30,10 @@ name: showcase take - a friend adds a climb
 # Coordinates (iPhone 16 Pro Max portrait):
 #   (the invite sheet closes by its existing localized Close label)
 #   40%,88%             the now-playing bar above the tab bar -> play view
-#   (the queue button is tapped by its label, not a point: it moved to the
-#   first slot of the action bar on boards without mirror, and stays bottom
-#   right on mirror boards)
+#   10%,84%             observed Kilter queue first-slot fallback, only when
+#                       the native drawer exposes no Queue accessibility label
+#                       and the recorder verifies board slot 0 is actually Kilter
+#   (mirror boards retain the label path; their first slot is Mirror)
 #   50%,<y>%            the second phone's new row, y from the recorder (see below)
 #   50%,7%              the backdrop above the reaction menu
 
@@ -52,7 +53,24 @@ name: showcase take - a friend adds a climb
     point: '40%,88%'
 - waitForAnimationToEnd
 
-- tapOn: '${SHOWCASE_QUEUE_LABEL}'
+# The recorded native drawer can render without exposing its app controls to
+# XCTest. Prefer its label; use the measured Kilter point only when verified.
+- evalScript: ${output.queueOpened = false}
+- runFlow:
+    when:
+      visible: '${SHOWCASE_QUEUE_LABEL}'
+    commands:
+      - tapOn: '${SHOWCASE_QUEUE_LABEL}'
+      - evalScript: ${output.queueOpened = true}
+- runFlow:
+    when:
+      true: ${!output.queueOpened && SHOWCASE_CREW_QUEUE_FALLBACK_POINT !== ''}
+    commands:
+      - tapOn:
+          point: '${SHOWCASE_CREW_QUEUE_FALLBACK_POINT}'
+      - evalScript: ${output.queueOpened = true}
+- assertTrue: ${output.queueOpened}
+
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/queue-open')}
 

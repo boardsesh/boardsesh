@@ -712,6 +712,14 @@ export function findBoardSlotProblem(logText: string, slot: number, kind: Showca
   return null;
 }
 
+/** Observed iOS Kilter queue target when its native drawer exposes no accessibility controls. */
+export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: ShowcasePlatform, logText: string): string {
+  if (platform !== 'ios' || (kind !== 'default' && kind !== 'kilter')) return '';
+  // The first toolbar slot is Mirror on Tension. Verify the actual resolved
+  // board as well as the selected recording kind before offering this point.
+  return findBoardSlotProblem(logText, 0, 'kilter') === null ? '10%,84%' : '';
+}
+
 /**
  * True once the app has logged the pre-session "Show this session live"
  * switch going OFF. The crew take refuses to start a session without it, so a
@@ -735,6 +743,18 @@ export function restoredSessionId(logText: string): string | null {
   const matches = [...logText.matchAll(/\[session\] restored from store: (\S+)/g)];
   const last = matches[matches.length - 1]?.[1];
   return last && last !== '(none)' ? last : null;
+}
+
+/** Close a live capture session before a cold launch can discard its JS state. */
+export async function ensureCaptureSessionClosed(
+  session: { open: boolean },
+  closeSession: () => Promise<void>,
+): Promise<void> {
+  if (!session.open) return;
+  await closeSession();
+  if (session.open) {
+    throw new Error('The live capture session did not end; preserving its app state instead of relaunching.');
+  }
 }
 
 /** The app logged the session starting (the Start tap landed). */

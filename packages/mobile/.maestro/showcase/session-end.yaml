@@ -6,13 +6,19 @@ name: showcase teardown - end the live session
 #
 # Ends the live session the take began, for everyone in it, so nothing
 # is left running on the account. The recorder runs this after the take and on
-# an abort (Ctrl-C included) whenever a session was started, always on a freshly
-# relaunched app (so no sheet covers Stop; the app restores the session), and
+# an abort (Ctrl-C included) whenever a session was started, keeping the live
+# app state (capture mode skips cold-start session restore), and
 # then checks the app logged the session ending.
 #
 # The exit control uses the existing localized accessibility label. The
 # destructive confirmation moved into SheetTopBar; its stable trailing-action
 # testID identifies the actual commit button rather than the title beside it.
+
+# Close an invite or queue sheet before routing, while retaining the live session.
+- tapOn:
+    text: '${SHOWCASE_CLOSE_LABEL}'
+    optional: true
+- waitForAnimationToEnd
 
 - openLink: com.boardsesh.app://home
 - tapOn:

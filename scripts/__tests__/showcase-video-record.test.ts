@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import {
   SHOWCASE_TAKE_IDS,
@@ -21,6 +21,8 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  crewQueueFallbackPoint,
+  ensureCaptureSessionClosed,
   findBoardHandoffProblem,
   findKeychainTeamProblem,
   differingPixelRatio,
@@ -832,5 +834,101 @@ describe('recorder home readiness server', () => {
     } finally {
       await signal.close();
     }
+  });
+});
+
+describe('capture session cleanup before a cold launch', () => {
+  it('waits for ending the live session before permitting the next launch', async () => {
+    const session = { open: true };
+    let finishEnd: (() => void) | undefined;
+    const ending = new Promise<void>((resolveEnd) => {
+      finishEnd = resolveEnd;
+    });
+    const closeSession = vi.fn(async () => {
+      await ending;
+      session.open = false;
+    });
+    let mayRelaunch = false;
+    const boundary = ensureCaptureSessionClosed(session, closeSession).then(() => {
+      mayRelaunch = true;
+    });
+    await Promise.resolve();
+    expect(closeSession).toHaveBeenCalledOnce();
+    expect(mayRelaunch).toBe(false);
+    expect(session.open).toBe(true);
+    finishEnd?.();
+    await boundary;
+    expect(session.open).toBe(false);
+    expect(mayRelaunch).toBe(true);
+  });
+
+  it('blocks the next launch when ending was unconfirmed or failed', async () => {
+    const session = { open: true };
+    await expect(ensureCaptureSessionClosed(session, async () => {})).rejects.toThrow('preserving its app state');
+    expect(session.open).toBe(true);
+    await expect(
+      ensureCaptureSessionClosed(session, async () => {
+        throw new Error('backend refused');
+      }),
+    ).rejects.toThrow('backend refused');
+    expect(session.open).toBe(true);
+  });
+
+  it('does not run session teardown when no live session exists', async () => {
+    const closeSession = vi.fn(async () => {});
+    await ensureCaptureSessionClosed({ open: false }, closeSession);
+    expect(closeSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps teardown in the live JS context when screenshot mode skips persisted restore', () => {
+    const persistence = readFileSync(
+      new URL('../../packages/mobile/src/providers/queue/use-queue-persistence.ts', import.meta.url),
+      'utf8',
+    );
+    expect(persistence).toContain("if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;");
+    const recorder = readFileSync(new URL('../showcase-video-record.ts', import.meta.url), 'utf8');
+    const cleanup = recorder.slice(
+      recorder.indexOf('async function endSession('),
+      recorder.indexOf('async function endStraySession('),
+    );
+    expect(cleanup).not.toContain('await relaunch(');
+    expect(cleanup).toContain('await runFlow(context, flow,');
+    const flow = readFileSync(showcaseFlowPath('session-end.yaml'), 'utf8');
+    expect(flow.indexOf("text: '${SHOWCASE_CLOSE_LABEL}'")).toBeLessThan(flow.indexOf('- openLink:'));
+    expect(flow).toContain('optional: true');
+  });
+});
+
+describe('observed native crew queue fallback', () => {
+  const kilterResolved = '[screenshot] board[0] "Marco\'s Board" -> "Marco\'s Board" (L8 S25 @35°, kilter)';
+  const tensionResolved = '[screenshot] board[0] "Tension" -> "Tension" (L7 S12 @40°, tension)';
+
+  it('enables the observed iOS first-slot target only for a verified Kilter capture', () => {
+    expect(crewQueueFallbackPoint('kilter', 'ios', kilterResolved)).toBe('10%,84%');
+    expect(crewQueueFallbackPoint('default', 'ios', kilterResolved)).toBe('10%,84%');
+    expect(crewQueueFallbackPoint('kilter', 'android', kilterResolved)).toBe('');
+    for (const kind of SHOWCASE_VARIANT_KINDS.filter((kind) => kind !== 'default' && kind !== 'kilter')) {
+      expect(crewQueueFallbackPoint(kind, 'ios', kilterResolved), kind).toBe('');
+    }
+  });
+
+  it('rejects a mismatched, unknown, or newer non-Kilter board resolution', () => {
+    expect(crewQueueFallbackPoint('kilter', 'ios', tensionResolved)).toBe('');
+    expect(crewQueueFallbackPoint('default', 'ios', '')).toBe('');
+    expect(crewQueueFallbackPoint('default', 'ios', kilterResolved.replace('board[0]', 'board[1]'))).toBe('');
+    expect(crewQueueFallbackPoint('default', 'ios', `${kilterResolved}\n${tensionResolved}`)).toBe('');
+    expect(crewQueueFallbackPoint('default', 'ios', `${kilterResolved}\n[screenshot] WARN board[0] no wall`)).toBe('');
+  });
+
+  it('prefers accessibility and gates coordinates before the queue-open mark', () => {
+    const source = readFileSync(showcaseFlowPath('crew.yaml'), 'utf8');
+    const labelBranch = source.indexOf("visible: '${SHOWCASE_QUEUE_LABEL}'");
+    const fallbackBranch = source.indexOf("true: ${!output.queueOpened && SHOWCASE_CREW_QUEUE_FALLBACK_POINT !== ''}");
+    const openedProof = source.indexOf('- assertTrue: ${output.queueOpened}');
+    expect(labelBranch).toBeGreaterThan(-1);
+    expect(fallbackBranch).toBeGreaterThan(labelBranch);
+    expect(openedProof).toBeGreaterThan(fallbackBranch);
+    expect(openedProof).toBeLessThan(source.indexOf("'/mark/queue-open'"));
+    expect(parseAllDocuments(source).every((document) => document.errors.length === 0)).toBe(true);
   });
 });

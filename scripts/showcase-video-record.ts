@@ -98,6 +98,8 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  crewQueueFallbackPoint,
+  ensureCaptureSessionClosed,
   differingPixelRatio,
   findBoardHandoffProblem,
   findKeychainTeamProblem,
@@ -1216,6 +1218,11 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
     signalUrl: context.signal.url,
     env: {
       SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
+      SHOWCASE_CREW_QUEUE_FALLBACK_POINT: crewQueueFallbackPoint(
+        context.args.kind,
+        context.primary.platform,
+        existsSync(context.primary.metroLog) ? readFileSync(context.primary.metroLog, 'utf8') : '',
+      ),
       SHOWCASE_CLOSE_LABEL: showcaseCloseLabel(context.args.locales[0]),
       SHOWCASE_LOG_BOARD_LABEL: formatBoardDisplayName(context.args.kind),
     },
@@ -1239,6 +1246,9 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
       marks: {},
     }),
   );
+  // A failed earlier setup may have started a session. Screenshot mode skips
+  // cold-start restoration, so finish it while its live JS context still exists.
+  await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-previous`));
   signal.reset();
   let window = await relaunch(primary);
   if (primary.platform === 'android') cleanAndroidStatusBar(primary.device.udid);
@@ -1372,11 +1382,12 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   });
 }
 
-/** End the live session a take started. Relaunches first so no open sheet swallows the Stop tap. */
+/** End the live session using the creator’s current JS state; capture launches never restore it. */
 async function endSession(context: RunContext, label: string): Promise<void> {
   if (!context.session.open) return;
-  // The app restores the session on launch, so the Record tab comes back in-session.
-  await relaunch(context.primary);
+  // Screenshot mode deliberately skips persisted queue/session hydration.
+  // Native relaunch here would lose the live session before we can end it.
+  // The teardown flow dismisses overlays and navigates home -> record in place.
   const window = new LogWindow(context.primary.metroLog);
   for (const flow of SESSION_END_FLOWS) await runFlow(context, flow, `${label}-end-session`);
   const endedBy = Date.now() + 10_000;
@@ -1437,7 +1448,7 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
 async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ udid: string } | string> {
   const { primary, secondary, signal } = context;
   if (!secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not set up`;
-  const [startFlow, ...inviteFlows] = take.setupFlows;
+  const [startFlow] = take.setupFlows;
   const window = new LogWindow(primary.metroLog);
   let sessionId: string | null = null;
   if (primary.platform === 'ios') {
@@ -1454,21 +1465,13 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
       );
     }
   } else {
-    // No clipboard to read back on the emulator. A relaunch restores the
-    // session and logs its id; then the remaining setup flows open the invite.
-    await runFlow(context, startFlow, `${take.id}-start`);
-    window.pull();
-    noteSessionStarted(context, window.text);
-    if (!context.session.open) return `[${take.id}] the session did not start; check the Start point in ${startFlow}`;
-    const relaunched = await relaunch(primary);
-    const idBy = Date.now() + 10_000;
-    while (!restoredSessionId(relaunched.text) && Date.now() < idBy) {
-      relaunched.pull();
-      await sleep(250);
-    }
-    sessionId = restoredSessionId(relaunched.text);
-    if (!sessionId) return `[${take.id}] the app did not log the session it restored after a relaunch`;
-    for (const flow of inviteFlows) await runFlow(context, flow, `${take.id}-invite`);
+    // Fail before Start: a cold capture launch cannot recover an Android invite
+    // id, and an emulator clipboard reader is not available in this harness.
+    // Keep the app alive; never discard an existing primary session to infer it.
+    return (
+      `[${take.id}] Android capture cannot retrieve the invite session id without a clipboard reader. ` +
+      `No session was started; cold-start capture mode does not restore sessions.`
+    );
   }
   console.log(`${LOG} [${take.id}] hidden session ${sessionId} started; sending the second phone in.`);
 
@@ -1488,7 +1491,7 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
       signalUrl: signal.url,
     })) === 0;
   if (!joined) return `[${take.id}] the second phone could not join session ${sessionId}; see its Maestro log`;
-  // The Join tap is a coordinate; prove it landed before filming a take whose
+  // Prove the Join control worked before filming a take whose
   // whole point is the second account's row.
   const joinDeadline = Date.now() + 15_000;
   while (!secondaryWindow.text.includes('[analytics] Session Joined') && Date.now() < joinDeadline) {
@@ -1892,6 +1895,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
           frames: 0,
           seconds: 0,
         });
+      }
+      // Setup can fail after Start. Clean up immediately while JS still owns
+      // the session, rather than letting the next take cold-launch over it.
+      try {
+        await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-cleanup`));
+      } catch (error) {
+        results[results.length - 1].problems.push(error instanceof Error ? error.message : String(error));
+        break;
       }
     }
   } catch (error) {
