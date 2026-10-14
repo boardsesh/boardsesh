@@ -1,6 +1,6 @@
 # Mobile store release runbook
 
-Both `main` and `release/next` automatically build TestFlight and Play-internal
+Both `main` and `release/next` automatically build TestFlight and Play tester-track
 candidates when the native fingerprint changes. Use either branch for a release;
 the screenshot and store-draft follow-ups use the branch that produced the binary.
 JS-only pushes skip native builds. Manual dispatch can force a rebuild on either
@@ -93,8 +93,43 @@ A push to either release branch that resolves to a new native fingerprint trigge
   exact binary to TestFlight.
 - **Android Play Internal Deploy** (`android-apk-rn.yml`) — resolves the next
   versionCode from Google Play, builds and validates the APK/AAB, and uploads the
-  AAB to Play internal. After Play accepts it, the exact signed arm64 APK is
+  same AAB to Play internal and open testing (`beta`) with `status: completed`
+  and `changesNotSentForReview: false`. After Play accepts the edit, the exact signed arm64 APK is
   published as the newest **Boardsesh Android Beta** prerelease.
+
+Open-beta testers can receive these native updates through Play with automatic
+updates enabled. This includes native builds from `release/next`, so the train
+is visible to open-beta testers too. The workflow keeps its existing **Android
+Play Internal Deploy (React Native)** name because other workflows consume it.
+It assigns releases only to tester tracks; production drafting and submission
+use separate workflows. The Play review queue is package-wide, however, so these
+workflows do not provide review isolation.
+
+The upload submits both tester tracks in one Play edit. A validation or commit
+failure for open beta also blocks the internal update and candidate tags. A
+successful workflow means Play accepted the edit, not that every tester can
+install it yet: Google review, managed publishing, Play propagation, and device
+automatic-update scheduling can delay availability. Check Play Console's
+Publishing overview for review or publishing actions before diagnosing a missing
+update as a failed build. `completed` describes the release rollout status; it
+does not bypass review or managed publishing.
+
+The pinned upload action does not set `changesInReviewBehavior` on its edit
+commit. [Google's default](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit)
+can cancel and resubmit an existing package-wide review,
+including pending production or listing changes. It does not turn a production
+draft into a completed release. Coordinate Play writers and inspect Publishing
+overview before the first or any manual dispatch, especially if a production review is already
+pending. The production-review guidance below requires
+`changesInReviewBehavior=ERROR_IF_IN_REVIEW` for that separate operation; this
+tester-track action currently lacks that protection.
+
+**First open-beta catch-up:** after merging this workflow change, dispatch
+`android-apk-rn.yml` on `main` with `force_native` enabled. Changing the tester
+tracks does not change the native fingerprint, so the normal push gate may skip
+the build. The forced build creates a fresh versionCode and submits it to both
+tester tracks; merging the workflow alone does not promote an existing internal
+build. Open-beta availability still waits for any required review and publishing.
 
 `workflow_dispatch` works from either branch and forces a build (Android has
 `force_native`, enabled by default). Automatic screenshot and store-draft runs
@@ -516,7 +551,7 @@ after the shipped fingerprint moves on.
    the chosen branch. A version-only release also needs both native workflows
    dispatched by hand (§2, "Version-only releases").
 3. Land the native changes on the chosen branch; wait for TestFlight and
-   Play internal builds.
+   Play tester-track builds.
 4. Complete native QA against the exact uploaded candidates.
 5. Screenshots re-capture themselves after the native build (the probe decides
    whether to fan out); listing text pushes itself.

@@ -211,11 +211,18 @@ describe('native release workflow contracts', () => {
     expect(android).toContain('actions/download-artifact@v4');
     expect(android).toContain('name: boardsesh-rn-android-${{ github.run_number }}');
     expect(android).not.toContain('outputs.apk_artifact_name');
-    expect(android).toContain('tracks: internal');
+    const uploads = stepsOfJob(android, 'build-and-release').filter((step) =>
+      step.uses?.startsWith('r0adkll/upload-google-play'),
+    );
+    expect(uploads).toHaveLength(1);
+    expect(String(uploads[0]?.with?.tracks).split(',').sort()).toEqual(['beta', 'internal']);
+    expect(uploads[0]?.with?.status).toBe('completed');
+    expect(uploads[0]?.with?.changesNotSentForReview).toBe(false);
+    expect(parse(android).name).toBe('Android Play Internal Deploy (React Native)');
     expect(android).toContain('Require Play upload credentials');
     expect(android).toContain('rerun failed jobs to repair tags or the APK prerelease');
     expect(android.indexOf('Require Play upload credentials')).toBeLessThan(android.indexOf('Expo prebuild'));
-    expect(android.indexOf('Upload AAB to Play internal track')).toBeLessThan(
+    expect(android.indexOf('Upload AAB to Play internal and open beta tracks')).toBeLessThan(
       android.indexOf('Tag the uploaded Android build and fingerprint'),
     );
     expect(android.indexOf('Tag the uploaded Android build and fingerprint')).toBeLessThan(
