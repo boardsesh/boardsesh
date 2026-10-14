@@ -18,6 +18,12 @@ const controls = vi.hoisted(() => ({
   },
   /** The form model the step last handed `MoreForm`. */
   model: null as null | MoreFormModel,
+  /** Which renderer drew that model. */
+  renderer: null as null | 'native' | 'rn',
+  /** The `Platform` the step reads; mutated in place so the mock stays live. */
+  platform: { OS: 'ios' as 'ios' | 'android', select: (choices: { ios: unknown }) => choices.ios },
+  /** What each measured view reports, by testID: jsdom has no layout. */
+  layouts: {} as Record<string, { width: number; height: number }>,
   dimProps: null as null | { onLiveChange: (dim: number) => void; onCommit: (dim: number) => void },
   unavailable: true,
   stalled: false,
@@ -31,7 +37,7 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
-  Platform: { OS: 'ios', select: (choices: { ios: unknown }) => choices.ios },
+  Platform: controls.platform,
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   View: ({
@@ -45,7 +51,10 @@ vi.mock('react-native', () => ({
     onLayout?: (event: unknown) => void;
     testID?: string;
   }) => {
-    useEffect(() => onLayout?.({ nativeEvent: { layout: { width: 402, height: 500 } } }), [onLayout]);
+    useEffect(() => {
+      const layout = (testID ? controls.layouts[testID] : undefined) ?? { width: 402, height: 500 };
+      onLayout?.({ nativeEvent: { layout } });
+    }, [onLayout, testID]);
     const paddingTop = Array.isArray(style) ? style.find((entry) => entry?.paddingTop != null)?.paddingTop : undefined;
     return createElement('div', { 'data-padding-top': paddingTop, 'data-testid': testID }, children);
   },
@@ -82,10 +91,29 @@ vi.mock('react-native', () => ({
 }));
 // The real stub, with the model it was handed kept for the test to drive.
 vi.mock('../../MoreForm', async () => {
-  const stub = await import('../../../../test/more-form-stub');
+  // `importActual`: the alias points '../../MoreForm' at this very stub, so the
+  // mock below replaces it, and a plain import would hand back the mock.
+  const stub = await vi.importActual<typeof import('../../../../test/more-form-stub')>(
+    '../../../../test/more-form-stub',
+  );
   return {
     MoreForm: (props: { model: MoreFormModel }) => {
       controls.model = props.model;
+      controls.renderer = 'native';
+      return stub.MoreForm(props);
+    },
+  };
+});
+vi.mock('../../MoreForm.rn', async () => {
+  // `importActual`: the alias points '../../MoreForm' at this very stub, so the
+  // mock below replaces it, and a plain import would hand back the mock.
+  const stub = await vi.importActual<typeof import('../../../../test/more-form-stub')>(
+    '../../../../test/more-form-stub',
+  );
+  return {
+    MoreFormRN: (props: { model: MoreFormModel }) => {
+      controls.model = props.model;
+      controls.renderer = 'rn';
       return stub.MoreForm(props);
     },
   };
@@ -203,7 +231,7 @@ vi.mock('../SprayWallBackgroundPreview', () => ({
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
-import { SprayWallLookStep, type SprayLookChoice } from '../SprayWallLookStep';
+import { SprayWallLookStep, previewRowHeight, type SprayLookChoice } from '../SprayWallLookStep';
 import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
 import {
   SPRAY_WALL_LOOK_OPTIONS,
@@ -266,6 +294,9 @@ beforeEach(() => {
   controls.preview = null;
   controls.carouselProps = null;
   controls.model = null;
+  controls.renderer = null;
+  controls.platform.OS = 'ios';
+  controls.layouts = {};
   controls.rendererAvailable = true;
   controls.art = { status: 'error', data: null };
   controls.headerTrailing = null;
@@ -596,5 +627,47 @@ describe('the wizard names the forward action and keeps the choice', () => {
       initialChoice: { selectedId: alternative.id, dim: 0.3, background: 'photo', backgroundTouched: true },
     });
     expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('the preview row height', () => {
+  it('fills what the form has, less its chrome and the dim slider', () => {
+    // An iPhone 15 Pro: 852pt, less a 116pt glass bar and a 128pt header block.
+    expect(previewRowHeight(608, 112)).toBe(464);
+    expect(previewRowHeight(608, 0)).toBe(576);
+  });
+
+  it('never squeezes below 280pt or grows past 640pt', () => {
+    expect(previewRowHeight(300, 112)).toBe(280);
+    expect(previewRowHeight(1200, 0)).toBe(640);
+  });
+
+  it('is worked out from the form slot alone, not the whole step', () => {
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    // The step itself is taller by the header inset and the header block; only
+    // the form's own height may count.
+    controls.layouts = {
+      'spray-look-step': { width: 402, height: 900 },
+      'spray-look-form': { width: 402, height: 608 },
+    };
+    renderStep();
+    const row = modelRow('lookCarousel');
+    if (row?.kind !== 'custom') throw new Error('no carousel row');
+    expect(row.height).toBe(previewRowHeight(608, 112));
+  });
+});
+
+describe('the form renderer', () => {
+  it('draws the native form on iOS and the React Native one on Android', () => {
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    renderStep();
+    expect(controls.renderer).toBe('native');
+    cleanup();
+    controls.renderer = null;
+    controls.platform.OS = 'android';
+    renderStep();
+    expect(controls.renderer).toBe('rn');
   });
 });

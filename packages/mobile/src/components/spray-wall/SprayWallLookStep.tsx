@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -36,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { MoreForm } from '../MoreForm';
+import { MoreFormRN } from '../MoreForm.rn';
 import { LookOptionSlider } from '../LookOptionSlider';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
@@ -47,7 +49,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useHeaderActions } from '../../hooks/use-header-actions';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
-import { spacing } from '../../theme/tokens';
+import { opacity, spacing } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
@@ -75,6 +77,7 @@ import {
 import { SprayWallBackgroundPreview } from './SprayWallBackgroundPreview';
 import { StepCounter } from './StepCounter';
 import { buildSprayBackgroundModel, buildSprayLookModel } from './spray-look-model';
+import type { MoreFormModel } from '../MoreForm.types';
 import {
   canPickBackground,
   sprayArtRefusalMessageKey,
@@ -123,7 +126,7 @@ const BACKGROUND_PREVIEW_SHARE = 0.72;
  * the rest of the form needs, clamped. The form scrolls, so a guess that comes
  * out short costs a scroll, never a clipped board.
  */
-function previewRowHeight(formHeight: number, reserved: number): number {
+export function previewRowHeight(formHeight: number, reserved: number): number {
   return Math.round(Math.min(MAX_PREVIEW_ROW, Math.max(MIN_PREVIEW_ROW, formHeight - FORM_CHROME - reserved)));
 }
 
@@ -270,15 +273,12 @@ export function SprayWallLookStep({
   // Native lays it out (`MoreCustomRow.height`), so its height is worked out
   // here, from the room measured under the header block: the header grows
   // with the locale and the text size.
-  const [rootHeight, setRootHeight] = useState(0);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
-    setRootHeight(event.nativeEvent.layout.height);
+  // Measured on the form's own slot, under the header block, so neither the
+  // see-through bar's inset nor the header's copy is counted twice.
+  const [formHeight, setFormHeight] = useState(0);
+  const handleFormLayout = useCallback((event: LayoutChangeEvent) => {
+    setFormHeight(event.nativeEvent.layout.height);
   }, []);
-  const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeaderHeight(event.nativeEvent.layout.height);
-  }, []);
-  const formHeight = Math.max(0, rootHeight - headerHeight);
   const lookRowHeight = previewRowHeight(formHeight, selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
   const backgroundRowHeight = previewRowHeight(formHeight * BACKGROUND_PREVIEW_SHARE, 0);
 
@@ -293,7 +293,7 @@ export function SprayWallLookStep({
 
   const previewAspect = preview ? preview.boardWidth / preview.boardHeight : null;
   const heroThumb = useMemo(() => {
-    if (rootHeight <= 0 || previewAspect == null) return null;
+    if (formHeight <= 0 || previewAspect == null) return null;
     return fitSprayLookHero({
       aspect: previewAspect,
       windowWidth: railWidth,
@@ -301,7 +301,7 @@ export function SprayWallLookStep({
       captionLineHeights: captionLineHeights('hero', textStyles),
       fontScale,
     });
-  }, [rootHeight, previewAspect, railWidth, lookRowHeight, textStyles, fontScale]);
+  }, [formHeight, previewAspect, railWidth, lookRowHeight, textStyles, fontScale]);
 
   // The server decides which backgrounds this draft can save. Loading,
   // unsupported and refused gates offer only the photo; unsupported backends
@@ -553,7 +553,7 @@ export function SprayWallLookStep({
 
   // A form only once the room for it is measured: its preview row is pinned
   // in points, and a first guess would re-fit the rail a frame later.
-  const measured = rootHeight > 0;
+  const measured = formHeight > 0;
   const showsLookForm = phase === 'look' && preview != null;
 
   return (
@@ -565,10 +565,9 @@ export function SprayWallLookStep({
         { paddingTop: headerInset, backgroundColor: systemColors.groupedBackground },
         showsLookForm || phase === 'background' ? null : { paddingBottom: bottomInset },
       ]}
-      onLayout={handleRootLayout}
       testID={phase === 'background' ? 'spray-background-step' : 'spray-look-step'}
     >
-      <View style={styles.header} onLayout={handleHeaderLayout}>
+      <View style={styles.header}>
         <StepCounter label={stepCounter} />
         <View style={styles.titleBlock}>
           <Text variant="title3">
@@ -581,14 +580,19 @@ export function SprayWallLookStep({
       </View>
 
       {/* Nothing in the form may change under a save in flight. */}
-      <View style={styles.form} pointerEvents={saving ? 'none' : 'auto'} accessibilityState={{ disabled: saving }}>
+      <View
+        style={[styles.form, saving ? styles.saving : null]}
+        pointerEvents={saving ? 'none' : 'auto'}
+        onLayout={handleFormLayout}
+        testID="spray-look-form"
+      >
         {phase === 'background' ? (
           measured ? (
-            <MoreForm model={backgroundModel} />
+            <LookForm model={backgroundModel} />
           ) : null
         ) : showsLookForm ? (
           measured ? (
-            <MoreForm model={lookModel} />
+            <LookForm model={lookModel} />
           ) : null
         ) : (
           // No preview to swipe through (still loading, or the draft cannot be
@@ -652,7 +656,7 @@ export function SprayWallLookStep({
               testID="spray-hold-look-slider"
             />
             {selectedDim !== null ? (
-              <View style={styles.dim} accessibilityState={{ disabled: saving }}>
+              <View style={styles.dim}>
                 <View style={styles.dimLabels}>
                   <Text variant="subheadline">{t('sprayWizard.look.dimTitle')}</Text>
                   <Text variant="subheadline" color={systemColors.secondaryLabel}>
@@ -683,6 +687,17 @@ export function SprayWallLookStep({
   );
 }
 
+/**
+ * The form both phases sit in. The native form on iOS; on Android the React
+ * Native renderer of the same model, because a Compose `RNHostView` row drew
+ * nothing on the emulator (the preview and the rail went missing), and both
+ * phases are built around exactly that row. `MoreFormRN` is the escape hatch
+ * `MoreForm.rn.tsx` describes for this case.
+ */
+function LookForm({ model }: { model: MoreFormModel }) {
+  return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -699,6 +714,10 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+  },
+  // Nothing moves under a save in flight, and the form says so.
+  saving: {
+    opacity: opacity.disabled,
   },
   rail: {
     flex: 1,
