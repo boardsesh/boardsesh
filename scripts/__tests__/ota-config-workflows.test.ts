@@ -232,11 +232,15 @@ describe('mobile-ota-unlock.yml', () => {
     for (const block of runBlocks) expect(block.split(/^ {6}- /m)[0]).not.toContain('${{');
   });
 
-  it('is awaited by direct production and backport publishers only', () => {
+  it('is awaited by direct production, backport and staged publishers only', () => {
     const callers = readdirSync(WORKFLOWS_DIR)
       .filter((file) => file !== 'mobile-ota-unlock.yml')
       .filter((file) => withoutComments(readWorkflow(file)).includes('mobile-ota-unlock'));
-    expect(callers.sort()).toEqual(['mobile-ota-backport.yml', 'mobile-ota-production.yml']);
+    expect(callers.sort()).toEqual([
+      'mobile-ota-backport.yml',
+      'mobile-ota-production.yml',
+      'mobile-ota-promote-staged.yml',
+    ]);
     const production = withoutComments(readWorkflow('mobile-ota-production.yml'));
     expect(production).toContain('node scripts/mobile-ota-unlock-wait.mjs');
     expect(production).toContain("!inputs.stage_for_production_deploy && steps.unlock_runtimes.outcome == 'success'");
@@ -266,6 +270,9 @@ describe('mobile-ota-unlock.yml', () => {
     const backport = withoutComments(readWorkflow('mobile-ota-backport.yml'));
     expect(backport).toContain('mobile-ota-unlock-wait.mjs');
     expect(backport).not.toContain('secrets.OTA_ADMIN');
+    const staged = withoutComments(readWorkflow('mobile-ota-promote-staged.yml'));
+    expect(staged).toContain('node scripts/mobile-ota-unlock-wait.mjs');
+    expect(staged).not.toContain('OTA_ADMIN');
   });
 });
 
