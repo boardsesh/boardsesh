@@ -1017,9 +1017,12 @@ function cutStills(cut: Cut): ReadonlyArray<Readonly<{ group: string; frames: St
     return timeline.scenes.map((scene, index) => ({
       group: `${index}-${scene.caption}`,
       frames: [
-        { frame: scene.startFrame, label: 'caption settled' },
-        { frame: Math.min(scene.endFrame - 1, scene.startFrame + 10), label: 'native footage' },
-        { frame: scene.endFrame - 1, label: 'cut or loop seam' },
+        { frame: Math.max(0, scene.startFrame - 6), label: index === 0 ? 'readable opener' : 'phone entrance' },
+        { frame: scene.startFrame + 5, label: 'words revealing' },
+        { frame: scene.startFrame + 10, label: 'caption readable' },
+        { frame: scene.endFrame - 18, label: 'native content settled' },
+        { frame: scene.endFrame - 6, label: 'phone and caption exit' },
+        { frame: scene.endFrame - 1, label: 'next beat or loop landing' },
       ],
     }));
   return timeline.scenes.map((scene) => {

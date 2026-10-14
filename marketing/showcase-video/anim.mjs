@@ -318,3 +318,53 @@ export function footageAt(segments, local, frameCount) {
 export function searchPhonePose(takeId, phoneCount, defaultPose, crewPose) {
   return phoneCount === 1 && takeId === 'crew' && crewPose ? crewPose : defaultPose;
 }
+
+/** Hero word blur/rise timing compressed to a fixed readable-by frame. */
+export function searchWordTiming(regularCount, readByFrame = 10) {
+  const frames = Math.floor(readByFrame / 2);
+  return {
+    firstWord: 0,
+    wordStagger: Math.min(1, (readByFrame - frames - 1) / Math.max(1, regularCount - 1)),
+    wordFrames: frames,
+    accentDelay: 1,
+    accentFrames: frames,
+  };
+}
+
+/** Two-dimensional hero spring entrance, followed by an eased side/bottom exit. */
+export function searchPhoneMotionPose(
+  slot,
+  local,
+  length,
+  {
+    opening = false,
+    index = 0,
+    count = 1,
+    width = 1920,
+    height = 1280,
+    phoneWidth = 428,
+    fps = 30,
+    leadFrames = 12,
+    exitFrames = 12,
+  } = {},
+) {
+  const stagger = Math.min(index * 2, leadFrames - 4);
+  const below = count > 1 && index < count - 1;
+  const off = below
+    ? { ...slot, cy: slot.cy + height }
+    : { ...slot, cx: width + (phoneWidth * (slot.scale ?? 1)) / 2 + 40 };
+  const phase = progress(local, -leadFrames + stagger, leadFrames - stagger);
+  // Normalize the same hero ARRIVE spring to its finite endpoint: approaching
+  // local zero and local zero have the same pose, with no snapped residual.
+  const arriveSpring = { zeta: 0.62, period: 0.42 };
+  const duration = (leadFrames / fps) * 1.75;
+  const arrived = opening ? 1 : spring(phase * duration, arriveSpring) / spring(duration, arriveSpring);
+  const enterPose = {
+    ...slot,
+    cx: lerp(off.cx, slot.cx, arrived),
+    cy: lerp(off.cy, slot.cy, arrived),
+  };
+  const exitStart = length - exitFrames + Math.min(index * 2, exitFrames - 4);
+  const out = easeIn(progress(local, exitStart, length - 1 - exitStart));
+  return { ...enterPose, cx: lerp(enterPose.cx, off.cx, out), cy: lerp(enterPose.cy, off.cy, out) };
+}

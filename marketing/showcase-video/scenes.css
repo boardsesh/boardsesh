@@ -822,15 +822,7 @@ svg.layer {
   display: block;
   white-space: nowrap;
 }
-#stage[data-format='3x2'] .search-caption .w {
-  opacity: 1;
-  transform: none;
-  filter: none;
-}
 #stage[data-format='3x2'] .search-caption .w.accent {
   color: var(--accent-on-dark);
   font-size: 152px;
-}
-#stage[data-format='3x2'] .phone-rig {
-  transform: scale(var(--s));
 }

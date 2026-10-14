@@ -23,6 +23,8 @@ import {
   projectPoint,
   spring,
   searchPhonePose,
+  searchPhoneMotionPose,
+  searchWordTiming,
 } from './anim.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -654,7 +656,8 @@ export function init(input) {
 }
 
 // The Apple creative is intentionally separate from the hero's choreography:
-// captions hard-cut, phones stay upright, and only the final 15 frames dissolve.
+// it reuses the hero’s spring entrances, word reveals and loop rise in a dark,
+// upright composition sized for the shorter search-card beats.
 function initSearchStage() {
   const stage = document.getElementById('stage');
   ui.stage = stage;
@@ -707,22 +710,34 @@ function initSearchStage() {
       takeId,
       ...buildPhone(layer, phoneIndex + 1),
     }));
-    return { scene, layer, caption, phones };
+    return { scene, layer, caption, words, phones };
   });
   renderSearchAt(0);
 }
 
-function paintSearchScene(entry, frame) {
-  const { scene, phones } = entry;
+function paintSearchScene(entry, frame, loopFrame = null) {
+  const { scene, phones, words, caption } = entry;
   const local = frame - scene.startFrame;
+  const length = sceneLength(scene);
+  const opening = entry === ui.searchScenes[0];
+  const closerStart = data.totalFrames - data.storeSearch.crossfadeFrames;
+  const closing = loopFrame != null;
+  const isOutroCloser = scene === data.scenes.at(-1) && frame >= closerStart;
+  const captionLocal = closing ? loopFrame - closerStart - 7 : local;
+  caption.style.opacity = captionLocal >= 0 ? '1' : '0';
+  const out = isOutroCloser ? easeIn(progress(frame, closerStart, 7)) : easeIn(progress(local, length - 8, 7));
+  applyWords(
+    words,
+    opening && !closing ? Infinity : captionLocal,
+    closing ? 0 : out,
+    searchWordTiming(words.regularCount, closing ? data.storeSearch.crossfadeFrames - 8 : 10),
+  );
   phones.forEach((phone, index) => {
     const take = data.takes[phone.takeId];
     const count = phones.length;
     const single = count === 1;
-    // Keep the opening trio and other single-phone beats at their existing poses;
-    // every crew beat fits the whole screen so the peer row stays visible.
     const centre = single ? 1420 : 1390 + (index - (count - 1) / 2) * 240;
-    const pose = searchPhonePose(
+    const slot = searchPhonePose(
       phone.takeId,
       count,
       {
@@ -735,9 +750,20 @@ function paintSearchScene(entry, frame) {
       },
       data.storeSearch.crewPhonePose,
     );
+    const pose = closing
+      ? closerPose(slot, loopFrame, closerStart + index * 2, data.totalFrames - 1, data.height * 0.9)
+      : searchPhoneMotionPose(slot, local, length, {
+          opening,
+          index,
+          count,
+          width: data.width,
+          height: data.height,
+          phoneWidth: data.phone.width,
+          fps: data.fps,
+        });
     setVars(phone.rig, { cx: pose.cx, cy: pose.cy, s: pose.scale, rx: 0, ry: 0, rz: 0 });
     setVars(phone.shadow, { cx: -1000, cy: -1000 });
-    const footage = footageAt(take.segments, local, take.frameCount);
+    const footage = footageAt(take.segments, Math.max(0, local), take.frameCount);
     phone.img.src = frameUrl(take, footage);
     visible.push(phone.img);
   });
@@ -745,22 +771,26 @@ function paintSearchScene(entry, frame) {
 
 function renderSearchAt(frame) {
   visible = [];
-  ui.searchScenes.forEach((entry) => {
+  ui.searchScenes.forEach((entry, index) => {
     entry.layer.style.opacity = '0';
+    entry.layer.style.zIndex = String(index + 1);
   });
-  const activeIndex = sceneIndexAt(frame);
-  const active = ui.searchScenes[activeIndex];
-  active.layer.style.opacity = '1';
-  paintSearchScene(active, frame);
-  const start = data.totalFrames - data.storeSearch.crossfadeFrames;
-  if (frame >= start) {
+  // A phone's spring leads the next beat by twelve frames, while its caption
+  // waits for that beat. Old and new words never overlap in the caption column.
+  ui.searchScenes.forEach((entry, index) => {
+    const lead = index === 0 ? 0 : 12;
+    if (frame < entry.scene.startFrame - lead || frame >= entry.scene.endFrame) return;
+    entry.layer.style.opacity = '1';
+    paintSearchScene(entry, frame);
+  });
+  const closerStart = data.totalFrames - data.storeSearch.crossfadeFrames;
+  if (frame >= closerStart) {
     const opening = ui.searchScenes[0];
-    // Last frame is exactly frame 0, including its native footage and caption.
-    const amount = (frame - start) / (data.storeSearch.crossfadeFrames - 1);
-    active.layer.style.opacity = String(1 - amount);
-    opening.layer.style.opacity = String(amount);
+    opening.layer.style.opacity = '1';
     opening.layer.style.zIndex = String(ui.searchScenes.length + 1);
-    paintSearchScene(opening, 0);
+    // Hero's loop rise lands exactly at the original pose and footage on the
+    // last frame; the opening words settle at the same time.
+    paintSearchScene(opening, 0, frame);
   }
   return frame;
 }

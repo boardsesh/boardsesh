@@ -1,10 +1,16 @@
-import { searchPhonePose } from '../../marketing/showcase-video/anim.mjs';
+import {
+  searchPhonePose,
+  searchPhoneMotionPose,
+  searchWordTiming,
+  closerPose,
+} from '../../marketing/showcase-video/anim.mjs';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SHOWCASE_TAKE_IDS } from '../lib/showcase-video/contract';
 import {
   buildStoreSearchArgs,
   parseRenderArgs,
+  parseHeadline,
   storeSearchCrewPhonePose,
   SHOWCASE_PHONE,
   screenToCanvas,
@@ -172,9 +178,71 @@ describe('store search crew framing', () => {
     expect(searchPhonePose('boards-kilter', 1, defaultPose, crewPose)).toBe(defaultPose);
     expect(searchPhonePose('crew', 2, defaultPose, crewPose)).toBe(defaultPose);
     expect(searchPhonePose('crew', 1, defaultPose, undefined)).toBe(defaultPose);
-    expect(timeline).toContain('const pose = searchPhonePose(');
-    expect(timeline).toContain('paintSearchScene(opening, 0)');
+    expect(timeline).toContain('const slot = searchPhonePose(');
+    expect(timeline).toContain('paintSearchScene(opening, 0, frame)');
     expect(timeline).toContain("cy: single ? (scene.id === 'lock-screen' ? 925 : 910) : 820");
     expect(timeline).toContain('scale: single ? 1.6 : index === Math.floor(count / 2) ? 1.12 : 0.92');
+  });
+});
+
+describe('hero motion for store search', () => {
+  const slot = { cx: 1420, cy: 640, scale: 1.15, rx: 0, ry: 0, rz: 0 };
+
+  it('leads the beat with a spring then keeps the real peer row settled until the exit', () => {
+    const off = searchPhoneMotionPose(slot, -12, 90);
+    const arriving = searchPhoneMotionPose(slot, -6, 90);
+    expect(off.cx).toBeGreaterThan(1920);
+    expect(arriving.cx).not.toBe(off.cx);
+    for (const frame of [0, 1, 12, 40, 77]) expect(searchPhoneMotionPose(slot, frame, 90)).toEqual(slot);
+    expect(searchPhoneMotionPose(slot, 83, 90).cx).toBeGreaterThan(slot.cx);
+    expect(searchPhoneMotionPose(slot, 89, 90).cx).toBeGreaterThan(1920);
+    // No clamped spring residual jumps at the entrance endpoint.
+    expect(Math.abs(searchPhoneMotionPose(slot, -0.00001, 90).cx - slot.cx)).toBeLessThan(0.001);
+  });
+
+  it('keeps the opening readable and stationary instead of replaying an entrance after frame zero', () => {
+    for (const frame of [0, 1, 10, 40, 77]) {
+      expect(searchPhoneMotionPose(slot, frame, 90, { opening: true })).toEqual(slot);
+    }
+    expect(searchPhoneMotionPose(slot, 83, 90, { opening: true })).not.toEqual(slot);
+  });
+
+  it('staggers board phones in two dimensions and never adds a tilt', () => {
+    const first = searchPhoneMotionPose(slot, -10, 90, { index: 0, count: 3 });
+    const middle = searchPhoneMotionPose(slot, -10, 90, { index: 1, count: 3 });
+    const last = searchPhoneMotionPose(slot, -10, 90, { index: 2, count: 3 });
+    expect(first.cy).not.toBe(middle.cy);
+    expect(last.cx).toBeGreaterThan(1920);
+    for (let index = 0; index < 3; index++) {
+      for (const frame of [-12, -6, 0, 10, 78, 89]) {
+        const pose = searchPhoneMotionPose(slot, frame, 90, { index, count: 3 });
+        expect([pose.rx, pose.ry, pose.rz]).toEqual([0, 0, 0]);
+        if (frame === 0) expect(pose).toEqual(slot);
+      }
+    }
+  });
+
+  it('makes every locale caption fully readable by frame ten, including the accent', () => {
+    for (const locale of STORE_SEARCH_LOCALES) {
+      const copy = JSON.parse(readFileSync(storeSearchCopyPath(locale), 'utf8')) as StoreSearchCopy;
+      for (const caption of Object.values(copy)) {
+        const regularCount = parseHeadline(caption)
+          .flat()
+          .filter((word) => !word.accent).length;
+        for (const deadline of [10, 7]) {
+          const timing = searchWordTiming(regularCount, deadline);
+          const lastRegular = timing.firstWord + timing.wordStagger * Math.max(0, regularCount - 1);
+          expect(lastRegular + timing.wordFrames).toBeLessThanOrEqual(deadline);
+          expect(lastRegular + timing.accentDelay + timing.accentFrames).toBeLessThanOrEqual(deadline);
+        }
+      }
+    }
+    const css = readFileSync(new URL('../../marketing/showcase-video/scenes.css', import.meta.url), 'utf8');
+    expect(css).not.toMatch(/\.search-caption \.w\s*\{/);
+  });
+
+  it('lands the hero loop rise exactly on the original phone without an empty last frame', () => {
+    expect(closerPose(slot, 435, 435, 449, 1280)).not.toEqual(slot);
+    expect(closerPose(slot, 449, 435, 449, 1280)).toEqual(slot);
   });
 });
