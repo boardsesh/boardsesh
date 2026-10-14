@@ -1,6 +1,6 @@
 # Climb list rows
 
-Settings → Climb list, immediately above Climb view, opens `/settings/climb-list`. The Climbs tab has no shortcut to it: the filter chips keep the whole row (#6397). The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
+Settings → Climbs & grades → Climb list, above Climb view, opens `/settings/climb-list`. The Climbs tab has no shortcut to it: the filter chips keep the whole row (#6397). The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
 
 ## Fields and presets
 
@@ -15,7 +15,7 @@ Settings → Climb list, immediately above Climb view, opens `/settings/climb-li
 
 Quick actions is outside presets. Active preset is derived by comparing content fields. A manual mix reads Custom; applying a preset remembers that mix, and the Custom chip restores it. Default clears content overrides so shipped defaults can continue to apply.
 
-The prominent grade still follows Settings → Grades. When the personal or Boardsesh grade differs, Community grade shows the crowd's grade in the detail line. With sends, rating and setter all hidden, that token docks beside the name.
+The prominent grade still follows Settings → Climbs & grades. When the personal or Boardsesh grade differs, Community grade shows the crowd's grade in the detail line. With sends, rating and setter all hidden, that token docks beside the name.
 
 ## Persistence and geometry
 

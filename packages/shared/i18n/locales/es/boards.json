@@ -277,7 +277,6 @@
     },
     "myGyms": {
       "moreRowTitle": "Mis rocódromos",
-      "moreRowSubtitle": "Entra a tus rocódromos y ajusta sus datos",
       "screenTitle": "Mis rocódromos",
       "loadError": "No pudimos cargar tus rocódromos. Inténtalo de nuevo.",
       "retry": "Reintentar",

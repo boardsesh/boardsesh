@@ -288,7 +288,24 @@
     },
     "settings": {
       "title": "Ajustes",
-      "library": "Biblioteca",
+      "pages": {
+        "offline": {
+          "title": "Sin conexión y almacenamiento",
+          "on": "Activado"
+        },
+        "general": {
+          "title": "General"
+        },
+        "climbs": {
+          "title": "Bloques y grados"
+        },
+        "earlyAccess": {
+          "title": "Acceso anticipado"
+        },
+        "developer": {
+          "title": "Desarrollo"
+        }
+      },
       "development": "Desarrollo",
       "dev": {
         "forceServerUnreachable": "Forzar servidor no disponible",
@@ -298,7 +315,6 @@
       "metroServersSubtitle": "Cambia entre bundlers de Tailnet",
       "boardLook": {
         "title": "Aspecto del plafón",
-        "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
         "rendererUnavailable": {
           "title": "Actualiza la app",
           "body": "Esta versión todavía no puede dibujar el aspecto Aura. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
@@ -556,7 +572,6 @@
       },
       "storage": {
         "title": "Almacenamiento",
-        "rowLabel": "Gestionar almacenamiento",
         "rowSubtitle": "Mira cuánto ocupan tus descargas y libera lo que no necesitas",
         "intro": "Los plafones que descargas ocupan espacio en este teléfono. Libera los que no estás escalando.",
         "offNote": "Las descargas sin conexión están desactivadas ahora mismo. Aun así puedes liberar lo que ya está en este teléfono.",
@@ -572,7 +587,7 @@
         "keptOffline": "Guardado sin conexión",
         "notKeptOffline": "Ya no se guarda sin conexión — sigue ocupando espacio",
         "estimateNote": "Los tamaños son aproximados. Dos tamaños del mismo diseño comparten sus vías, así que no suman el total.",
-        "remove": "Quitar",
+        "tapToRemove": "Pulsa un plafón para quitarlo de este móvil.",
         "removeAria": "Quitar {{name}} de este teléfono",
         "cancel": "Cancelar",
         "removeTitle": "¿Quitar {{name}}?",
@@ -623,7 +638,6 @@
         "personalGradesDescription": "Muestra el grado que le pusiste a un bloque en vez del de la comunidad, y ordena y filtra por él."
       },
       "offline": {
-        "title": "Sin conexión",
         "offlineMode": "Modo sin conexión",
         "offlineModeDescription": "Deja de hablar con el servidor de Boardsesh hasta que lo desactives. Los plafones descargados siguen funcionando y tus encadenes quedan en cola en el móvil.",
         "autoDownload": "Mantener los plafones sin conexión",
@@ -643,14 +657,8 @@
         "contributeSubtitle": "Las traducciones las mantiene la comunidad. Abre los archivos de {{language}} en GitHub para corregir o añadir una frase."
       },
       "diagnostics": {
-        "title": "Privacidad",
         "recording": "Ayúdanos a mejorar",
         "recordingDescription": "Envía grabaciones de sesión anónimas y enmascaradas para que corrijamos errores más rápido. Lo que escribes y tus fotos quedan ocultos. Desactívalo cuando quieras."
-      },
-      "integrations": {
-        "title": "Aplicaciones conectadas",
-        "subtitle": "Apple Health y Strava",
-        "subtitleWithStrava": "Cuentas de plafón, Apple Health, Strava"
       },
       "syncIssues": {
         "title": "Problemas de sincronización",
@@ -722,7 +730,7 @@
         "actions": "Acciones",
         "gradesTitle": "Grados",
         "previewFooter": "Ejemplo. Los encadenes, guardados y etiquetas aparecen en los bloques que los tienen.",
-        "gradeFooter": "Elige el grado principal en Ajustes → Grados.",
+        "gradeFooter": "Elige el grado principal en Ajustes → Bloques y grados.",
         "personalFooter": "Las marcas personales y listas requieren iniciar sesión y se cargan con conexión.",
         "presetsLabel": "Configuración rápida",
         "presets": {
@@ -810,7 +818,6 @@
     "onboarding": {
       "replaySection": "Tutorial",
       "replayTitle": "Repetir el tutorial",
-      "replaySubtitle": "Vuelve a ver el tutorial",
       "replayError": "No se pudo abrir el tutorial. Inténtalo de nuevo.",
       "prompt": {
         "title": "Mira lo que está encendido en tu muro, en directo",

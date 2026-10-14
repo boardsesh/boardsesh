@@ -57,7 +57,8 @@ describe('private audience publication consent', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(audience));
     expect(confirm).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        message: audience === 'public' ? 'privacy.publishResourceMessage' : 'privacy.publishLinkMessage',
+        message:
+          audience === 'public' ? 'settings:privacy.publishResourceMessage' : 'settings:privacy.publishLinkMessage',
       }),
     );
   });

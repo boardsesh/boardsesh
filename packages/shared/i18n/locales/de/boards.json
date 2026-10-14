@@ -277,7 +277,6 @@
     },
     "myGyms": {
       "moreRowTitle": "Meine Hallen",
-      "moreRowSubtitle": "Spring zu deinen Hallen und pass ihre Details an",
       "screenTitle": "Meine Hallen",
       "loadError": "Deine Hallen ließen sich nicht laden. Versuch es nochmal.",
       "retry": "Nochmal versuchen",

@@ -1,268 +1,281 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { router } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { PrivacyResourceAudience } from '@boardsesh/graphql/operations/privacy';
-import { Text } from '../Text';
-import { Button } from '../Button';
-import { ActivityIndicator } from '../ActivityIndicator';
-import { SwitchRow } from '../SwitchRow';
-import { useTheme } from '../../providers/theme-provider';
+import type { PrivacyResourceAudience, PrivacySettings } from '@boardsesh/graphql/operations/privacy';
+import { MoreForm } from '../MoreForm';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
+import { useAuth } from '../../providers/auth-provider';
+import { useConfirm } from '../../providers/dialog-provider';
+import { decideAnalyticsConsent } from '../../providers/consent-provider';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../lib/auth-store';
-import { useFollowers, useProfile } from '../../lib/graphql/hooks';
+import { useAnalyticsPreference, useAnalyticsRegionDefault } from '../../lib/consent-hooks';
+import { reportHandledError } from '../../lib/error-reporting';
+import { hapticSelection } from '../../lib/haptics';
+import { openExternalUrl } from '../../lib/open-url';
+import { trackSettingChanged, withSettingTracking } from '../../lib/settings-analytics';
+import { useProfile } from '../../lib/graphql/hooks';
 import {
   useIncomingFollowRequests,
-  usePrivacyFollowAction,
   usePrivacySettings,
   useSetAnonymousOnForeignBoards,
   useUpdatePrivacySettings,
 } from '../../lib/graphql/hooks/use-privacy';
-import { AudiencePicker, SESSION_AUDIENCES } from './AudiencePicker';
+import { useSessionRecordingToggle } from '../settings/use-session-recording-toggle';
+import {
+  ANALYTICS_ROW_KEY,
+  DEFAULT_SESSION_AUDIENCES,
+  PRIVATE_ACCOUNT_ROW_KEY,
+  SESSION_DEFAULT_ROW_KEY,
+  buildPrivacyModel,
+} from './privacy-model';
+import {
+  accountSwitchConfirmation,
+  accountSwitchPayload,
+  accountSwitchReopensSessions,
+  sessionAudienceConfirmation,
+  type PrivacyConfirmCopy,
+} from './privacy-settings-changes';
+import { PRIVACY_POLICY_URL } from './privacy-policy-url';
+import type { PrivacyPeopleMode } from './PrivacyPeopleScreen';
 
-interface PrivacyPerson {
-  userId: string;
-  displayName: string | null;
-  kind: 'request' | 'follower';
+const SETTINGS_PAGE = 'privacy';
+/**
+ * Rows `withSettingTracking` leaves alone. The account switch and the session
+ * default can be cancelled at a confirm or fail to save, so they report the
+ * change themselves once the write lands. Analytics is never reported: turning
+ * it on is not counted (consent is still off when the event fires), so counting
+ * only the turn-offs would skew the metric.
+ */
+const UNTRACKED_ROW_KEYS: ReadonlySet<string> = new Set([
+  PRIVATE_ACCOUNT_ROW_KEY,
+  SESSION_DEFAULT_ROW_KEY,
+  ANALYTICS_ROW_KEY,
+]);
+
+/** Who was signed in when a change was asked, so an answer never lands on another account. */
+type ViewerScope = { viewerId: string | undefined; credentialGeneration: number };
+
+function isDefaultSessionAudience(key: string): key is (typeof DEFAULT_SESSION_AUDIENCES)[number] {
+  return (DEFAULT_SESSION_AUDIENCES as readonly string[]).includes(key);
 }
-const personKey = (person: PrivacyPerson) => `${person.kind}:${person.userId}`;
-const PrivacyPersonRow = memo(function PrivacyPersonRow({
-  person,
-  onAction,
-  disabled,
-}: {
-  person: PrivacyPerson;
-  onAction: (action: 'approve' | 'decline' | 'remove', userId: string) => void;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation('settings');
-  const { spacing } = useTheme();
-  return (
-    <View style={{ padding: spacing[4], gap: spacing[2] }}>
-      <Text variant="headline">{person.displayName ?? t('privacy.climber')}</Text>
-      <View style={styles.actions}>
-        {person.kind === 'request' ? (
-          <>
-            <Button
-              title={t('privacy.approve')}
-              disabled={disabled}
-              onPress={() => onAction('approve', person.userId)}
-            />
-            <Button
-              title={t('privacy.decline')}
-              variant="outlined"
-              disabled={disabled}
-              onPress={() => onAction('decline', person.userId)}
-            />
-          </>
-        ) : (
-          <Button
-            title={t('privacy.removeFollower')}
-            variant="outlined"
-            disabled={disabled}
-            onPress={() => onAction('remove', person.userId)}
-          />
-        )}
-      </View>
-    </View>
-  );
-});
 
+function openPeople(mode: PrivacyPeopleMode) {
+  router.push({ pathname: '/settings/privacy-people', params: { mode } });
+}
+
+/**
+ * Privacy — every privacy control in one place, as a native form.
+ *
+ * Each switch and the session-default select writes the moment it changes;
+ * there is no Save. A change that widens who can see you (going public, or a
+ * Public default on a private account) asks first, and while it asks the row
+ * draws the new value: the native control already moved, and only a prop that
+ * changes back (on cancel) makes it move back. The account switch reads the
+ * server again before it writes, so the session default it carries along is
+ * built from what is saved now, not from a cached copy.
+ */
 export function PrivacySettingsScreen() {
   const { t } = useTranslation('settings');
-  const { spacing, systemColors, brandColors } = useTheme();
+  const { isAuthenticated } = useAuth();
   const { effectiveOffline } = useConnectivity();
-  const { data: profile } = useProfile();
-  const currentViewerId = useRef(profile?.id);
-  currentViewerId.current = profile?.id;
+  const confirm = useConfirm();
+  const profileQuery = useProfile();
+  const viewerId = profileQuery.data?.id;
   const settings = usePrivacySettings();
   const update = useUpdatePrivacySettings();
   const anonymousOnBoards = useSetAnonymousOnForeignBoards();
   const enabled = settings.data?.enabled === true;
-  const requests = useIncomingFollowRequests(enabled);
-  const followers = useFollowers(profile?.id, enabled);
-  const followAction = usePrivacyFollowAction();
-  const [isPrivate, setIsPrivate] = useState<boolean | null>(null);
-  const [sessionAudience, setSessionAudience] = useState<PrivacyResourceAudience>('public');
-  const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [peopleMode, setPeopleMode] = useState<'request' | 'follower'>('request');
+  const requests = useIncomingFollowRequests(isAuthenticated && enabled);
+  const analyticsPreference = useAnalyticsPreference();
+  const analyticsRegionDefault = useAnalyticsRegionDefault();
+  const sessionRecording = useSessionRecordingToggle();
+  const [confirmingIsPrivate, setConfirmingIsPrivate] = useState<boolean | null>(null);
+  const [confirmingAudience, setConfirmingAudience] = useState<PrivacyResourceAudience | null>(null);
+  const [heldAnonymous, setHeldAnonymous] = useState<boolean | null>(null);
+  // The account switch reads the server again before it writes; that read is
+  // part of the write, so it locks the rows and its failure is a failed save.
+  const [readingBeforeWrite, setReadingBeforeWrite] = useState(false);
+  const [readBeforeWriteFailed, setReadBeforeWriteFailed] = useState(false);
+
+  // Read after an await, so a check uses who is signed in now, not at the tap.
+  const latestViewerId = useRef(viewerId);
+  latestViewerId.current = viewerId;
+
+  const writePending = update.isPending || anonymousOnBoards.isPending || readingBeforeWrite;
+  const writeLocked = writePending || effectiveOffline;
+  const saveFailed = update.isError || anonymousOnBoards.isError || readBeforeWriteFailed;
+  const saveFailedMessage = t('privacy.saveFailed');
+
   useEffect(() => {
-    if (!settings.data || dirty) return;
-    setIsPrivate(settings.data.isPrivate);
-    setSessionAudience(settings.data.defaultSessionAudience);
-  }, [settings.data, dirty]);
-  const people = useMemo<PrivacyPerson[]>(
-    () =>
-      peopleMode === 'request'
-        ? (requests.data ?? []).map((request) => ({
-            userId: request.requesterId,
-            displayName: request.displayName,
-            kind: 'request',
-          }))
-        : (followers.data?.pages.flatMap((page) => page.users) ?? []).map((person) => ({
-            userId: person.id,
-            displayName: person.displayName ?? null,
-            kind: 'follower',
-          })),
-    [peopleMode, requests.data, followers.data],
-  );
-  const handleAction = useCallback(
-    (action: 'approve' | 'decline' | 'remove', userId: string) => {
-      followAction.mutate({ action, userId });
-    },
-    [followAction],
-  );
-  const disabled = effectiveOffline || update.isPending || anonymousOnBoards.isPending || followAction.isPending;
-  const renderPerson = useCallback(
-    ({ item }: { item: PrivacyPerson }) => (
-      <PrivacyPersonRow person={item} onAction={handleAction} disabled={disabled} />
-    ),
-    [handleAction, disabled],
-  );
-  const loadNextFollowers = useCallback(() => {
-    if (peopleMode === 'follower' && followers.hasNextPage && !followers.isFetchingNextPage)
-      void followers.fetchNextPage();
-  }, [peopleMode, followers]);
-  const chooseAccount = (next: boolean) => {
-    if (disabled) return;
-    setIsPrivate(next);
-    setSessionAudience(next ? 'followers' : 'public');
-    setDirty(true);
-    setSaved(false);
+    if (saveFailed) AccessibilityInfo.announceForAccessibility(saveFailedMessage);
+  }, [saveFailed, saveFailedMessage]);
+
+  /**
+   * A new write owns the status line: an earlier failure of any privacy write
+   * clears, so the note always describes the latest write and a failure of this
+   * one is announced afresh.
+   */
+  const startWrite = () => {
+    update.reset();
+    anonymousOnBoards.reset();
+    setReadBeforeWriteFailed(false);
   };
-  const save = () => {
-    if (isPrivate === null || disabled || !enabled) return;
-    const savingViewerId = profile?.id;
-    const credentialGeneration = captureAuthCredentialGeneration();
+
+  const captureViewer = (): ViewerScope => ({
+    viewerId: latestViewerId.current,
+    credentialGeneration: captureAuthCredentialGeneration(),
+  });
+  // A sign-out or account switch behind a dialog or a read must not let the
+  // old answer write to the new account.
+  const isViewerCurrent = (scope: ViewerScope) =>
+    latestViewerId.current === scope.viewerId && isAuthCredentialGenerationCurrent(scope.credentialGeneration);
+  const confirmForViewer = async (copy: PrivacyConfirmCopy, scope: ViewerScope): Promise<boolean> =>
+    (await confirm(copy)) && isViewerCurrent(scope);
+
+  /**
+   * The server's settings as they are now. The cached copy can be minutes old,
+   * and another phone may have narrowed the session default since; building the
+   * account switch's write from it could widen that default again. `undefined`
+   * when the read failed, or settled without data newer than the request.
+   */
+  const readFreshSettings = async (): Promise<PrivacySettings | undefined> => {
+    const requestedAt = Date.now();
+    try {
+      const result = await settings.refetch();
+      return result.status === 'success' && result.dataUpdatedAt >= requestedAt ? result.data : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  // The value the climber picked is HELD from the tap until its write settles
+  // (or its confirm is cancelled), and drawn in place of the server's. The native
+  // switch and the iOS Picker keep their own state and only resync when the prop
+  // changes, so the prop has to follow the tap at once and move back on a cancel
+  // or a failed write. Waiting for the mutation's pending state is not enough: a
+  // write that fails at once can settle before this screen ever sees it pending.
+  // Clearing a hold is a reset, not a report of success, so it runs whatever
+  // account is signed in by then. A change is reported only from the write's
+  // success, which the write hook already refuses for a replaced account.
+  const changePrivateAccount = async (nextIsPrivate: boolean) => {
+    const saved = settings.data;
+    if (!saved || writeLocked || nextIsPrivate === saved.isPrivate) return;
+    hapticSelection();
+    setConfirmingIsPrivate(nextIsPrivate);
+    const scope = captureViewer();
+    // What the confirm tells the climber about new sessions. The write opens
+    // them no further than that, whatever the fresh read below says.
+    const reopenSessions = accountSwitchReopensSessions(nextIsPrivate, saved.defaultSessionAudience);
+    const confirmation = accountSwitchConfirmation(nextIsPrivate, saved.defaultSessionAudience, t);
+    if (confirmation && !(await confirmForViewer(confirmation, scope))) {
+      setConfirmingIsPrivate(null);
+      return;
+    }
+    startWrite();
+    setReadingBeforeWrite(true);
+    const fresh = await readFreshSettings();
+    setReadingBeforeWrite(false);
+    if (!isViewerCurrent(scope)) {
+      setConfirmingIsPrivate(null);
+      return;
+    }
+    if (!fresh) {
+      setReadBeforeWriteFailed(true);
+      setConfirmingIsPrivate(null);
+      return;
+    }
+    // Another phone already made this change: the page now shows it, and there
+    // is nothing left to write.
+    if (fresh.isPrivate === nextIsPrivate) {
+      setConfirmingIsPrivate(null);
+      return;
+    }
+    update.mutate(accountSwitchPayload(nextIsPrivate, fresh.defaultSessionAudience, { reopenSessions }), {
+      onSuccess: () => trackSettingChanged(SETTINGS_PAGE, PRIVATE_ACCOUNT_ROW_KEY, nextIsPrivate),
+      onSettled: () => setConfirmingIsPrivate(null),
+    });
+  };
+
+  const selectSessionAudience = async (audienceKey: string) => {
+    const saved = settings.data;
+    if (!saved || writeLocked || !isDefaultSessionAudience(audienceKey)) return;
+    if (audienceKey === saved.defaultSessionAudience) return;
+    hapticSelection();
+    // Held BEFORE awaiting the confirm, so a cancel is a real change back.
+    setConfirmingAudience(audienceKey);
+    const scope = captureViewer();
+    const confirmation = sessionAudienceConfirmation(audienceKey, saved.defaultSessionAudience, saved.isPrivate, t);
+    if (confirmation && !(await confirmForViewer(confirmation, scope))) {
+      setConfirmingAudience(null);
+      return;
+    }
+    startWrite();
+    // The explicit choice alone: the account switch is never re-sent from here.
     update.mutate(
-      { isPrivate, defaultSessionAudience: sessionAudience },
+      { defaultSessionAudience: audienceKey },
       {
-        onSuccess: () => {
-          if (currentViewerId.current !== savingViewerId || !isAuthCredentialGenerationCurrent(credentialGeneration))
-            return;
-          setDirty(false);
-          setSaved(true);
-        },
+        onSuccess: () => trackSettingChanged(SETTINGS_PAGE, SESSION_DEFAULT_ROW_KEY, audienceKey),
+        onSettled: () => setConfirmingAudience(null),
       },
     );
   };
-  const header = (
-    <View style={{ padding: spacing[4], gap: spacing[4] }}>
-      <Text variant="title2">{t('privacy.title')}</Text>
-      <Text>{t('privacy.intro')}</Text>
-      {/* A plain preference: shown whether or not account privacy controls are on. */}
-      {settings.data ? (
-        <>
-          <SwitchRow
-            label={t('privacy.anonymousOnForeignBoards')}
-            description={t('privacy.anonymousOnForeignBoardsDescription')}
-            wrapDescription
-            value={
-              (anonymousOnBoards.isPending ? anonymousOnBoards.variables : undefined) ??
-              settings.data.anonymousOnForeignBoards
-            }
-            disabled={disabled}
-            onValueChange={(next) => {
-              if (!disabled) anonymousOnBoards.mutate(next);
-            }}
-          />
-          {anonymousOnBoards.isError ? (
-            <Text accessibilityRole="alert" color={brandColors.error}>
-              {t('privacy.saveFailed')}
-            </Text>
-          ) : null}
-        </>
-      ) : null}
-      {!settings.data && settings.isPending ? (
-        <ActivityIndicator />
-      ) : !enabled ? (
-        // Account audience, session defaults and follow requests need the
-        // server's privacy controls; the anonymity switch above does not.
-        <Text variant="footnote">{t('privacy.accountControlsLater')}</Text>
-      ) : (
-        <>
-          <Text variant="headline">{t('privacy.accountAudience')}</Text>
-          <View style={styles.actions}>
-            <Button
-              title={t('privacy.publicAccount')}
-              variant={isPrivate === false ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() => chooseAccount(false)}
-            />
-            <Button
-              title={t('privacy.privateAccount')}
-              variant={isPrivate === true ? 'filled' : 'outlined'}
-              disabled={disabled}
-              onPress={() => chooseAccount(true)}
-            />
-          </View>
-          <Text variant="footnote">{t('privacy.privateExplanation')}</Text>
-          <AudiencePicker
-            resource
-            audience={sessionAudience}
-            confirmPublic={isPrivate === true}
-            options={SESSION_AUDIENCES}
-            disabled={disabled}
-            label={t('privacy.sessionDefault')}
-            onChange={(audience) => {
-              if (disabled) return;
-              setSessionAudience(audience);
-              setDirty(true);
-              setSaved(false);
-            }}
-          />
-          <Text variant="footnote">{t('privacy.boardReview')}</Text>
-          <Button title={t('privacy.reviewBoards')} variant="outlined" onPress={() => router.push('/boards/manage')} />
-          {effectiveOffline ? <Text color={brandColors.error}>{t('privacy.offline')}</Text> : null}
-          {update.isError || followAction.isError ? (
-            <Text accessibilityRole="alert" color={brandColors.error}>
-              {t('privacy.saveFailed')}
-            </Text>
-          ) : null}
-          {saved ? (
-            <Text accessibilityRole="alert" color={brandColors.success}>
-              {t('privacy.saved')}
-            </Text>
-          ) : null}
-          <Button
-            title={t('privacy.save')}
-            loading={update.isPending}
-            disabled={disabled || isPrivate === null || !dirty}
-            onPress={save}
-          />
-          <View style={styles.actions}>
-            <Button
-              title={t('privacy.requests')}
-              variant={peopleMode === 'request' ? 'filled' : 'outlined'}
-              onPress={() => setPeopleMode('request')}
-            />
-            <Button
-              title={t('privacy.followers')}
-              variant={peopleMode === 'follower' ? 'filled' : 'outlined'}
-              onPress={() => setPeopleMode('follower')}
-            />
-          </View>
-          {requests.isError || followers.isError ? <Text>{t('privacy.loadFailed')}</Text> : null}
-          {(peopleMode === 'request' ? requests.isFetching : followers.isFetching) ? <ActivityIndicator /> : null}
-        </>
-      )}
-    </View>
+
+  const model = withSettingTracking(
+    buildPrivacyModel({
+      t,
+      signedIn: isAuthenticated,
+      settings: isAuthenticated ? settings.data : undefined,
+      settingsLoading: settings.isLoading || profileQuery.isLoading,
+      // Settings are read per climber, so a failed profile read leaves them
+      // disabled rather than failed: say so instead of showing an empty page.
+      settingsLoadFailed: settings.isError || profileQuery.isError,
+      offline: effectiveOffline,
+      saveFailed,
+      writePending,
+      pendingUpdate: update.isPending ? update.variables : undefined,
+      pendingAnonymous: heldAnonymous ?? (anonymousOnBoards.isPending ? anonymousOnBoards.variables : undefined),
+      confirming: {
+        isPrivate: confirmingIsPrivate ?? undefined,
+        sessionAudience: confirmingAudience ?? undefined,
+      },
+      pendingRequestCount: requests.data?.length ?? 0,
+      analytics: { preference: analyticsPreference, regionDefault: analyticsRegionDefault },
+      sessionRecording,
+      onRetry: () => {
+        // A recovered profile starts the settings read on its own.
+        if (profileQuery.isError || !viewerId) void profileQuery.refetch();
+        if (viewerId) void settings.refetch();
+      },
+      onPrivateAccountChange: (next) => void changePrivateAccount(next),
+      onSessionAudienceSelect: (audienceKey) => void selectSessionAudience(audienceKey),
+      onAnonymousOnForeignBoardsChange: (next) => {
+        if (writeLocked) return;
+        hapticSelection();
+        setHeldAnonymous(next);
+        startWrite();
+        anonymousOnBoards.mutate(next, { onSettled: () => setHeldAnonymous(null) });
+      },
+      onOpenFollowRequests: () => openPeople('request'),
+      onOpenFollowers: () => openPeople('follower'),
+      onReviewBoards: () => router.push('/boards/manage'),
+      onAnalyticsChange: (next) => {
+        hapticSelection();
+        void decideAnalyticsConsent(
+          next ? 'granted' : 'denied',
+          Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web',
+        ).catch((error: unknown) => reportHandledError(error));
+      },
+      onSessionRecordingChange: (next) => {
+        hapticSelection();
+        sessionRecording.onValueChange(next);
+      },
+      onExportData: () => router.push('/settings/export'),
+      onOpenPrivacyPolicy: () => void openExternalUrl(PRIVACY_POLICY_URL, 'privacy-settings'),
+    }),
+    SETTINGS_PAGE,
+    { skipKeys: UNTRACKED_ROW_KEYS },
   );
-  return (
-    <View style={{ flex: 1, backgroundColor: systemColors.background }}>
-      <FlashList
-        data={enabled ? people : []}
-        renderItem={renderPerson}
-        keyExtractor={personKey}
-        ListHeaderComponent={header}
-        onEndReached={loadNextFollowers}
-        onEndReachedThreshold={0.5}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom: spacing[8] }}
-      />
-    </View>
-  );
+
+  return <MoreForm model={model} />;
 }
-const styles = StyleSheet.create({ actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } });

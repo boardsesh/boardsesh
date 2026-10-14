@@ -10,7 +10,7 @@ import { decideAnalyticsConsent } from '../src/providers/consent-provider';
 import { Button } from '../src/components/Button';
 import { useBlockBack } from '../src/components/onboarding/use-block-back';
 import { spacing } from '../src/theme/tokens';
-import { WEB_BASE_URL } from '../src/lib/env';
+import { PRIVACY_POLICY_URL } from '../src/components/privacy/privacy-policy-url';
 import { track } from '../src/lib/analytics';
 import { reportHandledError } from '../src/lib/error-reporting';
 import { applyPosthogConsent } from '../src/lib/posthog-client';
@@ -69,7 +69,7 @@ function PrivacyConsentScreen() {
         <Text
           accessibilityRole="link"
           onPress={() => {
-            void Linking.openURL(`${WEB_BASE_URL}/privacy`).catch(reportHandledError);
+            void Linking.openURL(PRIVACY_POLICY_URL).catch(reportHandledError);
           }}
           style={[styles.link, { color: colors.accent }]}
         >

@@ -36,6 +36,14 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
         secondaryBackground: PlatformColor('secondarySystemBackground'),
         tertiaryBackground: PlatformColor('tertiarySystemBackground'),
         groupedBackground: PlatformColor('systemGroupedBackground'),
+        // The card that sits on `groupedBackground` (white in light, #1C1C1E in
+        // dark): what a SwiftUI Form draws its rows on. `secondaryBackground` is
+        // the opposite pairing (grey on white) and reads inverted on a settings page.
+        secondaryGroupedBackground: PlatformColor('secondarySystemGroupedBackground'),
+        // A block inside that card (a warning, a summary): #F2F2F7 in light,
+        // #2C2C2E in dark. `tertiaryBackground` is white in light, the same as
+        // the card, so a block drawn in it vanishes.
+        tertiaryGroupedBackground: PlatformColor('tertiarySystemGroupedBackground'),
         // Raised tile on top of a secondary/fill surface (e.g. the selected
         // segmented-control pill). tertiarySystemBackground sits a clear step
         // above secondary in both light and dark.
@@ -114,6 +122,21 @@ export const tertiaryFillFallback = {
   light: 'rgba(109, 40, 217, 0.06)',
   dark: 'rgba(199, 184, 232, 0.07)',
 } as const;
+
+/**
+ * Android / Material `tertiaryGroupedBackground`: a block inside a grouped card.
+ *
+ * Their card is `secondaryBackground`, which is white in light, the same as
+ * their `tertiaryBackground`, so the block takes the grouped page tone there
+ * (as iOS does: #F2F2F7 on a white card). In dark the card is already a step up
+ * from the page, so the block goes a step further up, to `tertiaryBackground`.
+ */
+export function tertiaryGroupedBackgroundFallback(
+  surfaces: { groupedBackground: string; tertiaryBackground: string },
+  colorScheme: 'light' | 'dark',
+): string {
+  return colorScheme === 'dark' ? surfaces.tertiaryBackground : surfaces.groupedBackground;
+}
 
 export type SystemColorKey = keyof typeof androidFallbackColors.light;
 export type AndroidFallbackColors = typeof androidFallbackColors;

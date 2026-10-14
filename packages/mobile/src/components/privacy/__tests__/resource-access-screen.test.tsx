@@ -16,11 +16,28 @@ const search = vi.hoisted(() => ({
 }));
 const statuses = vi.hoisted(() => ({ grants: [] as Grant[], loadedPages: [] as boolean[] }));
 
-vi.mock('react-native', () => ({
-  View: 'div',
-  TextInput: ({ value, onChangeText }: { value: string; onChangeText: (text: string) => void }) => (
-    <input aria-label="search" value={value} onChange={(event) => onChangeText(event.target.value)} />
+vi.mock('react-native', () => ({ View: 'div' }));
+vi.mock('../../SearchField', () => ({
+  SearchField: ({
+    value,
+    onChangeText,
+    placeholder,
+  }: {
+    value: string;
+    onChangeText: (text: string) => void;
+    placeholder: string;
+  }) => <input aria-label={placeholder} value={value} onChange={(event) => onChangeText(event.target.value)} />,
+}));
+vi.mock('../../ListRow', () => ({
+  ListRow: ({ title, trailing }: { title: string; trailing?: React.ReactNode }) => (
+    <div>
+      <span>{title}</span>
+      {trailing}
+    </div>
   ),
+}));
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
@@ -46,7 +63,7 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('expo-router', () => ({ useLocalSearchParams: () => ({ kind: 'board', resourceId: 'board-1' }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ spacing: [0, 4, 8, 12, 16], systemColors: {}, brandColors: {} }),
+  useTheme: () => ({ spacing: [0, 4, 8, 12, 16], borderRadius: { lg: 12 }, systemColors: {}, brandColors: {} }),
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span> }));
 vi.mock('../../Button', () => ({
@@ -92,6 +109,11 @@ beforeEach(() => {
 });
 
 describe('ResourceAccessScreen with share-link members', () => {
+  it('leaves the title to the navigation bar', () => {
+    const view = render(<ResourceAccessScreen />);
+    expect(view.queryByText('privacy.manageAccess')).toBeNull();
+  });
+
   it('lists a climber who joined by link as approved, and the owner can remove them', () => {
     grants.pages = [[{ userId: 'link-joiner', status: 'approved', invitedBy: 'owner-1', displayName: 'Link Joiner' }]];
     const view = render(<ResourceAccessScreen />);
@@ -121,7 +143,7 @@ describe('ResourceAccessScreen with share-link members', () => {
     statuses.grants = [{ userId: 'late-joiner', status: 'approved', invitedBy: 'owner-1', displayName: 'Late Joiner' }];
     statuses.loadedPages = [true];
     const view = render(<ResourceAccessScreen />);
-    fireEvent.change(view.getByLabelText('search'), { target: { value: 'late' } });
+    fireEvent.change(view.getByLabelText('privacy.searchClimbers'), { target: { value: 'late' } });
 
     expect(view.getByText('Late Joiner')).toBeTruthy();
     expect(view.queryByText('privacy.invite')).toBeNull();
@@ -138,7 +160,7 @@ describe('ResourceAccessScreen with share-link members', () => {
     search.pages = [{ results: [{ user: { id: 'late-joiner', displayName: 'Late Joiner' } }] }];
     statuses.loadedPages = [false];
     const view = render(<ResourceAccessScreen />);
-    fireEvent.change(view.getByLabelText('search'), { target: { value: 'late' } });
+    fireEvent.change(view.getByLabelText('privacy.searchClimbers'), { target: { value: 'late' } });
     expect(view.queryByText('Late Joiner')).toBeNull();
   });
 });

@@ -37,7 +37,9 @@ const {
   sprayWallDimLevel,
   withSprayWallDim,
   buildBoardLookPreviewSettings,
+  drawableBoardLookOptions,
   matchingBoardLookOptionId,
+  renderedBoardLookOption,
 } = await import('../board-look-options');
 
 beforeEach(() => {
@@ -226,6 +228,55 @@ describe('matchingBoardLookOptionId', () => {
         boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, glowReach: 1.77 },
       }),
     ).toBe('custom');
+  });
+});
+
+describe('drawableBoardLookOptions', () => {
+  it('keeps only the cards a build without the Boardsesh renderer can draw', () => {
+    const ids = drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, false).map((option) => option.id);
+    expect(ids).toEqual(['classic', 'custom']);
+  });
+
+  it('keeps every card when the renderer can draw them, or has not been probed yet', () => {
+    expect(drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, true)).toBe(BOARD_LOOK_SETTINGS_OPTIONS);
+    expect(drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, null)).toBe(BOARD_LOOK_SETTINGS_OPTIONS);
+  });
+});
+
+describe('renderedBoardLookOption', () => {
+  const aura = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' } as const;
+  const handTuned = {
+    mode: 'aura',
+    boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, glowReach: 1.77 },
+  } as const;
+
+  it('names the card the climber is on where this build draws it', () => {
+    expect(renderedBoardLookOption(aura, true)?.id).toBe('aura');
+    expect(renderedBoardLookOption(handTuned, true)?.id).toBe('custom');
+    expect(renderedBoardLookOption({ ...aura, mode: 'classic' }, true)?.id).toBe('classic');
+  });
+
+  it('names the matching card before the renderer has been probed, as the Board look rail does', () => {
+    expect(renderedBoardLookOption(aura, null)?.id).toBe('aura');
+  });
+
+  it('says Classic on a build that cannot draw the Boardsesh look, since Classic is what renders', () => {
+    // The picked look would be a lie here: resolveEffectiveRenderSettings draws
+    // classic whatever the climber chose.
+    expect(resolveEffectiveRenderSettings(aura, false).mode).toBe('classic');
+    expect(renderedBoardLookOption(aura, false)?.id).toBe('classic');
+    expect(renderedBoardLookOption(DEFAULT_BOARD_RENDER_SETTINGS, false)?.id).toBe('classic');
+    expect(renderedBoardLookOption(handTuned, false)?.id).toBe('classic');
+    expect(renderedBoardLookOption(aura, false)?.labelI18nKey).toBe('mobile.settings.boardLook.mode.options.classic');
+  });
+
+  it('only ever names a card the Board look page itself offers on that build', () => {
+    for (const available of [true, false, null] as const) {
+      for (const settings of [aura, handTuned, DEFAULT_BOARD_RENDER_SETTINGS]) {
+        const option = renderedBoardLookOption(settings, available);
+        expect(drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, available)).toContain(option);
+      }
+    }
   });
 });
 

@@ -16,7 +16,24 @@
     },
     "settings": {
       "title": "Paramètres",
-      "library": "Bibliothèque",
+      "pages": {
+        "offline": {
+          "title": "Hors ligne et stockage",
+          "on": "Activé"
+        },
+        "general": {
+          "title": "Général"
+        },
+        "climbs": {
+          "title": "Blocs et cotations"
+        },
+        "earlyAccess": {
+          "title": "Accès anticipé"
+        },
+        "developer": {
+          "title": "Développement"
+        }
+      },
       "development": "Développement",
       "dev": {
         "forceServerUnreachable": "Forcer le serveur injoignable",
@@ -26,7 +43,6 @@
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
       "boardLook": {
         "title": "Look de la board",
-        "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
         "rendererUnavailable": {
           "title": "Mets à jour l'app",
           "body": "Cette version ne sait pas encore dessiner le rendu Aura. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
@@ -284,7 +300,6 @@
       },
       "storage": {
         "title": "Stockage",
-        "rowLabel": "Gérer le stockage",
         "rowSubtitle": "Vois ce que prennent tes téléchargements et libère ce dont tu n'as pas besoin",
         "intro": "Les boards que tu télécharges prennent de la place sur ce téléphone. Libère celles sur lesquelles tu ne grimpes pas.",
         "offNote": "Les téléchargements hors ligne sont désactivés pour le moment. Tu peux quand même libérer ce qui est déjà sur ce téléphone.",
@@ -300,7 +315,7 @@
         "keptOffline": "Gardée hors ligne",
         "notKeptOffline": "Plus gardée hors ligne — prend toujours de la place",
         "estimateNote": "Les tailles sont approximatives. Deux tailles d'un même layout partagent leurs voies : le total ne correspond donc pas à leur somme.",
-        "remove": "Retirer",
+        "tapToRemove": "Touche une board pour la retirer de ce téléphone.",
         "removeAria": "Retirer {{name}} de ce téléphone",
         "cancel": "Annuler",
         "removeTitle": "Retirer {{name}} ?",
@@ -351,7 +366,6 @@
         "personalGradesDescription": "Affiche la cotation que tu as donnée à un bloc plutôt que celle de la communauté, et trie et filtre avec."
       },
       "offline": {
-        "title": "Hors ligne",
         "offlineMode": "Mode hors ligne",
         "offlineModeDescription": "Coupe les échanges avec le serveur Boardsesh jusqu'à ce que tu le désactives. Les boards téléchargées continuent de fonctionner et tes croix attendent sur ton téléphone.",
         "autoDownload": "Garder les boards hors ligne",
@@ -371,14 +385,8 @@
         "contributeSubtitle": "Les traductions sont maintenues par la communauté. Ouvrez les fichiers {{language}} sur GitHub pour corriger ou ajouter une phrase."
       },
       "diagnostics": {
-        "title": "Confidentialité",
         "recording": "Aidez-nous à nous améliorer",
         "recordingDescription": "Envoyez des enregistrements de session anonymes et masqués pour qu'on corrige les bugs plus vite. Ce que vous tapez et vos photos restent masqués. Désactivez quand vous voulez."
-      },
-      "integrations": {
-        "title": "Applications connectées",
-        "subtitle": "Apple Health et Strava",
-        "subtitleWithStrava": "Comptes de board, Apple Health, Strava"
       },
       "syncIssues": {
         "title": "Problèmes de synchronisation",
@@ -450,7 +458,7 @@
         "actions": "Actions",
         "gradesTitle": "Cotations",
         "previewFooter": "Exemple. Les croix, favoris et étiquettes apparaissent sur les blocs qui en ont.",
-        "gradeFooter": "Choisis la cotation principale dans Réglages → Cotations.",
+        "gradeFooter": "Choisis la cotation principale dans Réglages → Blocs et cotations.",
         "personalFooter": "Les marques personnelles et listes nécessitent une connexion au compte et se chargent en ligne.",
         "presetsLabel": "Réglage rapide",
         "presets": {
@@ -538,7 +546,6 @@
     "onboarding": {
       "replaySection": "Tutoriel",
       "replayTitle": "Revoir le tutoriel",
-      "replaySubtitle": "Affiche à nouveau le tutoriel",
       "replayError": "Impossible de rouvrir le tutoriel. Réessaie.",
       "prompt": {
         "title": "Vois ce qui est allumé sur ton mur, en direct",

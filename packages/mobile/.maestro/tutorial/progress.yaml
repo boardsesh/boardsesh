@@ -1,7 +1,10 @@
 appId: com.boardsesh.app.dev
 name: Tutorial - your grades and combined progress
 ---
-- openLink: com.boardsesh.app://settings
+# "Use my grades" lives on Settings > Climbs & grades. Its switch is found by its
+# neighbours: the label above-left of it, and the Climb view section below the
+# grades and the Climb list row.
+- openLink: com.boardsesh.app://settings/climbs
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element: Use my grades

@@ -316,7 +316,7 @@ export function AccessibilitySection({
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.settings.boardLook.accessibility.title')} />
-        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
+        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
           <SwitchRow
             label={t('mobile.settings.boardLook.accessibility.roleGlyphs.label')}
             description={t('mobile.settings.boardLook.accessibility.roleGlyphs.note')}
@@ -328,16 +328,7 @@ export function AccessibilitySection({
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.settings.accessibility.markersTitle')} />
-        {!isClassic ? (
-          <Text
-            variant="footnote"
-            color={systemColors.secondaryLabel}
-            style={[styles.description, styles.classicOnlyNote]}
-          >
-            {t('mobile.settings.boardLook.accessibility.classicOnlyNote')}
-          </Text>
-        ) : null}
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
           {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
             const roleOverride = overrides[role];
             const roleShape = getEffectiveHoldRoleShape(role, shapes);
@@ -414,6 +405,16 @@ export function AccessibilitySection({
             </>
           ) : null}
         </View>
+        {/* A footer, not a note above the card: it qualifies the rows it sits under. */}
+        {!isClassic ? (
+          <Text
+            variant="footnote"
+            color={systemColors.secondaryLabel}
+            style={[styles.description, styles.classicOnlyNote]}
+          >
+            {t('mobile.settings.boardLook.accessibility.classicOnlyNote')}
+          </Text>
+        ) : null}
         {hasMarkerOverrides ? (
           <PressableSurface accessibilityRole="button" onPress={handleResetMarkers} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>

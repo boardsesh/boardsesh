@@ -290,8 +290,8 @@ Four entry points, all behind one flag.
   proposal is how a setter changes their climb's grade (#5971). A grade proposal that comes back
   already `approved` (a wall owner's) toasts "Grade changed" instead of "proposed", and refreshes
   the climb lists.
-- **More → Moderation** — the feed (`app/moderation.tsx`, one root-stack modal), in its own
-  "Community" More-tab section so it is reachable signed-out too (voting prompts a sign-in). It
+- **Avatar menu → Moderation** — the feed (`app/moderation.tsx`, one root-stack modal), reachable
+  from the avatar menu and signed-out too (voting prompts a sign-in). It
   pages `browseProposals` twenty at a time, open
   proposals first, over **every** type (hide, grade, classic, benchmark) with two filters: Open / All
   and This board / All boards (default: the active board). Each card shows the climb (tap opens the
@@ -325,7 +325,7 @@ Four entry points, all behind one flag.
 
 **The moderation feed is ONE root-stack modal**, `app/moderation.tsx`, registered next to
 `share-beta` / `boards` with `presentation: 'modal'`. Every entry point pushes the same
-`/moderation` route: the More row, a proposal notification from either tab, and the play drawer's
+`/moderation` route: the avatar menu row, a proposal notification from either tab, and the play drawer's
 Community section. That last one is the reason for the shape — the drawer lives inside `/play`,
 itself a root `transparentModal`, so a push aimed at a tab stack lands *beneath* the player: a dead
 tap and a screen nobody can reach (`docs/mobile-sheets-vs-routes.md`, "Pushing a route from INSIDE

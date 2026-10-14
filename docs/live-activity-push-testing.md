@@ -254,7 +254,7 @@ EXPO_PUBLIC_BACKEND_URL=http://your-machine.tailscale-domain:8080 vp run dev:mob
 ```
 
 The dev server picks up `.boardsesh/qa-notes.md` automatically and exposes
-it under the More tab via `DevMetadataPanel`.
+it under Settings → Developer via `DevMetadataPanel`.
 
 #### 4. Verify in Console.app
 

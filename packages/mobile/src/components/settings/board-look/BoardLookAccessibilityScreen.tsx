@@ -1,5 +1,6 @@
 import { ScrollView, StyleSheet } from 'react-native';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
+import { useTheme } from '../../../providers/theme-provider';
 import { useBoardLookSettings } from '../../../lib/board-render/use-board-look-settings';
 import { spacing } from '../../../theme/tokens';
 import { AccessibilitySection } from '../sections/AccessibilitySection';
@@ -24,11 +25,13 @@ import { AccessibilitySection } from '../sections/AccessibilitySection';
  */
 export function BoardLookAccessibilityScreen() {
   const { scrollBottomPadding } = useBottomChromeMetrics();
+  const { systemColors } = useTheme();
   const { settings, requestedMode, boardseshRendererAvailable, setBoardseshField } = useBoardLookSettings();
 
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
+      style={{ backgroundColor: systemColors.groupedBackground }}
       contentContainerStyle={[styles.content, { paddingBottom: scrollBottomPadding + spacing[4] }]}
     >
       <AccessibilitySection
@@ -43,6 +46,9 @@ export function BoardLookAccessibilityScreen() {
 
 const styles = StyleSheet.create({
   content: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     flexGrow: 1,
     paddingTop: spacing[4],
     gap: spacing[6],

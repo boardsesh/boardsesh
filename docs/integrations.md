@@ -42,8 +42,7 @@ session_type` already accommodates inferred solo sessions for later.
 The mobile Connected apps route always shows board account cards for signed-in
 users. Strava is hidden until the `strava-integration` feature flag is enabled;
 static app builds can force it on with `EXPO_PUBLIC_STRAVA_INTEGRATION=true`.
-The More tab subtitle follows the same flag so unreleased Strava copy does not
-appear when the card is hidden. Apple Health remains device-gated by native
+Connected apps is a root row in Settings with no subtitle, so the flag only hides the Strava card. Apple Health remains device-gated by native
 availability checks.
 
 ## OAuth connect flow (mobile, cookie-less)

@@ -16,7 +16,24 @@
     },
     "settings": {
       "title": "Settings",
-      "library": "Library",
+      "pages": {
+        "offline": {
+          "title": "Offline & storage",
+          "on": "On"
+        },
+        "general": {
+          "title": "General"
+        },
+        "climbs": {
+          "title": "Climbs & grades"
+        },
+        "earlyAccess": {
+          "title": "Early access"
+        },
+        "developer": {
+          "title": "Developer"
+        }
+      },
       "development": "Development",
       "dev": {
         "forceServerUnreachable": "Force server unreachable",
@@ -26,7 +43,6 @@
       "metroServersSubtitle": "Switch between Tailnet bundlers",
       "boardLook": {
         "title": "Board look",
-        "rowSubtitleShort": "How your board renders, plus colours and shapes",
         "rendererUnavailable": {
           "title": "Update the app",
           "body": "This build can't draw the Aura look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
@@ -284,7 +300,6 @@
       },
       "storage": {
         "title": "Storage",
-        "rowLabel": "Manage storage",
         "rowSubtitle": "See what your downloads take up and clear what you don't need",
         "intro": "Boards you download take up space on this phone. Clear the ones you're not climbing on.",
         "offNote": "Offline downloads are off right now. You can still clear what's already on this phone.",
@@ -300,7 +315,7 @@
         "keptOffline": "Kept offline",
         "notKeptOffline": "Not kept offline anymore — still taking up space",
         "estimateNote": "Board sizes are estimates. Two sizes of the same layout share their climbs, so they won't add up to the total.",
-        "remove": "Remove",
+        "tapToRemove": "Tap a board to remove it from this phone.",
         "removeAria": "Remove {{name}} from this phone",
         "cancel": "Cancel",
         "removeTitle": "Remove {{name}}?",
@@ -351,7 +366,6 @@
         "personalGradesDescription": "Show the grade you gave a climb instead of the crowd's, and sort and filter by it."
       },
       "offline": {
-        "title": "Offline",
         "offlineMode": "Offline mode",
         "offlineModeDescription": "Stop talking to the Boardsesh server until you turn this off. Downloaded boards keep working and sends queue up on your phone.",
         "autoDownload": "Keep boards offline",
@@ -371,14 +385,8 @@
         "contributeSubtitle": "These come from the community. Open the {{language}} files on GitHub to fix or add a phrase."
       },
       "diagnostics": {
-        "title": "Privacy",
         "recording": "Help us improve",
         "recordingDescription": "Send anonymous, masked session recordings so we can squash bugs faster. Your typing and photos stay hidden. Flip it off whenever you like."
-      },
-      "integrations": {
-        "title": "Connected apps",
-        "subtitle": "Board accounts, Apple Health",
-        "subtitleWithStrava": "Board accounts, Apple Health, Strava"
       },
       "syncIssues": {
         "title": "Sync issues",
@@ -450,7 +458,7 @@
         "actions": "Actions",
         "gradesTitle": "Grades",
         "previewFooter": "Example. Sends, saves and tags show on climbs that have them.",
-        "gradeFooter": "Choose which grade is big in Settings → Grades.",
+        "gradeFooter": "Choose which grade is big in Settings → Climbs & grades.",
         "personalFooter": "Personal marks and playlists need sign-in and load when online.",
         "presetsLabel": "Quick setup",
         "presets": {
@@ -538,7 +546,6 @@
     "onboarding": {
       "replaySection": "Walkthrough",
       "replayTitle": "Replay walkthrough",
-      "replaySubtitle": "See the walkthrough again",
       "replayError": "Couldn't reopen the walkthrough. Try again.",
       "prompt": {
         "title": "See what's lit on your wall, live",

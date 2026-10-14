@@ -16,6 +16,7 @@ import {
   materialSurfaces,
   androidFallbackColors,
   tertiaryFillFallback,
+  tertiaryGroupedBackgroundFallback,
   materialSurfaceContainers,
 } from '../theme/colors';
 import { buildPaperTheme } from '../theme/paper-theme';
@@ -45,6 +46,12 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
   const brand = colorScheme === 'dark' ? brandColorsDark : brandColors;
   const systemColors = overrides.systemColors ?? {
     ...(variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme]),
+    secondaryGroupedBackground: (variant === 'material' ? materialSurfaces : androidFallbackColors)[colorScheme]
+      .secondaryBackground,
+    tertiaryGroupedBackground: tertiaryGroupedBackgroundFallback(
+      (variant === 'material' ? materialSurfaces : androidFallbackColors)[colorScheme],
+      colorScheme,
+    ),
     // The provider adds the error role on top of the surface palette (M3 error here).
     error: brand.error,
     tertiaryFill: tertiaryFillFallback[colorScheme],

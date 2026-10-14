@@ -1,14 +1,39 @@
 import { describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 vi.mock('expo-router', () => ({ router: undefined, useRouter: vi.fn() }));
 import { publishNavigationScope, resolveScopedDestination } from '../scoped-navigation';
 
+// Every Settings page, read off the real route folder so a new page is covered
+// the day it lands: `board-look/index.tsx` is `board-look/index`, and so on.
+const SETTINGS_PAGES = readdirSync(fileURLToPath(new URL('../../../../app/settings', import.meta.url)), {
+  recursive: true,
+  encoding: 'utf8',
+})
+  .filter(
+    (path) => path.endsWith('.tsx') && !path.includes('__tests__') && path !== '_layout.tsx' && path !== 'index.tsx',
+  )
+  .map((path) =>
+    path
+      .replace(/\.tsx$/, '')
+      .split('\\')
+      .join('/'),
+  )
+  .sort();
+
 describe('navigation keeps the originating tab', () => {
+  it('finds the Settings pages', () => {
+    expect(SETTINGS_PAGES).toEqual(expect.arrayContaining(['privacy', 'climbs', 'offline', 'board-look/custom']));
+  });
+
   it.each(['home', 'climbs', 'record', 'discover', 'profile', 'wall', 'account'])(
-    'resolves privacy settings to registered routes from %s',
+    'resolves every Settings page to a registered route from %s',
     (scope) => {
       publishNavigationScope(scope === 'account' ? ['account'] : ['(tabs)', scope]);
-      for (const route of ['privacy', 'privacy-access']) {
+      const scopedRoot = `${scope === 'account' ? '/account' : `/(tabs)/${scope}`}/settings`;
+      expect(resolveScopedDestination('/settings')).toBe(scopedRoot);
+      expect(existsSync(new URL(`../../../../app${scopedRoot}/index.tsx`, import.meta.url))).toBe(true);
+      for (const route of SETTINGS_PAGES) {
         const destination = resolveScopedDestination({
           pathname: `/settings/${route}`,
           params: { kind: 'board', resourceId: 'home-board' },

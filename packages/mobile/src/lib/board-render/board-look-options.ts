@@ -351,6 +351,39 @@ export function matchingBoardLookOptionId(settings: BoardRenderSettings): BoardL
 }
 
 /**
+ * The cards this build can actually draw.
+ *
+ * On a build whose renderer can't draw the Boardsesh look (`false`), every card
+ * that needs it is a lie, so they drop out. `null` means not probed yet, and
+ * keeps them all rather than flashing a shorter list.
+ */
+export function drawableBoardLookOptions(
+  options: readonly BoardLookOption[],
+  boardseshRendererAvailable: boolean | null,
+): readonly BoardLookOption[] {
+  return boardseshRendererAvailable === false ? options.filter((option) => !option.requiresBoardseshRenderer) : options;
+}
+
+/**
+ * The settings card that names what the climber's boards look like on this
+ * build, for a one-word summary such as the Settings root's Board look value.
+ *
+ * Their own card where this build draws it. A build without the Boardsesh
+ * renderer draws Classic whatever was picked (`resolveEffectiveRenderSettings`),
+ * so there it is Classic, never the Aura look they chose but can't see.
+ * `undefined` if that card is not one this build can draw.
+ */
+export function renderedBoardLookOption(
+  settings: BoardRenderSettings,
+  boardseshRendererAvailable: boolean | null,
+): BoardLookOption | undefined {
+  const id = boardseshRendererAvailable === false ? 'classic' : matchingBoardLookOptionId(settings);
+  return drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, boardseshRendererAvailable).find(
+    (option) => option.id === id,
+  );
+}
+
+/**
  * Apply a card. The one write path both surfaces use, so the two can't drift.
  *
  * `'classic'` writes ONLY the mode: a climber who switches to the classic

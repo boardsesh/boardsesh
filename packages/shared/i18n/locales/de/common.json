@@ -16,7 +16,24 @@
     },
     "settings": {
       "title": "Einstellungen",
-      "library": "Bibliothek",
+      "pages": {
+        "offline": {
+          "title": "Offline & Speicher",
+          "on": "An"
+        },
+        "general": {
+          "title": "Allgemein"
+        },
+        "climbs": {
+          "title": "Boulder & Grade"
+        },
+        "earlyAccess": {
+          "title": "Früher Zugang"
+        },
+        "developer": {
+          "title": "Entwicklung"
+        }
+      },
       "development": "Entwicklung",
       "dev": {
         "forceServerUnreachable": "Server-Ausfall simulieren",
@@ -26,7 +43,6 @@
       "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
       "boardLook": {
         "title": "Board-Look",
-        "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
         "rendererUnavailable": {
           "title": "App aktualisieren",
           "body": "Diese Version kann den Aura-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
@@ -284,7 +300,6 @@
       },
       "storage": {
         "title": "Speicher",
-        "rowLabel": "Speicher verwalten",
         "rowSubtitle": "Sieh, wie viel deine Downloads belegen, und räum auf",
         "intro": "Heruntergeladene Boards belegen Platz auf diesem Handy. Lösch die, auf denen du gerade nicht kletterst.",
         "offNote": "Offline-Downloads sind gerade aus. Du kannst trotzdem löschen, was schon auf diesem Handy liegt.",
@@ -300,7 +315,7 @@
         "keptOffline": "Offline verfügbar",
         "notKeptOffline": "Nicht mehr offline verfügbar — belegt aber noch Platz",
         "estimateNote": "Die Board-Größen sind Schätzungen. Zwei Größen desselben Layouts teilen sich ihre Boulder, deshalb ergeben sie zusammen nicht die Gesamtsumme.",
-        "remove": "Entfernen",
+        "tapToRemove": "Tipp auf ein Board, um es von diesem Handy zu entfernen.",
         "removeAria": "{{name}} von diesem Handy entfernen",
         "cancel": "Abbrechen",
         "removeTitle": "{{name}} entfernen?",
@@ -351,7 +366,6 @@
         "personalGradesDescription": "Zeigt den Grad, den du einem Boulder gegeben hast, statt den der Community, und sortiert und filtert danach."
       },
       "offline": {
-        "title": "Offline",
         "offlineMode": "Offline-Modus",
         "offlineModeDescription": "Stoppt den Kontakt zum Boardsesh-Server, bis du ihn wieder ausschaltest. Heruntergeladene Boards funktionieren weiter und deine Begehungen warten auf deinem Handy.",
         "autoDownload": "Boards offline halten",
@@ -371,14 +385,8 @@
         "contributeSubtitle": "Die Übersetzungen kommen aus der Community. Öffne die {{language}}-Dateien auf GitHub, um eine Formulierung zu korrigieren oder zu ergänzen."
       },
       "diagnostics": {
-        "title": "Privatsphäre",
         "recording": "Hilf uns, besser zu werden",
         "recordingDescription": "Sende anonyme, maskierte Session-Aufzeichnungen, damit wir Bugs schneller plattmachen. Deine Eingaben und Fotos bleiben verborgen. Du kannst es jederzeit abschalten."
-      },
-      "integrations": {
-        "title": "Verbundene Apps",
-        "subtitle": "Board-Konten, Apple Health",
-        "subtitleWithStrava": "Board-Konten, Apple Health, Strava"
       },
       "syncIssues": {
         "title": "Sync-Probleme",
@@ -450,7 +458,7 @@
         "actions": "Aktionen",
         "gradesTitle": "Schwierigkeitsgrade",
         "previewFooter": "Beispiel. Begehungen, Favoriten und Tags erscheinen bei Bouldern, die sie haben.",
-        "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Schwierigkeitsgrade.",
+        "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Boulder & Grade.",
         "personalFooter": "Persönliche Markierungen und Playlists benötigen eine Anmeldung und laden online.",
         "presetsLabel": "Schnellauswahl",
         "presets": {
@@ -538,7 +546,6 @@
     "onboarding": {
       "replaySection": "Rundgang",
       "replayTitle": "Rundgang wiederholen",
-      "replaySubtitle": "Sieh dir den Rundgang nochmal an",
       "replayError": "Der Rundgang ließ sich nicht öffnen. Versuch es nochmal.",
       "prompt": {
         "title": "Sieh live, was auf deiner Wand leuchtet",

@@ -138,6 +138,16 @@ describe('StravaCard', () => {
     expect(button(container, 'integrations.strava.connect')).toBeNull();
   });
 
+  it('leads the footer with the expiry and keeps Reconnect in the card when the link lapsed', () => {
+    mocks.statuses = [{ ...connectedStatus, status: 'expired' }];
+    const { container } = render(<StravaCard />);
+    expect(button(container, 'integrations.strava.reconnect')).not.toBeNull();
+    const footer = [...container.querySelectorAll('[data-text]')].find((node) =>
+      node.textContent?.startsWith('integrations.strava.expired'),
+    );
+    expect(footer?.textContent).toBe('integrations.strava.expired\n\nintegrations.strava.autoSyncDescription');
+  });
+
   it('disconnects when the confirm is accepted', async () => {
     mocks.statuses = [connectedStatus];
     mocks.confirmResult = true;

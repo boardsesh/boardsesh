@@ -2,12 +2,16 @@ import type { ComponentType } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SectionHeader } from '../../src/components/SectionHeader';
+import { ListRow } from '../../src/components/ListRow';
 import { BoardAccountsSection } from '../../src/components/integrations/BoardAccountsSection';
 import { AppleHealthCard } from '../../src/components/integrations/AppleHealthCard';
 import { StravaCard } from '../../src/components/integrations/StravaCard';
 import { getSupportedIntegrations, type IntegrationId } from '../../src/lib/integrations';
+import { scopedRouter as router } from '../../src/lib/routing/scoped-navigation';
 import { useFeatureFlag } from '../../src/providers/feature-flags-provider';
-import { spacing } from '../../src/theme/tokens';
+import { useTheme } from '../../src/providers/theme-provider';
+import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
+import { borderRadius, spacing } from '../../src/theme/tokens';
 
 // One card per supported integration. The registry decides which integrations
 // are available on this platform; this lookup maps each id to its UI.
@@ -18,7 +22,12 @@ const INTEGRATION_CARDS: Record<IntegrationId, ComponentType> = {
 
 export default function IntegrationsScreen() {
   const { t } = useTranslation('settings');
+  const { systemColors } = useTheme();
+  const { scrollBottomPadding } = useBottomChromeMetrics();
   const stravaEnabled = useFeatureFlag('strava-integration') === true;
+  // Pairing a Garmin watch used to be its own row on the Settings root. It is a
+  // connected device like the apps below, so it lives here now.
+  const garminWatchEnabled = useFeatureFlag('garmin-watch') === true;
   const integrations = getSupportedIntegrations().filter((integration) => integration.id !== 'strava' || stravaEnabled);
 
   // Per-id card title. A static switch (not a dynamic `t(integration.titleKey)`)
@@ -34,7 +43,11 @@ export default function IntegrationsScreen() {
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      style={{ backgroundColor: systemColors.groupedBackground }}
+      contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] }]}
+    >
       <BoardAccountsSection />
       {integrations.map((integration) => {
         const Card = INTEGRATION_CARDS[integration.id];
@@ -45,6 +58,19 @@ export default function IntegrationsScreen() {
           </View>
         );
       })}
+      {garminWatchEnabled ? (
+        <View style={styles.section}>
+          <SectionHeader title={t('integrations.garmin.title')} />
+          <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
+            <ListRow
+              title={t('watchPairing.title')}
+              showChevron
+              showSeparator={false}
+              onPress={() => router.push('/settings/watch-pair')}
+            />
+          </View>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -56,10 +82,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexGrow: 1,
     paddingTop: spacing[4],
-    paddingBottom: spacing[8],
   },
   section: {
     width: '100%',
     marginBottom: spacing[6],
+  },
+  card: {
+    overflow: 'hidden',
+    borderRadius: borderRadius.lg,
+    marginHorizontal: spacing[4],
   },
 });

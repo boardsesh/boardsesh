@@ -42,7 +42,7 @@ reuse a registry file.
 write the server side once and every later partner plugs into the same thing.
 The user relationship stays with us: the climber sees "Sequence wants to
 create workouts for you" on a boardsesh.com consent page and can cut it off
-from More → Connected apps.
+from Settings → Connected apps.
 
 The second shape won. It is more code on our side, but it is the code that
 makes this a platform feature instead of a one-off.

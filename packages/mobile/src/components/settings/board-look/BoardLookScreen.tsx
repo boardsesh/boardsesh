@@ -8,7 +8,11 @@ import { boardLookCardHeight } from '../../board-look/board-look-card-metrics';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { useBoardLookSettings } from '../../../lib/board-render/use-board-look-settings';
 import { countHoldMarkerOverrides, useHoldColorOverrides } from '../../../lib/hold-color-overrides';
-import { BOARD_LOOK_SETTINGS_OPTIONS, type BoardLookOptionId } from '../../../lib/board-render/board-look-options';
+import {
+  BOARD_LOOK_SETTINGS_OPTIONS,
+  drawableBoardLookOptions,
+  type BoardLookOptionId,
+} from '../../../lib/board-render/board-look-options';
 import { useOsAccessibilitySignals } from '../../../hooks/use-os-accessibility-signals';
 import {
   applyBoardLookSuggestion,
@@ -108,10 +112,7 @@ export function BoardLookScreen() {
   // A build that cannot draw the Boardsesh look makes every Boardsesh card a
   // lie, so the rail collapses to the looks this build can actually render.
   const options = useMemo(
-    () =>
-      boardseshRendererAvailable === false
-        ? BOARD_LOOK_SETTINGS_OPTIONS.filter((option) => !option.requiresBoardseshRenderer)
-        : BOARD_LOOK_SETTINGS_OPTIONS,
+    () => drawableBoardLookOptions(BOARD_LOOK_SETTINGS_OPTIONS, boardseshRendererAvailable),
     [boardseshRendererAvailable],
   );
 

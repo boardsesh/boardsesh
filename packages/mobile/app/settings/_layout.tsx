@@ -2,7 +2,9 @@ import { useCallback, type ComponentProps } from 'react';
 import { Stack, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { HeaderLeadingButton } from '../../src/components/HeaderActionButtons';
+import { settingsPageTitle } from '../../src/components/settings/root/settings-pages';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
+import { useKeepBoardsOffline } from '../../src/offline/use-keep-boards-offline';
 
 /**
  * Leave Settings. It normally sits on top of the tabs, so this pops it; a cold
@@ -35,6 +37,17 @@ function isStackRoot({ navigation, route }: Pick<SettingsScreenOptionsArgs, 'nav
 }
 
 /**
+ * "Keep boards offline" downloads every board in My Boards while any settings
+ * page is open. Mounted here, beside the stack, so it runs once whichever page is
+ * showing, and in a component of its own so its profile, My Boards and download
+ * state re-render only this, not the whole stack and every screen's options.
+ */
+function KeepBoardsOffline() {
+  useKeepBoardsOffline();
+  return null;
+}
+
+/**
  * Settings, as a ROOT stack rather than a branch of the You tab.
  *
  * It used to live at `(tabs)/profile/more` with every sub-page registered
@@ -59,6 +72,10 @@ function isStackRoot({ navigation, route }: Pick<SettingsScreenOptionsArgs, 'nav
  * cross-navigator trap in docs/mobile-sheets-vs-routes.md). Use `router.dismissTo`
  * for those — it pops back to the tabs already in the root stack and drops
  * Settings on the way.
+ *
+ * Each page the Settings root lists takes its title from `settingsPageTitle`,
+ * the same function that labels its root row, so the row a climber taps and the
+ * title they land on always match.
  */
 export default function SettingsLayout() {
   const { t } = useTranslation('common');
@@ -81,40 +98,54 @@ export default function SettingsLayout() {
   );
 
   return (
-    <Stack screenOptions={screenOptions}>
-      <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
-      {/* Board look is a parent plus two leaves: the parent asks "which look?",
+    <>
+      <KeepBoardsOffline />
+      <Stack screenOptions={screenOptions}>
+        <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
+        {/* The pages the Settings root lists, in its order. */}
+        <Stack.Screen name="privacy" options={{ title: settingsPageTitle('privacy', t) }} />
+        {/* No title here: the page names itself after the list it shows. */}
+        <Stack.Screen name="privacy-people" />
+        <Stack.Screen name="integrations" options={{ title: settingsPageTitle('integrations', t) }} />
+        <Stack.Screen name="account" options={{ title: settingsPageTitle('account', t) }} />
+        {/* Board look is a parent plus two leaves: the parent asks "which look?",
           and everything you can tune about one lives a tap away. Registered flat
           in this stack (no nested layout) so back-swipe and the header keep
           behaving. */}
-      <Stack.Screen name="board-look/index" options={{ title: t('mobile.settings.boardLook.title') }} />
-      <Stack.Screen name="board-look/custom" options={{ title: t('mobile.settings.boardLook.customLook.title') }} />
-      <Stack.Screen
-        name="board-look/accessibility"
-        options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
-      />
-      <Stack.Screen name="climb-list" options={{ title: t('mobile.settings.climbList.title') }} />
-      <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
-      <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
-      <Stack.Screen name="privacy" options={{ title: tSettings('privacy.title') }} />
-      <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
-      <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
-      <Stack.Screen name="export" options={{ title: tSettings('export.title') }} />
-      <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
-      {/* i18n-ignore-next-line — preview-only screen */}
-      <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
-      <Stack.Screen name="dev-servers" options={{ title: t('mobile.settings.metroServersTitle') }} />
-      {/* i18n-ignore-next-line — tester-only screen */}
-      <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
-      {/* i18n-ignore-next-line — tester-only screen */}
-      <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
-      {/* i18n-ignore-next-line — tester-only screen */}
-      <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
-      {/* i18n-ignore-next-line — admin-only screen */}
-      <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
-      {/* i18n-ignore-next-line — admin-only screen */}
-      <Stack.Screen name="outline-canvas" options={{ title: 'Outline Editor' }} />
-      <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />
-    </Stack>
+        <Stack.Screen name="board-look/index" options={{ title: settingsPageTitle('boardLook', t) }} />
+        <Stack.Screen name="board-look/custom" options={{ title: t('mobile.settings.boardLook.customLook.title') }} />
+        <Stack.Screen
+          name="board-look/accessibility"
+          options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
+        />
+        <Stack.Screen name="offline" options={{ title: settingsPageTitle('offline', t) }} />
+        <Stack.Screen name="general" options={{ title: settingsPageTitle('general', t) }} />
+        <Stack.Screen name="climbs" options={{ title: settingsPageTitle('climbs', t) }} />
+        <Stack.Screen name="board-lighting" options={{ title: settingsPageTitle('boardLighting', t) }} />
+        <Stack.Screen name="early-access" options={{ title: settingsPageTitle('earlyAccess', t) }} />
+        <Stack.Screen name="developer" options={{ title: settingsPageTitle('developer', t) }} />
+        {/* The pages those pages open. */}
+        <Stack.Screen name="climb-list" options={{ title: t('mobile.settings.climbList.title') }} />
+        <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
+        <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
+        <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
+        <Stack.Screen name="export" options={{ title: tSettings('export.title') }} />
+        <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
+        {/* i18n-ignore-next-line — preview-only screen */}
+        <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
+        <Stack.Screen name="dev-servers" options={{ title: t('mobile.settings.metroServersTitle') }} />
+        {/* i18n-ignore-next-line — tester-only screen */}
+        <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
+        {/* i18n-ignore-next-line — tester-only screen */}
+        <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
+        {/* i18n-ignore-next-line — tester-only screen */}
+        <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
+        {/* i18n-ignore-next-line — admin-only screen */}
+        <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
+        {/* i18n-ignore-next-line — admin-only screen */}
+        <Stack.Screen name="outline-canvas" options={{ title: 'Outline Editor' }} />
+        <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />
+      </Stack>
+    </>
   );
 }

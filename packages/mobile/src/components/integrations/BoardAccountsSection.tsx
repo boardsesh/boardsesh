@@ -770,7 +770,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
         styles.card,
         styles.accountCard,
         styles.accountCardSpacing,
-        { backgroundColor: systemColors.secondaryBackground },
+        { backgroundColor: systemColors.secondaryGroupedBackground },
       ]}
     >
       <View style={styles.accountHeader}>
@@ -975,7 +975,7 @@ function BoardAccountSkeletonCard({ isLast, systemColors }: BoardAccountSkeleton
         styles.card,
         styles.accountCard,
         !isLast && styles.accountCardSpacing,
-        { backgroundColor: systemColors.secondaryBackground },
+        { backgroundColor: systemColors.secondaryGroupedBackground },
       ]}
     >
       <View style={styles.accountHeader}>
@@ -1006,7 +1006,7 @@ function BoardAccountsLoadError({ systemColors, brandColors, isRetrying, onRetry
   const { t: tCommon } = useTranslation('common');
 
   return (
-    <View style={[styles.card, styles.loadErrorCard, { backgroundColor: systemColors.secondaryBackground }]}>
+    <View style={[styles.card, styles.loadErrorCard, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
       <Icon name="warning" size={20} color={brandColors.warning} />
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.loadErrorText}>
         {t('aurora.mobile.loadFailed')}
@@ -1105,7 +1105,7 @@ function BoardAccountCard({
         styles.card,
         styles.accountCard,
         !isLast && styles.accountCardSpacing,
-        { backgroundColor: systemColors.secondaryBackground },
+        { backgroundColor: systemColors.secondaryGroupedBackground },
       ]}
     >
       <View style={styles.accountHeader}>
@@ -1144,7 +1144,7 @@ function BoardAccountCard({
             </Text>
           ) : null}
           {!isExpired && circuitPlaylistWarningCopy ? (
-            <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
+            <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryGroupedBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.warningText}>
                 {circuitPlaylistWarningCopy}
@@ -1160,7 +1160,7 @@ function BoardAccountCard({
             </View>
           ) : null}
           {totalUnsynced > 0 ? (
-            <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
+            <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryGroupedBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.warningText}>
                 {t('aurora.unsynced.title', { count: totalUnsynced })}

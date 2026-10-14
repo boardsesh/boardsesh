@@ -9,7 +9,7 @@ runs on the device.
 Two different questions, and they have different answers.
 
 **The entry point is open to everyone.** Any user on a store or TestFlight build with Branch Surfing
-headers gets **Test a PR preview** in the user drawer and under **Previews** on the More tab. It
+headers gets **Test a PR preview** in the user drawer and under **Previews** in Settings → Early access. It
 opens the pick list: the `pr-<n>` OTA branches this build could load, each row showing the PR title,
 author, risk (`Risk: N/5` from the PR body) and how fresh the branch is, plus chips for Draft, a
 verdict they already filed, and a branch the server refused because it crashed here. Tapping one
@@ -21,7 +21,7 @@ The floating xprem marker and its light-only sheet were removed for #5287; previ
 uses these themed menu destinations. The app still uses xprem's branch API through `qa-surf.ts`.
 
 **The cold-start prompt is tester-only and off by default.** A user whose profile has `isTester`
-can enable **Show previews on launch** under **More → Previews**. The device-local preference
+can enable **Show previews on launch** under **Settings → Early access → Previews**. The device-local preference
 takes effect on the next launch. When enabled, production offers the pick list once per cold
 start; a `pr-<n>` bundle shows its brief once per branch + bundle: what this PR is and its
 `## Test plan`, with **Start testing**, **Finish testing**, **Open on GitHub**, **Leave preview**.
@@ -49,7 +49,7 @@ headers see none of it.
 
 ## Testers who also get updates early
 
-"Get updates early" (More → **App updates**, behind the `early-updates` flag) pins a phone to the
+"Get updates early" (Settings → Early access → **App updates**, behind the `early-updates` flag) pins a phone to the
 `pr-beta` branch. It shares the one `xprem-branch` header with previews, so the two take turns. The
 whole design, including the expo-updates rule it rests on, is in `docs/mobile-ota-updates.md` →
 "Early updates"; what changes for QA:
@@ -247,7 +247,7 @@ shown and prompted → picked/skipped stopped adding up.
 ## In a dev build
 
 `qaSurfingAvailable()` is false, so every surf action renders disabled with a hint rather than
-throwing. The screens are still openable — More → **QA: pick a PR (dev)** — so the layout and the
+throwing. The screens are still openable — Settings → Developer → **QA: pick a PR (dev)** — so the layout and the
 empty/error states can be checked without a store build.
 
 ## No PRs listed?

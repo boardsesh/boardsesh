@@ -25,6 +25,10 @@ type UserDrawerContextValue = {
   navigateToSettings: () => void;
   navigateToEditProfile: () => void;
   navigateToPlaylists: () => void;
+  /** The gyms the signed-in climber runs. */
+  navigateToMyGyms: () => void;
+  /** The community moderation feed, a root modal. */
+  navigateToModeration: () => void;
   navigateToChangelog: () => void;
   navigateToAbout: () => void;
   openDiscord: () => void;
@@ -98,6 +102,16 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     router.dismissTo('/(tabs)/discover/all');
   }, []);
 
+  const navigateToMyGyms = useCallback(() => {
+    router.push('/gyms/mine');
+  }, []);
+
+  // A root modal (one copy, not one per tab), so it presents above whatever is
+  // open, once the drawer route is gone.
+  const navigateToModeration = useCallback(() => {
+    router.push('/moderation');
+  }, []);
+
   const navigateToChangelog = useCallback(() => {
     router.push('/changelog');
   }, []);
@@ -147,6 +161,8 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       navigateToSettings,
       navigateToEditProfile,
       navigateToPlaylists,
+      navigateToMyGyms,
+      navigateToModeration,
       navigateToChangelog,
       navigateToAbout,
       openDiscord,
@@ -164,6 +180,8 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       navigateToSettings,
       navigateToEditProfile,
       navigateToPlaylists,
+      navigateToMyGyms,
+      navigateToModeration,
       navigateToChangelog,
       navigateToAbout,
       openDiscord,

@@ -20,15 +20,28 @@ const server = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  TextInput: ({
+}));
+vi.mock('../../SearchField', () => ({
+  SearchField: ({
     value,
     onChangeText,
-    accessibilityLabel,
+    placeholder,
   }: {
     value: string;
     onChangeText: (next: string) => void;
-    accessibilityLabel?: string;
-  }) => <input aria-label={accessibilityLabel} value={value} onChange={(event) => onChangeText(event.target.value)} />,
+    placeholder: string;
+  }) => <input aria-label={placeholder} value={value} onChange={(event) => onChangeText(event.target.value)} />,
+}));
+vi.mock('../../ListRow', () => ({
+  ListRow: ({ title, trailing }: { title: string; trailing?: React.ReactNode }) => (
+    <div>
+      <span>{title}</span>
+      {trailing}
+    </div>
+  ),
+}));
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: <T,>({
@@ -63,7 +76,7 @@ vi.mock('../../Button', () => ({
   ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ spacing: [0, 4, 8, 12, 16], systemColors: {}, brandColors: {} }),
+  useTheme: () => ({ spacing: [0, 4, 8, 12, 16], borderRadius: { lg: 12 }, systemColors: {}, brandColors: {} }),
 }));
 // The warning reads the gym over GraphQL; its own suite covers it.
 vi.mock('../../board-discovery/OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));

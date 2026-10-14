@@ -733,7 +733,7 @@ The rows are drawn by hand in the Expo app, on two admin-only routes under the s
 stack: `app/settings/outline-editor.tsx` picks a board, layout and size, and
 `outline-canvas.tsx` opens the board with every placement's outline drawn over it —
 traced, overridden, missing, and a ghost of the shard outline still sitting under a
-differing override. The entry point is More → Development → Hold Outlines, gated
+differing override. The entry point is Settings → Developer → Hold Outlines, gated
 `__DEV__ || isAdmin`; both routes re-check that themselves, because a deep link reaches
 them directly. The implementation lives in `packages/mobile/src/components/outline-editor/`.
 

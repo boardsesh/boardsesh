@@ -321,8 +321,6 @@
   "mobile": {
     "moderation": {
       "title": "Moderation",
-      "moreSectionTitle": "Community",
-      "moreRowSubtitle": "Stimme über gemeldete Boulder und Gradänderungen ab",
       "pinnedFromNotification": "Aus deiner Benachrichtigung",
       "hiddenChip": "Ausgeblendet",
       "supersededChip": "Ersetzt",

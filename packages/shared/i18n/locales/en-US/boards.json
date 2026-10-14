@@ -277,7 +277,6 @@
     },
     "myGyms": {
       "moreRowTitle": "My gyms",
-      "moreRowSubtitle": "Jump to your gyms and tweak their details",
       "screenTitle": "My gyms",
       "loadError": "We couldn't load your gyms. Try again.",
       "retry": "Try again",

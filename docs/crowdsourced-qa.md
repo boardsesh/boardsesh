@@ -10,7 +10,7 @@ Three pieces, landing in this order:
    by CI.
 2. **The backend** (`qaPreviews` query, `submitQaVerdict` mutation): serves a PR's plan to the app
    and posts the verdict to GitHub.
-3. **The app**: testers can enable **Show previews on launch** under **More → Previews** to be
+3. **The app**: testers can enable **Show previews on launch** under **Settings → Early access → Previews** to be
    asked to pick a PR at startup; this defaults to off. Anyone can open a preview manually,
    read the plan, and file a verdict from the user drawer.
 

@@ -172,7 +172,7 @@ diagnostic) applies on native. The whole surface lives in three files:
 - **Catalog**: `FEATURE_FLAG_DEFINITIONS` in
   `packages/mobile/src/providers/feature-flags-provider.tsx` — `{ key, label,
   description, variants? }`. Add a flag once here and it shows up in the live
-  PostHog read AND the tester-only Feature Flags screen (More → Feature Flags).
+  PostHog read AND the tester-only Feature Flags screen (Settings → Developer → Feature Flags).
   Two of them steer telemetry rather than UI: `observe-dispatch-enabled` is the
   kill switch for expo-observe, and `observe-sample-rate` is the live
   multivariate flag carrying its sample rate. Both are read in
@@ -349,7 +349,7 @@ flow. Linked accounts sync available history with variable timing; this step add
 no complete-history or delivery-time guarantee.
 
 Testers can enable **Onboarding board-account link step** through the avatar →
-Settings → Feature Flags. Then use avatar → Settings → Replay walkthrough to
+Settings → Developer → Feature Flags. Then use avatar → Settings → General → Replay walkthrough to
 reopen onboarding; replay does not clear an existing link-step answer.
 Production rollout is a separate action: compare board activations per tour start
 across cohorts and inspect prompt decline/abandonment before expanding exposure.

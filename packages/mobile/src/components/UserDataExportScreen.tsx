@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   AURORA_BOARDS,
@@ -17,11 +17,16 @@ import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } fr
 import { useProfile } from '../lib/graphql/hooks';
 import { UserDataExportActionError, useUserDataExport } from '../lib/graphql/hooks/use-user-data-export';
 import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
-import { borderRadius, spacing } from '../theme/tokens';
+import { withSettingTracking } from '../lib/settings-analytics';
+import { spacing } from '../theme/tokens';
 import { Button } from './Button';
-import { RadioGroup } from './RadioGroup';
-import { SectionHeader } from './SectionHeader';
+import { MoreForm } from './MoreForm';
 import { Text } from './Text';
+import { buildUserDataExportModel } from './user-data-export-model';
+
+// The board and format pickers choose what to download, not how the app
+// behaves, so they stay out of the `Setting Changed` counts.
+const UNTRACKED_EXPORT_ROWS: ReadonlySet<string> = new Set(['boardType', 'format']);
 
 type ExportActionError =
   | 'outbox'
@@ -38,17 +43,29 @@ type ExportActionError =
 export function UserDataExportScreen() {
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('settings');
+  const { systemColors } = useTheme();
   const profileQuery = useProfile({ enabled: isAuthenticated });
+  const pageBackground = { backgroundColor: systemColors.groupedBackground };
 
-  if (!isAuthenticated) return <Text style={styles.copy}>{t('export.signIn')}</Text>;
-  if (!profileQuery.data?.id) {
-    return profileQuery.isError ? (
-      <View style={styles.copy}>
-        <Text>{t('export.loadFailed')}</Text>
-        <Button title={t('export.refresh')} onPress={() => void profileQuery.refetch()} />
+  if (!isAuthenticated) {
+    return (
+      <View style={[styles.centered, pageBackground]}>
+        <Text>{t('export.signIn')}</Text>
       </View>
-    ) : (
-      <ActivityIndicator style={styles.copy} />
+    );
+  }
+  if (!profileQuery.data?.id) {
+    return (
+      <View style={[styles.centered, pageBackground]}>
+        {profileQuery.isError ? (
+          <>
+            <Text>{t('export.loadFailed')}</Text>
+            <Button title={t('export.refresh')} onPress={() => void profileQuery.refetch()} />
+          </>
+        ) : (
+          <ActivityIndicator />
+        )}
+      </View>
     );
   }
 
@@ -62,7 +79,6 @@ export function UserDataExportScreen() {
 
 function AccountUserDataExportScreen({ userId }: { userId: string }) {
   const { t, i18n } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
   const confirm = useConfirm();
   const [boardType, setBoardType] = useState<BoardName>(BOARD_DISPLAY_ORDER[0]);
   const [format, setFormat] = useState<UserDataExportFormat>('boardsesh');
@@ -81,32 +97,26 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
     () => new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'short' }),
     [i18n.language],
   );
-  const formatDate = (timestamp: string) => dateFormatter.format(new Date(timestamp));
+  const formatDate = useCallback((timestamp: string) => dateFormatter.format(new Date(timestamp)), [dateFormatter]);
   const boardOptions = useMemo(
     () =>
       BOARD_DISPLAY_ORDER.map((boardName) => ({
-        value: boardName,
+        key: boardName,
         label: boardName === 'spray' ? t('export.sprayWalls') : boardTypeLabel(boardName),
-        disabled: busy,
       })),
-    [t, busy],
+    [t],
   );
-  const formatOptions = useMemo(
-    () => [
-      { value: 'boardsesh' as const, label: t('export.boardseshFormat'), disabled: busy },
-      { value: 'aurora' as const, label: t('export.auroraFormat'), disabled: busy },
-    ],
-    [t, busy],
-  );
-  const selectBoard = useCallback((nextBoard: BoardName) => {
-    if (actionInFlight.current) return;
+  const selectBoard = useCallback((boardKey: string) => {
+    const nextBoard = BOARD_DISPLAY_ORDER.find((boardName) => boardName === boardKey);
+    if (!nextBoard || actionInFlight.current) return;
     setBoardType(nextBoard);
     setFormat('boardsesh');
     setActionError(null);
   }, []);
-  const selectFormat = useCallback((nextFormat: UserDataExportFormat) => {
+  const selectFormat = useCallback((formatKey: string) => {
     if (actionInFlight.current) return;
-    setFormat(nextFormat);
+    if (formatKey !== 'boardsesh' && formatKey !== 'aurora') return;
+    setFormat(formatKey);
     setActionError(null);
   }, []);
 
@@ -218,116 +228,48 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
         return null;
     }
   })();
-  const retryWaiting = !!exportStatus?.retryAt && Date.parse(exportStatus.retryAt) > Date.now();
-  const terminalFailure =
-    exportStatus?.errorCode === 'EXPORT_ARCHIVE_INVALID' || exportStatus?.errorCode === 'EXPORT_TOO_LARGE';
-  const failureCopy =
-    exportStatus?.errorCode === 'EXPORT_ARCHIVE_INVALID'
-      ? t('export.archiveInvalid')
-      : exportStatus?.errorCode === 'EXPORT_TOO_LARGE'
-        ? t('export.tooLarge')
-        : t('export.failed');
-  const fileExpired = !!selectedFile && Date.parse(selectedFile.expiresAt) <= Date.now();
-
-  return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
-      <View style={styles.copy}>
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {t('export.description')}
-        </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {t('export.weekly')}
-        </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {t('export.expiry')}
-        </Text>
-      </View>
-      <SectionHeader title={t('export.boardType')} />
-      <View style={styles.controls}>
-        <RadioGroup options={boardOptions} value={boardType} onChange={selectBoard} />
-      </View>
-      <SectionHeader title={t('export.format')} />
-      <View style={styles.controls}>
-        {supportsAurora ? <RadioGroup options={formatOptions} value={format} onChange={selectFormat} /> : null}
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {format === 'boardsesh' ? t('export.boardseshDescription') : t('export.auroraDescription')}
-        </Text>
-      </View>
-      <View style={[styles.statusCard, { backgroundColor: systemColors.secondaryBackground }]}>
-        {isOffline ? <Text color={brandColors.warning}>{t('export.offline')}</Text> : null}
-        {statusQuery.isLoading && !isOffline ? <ActivityIndicator /> : null}
-        {statusQuery.isError ? <Text color={brandColors.error}>{t('export.loadFailed')}</Text> : null}
-        {exportStatus?.status === 'not_requested' ? <Text>{t('export.notRequested')}</Text> : null}
-        {exportStatus?.status === 'generating' ? (
-          <>
-            <ActivityIndicator />
-            <Text>{pollLimitReached ? t('export.pollStopped') : t('export.generating')}</Text>
-          </>
-        ) : null}
-        {exportStatus?.status === 'unavailable' ? <Text>{t('export.unavailable')}</Text> : null}
-        {exportStatus?.status === 'failed' ? (
-          <>
-            <Text color={brandColors.error}>{failureCopy}</Text>
-            {!terminalFailure && retryWaiting && exportStatus.retryAt ? (
-              <Text>{t('export.retryAt', { date: formatDate(exportStatus.retryAt) })}</Text>
-            ) : null}
-          </>
-        ) : null}
-        {selectedFile || exportStatus?.status === 'ready' ? (
-          <>
-            <Text variant="headline">
-              {exportStatus?.status === 'ready'
-                ? t('export.ready')
-                : format === 'boardsesh'
-                  ? t('export.boardseshFormat')
-                  : t('export.auroraFormat')}
-            </Text>
-            {selectedFile ? (
-              <>
-                <Text>{t('export.exportedAt', { date: formatDate(selectedFile.exportedAt) })}</Text>
-                <Text>{t('export.expiresAt', { date: formatDate(selectedFile.expiresAt) })}</Text>
-                {fileExpired ? <Text>{t('export.fileExpired')}</Text> : null}
-              </>
-            ) : (
-              <Text>{t('export.formatUnavailable')}</Text>
-            )}
-            {exportStatus ? <Text>{t('export.refreshAt', { date: formatDate(exportStatus.refreshAt) })}</Text> : null}
-            <Button
-              title={Platform.OS === 'web' ? t('export.download') : t('export.saveOrShare')}
-              loading={downloadMutation.isPending}
-              disabled={busy || isOffline || !selectedFile || fileExpired}
-              onPress={() => void downloadExport()}
-            />
-          </>
-        ) : null}
-        {exportStatus &&
-        (exportStatus.status === 'not_requested' || (exportStatus.status === 'failed' && !terminalFailure)) ? (
-          <Button
-            title={exportStatus.status === 'failed' ? t('export.retry') : t('export.generate')}
-            loading={busy}
-            disabled={busy || isOffline || retryWaiting}
-            onPress={() => void requestExport()}
-          />
-        ) : null}
-        {actionErrorCopy ? <Text color={brandColors.error}>{actionErrorCopy}</Text> : null}
-        <Button
-          title={t('export.refresh')}
-          variant="outlined"
-          loading={statusQuery.isFetching}
-          disabled={busy || isOffline || statusQuery.isFetching}
-          onPress={() => {
-            setActionError(null);
-            void refresh();
-          }}
-        />
-      </View>
-    </ScrollView>
+  const model = withSettingTracking(
+    buildUserDataExportModel({
+      t,
+      isWeb: Platform.OS === 'web',
+      boardOptions,
+      boardType,
+      onSelectBoard: selectBoard,
+      supportsAurora,
+      format,
+      onSelectFormat: selectFormat,
+      busy,
+      isOffline,
+      statusLoading: statusQuery.isLoading,
+      statusError: statusQuery.isError,
+      statusFetching: statusQuery.isFetching,
+      exportStatus,
+      pollLimitReached,
+      requestPending: preparingAction || requestMutation.isPending,
+      downloadPending: downloadMutation.isPending,
+      actionErrorCopy,
+      now: Date.now(),
+      formatDate,
+      onGenerate: () => void requestExport(),
+      onDownload: () => void downloadExport(),
+      onRefresh: () => {
+        setActionError(null);
+        void refresh();
+      },
+    }),
+    'export',
+    { skipKeys: UNTRACKED_EXPORT_ROWS },
   );
+
+  return <MoreForm model={model} />;
 }
 
 const styles = StyleSheet.create({
-  container: { paddingVertical: spacing[4], paddingBottom: spacing[8] },
-  copy: { marginHorizontal: spacing[4], gap: spacing[2], paddingVertical: spacing[2] },
-  controls: { marginHorizontal: spacing[4], gap: spacing[3] },
-  statusCard: { margin: spacing[4], padding: spacing[4], gap: spacing[3], borderRadius: borderRadius.lg },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[8],
+  },
 });

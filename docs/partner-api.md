@@ -150,7 +150,7 @@ Either side can end it.
 
 - Your side: `POST https://ws.boardsesh.com/oauth/revoke` with
   `token=<refresh or access token>&client_id=...`. Always returns 200.
-- The climber's side: Boardsesh lists connected apps under More → Connected
+- The climber's side: Boardsesh lists connected apps under Settings → Connected
   apps, with a Disconnect button. A password reset also revokes every
   connection, the same way Sequence's own tokens behave.
 

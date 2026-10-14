@@ -16,6 +16,7 @@ import {
   materialSurfaces,
   materialSurfaceContainers,
   tertiaryFillFallback,
+  tertiaryGroupedBackgroundFallback,
   type MaterialSurfaceContainers,
 } from '../theme/colors';
 import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
@@ -74,6 +75,21 @@ type ResolvedSystemColors = {
   secondaryBackground: string | OpaqueColorValue;
   tertiaryBackground: string | OpaqueColorValue;
   groupedBackground: string | OpaqueColorValue;
+  /**
+   * The card on a `groupedBackground` page: iOS `secondarySystemGroupedBackground`
+   * (white in light, #1C1C1E in dark), the colour a SwiftUI Form draws its rows on,
+   * so a hand-built settings page matches the native ones beside it. Android and
+   * Material reuse `secondaryBackground`, which already sits a step above their
+   * grouped page.
+   */
+  secondaryGroupedBackground: string | OpaqueColorValue;
+  /**
+   * A block inside that card, such as a warning: iOS
+   * `tertiarySystemGroupedBackground` (#F2F2F7 in light, #2C2C2E in dark).
+   * `tertiaryBackground` is white in light, the same as the card, so it can't be
+   * used there. Android and Material use `tertiaryGroupedBackgroundFallback`.
+   */
+  tertiaryGroupedBackground: string | OpaqueColorValue;
   elevatedSurface: string | OpaqueColorValue;
   label: string | OpaqueColorValue;
   secondaryLabel: string | OpaqueColorValue;
@@ -227,7 +243,13 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
     // hardware when the user explicitly chose Material. Drawn opaque (no glass),
     // so we don't use PlatformColor here.
     case 'material':
-      return { ...materialSurfaces[colorScheme], error: brand.error, tertiaryFill: tertiaryFillFallback[colorScheme] };
+      return {
+        ...materialSurfaces[colorScheme],
+        secondaryGroupedBackground: materialSurfaces[colorScheme].secondaryBackground,
+        tertiaryGroupedBackground: tertiaryGroupedBackgroundFallback(materialSurfaces[colorScheme], colorScheme),
+        error: brand.error,
+        tertiaryFill: tertiaryFillFallback[colorScheme],
+      };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
         // PlatformColor values adapt automatically on iOS — return as-is,
@@ -252,6 +274,8 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         secondaryBackground: fallback.secondaryBackground,
         tertiaryBackground: fallback.tertiaryBackground,
         groupedBackground: fallback.groupedBackground,
+        secondaryGroupedBackground: fallback.secondaryBackground,
+        tertiaryGroupedBackground: tertiaryGroupedBackgroundFallback(fallback, colorScheme),
         elevatedSurface: fallback.elevatedSurface,
         label: fallback.label,
         secondaryLabel: fallback.secondaryLabel,

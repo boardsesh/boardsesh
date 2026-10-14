@@ -321,8 +321,6 @@
   "mobile": {
     "moderation": {
       "title": "Moderación",
-      "moreSectionTitle": "Comunidad",
-      "moreRowSubtitle": "Vota bloques reportados y cambios de grado",
       "pinnedFromNotification": "De tu notificación",
       "hiddenChip": "Oculto",
       "supersededChip": "Sustituida",

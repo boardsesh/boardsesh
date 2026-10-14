@@ -510,7 +510,7 @@
       },
       "tags": {
         "title": "Sehen, in welchen Playlists ein Boulder steckt",
-        "p1": "Unter Einstellungen, dann Anzeige, schaltest du Playlist-Tags anzeigen ein. Zeilen in einer Playlist bekommen Chips. Ein Tipp auf einen Chip öffnet die Playlist nicht."
+        "p1": "Unter Einstellungen, dann Boulder & Grade und Boulderliste, schaltest du Playlist-Tags anzeigen ein. Zeilen in einer Playlist bekommen Chips. Ein Tipp auf einen Chip öffnet die Playlist nicht."
       },
       "next": {
         "title": "Weiterlesen",
@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Halt die Glühbirne gedrückt",
         "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
-        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du in den Einstellungen.",
+        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board-Beleuchtung.",
         "row2": "Griff darüber beleuchten. Nur MoonBoard.",
         "row3": "Boulder beim Wischen beleuchten.",
         "row4": "Boulder beim Antippen in der Liste beleuchten. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
@@ -759,7 +759,7 @@
       "open": {
         "title": "Das Menü öffnen",
         "p1": "Halt eine Boulder-Zeile gedrückt. Sie hebt sich zu einer Karte, oben Eintrag machen, Zur Playlist hinzufügen und Teilen, der Rest darunter.",
-        "p2": "Lieber tippen? Unter Einstellungen, dann Anzeige, schaltest du Schnellaktionen-Button anzeigen ein und bekommst ein ⋮ auf jeder Zeile im Tab Boulder.",
+        "p2": "Lieber tippen? Unter Einstellungen, dann Boulder & Grade und Boulderliste, schaltest du Schnellaktionen-Button anzeigen ein und bekommst ein ⋮ auf jeder Zeile im Tab Boulder.",
         "shotAlt": "Die Karte mit den Boulder-Aktionen",
         "shotCaption": "Oben drei Schnell-Buttons, darunter die volle Liste.",
         "clipAlt": "Eine Boulder-Zeile gedrückt halten",
@@ -1072,11 +1072,11 @@
       "title": "Konto löschen",
       "intro": "Du kannst dein Konto und alle zugehörigen Daten jederzeit löschen. Dafür gibt es zwei Wege:",
       "inApp": "In der App:",
-      "inAppBody": " Tipp auf dein Profilbild, öffne „Einstellungen“, scroll ganz nach unten und tipp auf „Konto löschen“. Vorher wirst du um Bestätigung gebeten.",
+      "inAppBody": " Tipp auf dein Profilbild, öffne „Einstellungen“, dann „Konto“ und tipp auf „Konto löschen“. Vorher wirst du um Bestätigung gebeten.",
       "onWeb": "Im Web:",
       "onWebBody": " Melde dich an unter ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " und öffne „Einstellungen“ über dein Profilbild — dort steht derselbe Button „Konto löschen“.",
+      "onWebBodyEnd": " und öffne „Einstellungen“ über dein Profilbild — unter „Konto“ findest du denselben Button „Konto löschen“.",
       "permanent": "Das Löschen passiert sofort und ist endgültig. Nach der Bestätigung entfernen wir deine E-Mail-Adresse, deinen Benutzernamen, deine Routenbuch-Einträge, deine Warteschlangen-Daten und die Historie deiner Party-Sessions von unseren Servern. Das lässt sich nicht rückgängig machen."
     },
     "children": {
@@ -1099,7 +1099,7 @@
     "choices": {
       "title": "Cookies und Datenschutzwahl",
       "storageBody": "Erforderlicher Speicher umfasst NextAuth-Anmeldecookies, deine Sprache (boardsesh-locale), Geräteeinstellungen und das Cookie boardsesh-consent. Das Zustimmungscookie gilt ein Jahr und wird zwischen boardsesh.com und app.boardsesh.com geteilt. Außerhalb der Regionen, in denen wir fragen, setzt die Website es bei deinem ersten Besuch auf die Voreinstellung für Nutzungsanalysen. Solange Nutzungsanalysen eingeschaltet sind (durch deine Erlaubnis oder durch die Voreinstellung außerhalb der Regionen, in denen wir fragen), speichert PostHog Kennungen und Ereignisse (ph_* auf der Website und SDK-Speicher in der App). Ablehnung oder Widerruf löscht Analysekennungen und stoppt optionale Analysen, Aufzeichnungen und Ereignisse zur Installationszuordnung. Grundlegende Fehler- und Leistungsdiagnosen auf unseren eigenen Servern bleiben aktiviert. Funktionsschalter verwenden weiterhin einen Client im Arbeitsspeicher; bei angemeldeten Konten können sie deine Kontokennung nutzen.",
-      "changeBody": "Ändere deine Antwort über Datenschutzwahl im Website-Fußbereich oder Nutzungsanalysen in den Einstellungen. Wir speichern deine Wahl auf dem Gerät und bei angemeldeten Konten auch im Konto. Wo Nutzungsanalysen standardmäßig eingeschaltet sind, bleibt diese Voreinstellung auf dem Gerät und wird nie als Zustimmung in deinem Konto gespeichert. Eine Ablehnung im Konto überschreibt Gerätefreigaben; eine Kontofreigabe gilt für Geräte ohne Antwort. Der Entscheidungsverlauf bleibt als Zustimmungsnachweis bis zur Kontolöschung gespeichert. Anonyme, kurzlebige Ereignisse zum Zustand von Updates und Hallenanzeigen bleiben zur Dienstzuverlässigkeit aktiv."
+      "changeBody": "Ändere deine Antwort über Datenschutzwahl im Website-Fußbereich oder Nutzungsanalysen unter Einstellungen → Privatsphäre. Wir speichern deine Wahl auf dem Gerät und bei angemeldeten Konten auch im Konto. Wo Nutzungsanalysen standardmäßig eingeschaltet sind, bleibt diese Voreinstellung auf dem Gerät und wird nie als Zustimmung in deinem Konto gespeichert. Eine Ablehnung im Konto überschreibt Gerätefreigaben; eine Kontofreigabe gilt für Geräte ohne Antwort. Der Entscheidungsverlauf bleibt als Zustimmungsnachweis bis zur Kontolöschung gespeichert. Anonyme, kurzlebige Ereignisse zum Zustand von Updates und Hallenanzeigen bleiben zur Dienstzuverlässigkeit aktiv."
     }
   },
   "preview": {

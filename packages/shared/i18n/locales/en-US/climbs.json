@@ -321,8 +321,6 @@
   "mobile": {
     "moderation": {
       "title": "Moderation",
-      "moreSectionTitle": "Community",
-      "moreRowSubtitle": "Vote on reported climbs and grade changes",
       "pinnedFromNotification": "From your notification",
       "hiddenChip": "Hidden",
       "supersededChip": "Replaced",

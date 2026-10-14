@@ -12,7 +12,7 @@
   "close": "Fermer",
   "syncError": "Ton choix est enregistré ici. Nous le synchroniserons avec ton compte quand tu seras de nouveau en ligne.",
   "mobileTitle": "Ta confidentialité, ton choix",
-  "mobileBody": "Autorise les statistiques d’utilisation et l’enregistrement facultatif des sessions pour nous aider à améliorer Boardsesh. « Non merci » les désactive. Les diagnostics de base sur les erreurs et les performances restent activés. Ton choix s’applique partout où tu es connecté. Tu peux le modifier dans les paramètres à tout moment.",
+  "mobileBody": "Autorise les statistiques d’utilisation et l’enregistrement facultatif des sessions pour nous aider à améliorer Boardsesh. « Non merci » les désactive. Les diagnostics de base sur les erreurs et les performances restent activés. Ton choix s’applique partout où tu es connecté. Tu peux le modifier dans Paramètres → Confidentialité à tout moment.",
   "analyticsLabel": "Partager les statistiques",
   "regionDefaultNote": "Les statistiques sont activées par défaut dans ta région. Tu peux les désactiver ici à tout moment."
 }

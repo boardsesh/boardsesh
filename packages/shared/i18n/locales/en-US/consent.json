@@ -12,7 +12,7 @@
   "close": "Close",
   "syncError": "Your choice is saved here. We will sync it to your account when you are back online.",
   "mobileTitle": "Your privacy, your choice",
-  "mobileBody": "Allow product analytics and optional session replay to help us improve Boardsesh. No thanks keeps these off. Basic crash and performance diagnostics stay on. Your choice applies wherever you are signed in. You can change it in Settings anytime.",
+  "mobileBody": "Allow product analytics and optional session replay to help us improve Boardsesh. No thanks keeps these off. Basic crash and performance diagnostics stay on. Your choice applies wherever you are signed in. You can change it in Settings → Privacy anytime.",
   "analyticsLabel": "Share analytics",
   "regionDefaultNote": "Analytics is on by default in your region. You can turn it off here anytime."
 }

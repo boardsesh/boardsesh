@@ -43,9 +43,8 @@ export const GATED_PATHS: readonly string[] = [
   '/(tabs)/home',
   '/(tabs)/profile',
   // Notifications are per-account by definition — a signed-out visitor must hit
-  // the login wall, not an empty list. Registered in both tab stacks.
+  // the login wall, not an empty list.
   '/(tabs)/home/notifications',
-  '/(tabs)/profile/notifications',
   '/auth/login',
   '/auth/register',
   '/boards',

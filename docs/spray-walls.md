@@ -779,7 +779,7 @@ creator picked in the add-wall wizard. `SprayWall.renderSettings` returns it on
 every wall read. NULL means "no wall default", which is every wall created before
 the column existed, and the mobile resolver falls back to the climber's own look
 for it. On a wall that has one, the wall's look wins over the climber's own,
-unless they turned on "Use my look on spray walls" (More → Board look).
+unless they turned on "Use my look on spray walls" (Settings → Board look).
 
 The dimming over unlit holds (the Aura veil) is set by the creator in the same
 step, with a slider under the looks, and stored in the look as `veil: 'custom'`

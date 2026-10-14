@@ -449,7 +449,7 @@ climb-view events safe to delete. If a dashboard is ever built:
      `Board Look Step Shown`, split by `selected_option` and `cards_viewed`.
      This pair is self-denominating, so it is the one true rate on this page.
      While the launch gate is log-only (#5654, below), every Shown comes from
-     the More tab's replay row, so the funnel is climbers who went looking, not
+     the replay row in Settings → General, so the funnel is climbers who went looking, not
      the audience the launch step would reach. That audience is
      `Board Look Step Evaluated` with `outcome = 'would_present'`.
    - `Board Render Settings Changed` and `Board Render Preset Applied` counts,
@@ -509,7 +509,7 @@ The fix woke it up in log-only mode (`present={false}` from `OnboardingGate`),
 because nobody has decided yet whether the step should reach the climbers it
 would now wake up for. So the gate evaluates and pushes nothing, and
 `Board Look Step Shown` / `Resolved` only come from the step opened by hand
-(More tab, replay the board-look question) until presenting is turned back on.
+(Settings → General, replay the board-look question) until presenting is turned back on.
 
 What the gate does send is `Board Look Step Evaluated`:
 

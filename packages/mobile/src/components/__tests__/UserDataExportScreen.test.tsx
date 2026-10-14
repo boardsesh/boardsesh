@@ -26,9 +26,46 @@ const mocks = vi.hoisted(() => ({
 }));
 
 type ComponentProps = Record<string, unknown> & { children?: ReactNode };
+type PressableProps = ComponentProps & {
+  onPress?: () => void;
+  disabled?: boolean;
+  accessibilityRole?: string;
+  accessibilityLabel?: string;
+  accessibilityState?: { selected?: boolean; busy?: boolean };
+};
+// The screen renders through the MoreForm test stub (test/more-form-stub.tsx),
+// which draws rows with these primitives: a button row and a select/segmented
+// option are Pressables, so they need a role, a name and a real `disabled`.
 vi.mock('react-native', () => ({
-  View: ({ children }: ComponentProps) => createElement('div', null, children),
-  ScrollView: ({ children }: ComponentProps) => createElement('div', null, children),
+  View: ({ children, accessibilityRole, accessibilityLabel }: ComponentProps) =>
+    createElement(
+      'div',
+      { role: accessibilityRole as string | undefined, 'aria-label': accessibilityLabel as string | undefined },
+      children,
+    ),
+  Text: ({ children }: ComponentProps) => createElement('span', null, children),
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityState,
+  }: PressableProps) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        role: accessibilityRole,
+        'aria-label': accessibilityLabel,
+        'aria-checked': accessibilityRole === 'radio' ? (accessibilityState?.selected ?? false) : undefined,
+        'aria-busy': accessibilityState?.busy,
+        disabled,
+        onClick: onPress,
+      },
+      children,
+    ),
+  Switch: () => null,
   ActivityIndicator: () => createElement('div', { role: 'progressbar' }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   Platform: {
@@ -53,11 +90,9 @@ vi.mock('../../db', () => ({ getDatabaseHandle: () => mocks.database }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: mocks.authenticated }) }));
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => mocks.confirm }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    systemColors: { secondaryLabel: '#555', secondaryBackground: '#fff' },
-    brandColors: { error: '#c00', warning: '#960' },
-  }),
+  useTheme: () => ({ systemColors: { groupedBackground: '#f2f2f7' } }),
 }));
+vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../lib/auth-store', () => ({
   captureAuthCredentialGeneration: () => mocks.generation,
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.generation,
@@ -95,36 +130,28 @@ vi.mock('../../lib/graphql/hooks/use-user-data-export', () => ({
     };
   },
 }));
-vi.mock('../Text', () => ({ Text: ({ children }: ComponentProps) => createElement('span', null, children) }));
-vi.mock('../SectionHeader', () => ({
-  SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
+// The real model, with the input it was last built from kept, so a test can call
+// the screen's select handlers directly: no disabled option in the way, only the
+// screen's own in-flight guard.
+const modelInput = vi.hoisted(() => ({
+  latest: undefined as
+    | { onSelectBoard: (key: string) => void; onSelectFormat: (key: string) => void; busy: boolean }
+    | undefined,
 }));
+vi.mock('../user-data-export-model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../user-data-export-model')>();
+  return {
+    ...actual,
+    buildUserDataExportModel: (input: Parameters<typeof actual.buildUserDataExportModel>[0]) => {
+      modelInput.latest = input;
+      return actual.buildUserDataExportModel(input);
+    },
+  };
+});
+vi.mock('../Text', () => ({ Text: ({ children }: ComponentProps) => createElement('span', null, children) }));
 vi.mock('../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: onPress, disabled }, title),
-}));
-vi.mock('../RadioGroup', () => ({
-  RadioGroup: ({
-    options,
-    value,
-    onChange,
-  }: {
-    options: { value: string; label: string; disabled?: boolean }[];
-    value: string;
-    onChange: (next: string) => void;
-  }) =>
-    createElement(
-      'fieldset',
-      { 'data-current': value },
-      options.map((option) =>
-        // iOS ignores option.disabled; the screen must also guard its change handler.
-        createElement(
-          'button',
-          { key: option.value, 'data-value': option.value, onClick: () => onChange(option.value) },
-          option.label,
-        ),
-      ),
-    ),
 }));
 
 import { UserDataExportScreen } from '../UserDataExportScreen';
@@ -176,27 +203,59 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+function button(name: string): HTMLButtonElement {
+  return screen.getByRole('button', { name }) as HTMLButtonElement;
+}
+
+/** Footers join several notes with a blank line; find the one note among them. */
+function getFooterNote(note: string): HTMLElement {
+  return screen.getByText(
+    (_content, element) =>
+      element?.tagName === 'SPAN' &&
+      element.children.length === 0 &&
+      element.textContent?.split('\n\n').includes(note) === true,
+  );
+}
+function queryFooterNote(note: string): HTMLElement | null {
+  return screen.queryByText(
+    (_content, element) =>
+      element?.tagName === 'SPAN' &&
+      element.children.length === 0 &&
+      element.textContent?.split('\n\n').includes(note) === true,
+  );
+}
+
 describe('export screen and board choices', () => {
   it('offers all nine board families in display order, including spray walls', () => {
     render(<UserDataExportScreen />);
-    const boardGroup = screen.getAllByRole('group')[0];
+    const [boardGroup, formatGroup] = screen.getAllByRole('radiogroup');
+    expect(boardGroup.getAttribute('aria-label')).toBe('export.boardType');
     expect(
       within(boardGroup)
-        .getAllByRole('button')
-        .map((button) => button.getAttribute('data-value')),
-    ).toEqual([...BOARD_DISPLAY_ORDER]);
-    expect(screen.getByRole('button', { name: 'export.sprayWalls' })).not.toBeNull();
-    expect(screen.getAllByRole('group')[1].getAttribute('data-current')).toBe('boardsesh');
+        .getAllByRole('radio')
+        .map((option) => option.getAttribute('aria-label')),
+    ).toEqual(BOARD_DISPLAY_ORDER.map((boardName) => (boardName === 'spray' ? 'export.sprayWalls' : boardName)));
+    expect(screen.getByRole('radio', { name: 'export.sprayWalls' })).not.toBeNull();
+    expect(
+      within(formatGroup).getByRole('radio', { name: 'export.boardseshFormat' }).getAttribute('aria-checked'),
+    ).toBe('true');
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.outbox).not.toHaveBeenCalled();
+  });
+
+  it('keeps the explanation and the weekly rules as footers, not body copy', () => {
+    render(<UserDataExportScreen />);
+    expect(getFooterNote('export.description')).not.toBeNull();
+    expect(getFooterNote('export.weekly')).not.toBeNull();
+    expect(getFooterNote('export.expiry')).not.toBeNull();
   });
 
   it('offers Aurora for its six boards and only Boardsesh for the other three', () => {
     render(<UserDataExportScreen />);
     for (const boardType of BOARD_DISPLAY_ORDER) {
-      fireEvent.click(screen.getByRole('button', { name: boardType === 'spray' ? 'export.sprayWalls' : boardType }));
+      fireEvent.click(screen.getByRole('radio', { name: boardType === 'spray' ? 'export.sprayWalls' : boardType }));
       expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', boardType);
-      expect(screen.queryByRole('button', { name: 'export.auroraFormat' }) !== null).toBe(
+      expect(screen.queryByRole('radio', { name: 'export.auroraFormat' }) !== null).toBe(
         !['moonboard', 'woods', 'spray'].includes(boardType),
       );
     }
@@ -211,7 +270,7 @@ describe('export screen and board choices', () => {
 
   it('resets selection and local errors when a different account becomes active', () => {
     const { rerender } = render(<UserDataExportScreen />);
-    fireEvent.click(screen.getByRole('button', { name: 'tension' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'tension' }));
     expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'tension');
     mocks.generation = 2;
     mocks.profileId = 'climber-b';
@@ -233,7 +292,7 @@ describe('generation preflight', () => {
     const generate = screen.getByRole('button', { name: 'export.generate' });
     fireEvent.click(generate);
     fireEvent.click(generate);
-    fireEvent.click(screen.getByRole('button', { name: 'tension' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'tension' }));
     expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
     finishProbe?.({ pendingCount: 0, deadLetterCount: 0 });
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
@@ -260,9 +319,7 @@ describe('generation preflight', () => {
     render(<UserDataExportScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'export.generate' }));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
-    await waitFor(() =>
-      expect((screen.getByRole('button', { name: 'export.generate' }) as HTMLButtonElement).disabled).toBe(false),
-    );
+    await waitFor(() => expect(button('export.generate').disabled).toBe(false));
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
@@ -270,7 +327,7 @@ describe('generation preflight', () => {
     mocks.outbox.mockRejectedValue(new Error('database locked'));
     render(<UserDataExportScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'export.generate' }));
-    await waitFor(() => expect(screen.getByText('export.outboxReadFailed')).not.toBeNull());
+    await waitFor(() => expect(getFooterNote('export.outboxReadFailed')).not.toBeNull());
     expect(mocks.request).not.toHaveBeenCalled();
   });
 
@@ -278,8 +335,8 @@ describe('generation preflight', () => {
     mocks.request.mockRejectedValue(new Error('backend unavailable'));
     render(<UserDataExportScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'export.generate' }));
-    await waitFor(() => expect(screen.getByText('export.requestFailed')).not.toBeNull());
-    expect((screen.getByRole('button', { name: 'export.generate' }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(getFooterNote('export.requestFailed')).not.toBeNull());
+    expect(button('export.generate').disabled).toBe(false);
   });
 });
 
@@ -290,8 +347,9 @@ describe('cached export states and browser download', () => {
   it('shows the snapshot dates and downloads the default Boardsesh file without regenerating', async () => {
     mocks.status = readyExport();
     render(<UserDataExportScreen />);
-    expect(screen.getByText('export.weekly')).not.toBeNull();
-    expect(screen.getByText('export.expiry')).not.toBeNull();
+    expect(getFooterNote('export.weekly')).not.toBeNull();
+    expect(getFooterNote('export.expiry')).not.toBeNull();
+    expect(getFooterNote('export.refreshAt')).not.toBeNull();
     expect(screen.getByText('export.exportedAt')).not.toBeNull();
     expect(screen.getByText('export.expiresAt')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'export.generate' })).toBeNull();
@@ -317,7 +375,7 @@ describe('cached export states and browser download', () => {
       files: [...ready.files, { ...ready.files[0], format: 'aurora', filename: 'kilter-aurora.json' }],
     };
     render(<UserDataExportScreen />);
-    fireEvent.click(screen.getByRole('button', { name: 'export.auroraFormat' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'export.auroraFormat' }));
     fireEvent.click(screen.getByRole('button', { name: 'export.download' }));
     await waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ period: '2026-W40', format: 'aurora' }));
   });
@@ -325,11 +383,11 @@ describe('cached export states and browser download', () => {
   it('disables network actions while offline', () => {
     mocks.offline = true;
     const { rerender } = render(<UserDataExportScreen />);
-    expect((screen.getByRole('button', { name: 'export.generate' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'export.refresh' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(button('export.generate').disabled).toBe(true);
+    expect(button('export.refresh').disabled).toBe(true);
     mocks.status = readyExport();
     rerender(<UserDataExportScreen />);
-    expect((screen.getByRole('button', { name: 'export.download' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(button('export.download').disabled).toBe(true);
   });
 
   it('shows manual refresh after the automatic polling limit', async () => {
@@ -346,7 +404,7 @@ describe('cached export states and browser download', () => {
     mocks.status = exportStatus({ status: 'failed', retryAt: new Date(Date.now() + 86_400_000).toISOString() });
     render(<UserDataExportScreen />);
     expect(screen.getByText('export.retryAt')).not.toBeNull();
-    expect((screen.getByRole('button', { name: 'export.retry' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(button('export.retry').disabled).toBe(true);
   });
 
   it.each([
@@ -369,8 +427,8 @@ describe('cached export states and browser download', () => {
     mocks.download.mockRejectedValue(new Error('browser blocked'));
     render(<UserDataExportScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'export.download' }));
-    await waitFor(() => expect(screen.getByText('export.downloadFailed')).not.toBeNull());
-    expect((screen.getByRole('button', { name: 'export.download' }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(getFooterNote('export.downloadFailed')).not.toBeNull());
+    expect(button('export.download').disabled).toBe(false);
   });
 });
 
@@ -392,7 +450,7 @@ describe('native export save/share', () => {
       files: [...ready.files, { ...ready.files[0], format: 'aurora', filename: 'kilter-aurora.json' }],
     };
     render(<UserDataExportScreen />);
-    fireEvent.click(screen.getByRole('button', { name: 'export.auroraFormat' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'export.auroraFormat' }));
     fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
     await waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ period: '2026-W40', format: 'aurora' }));
   });
@@ -408,12 +466,12 @@ describe('native export save/share', () => {
     mocks.download.mockRejectedValue(new UserDataExportActionError(reason));
     render(<UserDataExportScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
-    await waitFor(() => expect(screen.getByText(copy)).not.toBeNull());
-    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(getFooterNote(copy)).not.toBeNull());
+    expect(button('export.saveOrShare').disabled).toBe(false);
     mocks.download.mockResolvedValue(undefined);
     fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
     await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText(copy)).toBeNull();
+    expect(queryFooterNote(copy)).toBeNull();
   });
 
   it('keeps actions disabled and selection guarded until sharing finishes', async () => {
@@ -429,9 +487,9 @@ describe('native export save/share', () => {
     fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
     mocks.downloadPending = true;
     rerender(<UserDataExportScreen />);
-    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'export.refresh' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'tension' }));
+    expect(button('export.saveOrShare').disabled).toBe(true);
+    expect(button('export.refresh').disabled).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: 'tension' }));
     expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
     await act(async () => {
       finishSharing?.();
@@ -439,7 +497,42 @@ describe('native export save/share', () => {
     expect(mocks.download).toHaveBeenCalledTimes(1);
     mocks.downloadPending = false;
     rerender(<UserDataExportScreen />);
-    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(button('export.saveOrShare').disabled).toBe(false);
+  });
+
+  it('ignores board and format picks that reach the handlers while an action is in flight', async () => {
+    // Called straight through the screen's handlers, not the rendered options:
+    // nothing is disabled here, so only the in-flight guard can refuse them.
+    mocks.status = readyExport();
+    let finishSharing: (() => void) | undefined;
+    mocks.download.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSharing = resolve;
+        }),
+    );
+    render(<UserDataExportScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    const handlers = modelInput.latest;
+    if (!handlers) throw new Error('the screen built no model');
+    expect(handlers.busy).toBe(false);
+
+    act(() => {
+      handlers.onSelectBoard('tension');
+      handlers.onSelectFormat('aurora');
+    });
+    expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
+    expect(screen.getByRole('radio', { name: 'export.boardseshFormat' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'export.auroraFormat' }).getAttribute('aria-checked')).toBe('false');
+
+    await act(async () => {
+      finishSharing?.();
+    });
+    // Once it settles the same handlers work again, so it was the guard above.
+    act(() => modelInput.latest?.onSelectFormat('aurora'));
+    expect(screen.getByRole('radio', { name: 'export.auroraFormat' }).getAttribute('aria-checked')).toBe('true');
+    act(() => modelInput.latest?.onSelectBoard('tension'));
+    expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'tension');
   });
 
   it('treats a dismissed share sheet as normal completion', async () => {
@@ -449,8 +542,8 @@ describe('native export save/share', () => {
       fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
     });
     expect(mocks.download).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('export.shareFailed')).toBeNull();
-    expect(screen.queryByText('export.nativeDownloadFailed')).toBeNull();
+    expect(queryFooterNote('export.shareFailed')).toBeNull();
+    expect(queryFooterNote('export.nativeDownloadFailed')).toBeNull();
   });
 
   it('silently discards a session ownership change', async () => {
@@ -461,7 +554,7 @@ describe('native export save/share', () => {
       fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
     });
     expect(mocks.download).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('export.nativeDownloadFailed')).toBeNull();
-    expect(screen.queryByText('export.shareFailed')).toBeNull();
+    expect(queryFooterNote('export.nativeDownloadFailed')).toBeNull();
+    expect(queryFooterNote('export.shareFailed')).toBeNull();
   });
 });

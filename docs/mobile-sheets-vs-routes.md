@@ -255,7 +255,7 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climb view and the player's ⋯ → View options use the same seven visibility
+Settings → Climbs & grades → Climb view and the player's ⋯ → View options use the same seven visibility
 switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
@@ -276,7 +276,7 @@ has no ⋯ and no Settings, ignores the stored choices and gets the default sect
 ready at once (no read to wait for), so a member's Hide all left in the same browser
 can't strand them with nothing below the board. Every other viewer, a guest without an
 account included, keeps the stored choices, because ⋯ → View options and Settings →
-Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
+Climbs & grades → Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
 the browser) and keep each section's existing expansion preference and order.
 
 The first eligible visible section supplies the header preview at the fold; its header
@@ -398,7 +398,7 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    Never hardcode what UIKit "must" have folded into an inset; constants are fallbacks for the
    pre-measurement frames only, and test fixtures carry DEVICE_VERIFIED / INFERRED provenance
    labels (`src/hooks/__tests__/bottom-chrome-metrics.test.ts` — extend its matrix when adding
-   a chrome state). On-device verification without a rebuild: More → Diagnostics → "Bottom
+   a chrome state). On-device verification without a rebuild: Settings → Developer → "Bottom
    chrome diagnostics" overlays the live values (dev, preview builds, and `pr-<N>` OTA
    channels).
 
@@ -877,4 +877,4 @@ content are separate layout contracts. The production source guard follows multi
 
 ## Climb list display settings
 
-Settings → Climb list opens `/settings/climb-list`; the Climbs tab has no shortcut of its own (#6397). This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Like the rest of Settings, it has mirrors in each tab and the account navigator, and the root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).
+Settings → Climbs & grades → Climb list opens `/settings/climb-list`; the Climbs tab has no shortcut of its own (#6397). This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Like the rest of Settings, it has mirrors in each tab and the account navigator, and the root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).

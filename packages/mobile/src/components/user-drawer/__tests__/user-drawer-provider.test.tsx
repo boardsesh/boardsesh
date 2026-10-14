@@ -38,6 +38,8 @@ const qaState = vi.hoisted(() => ({
   verdictSubmittedKey: null as string | null,
 }));
 const profileState = vi.hoisted(() => ({ isTester: false }));
+// The moderation kill switch and the sign-in state, mutable per test.
+const drawerState = vi.hoisted(() => ({ climbModerationEnabled: true, isAuthenticated: true }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 
 // The launch hold is covered by its own suite; here the screen renders as is.
@@ -113,6 +115,15 @@ vi.mock('react-i18next', () => ({
           'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
           'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
           'userDrawer.qa.badge': 'QA',
+          'boards:mobile.myGyms.moreRowTitle': 'My gyms',
+          'climbs:mobile.moderation.title': 'Moderation',
+          // The labels of the two rows Settings dropped instead of moving here,
+          // under both spellings a re-added row would use: a namespaced key on the
+          // drawer's `t`, or the bare key on a `useTranslation(namespace)` one.
+          'notifications:title': 'Notifications',
+          title: 'Notifications',
+          'playlists:library.allPlaylists.title': 'All playlists',
+          'library.allPlaylists.title': 'All playlists',
           'mobile.settings.signOut.failureTitle': 'Sign-out was not confirmed',
           'mobile.settings.signOut.failure': 'Reconnect and sign out again',
         }[key] ?? key;
@@ -140,6 +151,7 @@ vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
 // could render at all.
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
+  useClimbModerationEnabled: () => drawerState.climbModerationEnabled,
 }));
 // AsyncStorage-backed; the spotlight names a board, so the pill asks whether
 // there is one.
@@ -178,7 +190,7 @@ vi.mock('../../../settings/hooks', () => ({
   useSetting: (key: string) => [key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null, vi.fn()],
 }));
 vi.mock('../../../providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
+  useAuth: () => ({ isAuthenticated: drawerState.isAuthenticated, signOut: signOutMock }),
 }));
 // Raising the dialog and running the wipe is the hook's job, covered by its own
 // test. What matters here is that Log out routes through it at all — the drawer used
@@ -291,6 +303,8 @@ beforeEach(() => {
   qaState.runningPrNumber = null;
   qaState.verdictSubmittedKey = null;
   profileState.isTester = false;
+  drawerState.climbModerationEnabled = true;
+  drawerState.isAuthenticated = true;
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
   changelogSeen.getLastSeenChangelogDate.mockResolvedValue('2026-01-01T00:00:00.000Z');
@@ -361,6 +375,8 @@ describe('user-drawer route defers each action until the route unmounts', () => 
   it.each([
     ['Settings', '/settings'],
     ['My playlists', '/(tabs)/discover/all'],
+    ['My gyms', '/gyms/mine'],
+    ['Moderation', '/moderation'],
     ["What's New", '/changelog'],
     ['About', '/about'],
   ])('%s closes the drawer, then pushes %s', (rowTitle, route) => {
@@ -489,6 +505,43 @@ describe('user-drawer route defers each action until the route unmounts', () => 
 
     flushDrawerClose();
     expect(routerMock.back).not.toHaveBeenCalled();
+  });
+});
+
+// My gyms and Moderation moved here from Settings, which is now settings only.
+describe('user-drawer library rows', () => {
+  function rowTitles(container: HTMLElement): (string | null)[] {
+    return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
+  }
+
+  it('lists My gyms and Moderation directly under My playlists', () => {
+    const { container } = render(<Harness showScreen />);
+    const titles = rowTitles(container);
+    const playlists = titles.indexOf('My playlists');
+    expect(titles.slice(playlists, playlists + 3)).toEqual(['My playlists', 'My gyms', 'Moderation']);
+  });
+
+  it('hides My gyms when signed out, and keeps Moderation, which anyone can read', () => {
+    drawerState.isAuthenticated = false;
+    const { container } = render(<Harness showScreen />);
+    const titles = rowTitles(container);
+    expect(titles).not.toContain('My gyms');
+    expect(titles).toContain('Moderation');
+  });
+
+  it('hides Moderation while the moderation kill switch is off', () => {
+    drawerState.climbModerationEnabled = false;
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container)).not.toContain('Moderation');
+  });
+
+  it('does not bring back Notifications or All playlists, which the bell and My playlists cover', () => {
+    // The labels the old Settings rows used (`notifications:title` and
+    // `playlists:library.allPlaylists.title`), resolved through the mock above.
+    const { container } = render(<Harness showScreen />);
+    const titles = rowTitles(container);
+    expect(titles).not.toContain('Notifications');
+    expect(titles).not.toContain('All playlists');
   });
 });
 

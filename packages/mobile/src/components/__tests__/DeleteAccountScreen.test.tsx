@@ -78,6 +78,9 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
+vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+}));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ signOut: ctrl.signOut }) }));
 vi.mock('../../lib/graphql/hooks', () => ({
   useDeleteAccountInfo: () => ({ data: ctrl.infoData, isLoading: ctrl.infoLoading }),
@@ -127,6 +130,12 @@ function typeConfirm(getByPlaceholderText: (text: string) => HTMLElement, value:
 }
 
 describe('DeleteAccountScreen', () => {
+  it('has no Cancel button in the body: back is cancel', () => {
+    const { queryByTestId, getByTestId } = render(<DeleteAccountScreen />);
+    expect(queryByTestId('deleteAccount.dialog.cancel')).toBeNull();
+    expect(getByTestId(CONFIRM_BTN)).not.toBeNull();
+  });
+
   it('enables the confirm button only once "DELETE" is typed exactly', () => {
     const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
     const confirm = getByTestId(CONFIRM_BTN) as HTMLButtonElement;

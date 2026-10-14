@@ -510,7 +510,7 @@
       },
       "tags": {
         "title": "Voir dans quelles playlists est un bloc",
-        "p1": "Sous Paramètres, puis Affichage, active Afficher les étiquettes de playlist. Les lignes rangées dans une playlist gagnent des étiquettes. Toucher une étiquette n'ouvre pas la playlist."
+        "p1": "Sous Paramètres, puis Blocs et cotations, puis Liste des blocs, active Afficher les étiquettes de playlist. Les lignes rangées dans une playlist gagnent des étiquettes. Toucher une étiquette n'ouvre pas la playlist."
       },
       "next": {
         "title": "Pour aller plus loin",
@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Garde l'ampoule appuyée",
         "p1": "Une fois connecté, garde l'ampoule appuyée pour ces réglages, de haut en bas.",
-        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres.",
+        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres, puis Éclairage de la board.",
         "row2": "Allumer la prise du dessus. MoonBoard uniquement.",
         "row3": "Allumer en faisant défiler les blocs.",
         "row4": "Allumer en sélectionnant dans la liste. Désactive les deux et explorer ne change plus le mur.",
@@ -759,7 +759,7 @@
       "open": {
         "title": "Ouvrir le menu",
         "p1": "Garde une ligne de bloc appuyée. Elle se soulève en carte, avec Enregistrer une croix, Ajouter à la playlist et Partager en haut et le reste en dessous.",
-        "p2": "Tu préfères une touche ? Sous Paramètres, puis Affichage, active Afficher le bouton d'actions rapides pour un ⋮ sur chaque ligne de Blocs.",
+        "p2": "Tu préfères une touche ? Sous Paramètres, puis Blocs et cotations, puis Liste des blocs, active Afficher le bouton d'actions rapides pour un ⋮ sur chaque ligne de Blocs.",
         "shotAlt": "La carte d'actions d'un bloc",
         "shotCaption": "Trois boutons rapides en haut, la liste complète en dessous.",
         "clipAlt": "Garder une ligne de bloc appuyée",
@@ -1072,11 +1072,11 @@
       "title": "Suppression du compte",
       "intro": "Vous pouvez supprimer votre compte et toutes les données associées à tout moment. Il y a deux façons de le faire :",
       "inApp": "Dans l'app :",
-      "inAppBody": " Touchez votre avatar, ouvrez Paramètres, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
+      "inAppBody": " Touchez votre avatar, ouvrez Paramètres, allez dans Compte et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
       "onWeb": "Sur le web :",
       "onWebBody": " Connectez-vous sur ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " et ouvrez Paramètres depuis le menu de votre avatar pour trouver le même bouton Supprimer le compte.",
+      "onWebBodyEnd": " et ouvrez Paramètres, puis Compte, depuis le menu de votre avatar pour trouver le même bouton Supprimer le compte.",
       "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
     },
     "children": {
@@ -1099,7 +1099,7 @@
     "choices": {
       "title": "Cookies et choix de confidentialité",
       "storageBody": "Le stockage nécessaire comprend les cookies de connexion NextAuth, ta langue (boardsesh-locale), les préférences du téléphone et le cookie boardsesh-consent. Ce dernier dure un an et est partagé entre boardsesh.com et app.boardsesh.com. En dehors des régions où nous demandons, le site le règle sur les statistiques par défaut lors de ta première visite. Quand les statistiques sont activées (par ton autorisation, ou par défaut en dehors des régions où nous demandons), PostHog stocke des identifiants et des événements (ph_* sur le site et stockage du SDK dans l’app). Refuser ou retirer l’autorisation supprime les identifiants statistiques et arrête les statistiques facultatives, les enregistrements et les événements d’attribution des installations. Les diagnostics de base sur les erreurs et les performances sur nos propres serveurs restent activés. Les options de fonctionnalités utilisent toujours un client en mémoire ; avec une connexion, elles peuvent utiliser ton identifiant de compte.",
-      "changeBody": "Utilise Choix de confidentialité dans le pied de page du site ou Statistiques d’utilisation dans les paramètres pour changer ta réponse. Nous enregistrons ta décision sur ton appareil et, si tu es connecté, sur ton compte. Là où les statistiques sont activées par défaut, ce réglage reste sur l’appareil et n’est jamais enregistré sur ton compte comme un consentement. Un refus du compte remplace les autorisations des appareils ; une autorisation du compte s’applique aux appareils sans réponse. Nous conservons l’historique des décisions comme preuve du consentement jusqu’à la suppression du compte. Les événements anonymes et éphémères sur les mises à jour et les écrans des salles restent actifs pour la fiabilité du service."
+      "changeBody": "Utilise Choix de confidentialité dans le pied de page du site ou Statistiques d’utilisation dans Paramètres → Confidentialité pour changer ta réponse. Nous enregistrons ta décision sur ton appareil et, si tu es connecté, sur ton compte. Là où les statistiques sont activées par défaut, ce réglage reste sur l’appareil et n’est jamais enregistré sur ton compte comme un consentement. Un refus du compte remplace les autorisations des appareils ; une autorisation du compte s’applique aux appareils sans réponse. Nous conservons l’historique des décisions comme preuve du consentement jusqu’à la suppression du compte. Les événements anonymes et éphémères sur les mises à jour et les écrans des salles restent actifs pour la fiabilité du service."
     }
   },
   "preview": {

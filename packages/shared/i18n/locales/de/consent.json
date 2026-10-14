@@ -12,7 +12,7 @@
   "close": "Schließen",
   "syncError": "Deine Wahl ist hier gespeichert. Wir synchronisieren sie mit deinem Konto, sobald du wieder online bist.",
   "mobileTitle": "Deine Privatsphäre, deine Wahl",
-  "mobileBody": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit in den Einstellungen ändern.",
+  "mobileBody": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit unter Einstellungen → Privatsphäre ändern.",
   "analyticsLabel": "Nutzungsanalysen teilen",
   "regionDefaultNote": "Nutzungsanalysen sind in deiner Region standardmäßig eingeschaltet. Du kannst sie hier jederzeit ausschalten."
 }

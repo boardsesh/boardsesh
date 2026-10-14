@@ -89,19 +89,14 @@ type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
 const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   // Matches the Home chrome's bell, so the two ways into notifications read as
   // the same destination.
-  notifications: 'bell',
   // A shield with a check — "the crew vets this", rather than a gavel's
   // courtroom framing. Android uses the Material gavel drawable, the closest
   // glyph that set actually ships.
-  moderation: 'checkmark.shield',
-  playlists: 'music.note.list',
-  gyms: 'building.2',
   // The integrations page links outside accounts (Strava and friends), so a
   // chain link, not the heart it used to borrow from Health.
   integrations: 'link',
   // The watch row pairs a Garmin, so an analog watch face rather than the Apple
   // Watch silhouette.
-  watch: 'watch.analog',
   // Sliders — a tuning glyph for the render + accessibility knobs, not the
   // wheelchair accessibility symbol the row used to be (it isn't a system
   // accessibility setting).
@@ -110,8 +105,6 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   // What iOS Settings itself uses for on-device storage. SF Symbols 2 (iOS 14+).
   storage: 'internaldrive',
   translate: 'character.bubble',
-  replay: 'play.circle',
-  changelog: 'sparkles',
   devServers: 'server.rack',
   otaChannel: 'arrow.triangle.2.circlepath',
   featureFlags: 'flag',
@@ -184,7 +177,16 @@ function ValueRow({ row }: { row: MoreValueRow }) {
       {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
     </HStack>
   );
-  if (row.onPress) return <Button onPress={row.onPress}>{body}</Button>;
+  if (row.onPress) {
+    return (
+      <Button
+        onPress={row.onPress}
+        modifiers={row.accessibilityHint ? [accessibilityHintModifier(row.accessibilityHint)] : undefined}
+      >
+        {body}
+      </Button>
+    );
+  }
   return body;
 }
 

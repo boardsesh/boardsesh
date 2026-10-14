@@ -77,6 +77,7 @@ function StubRow({ row }: { row: MoreRow }) {
           onPress={row.onPress}
           accessibilityRole="button"
           accessibilityLabel={row.label}
+          accessibilityHint={row.accessibilityHint}
           accessibilityState={{ busy: row.busy ?? false }}
         >
           {body}

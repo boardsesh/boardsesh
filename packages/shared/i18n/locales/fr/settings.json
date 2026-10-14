@@ -44,7 +44,8 @@
     "exportSynced": "Exporter les données synchronisées",
     "waitForSync": "Attendre la synchronisation",
     "fileExpired": "Ce fichier a expiré. Actualise pour vérifier si une nouvelle exportation est disponible.",
-    "formatUnavailable": "Ce format n’est pas disponible pour l’exportation actuelle."
+    "formatUnavailable": "Ce format n’est pas disponible pour l’exportation actuelle.",
+    "checking": "Vérification de l’export de cette semaine…"
   },
   "metadata": {
     "settings": {
@@ -57,7 +58,6 @@
     "profileError": "Impossible de charger le profil"
   },
   "profile": {
-    "subtitle": "Choisissez comment vous apparaissez sur Boardsesh",
     "editAction": "Modifier le profil",
     "avatar": {
       "upload": "Importer",
@@ -97,7 +97,6 @@
       "removeSetterName": "Retirer mon nom d'ouvreur des blocs publiés",
       "confirmInstruction": "Tapez <strong>DELETE</strong> pour confirmer.",
       "confirmPlaceholder": "DELETE",
-      "cancel": "Annuler",
       "confirm": "Supprimer mon compte"
     },
     "error": "Suppression du compte impossible. Réessayez."
@@ -553,25 +552,26 @@
       "connectFailed": "Impossible de se connecter à Strava",
       "disconnected": "Strava déconnecté",
       "disconnectFailed": "Impossible de déconnecter Strava. Réessayez."
+    },
+    "garmin": {
+      "title": "Garmin"
     }
   },
   "watchPairing": {
     "title": "Associer une montre Garmin",
-    "subtitle": "Pilote ta session depuis ton poignet",
     "description": "Lance l'activité Boardsesh sur ta Garmin, puis saisis ce code pour associer la montre à ton compte.",
     "generate": "Obtenir un code",
     "regenerate": "Nouveau code",
     "codeInstruction": "Saisis ce code sur ta montre",
-    "expiresIn": "Expire dans {{seconds}} s",
+    "expiresInLabel": "Expire dans",
+    "secondsLeft": "{{seconds}} s",
     "expired": "Code expiré — obtiens-en un nouveau",
     "generating": "Obtention d'un code…",
     "error": "Impossible d'obtenir un code. Réessaie."
   },
   "privacy": {
     "title": "Confidentialité",
-    "intro": "Tes croix contribuent toujours aux cotations et à l’historique de la board. Tu choisis qui peut savoir qu’elles sont à toi.",
     "accountAudience": "Qui peut voir ton activité ?",
-    "publicAccount": "Compte public",
     "privateAccount": "Compte privé",
     "privateExplanation": "Les comptes privés partagent leur activité avec leurs abonnés approuvés. Cela protège aussi les activités passées. Tes abonnés actuels gardent leur accès jusqu’à ce que tu les retires.",
     "sessionDefault": "Audience des nouvelles séances",
@@ -582,15 +582,29 @@
     "offline": "Connecte-toi pour enregistrer les changements. Tes réglages enregistrés n’ont pas changé.",
     "saveFailed": "Enregistrement impossible. Tes réglages enregistrés n’ont pas changé. Connecte-toi et réessaie.",
     "saved": "Réglages de confidentialité enregistrés",
-    "save": "Enregistrer la confidentialité",
     "requests": "Demandes d’abonnement",
     "followers": "Abonnés",
     "approve": "Approuver",
     "decline": "Refuser",
     "removeFollower": "Retirer l’abonné",
     "climber": "Grimpeur ou grimpeuse",
-    "loadFailed": "Impossible de charger ton groupe. Réessaie une fois connecté.",
     "accountControlsLater": "La visibilité du compte, l’audience par défaut de tes séances et les demandes d’abonnement arrivent dans une prochaine mise à jour.",
+    "loadingSettings": "Chargement de tes réglages de confidentialité",
+    "loadSettingsFailed": "Impossible de charger tes réglages de confidentialité.",
+    "sessionDefaultFooter": "S’applique aux séances que tu lances à partir de maintenant. Les séances déjà lancées gardent leur audience.",
+    "makeAccountPublicTitle": "Rendre ton compte public ?",
+    "makeAccountPublicMessage": "Tout le monde verra ton activité, y compris les croix que tu as déjà enregistrées.",
+    "makeAccountPublicSessionsNote": "Les nouvelles séances seront publiques par défaut.",
+    "yourData": "Tes données",
+    "policy": "Politique de confidentialité",
+    "remove": "Retirer",
+    "approveNamed": "Approuver {{name}}",
+    "declineNamed": "Refuser {{name}}",
+    "removeNamed": "Retirer {{name}}",
+    "removeFollowerTitle": "Retirer {{name}} ?",
+    "removeFollowerMessage": "Cette personne ne verra plus l’activité que tu partages avec tes abonnés approuvés.",
+    "noRequests": "Personne n’attend pour s’abonner à toi. Les nouvelles demandes apparaîtront ici.",
+    "noFollowers": "Pas encore d’abonnés. Ta crew apparaîtra ici dès qu’elle s’abonnera.",
     "cancel": "Annuler",
     "publishPublicTitle": "Rendre public ?",
     "publishPublicMessage": "Tout le monde pourra voir cette publication et ton nom, même avec un compte privé. Les permissions de la séance ou de la board s’appliquent toujours.",

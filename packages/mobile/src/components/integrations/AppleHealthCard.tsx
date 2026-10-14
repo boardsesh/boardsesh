@@ -81,19 +81,15 @@ export function AppleHealthCard() {
   if (Platform.OS !== 'ios') return null;
 
   return (
-    <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-      <SwitchRow
-        label={t('integrations.appleHealth.autoSave')}
-        description={t('integrations.appleHealth.autoSaveDescription')}
-        value={enabled}
-        onValueChange={handleToggle}
-        disabled={!loaded}
-      />
-      {denied ? (
-        <>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.deniedHint}>
-            {t('integrations.appleHealth.permissionDenied')}
-          </Text>
+    <>
+      <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
+        <SwitchRow
+          label={t('integrations.appleHealth.autoSave')}
+          value={enabled}
+          onValueChange={handleToggle}
+          disabled={!loaded}
+        />
+        {denied ? (
           <ListRow
             title={t('integrations.appleHealth.openSettings')}
             showChevron
@@ -102,9 +98,15 @@ export function AppleHealthCard() {
               void openAppSettings();
             }}
           />
-        </>
-      ) : null}
-    </View>
+        ) : null}
+      </View>
+      {/* Denied access leads the footer: it is the reason the switch does nothing. */}
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
+        {denied
+          ? `${t('integrations.appleHealth.permissionDenied')}\n\n${t('integrations.appleHealth.autoSaveDescription')}`
+          : t('integrations.appleHealth.autoSaveDescription')}
+      </Text>
+    </>
   );
 }
 
@@ -114,9 +116,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     marginHorizontal: spacing[4],
   },
-  deniedHint: {
+  footer: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[1],
-    paddingBottom: spacing[2],
+    paddingTop: spacing[2],
   },
 });

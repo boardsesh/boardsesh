@@ -7,6 +7,7 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useConfirm } from '../../providers/dialog-provider';
+import { audienceConfirmation } from './privacy-settings-changes';
 
 export const SOCIAL_AUDIENCES = ['public', 'followers', 'only_me'] as const;
 export const SESSION_AUDIENCES = ['public', 'unlisted', 'followers', 'invite_only'] as const;
@@ -44,22 +45,8 @@ export function AudiencePicker<TAudience extends PrivacyResourceAudience>({
     invite_only: t('privacy.audiences.invited'),
   };
   const chooseAudience = async (next: TAudience) => {
-    if ((next === 'public' || next === 'unlisted') && (next !== audience || reconfirmPublic) && confirmPublic) {
-      if (
-        !(await confirm({
-          title: next === 'unlisted' ? t('privacy.publishLinkTitle') : t('privacy.publishPublicTitle'),
-          message:
-            next === 'unlisted'
-              ? t('privacy.publishLinkMessage')
-              : resource
-                ? t('privacy.publishResourceMessage')
-                : t('privacy.publishPublicMessage'),
-          confirmLabel: next === 'unlisted' ? t('privacy.publishLink') : t('privacy.publishPublic'),
-          cancelLabel: t('privacy.cancel'),
-        }))
-      )
-        return;
-    }
+    const confirmation = audienceConfirmation({ next, current: audience, confirmPublic, reconfirmPublic, resource, t });
+    if (confirmation && !(await confirm(confirmation))) return;
     onChange(next);
     setExpanded(false);
   };

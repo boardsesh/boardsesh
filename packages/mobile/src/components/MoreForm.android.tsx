@@ -41,7 +41,16 @@ import {
   CircularProgressIndicator,
   useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, alpha, weight, clickable, height, size } from '@expo/ui/jetpack-compose/modifiers';
+import {
+  fillMaxWidth,
+  padding,
+  alpha,
+  weight,
+  clickable,
+  height,
+  size,
+  semantics,
+} from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import {
@@ -76,17 +85,12 @@ import type {
 // the Compose `Icon` a vector-drawable source it tints itself. White-filled
 // (#FFFFFFFF) so the `tint` recolours them; a missing `icon` renders no leading slot.
 const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
-  notifications: require('../../assets/material-icons/notifications.xml'),
   // Material's gavel — the nearest "the community decides this" glyph the set
   // ships. iOS uses a checkmark shield.
-  moderation: require('../../assets/material-icons/moderation.xml'),
-  playlists: require('../../assets/material-icons/playlists.xml'),
-  gyms: require('../../assets/material-icons/gyms.xml'),
   // The integrations page links outside accounts, so Material's chain link —
   // the same glyph iOS draws (`link`).
   integrations: require('../../assets/material-icons/link.xml'),
   // Material's `watch` (outlined), for the Garmin pairing row.
-  watch: require('../../assets/material-icons/watch.xml'),
   // Sliders — a tuning glyph for the render + accessibility knobs, not the
   // wheelchair accessibility drawable the row used to be.
   boardLook: require('../../assets/material-icons/tune.xml'),
@@ -96,14 +100,12 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   accessibility: require('../../assets/material-icons/accessibility.xml'),
   storage: require('../../assets/material-icons/storage.xml'),
   translate: require('../../assets/material-icons/translate.xml'),
-  replay: require('../../assets/material-icons/replay.xml'),
-  changelog: require('../../assets/material-icons/changelog.xml'),
   devServers: require('../../assets/material-icons/devServers.xml'),
   otaChannel: require('../../assets/material-icons/otaChannel.xml'),
   featureFlags: require('../../assets/material-icons/featureFlags.xml'),
   branchSwitcher: require('../../assets/material-icons/branchSwitcher.xml'),
   editProfile: require('../../assets/material-icons/editProfile.xml'),
-  privacy: require('../../assets/material-icons/lock.xml'),
+  privacy: require('../../assets/material-icons/privacy.xml'),
   // The rest are Material Icons Outlined (24dp), matching the glyphs iOS draws:
   // account_circle, cloud_download, settings, format_list_bulleted, lightbulb,
   // science, build, ios_share and description.
@@ -297,6 +299,12 @@ function ValueRow({ row }: { row: MoreValueRow }) {
         <Text style={{ typography: 'bodyMedium' }} modifiers={[padding(spacing[2], 0, 0, 0), alpha(0.6)]}>
           {row.value}
         </Text>
+      ) : null}
+      {row.onPress && row.accessibilityHint ? (
+        // The same mechanism as a nav row's open-external hint: the clickable Row
+        // merges its children's semantics, so TalkBack reads this description
+        // after the label. Nothing is drawn.
+        <Spacer modifiers={[semantics({ contentDescription: row.accessibilityHint })]} />
       ) : null}
     </Row>
   );

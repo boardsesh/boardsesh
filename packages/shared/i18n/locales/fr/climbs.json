@@ -321,8 +321,6 @@
   "mobile": {
     "moderation": {
       "title": "Modération",
-      "moreSectionTitle": "Communauté",
-      "moreRowSubtitle": "Vote sur les blocs signalés et les changements de cotation",
       "pinnedFromNotification": "Depuis ta notification",
       "hiddenChip": "Masqué",
       "supersededChip": "Remplacée",

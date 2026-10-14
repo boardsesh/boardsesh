@@ -86,6 +86,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
             ) : undefined
           }
           onPress={row.onPress}
+          accessibilityHint={row.accessibilityHint}
           accessibilityState={row.busy ? { busy: true } : undefined}
           showSeparator={!isLast}
         />

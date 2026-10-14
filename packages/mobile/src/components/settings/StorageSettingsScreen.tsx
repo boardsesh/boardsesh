@@ -12,7 +12,7 @@
 //   exists to reclaim, and it would be invisible if we listed the setting instead.
 
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from 'expo-router';
 import { useOfflineDatabase } from '../../db/use-offline-database';
@@ -26,21 +26,19 @@ import {
 } from '@boardsesh/offline-sync';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Card } from '../Card';
 import { Button } from '../Button';
-import { ListRow } from '../ListRow';
-import { SectionHeader } from '../SectionHeader';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { StorageBoardRow } from './StorageBoardRow';
+import { MoreForm } from '../MoreForm';
 import { storageBoardLabel } from './storage-board-label';
+import { buildStorageModel } from './storage-model';
 import { useTheme } from '../../providers/theme-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
-import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useSetting, offlineBoardKey, forgetDownloadTrigger } from '../../settings';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
+import { withSettingTracking } from '../../lib/settings-analytics';
 import { isOfflineEngineEnabled } from '../../lib/offline-engine';
 import {
   measureDatabaseBytes,
@@ -55,7 +53,7 @@ import { useOfflineSchemaReady } from '../../db/use-offline-schema-ready';
 import { useOfflineSchemaDowngrade } from '../../db/use-offline-schema-downgrade';
 import { reportError } from '../../lib/error-reporting';
 import { hapticLight } from '../../lib/haptics';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 
 type StorageMeasurement = {
   totalBytes: number;
@@ -91,7 +89,6 @@ export function StorageSettingsScreen() {
   // try again" would be a lie with a button that cannot work.
   const schemaDowngrade = useOfflineSchemaDowngrade();
   const queryClient = useQueryClient();
-  const bottomChrome = useBottomChromeMetrics();
   const offlineEnabled = useOfflineDownloadsEnabled();
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const [removingScopeKey, setRemovingScopeKey] = useState<string | null>(null);
@@ -309,14 +306,62 @@ export function StorageSettingsScreen() {
     }
   }, [confirm, t, cachedImageBytes, showToast, refetch]);
 
-  const isBusy = removingScopeKey !== null || isRemovingAll || isCompacting || isClearingCache;
+  const handleRemoveBoard = useCallback((scopeKey: string) => void handleRemove(scopeKey), [handleRemove]);
+  const handleRemoveAllPress = useCallback(() => void handleRemoveAll(), [handleRemoveAll]);
+  const handleCompactPress = useCallback(() => void handleCompact(), [handleCompact]);
+  const handleClearCachedImagesPress = useCallback(() => void handleClearCachedImages(), [handleClearCachedImages]);
 
-  // Also spin while re-measuring over an empty cached result: a board downloaded
-  // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
-  // until the refetch lands, which reads as "your download is gone".
+  const model = useMemo(
+    () =>
+      measurement
+        ? withSettingTracking(
+            buildStorageModel({
+              t,
+              formatSize: formatStorageSize,
+              offlineEnabled,
+              totalBytes: measurement.totalBytes,
+              freeBytes: measurement.freeBytes,
+              reclaimableBytes: measurement.reclaimableBytes,
+              showReclaimable: hasReclaimable,
+              cachedImages,
+              boards: rows,
+              removingScopeKey,
+              isRemovingAll,
+              isCompacting,
+              isClearingCache,
+              onRemoveBoard: handleRemoveBoard,
+              onRemoveAll: handleRemoveAllPress,
+              onCompact: handleCompactPress,
+              onClearCachedImages: handleClearCachedImagesPress,
+            }),
+            'storage',
+          )
+        : null,
+    [
+      measurement,
+      t,
+      offlineEnabled,
+      hasReclaimable,
+      cachedImages,
+      rows,
+      removingScopeKey,
+      isRemovingAll,
+      isCompacting,
+      isClearingCache,
+      handleRemoveBoard,
+      handleRemoveAllPress,
+      handleCompactPress,
+      handleClearCachedImagesPress,
+    ],
+  );
+
+  // The full-page states sit on the same grouped ground the form draws, so
+  // nothing flashes when the measurement lands and the form takes over.
+  const pageBackground = { backgroundColor: systemColors.groupedBackground };
+
   if (schemaDowngrade !== null) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, pageBackground]}>
         <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.downgradeTitle')}
@@ -328,17 +373,20 @@ export function StorageSettingsScreen() {
     );
   }
 
+  // Also spin while re-measuring over an empty cached result: a board downloaded
+  // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
+  // until the refetch lands, which reads as "your download is gone".
   if (isLoading || (isRefetching && (measurement?.boards.length ?? 0) === 0)) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, pageBackground]}>
         <ActivityIndicator size="large" />
       </View>
     );
   }
 
-  if (isError || !measurement) {
+  if (isError || !measurement || !model) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, pageBackground]}>
         <Icon name="error" size={40} color={systemColors.error} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.errorTitle')}
@@ -369,7 +417,7 @@ export function StorageSettingsScreen() {
     })
   ) {
     return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.centered, pageBackground]}>
         <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.emptyTitle')}
@@ -381,177 +429,15 @@ export function StorageSettingsScreen() {
     );
   }
 
-  return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      style={{ backgroundColor: systemColors.background }}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[4] }]}
-    >
-      <Text variant="footnote" style={[styles.intro, { color: systemColors.secondaryLabel }]}>
-        {t('mobile.settings.storage.intro')}
-      </Text>
-
-      {/* The flag is a kill switch; someone rolled back still has the gigabytes. */}
-      {!offlineEnabled ? (
-        <Text variant="footnote" style={[styles.intro, { color: systemColors.secondaryLabel }]}>
-          {t('mobile.settings.storage.offNote')}
-        </Text>
-      ) : null}
-
-      {/* The measured total sits in its own card, above its own header, so the
-          approximate per-board figures below are never read as summing into it. */}
-      <Card style={styles.card}>
-        <ListRow
-          title={t('mobile.settings.storage.totalLabel')}
-          haptic={false}
-          showSeparator={measurement.freeBytes !== null}
-          trailing={<Text variant="body">{formatStorageSize(measurement.totalBytes)}</Text>}
-        />
-        {measurement.freeBytes !== null ? (
-          <ListRow
-            title={t('mobile.settings.storage.freeLabel')}
-            haptic={false}
-            showSeparator={false}
-            trailing={
-              <Text variant="body" style={{ color: systemColors.secondaryLabel }}>
-                {formatStorageSize(measurement.freeBytes)}
-              </Text>
-            }
-          />
-        ) : null}
-      </Card>
-
-      {/* Only when a compaction hasn't landed. Rendered ABOVE the boards so the one
-          actionable thing on the screen isn't below the fold on a long list. */}
-      {hasReclaimable ? (
-        <>
-          <SectionHeader title={t('mobile.settings.storage.reservedHeader')} />
-          <Card style={styles.card}>
-            <View style={styles.reserved}>
-              <Text variant="subheadline">
-                {t('mobile.settings.storage.reservedNote', {
-                  size: formatStorageSize(measurement.reclaimableBytes),
-                })}
-              </Text>
-              <Button
-                title={t('mobile.settings.storage.compact', {
-                  size: formatStorageSize(measurement.reclaimableBytes),
-                })}
-                variant="outlined"
-                loading={isCompacting}
-                disabled={removingScopeKey !== null || isRemovingAll}
-                onPress={() => void handleCompact()}
-              />
-            </View>
-          </Card>
-        </>
-      ) : null}
-
-      {/* Board art and photos. Hidden entirely on the browser build, where there is
-          no cache directory to measure and the Cache API bounds overlays by count.
-          The Photos row is omitted (never rendered as 0 B) when expo-image's cache
-          directory isn't one we recognise — the button still works. */}
-      {cachedImages ? (
-        <>
-          <SectionHeader title={t('mobile.settings.storage.cachedImagesHeader')} />
-          <Card style={styles.card}>
-            <ListRow
-              title={t('mobile.settings.storage.cachedImagesArtLabel')}
-              haptic={false}
-              showSeparator={cachedImages.photoBytes !== null}
-              trailing={<Text variant="body">{formatStorageSize(cachedImages.artBytes)}</Text>}
-            />
-            {cachedImages.photoBytes !== null ? (
-              <ListRow
-                title={t('mobile.settings.storage.cachedImagesPhotosLabel')}
-                haptic={false}
-                showSeparator={false}
-                trailing={<Text variant="body">{formatStorageSize(cachedImages.photoBytes)}</Text>}
-              />
-            ) : null}
-          </Card>
-          <Text variant="caption1" style={[styles.note, { color: systemColors.secondaryLabel }]}>
-            {t('mobile.settings.storage.cachedImagesNote')}
-          </Text>
-          <Button
-            title={t('mobile.settings.storage.clearCachedImages')}
-            variant="outlined"
-            loading={isClearingCache}
-            disabled={removingScopeKey !== null || isRemovingAll || isCompacting}
-            onPress={() => void handleClearCachedImages()}
-            style={styles.clearCache}
-          />
-        </>
-      ) : null}
-
-      {/* Reachable with no boards left: a failed compaction is exactly the state where
-          the list is empty but there's still something to do. */}
-      {rows.length === 0 ? (
-        <Text variant="footnote" style={[styles.note, { color: systemColors.secondaryLabel }]}>
-          {t('mobile.settings.storage.emptySubtitle')}
-        </Text>
-      ) : (
-        <>
-          <SectionHeader title={t('mobile.settings.storage.boardsHeader')} />
-          <Card style={styles.card}>
-            {rows.map((row, index) => (
-              <StorageBoardRow
-                key={row.scopeKey}
-                scopeKey={row.scopeKey}
-                title={row.title}
-                subtitle={row.subtitle}
-                caption={row.caption}
-                statusLabel={row.statusLabel}
-                removeLabel={t('mobile.settings.storage.remove')}
-                removeAccessibilityLabel={t('mobile.settings.storage.removeAria', { name: row.title })}
-                isRemoving={removingScopeKey === row.scopeKey}
-                isDisabled={isBusy}
-                showSeparator={index < rows.length - 1}
-                onRemove={handleRemove}
-              />
-            ))}
-          </Card>
-
-          <Text variant="caption1" style={[styles.note, { color: systemColors.secondaryLabel }]}>
-            {t('mobile.settings.storage.estimateNote')}
-          </Text>
-
-          <Button
-            title={t('mobile.settings.storage.removeAll')}
-            variant="text"
-            role="destructive"
-            loading={isRemovingAll}
-            disabled={removingScopeKey !== null || isCompacting}
-            onPress={() => void handleRemoveAll()}
-            style={styles.removeAll}
-          />
-        </>
-      )}
-    </ScrollView>
-  );
+  return <MoreForm model={model} />;
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingTop: spacing[4],
-  },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing[8],
-  },
-  intro: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-  },
-  card: {
-    marginHorizontal: spacing[4],
-    borderRadius: borderRadius.lg,
-  },
-  note: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
   },
   stateTitle: {
     marginTop: spacing[3],
@@ -564,18 +450,5 @@ const styles = StyleSheet.create({
   },
   stateButton: {
     marginTop: spacing[4],
-  },
-  removeAll: {
-    marginTop: spacing[4],
-    marginHorizontal: spacing[4],
-  },
-  clearCache: {
-    marginTop: spacing[3],
-    marginBottom: spacing[2],
-    marginHorizontal: spacing[4],
-  },
-  reserved: {
-    padding: spacing[4],
-    gap: spacing[3],
   },
 });

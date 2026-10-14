@@ -26,18 +26,11 @@ import type { ReactNode } from 'react';
  * screen and both renderers.
  */
 export type MoreIconName =
-  | 'notifications'
-  | 'moderation'
-  | 'playlists'
-  | 'gyms'
   | 'integrations'
-  | 'watch'
   | 'boardLook'
   | 'accessibility'
   | 'storage'
   | 'translate'
-  | 'replay'
-  | 'changelog'
   | 'devServers'
   | 'otaChannel'
   | 'featureFlags'
@@ -182,6 +175,12 @@ export type MoreValueRow = {
   /** The value is being worked out; a spinner sits in the trailing slot. */
   busy?: boolean;
   onPress?: () => void;
+  /**
+   * What a tap does, read by VoiceOver and TalkBack after the label, for a row
+   * whose action the label alone doesn't say (a Storage board row removes the
+   * board). Only meaningful with `onPress`.
+   */
+  accessibilityHint?: string;
 };
 
 /**

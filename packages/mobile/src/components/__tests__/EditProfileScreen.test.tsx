@@ -14,6 +14,10 @@ const resizeMock = vi.hoisted(() => vi.fn());
 const renderAsyncMock = vi.hoisted(() => vi.fn());
 const saveAsyncMock = vi.hoisted(() => vi.fn());
 const releaseMock = vi.hoisted(() => vi.fn());
+// The latest top-bar action the screen asked for: Save lives in the header now.
+const headerActions = vi.hoisted(() => ({
+  trailing: null as null | { label: string; onPress: () => void; disabled?: boolean; loading?: boolean },
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -49,6 +53,16 @@ vi.mock('../../providers/theme-provider', () => ({
       tertiaryLabel: '#999999',
     },
   }),
+}));
+
+vi.mock('../../hooks/use-header-actions', () => ({
+  useHeaderActions: ({ trailing }: { trailing: typeof headerActions.trailing }) => {
+    headerActions.trailing = trailing;
+  },
+}));
+
+vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 
 vi.mock('../../providers/toast-provider', () => ({
@@ -119,7 +133,13 @@ vi.mock('../Text', () => ({
 
 import { EditProfileScreen } from '../EditProfileScreen';
 
+function saveAction() {
+  if (!headerActions.trailing) throw new Error('no top-bar Save');
+  return headerActions.trailing;
+}
+
 beforeEach(() => {
+  headerActions.trailing = null;
   routerBackMock.mockClear();
   showToastMock.mockClear();
   mutateAsyncMock.mockReset();
@@ -154,6 +174,30 @@ beforeEach(() => {
 });
 
 describe('EditProfileScreen', () => {
+  it('saves from a top-bar check that stays grey until something changed', () => {
+    render(createElement(EditProfileScreen));
+
+    expect(saveAction()).toMatchObject({ label: 'profile.save', disabled: true, loading: false });
+    expect(screen.queryByRole('button', { name: 'profile.save' })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: 'Alex' } });
+    expect(saveAction().disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: '   ' } });
+    expect(saveAction().disabled).toBe(true);
+  });
+
+  it('saves the typed name and goes back', async () => {
+    render(createElement(EditProfileScreen));
+
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: ' Alex ' } });
+    saveAction().onPress();
+
+    await waitFor(() => expect(routerBackMock).toHaveBeenCalledOnce());
+    expect(mutateAsyncMock).toHaveBeenCalledWith({ displayName: 'Alex' });
+    expect(uploadAvatarMock).not.toHaveBeenCalled();
+  });
+
   it('uploads the picked avatar and saves the exact returned versioned URL', async () => {
     render(createElement(EditProfileScreen));
 
@@ -163,7 +207,8 @@ describe('EditProfileScreen', () => {
       expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'profile.save' }));
+    expect(saveAction().disabled).toBe(false);
+    saveAction().onPress();
 
     await waitFor(() => {
       expect(uploadAvatarMock).toHaveBeenCalledWith(

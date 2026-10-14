@@ -6,11 +6,13 @@ import * as ImagePicker from 'expo-image-picker';
 import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
+import { useHeaderActions } from '../hooks/use-header-actions';
+import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
 import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
 import { compressPickedImage } from '../lib/image-compression';
 import { reportError } from '../lib/error-reporting';
-import { spacing } from '../theme/tokens';
+import { borderRadius, spacing } from '../theme/tokens';
 import { Avatar } from './Avatar';
 import { AuthTextInput } from './AuthTextInput';
 import { Button } from './Button';
@@ -28,6 +30,7 @@ export function EditProfileScreen() {
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
+  const { scrollBottomPadding } = useBottomChromeMetrics();
 
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
@@ -58,7 +61,10 @@ export function EditProfileScreen() {
   const nameTooLong = trimmedName.length > DISPLAY_NAME_MAX;
   const previewUri = pickedAvatar?.uri ?? profile?.avatarUrl;
   const avatarName = trimmedName || profile?.email || null;
-  const hasChanges = pickedAvatar != null || trimmedName.length > 0;
+  // Dirty means different from what is saved: a name typed back to the saved one
+  // has nothing to save, and the ✓ stays grey.
+  const savedName = (profile?.displayName ?? '').trim();
+  const hasChanges = pickedAvatar != null || (trimmedName.length > 0 && trimmedName !== savedName);
   const canSave = !isSaving && !nameTooLong && hasChanges && !!profile?.id;
 
   const handlePickAvatar = async () => {
@@ -131,16 +137,28 @@ export function EditProfileScreen() {
     }
   };
 
+  // Save is the top-bar ✓, never a button at the foot of the form: back is cancel.
+  useHeaderActions({
+    trailing: {
+      kind: 'confirm',
+      label: t('profile.save'),
+      onPress: () => {
+        void handleSave();
+      },
+      disabled: !canSave,
+      loading: isSaving,
+      prominent: true,
+    },
+    clearOnUnmount: true,
+  });
+
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: systemColors.groupedBackground }}
+      contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] }]}
       keyboardShouldPersistTaps="handled"
     >
-      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.subtitle}>
-        {t('profile.subtitle')}
-      </Text>
-
       <View style={styles.avatarBlock}>
         <Avatar uri={previewUri} name={avatarName} size={96} />
         <Button
@@ -157,7 +175,7 @@ export function EditProfileScreen() {
         </Text>
       </View>
 
-      <View style={styles.form}>
+      <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
         <AuthTextInput
           label={t('profile.displayName.label')}
           value={displayName}
@@ -179,18 +197,6 @@ export function EditProfileScreen() {
           autoCapitalize="none"
         />
       </View>
-
-      <View style={styles.actions}>
-        <Button
-          title={t('profile.save')}
-          variant="filled"
-          onPress={() => {
-            void handleSave();
-          }}
-          disabled={!canSave}
-          loading={isSaving}
-        />
-      </View>
     </ScrollView>
   );
 }
@@ -202,28 +208,20 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexGrow: 1,
     paddingTop: spacing[4],
-    paddingBottom: spacing[8],
-  },
-  subtitle: {
-    paddingHorizontal: spacing[4],
-    textAlign: 'center',
   },
   avatarBlock: {
     alignItems: 'center',
     gap: spacing[3],
-    marginTop: spacing[5],
     paddingHorizontal: spacing[4],
   },
   avatarHint: {
     textAlign: 'center',
   },
-  form: {
+  card: {
     marginTop: spacing[6],
-    paddingHorizontal: spacing[4],
+    marginHorizontal: spacing[4],
+    padding: spacing[4],
     gap: spacing[4],
-  },
-  actions: {
-    marginTop: spacing[6],
-    paddingHorizontal: spacing[4],
+    borderRadius: borderRadius.lg,
   },
 });

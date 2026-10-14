@@ -32,23 +32,16 @@ import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './More
 // through the app's MDI font). Minimal-functional: each glyph reads sensibly for
 // its row; exact parity with the bundled Android vector set is a Phase-1 item.
 const MORE_ICON: Record<MoreIconName, string> = {
-  notifications: 'bell-outline',
-  playlists: 'playlist-music',
-  gyms: 'office-building',
   integrations: 'link-variant',
-  watch: 'watch',
   boardLook: 'tune',
   accessibility: 'human',
   storage: 'database-outline',
   translate: 'translate',
-  replay: 'replay',
-  changelog: 'star-four-points',
   devServers: 'server',
   otaChannel: 'cloud-download-outline',
   featureFlags: 'flag-outline',
   branchSwitcher: 'source-branch',
   editProfile: 'account-edit-outline',
-  moderation: 'gavel',
   privacy: 'lock-outline',
   account: 'account-circle-outline',
   offline: 'cloud-download-outline',
@@ -132,7 +125,11 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           key={row.key}
           title={row.label}
           description={row.subtitle}
+          // A value row's subtitle can be several facts (a stored board's size,
+          // config and last sync), so don't clip it at Paper's default 2 lines.
+          descriptionNumberOfLines={4}
           onPress={row.onPress}
+          accessibilityHint={row.accessibilityHint}
           aria-busy={row.busy ?? false}
           right={() => (
             <View style={styles.trailing}>

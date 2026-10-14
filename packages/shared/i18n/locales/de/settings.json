@@ -44,7 +44,8 @@
     "exportSynced": "Synchronisierte Daten exportieren",
     "waitForSync": "Auf Synchronisierung warten",
     "fileExpired": "Diese Datei ist abgelaufen. Aktualisiere, um nach einem neuen Export zu sehen.",
-    "formatUnavailable": "Dieses Format ist für den aktuellen Export nicht verfügbar."
+    "formatUnavailable": "Dieses Format ist für den aktuellen Export nicht verfügbar.",
+    "checking": "Export dieser Woche wird geprüft…"
   },
   "metadata": {
     "settings": {
@@ -57,7 +58,6 @@
     "profileError": "Profil konnte nicht geladen werden"
   },
   "profile": {
-    "subtitle": "Leg fest, wie du auf Boardsesh erscheinst",
     "editAction": "Profil bearbeiten",
     "avatar": {
       "upload": "Hochladen",
@@ -97,7 +97,6 @@
       "removeSetterName": "Meinen Namen als Routenbauer*in von veröffentlichten Bouldern entfernen",
       "confirmInstruction": "Tippe <strong>DELETE</strong> zum Bestätigen.",
       "confirmPlaceholder": "DELETE",
-      "cancel": "Abbrechen",
       "confirm": "Mein Konto löschen"
     },
     "error": "Konto konnte nicht gelöscht werden. Versuch es nochmal."
@@ -553,25 +552,26 @@
       "connectFailed": "Verbindung zu Strava fehlgeschlagen",
       "disconnected": "Strava getrennt",
       "disconnectFailed": "Strava ließ sich nicht trennen. Versuch es nochmal."
+    },
+    "garmin": {
+      "title": "Garmin"
     }
   },
   "watchPairing": {
     "title": "Garmin-Uhr koppeln",
-    "subtitle": "Steuer deine Session vom Handgelenk",
     "description": "Starte die Boardsesh-Aktivität auf deiner Garmin und tipp dann diesen Code ein, um die Uhr mit deinem Konto zu verbinden.",
     "generate": "Kopplungscode holen",
     "regenerate": "Neuer Code",
     "codeInstruction": "Gib diesen Code auf deiner Uhr ein",
-    "expiresIn": "Läuft ab in {{seconds}}s",
+    "expiresInLabel": "Läuft ab in",
+    "secondsLeft": "{{seconds}}s",
     "expired": "Code abgelaufen — hol dir einen neuen",
     "generating": "Code kommt…",
     "error": "Kein Code bekommen. Versuch es nochmal."
   },
   "privacy": {
     "title": "Privatsphäre",
-    "intro": "Deine Einträge helfen weiterhin bei Bewertungen und im Board-Verlauf. Du entscheidest, wer erkennt, dass sie von dir stammen.",
     "accountAudience": "Wer kann deine Aktivität sehen?",
-    "publicAccount": "Öffentliches Konto",
     "privateAccount": "Privates Konto",
     "privateExplanation": "Private Konten teilen Aktivitäten mit bestätigten Followern. Das schützt auch frühere Aktivitäten. Bisherige Follower behalten Zugriff, bis du sie entfernst.",
     "sessionDefault": "Zielgruppe neuer Sessions",
@@ -582,15 +582,29 @@
     "offline": "Verbinde dich, um die Änderungen zu speichern. Deine gespeicherten Einstellungen bleiben bestehen.",
     "saveFailed": "Speichern fehlgeschlagen. Deine gespeicherten Einstellungen bleiben bestehen. Verbinde dich und versuche es erneut.",
     "saved": "Privatsphäre gespeichert",
-    "save": "Privatsphäre speichern",
     "requests": "Follow-Anfragen",
     "followers": "Follower",
     "approve": "Bestätigen",
     "decline": "Ablehnen",
     "removeFollower": "Follower entfernen",
     "climber": "Kletterer*in",
-    "loadFailed": "Deine Gruppe konnte nicht geladen werden. Versuche es mit Verbindung erneut.",
     "accountControlsLater": "Kontosichtbarkeit, Standard-Zielgruppe für Sessions und Follow-Anfragen kommen mit einem späteren Update.",
+    "loadingSettings": "Deine Privatsphäre-Einstellungen werden geladen",
+    "loadSettingsFailed": "Deine Privatsphäre-Einstellungen konnten nicht geladen werden.",
+    "sessionDefaultFooter": "Gilt für Sessions, die du ab jetzt startest. Bereits gestartete Sessions behalten ihre Zielgruppe.",
+    "makeAccountPublicTitle": "Dein Konto öffentlich machen?",
+    "makeAccountPublicMessage": "Alle sehen deine Aktivität, auch Begehungen, die du schon eingetragen hast.",
+    "makeAccountPublicSessionsNote": "Neue Sessions sind standardmäßig öffentlich.",
+    "yourData": "Deine Daten",
+    "policy": "Datenschutzerklärung",
+    "remove": "Entfernen",
+    "approveNamed": "{{name}} bestätigen",
+    "declineNamed": "{{name}} ablehnen",
+    "removeNamed": "{{name}} entfernen",
+    "removeFollowerTitle": "{{name}} entfernen?",
+    "removeFollowerMessage": "Diese Person sieht die Aktivität, die du mit bestätigten Followern teilst, nicht mehr.",
+    "noRequests": "Niemand wartet darauf, dir zu folgen. Neue Anfragen erscheinen hier.",
+    "noFollowers": "Noch keine Follower. Deine Crew erscheint hier, sobald sie dir folgt.",
     "cancel": "Abbrechen",
     "publishPublicTitle": "Öffentlich machen?",
     "publishPublicMessage": "Alle können diesen Beitrag und deinen Namen sehen, auch bei einem privaten Konto. Die Berechtigungen der Session oder des Boards gelten weiterhin.",

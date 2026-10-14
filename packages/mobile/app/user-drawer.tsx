@@ -19,7 +19,7 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
-import { useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
+import { useClimbModerationEnabled, useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useQaMenu } from '../src/lib/qa/use-qa-menu';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
@@ -67,6 +67,8 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // the card names a board, so someone who has never picked one would carry the
   // pill forever.
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
+  // Kill switch for the whole community-moderation surface. Off hides the way in.
+  const climbModerationEnabled = useClimbModerationEnabled();
   const { data: activeBoard } = useActiveBoard();
   const spotlightReachable = offlineEngineEnabled && !!activeBoard;
   const [changelogUnseen, setChangelogUnseen] = useState(false);
@@ -88,6 +90,8 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     navigateToSettings,
     navigateToEditProfile,
     navigateToPlaylists,
+    navigateToMyGyms,
+    navigateToModeration,
     navigateToChangelog,
     navigateToAbout,
     openDiscord,
@@ -249,6 +253,23 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
           title={t('userDrawer.myPlaylists')}
           onPress={() => close(() => navigateToPlaylists())}
         />
+        {/* The gyms you run. Signed in only: the list is scoped to the caller. */}
+        {isAuthenticated ? (
+          <DrawerRow
+            icon="gym"
+            title={t('boards:mobile.myGyms.moreRowTitle')}
+            onPress={() => close(() => navigateToMyGyms())}
+          />
+        ) : null}
+        {/* Not gated on sign-in: anyone can read what the crew is deciding, and
+                the vote buttons handle the signed-out case themselves. */}
+        {climbModerationEnabled ? (
+          <DrawerRow
+            icon="moderation"
+            title={t('climbs:mobile.moderation.title')}
+            onPress={() => close(() => navigateToModeration())}
+          />
+        ) : null}
         {/* No subtitle: drawer rows are single-line menu entries (Settings,
                 About, …); the "Recent updates and fixes" line lives on the
                 changelog screen itself. The "New" pill carries the unseen cue. */}

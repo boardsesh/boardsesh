@@ -44,7 +44,8 @@
     "exportSynced": "Exportar datos sincronizados",
     "waitForSync": "Esperar a la sincronización",
     "fileExpired": "Este archivo ha caducado. Actualiza para comprobar si hay una exportación nueva.",
-    "formatUnavailable": "Este formato no está disponible para la exportación actual."
+    "formatUnavailable": "Este formato no está disponible para la exportación actual.",
+    "checking": "Comprobando la exportación de esta semana…"
   },
   "metadata": {
     "settings": {
@@ -57,7 +58,6 @@
     "profileError": "No se pudo cargar el perfil"
   },
   "profile": {
-    "subtitle": "Personaliza cómo apareces en Boardsesh",
     "editAction": "Editar perfil",
     "avatar": {
       "upload": "Subir",
@@ -97,7 +97,6 @@
       "removeSetterName": "Quitar mi nombre de aperturista de las vías publicadas",
       "confirmInstruction": "Escribe <strong>DELETE</strong> para confirmar.",
       "confirmPlaceholder": "DELETE",
-      "cancel": "Cancelar",
       "confirm": "Eliminar mi cuenta"
     },
     "error": "No se pudo eliminar la cuenta. Inténtalo de nuevo."
@@ -553,25 +552,26 @@
       "connectFailed": "No se pudo conectar con Strava",
       "disconnected": "Strava desconectado",
       "disconnectFailed": "No se pudo desconectar Strava. Inténtalo de nuevo."
+    },
+    "garmin": {
+      "title": "Garmin"
     }
   },
   "watchPairing": {
     "title": "Vincula un reloj Garmin",
-    "subtitle": "Controla la sesión desde la muñeca",
     "description": "Inicia la actividad de Boardsesh en tu Garmin y escribe este código para vincular el reloj a tu cuenta.",
     "generate": "Obtener un código",
     "regenerate": "Código nuevo",
     "codeInstruction": "Escribe este código en tu reloj",
-    "expiresIn": "Caduca en {{seconds}} s",
+    "expiresInLabel": "Caduca en",
+    "secondsLeft": "{{seconds}}s",
     "expired": "Código caducado: obtén uno nuevo",
     "generating": "Obteniendo un código…",
     "error": "No se pudo obtener el código. Inténtalo de nuevo."
   },
   "privacy": {
     "title": "Privacidad",
-    "intro": "Tus registros siguen ayudando a las cotaciones y al historial del plafón. Tú decides quién puede saber que son tuyos.",
     "accountAudience": "¿Quién puede ver tu actividad?",
-    "publicAccount": "Cuenta pública",
     "privateAccount": "Cuenta privada",
     "privateExplanation": "Las cuentas privadas comparten su actividad con seguidores aprobados. También se protege la actividad anterior. Tus seguidores actuales conservan el acceso hasta que los elimines.",
     "sessionDefault": "Público de las nuevas sesiones",
@@ -582,15 +582,29 @@
     "offline": "Conéctate para guardar los cambios de privacidad. Tus ajustes guardados no han cambiado.",
     "saveFailed": "No se pudo guardar. Tus ajustes guardados no han cambiado. Conéctate e inténtalo de nuevo.",
     "saved": "Ajustes de privacidad guardados",
-    "save": "Guardar privacidad",
     "requests": "Solicitudes de seguimiento",
     "followers": "Seguidores",
     "approve": "Aprobar",
     "decline": "Rechazar",
     "removeFollower": "Eliminar seguidor",
     "climber": "Escalador",
-    "loadFailed": "No se pudo cargar tu grupo. Inténtalo cuando tengas conexión.",
     "accountControlsLater": "La visibilidad de la cuenta, la audiencia por defecto de tus sesiones y las solicitudes de seguimiento llegarán en una próxima actualización.",
+    "loadingSettings": "Cargando tus ajustes de privacidad",
+    "loadSettingsFailed": "No se pudieron cargar tus ajustes de privacidad.",
+    "sessionDefaultFooter": "Se aplica a las sesiones que empieces a partir de ahora. Las sesiones ya iniciadas mantienen su público.",
+    "makeAccountPublicTitle": "¿Hacer pública tu cuenta?",
+    "makeAccountPublicMessage": "Cualquiera podrá ver tu actividad, incluidos los encadenes que ya has registrado.",
+    "makeAccountPublicSessionsNote": "Las sesiones nuevas serán públicas por defecto.",
+    "yourData": "Tus datos",
+    "policy": "Política de privacidad",
+    "remove": "Eliminar",
+    "approveNamed": "Aprobar a {{name}}",
+    "declineNamed": "Rechazar a {{name}}",
+    "removeNamed": "Eliminar a {{name}}",
+    "removeFollowerTitle": "¿Eliminar a {{name}}?",
+    "removeFollowerMessage": "Dejará de ver la actividad que compartes con seguidores aprobados.",
+    "noRequests": "Nadie está esperando para seguirte. Las solicitudes nuevas aparecerán aquí.",
+    "noFollowers": "Aún no tienes seguidores. Tu grupo aparecerá aquí cuando te siga.",
     "cancel": "Cancelar",
     "publishPublicTitle": "¿Hacerlo público?",
     "publishPublicMessage": "Cualquiera podrá ver esta publicación y tu nombre, incluso si tu cuenta es privada. Se siguen aplicando los permisos de la sesión o del plafón.",

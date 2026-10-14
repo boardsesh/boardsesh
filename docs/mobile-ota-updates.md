@@ -2446,7 +2446,7 @@ Its floating edge target and light-only sheet were removed for #5287 after repor
 the sheet opening while closing climb search.
 
 Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
-user drawer, under **Previews** on the More tab, and in **What’s New**.
+user drawer, under **Previews** in Settings → Early access, and in **What’s New**.
 The What’s New row pushes a searchable PR destination with native Back navigation; the
 other shortcuts retain their existing presentation. PR lists contain compatible PR branches.
 Staging and returning to the chosen release track live in **What’s New → Update options → Release** menu.
@@ -2493,12 +2493,12 @@ reload. A fresh install reports the cleanup as run but never had an override, so
 once. The reload onto a
 fresh bundle belongs to the gate, not the cleanup.
 EAS preview builds skip this migration; their separate tester-only `BranchSwitcherScreen` remains
-available under More → Preview Build.
+available under Settings → Developer → Preview Build.
 
 The retired custom channel switcher, GraphQL GitHub proxy, preview route, and web QR page were
 removed. The Android `/preview` intent filter remains only as a compatibility ingress, so existing
 `/preview/pr-N` links still land safely on What's New, including after login; branch selection happens
-through **Test a PR preview** in What’s New, More, or the user drawer. Sentry crash tools now live at More → Development → Sentry
+through **Test a PR preview** in What’s New, Settings → Early access, or the user drawer. Sentry crash tools now live at Settings → Developer → Sentry
 Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
@@ -2523,7 +2523,7 @@ native expo-updates behaviour that unit tests model but cannot prove.
 
 After that serialization fix, pilot QA does not require enabling the flag for everyone.
 On a tester's phone, leave any PR or staging
-preview, then set **More → Feature Flags → Early updates → On**, followed by
+preview, then set **Settings → Developer → Feature Flags → Early updates → On**, followed by
 **More → What’s New → Update options → Get updates early → On**.
 The tester-only per-phone override persists across restart and wins over PostHog. After testing,
 turn Get updates early off and wait for the leave to complete before resetting the override to Default.

@@ -86,9 +86,11 @@ export function StravaCard() {
     );
   }, [confirm, disconnectIntegrationMutate, showToast, t, tCommon]);
 
+  const cardBackground = { backgroundColor: systemColors.secondaryGroupedBackground };
+
   if (isLoading && !strava) {
     return (
-      <View style={[styles.card, styles.loadingCard, { backgroundColor: systemColors.secondaryBackground }]}>
+      <View style={[styles.card, styles.loadingCard, cardBackground]}>
         <ActivityIndicator color={brandColors.primary} />
       </View>
     );
@@ -96,20 +98,22 @@ export function StravaCard() {
 
   if (!strava?.connected) {
     return (
-      <View style={[styles.card, styles.disconnectedCard, { backgroundColor: systemColors.secondaryBackground }]}>
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
+      <>
+        <View style={[styles.card, styles.paddedCard, cardBackground]}>
+          {/* TODO: replace with official "Connect with Strava" brand asset (Strava brand guidelines) */}
+          <Button
+            title={t('integrations.strava.connect')}
+            variant="filled"
+            tintColor={STRAVA_ORANGE}
+            onPress={handleConnect}
+            disabled={connecting}
+            loading={connecting}
+          />
+        </View>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
           {t('integrations.strava.autoSyncDescription')}
         </Text>
-        {/* TODO: replace with official "Connect with Strava" brand asset (Strava brand guidelines) */}
-        <Button
-          title={t('integrations.strava.connect')}
-          variant="filled"
-          tintColor={STRAVA_ORANGE}
-          onPress={handleConnect}
-          disabled={connecting}
-          loading={connecting}
-        />
-      </View>
+      </>
     );
   }
 
@@ -119,41 +123,44 @@ export function StravaCard() {
   const needsReconnect = strava.status === 'expired' || strava.status === 'revoked';
 
   return (
-    <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-      <ListRow title={accountLabel} showSeparator />
-      <SwitchRow
-        label={t('integrations.strava.autoSync')}
-        description={t('integrations.strava.autoSyncDescription')}
-        value={strava.autoSyncEnabled}
-        onValueChange={handleAutoSyncChange}
-      />
-      {needsReconnect ? (
-        <View style={styles.reconnectBlock}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.reconnectHint}>
-            {t('integrations.strava.expired')}
-          </Text>
-          <Button
-            title={t('integrations.strava.reconnect')}
-            variant="filled"
-            tintColor={STRAVA_ORANGE}
-            onPress={handleConnect}
-            disabled={connecting}
-            loading={connecting}
-          />
-        </View>
-      ) : null}
-      {/* Destructive disconnect: the repo ListRow has no destructive variant, so
-          use a text Button tinted with the brand-error colour. */}
-      <View style={styles.disconnectRow}>
+    <>
+      <View style={[styles.card, cardBackground]}>
+        <ListRow title={accountLabel} showSeparator />
+        <SwitchRow
+          label={t('integrations.strava.autoSync')}
+          value={strava.autoSyncEnabled}
+          onValueChange={handleAutoSyncChange}
+        />
+        {needsReconnect ? (
+          <View style={styles.reconnectBlock}>
+            <Button
+              title={t('integrations.strava.reconnect')}
+              variant="filled"
+              tintColor={STRAVA_ORANGE}
+              onPress={handleConnect}
+              disabled={connecting}
+              loading={connecting}
+            />
+          </View>
+        ) : null}
+      </View>
+      {/* The expiry is what the climber needs to act on, so it leads the footer. */}
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
+        {needsReconnect
+          ? `${t('integrations.strava.expired')}\n\n${t('integrations.strava.autoSyncDescription')}`
+          : t('integrations.strava.autoSyncDescription')}
+      </Text>
+      {/* Disconnect is its own row in its own card, so a destructive action never
+          shares a card with the switch it would turn off. */}
+      <View style={[styles.card, styles.disconnectCard, cardBackground]}>
         <Button
           title={t('integrations.strava.disconnect')}
           variant="text"
           role="destructive"
-          icon="delete"
           onPress={handleDisconnect}
         />
       </View>
-    </View>
+    </>
   );
 }
 
@@ -168,21 +175,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing[6],
   },
-  disconnectedCard: {
+  paddedCard: {
     padding: spacing[4],
-    gap: spacing[3],
   },
   reconnectBlock: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
-    gap: spacing[2],
   },
-  reconnectHint: {
-    paddingTop: spacing[1],
+  footer: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[2],
   },
-  disconnectRow: {
+  disconnectCard: {
+    marginTop: spacing[4],
     alignItems: 'flex-start',
     paddingHorizontal: spacing[2],
-    paddingBottom: spacing[2],
   },
 });

@@ -11,6 +11,13 @@ type ListRowProps = {
   subtitle?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
+  /**
+   * Where `trailing` sits. `'end'` (the default) is beside the title, on one
+   * line that never wraps. `'below'` gives it its own full-width line under the
+   * title, for actions that must stay reachable when long labels (German) or
+   * large text sizes would otherwise squeeze the title away and clip a button.
+   */
+  trailingPlacement?: 'end' | 'below';
   showChevron?: boolean;
   onPress?: () => void;
   haptic?: boolean;
@@ -30,6 +37,7 @@ export function ListRow({
   subtitle,
   leading,
   trailing,
+  trailingPlacement = 'end',
   showChevron = false,
   onPress,
   haptic = true,
@@ -61,8 +69,9 @@ export function ListRow({
               {subtitle}
             </Text>
           )}
+          {trailing && trailingPlacement === 'below' ? <View style={styles.trailingBelow}>{trailing}</View> : null}
         </View>
-        {trailing && <View style={styles.trailing}>{trailing}</View>}
+        {trailing && trailingPlacement === 'end' ? <View style={styles.trailing}>{trailing}</View> : null}
         {showChevron && (
           <View style={styles.chevron}>
             <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
@@ -127,6 +136,9 @@ const styles = StyleSheet.create({
   },
   trailing: {
     marginStart: 8,
+  },
+  trailingBelow: {
+    marginTop: 8,
   },
   chevron: {
     marginStart: 4,

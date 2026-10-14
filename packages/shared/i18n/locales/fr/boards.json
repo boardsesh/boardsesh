@@ -277,7 +277,6 @@
     },
     "myGyms": {
       "moreRowTitle": "Mes salles",
-      "moreRowSubtitle": "Accède à tes salles et ajuste leurs infos",
       "screenTitle": "Mes salles",
       "loadError": "Impossible de charger tes salles. Réessaie.",
       "retry": "Réessayer",

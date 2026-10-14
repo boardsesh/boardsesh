@@ -214,6 +214,8 @@ export const iconMap = {
   // Misc
   // A gym / climbing venue — the glyph on a "you now manage this gym" row.
   gym: { ios: 'building.2', android: 'office-building' },
+  // The community moderation feed: vote on reported climbs and grade changes.
+  moderation: { ios: 'checkmark.shield', android: 'shield-check-outline' },
   star: { ios: 'star', android: 'star-outline' },
   'star.fill': { ios: 'star.fill', android: 'star' },
   crown: { ios: 'crown', android: 'crown-outline' },

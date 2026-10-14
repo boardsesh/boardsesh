@@ -1,6 +1,6 @@
 # Climbing data exports
 
-Signed-in climbers open **Settings → Export climbing data**, select a board and
+Signed-in climbers open **Settings → Privacy → Your data → Export climbing data**, select a board and
 format, then tap **Save or share** on iOS or Android to open the system share
 sheet. They can save the JSON file or send it to another app. Expo web keeps
 **Download JSON** through the browser. No linked manufacturer account is required.

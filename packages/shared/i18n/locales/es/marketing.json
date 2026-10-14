@@ -510,7 +510,7 @@
       },
       "tags": {
         "title": "Mira en qué playlists está un bloque",
-        "p1": "En Ajustes, luego Visualización, activa Mostrar etiquetas de playlist. Las filas que estén en una playlist sacan etiquetas. Tocar una etiqueta no abre la playlist."
+        "p1": "En Ajustes, luego Bloques y grados y Lista de bloques, activa Mostrar etiquetas de playlist. Las filas que estén en una playlist sacan etiquetas. Tocar una etiqueta no abre la playlist."
       },
       "next": {
         "title": "Sigue por aquí",
@@ -701,7 +701,7 @@
       "hidden": {
         "title": "Mantén pulsada la bombilla",
         "p1": "Con el plafón conectado, mantén pulsada la bombilla para estos controles, de arriba abajo.",
-        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes.",
+        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes, en Iluminación del plafón.",
         "row2": "Iluminar la presa de arriba. Solo MoonBoard.",
         "row3": "Iluminar bloques al deslizar.",
         "row4": "Iluminar bloques al tocar la lista. Apaga los dos y explorar deja de mover el muro.",
@@ -759,7 +759,7 @@
       "open": {
         "title": "Abre el menú",
         "p1": "Mantén pulsada la fila de un bloque. Se levanta en una tarjeta con Registrar un encadene, Añadir a la playlist y Compartir arriba, y el resto debajo.",
-        "p2": "¿Prefieres tocar? En Ajustes, luego Visualización, activa Mostrar botón de acciones rápidas para tener un ⋮ en cada fila de Bloques.",
+        "p2": "¿Prefieres tocar? En Ajustes, luego Bloques y grados y Lista de bloques, activa Mostrar botón de acciones rápidas para tener un ⋮ en cada fila de Bloques.",
         "shotAlt": "La tarjeta de acciones del bloque",
         "shotCaption": "Tres botones rápidos arriba, la lista completa debajo.",
         "clipAlt": "Mantener pulsada la fila de un bloque",
@@ -1072,11 +1072,11 @@
       "title": "Eliminación de cuenta",
       "intro": "Puedes borrar tu cuenta y todos los datos asociados en cualquier momento. Hay dos formas:",
       "inApp": "En la app:",
-      "inAppBody": " Toca tu avatar, abre Ajustes, baja del todo y toca Eliminar Cuenta. Te pediremos confirmar antes de borrar nada.",
+      "inAppBody": " Toca tu avatar, abre Ajustes, entra en Cuenta y toca Eliminar cuenta. Te pediremos confirmar antes de borrar nada.",
       "onWeb": "En la web:",
       "onWebBody": " Inicia sesión en ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " y abre Ajustes desde el menú de tu avatar para encontrar el mismo botón Eliminar Cuenta.",
+      "onWebBodyEnd": " y abre Ajustes y después Cuenta desde el menú de tu avatar para encontrar el mismo botón Eliminar cuenta.",
       "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
     },
     "children": {
@@ -1099,7 +1099,7 @@
     "choices": {
       "title": "Cookies y opciones de privacidad",
       "storageBody": "El almacenamiento necesario incluye las cookies de inicio de sesión de NextAuth, tu idioma (boardsesh-locale), las preferencias del dispositivo y la cookie boardsesh-consent. La cookie de consentimiento dura un año y se comparte entre boardsesh.com y app.boardsesh.com. Fuera de las regiones donde preguntamos, la web la configura con la analítica por defecto en tu primera visita. Cuando la analítica está activada (porque la permitiste, o por defecto fuera de las regiones donde preguntamos), PostHog guarda identificadores y eventos (ph_* en la web y almacenamiento del SDK en la app). Rechazar o retirar el permiso elimina los identificadores de analítica y detiene la analítica opcional, las grabaciones y los eventos de atribución de instalaciones. Los diagnósticos básicos de errores y rendimiento en nuestros servidores siguen activos. Las opciones de funciones siguen usando un cliente en memoria; con sesión iniciada pueden usar tu identificador de cuenta.",
-      "changeBody": "Usa Opciones de privacidad en el pie de la web o Analítica en Ajustes para cambiar tu respuesta. Guardamos tu decisión en el dispositivo y, con sesión iniciada, en tu cuenta. Donde la analítica está activada por defecto, ese valor se queda en el dispositivo y nunca se guarda en tu cuenta como consentimiento. Un rechazo en la cuenta prevalece sobre los permisos del dispositivo; un permiso en la cuenta se aplica a dispositivos que aún no han respondido. Conservamos el historial de decisiones como prueba del consentimiento hasta que eliminas la cuenta. Los eventos anónimos y efímeros del estado de las actualizaciones y de las pantallas de los rocódromos siguen activos para mantener la fiabilidad del servicio."
+      "changeBody": "Usa Opciones de privacidad en el pie de la web o Analítica en Ajustes → Privacidad para cambiar tu respuesta. Guardamos tu decisión en el dispositivo y, con sesión iniciada, en tu cuenta. Donde la analítica está activada por defecto, ese valor se queda en el dispositivo y nunca se guarda en tu cuenta como consentimiento. Un rechazo en la cuenta prevalece sobre los permisos del dispositivo; un permiso en la cuenta se aplica a dispositivos que aún no han respondido. Conservamos el historial de decisiones como prueba del consentimiento hasta que eliminas la cuenta. Los eventos anónimos y efímeros del estado de las actualizaciones y de las pantallas de los rocódromos siguen activos para mantener la fiabilidad del servicio."
     }
   },
   "preview": {
