@@ -46,6 +46,9 @@ The current Kilter/default crew scenes use Kilter
 Homewall 10×12 Full Ride: layout 8, size 25, sets 26/27/28/29, at 35°.
 Their queue continues from **Lightest Pair of Shorts** to **Guessing Games**.
 The default Kilter Original configuration contains a different climb catalogue.
+The Tension capture uses the saved High Point Climbing Orlando Tension board:
+layout 10, size 6, sets 12/13, at 40°. Its fresh private queue continues from
+**Masquerade** to **Putty**; the native card retains its actual grade formatting.
 
 ## Regenerate locally
 

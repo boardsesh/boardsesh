@@ -244,6 +244,140 @@
         "appLocaleVerified": true,
         "nextNavigationVerified": true
       }
+    },
+    "tension/en-US": {
+      "file": "tension-en-US-notification-center.png",
+      "sha256": "5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03",
+      "sourcePngSha256": "5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03",
+      "boardFamily": "tension",
+      "appLocale": "en-US",
+      "widgetLocale": "en",
+      "captureSurface": "notification-center",
+      "device": "iPhone13Pro",
+      "sourceBuild": "TestFlight2.6.0(18)",
+      "appSourceCommit": null,
+      "capturedAt": "2026-10-15T01:11:56.263971+00:00",
+      "nativePixels": {
+        "width": 1170,
+        "height": 2532
+      },
+      "screenPoints": {
+        "width": 390,
+        "height": 844
+      },
+      "cropRect": {
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
+      },
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1716,
+          "width": 1110,
+          "height": 435
+        }
+      },
+      "content": {
+        "climbName": "Masquerade",
+        "grade": "6a/V3",
+        "currentIndex": 1,
+        "totalClimbs": 2,
+        "nextEnabled": true
+      },
+      "controller": {
+        "connection": "real-ble",
+        "presentedBoardFamily": "kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Tension Next received Putty LED payload after serial mismatch was accepted",
+        "physicalWallLightingVerified": false,
+        "compatibility": {
+          "protocol": "aurora-uart",
+          "targetBoardFamily": "tension",
+          "serialMismatchAccepted": true,
+          "verification": "native-next-and-received-led-payload"
+        }
+      },
+      "review": {
+        "reviewedAt": "2026-10-15T01:15:13.921008+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
+        "nativePixelsUnmodified": true,
+        "unrelatedNotificationsExcluded": true,
+        "appLocaleVerified": true,
+        "nextNavigationVerified": true
+      }
+    },
+    "tension/es": {
+      "file": "tension-es-notification-center.png",
+      "sha256": "cb8b07a6b1258db12893ff655cf74fbea976a8717de6ac9a88cec4c32d6b1f56",
+      "sourcePngSha256": "cb8b07a6b1258db12893ff655cf74fbea976a8717de6ac9a88cec4c32d6b1f56",
+      "boardFamily": "tension",
+      "appLocale": "es",
+      "widgetLocale": "en",
+      "captureSurface": "notification-center",
+      "device": "iPhone13Pro",
+      "sourceBuild": "TestFlight2.6.0(18)",
+      "appSourceCommit": null,
+      "capturedAt": "2026-10-15T01:19:14.080992+00:00",
+      "nativePixels": {
+        "width": 1170,
+        "height": 2532
+      },
+      "screenPoints": {
+        "width": 390,
+        "height": 844
+      },
+      "cropRect": {
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
+      },
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1716,
+          "width": 1110,
+          "height": 435
+        }
+      },
+      "content": {
+        "climbName": "Masquerade",
+        "grade": "V3",
+        "currentIndex": 1,
+        "totalClimbs": 2,
+        "nextEnabled": true
+      },
+      "controller": {
+        "connection": "real-ble",
+        "presentedBoardFamily": "kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Tension Next received Putty LED payload after serial mismatch was accepted",
+        "physicalWallLightingVerified": false,
+        "compatibility": {
+          "protocol": "aurora-uart",
+          "targetBoardFamily": "tension",
+          "serialMismatchAccepted": true,
+          "verification": "native-next-and-received-led-payload"
+        }
+      },
+      "review": {
+        "reviewedAt": "2026-10-15T01:22:19.352198+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
+        "nativePixelsUnmodified": true,
+        "unrelatedNotificationsExcluded": true,
+        "appLocaleVerified": true,
+        "nextNavigationVerified": true
+      }
     }
   }
 }

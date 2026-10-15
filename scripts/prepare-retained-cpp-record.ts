@@ -21,7 +21,8 @@ import {
   type RetainedRetryHistory,
 } from './lib/cpp-retained-history';
 import { extractArtifactZip } from './mobile-ota-stable-artifacts';
-import { findOffenders } from './assert-screenshot-dimensions';
+import { findOffenders, readPngDimensions } from './assert-screenshot-dimensions';
+import { loadLiveActivityFixture, validateLiveActivityFixture } from './lib/screenshot-live-activity';
 import { DEFAULT_MIN_BYTES } from './assert-screenshot-content';
 import { resolveCppDetailReads } from './lib/cpp-detail-coverage';
 import { assertCppNegativeFixtureFiles, readCppBackgroundFile } from './lib/cpp-native-background-coverage';
@@ -493,6 +494,29 @@ export function verifyRetainedCppNative(
         findOffenders(device, [{ name: recipe.output, buffer: framed }]).length
       )
         return fail();
+      if (recipe.liveActivity) {
+        const native = loadLiveActivityFixture(recipe.liveActivity.boardFamily, 'en-US');
+        const activity = metadata.liveActivity;
+        const canvas = readPngDimensions(framed);
+        if (
+          !object(activity) ||
+          activity.manifestSha256 !== native.manifestSha256 ||
+          !object(activity.outputCanvas) ||
+          activity.outputCanvas.width !== canvas.width ||
+          activity.outputCanvas.height !== canvas.height ||
+          metadata.rawSha256 !== native.provenance.sha256 ||
+          metadata.rawBytes !== native.pixels.length ||
+          metadata.sources !== undefined
+        )
+          return fail();
+        const presentedFixture = validateLiveActivityFixture(
+          activity.fixture,
+          recipe.liveActivity.boardFamily,
+          'en-US',
+        );
+        if (canonicalJson(presentedFixture) !== canonicalJson(native.provenance)) return fail();
+        continue;
+      }
       const sources = recipe.sources.length > 1 ? metadata.sources : { [recipe.sources[0]]: metadata };
       if (!object(sources) || canonicalJson(Object.keys(sources).sort()) !== canonicalJson([...recipe.sources].sort()))
         return fail();

@@ -18,6 +18,7 @@ import { mergeFixtureSets, graphqlFixtureContentHash } from '../screenshot-fixtu
 import { CPP_MANIFEST_PATH, cppCaptureNames, readCppPage, type CppTarget } from '../lib/screenshot-cpp';
 import { graphqlFixtureKey, type GraphqlFixtureFile, type ScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
 import { ACCEPTED_SIZES } from '../assert-screenshot-dimensions';
+import { loadLiveActivityFixture } from '../lib/screenshot-live-activity';
 import {
   RETAINED_CPP_DEVICES,
   downloadRetainedCppRecord,
@@ -860,6 +861,21 @@ function writeNative(root: string, device: string, manifest: ScreenshotFixtureMa
   };
   for (const recipe of page.recipes[device.startsWith('ipad-') ? 'ipad' : 'phone']) {
     writeFileSync(join(framed, recipe.output), png);
+    if (recipe.liveActivity) {
+      const native = loadLiveActivityFixture(recipe.liveActivity.boardFamily, 'en-US');
+      const { width, height } = ACCEPTED_SIZES[device][0];
+      presentation.files[recipe.output] = {
+        rawBytes: native.pixels.length,
+        rawSha256: native.provenance.sha256,
+        framedSha256: sha256(png),
+        liveActivity: {
+          fixture: native.provenance,
+          manifestSha256: native.manifestSha256,
+          outputCanvas: { width, height },
+        },
+      };
+      continue;
+    }
     const source = { rawSha256: sha256(png), rawBytes: png.length };
     presentation.files[recipe.output] = {
       ...source,
@@ -935,6 +951,34 @@ describe('retained original source and native bytes', () => {
     for (const [artifactId, bytes] of source.archives) expect(bytes.equals(originalBytes.get(artifactId)!)).toBe(true);
     expect(source.calls.some((path) => path.endsWith('/artifacts/99/zip'))).toBe(false);
   });
+  it.each(['source hash', 'source bytes', 'fixture manifest', 'canvas', 'fixture identity', 'extra sources'])(
+    'rejects altered Live Activity %s in retained native presentations',
+    (kind) => {
+      const fixture = sample('kilter');
+      const root = directory();
+      const device = 'iphone-16-pro-max';
+      writeNative(root, device, fixture.manifest);
+      expect(() => verifyRetainedCppNative(root, device, fixture.manifest)).not.toThrow();
+      const filename = join(root, 'screenshots', 'en-US', device, 'presentation.json');
+      const presentation = JSON.parse(readFileSync(filename, 'utf8')) as {
+        files: Record<string, Record<string, unknown>>;
+      };
+      const recipe = readCppPage('kilter').recipes.phone.find((candidate) => candidate.liveActivity)!;
+      const metadata = presentation.files[recipe.output];
+      const activity = metadata.liveActivity as Record<string, unknown>;
+      if (kind === 'source hash') metadata.rawSha256 = 'f'.repeat(64);
+      if (kind === 'source bytes') metadata.rawBytes = 1;
+      if (kind === 'fixture manifest') activity.manifestSha256 = 'f'.repeat(64);
+      if (kind === 'canvas') activity.outputCanvas = { width: 1, height: 1 };
+      if (kind === 'fixture identity') {
+        const native = activity.fixture as Record<string, unknown>;
+        native.capturedAt = '2026-10-01T00:00:00Z';
+      }
+      if (kind === 'extra sources') metadata.sources = {};
+      writeFileSync(filename, JSON.stringify(presentation));
+      expect(() => verifyRetainedCppNative(root, device, fixture.manifest)).toThrow();
+    },
+  );
   it('checks original native sidecars against exact Git bytes while current selected-target gates still apply', () => {
     const source = metadata(),
       fixture = sample(),

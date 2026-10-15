@@ -410,17 +410,20 @@ warning; asking for `--target homepage` with it fails instead).
 
 ## Targets
 
-### Whole native Lock Screen endings
+### Whole native phone endings
 
 Kilter, Tension and default `store-search` cuts end with **Next climb. Outside
-of the app.** Their required `lock-screen` take is the complete physical iPhone
-13 Pro Lock Screen, identified by `presentation: "native-lock-screen"`. Preserve
+the app.** Their required `lock-screen` take is the complete physical iPhone
+13 Pro native screen, identified by `presentation: "native-lock-screen"` or
+`"native-notification-center"`, matching its actual `captureSurface`. Preserve
 its actual clock, wallpaper, notch, Live Activity and native controls. Clear
 unrelated notifications on the phone before capture; do not remove them by
 repainting footage. A Notification Center card crop cannot substitute.
 
 The renderer requires reviewed `captureFraming: "full-screen"` fixtures with
-`captureSurface: "lock-screen"` and actual locked-screen context. Recording
+the corresponding `lockScreenContext` or `notificationCenterContext`. The latter
+retains authentication as `not-established`; WDA's locked flag cannot prove it.
+Recording
 `nativeFixtureSourcePngSha256` must match that locale/family fixture's unchanged
 source PNG hash. Video dimensions must be 1170×2532, corresponding to the real
 390×844-point screen. A separate 416×870 frame fits the whole phone inside the
@@ -428,14 +431,17 @@ safe area beside the caption. It adds no camera overlay, gloss or controls from
 a newer iPhone. Other scene geometry and the hero spring entrance/exit/loop
 stay unchanged. No exterior alpha mask or Live Activity card crop is used.
 
-Supply `activity-ready` and `next-tapped` in the original native 30 fps timeline.
+Supply `activity-ready`, `next-tapped`, `next-changed` and `next-settled` in the
+30 fps timeline resampled from actual received native-frame timestamps.
 `editorialStartSeconds` is an optional edit boundary, not a native event. The
-selected beat must include at least 0.4 seconds before actual Next and 0.8 seconds
-after it before the spring exit; missing or out-of-range events stop rendering.
+six-second beat must include at least 0.4 seconds before actual Next and one
+second of sharply readable new state before the final 0.5-second loop transition;
+missing or out-of-range events stop rendering.
 Independently review the changed name, thumbnail and queue position to confirm
 that the native redraw has settled, rather than treating tap timing as proof.
-Record source timestamps, rejected partial redraws and clean-frame holds when
-converting device MJPEG samples to 30 fps. The physical TestFlight build has
+Record source timestamps and use one contiguous reviewed MJPEG range. Nearest
+timestamp resampling retains original JPEG bytes and genuine transition blur;
+do not remove interior frames or compress elapsed time. The physical TestFlight build has
 independent provenance from simulator app footage; never label it as current
 `main` when its source commit is unknown.
 
