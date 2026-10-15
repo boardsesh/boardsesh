@@ -506,4 +506,56 @@ describe('reviewed native Live Activity fixtures', () => {
     }
     expect(sourceHashes.size).toBe(4);
   });
+  it('pins four full Tension captures with honest development-controller compatibility', () => {
+    const approvedSourceHashes = {
+      'en-US': '5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03',
+      es: 'cb8b07a6b1258db12893ff655cf74fbea976a8717de6ac9a88cec4c32d6b1f56',
+      fr: 'f7b205e4d3ccac58d472ddb8223df34db6ac79ceb92b4bae09d03e26799cf913',
+      de: '66e3d5dcf2add3ffb47a80ce1f02858cf6ec1c32847cae4d572bb7cc2948364c',
+    };
+    const sourceHashes = new Set<string>();
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const loaded = loadFullScreenLiveActivityFixture('tension', locale);
+      expect(loaded.provenance).toMatchObject({
+        boardFamily: 'tension',
+        appLocale: locale,
+        widgetLocale: 'en',
+        sourceBuild: 'TestFlight2.6.0(18)',
+        appSourceCommit: null,
+        captureFraming: 'full-screen',
+        captureSurface: 'notification-center',
+        cropRect: { x: 0, y: 0, width: 1170, height: 2532 },
+        notificationCenterContext: {
+          unrelatedNotificationsDismissed: true,
+          entryFromAuthenticatedApp: true,
+          authenticationState: 'not-established',
+        },
+        content: {
+          climbName: 'Masquerade',
+          grade: locale === 'es' ? 'V3' : '6a/V3',
+          currentIndex: 1,
+          totalClimbs: 2,
+          nextEnabled: true,
+        },
+        controller: {
+          presentedBoardFamily: 'kilter',
+          physicalWallLightingVerified: false,
+          compatibility: {
+            protocol: 'aurora-uart',
+            targetBoardFamily: 'tension',
+            serialMismatchAccepted: true,
+            verification: 'native-next-and-received-led-payload',
+          },
+        },
+      });
+      expect(loaded.provenance.sha256).toBe(approvedSourceHashes[locale]);
+      expect(loaded.provenance.sourcePngSha256).toBe(approvedSourceHashes[locale]);
+      expect(nativeCaptureSha256(loaded.pixels)).toBe(approvedSourceHashes[locale]);
+      expect(loaded.provenance.extraction).toBeUndefined();
+      expect(loaded.provenance.lockScreenContext).toBeUndefined();
+      expect(loaded.provenance.notificationCenterContext).not.toHaveProperty('deviceLocked');
+      sourceHashes.add(loaded.provenance.sourcePngSha256);
+    }
+    expect(sourceHashes.size).toBe(4);
+  });
 });

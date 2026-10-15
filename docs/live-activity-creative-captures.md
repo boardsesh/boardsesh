@@ -50,6 +50,20 @@ The Tension capture uses the saved High Point Climbing Orlando Tension board:
 layout 10, size 6, sets 12/13, at 40°. Its fresh private queue continues from
 **Masquerade** to **Putty**; the native card retains its actual grade formatting.
 
+## Future recording runs: one capture per target
+
+Capture Live Activity footage and its full-phone still **once per target**, then
+reuse those genuine native pixels across localized creatives. Localize the
+surrounding copy and ordinary app scenes; do not repeat the slow physical-device
+capture for every output locale. Keep the source app/widget language recorded
+honestly and separate from the creative's output language. Never relabel a source
+capture as another app locale.
+
+This is the policy for the next recording run. The current run finishes its
+already planned separate locale takes. Before the next run, update the fixture
+selection and provenance contract to support shared source captures explicitly;
+the current renderer still requires a matching fixture for each app locale.
+
 ## Regenerate locally
 
 1. Install the supported Boardsesh TestFlight build on a connected iPhone. Use
