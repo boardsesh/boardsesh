@@ -824,6 +824,10 @@
       "saved": "Holds saved",
       "addA11y": "Add missing holds"
     },
+    "preview": {
+      "open": "Preview holds only",
+      "back": "Back to editing"
+    },
     "toast": {
       "deleted": "Hold deleted",
       "joined": "Joined 2 holds",
@@ -1155,7 +1159,7 @@
     },
     "background": {
       "title": "What should the wall show?",
-      "body": "Show the photo, just the wall, or just the holds.",
+      "body": "Swipe to compare the photo, just the wall, or just the holds.",
       "unsupported": "Only the photo is available right now. You can still finish your wall."
     }
   },

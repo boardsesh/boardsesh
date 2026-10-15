@@ -253,6 +253,10 @@ export type RegisteredSprayWall = {
 export const REGISTERED_WALL_REVALIDATE_MS = 10 * 60 * 1000;
 
 const walls = new Map<number, RegisteredSprayWall>();
+// An unpublished version is mutable: detection/editing saves holds without
+// changing its row id. Render caches must distinguish those geometry updates.
+const draftRenderRevisions = new Map<number, number>();
+let draftRenderSequence = 0;
 let removalSequence = 0;
 let registryRemovalGeneration = 0;
 const wallRemovalGenerations = new Map<number, number>();
@@ -452,10 +456,41 @@ export function registerSprayWall(
     layoutId,
     registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
   };
+  if (wall.draft) {
+    if (!previous?.draft || !sameDraftGeometry(previous, registered)) {
+      draftRenderRevisions.set(layoutId, ++draftRenderSequence);
+    }
+  } else {
+    draftRenderRevisions.delete(layoutId);
+  }
   walls.set(layoutId, registered);
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(drawnSprayHolds(registered)));
   notify();
+}
+
+function sameDraftGeometry(previous: RegisteredSprayWall, next: RegisteredSprayWall): boolean {
+  if (
+    previous.wallUuid !== next.wallUuid ||
+    previous.versionId !== next.versionId ||
+    previous.photoWidth !== next.photoWidth ||
+    previous.photoHeight !== next.photoHeight ||
+    previous.holds.length !== next.holds.length
+  )
+    return false;
+  if (previous.holds === next.holds) return true;
+  return previous.holds.every((hold, index) => {
+    const candidate = next.holds[index];
+    if (hold.id !== candidate.id || hold.cx !== candidate.cx || hold.cy !== candidate.cy || hold.r !== candidate.r) {
+      return false;
+    }
+    const outline = hold.outline ?? [];
+    const candidateOutline = candidate.outline ?? [];
+    return (
+      outline.length === candidateOutline.length &&
+      outline.every((point, pointIndex) => point === candidateOutline[pointIndex])
+    );
+  });
 }
 
 /**
@@ -662,6 +697,7 @@ export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: b
 
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
+  draftRenderRevisions.delete(layoutId);
   wallRemovalGenerations.set(layoutId, ++removalSequence);
   revokeSprayPrivacy(layoutId);
   notifyWithdrawal(layoutId);
@@ -965,7 +1001,9 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
   // byte-identical to what it was before art existed, so no overlay on disk moves.
   const art = activeSprayArt(walls.get(layoutId));
   const background = art ? `-bg${art.variant}` : '';
-  return `${sprayIdentityToken(boardName, layoutId)}${background}`;
+  const revision = draftRenderRevisions.get(layoutId);
+  const draftGeometry = revision === undefined ? '' : `-dg${revision}`;
+  return `${sprayIdentityToken(boardName, layoutId)}${draftGeometry}${background}`;
 }
 
 /**
@@ -997,6 +1035,7 @@ export function withdrawAllSprayWalls(): void {
   privacyCleanup?.();
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
+  draftRenderRevisions.clear();
   loadStates.clear();
   deferredRequests.clear();
   inFlightLoads.clear();

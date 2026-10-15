@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('react-native', () => ({
   Alert: { alert: vi.fn() },
   StyleSheet: { absoluteFill: {}, hairlineWidth: 1, create: (styles: unknown) => styles },
@@ -31,6 +31,14 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../SprayCountCrossfade', () => ({ SprayCountCrossfade: () => null }));
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => null }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
@@ -65,6 +73,9 @@ vi.mock('../SprayModeSwitcher', () => ({
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { xl: 24 } }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44 } }));
 import { SprayEditorBottomBar } from '../SprayEditorBottomBar';
+import { SprayEditorMenu } from '../SprayCountCapsule';
+
+afterEach(cleanup);
 
 type BottomBarProps = Parameters<typeof SprayEditorBottomBar>[0];
 
@@ -119,4 +130,30 @@ describe('the Undo | Redo pill', () => {
     getByLabelText('sprayEditor.bar.redo').click();
     expect(onRedo).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('the holds-only preview menu action', () => {
+  it.each([true, false])(
+    'opens from phone/tablet chrome (maybe rows: %s) after closing the menu',
+    (includeMaybeRows) => {
+      const calls: string[] = [];
+      const onStartOver = vi.fn();
+      const view = render(
+        <SprayEditorMenu
+          counts={{ on: 3, maybes: 0, off: 0, unsavedWrites: 0, unsavedFinds: 0, unsavedRemovals: 0 }}
+          showMaybes
+          canReviewMaybes
+          includeMaybeRows={includeMaybeRows}
+          onKeepMaybes={vi.fn()}
+          onToggleMaybes={vi.fn()}
+          onStartOver={onStartOver}
+          onPreviewHoldsOnly={() => calls.push('preview')}
+          onClose={() => calls.push('close')}
+        />,
+      );
+      fireEvent.click(view.getByRole('button', { name: 'sprayEditor.preview.open' }));
+      expect(calls).toEqual(['close', 'preview']);
+      expect(onStartOver).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -53,6 +53,7 @@ import { SegmentedControl } from '../SegmentedControl';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { PolygonTapOverlay } from './PolygonTapOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
+import { SprayHoldsOnlyPreview } from './SprayHoldsOnlyPreview';
 import { SelectedHoldOverlay } from './SelectedHoldOverlay';
 import { SprayPlacementPreview } from './SprayPlacementPreview';
 import { SprayResizeHandle } from './SprayResizeHandle';
@@ -411,6 +412,9 @@ export function SprayHoldEditorScreen({
    * Kept here for both so Esc can close it.
    */
   const [menuOpen, setMenuOpen] = useState(false);
+  const [holdsOnlyPreview, setHoldsOnlyPreview] = useState(false);
+  const holdsOnlyPreviewRef = useRef(holdsOnlyPreview);
+  holdsOnlyPreviewRef.current = holdsOnlyPreview;
   /**
    * The Apple Pencil squeeze palette, open at the Pencil tip (null x/y: the
    * Pencil was not hovering, so mid-screen). iPad only. See `SprayPencilPalette`.
@@ -876,7 +880,7 @@ export function SprayHoldEditorScreen({
   const committing = saveHolds.isPending || askingRemoval;
   // Nothing takes a touch until the rings have finished arriving: a tap during
   // the sweep would land on a ring that is not drawn yet.
-  const canEdit = viewerCanEdit && !committing && !celebrating && revealDone;
+  const canEdit = viewerCanEdit && !committing && !celebrating && revealDone && !holdsOnlyPreview;
   const canEditRef = useRef(canEdit);
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
@@ -1917,6 +1921,20 @@ export function SprayHoldEditorScreen({
   const handlePutDown = useCallback(() => dispatch({ type: 'SELECT', id: null }), []);
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const openHoldsOnlyPreview = useCallback(() => {
+    if (!canEditRef.current || committingRef.current) return;
+    // Close the edit gate synchronously, including any late gesture callback
+    // from an overlay that unmounts in the preview's next render.
+    holdsOnlyPreviewRef.current = true;
+    canEditRef.current = false;
+    setMenuOpen(false);
+    setPencilPalette(null);
+    setHoldsOnlyPreview(true);
+  }, []);
+  const closeHoldsOnlyPreview = useCallback(() => {
+    holdsOnlyPreviewRef.current = false;
+    setHoldsOnlyPreview(false);
+  }, []);
 
   /**
    * The inspector's Previous / Next: pick the neighbouring ring in reading order
@@ -2018,7 +2036,14 @@ export function SprayHoldEditorScreen({
   }, [homography, refuseOverCap, t]);
 
   const handlePrimary = useCallback(async () => {
-    if (!viewerCanEdit || homography == null || committingRef.current || refineRef.current.view) return;
+    if (
+      !viewerCanEdit ||
+      holdsOnlyPreviewRef.current ||
+      homography == null ||
+      committingRef.current ||
+      refineRef.current.view
+    )
+      return;
     // Ask before taking stored holds off a live wall that climbs may use. The
     // press owns the screen while the host asks (`committingRef`), so a second
     // press waits, and a declined check leaves every edit where it was.
@@ -2151,6 +2176,10 @@ export function SprayHoldEditorScreen({
 
   const shortcutRef = useRef<(id: SprayShortcutId) => void>(() => {});
   shortcutRef.current = (id) => {
+    if (holdsOnlyPreviewRef.current) {
+      if (id === 'escape') closeHoldsOnlyPreview();
+      return;
+    }
     const action = resolveSprayShortcut(id, {
       canEdit,
       tool,
@@ -2226,6 +2255,7 @@ export function SprayHoldEditorScreen({
 
   const pencilGestureRef = useRef<(gesture: NativePencilGesture) => void>(() => {});
   pencilGestureRef.current = (gesture) => {
+    if (holdsOnlyPreviewRef.current) return;
     switch (resolvePencilGesture(gesture.preferredAction, { tablet, canEdit, tool })) {
       case 'add':
         setPencilPalette(null);
@@ -2488,8 +2518,21 @@ export function SprayHoldEditorScreen({
   const hoverShown = tablet && tool === 'edit' && canEdit;
 
   const renderInTransform = useCallback(
-    (context: FilterBoardTransformContext) =>
-      wall ? (
+    (context: FilterBoardTransformContext) => {
+      if (!wall) return null;
+      if (holdsOnlyPreview) {
+        return (
+          <SprayHoldsOnlyPreview
+            holds={allEditorHolds}
+            refined={refineView}
+            boardWidth={wall.photoWidth}
+            boardHeight={wall.photoHeight}
+            renderWidth={boardRender.width}
+            renderHeight={boardRender.height}
+          />
+        );
+      }
+      return (
         <>
           {/* Between the photo and the rings: calms a busy wall so the rings read,
               and deepens while a hold is picked so the chip bar's hold stands out. */}
@@ -2591,9 +2634,11 @@ export function SprayHoldEditorScreen({
             />
           ) : null}
         </>
-      ) : null,
+      );
+    },
     [
       wall,
+      holdsOnlyPreview,
       refineView,
       refinePointsSV,
       refineMode,
@@ -2651,7 +2696,7 @@ export function SprayHoldEditorScreen({
   // `PolygonTapOverlay` will close on.
   const loupeContent = useMemo(
     () =>
-      wall && viewerCanEdit ? (
+      wall && viewerCanEdit && !holdsOnlyPreview ? (
         <>
           <Image
             source={{ uri: wall.photoUrl }}
@@ -2726,6 +2771,7 @@ export function SprayHoldEditorScreen({
     [
       wall,
       viewerCanEdit,
+      holdsOnlyPreview,
       refineView,
       refinePointsSV,
       refineMode,
@@ -2761,7 +2807,7 @@ export function SprayHoldEditorScreen({
   const renderAboveBoard = useCallback(
     (context: FilterBoardTransformContext) => {
       // Read-only: zoom and pan, and nothing that could change the wall.
-      if (!viewerCanEdit) return null;
+      if (!viewerCanEdit || holdsOnlyPreview) return null;
       // On top of whichever surface the tool uses, so its own touch-down beats
       // both that surface and the zoomed board's pan.
       const resizeHandle =
@@ -2960,6 +3006,7 @@ export function SprayHoldEditorScreen({
     },
     [
       viewerCanEdit,
+      holdsOnlyPreview,
       gestureEpoch,
       tool,
       modePicking,
@@ -3024,20 +3071,26 @@ export function SprayHoldEditorScreen({
     ],
     [t],
   );
-  const banner = bannerFor({
-    tool,
-    picking: modePicking,
-    addShape,
-    refineMode,
-    refineNotice,
-    pencilOnly: pencil.pencilOnly,
-    errorText,
-    viewerCanEdit,
-    notice: wallIsEmpty ? notice : undefined,
-    onCancel: handleCancelTool,
-    onDone: leaveAddMode,
-    t,
-  });
+  const banner = holdsOnlyPreview
+    ? {
+        message: t('sprayBackground.holdCutouts'),
+        actionLabel: t('sprayEditor.preview.back'),
+        onAction: closeHoldsOnlyPreview,
+      }
+    : bannerFor({
+        tool,
+        picking: modePicking,
+        addShape,
+        refineMode,
+        refineNotice,
+        pencilOnly: pencil.pencilOnly,
+        errorText,
+        viewerCanEdit,
+        notice: wallIsEmpty ? notice : undefined,
+        onCancel: handleCancelTool,
+        onDone: leaveAddMode,
+        t,
+      });
   const refineModeOptions = useMemo(
     () => [
       { key: 'add' as const, label: t('sprayEditor.refine.add') },
@@ -3045,22 +3098,21 @@ export function SprayHoldEditorScreen({
     ],
     [t],
   );
-  const bannerAccessory =
-    tool === 'add' ? (
-      <SegmentedControl
-        options={addShapeOptions}
-        selectedKey={addShape}
-        onSelect={handleAddShapeChange}
-        accessibilityLabel={t('sprayEditor.addShape.label')}
-      />
-    ) : tool === 'refine' && !modePicking ? (
-      <SegmentedControl
-        options={refineModeOptions}
-        selectedKey={refineMode}
-        onSelect={handleRefineModeChange}
-        accessibilityLabel={t('sprayEditor.refine.mode')}
-      />
-    ) : null;
+  const bannerAccessory = holdsOnlyPreview ? null : tool === 'add' ? (
+    <SegmentedControl
+      options={addShapeOptions}
+      selectedKey={addShape}
+      onSelect={handleAddShapeChange}
+      accessibilityLabel={t('sprayEditor.addShape.label')}
+    />
+  ) : tool === 'refine' && !modePicking ? (
+    <SegmentedControl
+      options={refineModeOptions}
+      selectedKey={refineMode}
+      onSelect={handleRefineModeChange}
+      accessibilityLabel={t('sprayEditor.refine.mode')}
+    />
+  ) : null;
   const boardShowing = !isLoading && wall != null && !isUnavailable && homography != null;
   // A hint only when nothing more urgent is on the line, the rings have finished
   // arriving, and the climber is free to act on it.
@@ -3280,6 +3332,7 @@ export function SprayHoldEditorScreen({
                 onKeepMaybes={handleKeepMaybes}
                 onToggleMaybes={handleToggleMaybes}
                 onStartOver={handleStartOver}
+                onPreviewHoldsOnly={openHoldsOnlyPreview}
                 onClose={closeMenu}
               />
             ) : null
@@ -3383,6 +3436,7 @@ export function SprayHoldEditorScreen({
                 onKeepMaybes={handleKeepMaybes}
                 onToggleMaybes={handleToggleMaybes}
                 onStartOver={handleStartOver}
+                onPreviewHoldsOnly={openHoldsOnlyPreview}
                 onClose={closeMenu}
                 style={styles.menuDown}
               />

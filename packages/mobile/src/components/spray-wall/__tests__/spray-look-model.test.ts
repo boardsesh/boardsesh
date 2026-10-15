@@ -18,8 +18,6 @@ function backgroundInput(overrides: Partial<SprayBackgroundModelInput> = {}): Sp
     previewHeight: 360,
     gate: OPEN,
     value: 'wall-crop',
-    onChange: vi.fn(),
-    saving: false,
     unavailable: false,
     ...overrides,
   };
@@ -30,61 +28,37 @@ function rowOf(rows: MoreRow[], key: string): MoreRow | undefined {
 }
 
 describe('buildSprayBackgroundModel', () => {
-  it('draws the preview as a pinned full-bleed row, then the three-way control', () => {
+  it('hosts swipeable previews in one full-bleed row without a separate selector', () => {
     const model = buildSprayBackgroundModel(backgroundInput());
-    expect(model.sections.map((section) => section.key)).toEqual(['preview', 'background']);
-    expect(model.sections[0].rows[0]).toEqual({
-      kind: 'custom',
-      key: 'backgroundPreview',
-      content: 'preview',
-      height: 360,
-      fullBleed: true,
-    });
-    const control = model.sections[1].rows[0];
-    if (control.kind !== 'segmented') throw new Error('not segmented');
-    expect(control.options.map((option) => option.key)).toEqual(['photo', 'wall-crop', 'hold-cutouts']);
-    expect(control.selectedKey).toBe('wall-crop');
-    expect(control.disabled).toBe(false);
-    expect(model.sections[1].footer).toBe('sprayBackground.note.preview');
+    expect(model.sections.map((section) => section.key)).toEqual(['preview']);
+    expect(model.sections[0].rows).toEqual([
+      {
+        kind: 'custom',
+        key: 'backgroundPreview',
+        content: 'preview',
+        height: 360,
+        fullBleed: true,
+      },
+    ]);
+    expect(model.sections[0].footer).toBe('sprayBackground.note.preview');
   });
 
   it('adds the volumes warning under Holds only', () => {
     const model = buildSprayBackgroundModel(backgroundInput({ value: 'hold-cutouts' }));
-    expect(model.sections[1].footer).toBe('sprayBackground.note.preview sprayBackground.note.volumes');
+    expect(model.sections[0].footer).toBe('sprayBackground.note.preview sprayBackground.note.volumes');
   });
 
-  it('hands on a new pick, never the current one, and nothing while saving', () => {
-    const onChange = vi.fn();
-    const pick = (input: SprayBackgroundModelInput, key: string) => {
-      const control = buildSprayBackgroundModel(input).sections[1].rows[0];
-      if (control.kind !== 'segmented') throw new Error('not segmented');
-      control.onSelect(key);
-    };
-    pick(backgroundInput({ onChange }), 'wall-crop');
-    pick(backgroundInput({ onChange }), 'sky');
-    pick(backgroundInput({ onChange, saving: true }), 'photo');
-    expect(onChange).not.toHaveBeenCalled();
-    pick(backgroundInput({ onChange }), 'hold-cutouts');
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('hold-cutouts');
-  });
-
-  it('greys the control out while the server has not answered', () => {
+  it('explains why only the photo is offered while the server has not answered', () => {
     const model = buildSprayBackgroundModel(backgroundInput({ gate: { kind: 'loading' } }));
-    const control = model.sections[1].rows[0];
-    if (control.kind !== 'segmented') throw new Error('not segmented');
-    expect(control.disabled).toBe(true);
-    // Shown as the photo until a gate lets the generated looks through.
-    expect(control.selectedKey).toBe('photo');
-    expect(model.sections[1].footer).toBe('sprayWizard.look.loading');
+    expect(model.sections[0].footer).toBe('sprayWizard.look.loading');
   });
 
   it.each([
     [{ kind: 'unsupported' } as const, 'sprayWizard.background.unsupported'],
     [{ kind: 'locked', reason: 'no-pins' } as const, 'sprayBackground.note.lockedNoPins'],
     [{ kind: 'locked', reason: 'retake' } as const, 'sprayBackground.note.lockedRetake'],
-  ])('offers no control for a photo-only gate (%o) and says why under the preview', (gate, why) => {
+  ])('explains a photo-only gate (%o)', (gate, why) => {
     const model = buildSprayBackgroundModel(backgroundInput({ gate }));
-    expect(model.sections.map((section) => section.key)).toEqual(['preview']);
     expect(model.sections[0].footer).toBe(why);
   });
 

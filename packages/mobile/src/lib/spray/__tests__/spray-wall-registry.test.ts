@@ -14,6 +14,7 @@ import {
   setSprayWallLook,
   sprayBoardRenderDefault,
   sprayCacheToken,
+  sprayIdentityToken,
   sprayGeometryKey,
   sprayWallViewerCanEdit,
   sprayWallViewerGeneration,
@@ -122,6 +123,39 @@ describe('spray wall registry', () => {
 });
 
 describe('sprayCacheToken', () => {
+  it('changes for saved draft geometry without remounting the editor identity', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), draft: true });
+    const originalRender = sprayCacheToken('spray', LAYOUT_ID);
+    const originalIdentity = sprayIdentityToken('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, { ...wall(1, [{ ...DEFAULT_HOLDS[0], cx: 250 }]), draft: true });
+    expect(sprayCacheToken('spray', LAYOUT_ID)).not.toBe(originalRender);
+    expect(sprayIdentityToken('spray', LAYOUT_ID)).toBe(originalIdentity);
+  });
+
+  it('keeps the draft render token for a refreshed URL with unchanged geometry', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), draft: true });
+    const original = sprayCacheToken('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, {
+      ...wall(
+        1,
+        DEFAULT_HOLDS.map((hold) => ({ ...hold, outline: [...hold.outline!] })),
+      ),
+      draft: true,
+      photoUrl: 'https://private.example/refreshed',
+    });
+    expect(sprayCacheToken('spray', LAYOUT_ID)).toBe(original);
+  });
+
+  it('invalidates a draft outline change even when its center and radius stay the same', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), draft: true });
+    const original = sprayCacheToken('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, {
+      ...wall(1, [{ ...DEFAULT_HOLDS[0], outline: [1, 0, 0, 0.5, -1, 0] }]),
+      draft: true,
+    });
+    expect(sprayCacheToken('spray', LAYOUT_ID)).not.toBe(original);
+  });
+
   it('is empty for every catalogue board, so no existing cache key moves', () => {
     registerSprayWall(LAYOUT_ID, wall(4));
     for (const boardName of [

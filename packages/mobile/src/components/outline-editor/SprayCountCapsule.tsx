@@ -139,6 +139,7 @@ type SprayEditorMenuProps = {
   onKeepMaybes: () => void;
   onToggleMaybes: () => void;
   onStartOver: () => void;
+  onPreviewHoldsOnly: () => void;
   /** Close the menu. Every row closes it before it acts. */
   onClose: () => void;
   style?: StyleProp<ViewStyle>;
@@ -158,6 +159,7 @@ export const SprayEditorMenu = React.memo(function SprayEditorMenu({
   onKeepMaybes,
   onToggleMaybes,
   onStartOver,
+  onPreviewHoldsOnly,
   onClose,
   style,
 }: SprayEditorMenuProps) {
@@ -179,13 +181,24 @@ export const SprayEditorMenu = React.memo(function SprayEditorMenu({
         { text: t('sprayEditor.startOver.confirm'), style: 'destructive', onPress: onStartOver },
       ]);
     };
-    return { keepMaybes, toggleMaybes, startOver };
-  }, [onClose, onKeepMaybes, onToggleMaybes, onStartOver, t]);
+    const previewHoldsOnly = () => {
+      onClose();
+      onPreviewHoldsOnly();
+    };
+    return { keepMaybes, toggleMaybes, startOver, previewHoldsOnly };
+  }, [onClose, onKeepMaybes, onToggleMaybes, onStartOver, onPreviewHoldsOnly, t]);
 
   const maybeRows = includeMaybeRows && canReviewMaybes && counts.maybes > 0;
   return (
     <View style={[styles.menu, style]}>
       <GlassSurface glassEffectStyle="regular" borderRadius={borderRadius.xl} style={StyleSheet.absoluteFill} />
+      <Button
+        title={t('sprayEditor.preview.open')}
+        variant="text"
+        over="surface"
+        onPress={actions.previewHoldsOnly}
+        testID="spray-editor-preview-holds-only"
+      />
       {maybeRows && showMaybes ? (
         <Button title={t('sprayEditor.menu.keepMaybes')} variant="text" over="surface" onPress={actions.keepMaybes} />
       ) : null}

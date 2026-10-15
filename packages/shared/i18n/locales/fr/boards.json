@@ -824,6 +824,10 @@
       "saved": "Prises enregistrées",
       "addA11y": "Ajouter les prises manquantes"
     },
+    "preview": {
+      "open": "Voir les prises seules",
+      "back": "Reprendre les retouches"
+    },
     "toast": {
       "deleted": "Prise supprimée",
       "joined": "2 prises réunies",
@@ -1155,7 +1159,7 @@
     },
     "background": {
       "title": "Que doit montrer le mur ?",
-      "body": "Affiche la photo, le mur seul ou les prises seules.",
+      "body": "Fais glisser pour comparer la photo, le mur seul ou les prises seules.",
       "unsupported": "Seule la photo est disponible pour le moment. Tu peux quand même terminer ton mur."
     }
   },

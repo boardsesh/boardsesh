@@ -241,14 +241,39 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
 vi.mock('../../../lib/spray/use-spray-wall-art', () => ({
   useSprayWallArt: () => controls.art,
 }));
-vi.mock('../SprayWallBackgroundPreview', () => ({
-  SprayWallBackgroundPreview: ({ value }: { value: string }) =>
-    createElement('div', { 'data-testid': 'background-preview', 'data-value': value }),
+vi.mock('../SprayWallBackgroundCarousel', () => ({
+  SprayWallBackgroundCarousel: ({
+    value,
+    gate,
+    disabled,
+    onChange,
+  }: {
+    value: string;
+    gate: { kind: string };
+    disabled: boolean;
+    onChange: (key: string) => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'background-preview', 'data-value': value },
+      gate.kind === 'open'
+        ? ['photo', 'wall-crop', 'hold-cutouts'].map((key, index) =>
+            createElement('button', {
+              key,
+              role: 'radio',
+              'aria-label': `sprayBackground.${['photo', 'wallCrop', 'holdCutouts'][index]}`,
+              'aria-checked': value === key,
+              disabled,
+              onClick: () => onChange(key),
+            }),
+          )
+        : null,
+    ),
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
-import { SprayWallLookStep, previewRowHeight, type SprayLookChoice } from '../SprayWallLookStep';
+import { SprayWallLookStep, type SprayLookChoice } from '../SprayWallLookStep';
 import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
 import {
   SPRAY_WALL_LOOK_OPTIONS,
@@ -649,17 +674,6 @@ describe('the wizard names the forward action and keeps the choice', () => {
 });
 
 describe('the preview row height', () => {
-  it('fills what the form has, less its chrome and the dim slider', () => {
-    // An iPhone 15 Pro: 852pt, less a 116pt glass bar and a 128pt header block.
-    expect(previewRowHeight(608, 112)).toBe(464);
-    expect(previewRowHeight(608, 0)).toBe(576);
-  });
-
-  it('never squeezes below 280pt or grows past 640pt', () => {
-    expect(previewRowHeight(300, 112)).toBe(280);
-    expect(previewRowHeight(1200, 0)).toBe(640);
-  });
-
   it('is worked out from the form slot alone, not the whole step', () => {
     controls.preview = { boardWidth: 500, boardHeight: 700 };
     controls.unavailable = false;
@@ -672,31 +686,34 @@ describe('the preview row height', () => {
     renderStep();
     const row = modelRow('lookCarousel');
     if (row?.kind !== 'custom') throw new Error('no carousel row');
-    expect(row.height).toBe(previewRowHeight(608, 112));
+    expect(row.height).toBe(496);
   });
 });
 
 describe('the form renderer', () => {
-  it('fits Android controls and notes beside the preview before allowing overflow scrolling', () => {
-    controls.platform.OS = 'android';
+  it.each(['ios', 'android'] as const)(
+    'fits %s controls and notes beside the preview before allowing overflow scrolling',
+    (platform) => {
+      controls.platform.OS = platform;
+      controls.preview = { boardWidth: 500, boardHeight: 700 };
+      controls.unavailable = false;
+      controls.layouts = { 'spray-look-form': { width: 402, height: 500 } };
+      renderStep();
+      act(() => controls.formProps?.onReservedHeightChange?.(180));
+      expect(modelRow('lookCarousel')).toMatchObject({ height: 320 });
+      expect(controls.formProps).toMatchObject({ fitted: true, scrollable: false });
+      // Translated footers or enlarged labels consume real room, rather than
+      // being omitted from a guessed fixed slider-height reservation.
+      act(() => controls.formProps?.onReservedHeightChange?.(400));
+      expect(controls.formProps?.scrollable).toBe(true);
+      expect(controls.carouselProps?.selectOnSnap).toBe(true);
+    },
+  );
+  it('draws both preview forms directly in React Native', () => {
     controls.preview = { boardWidth: 500, boardHeight: 700 };
     controls.unavailable = false;
-    controls.layouts = { 'spray-look-form': { width: 402, height: 500 } };
     renderStep();
-    act(() => controls.formProps?.onReservedHeightChange?.(180));
-    expect(modelRow('lookCarousel')).toMatchObject({ height: 320 });
-    expect(controls.formProps).toMatchObject({ fitted: true, scrollable: false });
-    // Translated footers or enlarged labels consume real room, rather than
-    // being omitted from a guessed fixed slider-height reservation.
-    act(() => controls.formProps?.onReservedHeightChange?.(400));
-    expect(controls.formProps?.scrollable).toBe(true);
-    expect(controls.carouselProps?.selectOnSnap).toBe(true);
-  });
-  it('draws the native form on iOS and the React Native one on Android', () => {
-    controls.preview = { boardWidth: 500, boardHeight: 700 };
-    controls.unavailable = false;
-    renderStep();
-    expect(controls.renderer).toBe('native');
+    expect(controls.renderer).toBe('rn');
     cleanup();
     controls.renderer = null;
     controls.platform.OS = 'android';

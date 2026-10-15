@@ -824,6 +824,10 @@
       "saved": "Presas guardadas",
       "addA11y": "Añadir presas que faltan"
     },
+    "preview": {
+      "open": "Ver solo las presas",
+      "back": "Volver a editar"
+    },
     "toast": {
       "deleted": "Presa eliminada",
       "joined": "2 presas unidas",
@@ -1155,7 +1159,7 @@
     },
     "background": {
       "title": "¿Qué debería mostrar el muro?",
-      "body": "Muestra la foto, solo el muro o solo las presas.",
+      "body": "Desliza para comparar la foto, solo el muro o solo las presas.",
       "unsupported": "Ahora solo está disponible la foto. Aún puedes terminar tu muro."
     }
   },

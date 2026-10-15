@@ -37,8 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '../Text';
 import { Button } from '../Button';
-import { MoreForm } from '../MoreForm';
-import { MoreFormRN, type MoreFormRNProps } from '../MoreForm.rn';
+import { MoreFormRN } from '../MoreForm.rn';
 import { LookOptionSlider } from '../LookOptionSlider';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
@@ -80,7 +79,7 @@ import {
   isSprayWallArtNotAvailableError,
   readSprayWallArtRefusalReason,
 } from '../../lib/graphql/extract-error-message';
-import { SprayWallBackgroundPreview } from './SprayWallBackgroundPreview';
+import { SprayWallBackgroundCarousel } from './SprayWallBackgroundCarousel';
 import { StepCounter } from './StepCounter';
 import { buildSprayBackgroundModel, buildSprayLookModel } from './spray-look-model';
 import {
@@ -123,17 +122,6 @@ const DIM_SECTION_HEIGHT = 112;
 const MIN_PREVIEW_ROW = 280;
 /** Nor drawn taller than this, on a tablet. */
 const MAX_PREVIEW_ROW = 640;
-/** The background preview row, as a share of the room the form has. */
-const BACKGROUND_PREVIEW_SHARE = 0.72;
-
-/**
- * How tall the preview row may be: the room under the header block, less what
- * the rest of the form needs, clamped. The form scrolls, so a guess that comes
- * out short costs a scroll, never a clipped board.
- */
-export function previewRowHeight(formHeight: number, reserved: number): number {
-  return Math.round(Math.min(MAX_PREVIEW_ROW, Math.max(MIN_PREVIEW_ROW, formHeight - FORM_CHROME - reserved)));
-}
 
 /**
  * What the climber chose on the two look phases, handed to the wizard on
@@ -285,20 +273,29 @@ export function SprayWallLookStep({
     setFormHeight(event.nativeEvent.layout.height);
   }, []);
   const [reservedLookHeight, setReservedLookHeight] = useState<number | null>(null);
+  const [reservedBackgroundHeight, setReservedBackgroundHeight] = useState<number | null>(null);
   const handleReservedLookHeight = useCallback((height: number) => {
     setReservedLookHeight((previous) => (previous !== null && Math.abs(previous - height) < 0.5 ? previous : height));
+  }, []);
+  const handleReservedBackgroundHeight = useCallback((height: number) => {
+    setReservedBackgroundHeight((previous) =>
+      previous !== null && Math.abs(previous - height) < 0.5 ? previous : height,
+    );
   }, []);
   const minimumCompactHeight =
     RAIL_THUMB_HEIGHT + captionBlockHeight(captionLineHeights('rail', textStyles), fontScale, 0) + DOTS_HEIGHT;
   const lookReservedHeight = reservedLookHeight ?? (selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
-  const lookRowHeight =
-    Platform.OS === 'android'
-      ? Math.round(Math.min(MAX_PREVIEW_ROW, Math.max(minimumCompactHeight, formHeight - lookReservedHeight)))
-      : previewRowHeight(formHeight, selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
+  const lookRowHeight = Math.round(
+    Math.min(MAX_PREVIEW_ROW, Math.max(minimumCompactHeight, formHeight - lookReservedHeight)),
+  );
   // Ordinary phones keep the preview still while dimming. A tiny viewport or
   // accessibility text can still scroll once a readable compact card cannot fit.
   const lookOverflows = lookRowHeight + lookReservedHeight > formHeight + 0.5;
-  const backgroundRowHeight = previewRowHeight(formHeight * BACKGROUND_PREVIEW_SHARE, 0);
+  const backgroundReservedHeight = reservedBackgroundHeight ?? FORM_CHROME * 3;
+  const backgroundRowHeight = Math.round(
+    Math.min(MAX_PREVIEW_ROW, Math.max(MIN_PREVIEW_ROW, formHeight - backgroundReservedHeight)),
+  );
+  const backgroundOverflows = backgroundRowHeight + backgroundReservedHeight > formHeight + 0.5;
 
   // The row is inset inside the form's card, so the rail centres on the row,
   // not the window. Measured inside the row; until then, the window less the
@@ -318,7 +315,8 @@ export function SprayWallLookStep({
       railSlotHeight: Math.max(0, lookRowHeight - DOTS_HEIGHT),
       captionLineHeights: captionLineHeights('hero', textStyles),
       fontScale,
-      ...(Platform.OS === 'android' ? { verticalPadding: 0, minWidth: RAIL_MIN_WIDTH } : {}),
+      verticalPadding: 0,
+      minWidth: RAIL_MIN_WIDTH,
     });
   }, [formHeight, previewAspect, railWidth, lookRowHeight, textStyles, fontScale]);
 
@@ -539,13 +537,25 @@ export function SprayWallLookStep({
 
   const backgroundPreview = useMemo(
     () => (
-      <SprayWallBackgroundPreview
+      <SprayWallBackgroundCarousel
+        gate={backgroundGate}
         value={displayedBackground}
         previewSource={draftState.lookPreviewSource}
         unavailable={draftState.isUnavailable}
+        disabled={saving || backgroundGate.kind === 'loading'}
+        height={backgroundRowHeight}
+        onChange={pickBackground}
       />
     ),
-    [displayedBackground, draftState.lookPreviewSource, draftState.isUnavailable],
+    [
+      backgroundGate,
+      displayedBackground,
+      draftState.lookPreviewSource,
+      draftState.isUnavailable,
+      saving,
+      backgroundRowHeight,
+      pickBackground,
+    ],
   );
   const backgroundModel = useMemo(
     () =>
@@ -555,20 +565,9 @@ export function SprayWallLookStep({
         previewHeight: backgroundRowHeight,
         gate: backgroundGate,
         value: background,
-        onChange: pickBackground,
-        saving,
         unavailable: draftState.isUnavailable,
       }),
-    [
-      t,
-      backgroundPreview,
-      backgroundRowHeight,
-      backgroundGate,
-      background,
-      pickBackground,
-      saving,
-      draftState.isUnavailable,
-    ],
+    [t, backgroundPreview, backgroundRowHeight, backgroundGate, background, draftState.isUnavailable],
   );
 
   // A form only once the room for it is measured: its preview row is pinned
@@ -583,11 +582,7 @@ export function SprayWallLookStep({
         // Padded rather than offset, so the grouped background runs up under
         // the see-through header instead of leaving a seam below it.
         { paddingTop: headerInset, backgroundColor: systemColors.groupedBackground },
-        Platform.OS === 'android'
-          ? { paddingBottom: spacing[3] }
-          : showsLookForm || phase === 'background'
-            ? null
-            : { paddingBottom: bottomInset },
+        { paddingBottom: (Platform.OS === 'android' ? 0 : bottomInset) + spacing[3] },
       ]}
       testID={phase === 'background' ? 'spray-background-step' : 'spray-look-step'}
     >
@@ -612,11 +607,16 @@ export function SprayWallLookStep({
       >
         {phase === 'background' ? (
           measured ? (
-            <LookForm model={backgroundModel} />
+            <MoreFormRN
+              model={backgroundModel}
+              fitted
+              scrollable={backgroundOverflows}
+              onReservedHeightChange={handleReservedBackgroundHeight}
+            />
           ) : null
         ) : showsLookForm ? (
           measured ? (
-            <LookForm
+            <MoreFormRN
               model={lookModel}
               fitted
               scrollable={lookOverflows}
@@ -724,17 +724,6 @@ export function SprayWallLookStep({
   ) : (
     content
   );
-}
-
-/**
- * The form both phases sit in. The native form on iOS; on Android the React
- * Native renderer of the same model, because a Compose `RNHostView` row drew
- * nothing on the emulator (the preview and the rail went missing), and both
- * phases are built around exactly that row. `MoreFormRN` is the escape hatch
- * `MoreForm.rn.tsx` describes for this case.
- */
-function LookForm(props: MoreFormRNProps) {
-  return Platform.OS === 'android' ? <MoreFormRN {...props} /> : <MoreForm model={props.model} />;
 }
 
 const styles = StyleSheet.create({

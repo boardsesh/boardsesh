@@ -17,12 +17,13 @@ const HOLDS: SprayPhotoHold[] = Array.from({ length: 40 }, (_, index) => ({
   r: 20,
 }));
 
-function registerWall(holds: SprayPhotoHold[] = HOLDS, version = 1) {
+function registerWall(holds: SprayPhotoHold[] = HOLDS, version = 1, draft = false) {
   registerSprayWall(LAYOUT_ID, {
     wallUuid: 'wall-uuid',
     angle: 40,
     version,
     versionId: version,
+    draft,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo',
@@ -38,6 +39,18 @@ afterEach(() => {
 });
 
 describe('useSyntheticSprayWallPreview', () => {
+  it('loads saved holds after an empty draft was already previewed at the same version', () => {
+    registerWall([], 1, true);
+    const { result } = renderHook(() => useSyntheticSprayWallPreview(LAYOUT_ID));
+    expect(result.current.status).toBe('unavailable');
+
+    act(() => registerWall(HOLDS, 1, true));
+
+    expect(result.current.status).toBe('ready');
+    const [lit] = accumulateFramesToMaps(result.current.preview?.frames ?? '', 'spray');
+    expect(Object.keys(lit)).toHaveLength(12);
+  });
+
   it('is loading until the wall is registered, then draws it', () => {
     const { result } = renderHook(() => useSyntheticSprayWallPreview(LAYOUT_ID));
     expect(result.current).toEqual({ status: 'loading', preview: null, climb: null });

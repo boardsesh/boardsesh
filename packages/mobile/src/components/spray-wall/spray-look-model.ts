@@ -5,8 +5,6 @@ import { backgroundPickerNote, canPickBackground, type SprayBackgroundGate } fro
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-const BACKGROUNDS: readonly SprayWallBackground[] = ['photo', 'wall-crop', 'hold-cutouts'];
-
 /** The three backgrounds, labelled, in the order the control shows them. */
 export function sprayBackgroundOptions(t: Translate): (MoreOption & { key: SprayWallBackground })[] {
   return [
@@ -24,84 +22,46 @@ export type SprayBackgroundModelInput = {
   gate: SprayBackgroundGate;
   /** The creator's pick; shown as the photo while the gate refuses it. */
   value: SprayWallBackground;
-  onChange: (background: SprayWallBackground) => void;
-  /** The look save is in flight: nothing may move under it. */
-  saving: boolean;
   /** The draft's photo cannot be drawn here. */
   unavailable: boolean;
 };
 
-/**
- * The background phase of the look step: the draft drawn on one background,
- * and a three-way control under it (Photo, Wall only, Holds only), with the
- * gate's sentence in the footer.
- *
- * The control only appears where a backend can store the choice: while the
- * answer is out it is greyed, and for a photo the gate refuses, or a backend
- * that predates generated looks, only the photo is offered, so there is no
- * control at all and the footer says why. A refused key is dropped on select as
- * well, because a SwiftUI segmented control cannot grey one segment out.
- */
+/** The swipeable background previews and the selected option's footer. */
 export function buildSprayBackgroundModel(input: SprayBackgroundModelInput): MoreFormModel {
   const { t, gate } = input;
   const selected = canPickBackground(gate, input.value) ? input.value : 'photo';
-  const sections: MoreSection[] = [];
-
-  sections.push({
-    key: 'preview',
-    footer: input.unavailable ? t('sprayWizard.look.unavailable') : undefined,
-    rows: [
+  const notes: string[] = [];
+  if (input.unavailable) notes.push(t('sprayWizard.look.unavailable'));
+  if (gate.kind === 'loading') {
+    notes.push(t('sprayWizard.look.loading'));
+  } else if (gate.kind === 'open') {
+    const note = backgroundPickerNote(gate, selected, true);
+    if (note) notes.push(t(`sprayBackground.note.${note}`));
+    if (selected === 'hold-cutouts') notes.push(t('sprayBackground.note.volumes'));
+  } else if (gate.kind === 'unsupported') {
+    notes.push(t('sprayWizard.background.unsupported'));
+  } else {
+    notes.push(
+      t(gate.reason === 'no-pins' ? 'sprayBackground.note.lockedNoPins' : 'sprayBackground.note.lockedRetake'),
+    );
+  }
+  return {
+    sections: [
       {
-        kind: 'custom',
-        key: 'backgroundPreview',
-        content: input.preview,
-        height: input.previewHeight,
-        fullBleed: true,
+        key: 'preview',
+        footer: notes.length > 0 ? notes.join(' ') : undefined,
+        rows: [
+          {
+            kind: 'custom',
+            key: 'backgroundPreview',
+            content: input.preview,
+            height: input.previewHeight,
+            fullBleed: true,
+          },
+        ],
       },
     ],
-  });
-
-  if (gate.kind === 'loading' || gate.kind === 'open') {
-    const notes: string[] = [];
-    if (gate.kind === 'loading') {
-      notes.push(t('sprayWizard.look.loading'));
-    } else {
-      const note = backgroundPickerNote(gate, selected, true);
-      if (note) notes.push(t(`sprayBackground.note.${note}`));
-      // Volumes are not detected, so Holds only can drop them.
-      if (selected === 'hold-cutouts') notes.push(t('sprayBackground.note.volumes'));
-    }
-    sections.push({
-      key: 'background',
-      footer: notes.join(' '),
-      rows: [
-        {
-          kind: 'segmented',
-          key: 'background',
-          label: t('sprayBackground.label'),
-          options: sprayBackgroundOptions(t),
-          selectedKey: selected,
-          disabled: gate.kind === 'loading' || input.saving,
-          onSelect: (key) => {
-            if (input.saving) return;
-            const next = BACKGROUNDS.find((candidate) => candidate === key);
-            if (next && next !== selected && canPickBackground(gate, next)) input.onChange(next);
-          },
-        },
-      ],
-    });
-    return { sections };
-  }
-
-  // Photo only. Say why under the preview rather than offering one segment.
-  const why =
-    gate.kind === 'unsupported'
-      ? t('sprayWizard.background.unsupported')
-      : gate.reason === 'no-pins'
-        ? t('sprayBackground.note.lockedNoPins')
-        : t('sprayBackground.note.lockedRetake');
-  sections[0] = { ...sections[0], footer: [sections[0].footer, why].filter(Boolean).join(' ') };
-  return { sections };
+  };
 }
 
 export type SprayLookModelInput = {

@@ -824,6 +824,10 @@
       "saved": "Griffe gespeichert",
       "addA11y": "Fehlende Griffe hinzufügen"
     },
+    "preview": {
+      "open": "Nur Griffe ansehen",
+      "back": "Weiter bearbeiten"
+    },
     "toast": {
       "deleted": "Griff gelöscht",
       "joined": "2 Griffe verbunden",
@@ -1155,7 +1159,7 @@
     },
     "background": {
       "title": "Was soll die Wand zeigen?",
-      "body": "Zeig das Foto, nur die Wand oder nur die Griffe.",
+      "body": "Wische, um das Foto, nur die Wand oder nur die Griffe zu vergleichen.",
       "unsupported": "Aktuell ist nur das Foto verfügbar. Du kannst deine Wand trotzdem fertigstellen."
     }
   },
