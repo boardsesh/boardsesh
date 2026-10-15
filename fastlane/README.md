@@ -1,9 +1,8 @@
 # fastlane
 
 Store-automation lanes for the React Native app (`packages/mobile`). Both
-platforms have a screenshot upload lane, a listing-text (metadata) upload lane,
-and a build-number resolver; Android also has a listing-image lane (Play
-high-res icon / feature graphic). The dedicated iOS CPP lane can submit custom
+platforms have native tester-upload, screenshot, listing-text (metadata), and
+build-number lanes; Android also has listing-image and release-lifecycle audit lanes. The dedicated iOS CPP lane can submit custom
 product pages for review. The listing lanes do not submit for review or upload binaries.
 
 ```bash
@@ -22,6 +21,93 @@ cd fastlane && bundle exec fastlane android images
 cd fastlane && bundle exec fastlane ios next_build_number
 cd fastlane && bundle exec fastlane android next_version_code
 ```
+
+## Native tester updates — `android upload_beta`, `ios testflight`
+
+Pushes to `main` and `release/next` automatically build a replacement when the
+native fingerprint changes. Android uploads the same AAB to **internal and open
+testing (`beta`)** in one edit. Both releases use `completed`, making the build
+available to 100% of eligible testers after Google permits publication. iOS
+exports the signed archive and uploads to TestFlight using the workflow's
+existing export options. Store review and processing still determine when a
+tester can install either build.
+
+JavaScript-only changes continue through the separate OTA workflows. A binary
+can only receive OTA bundles matching its runtime fingerprint; choosing staging
+cannot make an older native binary load an incompatible bundle. See the
+[OTA runbook](../docs/mobile-ota-updates.md).
+
+The native workflows call these lanes after building and checking the artifacts:
+
+```bash
+cd fastlane
+bundle exec fastlane android upload_beta
+bundle exec fastlane ios testflight
+```
+
+| Android input | Meaning |
+| --- | --- |
+| `ANDROID_AAB_PATH` | One built AAB path, or glob matching exactly one AAB |
+| `ANDROID_VERSION_CODE` | Exact expected uploaded versionCode |
+| `BOARDSESH_MOBILE_VERSION` | Semver release label from the build pipeline |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Existing Play service-account JSON |
+
+Android options `aab:`, `version_code:`, and `version:` override those inputs.
+`metadata_path:` defaults to committed `fastlane/metadata/android`; every
+locale's `changelogs/default.txt` supplies the same notes to both tester tracks.
+Notes must contain 1–500 characters. `output:` optionally saves a JSON commit
+receipt. Relative AAB and metadata paths resolve from the repository root.
+The lane checks Play's existing versionCodes before uploading, verifies the
+uploaded versionCode, validates both track assignments, and commits once.
+The release label is supplied by the build pipeline; the lane does not separately
+extract the embedded AAB versionName.
+
+The pinned Google API client commits with
+`changes_not_sent_for_review: false` and
+`changes_in_review_behavior: "ERROR_IF_IN_REVIEW"`. Existing review conflicts
+fail the upload; the lane never cancels a review, retries with an unsubmitted
+release, or changes production. A commit receipt is submission evidence, not
+proof of publication or delivery. Google review and managed publishing can keep
+open testing unchanged until they finish. Audit the exact build afterward.
+
+| iOS input | Meaning |
+| --- | --- |
+| `ARCHIVE_PATH` | Existing signed `.xcarchive` directory |
+| `EXPORT_OPTIONS_PLIST` | Existing workflow-generated export options |
+| `EXPORT_PATH` | Destination for exported artifacts |
+| `APP_STORE_CONNECT_API_KEY_ID` | Key ID matching `~/.private_keys/AuthKey_<id>.p8` |
+| `APP_STORE_CONNECT_ISSUER_ID` | Existing App Store Connect issuer ID |
+
+Relative iOS build paths resolve from the repository root. The lane preserves
+`xcodebuild -exportArchive` and the existing export/signing configuration.
+
+## Play catch-up and publication checks — `android beta`, `android audit`
+
+Use an exact versionCode to inspect open testing without opening an edit:
+
+```bash
+cd fastlane
+bundle exec fastlane android audit version_code:2001310 track:beta
+bundle exec fastlane android beta version_code:2001310
+```
+
+`android beta` defaults to a read-only plan. It requires one exact **published**
+internal release and refuses to overwrite a newer beta build. To submit that
+existing build to open testing, run
+`bundle exec fastlane android beta version_code:2001310 apply:true`.
+This is the catch-up path for a build already uploaded internally; routine new
+native builds use `upload_beta` instead. Neither lane uploads production releases.
+
+`android audit` accepts `track:internal`, `track:beta`, or `track:production`
+and saves its lifecycle receipt to `output:` or a temporary file printed in the
+log. A `PUBLISHED` lifecycle state confirms publication for the selected track;
+`DRAFT`, `NOT_SENT_FOR_REVIEW`, `IN_REVIEW`, and `APPROVED_NOT_PUBLISHED` do not.
+An empty receipt immediately after commit means publication is not yet verified.
+Tester delivery also depends on account eligibility, device compatibility, and
+Play Store propagation.
+
+Mocked upload checks: `vp exec ruby fastlane/tests/android_release_test.rb`.
+Lane invocation checks: `vp exec ruby fastlane/tests/native_upload_lanes_test.rb`.
 
 ## Screenshots — `ios screenshots`, `android screenshots`
 
@@ -94,8 +180,8 @@ fastlane/metadata/
   `release_notes.txt` is the public "What's New" for that version.
 - **`android metadata`** updates the Play **listing text** (title + short/full
   description) only. It deliberately skips changelogs: the Android "What's new"
-  ships with the AAB at release time via `android-apk-rn.yml`'s
-  `whatsNewDirectory`, sourced from `changelogs/default.txt` — so the release
+  ships with the AAB through `android upload_beta`, sourced from each locale's
+  `changelogs/default.txt` — so the release
   notes always travel with the release they describe.
 
 Both push to the editable/draft listing, so a wrong value is reversible: edit
@@ -131,7 +217,8 @@ fastlane at all** — App Store Connect reads it from the uploaded build's
 These resolve the next build identifier from the **live store** instead of a
 hand-maintained offset, and print it as `value=<n>` (written to `$GITHUB_OUTPUT`
 in CI, consumed as `steps.<id>.outputs.value`). Automatic store builds and production OTA delivery
-run from `main`; fingerprint gating prevents duplicate native builds.
+run from `main`; native tester builds also run from `release/next`.
+Fingerprint gating prevents duplicate native builds.
 
 - **`ios next_build_number`** = `latest_testflight_build_number` for the current
   marketing version (from `packages/mobile/app.config.ts`) `+ 1`.

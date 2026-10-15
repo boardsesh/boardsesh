@@ -1,0 +1,50 @@
+name: Fastlane Release Checks
+
+on:
+  pull_request:
+    paths:
+      - 'fastlane/**'
+      - '.github/workflows/android-apk-rn.yml'
+      - '.github/workflows/ios-testflight-rn.yml'
+      - '.github/workflows/mobile-store-android-*.yml'
+      - '.github/workflows/mobile-store-fastlane-check.yml'
+      - 'scripts/mobile-store-android-*.ts'
+      - 'scripts/__tests__/mobile-store-android-*.test.ts'
+      - 'scripts/native-release-workflows.test.ts'
+  push:
+    branches: [main, release/next]
+    paths:
+      - 'fastlane/**'
+      - '.github/workflows/mobile-store-fastlane-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Test upload boundaries without store credentials
+        working-directory: fastlane
+        run: |
+          vp exec ruby tests/android_release_test.rb
+          vp exec ruby tests/native_upload_lanes_test.rb
+      - name: Verify pinned Play API supports review protection
+        working-directory: fastlane
+        run: |
+          bundle exec ruby -e 'require "supply"; require "supply/client"; abort "Missing review guard" unless Google::Apis::AndroidpublisherV3::AndroidPublisherService.instance_method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])'
+      - name: Verify native triggers and exact beta promotion
+        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts --reporter=agent

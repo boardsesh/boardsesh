@@ -10,7 +10,18 @@ import {
 } from './mobile-auto-version-bump';
 
 const PACKAGE_NAME = 'com.boardsesh.app';
-const RELEASES_URL = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/tracks/production/releases`;
+export type AndroidTrack = 'internal' | 'beta' | 'production';
+
+export function parseAndroidTrack(input: string): AndroidTrack {
+  if (input !== 'internal' && input !== 'beta' && input !== 'production') {
+    throw new Error('ANDROID_TRACK must be internal, beta, or production');
+  }
+  return input;
+}
+
+function releasesUrl(track: AndroidTrack): string {
+  return `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}/tracks/${parseAndroidTrack(track)}/releases`;
+}
 
 export async function createAuditAccessToken(secret: string): Promise<string> {
   try {
@@ -25,8 +36,11 @@ export async function createAuditAccessToken(secret: string): Promise<string> {
 // This endpoint is outside the Edits API: reading it cannot invalidate an open
 // edit. It exposes release lifecycle states, not notes or publishing settings.
 // https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases/list
-export async function readProductionReleaseSummaries(accessToken: string): Promise<unknown> {
-  const response = await fetch(RELEASES_URL, {
+export async function readProductionReleaseSummaries(
+  accessToken: string,
+  track: AndroidTrack = 'production',
+): Promise<unknown> {
+  const response = await fetch(releasesUrl(track), {
     method: 'GET',
     headers: { Authorization: `Bearer ${accessToken}` },
     redirect: 'error',
@@ -34,11 +48,12 @@ export async function readProductionReleaseSummaries(accessToken: string): Promi
   });
   // Do not include response bodies in errors: only the whitelisted release
   // fields below belong in the retained report or workflow log.
-  if (!response.ok) throw new Error(`Google Play production release audit returned HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`Google Play ${track} release audit returned HTTP ${response.status}`);
+  if (response.status === 204) return { releases: [] };
   try {
     return await response.json();
   } catch {
-    throw new Error('Google Play production release audit returned invalid JSON');
+    throw new Error(`Google Play ${track} release audit returned invalid JSON`);
   }
 }
 
@@ -49,21 +64,26 @@ export function parseExpectedVersionCode(input: string): number {
   return Number(input);
 }
 
-export function buildAndroidReleaseAudit(input: unknown, expectedVersionCode: number) {
+export function buildAndroidReleaseAudit(
+  input: unknown,
+  expectedVersionCode: number,
+  track: AndroidTrack = 'production',
+) {
   parseExpectedVersionCode(String(expectedVersionCode));
+  parseAndroidTrack(track);
   const parsed = parseGoogleProductionReleasesResponse(input);
   const rawReleases = (input as { releases: Array<Record<string, unknown>> }).releases;
   const releases = parsed.map((release, index) => {
     const rawRelease = rawReleases[index]!;
     const releaseName = rawRelease['releaseName'];
-    const track = rawRelease['track'];
+    const releaseTrack = rawRelease['track'];
     if (releaseName !== undefined && typeof releaseName !== 'string') {
       throw new Error(`Google Play release ${index} has an invalid releaseName`);
     }
-    if (track !== undefined && track !== 'production') {
-      throw new Error(`Google Play release ${index} does not belong to the production track`);
+    if (releaseTrack !== undefined && releaseTrack !== track) {
+      throw new Error(`Google Play release ${index} does not belong to the ${track} track`);
     }
-    return { releaseName: releaseName ?? null, track: track ?? null, ...release };
+    return { releaseName: releaseName ?? null, track: releaseTrack ?? null, ...release };
   });
   const matches = releases.filter((release) =>
     release.activeArtifacts.some((artifact) => artifact.versionCode === expectedVersionCode),
@@ -72,13 +92,13 @@ export function buildAndroidReleaseAudit(input: unknown, expectedVersionCode: nu
     platform: 'android',
     auditedAt: new Date().toISOString(),
     packageName: PACKAGE_NAME,
-    requestedTrack: 'production',
+    requestedTrack: track,
     expectedVersionCode,
-    sourceEndpoint: RELEASES_URL,
+    sourceEndpoint: releasesUrl(track),
     identityErrors:
       matches.length === 1
         ? []
-        : [`Expected one production release containing versionCode ${expectedVersionCode}; found ${matches.length}`],
+        : [`Expected one ${track} release containing versionCode ${expectedVersionCode}; found ${matches.length}`],
     matchingReleases: matches,
     releases,
     limitations: [
@@ -93,16 +113,25 @@ export function buildAndroidReleaseAudit(input: unknown, expectedVersionCode: nu
 async function main(): Promise<number> {
   try {
     const expectedVersionCode = parseExpectedVersionCode(process.env['ANDROID_VERSION_CODE'] ?? '2001247');
+    const track = parseAndroidTrack(process.env['ANDROID_TRACK'] ?? 'production');
+    const requirePublished = process.env['ANDROID_REQUIRE_PUBLISHED'] === 'true';
     const outputPath = process.env['STORE_AUDIT_OUTPUT'];
     if (!outputPath) throw new Error('Missing STORE_AUDIT_OUTPUT');
     const secret = process.env['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'];
     if (!secret) throw new Error('Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON');
     const accessToken = await createAuditAccessToken(secret);
-    const response = await readProductionReleaseSummaries(accessToken);
-    const report = buildAndroidReleaseAudit(response, expectedVersionCode);
+    const response = await readProductionReleaseSummaries(accessToken, track);
+    const report = buildAndroidReleaseAudit(response, expectedVersionCode, track);
     writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     if (report.identityErrors.length > 0) throw new Error(report.identityErrors.join('; '));
-    console.log(`Android versionCode ${expectedVersionCode}: ${report.matchingReleases[0]!.releaseLifecycleState}`);
+    if (requirePublished && report.matchingReleases[0]!.releaseLifecycleState !== 'RELEASE_LIFECYCLE_STATE_PUBLISHED') {
+      throw new Error(
+        `Android ${track} versionCode ${expectedVersionCode} is not published: ${report.matchingReleases[0]!.releaseLifecycleState}`,
+      );
+    }
+    console.log(
+      `Android ${track} versionCode ${expectedVersionCode}: ${report.matchingReleases[0]!.releaseLifecycleState}`,
+    );
     console.log('Read-only release state retained. Release notes and managed publishing remain unverified.');
     return 0;
   } catch (error) {

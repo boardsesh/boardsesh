@@ -6,6 +6,7 @@ import {
   buildAndroidReleaseAudit,
   createAuditAccessToken,
   parseExpectedVersionCode,
+  parseAndroidTrack,
   readProductionReleaseSummaries,
 } from '../mobile-store-android-audit';
 
@@ -133,5 +134,40 @@ describe('Google Play request boundary', () => {
     await expect(readProductionReleaseSummaries('token')).rejects.toThrow(
       'Google Play production release audit returned invalid JSON',
     );
+  });
+});
+
+describe('tester track release audit', () => {
+  it('reports a missing build when Google returns HTTP 204 for an empty track', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 })));
+    const report = buildAndroidReleaseAudit(await readProductionReleaseSummaries('token', 'beta'), 2001310, 'beta');
+    expect(report.identityErrors).toEqual(['Expected one beta release containing versionCode 2001310; found 0']);
+  });
+
+  it.each(['internal', 'beta', 'production'] as const)(
+    'reads %s independently without opening an edit',
+    async (track) => {
+      const response = { releases: [{ ...release(2001310), track }] };
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response)));
+      vi.stubGlobal('fetch', fetchMock);
+      const report = buildAndroidReleaseAudit(await readProductionReleaseSummaries('token', track), 2001310, track);
+      expect(report.requestedTrack).toBe(track);
+      expect(report.identityErrors).toEqual([]);
+      expect(report.matchingReleases[0]?.releaseLifecycleState).toBe('RELEASE_LIFECYCLE_STATE_DRAFT');
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+        `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.boardsesh.app/tracks/${track}/releases`,
+        expect.objectContaining({ method: 'GET', redirect: 'error' }),
+      );
+    },
+  );
+
+  it('does not mistake an internal release for an open beta release', () => {
+    expect(() =>
+      buildAndroidReleaseAudit({ releases: [{ ...release(2001310), track: 'internal' }] }, 2001310, 'beta'),
+    ).toThrow('does not belong to the beta track');
+  });
+
+  it.each(['', 'alpha', '../production', 'Beta'])('rejects unsupported track %s', (track) => {
+    expect(() => parseAndroidTrack(track)).toThrow('ANDROID_TRACK');
   });
 });

@@ -90,11 +90,12 @@ A push to either release branch that resolves to a new native fingerprint trigge
 
 - **iOS TestFlight Deploy** (`ios-testflight-rn.yml`) — resolves the next build
   number from App Store Connect, builds, validates the archive, and uploads the
-  exact binary to TestFlight.
+  exact binary to TestFlight through `fastlane ios testflight`.
 - **Android Play Internal Deploy** (`android-apk-rn.yml`) — resolves the next
   versionCode from Google Play, builds and validates the APK/AAB, and uploads the
-  same AAB to Play internal and open testing (`beta`) with `status: completed`
-  and `changesNotSentForReview: false`. After Play accepts the edit, the exact signed arm64 APK is
+  same AAB through `fastlane android upload_beta` to Play internal and open
+  testing (`beta`) at 100% (`status: completed`), with
+  `changesNotSentForReview: false` and `changesInReviewBehavior: ERROR_IF_IN_REVIEW`. After Play accepts the edit, the exact signed arm64 APK is
   published as the newest **Boardsesh Android Beta** prerelease.
 
 Open-beta testers can receive these native updates through Play with automatic
@@ -114,22 +115,25 @@ Publishing overview for review or publishing actions before diagnosing a missing
 update as a failed build. `completed` describes the release rollout status; it
 does not bypass review or managed publishing.
 
-The pinned upload action does not set `changesInReviewBehavior` on its edit
-commit. [Google's default](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit)
-can cancel and resubmit an existing package-wide review,
-including pending production or listing changes. It does not turn a production
-draft into a completed release. Coordinate Play writers and inspect Publishing
-overview before the first or any manual dispatch, especially if a production review is already
-pending. The production-review guidance below requires
-`changesInReviewBehavior=ERROR_IF_IN_REVIEW` for that separate operation; this
-tester-track action currently lacks that protection.
+Fastlane owns tester-track assignment, release notes from
+`fastlane/metadata/android/*/changelogs/default.txt`, and the review policy.
+The upload commits both tracks in one edit and fails if another package-wide
+review is already pending. It never cancels that review or retries the commit
+with relaxed flags. Let the existing review finish, then rerun the failed job.
+Production remains a separate draft/submission flow.
 
-**First open-beta catch-up:** after merging this workflow change, dispatch
-`android-apk-rn.yml` on `main` with `force_native` enabled. Changing the tester
-tracks does not change the native fingerprint, so the normal push gate may skip
-the build. The forced build creates a fresh versionCode and submits it to both
-tester tracks; merging the workflow alone does not promote an existing internal
-build. Open-beta availability still waits for any required review and publishing.
+**Catch up open testing without rebuilding:** dispatch **Android Open Beta
+Promotion** (`mobile-store-android-beta.yml`) on `main` with the exact published
+internal versionCode. Its default is a GET-only plan; select `apply` to submit
+that same binary to open testing at 100%. It shares the native upload lock and
+refuses a missing source, downgrade, or pending package review. The equivalent
+Fastlane lane is `android beta version_code:<code>` (plan), with `apply:true`
+for submission. The independent lifecycle readback can still show review or
+publishing delays after a successful commit.
+
+Changing a workflow or lane does not change the native fingerprint. Such a
+merge may skip the native build; use promotion to catch up an existing internal
+build rather than assuming the configuration change delivered it.
 
 `workflow_dispatch` works from either branch and forces a build (Android has
 `force_native`, enabled by default). Automatic screenshot and store-draft runs
@@ -454,8 +458,12 @@ CPPs, device sets, checksums and unfinished screenshot processing appear as
 Apple requests are GET-only. The audit changes no listings, assets, review
 submissions or rollout. For Google Play, dispatch **Mobile Store Android Audit**
 (`mobile-store-android-audit.yml`) with the exact versionCode. Its GET-only
-production release summary checks release identity and lifecycle without opening
-an edit. It cannot verify localized release notes, screenshot contents, or managed
+release summary checks the selected `internal`, `beta` (open testing), or
+`production` track without opening an edit. Its `require_published` option
+defaults to true: an exact matching draft is insufficient. Turn it off when
+inspecting a pending review. The equivalent Fastlane lane is
+`android audit version_code:<code> track:beta`. Google may return HTTP 204 for
+an empty track or a quota error; neither verifies publication. It cannot verify localized release notes, screenshot contents, or managed
 publishing. Do not create an edit merely to audit: a new edit can invalidate an
 existing edit from the same service account.
 Review contact details, credentials and signed upload operations are excluded
@@ -722,3 +730,24 @@ staging before Apple credentials. A token with no actual runtime delta also
 fails. Ancestry, all 16 successful native executions with verified attempt history, immutable fixture and
 artifact checks, all 180 image bytes, independent visual review, and Apple
 readback remain required. No image is recaptured, reframed or rewritten here.
+
+### Android open-testing delivery incident, 16 October 2026
+
+The live release audit found internal 2.6.0 (2001310) published, open testing
+2.6.0 (2001247) still a draft, and production 2.5.0 (2001108) published.
+The newer production 2.6.0 was also a draft. The configuration change to upload
+to both tester tracks had passed its native-fingerprint gate without building;
+it did not promote the already uploaded internal binary.
+
+The 2001108 binary uses runtime `154bc941c504727afc914057aed2edff2c096576`.
+Its last staging update was 7 October. The current Android runtime
+`8733a10cad03453551ff474a116ef4858611f75b` had early/staging publications on
+15 October; stable was ramping at 50%. OTA activity on the new runtime cannot
+update the old binary. Play tester enrollment and the in-app OTA branch are
+separate choices; switching OTA branches does not install a new native runtime.
+
+The exact published internal build 2001310 was subsequently submitted to open
+testing with `completed` (100%) and the strict review guard. Google accepted
+the commit. Its independent summary returned HTTP 204 and then quota exceeded,
+so publication and delivery to individual testers were not verified. Check
+Publishing overview and the open-testing track before promising availability.

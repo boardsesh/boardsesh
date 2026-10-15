@@ -14,6 +14,10 @@
     "types": ["node"]
   },
   "include": [
+    "mobile-store-android-audit.ts",
+    "mobile-store-android-beta.ts",
+    "__tests__/mobile-store-android-audit.test.ts",
+    "__tests__/mobile-store-android-beta.test.ts",
     "import-live-activity-capture.ts",
     "__tests__/screenshot-live-activity.test.ts",
     "record-ios-campaign-privacy.ts",

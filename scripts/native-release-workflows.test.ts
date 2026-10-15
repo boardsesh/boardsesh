@@ -162,7 +162,11 @@ describe('native release workflow contracts', () => {
     expect(ios).toContain("steps.testflight_upload.outcome == 'success'");
     expect(android).toContain('fingerprint-android-');
     expect(android).toContain("steps.play_upload.outcome == 'success'");
-    expect(android).not.toContain('continue-on-error: true\n        uses: r0adkll/upload-google-play');
+    expect(
+      stepsOfJob(android, 'build-and-release').find((step) =>
+        step.run?.includes('bundle exec fastlane android upload_beta'),
+      )?.['continue-on-error'],
+    ).not.toBe(true);
     expect(ios).toContain('authenticated_push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"');
     expect(android).toContain(
       'authenticated_push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"',
@@ -211,13 +215,12 @@ describe('native release workflow contracts', () => {
     expect(android).toContain('actions/download-artifact@v4');
     expect(android).toContain('name: boardsesh-rn-android-${{ github.run_number }}');
     expect(android).not.toContain('outputs.apk_artifact_name');
-    const uploads = stepsOfJob(android, 'build-and-release').filter((step) =>
-      step.uses?.startsWith('r0adkll/upload-google-play'),
+    const uploads = stepsOfJob(android, 'build-and-release').filter(
+      (step) => typeof step.run === 'string' && step.run.includes('bundle exec fastlane android upload_beta'),
     );
     expect(uploads).toHaveLength(1);
-    expect(String(uploads[0]?.with?.tracks).split(',').sort()).toEqual(['beta', 'internal']);
-    expect(uploads[0]?.with?.status).toBe('completed');
-    expect(uploads[0]?.with?.changesNotSentForReview).toBe(false);
+    expect(uploads[0]?.['working-directory']).toBe('fastlane');
+    expect(uploads[0]?.env?.ANDROID_VERSION_CODE).toBe('${{ steps.version_code.outputs.value }}');
     expect(parse(android).name).toBe('Android Play Internal Deploy (React Native)');
     expect(android).toContain('Require Play upload credentials');
     expect(android).toContain('rerun failed jobs to repair tags or the APK prerelease');
@@ -428,6 +431,8 @@ describe('native release workflow contracts', () => {
     run?: string;
     uses?: string;
     with?: Record<string, unknown>;
+    'working-directory'?: string;
+    'continue-on-error'?: boolean;
     // Step-level env. Parsed rather than string-matched so an assertion about
     // which values a step can actually see reads that step's own block.
     env?: Record<string, unknown>;
@@ -527,9 +532,7 @@ describe('native release workflow contracts', () => {
   // the 2026-09-01 stranding. So the artifact is asserted, on the runner, while
   // there is still time to fail without shipping.
   it('checks the embedded commitTime after bundling and before the store upload', () => {
-    // The Play upload is a `uses:` action, not a `run:` — anchor on whichever
-    // this platform's upload actually is, so neither side silently compares
-    // against -1.
+    // Both platforms upload through Fastlane after their artifact checks.
     const indexOfUpload = (steps: readonly WorkflowStep[], marker: string): number =>
       steps.findIndex(
         (step) =>
@@ -537,12 +540,12 @@ describe('native release workflow contracts', () => {
       );
 
     for (const [source, job, bundleStep, uploadStep, searchRoot] of [
-      [ios, 'build-and-upload', 'xcodebuild archive', 'xcodebuild -exportArchive', '"$ARCHIVE_PATH"'],
+      [ios, 'build-and-upload', 'xcodebuild archive', 'bundle exec fastlane ios testflight', '"$ARCHIVE_PATH"'],
       [
         android,
         'build-and-release',
         './gradlew assembleRelease',
-        'r0adkll/upload-google-play',
+        'bundle exec fastlane android upload_beta',
         'packages/mobile/android/app/build',
       ],
     ] as const) {
@@ -593,7 +596,9 @@ describe('native release workflow contracts', () => {
 
     // Before the bundle leaves the runner. Past this the binary is in the store
     // and the fingerprint tag makes the next push skip the native build.
-    const upload = steps.findIndex((step) => step.uses?.startsWith('r0adkll/upload-google-play') ?? false);
+    const upload = steps.findIndex(
+      (step) => typeof step.run === 'string' && step.run.includes('bundle exec fastlane android upload_beta'),
+    );
     expect(upload).toBeGreaterThanOrEqual(0);
     expect(check).toBeLessThan(upload);
 
@@ -638,7 +643,7 @@ describe('native release workflow contracts', () => {
     // manual rebuild. A reorder is exactly what this assertion catches.
     const releaseSteps = stepsOfJob(ios, 'build-and-upload');
     const abiCheck = indexOfStepRunning(releaseSteps, 'vp run mobile:abi-check');
-    for (const later of ['xcodebuild -exportArchive', 'vp run mobile:upload-dsyms']) {
+    for (const later of ['bundle exec fastlane ios testflight', 'vp run mobile:upload-dsyms']) {
       const step = indexOfStepRunning(releaseSteps, later);
       expect(step).toBeGreaterThanOrEqual(0);
       expect(abiCheck).toBeLessThan(step);

@@ -219,6 +219,28 @@ rescue => error
 end
 
 platform :ios do
+  desc "Export the signed archive and upload to TestFlight with the existing export options"
+  lane :testflight do
+    %w[ARCHIVE_PATH EXPORT_OPTIONS_PLIST EXPORT_PATH].each do |name|
+      UI.user_error!("Missing #{name}") if ENV.fetch(name).empty?
+    end
+    archive = File.expand_path(ENV.fetch("ARCHIVE_PATH"), REPO_ROOT)
+    export_options = File.expand_path(ENV.fetch("EXPORT_OPTIONS_PLIST"), REPO_ROOT)
+    export_path = File.expand_path(ENV.fetch("EXPORT_PATH"), REPO_ROOT)
+    key_id = ENV.fetch("APP_STORE_CONNECT_API_KEY_ID")
+    issuer_id = ENV.fetch("APP_STORE_CONNECT_ISSUER_ID")
+    UI.user_error!("Missing App Store Connect key ID or issuer ID") if key_id.empty? || issuer_id.empty?
+    UI.user_error!("Invalid App Store Connect key ID") unless key_id.match?(/\A[A-Za-z0-9]+\z/)
+    key_path = File.expand_path("~/.private_keys/AuthKey_#{key_id}.p8")
+    UI.user_error!("Missing signed Xcode archive") unless Dir.exist?(archive)
+    UI.user_error!("Missing Xcode export options") unless File.file?(export_options)
+    UI.user_error!("Missing App Store Connect private key") unless File.file?(key_path)
+    sh("xcodebuild", "-exportArchive", "-archivePath", archive,
+      "-exportOptionsPlist", export_options, "-exportPath", export_path,
+      "-allowProvisioningUpdates", "-authenticationKeyPath", key_path,
+      "-authenticationKeyID", key_id, "-authenticationKeyIssuerID", issuer_id)
+  end
+
   desc "Plan or submit the exact reviewed app/CPP snapshot without changing store content"
   lane :review_submission do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "store_review_submission")
@@ -539,6 +561,50 @@ platform :ios do
 end
 
 platform :android do
+  desc "Upload one built AAB to internal and open testing in one review-protected edit"
+  lane :upload_beta do |options|
+    require File.join(REPO_ROOT, "fastlane", "lib", "android_release")
+    aab_pattern = options[:aab] || ENV.fetch("ANDROID_AAB_PATH")
+    aabs = Dir.glob(File.expand_path(aab_pattern, REPO_ROOT))
+    UI.user_error!("Expected exactly one AAB matching the upload path") unless aabs.length == 1
+    version_code = options[:version_code] || ENV.fetch("ANDROID_VERSION_CODE")
+    version = options[:version] || ENV.fetch("BOARDSESH_MOBILE_VERSION")
+    metadata_path = File.expand_path(options[:metadata_path] || ANDROID_METADATA_DIR, REPO_ROOT)
+    credential = ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] || ENV["GOOGLE_PLAY_JSON_KEY"]
+    service = -> { BoardseshAndroidRelease.service(json_key_data: credential) }
+    report = BoardseshAndroidRelease::Runner.new(service: service, aab: aabs.first,
+      version_code: version_code, version: version, metadata_path: metadata_path).run
+    UI.message(JSON.pretty_generate(report))
+    File.write(options[:output], JSON.pretty_generate(report) + "\n") if options[:output]
+  rescue BoardseshAndroidRelease::Error => error
+    UI.user_error!(error.message)
+  end
+
+  desc "Audit exact Android release lifecycle without creating a Play edit"
+  lane :audit do |options|
+    ENV["ANDROID_VERSION_CODE"] = (options[:version_code] || ENV.fetch("ANDROID_VERSION_CODE")).to_s
+    ENV["ANDROID_TRACK"] = (options[:track] || "beta").to_s
+    ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] ||= ENV["GOOGLE_PLAY_JSON_KEY"]
+    ENV["STORE_AUDIT_OUTPUT"] = options[:output] || File.join(Dir.mktmpdir("play-audit-"), "audit.json")
+    Dir.chdir(REPO_ROOT) do
+      sh("vp", "exec", "node", "--import", "tsx", File.join(REPO_ROOT, "scripts", "mobile-store-android-audit.ts"))
+    end
+    UI.message("Release lifecycle receipt: #{ENV.fetch('STORE_AUDIT_OUTPUT')}")
+  end
+
+  desc "Plan or submit one exact published internal build to open testing (beta)"
+  lane :beta do |options|
+    version_code = (options[:version_code] || ENV["ANDROID_VERSION_CODE"]).to_s
+    unless version_code.match?(/\A[1-9]\d*\z/)
+      UI.user_error!("Provide version_code:<exact Android versionCode>")
+    end
+    ENV["ANDROID_VERSION_CODE"] = version_code
+    ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] ||= ENV["GOOGLE_PLAY_JSON_KEY"]
+    command = ["vp", "exec", "node", "--import", "tsx", File.join(REPO_ROOT, "scripts", "mobile-store-android-beta.ts")]
+    command << "--apply" if options[:apply].to_s == "true"
+    Dir.chdir(REPO_ROOT) { sh(*command) }
+  end
+
   desc "Upload Play Store phone screenshots to Google Play (no binary, no text metadata)"
   lane :screenshots do
     unless Dir.exist?(GOOGLE_SCREENSHOTS_DIR)
