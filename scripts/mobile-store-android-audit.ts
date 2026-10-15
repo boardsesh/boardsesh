@@ -104,6 +104,7 @@ export function buildAndroidReleaseAudit(
     limitations: [
       'Release notes are not exposed by this endpoint and were not verified.',
       'Managed publishing status is not exposed by this endpoint and was not verified.',
+      'PUBLISHED includes partial and halted releases; rollout completion, track activation, and tester delivery were not verified.',
       'Version name and source commit were not verified; identity uses the exact versionCode.',
       'The API returns up to 20 non-obsolete releases; absence does not prove a build was never uploaded.',
     ],

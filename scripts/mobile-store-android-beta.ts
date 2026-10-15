@@ -92,7 +92,9 @@ function selectedRelease(internal: unknown, beta: unknown, versionCode: number) 
       return { language: parsed['language'], text: parsed['text'] };
     });
   }
-  return release;
+  const matches = betaReleases.filter((entry) => (entry['versionCodes'] as string[]).includes(String(versionCode)));
+  if (matches.length > 1) throw new Error('Beta edit contains ambiguous releases for ANDROID_VERSION_CODE');
+  return { release, alreadyCompleted: matches.length === 1 && matches[0]!['status'] === 'completed' };
 }
 
 export async function promoteAndroidBeta(options: { accessToken: string; versionCode: number; apply?: boolean }) {
@@ -124,13 +126,10 @@ export async function promoteAndroidBeta(options: { accessToken: string; version
   const internal = await request('/tracks/internal/releases');
   const beta = await request('/tracks/beta/releases');
   const betaReleases = checkSummaries(internal, beta, versionCode);
-  const alreadyPublished = betaReleases.some(
-    (release) =>
-      release.releaseLifecycleState === PUBLISHED &&
-      release.activeArtifacts.some((artifact) => artifact.versionCode === versionCode),
-  );
-  if (!apply || alreadyPublished) {
-    return { action: alreadyPublished ? 'already-published' : 'plan', versionCode, targetTrack: 'beta', betaReleases };
+  if (!apply) {
+    // PUBLISHED also includes partial and halted rollouts. A lifecycle-only
+    // plan cannot establish whether the requested build is already at 100%.
+    return { action: 'plan', versionCode, targetTrack: 'beta', betaReleases, rolloutStatus: 'unknown' };
   }
 
   // No retries or cleanup edits: a review conflict must fail visibly, and a
@@ -142,7 +141,15 @@ export async function promoteAndroidBeta(options: { accessToken: string; version
   const editPath = `/edits/${created['id']}`;
   const internalEdit = await request(`${editPath}/tracks/internal`);
   const betaEdit = await request(`${editPath}/tracks/beta`);
-  const release = selectedRelease(internalEdit, betaEdit, versionCode);
+  const { release, alreadyCompleted } = selectedRelease(internalEdit, betaEdit, versionCode);
+  const alreadyPublished = betaReleases.some(
+    (entry) =>
+      entry.releaseLifecycleState === PUBLISHED &&
+      entry.activeArtifacts.some((artifact) => artifact.versionCode === versionCode),
+  );
+  if (alreadyCompleted && alreadyPublished) {
+    return { action: 'already-completed', versionCode, targetTrack: 'beta', betaReleases, rolloutStatus: 'completed' };
+  }
   await request(`${editPath}/tracks/beta`, 'PUT', { track: 'beta', releases: [release] });
   await request(`${editPath}:validate`, 'POST');
   await request(`${editPath}:commit?changesNotSentForReview=false&changesInReviewBehavior=ERROR_IF_IN_REVIEW`, 'POST');

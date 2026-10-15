@@ -155,12 +155,52 @@ describe('Android open testing promotion', () => {
     });
   });
 
-  it('makes no edits when the exact version is already published', async () => {
+  it('keeps read-only plans explicit about unknown rollout completion', async () => {
     const fetchMock = mockResponses([summary(published()), summary(published())]);
-    expect(await promoteAndroidBeta({ accessToken: 'secret', versionCode: VERSION, apply: true })).toMatchObject({
-      action: 'already-published',
+    expect(await promoteAndroidBeta({ accessToken: 'secret', versionCode: VERSION })).toMatchObject({
+      action: 'plan',
+      rolloutStatus: 'unknown',
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['inProgress', 'halted'])('completes a PUBLISHED beta whose rollout is %s', async (status) => {
+    const responses = applyResponses(summary(published()));
+    responses[1] = summary(published());
+    responses[4] = { track: 'beta', releases: [{ status, userFraction: 0.1, versionCodes: [String(VERSION)] }] };
+    const fetchMock = mockResponses(responses);
+    expect(await promoteAndroidBeta({ accessToken: 'secret', versionCode: VERSION, apply: true })).toMatchObject({
+      action: 'committed',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[5]![1]!.body as string).releases[0]).toMatchObject({
+      status: 'completed',
+      versionCodes: [String(VERSION)],
+    });
+    expect(fetchMock.mock.calls[7]![0]).toContain('changesInReviewBehavior=ERROR_IF_IN_REVIEW');
+  });
+
+  it.each(['DRAFT', 'NOT_SENT_FOR_REVIEW'])('submits completed edit releases whose lifecycle is %s', async (state) => {
+    const responses = applyResponses();
+    responses[1] = summary(published(VERSION, state));
+    responses[4] = { track: 'beta', releases: [{ status: 'completed', versionCodes: [String(VERSION)] }] };
+    const fetchMock = mockResponses(responses);
+    expect(await promoteAndroidBeta({ accessToken: 'secret', versionCode: VERSION, apply: true })).toMatchObject({
+      action: 'committed',
+    });
+    expect(fetchMock.mock.calls[7]![0]).toContain('changesNotSentForReview=false');
+  });
+
+  it('skips track writes only after reading exact completed rollout status', async () => {
+    const responses = applyResponses().slice(0, 5);
+    responses[1] = summary(published());
+    responses[4] = { track: 'beta', releases: [{ status: 'completed', versionCodes: [String(VERSION)] }] };
+    const fetchMock = mockResponses(responses);
+    expect(await promoteAndroidBeta({ accessToken: 'secret', versionCode: VERSION, apply: true })).toMatchObject({
+      action: 'already-completed',
+      rolloutStatus: 'completed',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false);
   });
 
   it('does not echo network errors containing credentials', async () => {

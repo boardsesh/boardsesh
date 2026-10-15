@@ -460,7 +460,11 @@ submissions or rollout. For Google Play, dispatch **Mobile Store Android Audit**
 (`mobile-store-android-audit.yml`) with the exact versionCode. Its GET-only
 release summary checks the selected `internal`, `beta` (open testing), or
 `production` track without opening an edit. Its `require_published` option
-defaults to true: an exact matching draft is insufficient. Turn it off when
+defaults to true: an exact matching draft is insufficient. `PUBLISHED` also
+includes partial and halted releases, so this lifecycle check does not prove a
+100% rollout, track activation, or tester delivery. The apply-mode catch-up lane
+checks edit status and completes partial or halted releases; its GET-only plan
+cannot verify rollout completion. Turn the publication requirement off when
 inspecting a pending review. The equivalent Fastlane lane is
 `android audit version_code:<code> track:beta`. Google may return HTTP 204 for
 an empty track or a quota error; neither verifies publication. It cannot verify localized release notes, screenshot contents, or managed

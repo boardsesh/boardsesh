@@ -32,6 +32,9 @@ describe('exact Android release audit', () => {
     expect(report.identityErrors).toEqual([]);
     expect(report.matchingReleases).toEqual([release(2001247, state)]);
     expect(report.releases).toHaveLength(2);
+    expect(report.limitations).toContain(
+      'PUBLISHED includes partial and halted releases; rollout completion, track activation, and tester delivery were not verified.',
+    );
     expect(report.limitations).toContain('Release notes are not exposed by this endpoint and were not verified.');
     expect(report.limitations).toContain(
       'Managed publishing status is not exposed by this endpoint and was not verified.',

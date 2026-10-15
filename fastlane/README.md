@@ -95,13 +95,20 @@ bundle exec fastlane android beta version_code:2001310
 internal release and refuses to overwrite a newer beta build. To submit that
 existing build to open testing, run
 `bundle exec fastlane android beta version_code:2001310 apply:true`.
+Applying always inspects the edit's exact release status. A partially rolled out
+or halted matching beta is set to `completed`; only a `PUBLISHED` release
+whose edit status is also `completed` skips track writes. A completed release
+that still needs review is submitted. The GET-only plan reports rollout status as unknown:
+Google's `PUBLISHED` lifecycle includes partial and halted releases.
 This is the catch-up path for a build already uploaded internally; routine new
 native builds use `upload_beta` instead. Neither lane uploads production releases.
 
 `android audit` accepts `track:internal`, `track:beta`, or `track:production`
 and saves its lifecycle receipt to `output:` or a temporary file printed in the
-log. A `PUBLISHED` lifecycle state confirms publication for the selected track;
-`DRAFT`, `NOT_SENT_FOR_REVIEW`, `IN_REVIEW`, and `APPROVED_NOT_PUBLISHED` do not.
+log. A `PUBLISHED` lifecycle state includes partial and halted releases; it does
+not verify a 100% rollout, an active testing track, or delivery to a tester.
+The states `DRAFT`, `NOT_SENT_FOR_REVIEW`, `IN_REVIEW`, and
+`APPROVED_NOT_PUBLISHED` do not confirm publication.
 An empty receipt immediately after commit means publication is not yet verified.
 Tester delivery also depends on account eligibility, device compatibility, and
 Play Store propagation.
