@@ -378,6 +378,73 @@
         "appLocaleVerified": true,
         "nextNavigationVerified": true
       }
+    },
+    "tension/fr": {
+      "file": "tension-fr-notification-center.png",
+      "sha256": "f7b205e4d3ccac58d472ddb8223df34db6ac79ceb92b4bae09d03e26799cf913",
+      "sourcePngSha256": "f7b205e4d3ccac58d472ddb8223df34db6ac79ceb92b4bae09d03e26799cf913",
+      "boardFamily": "tension",
+      "appLocale": "fr",
+      "widgetLocale": "en",
+      "captureSurface": "notification-center",
+      "device": "iPhone13Pro",
+      "sourceBuild": "TestFlight2.6.0(18)",
+      "appSourceCommit": null,
+      "capturedAt": "2026-10-15T01:32:11.818574+00:00",
+      "nativePixels": {
+        "width": 1170,
+        "height": 2532
+      },
+      "screenPoints": {
+        "width": 390,
+        "height": 844
+      },
+      "cropRect": {
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
+      },
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1716,
+          "width": 1110,
+          "height": 435
+        }
+      },
+      "content": {
+        "climbName": "Masquerade",
+        "grade": "6a/V3",
+        "currentIndex": 1,
+        "totalClimbs": 2,
+        "nextEnabled": true
+      },
+      "controller": {
+        "connection": "real-ble",
+        "presentedBoardFamily": "kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Tension Next received Putty LED payload after serial mismatch was accepted",
+        "physicalWallLightingVerified": false,
+        "compatibility": {
+          "protocol": "aurora-uart",
+          "targetBoardFamily": "tension",
+          "serialMismatchAccepted": true,
+          "verification": "native-next-and-received-led-payload"
+        }
+      },
+      "review": {
+        "reviewedAt": "2026-10-15T01:34:47.225669+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
+        "nativePixelsUnmodified": true,
+        "unrelatedNotificationsExcluded": true,
+        "appLocaleVerified": true,
+        "nextNavigationVerified": true
+      }
     }
   }
 }
