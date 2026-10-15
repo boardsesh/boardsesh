@@ -13,12 +13,15 @@ import type { BoardName } from '@/app/lib/types';
  * Server-side reads for the climb front door's two GraphQL-backed sections.
  *
  * Both are cached, and the cache on `similarClimbs` is load-bearing rather than
- * an optimisation. The resolver is rate-limited 30 requests/minute per IP
- * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and a
- * server-side call presents ONE IP — the web server's — for the whole world's
- * traffic. Its CTE also scans `board_climb_holds` across the entire layout. A
- * crawler walking a few hundred thousand climb pages is precisely the workload
- * that saturates both.
+ * an optimisation. The resolver is rate-limited 30 requests/minute
+ * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and its CTE
+ * scans `board_climb_holds` across the entire layout. A crawler walking a few
+ * hundred thousand climb pages is precisely the workload that saturates it.
+ *
+ * `executeGraphQLInternal` authenticates as a trusted internal-service caller
+ * (`INTERNAL_SERVICE_SECRET`, issue #5291) rather than presenting an anonymous
+ * IP, so this no longer collapses onto the same per-visitor bucket every other
+ * anonymous caller shares — see `applyRateLimit`'s `isInternalService` branch.
  *
  * Since #4968 it is no longer the ONLY cache on that path. `unstable_cache` is
  * per web instance and starts empty on every build, so a second one lives
@@ -66,8 +69,8 @@ const BETA_LINKS_REVALIDATE_SECONDS = 3600;
  * The similar-climbs section retries instead from the reader's own browser
  * (`SimilarClimbsList` re-runs the query on hydration when the server hands it
  * no seed), which costs the crawler nothing, spends nobody's server-render
- * budget, and bills the resolver's 30/min rate limit against the reader's IP
- * rather than the web server's single shared one.
+ * budget, and bills the resolver's 600/min materialized-index limit against
+ * the reader's IP rather than the web server's trusted per-read partition.
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
