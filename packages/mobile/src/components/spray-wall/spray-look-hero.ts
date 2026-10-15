@@ -8,16 +8,21 @@ export function fitSprayLookHero({
   railSlotHeight,
   captionLineHeights,
   fontScale,
+  verticalPadding = spacing[4] * 2,
+  minWidth,
 }: {
   aspect: number;
   windowWidth: number;
   railSlotHeight: number;
   captionLineHeights: CaptionLineHeights;
   fontScale: number;
+  verticalPadding?: number;
+  minWidth?: number;
 }) {
   return resolveHeroThumb({
     aspect,
     windowWidth,
-    heightBudget: railSlotHeight - spacing[4] * 2 - captionBlockHeight(captionLineHeights, fontScale, 0),
+    heightBudget: railSlotHeight - verticalPadding - captionBlockHeight(captionLineHeights, fontScale, 0),
+    minWidth,
   });
 }

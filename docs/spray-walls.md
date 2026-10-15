@@ -400,6 +400,14 @@ must not be painted beneath that native overlay: its holds use photo pixels,
 while the generated background uses canonical coordinates. Previewing changes
 neither the global wall registry nor the climber's own render preferences.
 
+On Android the look form measures its controls, footer notes and spacing before
+assigning the remaining height to the carousel. It scrolls only when a readable
+compact preview cannot fit, and compact cards retain centred swipe selection.
+The corner step likewise reserves its measured controls and hint before fitting
+the photo; a route-local native safe area keeps both screens above system navigation.
+The rename sheet uses a bounded scroll body on Android so keyboard focus cannot
+draw the name input over its pinned Done action.
+
 Three rules in that flow are not obvious from the API and are easy to undo:
 
 - **A wall is created PRIVATE whatever the climber chose, and the choice waits on

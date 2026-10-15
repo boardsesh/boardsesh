@@ -41,6 +41,8 @@ type BoardLookCarouselProps = {
   heroThumb?: { width: number; height: number } | null;
   /** Window width. Only needed alongside `heroThumb`, to centre the rail. */
   windowWidth?: number;
+  /** Keep compact fallback cards centred too, on a wizard preview surface. */
+  centered?: boolean;
   /**
    * Let a flick choose the card it lands on.
    *
@@ -83,6 +85,7 @@ export function BoardLookCarousel({
   onCardSeen,
   heroThumb,
   windowWidth,
+  centered = false,
   selectOnSnap,
   showDescriptions = true,
   contentStyle,
@@ -238,13 +241,13 @@ export function BoardLookCarousel({
         // answers — a recycled row is not re-rendered just because `renderItem`
         // changed identity.
         extraData={extraData}
-        align={heroThumb ? 'center' : 'start'}
+        align={heroThumb || centered ? 'center' : 'start'}
         windowWidth={windowWidth}
         initialScrollIndex={selectedIndex}
         // Tapping a neighbour that is only peeking in makes it the chosen look;
         // bringing it to the centre is what keeps "the card you are looking at"
         // and "the look the button will apply" the same card.
-        activeIndex={heroThumb ? selectedIndex : undefined}
+        activeIndex={heroThumb || centered ? selectedIndex : undefined}
         // One offscreen card at hero size. Each live card holds a multi-megabyte
         // bitmap, and this screen fires on a cold first launch right after a sync.
         drawDistance={heroThumb ? layout.thumbWidth : undefined}

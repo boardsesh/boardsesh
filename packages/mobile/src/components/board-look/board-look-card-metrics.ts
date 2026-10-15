@@ -189,17 +189,19 @@ export function resolveHeroThumb({
   aspect,
   windowWidth,
   heightBudget,
+  minWidth = HERO_MIN_WIDTH,
 }: {
   aspect: number;
   windowWidth: number;
   heightBudget: number;
+  minWidth?: number;
 }): HeroThumb | null {
   if (!Number.isFinite(aspect) || aspect <= 0) return null;
   if (!Number.isFinite(heightBudget) || heightBudget <= 0) return null;
 
   const widthBudget = Math.min(windowWidth * HERO_WIDTH_FRACTION, HERO_MAX_WIDTH);
   const width = Math.floor(Math.min(widthBudget, heightBudget * aspect));
-  if (width < HERO_MIN_WIDTH) return null;
+  if (width < minWidth) return null;
 
   // A card wide enough to leave no peek would hide that the rail continues. The
   // centred card sits behind an inset of half the leftover width, so the slice of
@@ -208,7 +210,7 @@ export function resolveHeroThumb({
   const minLeftover = 2 * (MIN_PEEK + RAIL_CARD_GAP);
   if (windowWidth - width < minLeftover) {
     const capped = Math.floor(windowWidth - minLeftover);
-    if (capped < HERO_MIN_WIDTH) return null;
+    if (capped < minWidth) return null;
     return { width: capped, height: Math.floor(capped / aspect) };
   }
 

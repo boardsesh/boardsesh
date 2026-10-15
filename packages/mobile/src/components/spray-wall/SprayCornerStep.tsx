@@ -27,7 +27,7 @@
 // lifts.
 
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Quad, ReferenceSize } from '@boardsesh/spray-wall-geometry';
 import { cornerQualityNote } from './corner-quality';
@@ -36,11 +36,12 @@ import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../../theme/tokens';
 import { SprayCornerMarker } from './SprayCornerMarker';
 import { StepCounter } from './StepCounter';
 import { MIN_STAGE_HEIGHT, useFittedPhotoStage } from './use-fitted-photo-stage';
+import { CORNER_HANDLE_SIZE } from './corner-photo-fit';
 
 export type SprayCornerStepProps = {
   /** "Step 3 of 6", already translated, or null where the step is not counted. */
@@ -83,10 +84,9 @@ export function SprayCornerStep({
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
-  // The larger of the window's inset and this screen's own: on Android the
-  // published window inset read 0 here, and the hint under the photo sat under
-  // the gesture bar. The flow is a full-screen route, never inside a tab, so the
-  // local inset carries no tab bar to over-pad by.
+  // iOS keeps the existing window/local sampling. Android samples this route's
+  // own native frame below: the inherited providers can report zero even while
+  // a native-stack screen draws behind the gesture-navigation bar.
   const windowBottomInset = useWindowBottomInset();
   const { bottom: localBottomInset } = useSafeAreaInsets();
   const bottomInset = Math.max(windowBottomInset, localBottomInset);
@@ -94,6 +94,28 @@ export function SprayCornerStep({
   // The measured stage, the scroll-when-it-must rule and the hold-still-while-
   // dragging lock, shared with the crop step.
   const fittedStage = useFittedPhotoStage();
+  const [controlsHeight, setControlsHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
+  const handleControlsLayout = useCallback((event: LayoutChangeEvent) => {
+    setControlsHeight(event.nativeEvent.layout.height);
+  }, []);
+  const handleFooterLayout = useCallback((event: LayoutChangeEvent) => {
+    setFooterHeight(event.nativeEvent.layout.height);
+  }, []);
+  // Android's ScrollView measures content unbounded vertically. A photo fitted
+  // to a flex stage can then become that stage's new intrinsic minimum and
+  // grow the content past the hint. Reserve both chrome blocks explicitly.
+  const stageHeight = Math.max(
+    MIN_STAGE_HEIGHT,
+    fittedStage.viewportHeight - controlsHeight - footerHeight - headerInset - spacing[4] - spacing[3] * 3,
+  );
+  const stageReady =
+    Platform.OS !== 'android' ||
+    (fittedStage.viewportHeight > 0 && fittedStage.maxPhotoWidth > 0 && controlsHeight > 0 && footerHeight > 0);
+  // The native stage's onLayout can still contain its initial minimum height
+  // on the render that first has measured controls/footer. Seed the rings from
+  // the SAME height the Android stage will draw, without that one-layout lag.
+  const maxPhotoHeight = Platform.OS === 'android' ? stageHeight - CORNER_HANDLE_SIZE : fittedStage.maxPhotoHeight;
 
   // One slot for the hint and for the refusal that replaces it, as tall as the
   // taller of the two at this width and text size.
@@ -126,7 +148,7 @@ export function SprayCornerStep({
   // still skip.
   const photoHasSize = photo.width > 0 && photo.height > 0;
 
-  return (
+  const content = (
     <ScrollView
       style={styles.flex}
       // The header inset is added by hand below: with `automatic`, iOS applies
@@ -135,105 +157,126 @@ export function SprayCornerStep({
       // Nothing is pinned under the page, so it pads only past the home indicator.
       contentContainerStyle={[
         styles.content,
-        { paddingTop: headerInset + spacing[4], paddingBottom: bottomInset + spacing[3] },
+        {
+          paddingTop: headerInset + spacing[4],
+          paddingBottom: (Platform.OS === 'android' ? 0 : bottomInset) + spacing[3],
+        },
       ]}
       {...fittedStage.scrollProps}
       bounces={false}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.titleBlock}>
-        {stepCounter ? <StepCounter label={stepCounter} /> : null}
-        <Text variant="title3">{title}</Text>
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {body}
-        </Text>
+      <View style={styles.controls} onLayout={handleControlsLayout} testID="spray-corner-controls">
+        <View style={styles.titleBlock}>
+          {stepCounter ? <StepCounter label={stepCounter} /> : null}
+          <Text variant="title3">{title}</Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {body}
+          </Text>
+        </View>
+        <View style={styles.clearRow}>
+          <Button
+            title={t('sprayWizard.anchors.clear')}
+            icon="undo"
+            variant="tonal"
+            size="small"
+            onPress={onClear}
+            disabled={!canClear}
+          />
+        </View>
       </View>
-      <View style={styles.clearRow}>
-        <Button
-          title={t('sprayWizard.anchors.clear')}
-          icon="undo"
-          variant="tonal"
-          size="small"
-          onPress={onClear}
-          disabled={!canClear}
-        />
-      </View>
-      <View style={styles.stage} onLayout={fittedStage.onStageLayout}>
-        {photoHasSize ? (
+      <View
+        style={[styles.stage, Platform.OS === 'android' ? { flex: 0, height: stageHeight } : null]}
+        onLayout={fittedStage.onStageLayout}
+        testID="spray-corner-stage"
+      >
+        {photoHasSize && stageReady ? (
           <SprayCornerMarker
             photo={photo}
             maxWidth={fittedStage.maxPhotoWidth}
-            maxHeight={fittedStage.maxPhotoHeight}
+            maxHeight={maxPhotoHeight}
             value={value}
             onChange={onChange}
             invalid={invalid}
             onDragActiveChange={fittedStage.onDragActiveChange}
           />
-        ) : (
+        ) : !photoHasSize ? (
           <Text variant="subheadline" color={systemColors.error} style={styles.hint} accessibilityLiveRegion="polite">
             {t('sprayWizard.photo.failed')}
           </Text>
-        )}
+        ) : null}
       </View>
-      <View style={{ minHeight: Math.max(hintHeight, crossedHeight) }}>
-        {/* The one announcement of a refusal, in both flows. */}
-        <Text
-          variant="footnote"
-          color={invalid ? systemColors.error : systemColors.secondaryLabel}
-          style={styles.hint}
-          accessibilityLiveRegion={invalid ? 'polite' : 'none'}
-        >
-          {invalid ? t('sprayWizard.anchors.crossed') : t('sprayWizard.anchors.hint')}
-        </Text>
-        {/* Both sentences, laid out and never shown, so the slot can be sized
+      <View style={styles.controls} onLayout={handleFooterLayout} testID="spray-corner-footer">
+        <View style={{ minHeight: Math.max(hintHeight, crossedHeight) }}>
+          {/* The one announcement of a refusal, in both flows. */}
+          <Text
+            variant="footnote"
+            color={invalid ? systemColors.error : systemColors.secondaryLabel}
+            style={styles.hint}
+            accessibilityLiveRegion={invalid ? 'polite' : 'none'}
+          >
+            {invalid ? t('sprayWizard.anchors.crossed') : t('sprayWizard.anchors.hint')}
+          </Text>
+          {/* Both sentences, laid out and never shown, so the slot can be sized
             before either is needed. */}
-        <Text
-          variant="footnote"
-          style={[styles.hint, styles.hintProbe]}
-          onLayout={onHintProbeLayout}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {t('sprayWizard.anchors.hint')}
-        </Text>
-        <Text
-          variant="footnote"
-          style={[styles.hint, styles.hintProbe]}
-          onLayout={onCrossedProbeLayout}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {t('sprayWizard.anchors.crossed')}
-        </Text>
-      </View>
-      {qualityFrame ? (
-        <View style={{ minHeight: qualitySlotHeight }}>
-          {qualityNote ? (
-            <Text
-              variant="footnote"
-              color={qualityNote === 'good' ? systemColors.secondaryLabel : brandColors.warning}
-              style={styles.hint}
-              accessibilityLiveRegion="polite"
-              testID={`spray-corner-quality-${qualityNote}`}
-            >
-              {t(`sprayWizard.anchors.quality.${qualityNote}`)}
-            </Text>
-          ) : null}
-          {QUALITY_NOTES.map((note) => (
-            <Text
-              key={note}
-              variant="footnote"
-              style={[styles.hint, styles.hintProbe]}
-              onLayout={(event) => onQualityProbeLayout(note, event)}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              {t(`sprayWizard.anchors.quality.${note}`)}
-            </Text>
-          ))}
+          <Text
+            variant="footnote"
+            style={[styles.hint, styles.hintProbe]}
+            onLayout={onHintProbeLayout}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {t('sprayWizard.anchors.hint')}
+          </Text>
+          <Text
+            variant="footnote"
+            style={[styles.hint, styles.hintProbe]}
+            onLayout={onCrossedProbeLayout}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {t('sprayWizard.anchors.crossed')}
+          </Text>
         </View>
-      ) : null}
+        {qualityFrame ? (
+          <View style={{ minHeight: qualitySlotHeight }}>
+            {qualityNote ? (
+              <Text
+                variant="footnote"
+                color={qualityNote === 'good' ? systemColors.secondaryLabel : brandColors.warning}
+                style={styles.hint}
+                accessibilityLiveRegion="polite"
+                testID={`spray-corner-quality-${qualityNote}`}
+              >
+                {t(`sprayWizard.anchors.quality.${qualityNote}`)}
+              </Text>
+            ) : null}
+            {QUALITY_NOTES.map((note) => (
+              <Text
+                key={note}
+                variant="footnote"
+                style={[styles.hint, styles.hintProbe]}
+                onLayout={(event) => onQualityProbeLayout(note, event)}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                {t(`sprayWizard.anchors.quality.${note}`)}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </View>
     </ScrollView>
+  );
+
+  return Platform.OS === 'android' ? (
+    <SafeAreaProvider style={styles.flex}>
+      <SafeAreaView edges={['bottom']} style={styles.flex}>
+        {content}
+      </SafeAreaView>
+    </SafeAreaProvider>
+  ) : (
+    content
   );
 }
 
@@ -249,6 +292,9 @@ const styles = StyleSheet.create({
   clearRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+  },
+  controls: {
+    gap: spacing[3],
   },
   // The counter, the title and the line under it.
   titleBlock: {

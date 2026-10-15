@@ -14,7 +14,8 @@ import { PressableSurface } from './PressableSurface';
 // files is one Host per control rather than one Host for the whole form — which
 // is exactly what every settings screen in the app did before MoreForm existed.
 
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
 import { Icon } from './Icon';
@@ -34,7 +35,7 @@ import {
 } from './MoreForm.logic';
 import type { MoreFormProps, MoreRow, MoreSection } from './MoreForm.types';
 
-function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
+function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: boolean }) {
   const { systemColors } = useTheme();
   const opensOutsideAppHint = useOpensOutsideAppHint();
 
@@ -171,9 +172,10 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
     }
     case 'slider':
       return (
-        <View style={styles.padded}>
+        <View style={[styles.padded, fitted ? styles.fittedSlider : null]}>
           <MarkerMultiplierSlider
             accessibilityLabel={row.label}
+            showLabel
             value={row.value}
             min={row.min}
             max={row.max}
@@ -193,7 +195,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
   }
 }
 
-function Section({ section }: { section: MoreSection }) {
+function Section({ section, fitted }: { section: MoreSection; fitted?: boolean }) {
   const { systemColors } = useTheme();
   // A section of nothing but buttons gets no card — a bare "Reset" reads as an
   // action, not as a one-row list. Matches what the native files do.
@@ -211,7 +213,7 @@ function Section({ section }: { section: MoreSection }) {
         }
       >
         {section.rows.map((row, index) => (
-          <Row key={row.key} row={row} isLast={index === section.rows.length - 1} />
+          <Row key={row.key} row={row} isLast={index === section.rows.length - 1} fitted={fitted} />
         ))}
       </View>
       {section.footer ? (
@@ -223,13 +225,42 @@ function Section({ section }: { section: MoreSection }) {
   );
 }
 
-export function MoreFormRN({ model }: MoreFormProps) {
-  return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+export type MoreFormRNProps = MoreFormProps & {
+  /** Measured preview screens fit their content before enabling overflow scroll. */
+  fitted?: boolean;
+  scrollable?: boolean;
+  /** Actual labels, controls, footers and gaps; excludes fixed custom rows. */
+  onReservedHeightChange?: (height: number) => void;
+};
+
+export function MoreFormRN({ model, fitted, scrollable = true, onReservedHeightChange }: MoreFormRNProps) {
+  const customHeight = model.sections.reduce(
+    (total, section) =>
+      total + section.rows.reduce((height, row) => height + (row.kind === 'custom' ? row.height : 0), 0),
+    0,
+  );
+  const handleContentLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onReservedHeightChange?.(Math.max(0, event.nativeEvent.layout.height - customHeight));
+    },
+    [customHeight, onReservedHeightChange],
+  );
+  const content = (
+    <View
+      style={fitted ? styles.fittedContent : styles.content}
+      onLayout={onReservedHeightChange ? handleContentLayout : undefined}
+    >
       {model.sections.map((section) => (
-        <Section key={section.key} section={section} />
+        <Section key={section.key} section={section} fitted={fitted} />
       ))}
+    </View>
+  );
+  return scrollable ? (
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scrollContent}>
+      {content}
     </ScrollView>
+  ) : (
+    content
   );
 }
 
@@ -239,6 +270,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing[4],
     paddingBottom: spacing[8],
     gap: spacing[6],
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  fittedContent: {
+    gap: spacing[3],
+  },
+  fittedSlider: {
+    paddingVertical: spacing[1],
   },
   section: {
     gap: spacing[2],

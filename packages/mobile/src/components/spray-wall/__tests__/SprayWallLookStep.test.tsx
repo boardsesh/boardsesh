@@ -20,6 +20,11 @@ const controls = vi.hoisted(() => ({
   model: null as null | MoreFormModel,
   /** Which renderer drew that model. */
   renderer: null as null | 'native' | 'rn',
+  formProps: null as null | {
+    fitted?: boolean;
+    scrollable?: boolean;
+    onReservedHeightChange?: (height: number) => void;
+  },
   /** The `Platform` the step reads; mutated in place so the mock stays live. */
   platform: { OS: 'ios' as 'ios' | 'android', select: (choices: { ios: unknown }) => choices.ios },
   /** What each measured view reports, by testID: jsdom has no layout. */
@@ -111,14 +116,24 @@ vi.mock('../../MoreForm.rn', async () => {
     '../../../../test/more-form-stub',
   );
   return {
-    MoreFormRN: (props: { model: MoreFormModel }) => {
+    MoreFormRN: (props: {
+      model: MoreFormModel;
+      fitted?: boolean;
+      scrollable?: boolean;
+      onReservedHeightChange?: (height: number) => void;
+    }) => {
       controls.model = props.model;
       controls.renderer = 'rn';
+      controls.formProps = props;
       return stub.MoreForm(props);
     },
   };
 });
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
+vi.mock('react-native-safe-area-context', () => ({
+  SafeAreaProvider: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
 vi.mock('../../../hooks/use-header-actions', () => ({
   useHeaderActions: ({ trailing }: { trailing?: { label: string; onPress: () => void } | null }) => {
     if (trailing) controls.headerTrailing = trailing;
@@ -196,6 +211,8 @@ vi.mock('../../board-look/BoardLookCarousel', () => ({
 }));
 vi.mock('../../board-look/RailIndexDots', () => ({ RailIndexDots: () => null }));
 vi.mock('../../board-look/board-look-card-metrics', () => ({
+  RAIL_MIN_WIDTH: 132,
+  RAIL_THUMB_HEIGHT: 168,
   captionBlockHeight: () => 20,
   captionLineHeights: () => [],
   resolveHeroThumb: () => null,
@@ -295,6 +312,7 @@ beforeEach(() => {
   controls.carouselProps = null;
   controls.model = null;
   controls.renderer = null;
+  controls.formProps = null;
   controls.platform.OS = 'ios';
   controls.layouts = {};
   controls.rendererAvailable = true;
@@ -424,7 +442,7 @@ describe('spray Look wall background', () => {
 
   it('stores the photo by name when the creator picks it, so an earlier save cannot stick', async () => {
     controls.art = artAnswer('SOFT');
-    const { getByTestId, getByText } = renderStep('background');
+    const { getByTestId } = renderStep('background');
     fireEvent.click(backgroundRadio('photo'));
     expect(getByTestId('background-preview').getAttribute('data-value')).toBe('photo');
     finishBackground();
@@ -659,6 +677,21 @@ describe('the preview row height', () => {
 });
 
 describe('the form renderer', () => {
+  it('fits Android controls and notes beside the preview before allowing overflow scrolling', () => {
+    controls.platform.OS = 'android';
+    controls.preview = { boardWidth: 500, boardHeight: 700 };
+    controls.unavailable = false;
+    controls.layouts = { 'spray-look-form': { width: 402, height: 500 } };
+    renderStep();
+    act(() => controls.formProps?.onReservedHeightChange?.(180));
+    expect(modelRow('lookCarousel')).toMatchObject({ height: 320 });
+    expect(controls.formProps).toMatchObject({ fitted: true, scrollable: false });
+    // Translated footers or enlarged labels consume real room, rather than
+    // being omitted from a guessed fixed slider-height reservation.
+    act(() => controls.formProps?.onReservedHeightChange?.(400));
+    expect(controls.formProps?.scrollable).toBe(true);
+    expect(controls.carouselProps?.selectOnSnap).toBe(true);
+  });
   it('draws the native form on iOS and the React Native one on Android', () => {
     controls.preview = { boardWidth: 500, boardHeight: 700 };
     controls.unavailable = false;

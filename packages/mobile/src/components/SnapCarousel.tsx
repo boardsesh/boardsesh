@@ -25,6 +25,7 @@ export const SNAP_CARD_GAP = RAIL_CARD_GAP;
  * momentum scroll, so no momentum-end event follows the release.
  */
 const NO_MOMENTUM_VELOCITY = 0.01;
+const CENTERED_CONTENT_POSITION = { disabled: true };
 
 type SnapCarouselProps<TItem> = {
   data: readonly TItem[];
@@ -124,6 +125,7 @@ export function SnapCarousel<TItem>({
   // True from the moment a finger goes down until the rail stops, so scroll
   // frames the climber did not cause cannot move the selection.
   const userScrollingRef = useRef(false);
+  const correctedGestureRef = useRef(false);
 
   // Centring is done with a content INSET, not with `snapToAlignment="center"`.
   //
@@ -133,6 +135,7 @@ export function SnapCarousel<TItem>({
   // centring twice and shove every card off to one side, leaving no peek at all
   // on the trailing edge.
   const centeredInset = align === 'center' && windowWidth ? centeredContentInset(windowWidth, cardWidth) : null;
+  const previousGeometryRef = useRef({ snapInterval, centeredInset });
 
   /**
    * Which card an offset belongs to, reported only when it CHANGES.
@@ -170,14 +173,33 @@ export function SnapCarousel<TItem>({
 
   const handleScrollBeginDrag = useCallback(() => {
     userScrollingRef.current = true;
+    correctedGestureRef.current = false;
   }, []);
+
+  const finishScrollAt = useCallback(
+    (offsetX: number) => {
+      userScrollingRef.current = false;
+      // A corrective animation may emit another completion. One correction per
+      // gesture keeps native off-grid finishes bounded instead of chasing them.
+      if (correctedGestureRef.current) return;
+      settleAt(offsetX);
+      if (centeredInset == null) return;
+      const index = Math.max(0, Math.min(itemCount - 1, Math.round(offsetX / snapInterval)));
+      const targetOffset = index * snapInterval;
+      if (Math.abs(offsetX - targetOffset) <= 0.5) return;
+      const list = listRef.current;
+      if (!list) return;
+      correctedGestureRef.current = true;
+      list.scrollToOffset({ offset: targetOffset, animated: false });
+    },
+    [settleAt, centeredInset, itemCount, snapInterval],
+  );
 
   const handleMomentumEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      userScrollingRef.current = false;
-      settleAt(event.nativeEvent.contentOffset.x);
+      finishScrollAt(event.nativeEvent.contentOffset.x);
     },
-    [settleAt],
+    [finishScrollAt],
   );
 
   /**
@@ -201,22 +223,39 @@ export function SnapCarousel<TItem>({
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const velocityX = event.nativeEvent.velocity?.x ?? 0;
       if (Math.abs(velocityX) > NO_MOMENTUM_VELOCITY) return;
-      userScrollingRef.current = false;
-      settleAt(event.nativeEvent.contentOffset.x);
+      finishScrollAt(event.nativeEvent.contentOffset.x);
     },
-    [settleAt],
+    [finishScrollAt],
   );
 
   useEffect(() => {
-    if (activeIndex == null || activeIndex === settledIndexRef.current) return;
+    const previousGeometry = previousGeometryRef.current;
+    const geometryChanged =
+      previousGeometry.snapInterval !== snapInterval || previousGeometry.centeredInset !== centeredInset;
+    previousGeometryRef.current = { snapInterval, centeredInset };
+    if (geometryChanged) {
+      // The resized list replaces the native scroller, which may never finish
+      // its old gesture. Initialization frames belong to the new list.
+      userScrollingRef.current = false;
+      correctedGestureRef.current = false;
+    }
+    if (activeIndex == null || (activeIndex === settledIndexRef.current && !geometryChanged)) return;
     const list = listRef.current;
     // Recorded only once the scroll is actually on its way. Marking it settled
     // first would leave the ref claiming a position the rail never moved to, and
     // the next matching `activeIndex` would then be skipped as a no-op.
     if (!list) return;
     settledIndexRef.current = activeIndex;
-    void list.scrollToIndex({ index: activeIndex, animated: !reduceMotion });
-  }, [activeIndex, reduceMotion]);
+    const animated = !reduceMotion && !geometryChanged;
+    if (centeredInset != null) {
+      // FlashList's index clamp omits trailing padding and its item width
+      // includes the separator. Our fixed geometry gives the exact native
+      // offset, including for the final card.
+      list.scrollToOffset({ offset: activeIndex * snapInterval, animated });
+    } else {
+      void list.scrollToIndex({ index: activeIndex, animated });
+    }
+  }, [activeIndex, reduceMotion, centeredInset, snapInterval]);
 
   const contentContainerStyle = useMemo(
     () => [centeredInset != null ? { paddingHorizontal: centeredInset } : styles.content, contentStyle],
@@ -228,6 +267,9 @@ export function SnapCarousel<TItem>({
     // favour of automatic sizing; passing it is a no-op. Cards are fixed-width
     // (`cardWidth`) so layout is stable regardless.
     <FlashList
+      // A resized hero needs fresh recycler geometry before its selected index
+      // can be centered. Selection and dim changes keep this key unchanged.
+      key={centeredInset != null ? `${snapInterval}:${centeredInset}` : 'start'}
       ref={listRef}
       data={data}
       horizontal
@@ -241,8 +283,14 @@ export function SnapCarousel<TItem>({
       snapToAlignment="start"
       decelerationRate="fast"
       disableIntervalMomentum
-      initialScrollIndex={initialScrollIndex}
+      initialScrollIndex={centeredInset != null ? (activeIndex ?? initialScrollIndex) : initialScrollIndex}
+      // FlashList adds leading padding to the initial index offset. Cancel it
+      // so index i starts at i * interval, just like a finger-driven snap.
+      initialScrollIndexParams={centeredInset != null ? { viewOffset: -centeredInset } : undefined}
       drawDistance={drawDistance}
+      // These fixed cards follow selection explicitly. FlashList's automatic
+      // anchor preservation otherwise moves them again after a centered snap.
+      maintainVisibleContentPosition={centeredInset != null ? CENTERED_CONTENT_POSITION : undefined}
       onScrollBeginDrag={onSnapToIndex ? handleScrollBeginDrag : undefined}
       onScroll={onSnapToIndex ? handleScroll : undefined}
       // Every frame, because the selection is gated on the card actually

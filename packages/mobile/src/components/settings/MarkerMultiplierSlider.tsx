@@ -23,6 +23,8 @@ import { spacing } from '../../theme/tokens';
  */
 export type MarkerMultiplierSliderProps = {
   accessibilityLabel: string;
+  /** A settings row shows its name in place of the track's endpoint labels. */
+  showLabel?: boolean;
   value: number;
   min: number;
   max: number;
@@ -45,6 +47,7 @@ function normalizeToStep(raw: number, min: number, max: number, step: number): n
 
 export function MarkerMultiplierSlider({
   accessibilityLabel,
+  showLabel = false,
   value,
   min,
   max,
@@ -98,13 +101,19 @@ export function MarkerMultiplierSlider({
       style={styles.container}
     >
       <View style={styles.labels}>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {format(min)}
+        <Text
+          variant={showLabel ? 'subheadline' : 'caption1'}
+          color={systemColors.secondaryLabel}
+          style={showLabel ? styles.settingLabel : undefined}
+        >
+          {showLabel ? accessibilityLabel : format(min)}
         </Text>
         <Text variant="headline">{valueText}</Text>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {format(max)}
-        </Text>
+        {showLabel ? null : (
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {format(max)}
+          </Text>
+        )}
       </View>
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <NativeMarkerSlider
@@ -161,6 +170,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing[2],
+  },
+  settingLabel: {
+    flex: 1,
   },
   track: {
     height: 6,

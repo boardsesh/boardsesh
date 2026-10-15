@@ -1,7 +1,8 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { Sheet } from '../Sheet';
 import { SheetTopBar } from '../SheetTopBar';
@@ -36,6 +37,10 @@ export function SprayWallNameSheet({ visible, name, placeholder, onDone, onClose
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
   const [draft, setDraft] = useState(name);
+  const sheetRef = useRef<BottomSheetMethods>(null);
+  const handleFocus = useCallback(() => {
+    if (Platform.OS === 'android') sheetRef.current?.expand();
+  }, []);
 
   // Seeded on the closed → open edge only, so a re-render while open never
   // throws away what the climber has typed.
@@ -75,33 +80,59 @@ export function SprayWallNameSheet({ visible, name, placeholder, onDone, onClose
       ? { snapPoints: MEDIUM_LARGE_SNAP_POINTS }
       : { enableDynamicSizing: true, androidContentSized: true };
 
+  const field = (
+    <View style={styles.body}>
+      <BottomSheetTextInput
+        value={draft}
+        onChangeText={setDraft}
+        placeholder={placeholder}
+        placeholderTextColor={systemColors.tertiaryLabel}
+        accessibilityLabel={t('sprayWizard.details.name')}
+        maxLength={SPRAY_WALL_NAME_MAX_LENGTH}
+        style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+        // A wall's name is a proper noun ("Garage", "The Cave"); autocorrect
+        // rewrote it and spell-check underlined it (#5960).
+        autoCorrect={false}
+        spellCheck={false}
+        returnKeyType="done"
+        autoFocus
+        onFocus={handleFocus}
+        onSubmitEditing={handleDone}
+        testID="spray-wall-name-input"
+      />
+    </View>
+  );
+
   return (
-    <Sheet visible={visible} {...sizing} onClose={onClose} header={header}>
-      <View style={styles.body}>
-        <BottomSheetTextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={placeholder}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          accessibilityLabel={t('sprayWizard.details.name')}
-          maxLength={SPRAY_WALL_NAME_MAX_LENGTH}
-          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-          // A wall's name is a proper noun ("Garage", "The Cave"); autocorrect
-          // rewrote it and spell-check underlined it (#5960).
-          autoCorrect={false}
-          spellCheck={false}
-          returnKeyType="done"
-          autoFocus
-          onSubmitEditing={handleDone}
-          testID="spray-wall-name-input"
-        />
-      </View>
+    <Sheet
+      ref={sheetRef}
+      visible={visible}
+      {...sizing}
+      onClose={onClose}
+      header={Platform.OS === 'android' ? undefined : header}
+    >
+      {Platform.OS === 'android' ? (
+        <>
+          {/* Keep chrome outside the field's scroll viewport, while avoiding
+              Sheet's extra keyboard padding: Compose already shrinks this
+              fixed-detent body when the IME opens. Padding twice hides it. */}
+          {header}
+          <ScrollView style={styles.androidBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+            {field}
+          </ScrollView>
+        </>
+      ) : (
+        field
+      )}
     </Sheet>
   );
 }
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
+    androidBody: {
+      flex: 1,
+    },
     body: {
       paddingHorizontal: spacing[4],
       paddingTop: spacing[3],

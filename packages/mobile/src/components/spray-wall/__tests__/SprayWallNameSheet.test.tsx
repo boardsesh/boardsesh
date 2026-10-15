@@ -4,12 +4,14 @@ vi.mock('../../AccessibleBottomSheetTextInput', () => ({
     value,
     onChangeText,
     onSubmitEditing,
+    onFocus,
     placeholder,
     maxLength,
   }: {
     value?: string;
     onChangeText?: (text: string) => void;
     onSubmitEditing?: () => void;
+    onFocus?: () => void;
     placeholder?: string;
     maxLength?: number;
   }) =>
@@ -19,6 +21,7 @@ vi.mock('../../AccessibleBottomSheetTextInput', () => ({
       'data-maxlength': maxLength === undefined ? '' : String(maxLength),
       value: value ?? '',
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      onFocus,
       onKeyDown: (event: { key: string }) => {
         if (event.key === 'Enter') onSubmitEditing?.();
       },
@@ -30,14 +33,18 @@ import { createElement, type ReactNode } from 'react';
 
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 const sheetProps = vi.hoisted(() => ({ last: null as null | Record<string, unknown> }));
+const expand = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
   Platform: platform,
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  ScrollView: ({ children }: { children?: ReactNode }) =>
+    createElement('div', { 'data-testid': 'name-field-scroll' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('../../Sheet', () => ({
-  Sheet: (props: { children?: ReactNode; header?: ReactNode; visible: boolean }) => {
+  Sheet: (props: { children?: ReactNode; header?: ReactNode; visible: boolean; ref?: { current: unknown } }) => {
     sheetProps.last = props;
+    if (props.ref) props.ref.current = { expand };
     return createElement(
       'div',
       { 'data-sheet': 'true', 'data-visible': String(props.visible) },
@@ -64,6 +71,7 @@ const { SprayWallNameSheet } = await import('../SprayWallNameSheet');
 afterEach(() => {
   cleanup();
   platform.OS = 'ios';
+  expand.mockClear();
 });
 
 function renderSheet(props: Partial<Parameters<typeof SprayWallNameSheet>[0]> = {}) {
@@ -125,8 +133,23 @@ describe('SprayWallNameSheet sizing', () => {
     cleanup();
     platform.OS = 'android';
     renderSheet();
-    expect(sheetProps.last?.snapPoints).toEqual(['50%', '90%']);
+    expect(sheetProps.last).toMatchObject({ snapPoints: ['50%', '90%'] });
     expect(sheetProps.last?.enableDynamicSizing).toBeUndefined();
+  });
+
+  it('keeps Android chrome outside the field scroll without a second keyboard reservation', () => {
+    platform.OS = 'android';
+    const { container, getByTestId, onDone } = renderSheet();
+    expect(sheetProps.last?.header).toBeUndefined();
+    expect(sheetProps.last?.scrollable).toBeUndefined();
+    const fieldScroll = getByTestId('name-field-scroll');
+    expect(fieldScroll.contains(input(container))).toBe(true);
+    expect(fieldScroll.contains(done(container))).toBe(false);
+    fireEvent.focus(input(container));
+    expect(expand).toHaveBeenCalledOnce();
+    fireEvent.change(input(container), { target: { value: 'Android garage' } });
+    fireEvent.click(done(container));
+    expect(onDone).toHaveBeenCalledExactlyOnceWith('Android garage');
   });
 
   it('names its Cancel for screen readers', () => {

@@ -44,6 +44,24 @@ beforeEach(() => {
 });
 const format = (value: number) => String(value);
 describe('native linear slider persistence contract', () => {
+  it('keeps a settings row label visible alongside its changing value', () => {
+    const props = {
+      accessibilityLabel: 'Dim the rest of the wall',
+      showLabel: true,
+      value: 0.4,
+      min: 0,
+      max: 0.9,
+      step: 0.05,
+      format: (amount: number) => `${Math.round(amount * 100)}%`,
+      onChange: vi.fn(),
+    };
+    const view = render(<MarkerMultiplierSlider {...props} />);
+    expect(view.getByText('Dim the rest of the wall')).toBeTruthy();
+    expect(view.getByText('40%')).toBeTruthy();
+    view.rerender(<MarkerMultiplierSlider {...props} value={0.65} />);
+    expect(view.getByText('Dim the rest of the wall')).toBeTruthy();
+    expect(view.getByText('65%')).toBeTruthy();
+  });
   it('updates the draft throughout a drag and commits once on release', () => {
     const change = vi.fn();
     const commit = vi.fn();

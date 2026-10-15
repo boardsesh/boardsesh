@@ -34,17 +34,23 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { MoreForm } from '../MoreForm';
-import { MoreFormRN } from '../MoreForm.rn';
+import { MoreFormRN, type MoreFormRNProps } from '../MoreForm.rn';
 import { LookOptionSlider } from '../LookOptionSlider';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
 import { RailIndexDots } from '../board-look/RailIndexDots';
-import { captionLineHeights } from '../board-look/board-look-card-metrics';
+import {
+  captionBlockHeight,
+  captionLineHeights,
+  RAIL_MIN_WIDTH,
+  RAIL_THUMB_HEIGHT,
+} from '../board-look/board-look-card-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useHeaderActions } from '../../hooks/use-header-actions';
@@ -77,7 +83,6 @@ import {
 import { SprayWallBackgroundPreview } from './SprayWallBackgroundPreview';
 import { StepCounter } from './StepCounter';
 import { buildSprayBackgroundModel, buildSprayLookModel } from './spray-look-model';
-import type { MoreFormModel } from '../MoreForm.types';
 import {
   canPickBackground,
   sprayArtRefusalMessageKey,
@@ -279,7 +284,20 @@ export function SprayWallLookStep({
   const handleFormLayout = useCallback((event: LayoutChangeEvent) => {
     setFormHeight(event.nativeEvent.layout.height);
   }, []);
-  const lookRowHeight = previewRowHeight(formHeight, selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
+  const [reservedLookHeight, setReservedLookHeight] = useState<number | null>(null);
+  const handleReservedLookHeight = useCallback((height: number) => {
+    setReservedLookHeight((previous) => (previous !== null && Math.abs(previous - height) < 0.5 ? previous : height));
+  }, []);
+  const minimumCompactHeight =
+    RAIL_THUMB_HEIGHT + captionBlockHeight(captionLineHeights('rail', textStyles), fontScale, 0) + DOTS_HEIGHT;
+  const lookReservedHeight = reservedLookHeight ?? (selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
+  const lookRowHeight =
+    Platform.OS === 'android'
+      ? Math.round(Math.min(MAX_PREVIEW_ROW, Math.max(minimumCompactHeight, formHeight - lookReservedHeight)))
+      : previewRowHeight(formHeight, selectedDim !== null ? DIM_SECTION_HEIGHT : 0);
+  // Ordinary phones keep the preview still while dimming. A tiny viewport or
+  // accessibility text can still scroll once a readable compact card cannot fit.
+  const lookOverflows = lookRowHeight + lookReservedHeight > formHeight + 0.5;
   const backgroundRowHeight = previewRowHeight(formHeight * BACKGROUND_PREVIEW_SHARE, 0);
 
   // The row is inset inside the form's card, so the rail centres on the row,
@@ -300,6 +318,7 @@ export function SprayWallLookStep({
       railSlotHeight: Math.max(0, lookRowHeight - DOTS_HEIGHT),
       captionLineHeights: captionLineHeights('hero', textStyles),
       fontScale,
+      ...(Platform.OS === 'android' ? { verticalPadding: 0, minWidth: RAIL_MIN_WIDTH } : {}),
     });
   }, [formHeight, previewAspect, railWidth, lookRowHeight, textStyles, fontScale]);
 
@@ -455,8 +474,9 @@ export function SprayWallLookStep({
               boardseshRendererAvailable={boardseshRendererAvailable}
               heroThumb={heroThumb}
               windowWidth={railWidth}
+              centered
               // Safe here: a snap only moves local state until Next.
-              selectOnSnap={heroThumb != null}
+              selectOnSnap
               showDescriptions={false}
             />
           </View>
@@ -556,14 +576,18 @@ export function SprayWallLookStep({
   const measured = formHeight > 0;
   const showsLookForm = phase === 'look' && preview != null;
 
-  return (
+  const content = (
     <View
       style={[
         styles.root,
         // Padded rather than offset, so the grouped background runs up under
         // the see-through header instead of leaving a seam below it.
         { paddingTop: headerInset, backgroundColor: systemColors.groupedBackground },
-        showsLookForm || phase === 'background' ? null : { paddingBottom: bottomInset },
+        Platform.OS === 'android'
+          ? { paddingBottom: spacing[3] }
+          : showsLookForm || phase === 'background'
+            ? null
+            : { paddingBottom: bottomInset },
       ]}
       testID={phase === 'background' ? 'spray-background-step' : 'spray-look-step'}
     >
@@ -592,7 +616,12 @@ export function SprayWallLookStep({
           ) : null
         ) : showsLookForm ? (
           measured ? (
-            <LookForm model={lookModel} />
+            <LookForm
+              model={lookModel}
+              fitted
+              scrollable={lookOverflows}
+              onReservedHeightChange={handleReservedLookHeight}
+            />
           ) : null
         ) : (
           // No preview to swipe through (still loading, or the draft cannot be
@@ -685,6 +714,16 @@ export function SprayWallLookStep({
       </View>
     </View>
   );
+
+  return Platform.OS === 'android' ? (
+    <SafeAreaProvider style={styles.root}>
+      <SafeAreaView edges={['bottom']} style={styles.root}>
+        {content}
+      </SafeAreaView>
+    </SafeAreaProvider>
+  ) : (
+    content
+  );
 }
 
 /**
@@ -694,8 +733,8 @@ export function SprayWallLookStep({
  * phases are built around exactly that row. `MoreFormRN` is the escape hatch
  * `MoreForm.rn.tsx` describes for this case.
  */
-function LookForm({ model }: { model: MoreFormModel }) {
-  return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
+function LookForm(props: MoreFormRNProps) {
+  return Platform.OS === 'android' ? <MoreFormRN {...props} /> : <MoreForm model={props.model} />;
 }
 
 const styles = StyleSheet.create({

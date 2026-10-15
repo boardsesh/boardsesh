@@ -25,6 +25,8 @@ type Size = { width: number; height: number };
 const NO_SIZE: Size = { width: 0, height: 0 };
 
 export type FittedPhotoStage = {
+  /** The visible ScrollView height, for hosts that reserve explicit chrome. */
+  viewportHeight: number;
   /** For the stage view's `onLayout`. */
   onStageLayout: (event: LayoutChangeEvent) => void;
   /** Spread onto the step's ScrollView. */
@@ -85,6 +87,7 @@ export function useFittedPhotoStage(): FittedPhotoStage {
   const maxPhotoHeight = Math.max(0, stage.height - CORNER_HANDLE_SIZE);
 
   return {
+    viewportHeight,
     onStageLayout,
     scrollProps: { scrollEnabled: overflows && !dragging, onLayout: onViewportLayout, onContentSizeChange },
     onDragActiveChange,
