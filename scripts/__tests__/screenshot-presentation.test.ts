@@ -99,7 +99,7 @@ describe('board-specific CPP openings', () => {
         tension: [
           'cppTensionQueue',
           'cppTensionLogbookImport',
-          island,
+          device.startsWith('ipad-') ? 'cppKiosk' : 'cppLiveActivity',
           'cppTensionSearch',
           'cppTensionMirrorBoard',
           'cppWorkout',
@@ -130,6 +130,19 @@ describe('board-specific CPP openings', () => {
         expect(recipes.slice(2).map((recipe) => recipe.caption)).toEqual(expected[target]);
       }
     }
+  });
+
+  it('keeps Tension Live Activity tied to its phone fixture without reusing Island or Kilter sources', () => {
+    const page = readCppPage('tension');
+    const phone = page.recipes.phone[4];
+    expect(phone.output).toBe('04-live-activity.png');
+    expect(phone.layout).toBe('store-live-activity');
+    expect(phone.sources).toEqual([]);
+    expect(phone.liveActivity).toEqual({ boardFamily: 'tension' });
+    expect(page.recipes.phone.some((recipe) => recipe.sources.includes('08-island.png'))).toBe(false);
+    expect(page.recipes.phone.some((recipe) => recipe.liveActivity?.boardFamily === 'kilter')).toBe(false);
+    expect(page.recipes.ipad.some((recipe) => recipe.liveActivity !== undefined)).toBe(false);
+    expect(page.recipes.ipad[4].sources).toEqual(['08-kiosk.png']);
   });
 
   it('localizes both opening captions, qualifies MoonBoard CSV import, and never promises spray imports', () => {

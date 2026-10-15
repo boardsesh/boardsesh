@@ -360,10 +360,13 @@
             "sources": ["03-logbook.png"]
           },
           {
-            "output": "04-island.png",
-            "caption": "cppIsland",
-            "layout": "store-island",
-            "sources": ["08-island.png"]
+            "output": "04-live-activity.png",
+            "caption": "cppLiveActivity",
+            "layout": "store-live-activity",
+            "sources": [],
+            "liveActivity": {
+              "boardFamily": "tension"
+            }
           },
           {
             "output": "05-search.png",

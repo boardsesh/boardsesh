@@ -15,6 +15,7 @@ import {
 import { cppCaptureNames, readCppPage } from '../lib/screenshot-cpp';
 import {
   loadLiveActivityFixture,
+  loadFullScreenLiveActivityFixture,
   nativeCaptureSha256,
   validateLiveActivityFixture,
   type LiveActivityFixture,
@@ -102,6 +103,21 @@ function fullScreenProvenance(): LiveActivityFixture {
   };
 }
 
+function fullNotificationCenterProvenance(): LiveActivityFixture {
+  const { lockScreenContext, ...original } = fullScreenProvenance();
+  return {
+    ...original,
+    captureSurface: 'notification-center',
+    notificationCenterContext: {
+      wallpaper: lockScreenContext!.wallpaper,
+      unrelatedNotificationsDismissed: true,
+      liveActivityRect: lockScreenContext!.liveActivityRect,
+      entryFromAuthenticatedApp: true,
+      authenticationState: 'not-established',
+    },
+  };
+}
+
 describe('reviewed native Live Activity fixtures', () => {
   it('retains a reviewed complete Lock Screen byte-for-byte for CI framing', async () => {
     const root = directory();
@@ -114,7 +130,7 @@ describe('reviewed native Live Activity fixtures', () => {
     writeFileSync(metadata, JSON.stringify(fullScreenProvenance()));
     const file = await importLiveActivityCapture(input, metadata, root);
     expect(file).toBe(join(root, 'kilter-en-US-lock-screen.png'));
-    const loaded = loadLiveActivityFixture('kilter', 'en-US', root);
+    const loaded = loadFullScreenLiveActivityFixture('kilter', 'en-US', root);
     expect(loaded.pixels.equals(source)).toBe(true);
     expect(loaded.provenance).toMatchObject({
       captureFraming: 'full-screen',
@@ -131,6 +147,66 @@ describe('reviewed native Live Activity fixtures', () => {
       { outputCanvas: { width: 1206, height: 2622 } },
     );
     expect(await sharp(framed).metadata()).toMatchObject({ width: 1206, height: 2622 });
+  });
+  it('preserves full Notification Center bytes without asserting passcode lock or direct take entry', async () => {
+    const root = directory();
+    const source = await sharp({ create: { width: 1170, height: 2532, channels: 3, background: '#112233' } })
+      .png()
+      .toBuffer();
+    const supplied = fullNotificationCenterProvenance();
+    const input = join(root, 'source.png');
+    const metadata = join(root, 'provenance.json');
+    writeFileSync(input, source);
+    writeFileSync(metadata, JSON.stringify({ ...supplied, rawWdaLocked: true }));
+    expect(await importLiveActivityCapture(input, metadata, root)).toBe(
+      join(root, 'kilter-en-US-notification-center.png'),
+    );
+    const loaded = loadFullScreenLiveActivityFixture('kilter', 'en-US', root);
+    expect(loaded.pixels.equals(source)).toBe(true);
+    expect(loaded.provenance.notificationCenterContext).toEqual(supplied.notificationCenterContext);
+    expect(loaded.provenance.lockScreenContext).toBeUndefined();
+    expect(JSON.stringify(loaded.provenance)).not.toMatch(/deviceLocked|rawWdaLocked/);
+  });
+  it.each([
+    { notificationCenterContext: undefined },
+    { lockScreenContext: fullScreenProvenance().lockScreenContext },
+    { captureSurface: 'lock-screen' },
+    { captureFraming: undefined },
+    { cropRect: provenance().cropRect },
+    {
+      notificationCenterContext: {
+        ...fullNotificationCenterProvenance().notificationCenterContext,
+        deviceLocked: true,
+      },
+    },
+    {
+      notificationCenterContext: {
+        ...fullNotificationCenterProvenance().notificationCenterContext,
+        entryFromAuthenticatedApp: false,
+      },
+    },
+    {
+      notificationCenterContext: {
+        ...fullNotificationCenterProvenance().notificationCenterContext,
+        authenticationState: 'locked',
+      },
+    },
+    {
+      notificationCenterContext: {
+        ...fullNotificationCenterProvenance().notificationCenterContext,
+        unrelatedNotificationsDismissed: false,
+      },
+    },
+    {
+      notificationCenterContext: {
+        ...fullNotificationCenterProvenance().notificationCenterContext,
+        liveActivityRect: { x: 0, y: 2500, width: 100, height: 100 },
+      },
+    },
+  ])('rejects incomplete or falsely locked full Notification Center context %j', (override) => {
+    expect(() =>
+      validateLiveActivityFixture({ ...fullNotificationCenterProvenance(), ...override }, 'kilter', 'en-US'),
+    ).toThrow('Invalid native');
   });
   it.each([
     { captureSurface: 'notification-center' },
@@ -180,6 +256,11 @@ describe('reviewed native Live Activity fixtures', () => {
     pixels[pixels.length - 1] ^= 1;
     writeFileSync(fixture, pixels);
     expect(() => loadLiveActivityFixture('kilter', 'en-US', root)).toThrow('hash mismatch');
+  });
+  it('rejects a valid legacy card when a whole-phone recipe requests its matching fixture', async () => {
+    const { root } = await importedFixture();
+    expect(loadLiveActivityFixture('kilter', 'en-US', root).provenance.captureSurface).toBe('notification-center');
+    expect(() => loadFullScreenLiveActivityFixture('kilter', 'en-US', root)).toThrow('complete native system screen');
   });
   it('removes only edge-connected wallpaper, preserving opaque native RGB and its border', async () => {
     const original = readFileSync(
@@ -370,23 +451,57 @@ describe('reviewed native Live Activity fixtures', () => {
     expect(cppCaptureNames(kilter, 'iphone-16-pro')).not.toContain('08-island.png');
     expect(cppCaptureNames(kilter, 'ipad-pro-13-inch-m5')).toContain('08-kiosk.png');
     expect(kilter.recipes.phone).toHaveLength(9);
-    for (const family of ['tension', 'moonboard'] as const)
-      expect(cppCaptureNames(readCppPage(family), 'iphone-16-pro')).toContain('08-island.png');
+    const tension = readCppPage('tension');
+    expect(cppCaptureNames(tension, 'iphone-16-pro')).not.toContain('08-island.png');
+    expect(tension.recipes.phone[4]).toMatchObject({
+      output: '04-live-activity.png',
+      layout: 'store-live-activity',
+      sources: [],
+      liveActivity: { boardFamily: 'tension' },
+    });
+    expect(cppCaptureNames(readCppPage('moonboard'), 'iphone-16-pro')).toContain('08-island.png');
   });
-  it('pins every committed locale to its reviewed physical Kilter capture without claiming a source commit', () => {
+  it('pins four full Kilter Notification Center captures without inferring lock state or a source commit', () => {
+    const approvedSourceHashes = {
+      'en-US': 'ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8',
+      es: 'c7b727d98ee23d09476b38985e6d081e1b38581758693183f51f61080680da5c',
+      fr: 'e1991c81e5d03457b9fc2e5f14371b73091918e734efb11286a5a64284774acd',
+      de: 'cb509013ab5b85d184d4feb0e20929b534ad8848ad74f645a358d1e796c403a4',
+    };
     const sourceHashes = new Set<string>();
     for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
-      const loaded = loadLiveActivityFixture('kilter', locale);
+      const loaded = loadFullScreenLiveActivityFixture('kilter', locale);
       expect(loaded.provenance).toMatchObject({
         appLocale: locale,
         widgetLocale: 'en',
         device: 'iPhone13Pro',
         sourceBuild: 'TestFlight2.6.0(18)',
         appSourceCommit: null,
+        captureFraming: 'full-screen',
         captureSurface: 'notification-center',
-        cropRect: { x: 30, y: 714, width: 1110, height: 435 },
-        content: { climbName: 'Orestes', nextEnabled: true },
+        nativePixels: { width: 1170, height: 2532 },
+        screenPoints: { width: 390, height: 844 },
+        cropRect: { x: 0, y: 0, width: 1170, height: 2532 },
+        notificationCenterContext: {
+          wallpaper: 'iOS stock Astronomy Earth',
+          unrelatedNotificationsDismissed: true,
+          entryFromAuthenticatedApp: true,
+          authenticationState: 'not-established',
+        },
+        content: {
+          climbName: 'Lightest Pair of Shorts',
+          grade: locale === 'es' ? '6b/V4' : 'V4',
+          currentIndex: 1,
+          totalClimbs: 2,
+          nextEnabled: true,
+        },
       });
+      expect(loaded.provenance.sourcePngSha256).toBe(approvedSourceHashes[locale]);
+      expect(loaded.provenance.sha256).toBe(approvedSourceHashes[locale]);
+      expect(nativeCaptureSha256(loaded.pixels)).toBe(approvedSourceHashes[locale]);
+      expect(loaded.provenance.extraction).toBeUndefined();
+      expect(loaded.provenance.lockScreenContext).toBeUndefined();
+      expect(loaded.provenance.notificationCenterContext).not.toHaveProperty('deviceLocked');
       sourceHashes.add(loaded.provenance.sourcePngSha256);
     }
     expect(sourceHashes.size).toBe(4);

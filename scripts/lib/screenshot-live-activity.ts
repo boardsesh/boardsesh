@@ -36,13 +36,21 @@ export interface LiveActivityFixture {
   nativePixels: NativeCaptureSize;
   screenPoints: NativeCaptureSize;
   cropRect: NativeCaptureRect;
-  /** Keep the complete native Lock Screen, including its real clock and wallpaper. */
+  /** Keep the complete native system surface, including its real clock and wallpaper. */
   captureFraming?: 'full-screen';
   lockScreenContext?: {
     wallpaper: string;
     deviceLocked: true;
     unrelatedNotificationsDismissed: true;
     liveActivityRect: NativeCaptureRect;
+  };
+  /** Notification Center is distinct from a continuously passcode-locked capture. */
+  notificationCenterContext?: {
+    wallpaper: string;
+    unrelatedNotificationsDismissed: true;
+    liveActivityRect: NativeCaptureRect;
+    entryFromAuthenticatedApp: true;
+    authenticationState: 'not-established';
   };
   /** Only exterior wallpaper alpha changes; all native card RGB remains untouched. */
   extraction?: LiveActivityExterior;
@@ -182,31 +190,37 @@ export function validateLiveActivityFixture(
     throw invalid();
   const extraction = candidate.extraction;
   const lockScreenContext = candidate.lockScreenContext;
+  const notificationCenterContext = candidate.notificationCenterContext;
+  const fullContext = candidate.captureSurface === 'lock-screen' ? lockScreenContext : notificationCenterContext;
   if (candidate.captureFraming !== undefined) {
     if (
       candidate.captureFraming !== 'full-screen' ||
-      candidate.captureSurface !== 'lock-screen' ||
       cropRect.x !== 0 ||
       cropRect.y !== 0 ||
       cropRect.width !== nativePixels.width ||
       cropRect.height !== nativePixels.height ||
       candidate.sha256 !== candidate.sourcePngSha256 ||
       extraction !== undefined ||
-      !record(lockScreenContext) ||
-      !text(lockScreenContext.wallpaper) ||
-      lockScreenContext.deviceLocked !== true ||
-      lockScreenContext.unrelatedNotificationsDismissed !== true ||
-      !record(lockScreenContext.liveActivityRect) ||
-      !size(lockScreenContext.liveActivityRect) ||
-      !Number.isSafeInteger(lockScreenContext.liveActivityRect.x) ||
-      !Number.isSafeInteger(lockScreenContext.liveActivityRect.y) ||
-      Number(lockScreenContext.liveActivityRect.x) < 0 ||
-      Number(lockScreenContext.liveActivityRect.y) < 0 ||
-      Number(lockScreenContext.liveActivityRect.x) + lockScreenContext.liveActivityRect.width > nativePixels.width ||
-      Number(lockScreenContext.liveActivityRect.y) + lockScreenContext.liveActivityRect.height > nativePixels.height
+      !record(fullContext) ||
+      !text(fullContext.wallpaper) ||
+      fullContext.unrelatedNotificationsDismissed !== true ||
+      !record(fullContext.liveActivityRect) ||
+      !size(fullContext.liveActivityRect) ||
+      !Number.isSafeInteger(fullContext.liveActivityRect.x) ||
+      !Number.isSafeInteger(fullContext.liveActivityRect.y) ||
+      Number(fullContext.liveActivityRect.x) < 0 ||
+      Number(fullContext.liveActivityRect.y) < 0 ||
+      Number(fullContext.liveActivityRect.x) + fullContext.liveActivityRect.width > nativePixels.width ||
+      Number(fullContext.liveActivityRect.y) + fullContext.liveActivityRect.height > nativePixels.height ||
+      (candidate.captureSurface === 'lock-screen'
+        ? fullContext.deviceLocked !== true || notificationCenterContext !== undefined
+        : lockScreenContext !== undefined ||
+          fullContext.deviceLocked !== undefined ||
+          fullContext.entryFromAuthenticatedApp !== true ||
+          fullContext.authenticationState !== 'not-established')
     )
       throw invalid();
-  } else if (lockScreenContext !== undefined) throw invalid();
+  } else if (lockScreenContext !== undefined || notificationCenterContext !== undefined) throw invalid();
   if (
     extraction !== undefined &&
     (!record(extraction) ||
@@ -235,22 +249,37 @@ export function validateLiveActivityFixture(
     nativePixels: { width: nativePixels.width, height: nativePixels.height },
     screenPoints: { width: screenPoints.width, height: screenPoints.height },
     cropRect: { x: Number(cropRect.x), y: Number(cropRect.y), width: cropRect.width, height: cropRect.height },
-    ...(candidate.captureFraming === 'full-screen' &&
-    record(lockScreenContext) &&
-    record(lockScreenContext.liveActivityRect)
+    ...(candidate.captureFraming === 'full-screen' && record(fullContext) && record(fullContext.liveActivityRect)
       ? {
           captureFraming: 'full-screen' as const,
-          lockScreenContext: {
-            wallpaper: String(lockScreenContext.wallpaper),
-            deviceLocked: true as const,
-            unrelatedNotificationsDismissed: true as const,
-            liveActivityRect: {
-              x: Number(lockScreenContext.liveActivityRect.x),
-              y: Number(lockScreenContext.liveActivityRect.y),
-              width: Number(lockScreenContext.liveActivityRect.width),
-              height: Number(lockScreenContext.liveActivityRect.height),
-            },
-          },
+          ...(candidate.captureSurface === 'lock-screen'
+            ? {
+                lockScreenContext: {
+                  wallpaper: String(fullContext.wallpaper),
+                  deviceLocked: true as const,
+                  unrelatedNotificationsDismissed: true as const,
+                  liveActivityRect: {
+                    x: Number(fullContext.liveActivityRect.x),
+                    y: Number(fullContext.liveActivityRect.y),
+                    width: fullContext.liveActivityRect.width as number,
+                    height: fullContext.liveActivityRect.height as number,
+                  },
+                },
+              }
+            : {
+                notificationCenterContext: {
+                  wallpaper: String(fullContext.wallpaper),
+                  unrelatedNotificationsDismissed: true as const,
+                  entryFromAuthenticatedApp: true as const,
+                  authenticationState: 'not-established' as const,
+                  liveActivityRect: {
+                    x: Number(fullContext.liveActivityRect.x),
+                    y: Number(fullContext.liveActivityRect.y),
+                    width: fullContext.liveActivityRect.width as number,
+                    height: fullContext.liveActivityRect.height as number,
+                  },
+                },
+              }),
         }
       : {}),
     ...(record(extraction)
@@ -351,4 +380,18 @@ export function loadLiveActivityFixture(
     manifestSha256: nativeCaptureSha256(manifestBytes),
     maskPath: join(root, provenance.file),
   };
+}
+
+/** Whole-phone marketing recipes must never reuse the earlier cropped-card evidence. */
+export function loadFullScreenLiveActivityFixture(
+  boardFamily: LiveActivityBoardFamily,
+  locale: CaptionLocale,
+  root = LIVE_ACTIVITY_FIXTURE_ROOT,
+): LoadedLiveActivityFixture {
+  const fixture = loadLiveActivityFixture(boardFamily, locale, root);
+  if (fixture.provenance.captureFraming !== 'full-screen')
+    throw new Error(
+      `Whole-phone Live Activity recipe requires a reviewed complete native system screen: ${boardFamily}/${locale}. Regenerate the physical capture locally; cropped cards are not supported.`,
+    );
+  return fixture;
 }

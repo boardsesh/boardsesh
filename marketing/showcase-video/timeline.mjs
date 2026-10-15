@@ -717,7 +717,9 @@ function initSearchStage() {
         });
     }
     const phones = scene.takes.map((takeId, phoneIndex) => {
-      const nativeLockScreen = data.takes[takeId].presentation === 'native-lock-screen';
+      const nativeLockScreen = ['native-lock-screen', 'native-notification-center'].includes(
+        data.takes[takeId].presentation,
+      );
       if (nativeLockScreen && (!data.storeSearch.nativeLockScreenPhone || !data.storeSearch.nativeLockScreenPose))
         throw new Error('Native Lock Screen requires its own reviewed phone geometry and safe pose');
       return {

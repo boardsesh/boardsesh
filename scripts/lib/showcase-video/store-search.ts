@@ -49,25 +49,25 @@ const beat = (
 export function storeSearchPlan(variant: StoreSearchVariant): readonly ShowcaseScenePlan[] {
   if (variant === 'default')
     return [
-      beat('boards', 'boards', 150, PILE),
-      beat('spray', 'spray', 150),
-      beat('crew', 'crew', 150),
-      beat('lock-screen', 'island', 150),
+      beat('boards', 'boards', 140, PILE),
+      beat('spray', 'spray', 140),
+      beat('crew', 'crew', 140),
+      beat('lock-screen', 'island', 180),
     ];
   if (variant === 'kilter')
     return [
-      beat('boards', 'kilter', 90, ['boards-kilter']),
-      beat('log', 'kilterLog', 90),
-      beat('boards', 'boards', 90, PILE),
-      beat('crew', 'friends', 90),
-      beat('lock-screen', 'island', 90),
+      beat('boards', 'kilter', 68, ['boards-kilter']),
+      beat('log', 'kilterLog', 67),
+      beat('boards', 'boards', 68, PILE),
+      beat('crew', 'friends', 67),
+      beat('lock-screen', 'island', 180),
     ];
   if (variant === 'tension')
     return [
-      beat('boards', 'tension', 105, ['boards-tension']),
-      beat('log', 'tensionLog', 150),
-      beat('crew', 'tensionFriends', 105),
-      beat('lock-screen', 'island', 90),
+      beat('boards', 'tension', 81, ['boards-tension']),
+      beat('log', 'tensionLog', 108),
+      beat('crew', 'tensionFriends', 81),
+      beat('lock-screen', 'island', 180),
     ];
   if (variant === 'moonboard')
     return [
@@ -104,6 +104,7 @@ export function storeSearchRecordingProblems(
     recordedAt?: string;
     validated?: boolean;
     presentation?: string;
+    captureSurface?: string;
     nativeFixtureSourcePngSha256?: string;
     boardKind?: string;
   }>,
@@ -121,7 +122,7 @@ export function storeSearchRecordingProblems(
   if (metadata.platform !== 'ios') problems.push('Apple creative requires a native iOS recording');
   if (
     metadata.presentation !== undefined &&
-    (metadata.presentation !== 'native-lock-screen' || takeId !== 'lock-screen')
+    (!['native-lock-screen', 'native-notification-center'].includes(metadata.presentation) || takeId !== 'lock-screen')
   )
     problems.push(`unsupported native presentation ${metadata.presentation}`);
   if (
@@ -150,7 +151,16 @@ export function storeSearchRecordingProblems(
     problems.push(`native board ${metadata.boardKind ?? 'missing'}, expected ${boardFamily}`);
 
   if (takeId === 'lock-screen') {
-    if (metadata.presentation !== 'native-lock-screen') problems.push('Ending requires a complete native Lock Screen');
+    const surface =
+      metadata.presentation === 'native-lock-screen'
+        ? 'lock-screen'
+        : metadata.presentation === 'native-notification-center'
+          ? 'notification-center'
+          : undefined;
+    if (!surface) problems.push('Ending requires a complete native system screen');
+    if (!surface || metadata.captureSurface !== surface)
+      problems.push('Native ending presentation and capture surface mismatch');
+    if (!['default', 'kilter', 'tension'].includes(variant)) problems.push('Unsupported native ending board family');
     const family = variant === 'default' ? 'kilter' : variant;
     if (metadata.boardKind !== family) problems.push(`Live Activity must show the actual ${family} board`);
     if (!/^[a-f0-9]{64}$/.test(metadata.nativeFixtureSourcePngSha256 ?? ''))
@@ -163,13 +173,20 @@ export function storeSearchRecordingProblems(
 
 /** Reviewed still and native video must refer to the same full phone capture context. */
 export function storeSearchNativeLockScreenProblems(
-  metadata: Readonly<{ nativeFixtureSourcePngSha256?: string; boardKind?: string; locale?: string }>,
+  metadata: Readonly<{
+    nativeFixtureSourcePngSha256?: string;
+    boardKind?: string;
+    locale?: string;
+    presentation?: string;
+    captureSurface?: string;
+  }>,
   screen: Readonly<{ width: number; height: number }>,
   fixture: Pick<
     LiveActivityFixture,
     | 'captureFraming'
     | 'captureSurface'
     | 'lockScreenContext'
+    | 'notificationCenterContext'
     | 'boardFamily'
     | 'appLocale'
     | 'sourcePngSha256'
@@ -182,10 +199,20 @@ export function storeSearchNativeLockScreenProblems(
   const problems: string[] = [];
   if (
     fixture.captureFraming !== 'full-screen' ||
-    fixture.captureSurface !== 'lock-screen' ||
-    !fixture.lockScreenContext
+    (fixture.captureSurface === 'lock-screen'
+      ? !fixture.lockScreenContext ||
+        fixture.lockScreenContext.deviceLocked !== true ||
+        fixture.notificationCenterContext !== undefined
+      : !fixture.notificationCenterContext ||
+        fixture.notificationCenterContext.entryFromAuthenticatedApp !== true ||
+        fixture.notificationCenterContext.authenticationState !== 'not-established' ||
+        fixture.lockScreenContext !== undefined)
   )
-    problems.push('Native ending requires a reviewed complete, locked phone fixture');
+    problems.push('Native ending requires a reviewed complete native system screen fixture');
+  const expectedPresentation =
+    fixture.captureSurface === 'lock-screen' ? 'native-lock-screen' : 'native-notification-center';
+  if (metadata.presentation !== expectedPresentation || metadata.captureSurface !== fixture.captureSurface)
+    problems.push('Native ending presentation and fixture surface mismatch');
   if (fixture.boardFamily !== metadata.boardKind || fixture.appLocale !== metadata.locale)
     problems.push('Native ending fixture family or app locale mismatch');
   if (metadata.nativeFixtureSourcePngSha256 !== fixture.sourcePngSha256)
@@ -252,20 +279,24 @@ export function storeSearchTakeSegments(
     return [[SHOWCASE_FPS, SHOWCASE_FPS + 1, sceneFrames]];
   }
   if (takeId === 'lock-screen') {
-    if (take.presentation !== 'native-lock-screen') throw new Error('lock-screen: complete native phone required');
+    if (!['native-lock-screen', 'native-notification-center'].includes(take.presentation ?? ''))
+      throw new Error('lock-screen: complete native phone required');
     const ready = marked('activity-ready');
     const next = marked('next-tapped');
-    const from = Math.round((take.editorialStartSeconds ?? Math.max(ready, next - 1)) * SHOWCASE_FPS);
-    // Preserve native timing, with a readable changed climb before the spring exit.
-    const settledEnd = next + 0.8;
+    const from = Math.floor((take.editorialStartSeconds ?? Math.max(ready, next - 1)) * SHOWCASE_FPS);
+    // These marks are measured in the original raw pixels, never estimated from the tap or post-stream AX.
+    const changed = marked('next-changed');
+    const settled = marked('next-settled');
+    const readableUntil = from + sceneFrames - STORE_SEARCH_CROSSFADE_FRAMES;
     if (
       !Number.isInteger(from) ||
       from < 0 ||
       ready > next ||
       from / SHOWCASE_FPS < ready ||
       from / SHOWCASE_FPS > next - 0.4 ||
-      settledEnd * SHOWCASE_FPS >= frameCount ||
-      settledEnd * SHOWCASE_FPS > from + sceneFrames - 8 ||
+      changed < next ||
+      settled < changed ||
+      Math.ceil(settled * SHOWCASE_FPS) + SHOWCASE_FPS > readableUntil ||
       from + sceneFrames > frameCount
     )
       throw new Error('lock-screen: native before, actual Next and settled result must fit the selected beat');

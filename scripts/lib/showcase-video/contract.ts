@@ -207,7 +207,8 @@ export type ShowcaseMarksFile = Readonly<{
   validated?: boolean;
   boardKind?: string;
   /** Explicit physical capture framing; never infer Lock Screen from an app screenshot. */
-  presentation?: 'live-activity-card' | 'native-lock-screen';
+  presentation?: 'live-activity-card' | 'native-lock-screen' | 'native-notification-center';
+  captureSurface?: 'lock-screen' | 'notification-center';
   /** Binds physical video to the reviewed, unchanged full-screen fixture source. */
   nativeFixtureSourcePngSha256?: string;
   /** Editorial selection in the original capture's timeline; it is not a native event. */

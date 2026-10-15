@@ -1447,7 +1447,7 @@ describe('custom product page captures', () => {
               'queue',
               'logbook',
               'led',
-              ...(target === 'kilter' && !ipad ? [] : [finalScene]),
+              ...((target === 'kilter' || target === 'tension') && !ipad ? [] : [finalScene]),
             ]);
             for (const [index, scene] of requestedScenes.entries()) {
               const board = index < 6 ? [...page.heroBoards, ...page.otherBoards][index] : page.primaryBoard;
@@ -1496,7 +1496,7 @@ describe('custom product page captures', () => {
               typeof step.takeScreenshot === 'string' ? [`${step.takeScreenshot}.png`] : [],
             );
             expect(captures.sort()).toEqual(cppCaptureNames(page, deviceSlug(device.name)));
-            if (target === 'kilter' && !ipad) expect(captures).not.toContain('08-island.png');
+            if ((target === 'kilter' || target === 'tension') && !ipad) expect(captures).not.toContain('08-island.png');
             else
               expect(captures).toContain(target === 'spray' ? '08-holds.png' : ipad ? '08-kiosk.png' : '08-island.png');
             checkedDocuments += 1;
@@ -1717,18 +1717,122 @@ describe('custom product page captures', () => {
           expect(recipes[5].caption).toBe(device.startsWith('ipad-') ? 'cppKiosk' : 'cppLiveActivity');
           expect(recipes[3].sources).toEqual(['03-logbook.png']);
         }
+        if (target === 'tension') {
+          expect(recipes[4]).toEqual(
+            device.startsWith('ipad-')
+              ? {
+                  output: '04-kiosk.png',
+                  caption: 'cppKiosk',
+                  layout: 'screen',
+                  sources: ['08-kiosk.png'],
+                }
+              : {
+                  output: '04-live-activity.png',
+                  caption: 'cppLiveActivity',
+                  layout: 'store-live-activity',
+                  sources: [],
+                  liveActivity: { boardFamily: 'tension' },
+                },
+          );
+        }
         expect(recipes.find((recipe) => recipe.sources.includes('other-1.png'))!.sources).toEqual([
           'other-1.png',
           'other-2.png',
           'other-3.png',
         ]);
-        const nativeCardFixture = target === 'kilter' && !device.startsWith('ipad-');
+        const nativeCardFixture = (target === 'kilter' || target === 'tension') && !device.startsWith('ipad-');
         expect(names).toHaveLength(nativeCardFixture ? 12 : 13);
         expect(cppCaptureNames({ ...page, recipes: { phone: [], ipad: [] } }, device)).toEqual(
           nativeCardFixture ? [...names, '08-island.png'].sort() : names,
         );
         expect(() => resolveCppRecipes(page, device, names.slice(1))).toThrow('Incomplete CPP capture');
         expect(() => resolveCppRecipes(page, device, [...names, names[0]])).toThrow('Incomplete CPP capture');
+      }
+    }
+  });
+  it('accepts only matching Kilter or Tension phone Live Activity fixture recipes', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'cpp-live-activity-recipe-'));
+    directories.push(directory);
+    const manifestPath = join(directory, 'manifest.json');
+    for (const target of CPP_TARGETS) {
+      for (const device of ['phone', 'ipad'] as const) {
+        for (const boardFamily of ['kilter', 'tension', 'moonboard'] as const) {
+          const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8'));
+          manifest.targets[target].recipes[device][4] = {
+            output: '04-live-activity.png',
+            caption: 'cppLiveActivity',
+            layout: 'store-live-activity',
+            sources: [],
+            liveActivity: { boardFamily },
+          };
+          writeFileSync(manifestPath, JSON.stringify(manifest));
+          const readPage = () => readCppPage(target, manifestPath);
+          if (device === 'phone' && (target === 'kilter' || target === 'tension') && boardFamily === target)
+            expect(readPage).not.toThrow();
+          else expect(readPage).toThrow('Invalid CPP recipe');
+        }
+      }
+    }
+  });
+  it('requires empty sources only on supported Live Activity recipes and rejects stale Island sources', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'cpp-live-activity-sources-'));
+    directories.push(directory);
+    const manifestPath = join(directory, 'manifest.json');
+    for (const target of ['kilter', 'tension'] as const) {
+      for (const sources of [['08-island.png'], ['05-queue.png']]) {
+        const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8'));
+        const recipe = manifest.targets[target].recipes.phone.find(
+          (candidate: { layout: string }) => candidate.layout === 'store-live-activity',
+        );
+        recipe.sources = sources;
+        writeFileSync(manifestPath, JSON.stringify(manifest));
+        expect(() => readCppPage(target, manifestPath)).toThrow('Invalid CPP recipe');
+      }
+      const manifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8'));
+      manifest.targets[target].recipes.phone[0].sources = [];
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      expect(() => readCppPage(target, manifestPath)).toThrow('Invalid CPP recipe');
+      const page = readCppPage(target);
+      const names = cppCaptureNames(page, 'iphone-16-pro');
+      expect(() => resolveCppRecipes(page, 'iphone-16-pro', [...names, '08-island.png'])).toThrow(
+        'Incomplete CPP capture',
+      );
+    }
+  });
+  it('does not omit the native Island capture for unsupported or mismatched fixture inputs', () => {
+    for (const target of ['kilter', 'tension', 'moonboard', 'spray'] as const) {
+      const page = readCppPage(target);
+      const unsupportedRecipes = [
+        {
+          output: '04-live-activity.png',
+          caption: 'cppLiveActivity' as const,
+          layout: 'store-live-activity' as const,
+          sources: [],
+          liveActivity: { boardFamily: target === 'kilter' ? ('tension' as const) : ('kilter' as const) },
+        },
+        {
+          output: '04-live-activity.png',
+          caption: 'cppLiveActivity' as const,
+          layout: 'screen' as const,
+          sources: ['05-queue.png'],
+          liveActivity: { boardFamily: 'tension' as const },
+        },
+        {
+          output: '04-live-activity.png',
+          caption: 'cppLiveActivity' as const,
+          layout: 'store-live-activity' as const,
+          sources: ['05-queue.png'],
+          liveActivity: { boardFamily: 'tension' as const },
+        },
+      ];
+      for (const recipe of unsupportedRecipes) {
+        const malformedPage = { ...page, recipes: { ...page.recipes, phone: [recipe] } };
+        const names = cppCaptureNames(malformedPage, 'iphone-16-pro');
+        expect(names).toHaveLength(13);
+        expect(names).toContain(target === 'spray' ? '08-holds.png' : '08-island.png');
+        expect(cppCaptureNames(malformedPage, 'ipad-pro-11-inch-m5')).toContain(
+          target === 'spray' ? '08-holds.png' : '08-kiosk.png',
+        );
       }
     }
   });
@@ -1873,7 +1977,7 @@ describe('custom product page captures', () => {
         expect(queueScene.indexOf('tapOn: ${SCREENSHOT_QUEUE_LABEL}')).toBeLessThan(queueScene.indexOf('Ready queue'));
         expect(source).not.toContain('openLink:');
         expect(source.match(/takeScreenshot:/g)).toHaveLength(
-          target === 'kilter' && !device.name.startsWith('iPad') ? 12 : 13,
+          (target === 'kilter' || target === 'tension') && !device.name.startsWith('iPad') ? 12 : 13,
         );
       }
       if (target === 'spray') {
@@ -2053,7 +2157,7 @@ describe('custom product page captures', () => {
           }
         }
         expect(source.match(/takeScreenshot:/g)).toHaveLength(
-          target === 'kilter' && !device.name.startsWith('iPad') ? 12 : 13,
+          (target === 'kilter' || target === 'tension') && !device.name.startsWith('iPad') ? 12 : 13,
         );
       }
       for (const invalid of [

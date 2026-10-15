@@ -217,22 +217,23 @@ describe('Apple search video', () => {
       expect(timeline.scenes.every((scene) => scene.takes.length > 0)).toBe(true);
       expect(timeline.scenes.some((scene) => scene.id === 'outro')).toBe(false);
     }
-    expect(storeSearchPlan('default').map((scene) => scene.frames)).toEqual([150, 150, 150, 150]);
+    expect(storeSearchPlan('kilter').map((scene) => scene.frames)).toEqual([68, 67, 68, 67, 180]);
+    expect(storeSearchPlan('default').map((scene) => scene.frames)).toEqual([140, 140, 140, 180]);
     expect(storeSearchPlan('spray').at(-1)).toMatchObject({ id: 'spray', caption: 'sprayNext', frames: 90 });
     expect(storeSearchPlan('tension').at(-1)).toMatchObject({
       id: 'lock-screen',
       caption: 'island',
-      frames: 90,
+      frames: 180,
     });
   });
 
   it('requires fresh Tension crew and its matched complete native Lock Screen', () => {
     const plan = storeSearchPlan('tension');
     expect(plan.map((scene) => [scene.caption, scene.frames])).toEqual([
-      ['tension', 105],
-      ['tensionLog', 150],
-      ['tensionFriends', 105],
-      ['island', 90],
+      ['tension', 81],
+      ['tensionLog', 108],
+      ['tensionFriends', 81],
+      ['island', 180],
     ]);
     expect(storeSearchRequiredFootageProblems('tension', new Set(['boards-tension', 'log']))).toEqual([
       'Missing required native take: crew',
@@ -263,6 +264,7 @@ describe('Apple search video', () => {
       kind: 'kilter',
       boardKind: 'kilter',
       presentation: 'native-lock-screen',
+      captureSurface: 'lock-screen',
       nativeFixtureSourcePngSha256: 'a'.repeat(64),
       platform: 'ios',
       validated: true,
@@ -312,7 +314,7 @@ describe('Apple search video', () => {
 
   it('requires a reviewed Kilter Live Activity ending instead of an empty outro', () => {
     const ending = storeSearchPlan('kilter').at(-1);
-    expect(ending).toMatchObject({ id: 'lock-screen', frames: 90, optional: false });
+    expect(ending).toMatchObject({ id: 'lock-screen', frames: 180, optional: false });
     expect(storeSearchPlan('kilter').some((scene) => scene.id === 'outro')).toBe(false);
     const metadata = {
       takeId: 'lock-screen',
@@ -322,13 +324,14 @@ describe('Apple search video', () => {
       recordedAt: '2026-10-14T00:00:00Z',
       validated: true,
       presentation: 'native-lock-screen',
+      captureSurface: 'lock-screen',
       nativeFixtureSourcePngSha256: 'a'.repeat(64),
       boardKind: 'kilter',
     };
     expect(storeSearchRecordingProblems(metadata, 'lock-screen', 'en-US', 'kilter')).toEqual([]);
     expect(
       storeSearchRecordingProblems({ ...metadata, presentation: undefined }, 'lock-screen', 'en-US', 'kilter'),
-    ).toContain('Ending requires a complete native Lock Screen');
+    ).toContain('Ending requires a complete native system screen');
     expect(
       storeSearchRecordingProblems({ ...metadata, boardKind: 'tension' }, 'lock-screen', 'en-US', 'kilter'),
     ).toContain('Live Activity must show the actual kilter board');
@@ -337,7 +340,13 @@ describe('Apple search video', () => {
   });
 
   it('binds the full native phone to its reviewed fixture, family, locale and source hash', () => {
-    const metadata = { boardKind: 'tension', locale: 'fr', nativeFixtureSourcePngSha256: 'a'.repeat(64) };
+    const metadata = {
+      boardKind: 'tension',
+      locale: 'fr',
+      presentation: 'native-lock-screen',
+      captureSurface: 'lock-screen',
+      nativeFixtureSourcePngSha256: 'a'.repeat(64),
+    };
     const screen = { width: 1170, height: 2532 };
     const fixture: Parameters<typeof storeSearchNativeLockScreenProblems>[2] = {
       captureFraming: 'full-screen',
@@ -375,38 +384,105 @@ describe('Apple search video', () => {
       expect(storeSearchNativeLockScreenProblems({ ...metadata, ...override }, screen, fixture)).not.toEqual([]);
   });
 
-  it('keeps actual native Next timing and a readable changed climb inside the whole-phone ending', () => {
-    const take = { frameCount: 240, presentation: 'native-lock-screen' as const, editorialStartSeconds: 2 };
-    const marks = { 'activity-ready': 1, 'next-tapped': 3 };
-    const segments = storeSearchTakeSegments('tension', 'island', 'lock-screen', 90, take, marks);
-    expect(segments).toEqual([[60, 150]]);
-    expect(footageAt(segments, 0, take.frameCount)).toBe(60);
-    expect(footageAt(segments, 30, take.frameCount)).toBe(90);
-    expect(footageAt(segments, 77, take.frameCount)).toBe(137);
-    for (const badMarks of [
-      { 'activity-ready': 1 },
-      { ...marks, 'next-tapped': 5 },
-      { ...marks, 'activity-ready': 4 },
-      { ...marks, 'next-tapped': NaN },
-    ])
-      expect(() => storeSearchTakeSegments('tension', 'island', 'lock-screen', 90, take, badMarks)).toThrow();
-    for (const badTake of [
-      { ...take, presentation: 'live-activity-card' as const },
-      { ...take, editorialStartSeconds: 0 },
-      { ...take, editorialStartSeconds: 2.8 },
-      { ...take, frameCount: 110 },
-    ])
-      expect(() => storeSearchTakeSegments('tension', 'island', 'lock-screen', 90, badTake, marks)).toThrow();
+  it('accepts matching Notification Center provenance and rejects mismatched lock/surface claims', () => {
+    const metadata = {
+      takeId: 'lock-screen',
+      locale: 'en-US',
+      kind: 'kilter',
+      boardKind: 'kilter',
+      platform: 'ios',
+      validated: true,
+      recordedAt: '2026-10-15T00:00:00Z',
+      presentation: 'native-notification-center',
+      captureSurface: 'notification-center',
+      nativeFixtureSourcePngSha256: 'a'.repeat(64),
+    };
+    const screen = { width: 1170, height: 2532 };
+    const fixture: Parameters<typeof storeSearchNativeLockScreenProblems>[2] = {
+      boardFamily: 'kilter',
+      appLocale: 'en-US',
+      device: 'iPhone13Pro',
+      sourcePngSha256: metadata.nativeFixtureSourcePngSha256,
+      captureFraming: 'full-screen',
+      captureSurface: 'notification-center',
+      nativePixels: screen,
+      screenPoints: { width: 390, height: 844 },
+      cropRect: { x: 0, y: 0, ...screen },
+      notificationCenterContext: {
+        wallpaper: 'Actual Earth wallpaper',
+        unrelatedNotificationsDismissed: true,
+        liveActivityRect: { x: 30, y: 1714, width: 1110, height: 435 },
+        entryFromAuthenticatedApp: true,
+        authenticationState: 'not-established',
+      },
+    };
+    expect(storeSearchRecordingProblems(metadata, 'lock-screen', 'en-US', 'kilter')).toEqual([]);
+    expect(storeSearchNativeLockScreenProblems(metadata, screen, fixture)).toEqual([]);
+    for (const override of [
+      { captureSurface: undefined },
+      { captureSurface: 'lock-screen' },
+      { presentation: 'native-lock-screen' },
+      { presentation: 'live-activity-card' },
+      { boardKind: 'tension' },
+      { locale: 'es' },
+    ]) {
+      expect(storeSearchRecordingProblems({ ...metadata, ...override }, 'lock-screen', 'en-US', 'kilter')).not.toEqual(
+        [],
+      );
+      expect(storeSearchNativeLockScreenProblems({ ...metadata, ...override }, screen, fixture)).not.toEqual([]);
+    }
+    expect(
+      storeSearchNativeLockScreenProblems(metadata, screen, { ...fixture, notificationCenterContext: undefined }),
+    ).not.toEqual([]);
+    expect(
+      storeSearchNativeLockScreenProblems(metadata, screen, { ...fixture, captureSurface: 'lock-screen' }),
+    ).not.toEqual([]);
+    expect(
+      storeSearchRecordingProblems(
+        { ...metadata, kind: 'moonboard', boardKind: 'moonboard' },
+        'lock-screen',
+        'en-US',
+        'moonboard',
+      ),
+    ).not.toEqual([]);
   });
 
-  it('rejects a short Lock Screen capture instead of holding or repeating frames around Next', () => {
-    const take = { frameCount: 149, presentation: 'native-lock-screen' as const, editorialStartSeconds: 2 };
-    const marks = { 'activity-ready': 1, 'next-tapped': 3 };
-    // Before and settled-after frames exist, but the entire real-time beat does not.
-    expect(() => storeSearchTakeSegments('kilter', 'island', 'lock-screen', 90, take, marks)).toThrow();
-    expect(storeSearchTakeSegments('kilter', 'island', 'lock-screen', 90, { ...take, frameCount: 150 }, marks)).toEqual(
-      [[60, 150]],
-    );
+  it.each(['native-lock-screen', 'native-notification-center'] as const)(
+    'retains native 1x timing and one second sharp changed before the half-second exit: %s',
+    (presentation) => {
+      const take = { frameCount: 260, presentation, editorialStartSeconds: 2 };
+      const marks = { 'activity-ready': 1, 'next-tapped': 3, 'next-changed': 5.7, 'next-settled': 6 };
+      const segments = storeSearchTakeSegments('tension', 'island', 'lock-screen', 180, take, marks);
+      expect(segments).toEqual([[60, 240]]);
+      for (const local of [0, 30, 90, 179]) expect(footageAt(segments, local, take.frameCount)).toBe(60 + local);
+      for (const badMarks of [
+        { 'activity-ready': 1, 'next-tapped': 3 },
+        { ...marks, 'next-tapped': 5.8 },
+        { ...marks, 'activity-ready': 4 },
+        { ...marks, 'next-changed': NaN },
+        { ...marks, 'next-changed': 2.9 },
+        { ...marks, 'next-settled': 5.6 },
+        { ...marks, 'next-settled': 6.51 },
+      ])
+        expect(() => storeSearchTakeSegments('tension', 'island', 'lock-screen', 180, take, badMarks)).toThrow();
+      for (const badTake of [
+        { ...take, presentation: 'live-activity-card' as const },
+        { ...take, editorialStartSeconds: 0 },
+        { ...take, editorialStartSeconds: 2.8 },
+        { ...take, frameCount: 239 },
+      ])
+        expect(() => storeSearchTakeSegments('tension', 'island', 'lock-screen', 180, badTake, marks)).toThrow();
+      expect(
+        storeSearchTakeSegments('kilter', 'island', 'lock-screen', 180, take, { ...marks, 'next-settled': 6.5 }),
+      ).toEqual([[60, 240]]);
+    },
+  );
+
+  it('fits the measured Spanish delayed change with six seconds and refuses a five-second estimate', () => {
+    const take = { frameCount: 300, presentation: 'native-notification-center' as const, editorialStartSeconds: 2.65 };
+    const marks = { 'activity-ready': 2.4, 'next-tapped': 3.057365, 'next-changed': 6.960286, 'next-settled': 7.07934 };
+    expect(storeSearchTakeSegments('kilter', 'island', 'lock-screen', 180, take, marks)).toEqual([[79, 259]]);
+    expect(() => storeSearchTakeSegments('kilter', 'island', 'lock-screen', 150, take, marks)).toThrow();
   });
 
   it('keeps localized captions brief and manufacturer names out of generic captions', () => {

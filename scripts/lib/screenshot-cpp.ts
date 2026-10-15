@@ -199,7 +199,8 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
         recipe.layout === 'store-live-activity' &&
         isRecord(recipe.liveActivity) &&
         recipe.liveActivity.boardFamily === target &&
-        target === 'kilter';
+        device === 'phone' &&
+        (target === 'kilter' || target === 'tension');
       if (
         !isRecord(recipe) ||
         typeof recipe.output !== 'string' ||
@@ -243,7 +244,15 @@ export function readCppPage(target: CppTarget, manifestPath = CPP_MANIFEST_PATH)
 }
 export function cppCaptureNames(page: CppPage, device: string): string[] {
   const spray = page.primaryBoard.family === 'spray';
-  const nativeCardFixture = !device.startsWith('ipad-') && page.recipes.phone.some((recipe) => recipe.liveActivity);
+  const nativeCardFixture =
+    !device.startsWith('ipad-') &&
+    (page.primaryBoard.family === 'kilter' || page.primaryBoard.family === 'tension') &&
+    page.recipes.phone.some(
+      (recipe) =>
+        recipe.layout === 'store-live-activity' &&
+        recipe.sources.length === 0 &&
+        recipe.liveActivity?.boardFamily === page.primaryBoard.family,
+    );
   // Capture all genuine native scenes even when a presentation recipe omits
   // one. Changing a layout must never reduce the recorded source contract.
   return [

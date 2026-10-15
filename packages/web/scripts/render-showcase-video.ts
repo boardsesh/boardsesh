@@ -9,7 +9,7 @@ import {
   storeSearchTakeSegments,
   type StoreSearchCopy,
 } from '../../../scripts/lib/showcase-video/store-search';
-import { loadLiveActivityFixture } from '../../../scripts/lib/screenshot-live-activity';
+import { loadFullScreenLiveActivityFixture } from '../../../scripts/lib/screenshot-live-activity';
 /**
  * Renders the homepage showcase video from the stage in marketing/showcase-video/.
  *
@@ -576,9 +576,9 @@ async function loadSearchFootage(source: FootageSource, target: ShowcaseTarget):
     )
       throw new Error(`${takeId}: editorial selection is outside the native capture`);
     const nativeFixture =
-      marks.presentation === 'native-lock-screen' &&
+      ['native-lock-screen', 'native-notification-center'].includes(marks.presentation ?? '') &&
       (marks.boardKind === 'kilter' || marks.boardKind === 'tension' || marks.boardKind === 'moonboard')
-        ? loadLiveActivityFixture(marks.boardKind, search.locale)
+        ? loadFullScreenLiveActivityFixture(marks.boardKind, search.locale)
         : undefined;
     if (nativeFixture) {
       const fixtureProblems = storeSearchNativeLockScreenProblems(marks, { width, height }, nativeFixture.provenance);
@@ -680,6 +680,8 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
         marksSha256: createHash('sha256')
           .update(readFileSync(marksFilePath(takeId, footage.source.dirs)))
           .digest('hex'),
+        ...(sourceMarks.presentation ? { presentation: sourceMarks.presentation } : {}),
+        ...(sourceMarks.captureSurface ? { captureSurface: sourceMarks.captureSurface } : {}),
         ...(sourceMarks.nativeFixtureSourcePngSha256
           ? { nativeFixtureSourcePngSha256: sourceMarks.nativeFixtureSourcePngSha256 }
           : {}),

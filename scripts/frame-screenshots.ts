@@ -14,7 +14,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { extractScreenshotIsland } from './lib/screenshot-island';
-import { loadLiveActivityFixture, type NativeCaptureSize } from './lib/screenshot-live-activity';
+import { loadFullScreenLiveActivityFixture, type NativeCaptureSize } from './lib/screenshot-live-activity';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import {
   findGooglePlayImageOffenders,
@@ -830,7 +830,11 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
     for (const recipe of recipes) {
       const name = recipe.output;
       const nativeFixture = recipe.liveActivity
-        ? loadLiveActivityFixture(recipe.liveActivity.boardFamily, options.locale, options.liveActivityFixtureRoot)
+        ? loadFullScreenLiveActivityFixture(
+            recipe.liveActivity.boardFamily,
+            options.locale,
+            options.liveActivityFixtureRoot,
+          )
         : undefined;
       const buffers = nativeFixture
         ? [nativeFixture.pixels]

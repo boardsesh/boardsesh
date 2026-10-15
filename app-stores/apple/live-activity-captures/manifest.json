@@ -2,9 +2,9 @@
   "version": 1,
   "fixtures": {
     "kilter/en-US": {
-      "file": "kilter-en-US.png",
-      "sha256": "d6389a5e02952af47628f844f2fab2a7e89eed46462fcb377f3bd27729ccbad1",
-      "sourcePngSha256": "2ec4a16531b5d430cfc27b48dc0ed3ea5b4a3149ba83ff251f9f88ee84ad43ca",
+      "file": "kilter-en-US-notification-center.png",
+      "sha256": "ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8",
+      "sourcePngSha256": "ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8",
       "boardFamily": "kilter",
       "appLocale": "en-US",
       "widgetLocale": "en",
@@ -12,7 +12,7 @@
       "device": "iPhone13Pro",
       "sourceBuild": "TestFlight2.6.0(18)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-14T06:37:26.101815+00:00",
+      "capturedAt": "2026-10-15T00:11:42.492757+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -22,35 +22,40 @@
         "height": 844
       },
       "cropRect": {
-        "x": 30,
-        "y": 714,
-        "width": 1110,
-        "height": 435
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
       },
-      "extraction": {
-        "method": "edge-connected-native-exterior-alpha",
-        "maxBackgroundRed": 3,
-        "borderGuardPixels": 1,
-        "transparentPixels": 4066,
-        "nativeCropSha256": "740b03a09ca312a78bc648b4c1513769e49eb25ce1e2368ad48e41a3d446bcfa",
-        "alphaSha256": "bbe6b18f4b166dceb8df48e6e0b53db8fa5357c7d91ec29b4115e54700f0fc1a"
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1713,
+          "width": 1110,
+          "height": 438
+        }
       },
       "content": {
-        "climbName": "Orestes",
-        "grade": "7b+/V8",
-        "currentIndex": 261,
-        "totalClimbs": 262,
+        "climbName": "Lightest Pair of Shorts",
+        "grade": "V4",
+        "currentIndex": 1,
+        "totalClimbs": 2,
         "nextEnabled": true
       },
       "controller": {
         "connection": "real-ble",
         "presentedBoardFamily": "kilter",
-        "description": "Development controller presenting as Kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Next received the changed LED payload",
         "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-14T06:58:53.689131+00:00",
-        "reviewedBy": "Codex independent source review",
+        "reviewedAt": "2026-10-15T00:39:04.418908+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
@@ -58,9 +63,9 @@
       }
     },
     "kilter/es": {
-      "file": "kilter-es.png",
-      "sha256": "fbbc53d702fbc004f1e08b847f77eeb519c6a037a7ecd0c3bb52889bf00912af",
-      "sourcePngSha256": "1d1bc656e257f603fcc0d68f216dc905d8867c9219450cc5d53817e8902d4893",
+      "file": "kilter-es-notification-center.png",
+      "sha256": "c7b727d98ee23d09476b38985e6d081e1b38581758693183f51f61080680da5c",
+      "sourcePngSha256": "c7b727d98ee23d09476b38985e6d081e1b38581758693183f51f61080680da5c",
       "boardFamily": "kilter",
       "appLocale": "es",
       "widgetLocale": "en",
@@ -68,7 +73,7 @@
       "device": "iPhone13Pro",
       "sourceBuild": "TestFlight2.6.0(18)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-14T06:47:51.166121+00:00",
+      "capturedAt": "2026-10-15T00:24:54.238574+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -78,35 +83,40 @@
         "height": 844
       },
       "cropRect": {
-        "x": 30,
-        "y": 714,
-        "width": 1110,
-        "height": 435
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
       },
-      "extraction": {
-        "method": "edge-connected-native-exterior-alpha",
-        "maxBackgroundRed": 3,
-        "borderGuardPixels": 1,
-        "transparentPixels": 4066,
-        "nativeCropSha256": "c83d7d0961466d78b3edfc4c12b5977d3344fe55e80f179224c4e1a21ebc4956",
-        "alphaSha256": "bbe6b18f4b166dceb8df48e6e0b53db8fa5357c7d91ec29b4115e54700f0fc1a"
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1668,
+          "width": 1110,
+          "height": 480
+        }
       },
       "content": {
-        "climbName": "Orestes",
-        "grade": "V8+",
-        "currentIndex": 261,
-        "totalClimbs": 262,
+        "climbName": "Lightest Pair of Shorts",
+        "grade": "6b/V4",
+        "currentIndex": 1,
+        "totalClimbs": 2,
         "nextEnabled": true
       },
       "controller": {
         "connection": "real-ble",
         "presentedBoardFamily": "kilter",
-        "description": "Development controller presenting as Kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Next received the changed LED payload",
         "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-14T06:58:53.689663+00:00",
-        "reviewedBy": "Codex independent source review",
+        "reviewedAt": "2026-10-15T00:39:04.418908+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
@@ -114,9 +124,9 @@
       }
     },
     "kilter/fr": {
-      "file": "kilter-fr.png",
-      "sha256": "b6f63afd01d036f2b29fe6df8caf50e4ed83e60aa85f489cf44eb78172d8dd14",
-      "sourcePngSha256": "156a67be7ad18cc1dafaa7de6c7feb978e5397017e91adcc20c3936e0339b91d",
+      "file": "kilter-fr-notification-center.png",
+      "sha256": "e1991c81e5d03457b9fc2e5f14371b73091918e734efb11286a5a64284774acd",
+      "sourcePngSha256": "e1991c81e5d03457b9fc2e5f14371b73091918e734efb11286a5a64284774acd",
       "boardFamily": "kilter",
       "appLocale": "fr",
       "widgetLocale": "en",
@@ -124,7 +134,7 @@
       "device": "iPhone13Pro",
       "sourceBuild": "TestFlight2.6.0(18)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-14T06:50:18.139957+00:00",
+      "capturedAt": "2026-10-15T00:27:48.475239+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -134,35 +144,40 @@
         "height": 844
       },
       "cropRect": {
-        "x": 30,
-        "y": 714,
-        "width": 1110,
-        "height": 435
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
       },
-      "extraction": {
-        "method": "edge-connected-native-exterior-alpha",
-        "maxBackgroundRed": 3,
-        "borderGuardPixels": 1,
-        "transparentPixels": 4066,
-        "nativeCropSha256": "0620964a3d7fe171195f2cd3c2225fe5c7884e18b929e19f9248341f23452a43",
-        "alphaSha256": "bbe6b18f4b166dceb8df48e6e0b53db8fa5357c7d91ec29b4115e54700f0fc1a"
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1713,
+          "width": 1110,
+          "height": 438
+        }
       },
       "content": {
-        "climbName": "Orestes",
-        "grade": "7b+/V8",
-        "currentIndex": 261,
-        "totalClimbs": 262,
+        "climbName": "Lightest Pair of Shorts",
+        "grade": "V4",
+        "currentIndex": 1,
+        "totalClimbs": 2,
         "nextEnabled": true
       },
       "controller": {
         "connection": "real-ble",
         "presentedBoardFamily": "kilter",
-        "description": "Development controller presenting as Kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Next received the changed LED payload",
         "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-14T06:58:53.690248+00:00",
-        "reviewedBy": "Codex independent source review",
+        "reviewedAt": "2026-10-15T00:39:04.418908+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
@@ -170,9 +185,9 @@
       }
     },
     "kilter/de": {
-      "file": "kilter-de.png",
-      "sha256": "d6389a5e02952af47628f844f2fab2a7e89eed46462fcb377f3bd27729ccbad1",
-      "sourcePngSha256": "f649b145a96d22616898eb29dafb6223dcbd3e6af16c88d692f0d80bf09f6e94",
+      "file": "kilter-de-notification-center.png",
+      "sha256": "cb509013ab5b85d184d4feb0e20929b534ad8848ad74f645a358d1e796c403a4",
+      "sourcePngSha256": "cb509013ab5b85d184d4feb0e20929b534ad8848ad74f645a358d1e796c403a4",
       "boardFamily": "kilter",
       "appLocale": "de",
       "widgetLocale": "en",
@@ -180,7 +195,7 @@
       "device": "iPhone13Pro",
       "sourceBuild": "TestFlight2.6.0(18)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-14T06:53:22.192905+00:00",
+      "capturedAt": "2026-10-15T00:30:58.244164+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -190,39 +205,44 @@
         "height": 844
       },
       "cropRect": {
-        "x": 30,
-        "y": 714,
-        "width": 1110,
-        "height": 435
+        "x": 0,
+        "y": 0,
+        "width": 1170,
+        "height": 2532
+      },
+      "captureFraming": "full-screen",
+      "notificationCenterContext": {
+        "wallpaper": "iOS stock Astronomy Earth",
+        "unrelatedNotificationsDismissed": true,
+        "entryFromAuthenticatedApp": true,
+        "authenticationState": "not-established",
+        "liveActivityRect": {
+          "x": 30,
+          "y": 1713,
+          "width": 1110,
+          "height": 438
+        }
       },
       "content": {
-        "climbName": "Orestes",
-        "grade": "7b+/V8",
-        "currentIndex": 261,
-        "totalClimbs": 262,
+        "climbName": "Lightest Pair of Shorts",
+        "grade": "V4",
+        "currentIndex": 1,
+        "totalClimbs": 2,
         "nextEnabled": true
       },
       "controller": {
         "connection": "real-ble",
         "presentedBoardFamily": "kilter",
-        "description": "Development controller presenting as Kilter",
+        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Next received the changed LED payload",
         "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-14T06:58:53.690514+00:00",
-        "reviewedBy": "Codex independent source review",
+        "reviewedAt": "2026-10-15T00:39:04.418908+00:00",
+        "reviewedBy": "Codex root with independent native capture QA",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
         "nextNavigationVerified": true
-      },
-      "extraction": {
-        "method": "edge-connected-native-exterior-alpha",
-        "maxBackgroundRed": 3,
-        "borderGuardPixels": 1,
-        "transparentPixels": 4066,
-        "nativeCropSha256": "740b03a09ca312a78bc648b4c1513769e49eb25ce1e2368ad48e41a3d446bcfa",
-        "alphaSha256": "bbe6b18f4b166dceb8df48e6e0b53db8fa5357c7d91ec29b4115e54700f0fc1a"
       }
     }
   }

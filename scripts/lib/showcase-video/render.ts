@@ -1535,7 +1535,7 @@ export type StageTake = Readonly<{
   /** Store-search repeated takes select a separate real source range per caption. */
   segmentsByCaption?: Readonly<Record<string, readonly FootageRange[]>>;
   screen: Readonly<{ width: number; height: number }>;
-  presentation?: 'live-activity-card' | 'native-lock-screen';
+  presentation?: 'live-activity-card' | 'native-lock-screen' | 'native-notification-center';
   editorialStartSeconds?: number;
   anchors: Partial<Record<ShowcaseCalloutName, readonly ShowcaseAnchorSample[]>>;
 }>;
@@ -1628,6 +1628,8 @@ export type ShowcaseStageData = Readonly<{
       framesSha256: string;
       marksSha256: string;
       nativeFixtureSourcePngSha256?: string;
+      presentation?: 'live-activity-card' | 'native-lock-screen' | 'native-notification-center';
+      captureSurface?: 'lock-screen' | 'notification-center';
     }>[];
   }>;
   width: number;

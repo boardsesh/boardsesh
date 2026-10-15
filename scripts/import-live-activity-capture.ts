@@ -15,7 +15,7 @@ import {
   type LiveActivityFixtureManifest,
 } from './lib/screenshot-live-activity';
 
-/** Native crop and exterior-only alpha. No resizing, painted controls, or UI reconstruction. */
+/** Preserve whole native PNGs; legacy cards only crop and extract exterior alpha. */
 export async function importLiveActivityCapture(
   input: string,
   provenancePath: string,
@@ -34,7 +34,7 @@ export async function importLiveActivityCapture(
   const locale = provenance.appLocale as (typeof CAPTION_LOCALES)[number];
   const source = readFileSync(input);
   const sourcePngSha256 = nativeCaptureSha256(source);
-  const file = `${boardFamily}-${locale}${provenance.captureFraming === 'full-screen' ? '-lock-screen' : ''}.png`;
+  const file = `${boardFamily}-${locale}${provenance.captureFraming === 'full-screen' ? `-${String(provenance.captureSurface)}` : ''}.png`;
   const checked = validateLiveActivityFixture(
     { ...provenance, file, sha256: sourcePngSha256, sourcePngSha256 },
     boardFamily,
@@ -97,9 +97,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
       'Usage: vp exec tsx scripts/import-live-activity-capture.ts --input <native.png> --provenance <reviewed.json> [--output-root <directory>]',
     );
   const pathname = await importLiveActivityCapture(resolve(input), resolve(provenance), resolve(root));
-  console.log(
-    `[live-activity:capture] Wrote reviewed native card ${basename(pathname)}; original screenshot stays private.`,
-  );
+  console.log(`[live-activity:capture] Wrote reviewed native capture ${basename(pathname)}; source file unchanged.`);
   return 0;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
