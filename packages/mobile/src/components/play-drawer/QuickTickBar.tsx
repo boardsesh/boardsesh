@@ -29,9 +29,15 @@ export type QuickTickBarProps = {
   form: QuickTickForm;
   /** LogAscentSheet keeps this field in its pinned action bar. */
   showNote?: boolean;
+  /** Compact logging keeps date/time in the expanded form. */
+  showDate?: boolean;
 };
 
-export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = true }: QuickTickBarProps) {
+export const QuickTickBar = React.memo(function QuickTickBar({
+  form,
+  showNote = true,
+  showDate = true,
+}: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   // Resolved through the provider, never the static palette: these sheets sit
@@ -143,16 +149,18 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = 
           need a row of their own, separated by an `@`. Both fields commit
           through the same `onClimbedAtChange`, so touching either one pins
           the timestamp instead of logging a fresh save-time now. */}
-      <TickFormRow label={tClimbs('mobile.tick.dateLabel')} showSeparator={false} testID="tick-row-date">
-        <TickDateRow
-          value={climbedAt}
-          maximumDate={maximumClimbedAtDate}
-          onChange={onClimbedAtChange}
-          onFutureAdjusted={onFutureAdjusted}
-          dateAccessibilityLabel={tClimbs('mobile.tick.dateLabel')}
-          timeAccessibilityLabel={tClimbs('mobile.tick.timeLabel')}
-        />
-      </TickFormRow>
+      {showDate ? (
+        <TickFormRow label={tClimbs('mobile.tick.dateLabel')} showSeparator={false} testID="tick-row-date">
+          <TickDateRow
+            value={climbedAt}
+            maximumDate={maximumClimbedAtDate}
+            onChange={onClimbedAtChange}
+            onFutureAdjusted={onFutureAdjusted}
+            dateAccessibilityLabel={tClimbs('mobile.tick.dateLabel')}
+            timeAccessibilityLabel={tClimbs('mobile.tick.timeLabel')}
+          />
+        </TickFormRow>
+      ) : null}
 
       {/* `alignTop`: the note is the one control that grows well past the 56pt
           row beat, and a centred label floats ~31pt below the first line of

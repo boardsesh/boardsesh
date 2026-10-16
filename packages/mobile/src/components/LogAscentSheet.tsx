@@ -248,7 +248,7 @@ function LogAscentSheetContent({
       }
     >
       <View ref={formFieldsRef} onLayout={handleFormFieldsLayout} testID="tick-form-fields">
-        <QuickTickBar form={form} showNote={false} />
+        <QuickTickBar form={form} showNote={false} showDate={!compactNote} />
         <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
       </View>
     </ModalSheet>

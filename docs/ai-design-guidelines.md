@@ -1139,7 +1139,10 @@ name or translated Material label needs more space.
 The create-tick form groups Tries and Stars with one divider below Stars; grade
 guidance stays attached to the grade rail in secondary-label colour. Keep the
 personal-grade explanation and first-ascent logging requirement visible and
-wrapping. The date row meets the pinned footer without a duplicate divider.
+wrapping. On iOS, date/time stays in the expanded sheet so the compact state
+focuses on Tries, Stars and Grade. Android keeps date/time in its single
+content-fitting state. Collapsing preserves the chosen timestamp; expanding
+restores it. When shown, the date row has no divider above the pinned footer.
 
 Tick comments stay visible above the create sheet's actions: one line at the
 medium detent and a larger field at the large detent. Focusing the field expands

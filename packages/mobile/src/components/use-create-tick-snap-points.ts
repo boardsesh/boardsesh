@@ -6,7 +6,7 @@ import { SHEET_TOP_CHROME_PT, useSheetColumnStyle } from './use-sheet-column-sty
 
 type Measurements = { key: string; generation: number; header?: number; body?: number; footer?: number };
 
-/** Keep all create-tick fields above its pinned compact composer when the large ceiling permits.
+/** Keep visible compact create-tick fields above its pinned composer when the large ceiling permits.
  * Both detents must survive every measurement update: Expo's index-sync effect
  * also watches detent count, and changing it can dismiss a presented modal. */
 export function useCreateTickSnapPoints(locale: string | undefined, compact: boolean) {
@@ -41,7 +41,14 @@ export function useCreateTickSnapPoints(locale: string | undefined, compact: boo
     [key, geometryGeneration],
   );
   const onHeaderLayout = useCallback((height: number) => record('header', height), [record]);
-  const onBodyLayout = useCallback((height: number) => record('body', height), [record]);
+  const onBodyLayout = useCallback(
+    (height: number) => {
+      // Expanded-only date/time must not become part of the compact height, even
+      // when an async native measure arrives after a collapse/expand round trip.
+      if (compact && layoutContextRef.current.compactGeneration === compactGeneration) record('body', height);
+    },
+    [compact, compactGeneration, record],
+  );
   const onFooterLayout = useCallback(
     (measurement: { height: number; bottomInset: number }) => {
       // Ignore the expanded note. Remove the inset actually used in this layout;

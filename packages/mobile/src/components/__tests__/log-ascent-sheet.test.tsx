@@ -203,7 +203,16 @@ vi.mock('../tick', async () => {
     TickFormRow: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
       createElement('div', { 'data-testid': testID }, children),
     TickCountRail: () => createElement('span', null, 'tries'),
-    TickDateRow: () => createElement('span', null, 'date'),
+    TickDateRow: ({ value, onChange }: { value: Date; onChange: (next: Date) => void }) =>
+      createElement(
+        'button',
+        {
+          'data-testid': 'tick-date-value',
+          'data-date-value': value.toISOString(),
+          onClick: () => onChange(new Date('2025-03-15T12:00:00.000Z')),
+        },
+        'date',
+      ),
     TickSheetHeader: ({
       title,
       subtitle,
@@ -295,10 +304,11 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
   }) => {
     formInput.current = input;
     const [comment, setComment] = useState('');
+    const [climbedAt, setClimbedAt] = useState(new Date('2025-06-01T08:00:00.000Z'));
     return {
       tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
       comment,
-      climbedAt: new Date('2025-06-01T08:00:00.000Z'),
+      climbedAt,
       maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
       grades: [],
       consensusDifficultyId: undefined,
@@ -313,7 +323,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       onGradeSelect: vi.fn(),
       onTriesSelect: vi.fn(),
       onCommentChange: setComment,
-      onClimbedAtChange: vi.fn(),
+      onClimbedAtChange: setClimbedAt,
       onFutureAdjusted: vi.fn(),
       onSave: () => {
         if (input.savedRef) input.savedRef.current = true;
@@ -594,8 +604,8 @@ function nativeSnapPoints(getByTestId: (id: string) => HTMLElement): (string | n
   return JSON.parse(getByTestId('native-sheet').getAttribute('data-snap-points') ?? '[]') as (string | number)[];
 }
 
-describe('LogAscentSheet all fields at the opening detent (#6503)', () => {
-  it('keeps tries/stars before grade/help and date inside the measured form', () => {
+describe('LogAscentSheet compact visible fields at the opening detent (#6503)', () => {
+  it('keeps tries/stars before grade/help inside the measured compact form', () => {
     const { getByTestId, container } = renderSheet();
     const primary = getByTestId('tick-primary-fields');
     expect(
@@ -605,16 +615,16 @@ describe('LogAscentSheet all fields at the opening detent (#6503)', () => {
       Array.from(getByTestId('sheet-body').querySelectorAll('[data-testid^="tick-row-"]')).map((row) =>
         row.getAttribute('data-testid'),
       ),
-    ).toEqual(['tick-row-tries', 'tick-row-stars', 'tick-row-grade', 'tick-row-date']);
+    ).toEqual(['tick-row-tries', 'tick-row-stars', 'tick-row-grade']);
     reportCompactMeasurements(56, 116, 230);
     expect(columnStyle(container).height).toBe(402);
     expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
   });
 
-  it('fits the whole form including grade, date and audience above the pinned actions', () => {
+  it('fits the compact form including grade and audience above the pinned actions', () => {
     const { getByTestId, container } = renderSheet();
     const measuredForm = getByTestId('tick-form-fields');
-    for (const testID of ['tick-row-tries', 'tick-row-stars', 'tick-row-grade', 'tick-row-date', 'tick-privacy']) {
+    for (const testID of ['tick-row-tries', 'tick-row-stars', 'tick-row-grade', 'tick-privacy']) {
       expect(measuredForm.contains(getByTestId(testID))).toBe(true);
     }
     expect(measuredForm.contains(getByTestId('tick-action-bar'))).toBe(false);
@@ -634,6 +644,51 @@ describe('LogAscentSheet all fields at the opening detent (#6503)', () => {
     expect(getByTestId('tick-form-fields').textContent).toContain('mobile.tick.firstAscent');
     reportCompactMeasurements(56, 380, 180);
     expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+  });
+
+  it('keeps date/time in the expanded form and preserves the edited date across detents', () => {
+    const { getByTestId, queryByTestId } = renderSheet();
+    expect(queryByTestId('tick-row-date')).toBeNull();
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(getByTestId('tick-date-value').getAttribute('data-date-value')).toBe('2025-06-01T08:00:00.000Z');
+    fireEvent.click(getByTestId('tick-date-value'));
+    fireEvent.click(getByTestId('simulate-collapse'));
+    expect(queryByTestId('tick-row-date')).toBeNull();
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(getByTestId('tick-date-value').getAttribute('data-date-value')).toBe('2025-03-15T12:00:00.000Z');
+  });
+
+  it('keeps date/time available in the single Android content-fitting state', () => {
+    platformMock.OS = 'android';
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('tick-row-date')).toBeTruthy();
+  });
+
+  it('ignores expanded body measurements and rejects stale callbacks after returning to compact', () => {
+    const { getByTestId } = renderSheet();
+    reportCompactMeasurements(56, 330, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+    const oldCompactLayout = layoutHandlers.get('tick-form-fields');
+    fireEvent.click(getByTestId('simulate-expand'));
+    const expandedLayout = layoutHandlers.get('tick-form-fields');
+    const expandedMeasure = nativeMeasurements
+      .filter((measurement) => measurement.testID === 'tick-form-fields')
+      .at(-1);
+    expect(expandedMeasure).toBeDefined();
+    reportLayout('tick-form-fields', 500);
+    expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+    fireEvent.click(getByTestId('simulate-collapse'));
+    act(() => {
+      oldCompactLayout?.({ nativeEvent: { layout: { height: 500 } } });
+      expandedLayout?.({ nativeEvent: { layout: { height: 500 } } });
+      expandedMeasure?.deliver(500);
+    });
+    expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+    // The current compact generation requests a fresh native measurement.
+    const compactMeasure = nativeMeasurements.filter((measurement) => measurement.testID === 'tick-form-fields').at(-1);
+    expect(compactMeasure).not.toBe(expandedMeasure);
+    act(() => compactMeasure?.deliver(340));
+    expect(nativeSnapPoints(getByTestId)).toEqual([646, '90%']);
   });
 
   it('opens immediately at medium and keeps medium when the measured controls fit', () => {

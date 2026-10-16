@@ -217,6 +217,17 @@ describe('QuickTickBar row order', () => {
     expect(dividedRows).toEqual(['mobile.tick.starsLabel']);
   });
 
+  it('omits the complete date/time row when the host requests compact fields', () => {
+    const { container, queryByTestId, rerender } = render(
+      createElement(QuickTickBar, { form: makeForm(), showDate: false }),
+    );
+    expect(queryByTestId('tick-date-row')).toBeNull();
+    expect(rowLabels(container)).not.toContain('mobile.tick.dateLabel');
+    rerender(createElement(QuickTickBar, { form: makeForm(), showDate: true }));
+    expect(queryByTestId('tick-date-row')).toBeTruthy();
+    expect(rowLabels(container)).toContain('mobile.tick.dateLabel');
+  });
+
   it('puts date and time on a single row, both fields committing through one handler', () => {
     const { container, getByTestId, form } = renderBar();
 
