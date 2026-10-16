@@ -32,8 +32,6 @@ type CollapsingLargeTitleHeaderProps = {
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
-  /** Extra controls that overlay content without increasing the list inset. */
-  floatingContent?: ReactNode;
   /** Under the UIKit header, keep the painted band behind `children` instead of
    *  letting them float over the list (see `NativeRootHeader`). Nothing else
    *  reads it: the floating islands have always sat over the list. */
@@ -57,7 +55,6 @@ export function CollapsingLargeTitleHeader({
   leftActions,
   rightActions,
   children,
-  floatingContent,
   opaqueControls,
   scrollEdge,
 }: CollapsingLargeTitleHeaderProps) {
@@ -84,7 +81,6 @@ export function CollapsingLargeTitleHeader({
         opaqueControls={opaqueControls}
         scrollEdge={scrollEdge}
         onHeightChange={onHeightChange}
-        floatingContent={floatingContent}
       >
         {children}
       </NativeRootHeader>
@@ -95,10 +91,7 @@ export function CollapsingLargeTitleHeader({
       {/* Always-on progressive glass: a blur from the top of the screen down to
           just below the islands, strongest up top and fading to clear, so content
           frosts out gradually and the status-bar strip reads as glass. */}
-      <ProgressiveBlur
-        style={[styles.blur, floatingContent != null ? { bottom: -spacing[6] } : { height: blurHeight }]}
-        fadeLength={floatingContent != null ? spacing[6] : undefined}
-      />
+      <ProgressiveBlur style={[styles.blur, { height: blurHeight }]} />
       <View pointerEvents="box-none" style={{ paddingTop: insets.top }} onLayout={handleLayout}>
         {/* A standard three-section nav row: left island, a flexible centre that
           holds the optional persistent title, right island. The flex centre keeps
@@ -134,11 +127,6 @@ export function CollapsingLargeTitleHeader({
 
         {children}
       </View>
-      {floatingContent != null ? (
-        <View pointerEvents="auto" style={{ backgroundColor: systemColors.background }}>
-          {floatingContent}
-        </View>
-      ) : null}
     </View>
   );
 }

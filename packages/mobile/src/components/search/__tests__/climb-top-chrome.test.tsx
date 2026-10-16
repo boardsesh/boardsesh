@@ -5,9 +5,33 @@ vi.mock('../../../hooks/use-floating-header-controls', () => ({
   useFloatingHeaderControls: () => nativeChrome.glassGradeRail && ctrl.variant === 'liquidGlass',
 }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({ scrollEdge }: { scrollEdge?: unknown }) => {
+  NativeRootHeader: ({
+    scrollEdge,
+    children,
+    floatingContent,
+    onHeightChange,
+  }: {
+    scrollEdge?: unknown;
+    children?: ReactNode;
+    // Retain the original overlay slot so reverting production for the regression
+    // control fails on measured containment rather than a missing mocked rail.
+    floatingContent?: ReactNode;
+    onHeightChange: (height: number) => void;
+  }) => {
     nativeChrome.scrollEdge = scrollEdge;
-    return null;
+    return createElement(
+      'div',
+      null,
+      createElement(
+        'div',
+        {
+          'data-has-layout': 'true',
+          onClick: () => onHeightChange(nativeChrome.measuredChromeHeight),
+        },
+        children,
+      ),
+      floatingContent,
+    );
   },
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
@@ -39,7 +63,12 @@ type BluetoothCtx = {
 
 // The UIKit header path (iOS on Liquid Glass), off unless a test turns it on, and
 // the scroll-edge store the native header was handed.
-const nativeChrome = vi.hoisted(() => ({ enabled: false, glassGradeRail: false, scrollEdge: undefined as unknown }));
+const nativeChrome = vi.hoisted(() => ({
+  enabled: false,
+  glassGradeRail: false,
+  measuredChromeHeight: 88,
+  scrollEdge: undefined as unknown,
+}));
 
 const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
@@ -73,7 +102,9 @@ vi.mock('react-native', () => ({
         'data-testid': testID,
         'data-pointer': pointerEvents ?? '',
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
-        onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { height: 88 } } }) : undefined,
+        onClick: onLayout
+          ? () => onLayout({ nativeEvent: { layout: { height: nativeChrome.measuredChromeHeight } } })
+          : undefined,
       },
       children,
     ),
@@ -458,6 +489,7 @@ describe('ClimbTopChrome', () => {
     ctrl.setBoardAngle.mockClear();
     nativeChrome.enabled = false;
     nativeChrome.glassGradeRail = false;
+    nativeChrome.measuredChromeHeight = 88;
     nativeChrome.scrollEdge = undefined;
     haptics.light.mockClear();
     haptics.selection.mockClear();
@@ -641,44 +673,58 @@ describe('ClimbTopChrome', () => {
     expect(onHeightChange).toHaveBeenCalledWith(88);
   });
 
-  it.each(['material', 'liquidGlass'] as const)(
-    'keeps the grade row outside the reserved measurement on %s',
-    (variant) => {
-      ctrl.variant = variant;
-      const onHeightChange = vi.fn();
-      const props = makeProps({
-        onHeightChange,
-        gradeBound: { minGradeId: 10, maxGradeId: 12 },
-        onGradeChange: vi.fn(),
-        showPersistentChips: true,
-        filterChrome: <span>Persistent filter tokens</span>,
-      });
-      const { container, rerender, getByText } = render(<ClimbTopChrome {...props} />);
-      const measure = () => container.querySelector('[data-has-layout="true"]')!;
-      fireEvent.click(measure());
-      expect(onHeightChange).toHaveBeenLastCalledWith(88);
-      onHeightChange.mockClear();
+  it.each([
+    ['Material', 'material', false, 'custom'],
+    ['fallback Liquid Glass', 'liquidGlass', false, 'custom'],
+    ['native Liquid Glass with custom search', 'liquidGlass', true, 'custom'],
+    ['native Liquid Glass with native search', 'liquidGlass', true, 'native'],
+  ] as const)('reserves the disclosed grade row only while open on %s', (_label, variant, nativeHeader, searchMode) => {
+    ctrl.variant = variant;
+    nativeChrome.enabled = nativeHeader;
+    nativeChrome.glassGradeRail = nativeHeader;
+    const onHeightChange = vi.fn();
+    const props = makeProps({
+      searchMode,
+      onHeightChange,
+      gradeBound: { minGradeId: 10, maxGradeId: 12 },
+      onGradeChange: vi.fn(),
+      showPersistentChips: true,
+      filterChrome: <span>Persistent filter tokens</span>,
+    });
+    const { container, rerender, getByText } = render(<ClimbTopChrome {...props} />);
+    const measure = () => container.querySelector('[data-has-layout="true"]')!;
+    const filterTokens = getByText('Persistent filter tokens');
+    fireEvent.click(measure());
+    expect(onHeightChange).toHaveBeenLastCalledWith(88);
 
-      rerender(<ClimbTopChrome {...props} gradeRailVisible />);
-      const rail = container.querySelector('[data-grade-rail="true"]')!;
-      expect(rail).not.toBeNull();
-      expect(measure().contains(rail)).toBe(false);
-      expect(measure().contains(getByText('Persistent filter tokens'))).toBe(true);
-      expect(onHeightChange).not.toHaveBeenCalled();
-      if (variant === 'liquidGlass') {
-        const railCarrier = container.querySelector('[data-testid="climb-grade-rail"]');
-        expect(railCarrier?.contains(rail)).toBe(true);
-        expect(JSON.parse(railCarrier?.getAttribute('data-style') ?? '{}')).toMatchObject({
-          backgroundColor: '#010203',
-        });
-        expect(railCarrier?.contains(getByText('Persistent filter tokens'))).toBe(false);
-      }
+    rerender(<ClimbTopChrome {...props} gradeRailVisible />);
+    const rail = container.querySelector('[data-grade-rail="true"]')!;
+    expect(rail).not.toBeNull();
+    expect(rail.getAttribute('data-glass')).toBe(String(nativeHeader));
+    expect(measure().contains(rail)).toBe(true);
+    expect(measure().contains(filterTokens)).toBe(true);
+    expect(getByText('Persistent filter tokens')).toBe(filterTokens);
+    expect(JSON.parse(rail.parentElement?.getAttribute('data-style') ?? '{}')).not.toHaveProperty('position');
+    // Native onLayout supplies the expanded geometry; jsdom has no Yoga layout.
+    nativeChrome.measuredChromeHeight = 140;
+    fireEvent.click(measure());
+    expect(onHeightChange).toHaveBeenLastCalledWith(140);
+    if (variant === 'liquidGlass') {
+      const railCarrier = container.querySelector('[data-testid="climb-grade-rail"]');
+      expect(railCarrier?.contains(rail)).toBe(true);
+      expect(JSON.parse(railCarrier?.getAttribute('data-style') ?? '{}').backgroundColor).toBe(
+        nativeHeader ? undefined : '#010203',
+      );
+      expect(railCarrier?.contains(getByText('Persistent filter tokens'))).toBe(false);
+    }
 
-      rerender(<ClimbTopChrome {...props} />);
-      expect(container.querySelector('[data-grade-rail="true"]')).toBeNull();
-      expect(onHeightChange).not.toHaveBeenCalled();
-    },
-  );
+    rerender(<ClimbTopChrome {...props} />);
+    expect(container.querySelector('[data-grade-rail="true"]')).toBeNull();
+    expect(getByText('Persistent filter tokens')).toBe(filterTokens);
+    nativeChrome.measuredChromeHeight = 88;
+    fireEvent.click(measure());
+    expect(onHeightChange).toHaveBeenLastCalledWith(88);
+  });
 
   it('removes only the grade panel backing when floating native glass is allowed', () => {
     nativeChrome.glassGradeRail = true;

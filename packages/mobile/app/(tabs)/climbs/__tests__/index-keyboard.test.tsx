@@ -142,6 +142,7 @@ const mocks = vi.hoisted(() => ({
   // chrome was rendered, which is how often the screen was.
   chromeScrollEdge: undefined as ScrollEdgeBackdrop | undefined,
   listScrollProps: {} as Partial<ScrollEdgeBackdrop['listProps']>,
+  listCommitLayout: undefined as (() => void) | undefined,
   chromeRenders: 0,
   // The persisted "grade row shown" setting, as a store the screen re-renders
   // from: `set` is the write that keeps the choice across launches.
@@ -173,6 +174,8 @@ const mocks = vi.hoisted(() => ({
 type FlashListProps<Item> = {
   ref?: Ref<{ scrollToOffset: (params: { offset: number; animated?: boolean }) => void }>;
   scrollToOverflowEnabled?: boolean;
+  onCommitLayoutEffect?: () => void;
+  contentContainerStyle?: { paddingTop: number };
   data?: Item[];
   renderItem?: (info: { item: Item; index: number }) => ReactNode;
   ListHeaderComponent?: ReactNode;
@@ -235,7 +238,10 @@ vi.mock('@shopify/flash-list', () => ({
     onScrollEndDrag,
     onMomentumScrollBegin,
     onMomentumScrollEnd,
+    onCommitLayoutEffect,
+    contentContainerStyle,
   }: FlashListProps<Item>) => {
+    mocks.listCommitLayout = onCommitLayoutEffect;
     mocks.listScrollProps = {
       onScroll,
       onScrollBeginDrag,
@@ -246,7 +252,11 @@ vi.mock('@shopify/flash-list', () => ({
     useImperativeHandle(ref, () => ({ scrollToOffset: mocks.scrollToOffset }), []);
     return createElement(
       'div',
-      { 'data-testid': 'flash-list', 'data-scroll-to-overflow': String(scrollToOverflowEnabled) },
+      {
+        'data-testid': 'flash-list',
+        'data-scroll-to-overflow': String(scrollToOverflowEnabled),
+        'data-padding-top': contentContainerStyle?.paddingTop,
+      },
       refreshControl,
       ListHeaderComponent,
       data.length > 0
@@ -1021,22 +1031,28 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
 
   // Material, Android, the old floating chrome, and the iOS paths that keep a
   // painted band (before iOS 26, Reduce Transparency, Increase Contrast): no
-  // blur mounts, so nothing listens to the list.
+  // blur mounts. Only the stable native-offset tracker is needed for clearance.
   it.each([true, false])(
-    'gives the list no scroll listeners until a blur is mounted (UIKit header: %s)',
+    'tracks native offsets without extra gesture listeners before a blur mounts (UIKit header: %s)',
     async (nativeRootHeader) => {
       mocks.nativeRootHeader = nativeRootHeader;
       const { findByText } = render(<ClimbList />);
       await findByText('Moonage');
 
-      for (const listener of SCROLL_LISTENERS) expect(mocks.listScrollProps[listener]).toBeUndefined();
+      expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
+      for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
+        expect(mocks.listScrollProps[listener]).toBeUndefined();
+      }
     },
   );
 
-  it("gives the list every one of the store's listeners once a blur is mounted", async () => {
+  it("forwards scrolling and retains the store's gesture listeners once a blur mounts", async () => {
     const { store } = await renderUnderFloatingChips();
 
-    for (const listener of SCROLL_LISTENERS) expect(mocks.listScrollProps[listener]).toBe(store.listProps[listener]);
+    expect(mocks.listScrollProps.onScroll).toBeTypeOf('function');
+    for (const listener of SCROLL_LISTENERS.filter((listener) => listener !== 'onScroll')) {
+      expect(mocks.listScrollProps[listener]).toBe(store.listProps[listener]);
+    }
   });
 
   it('tells the blur once rows are under the chips, and again when the list is back at rest', async () => {
@@ -1090,6 +1106,41 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
 
     expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: -100, animated: false });
     expect(store.isScrolledUnder()).toBe(false);
+  });
+
+  it.each([
+    [true, false],
+    [false, false],
+    [false, true],
+  ])(
+    'preserves scrolled rows after chrome height commits (UIKit: %s, Material: %s)',
+    async (nativeRootHeader, material) => {
+      mocks.nativeRootHeader = nativeRootHeader;
+      mocks.filtersInTopChrome = material;
+      const { findByText } = render(<ClimbList />);
+      await findByText('Moonage');
+      act(() => mocks.reportChromeHeight?.(44));
+      scrollListTo(500);
+      act(() => mocks.reportChromeHeight?.(104));
+      expect(mocks.scrollToOffset).not.toHaveBeenCalled();
+      act(() => mocks.listCommitLayout?.());
+      expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 560, animated: false });
+      scrollListTo(560);
+      act(() => mocks.reportChromeHeight?.(44));
+      act(() => mocks.listCommitLayout?.());
+      expect(mocks.scrollToOffset).toHaveBeenLastCalledWith({ offset: 500, animated: false });
+    },
+  );
+
+  it('reserves the expanded controls above a resting first result without scrolling it away', async () => {
+    const { findByText, getByTestId } = render(<ClimbList />);
+    await findByText('Moonage');
+    act(() => mocks.reportChromeHeight?.(44));
+    scrollListTo(-100);
+    act(() => mocks.reportChromeHeight?.(104));
+    act(() => mocks.listCommitLayout?.());
+    expect(getByTestId('flash-list').getAttribute('data-padding-top')).toBe('104');
+    expect(mocks.scrollToOffset).not.toHaveBeenCalled();
   });
 });
 

@@ -460,9 +460,10 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 
 Some root tabs pin a block of controls under the UIKit navigation bar: Climbs has its filter chips,
 the grade row and the removable filter tokens; Profile has its segmented control. `NativeRootHeader`
-draws that block (`HeaderControls`), and the list pads its top by the persistent controls' measured
-height. The disclosed grade row is drawn below that measurement, inside the full background and
-touch surface, so showing or hiding it leaves the list's spacing and scroll position unchanged.
+draws that block (`HeaderControls`), and the list reserves the full measured height, including an
+expanded Grade row. At the top, opening Grade moves results below the controls so compact rows
+remain readable. Away from the top, the Climbs list compensates for the height change after its
+layout commits, preserving the visible rows without resetting the search or scrolling to the top.
 
 **On iOS 26 the block floats without a continuous blur.** Individual filter capsules keep their
 native glass surfaces. List content remains sharp between and beneath them, matching the GitHub
@@ -471,8 +472,8 @@ app's floating filter row. Profile's translucent segmented track has a local opa
 remain outside that backing. UIKit owns the navigation bar's
 scroll-edge material, status area and action lenses above the supplementary controls.
 
-The control block stays below the native bar as its title collapses. Opening the grade row does
-not reserve more list space; it remains inside the control block's touch surface. The block owns
+The control block stays below the native bar as its title collapses. Closing Grade releases its
+reserved space; no empty rail slot remains. The block owns
 touches through the gaps between controls, so taps do not open climbs underneath.
 Disclosed grade rails opt into individual regular native glass chips on the same capability
 and accessibility gate as floating header controls. Their rail has no continuous backing;
@@ -488,8 +489,9 @@ and Increase Contrast keep the local opaque backing. Angle rails also retain the
 
 Older iOS versions, Reduce Transparency, Increase Contrast and an explicit `opaqueControls`
 request retain the painted band in `systemColors.background`. The native glass path adds no
-custom backdrop, fade, wash or list-scroll subscription. Existing scroll-edge wiring is accepted
-for caller compatibility without attaching a backdrop to the store.
+custom backdrop, fade or wash. Existing scroll-edge wiring is accepted for caller compatibility
+without attaching a backdrop to the store. The Climbs list tracks native offsets in a ref for
+clearance changes; scrolling never updates React state for this tracking.
 
 Filter capsules' SwiftUI Host follows the app's resolved light/dark scheme. Resting native glass
 capsules use SwiftUI's secondary foreground style for muted grey labels, symbols and chevrons.

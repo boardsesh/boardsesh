@@ -4,13 +4,11 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
     children,
-    floatingContent,
     opaqueControls,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     children?: ReactNode;
-    floatingContent?: ReactNode;
     opaqueControls?: boolean;
     scrollEdge?: unknown;
   }) => {
@@ -20,7 +18,6 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
       createElement('div', { 'data-native-controls': 'true', 'data-opaque': String(opaqueControls) }, children),
-      createElement('div', { 'data-native-floating': 'true' }, floatingContent),
     );
   },
 }));
@@ -107,15 +104,15 @@ function makeProps(over: Partial<Parameters<typeof CollapsingLargeTitleHeader>[0
 }
 
 describe('CollapsingLargeTitleHeader', () => {
-  it('passes floating content separately from the reserved native controls', () => {
+  it('passes disclosed controls together with the reserved native controls', () => {
     controls.nativeHeader = true;
     const { container } = render(
-      <CollapsingLargeTitleHeader {...makeProps({ floatingContent: <button>Grade row</button> })}>
+      <CollapsingLargeTitleHeader {...makeProps()}>
         <span>Persistent filters</span>
+        <button>Grade row</button>
       </CollapsingLargeTitleHeader>,
     );
-    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filters');
-    expect(container.querySelector('[data-native-floating]')?.textContent).toBe('Grade row');
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filtersGrade row');
   });
 
   beforeEach(() => {
@@ -227,29 +224,29 @@ describe('CollapsingLargeTitleHeader', () => {
     expect(container.querySelector('[data-testid="blur-view"]')).not.toBeNull();
   });
 
-  it('excludes floating controls from fallback measurement without remounting persistent controls', () => {
+  it('measures disclosed controls without remounting persistent controls', () => {
     const onHeightChange = vi.fn();
     const props = makeProps({ onHeightChange });
-    const { container, rerender, getByText } = render(
+    // Keep the same child slots while disclosure changes, as ClimbTopChrome does.
+    const header = (gradeVisible: boolean) => (
       <CollapsingLargeTitleHeader {...props}>
         <input aria-label="Search" defaultValue="project" />
-      </CollapsingLargeTitleHeader>,
+        {gradeVisible ? <button>Grade row</button> : null}
+      </CollapsingLargeTitleHeader>
     );
+    const { container, rerender, getByText, queryByText } = render(header(false));
     const search = container.querySelector('input')!;
     const measure = () => container.querySelector('[data-has-layout="true"]')!;
     fireEvent.click(measure());
     onHeightChange.mockClear();
-    rerender(
-      <CollapsingLargeTitleHeader {...props} floatingContent={<button>Grade row</button>}>
-        <input aria-label="Search" defaultValue="project" />
-      </CollapsingLargeTitleHeader>,
-    );
-    expect(measure().contains(getByText('Grade row'))).toBe(false);
-    const floatingSurface = getByText('Grade row').parentElement!;
-    expect(floatingSurface.getAttribute('data-pointer')).toBe('auto');
-    expect(JSON.parse(floatingSurface.getAttribute('data-style')!)).toMatchObject({ backgroundColor: '#fff' });
+    rerender(header(true));
+    expect(measure().contains(getByText('Grade row'))).toBe(true);
     expect(container.querySelector('input')).toBe(search);
-    expect(onHeightChange).not.toHaveBeenCalled();
+    fireEvent.click(measure());
+    expect(onHeightChange).toHaveBeenLastCalledWith(72);
+    rerender(header(false));
+    expect(queryByText('Grade row')).toBeNull();
+    expect(container.querySelector('input')).toBe(search);
   });
 
   it('reports its measured height through onHeightChange (container onLayout)', () => {

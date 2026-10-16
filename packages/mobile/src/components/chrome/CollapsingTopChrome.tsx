@@ -67,8 +67,6 @@ type CollapsingTopChromeProps = {
   /** Extra controls rendered below the islands row (e.g. the Climbs search row).
    *  Discover passes none. Measured into the reported chrome height. */
   children?: ReactNode;
-  /** Extra controls that overlay content without increasing the list inset. */
-  floatingContent?: ReactNode;
   /** Legacy scroll-edge wiring. Native supplementary controls do not attach a backdrop. */
   scrollEdge?: ScrollEdgeBackdrop;
 };
@@ -104,7 +102,6 @@ export function CollapsingTopChrome({
   hideLight = false,
   anchorBoardButton = false,
   children,
-  floatingContent,
   scrollEdge,
 }: CollapsingTopChromeProps) {
   const { systemColors, variant } = useTheme();
@@ -263,7 +260,6 @@ export function CollapsingTopChrome({
           ) : undefined
         }
         scrollEdge={scrollEdge}
-        floatingContent={floatingContent}
         onHeightChange={onHeightChange}
       >
         {children}
@@ -277,7 +273,6 @@ export function CollapsingTopChrome({
       onHeightChange={onHeightChange}
       leftActions={leftActions}
       rightActions={rightActions}
-      floatingContent={floatingContent}
     >
       {children}
     </CollapsingLargeTitleHeader>

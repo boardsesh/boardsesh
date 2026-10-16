@@ -22,7 +22,6 @@ export function NativeRootHeader({
   centerContent,
   centerActionWidths,
   children,
-  floatingContent,
   opaqueControls = false,
   onHeightChange,
 }: {
@@ -39,8 +38,6 @@ export function NativeRootHeader({
   centerActionWidths?: { leading: number; trailing: number };
   /** Supplementary controls pinned under the bar; see `HeaderControls`. */
   children?: ReactNode;
-  /** Controls drawn below children without reserving additional list space. */
-  floatingContent?: ReactNode;
   /**
    * Keep the painted band behind `children` even where they could float. For a
    * block that carries bare text, which a blur alone does not keep readable.
@@ -74,12 +71,11 @@ export function NativeRootHeader({
       )
     : undefined;
   const controlsHeight = useRef(0);
-  const hasReservedControls = children != null;
-  const hasControls = hasReservedControls || floatingContent != null;
+  const hasControls = children != null;
   useLayoutEffect(() => {
-    if (!hasReservedControls) controlsHeight.current = 0;
+    if (!hasControls) controlsHeight.current = 0;
     onHeightChange(controlsHeight.current);
-  }, [onHeightChange, hasReservedControls]);
+  }, [onHeightChange, hasControls]);
   const measureControls = useCallback(
     (event: LayoutChangeEvent) => {
       controlsHeight.current = event.nativeEvent.layout.height;
@@ -145,12 +141,7 @@ export function NativeRootHeader({
         }}
       />
       {hasControls ? (
-        <HeaderControls
-          headerHeight={headerHeight}
-          opaque={opaqueControls}
-          onLayout={measureControls}
-          floatingContent={floatingContent}
-        >
+        <HeaderControls headerHeight={headerHeight} opaque={opaqueControls} onLayout={measureControls}>
           {children}
         </HeaderControls>
       ) : null}
@@ -177,13 +168,11 @@ function HeaderControls({
   opaque,
   onLayout,
   children,
-  floatingContent,
 }: {
   headerHeight: number;
   opaque: boolean;
   onLayout: (event: LayoutChangeEvent) => void;
   children: ReactNode;
-  floatingContent: ReactNode;
 }) {
   const { systemColors } = useTheme();
   const canFloat = useFloatingHeaderControls();
@@ -198,7 +187,6 @@ function HeaderControls({
       <View pointerEvents="box-none" onLayout={onLayout}>
         {children}
       </View>
-      {floatingContent}
     </View>
   );
 }

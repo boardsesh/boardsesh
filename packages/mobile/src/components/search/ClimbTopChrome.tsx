@@ -322,10 +322,10 @@ function ClimbTopChromeComponent({
               ) : null}
             </View>
           ) : null}
+          {/* Measure the disclosed rail with the rest of the chrome so the first
+              result clears it. Keep the search gutter and rail's own chip insets. */}
+          {usesCustomSearch && gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
         </View>
-        {/* Inside the opaque touch surface, outside the reserved-height measurement.
-            Retain the search stack's gutter and the rail's own chip insets. */}
-        {usesCustomSearch && gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
       </View>
     );
   }
@@ -356,16 +356,6 @@ function ClimbTopChromeComponent({
       anchorBoardButton={anchorBoardButton}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
-      floatingContent={
-        gradeRail ? (
-          <View
-            testID="climb-grade-rail"
-            style={[styles.gradeRail, glassGradeRail ? null : { backgroundColor: systemColors.background }]}
-          >
-            {gradeRail}
-          </View>
-        ) : undefined
-      }
       hideLight
     >
       {usesCustomSearch ? (
@@ -389,6 +379,16 @@ function ClimbTopChromeComponent({
           including the iOS 26 native-search path (no custom search row) — so
           filtering is always glanceable, never gated behind keyboard focus. */}
       {filterChrome}
+      {/* The disclosed rail participates in the measured chrome height. At rest,
+          even compact climb rows start below it; glass stays on each capsule. */}
+      {gradeRail ? (
+        <View
+          testID="climb-grade-rail"
+          style={[styles.gradeRail, glassGradeRail ? null : { backgroundColor: systemColors.background }]}
+        >
+          {gradeRail}
+        </View>
+      ) : null}
     </CollapsingTopChrome>
   );
 }

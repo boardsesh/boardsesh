@@ -299,10 +299,11 @@ describe('NativeRootHeader', () => {
   });
 
   describe('supplementary controls under the bar', () => {
-    type ControlsProps = { opaqueControls?: boolean; scrollEdge?: ScrollEdgeBackdrop; floatingContent?: ReactNode };
-    const header = (props: ControlsProps, onHeightChange: (height: number) => void) => (
-      <NativeRootHeader onHeightChange={onHeightChange} {...props}>
+    type ControlsProps = { opaqueControls?: boolean; scrollEdge?: ScrollEdgeBackdrop; gradeRowVisible?: boolean };
+    const header = ({ gradeRowVisible, ...headerProps }: ControlsProps, onHeightChange: (height: number) => void) => (
+      <NativeRootHeader onHeightChange={onHeightChange} {...headerProps}>
         <span>Filter chips</span>
+        {gradeRowVisible ? <button>Grade row</button> : null}
       </NativeRootHeader>
     );
     const renderControls = (props: ControlsProps = {}) => {
@@ -315,17 +316,19 @@ describe('NativeRootHeader', () => {
       const update = (next: ControlsProps) => view.rerender(header(next, onHeightChange));
       return { ...view, onHeightChange, block, backdrop, backdropFrame, update };
     };
-    it('keeps the reserved height when floating controls open, resize and close', () => {
+    it('measures disclosed controls while they are open and releases their space when closed', () => {
       controls.canFloat = true;
       const { block, update, onHeightChange, getByText, queryByText } = renderControls();
       fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
       expect(onHeightChange).toHaveBeenLastCalledWith(36);
       onHeightChange.mockClear();
 
-      update({ floatingContent: <button>Grade row</button> });
+      update({ gradeRowVisible: true });
       expect(block()!.contains(getByText('Grade row'))).toBe(true);
-      expect(block()!.querySelector('[data-measure-controls]')!.contains(getByText('Grade row'))).toBe(false);
-      expect(onHeightChange).not.toHaveBeenCalled();
+      expect(block()!.querySelector('[data-measure-controls]')!.contains(getByText('Grade row'))).toBe(true);
+      controls.measuredControlsHeight = 88;
+      fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
+      expect(onHeightChange).toHaveBeenLastCalledWith(88);
 
       // Real persistent-control resizing (rotation or text size) still measures.
       controls.measuredControlsHeight = 52;
@@ -334,21 +337,23 @@ describe('NativeRootHeader', () => {
       onHeightChange.mockClear();
       update({});
       expect(queryByText('Grade row')).toBeNull();
-      expect(onHeightChange).not.toHaveBeenCalled();
+      controls.measuredControlsHeight = 36;
+      fireEvent.click(block()!.querySelector('[data-measure-controls]')!);
+      expect(onHeightChange).toHaveBeenLastCalledWith(36);
     });
 
-    it('restores zero reserved height when only floating controls remain', () => {
+    it('restores zero reserved height when supplementary controls are removed', () => {
       const onHeightChange = vi.fn();
-      const { container, rerender, getByText } = render(
+      const { container, rerender } = render(
         <NativeRootHeader onHeightChange={onHeightChange}>
           <span>Search</span>
         </NativeRootHeader>,
       );
       fireEvent.click(container.querySelector('[data-measure-controls]')!);
       expect(onHeightChange).toHaveBeenLastCalledWith(36);
-      rerender(<NativeRootHeader onHeightChange={onHeightChange} floatingContent={<button>Grade row</button>} />);
+      rerender(<NativeRootHeader onHeightChange={onHeightChange} />);
       expect(onHeightChange).toHaveBeenLastCalledWith(0);
-      expect(container.querySelector('[data-controls]')!.contains(getByText('Grade row'))).toBe(true);
+      expect(container.querySelector('[data-controls]')).toBeNull();
     });
 
     it('floats native controls without a continuous blur behind them', () => {
@@ -364,7 +369,7 @@ describe('NativeRootHeader', () => {
       controls.canFloat = true;
       const scrollEdge = wiring ? createScrollEdgeBackdrop() : undefined;
       const { block, backdrop, backdropFrame, update, getByText } = renderControls({ scrollEdge });
-      update({ scrollEdge, floatingContent: <button>Grade row</button> });
+      update({ scrollEdge, gradeRowVisible: true });
       expect(block()!.contains(getByText('Grade row'))).toBe(true);
       expect(backdrop()).toBeNull();
       expect(backdropFrame()).toBeNull();

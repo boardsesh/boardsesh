@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
+import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
@@ -469,14 +470,6 @@ function ClimbListInner() {
     onDismiss: finishFilterSession,
   });
   const [recentFilters, setRecentFilters] = useState<RecentFilter[]>([]);
-  // Measured height of the persistent chrome the list has to clear: the floating
-  // controls (incl. the top safe-area inset), or only the controls under the bar
-  // when UIKit owns the header (the automatic inset covers the bar). The grade
-  // row overlays climbs and is excluded from this reserved spacing.
-  // The list pads its top by this, so it is not a screen offset: never position
-  // an overlay with it.
-  const [searchBarHeight, setSearchBarHeight] = useState(() => insets.top + 60);
-
   const blurSearchInputs = useCallback(() => {
     Keyboard.dismiss();
     searchHeaderRef.current?.blur();
@@ -978,23 +971,30 @@ function ClimbListInner() {
     [searchInput, boardseshGradesActive],
   );
   const hasSeenSearchKeyRef = useRef(false);
-  // Read through a ref: the header settling its height is not a new search and
-  // must not scroll the list.
   const listTopOffset = useListTopOffset();
-  const listTopOffsetRef = useRef(listTopOffset);
-  listTopOffsetRef.current = listTopOffset;
-  // Whether rows are under the filter chips floating below the UIKit header: the
-  // blur behind the chips shows only then. A store the list writes and the blur
-  // reads, so a scroll never re-renders this screen. `list` is undefined until a
-  // blur is mounted, which keeps the list under every opaque header (Material,
-  // Android, iOS before 26, Reduce Transparency) free of scroll listeners.
+  // Legacy backdrop consumers attach to this store. Native capsules draw their
+  // own glass; forwarding its optional callbacks never renders this screen.
   const scrollEdge = useScrollEdgeBackdrop();
+  // The full measured controls include the expanded Grade rail. At the top,
+  // disclosure moves results below it; farther down, keep the same rows in place.
+  const {
+    chromeHeight: searchBarHeight,
+    onChromeHeightChange: handleChromeHeightChange,
+    onScroll: handleListScroll,
+    onCommitLayoutEffect: handleListCommitLayout,
+    resetScrollToTop,
+  } = useListChromeClearance({
+    initialHeight: insets.top + 60,
+    topOffset: listTopOffset,
+    listRef: climbListRef,
+    onScroll: scrollEdge.list?.listProps.onScroll,
+  });
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
       return;
     }
-    climbListRef.current?.scrollToOffset({ offset: listTopOffsetRef.current, animated: false });
+    resetScrollToTop();
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
     visibleRowsStore.set(0, 0);
@@ -1002,7 +1002,7 @@ function ClimbListInner() {
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
     lastNextPageFailureAtRef.current = null;
-  }, [searchScrollKey, visibleRowsStore]);
+  }, [searchScrollKey, visibleRowsStore, resetScrollToTop]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -2292,7 +2292,7 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         {/* The empty state replaces action chrome; clear its native center slot. */}
-        {nativeRootHeader ? <NativeRootHeader onHeightChange={setSearchBarHeight} /> : null}
+        {nativeRootHeader ? <NativeRootHeader onHeightChange={handleChromeHeightChange} /> : null}
         <View style={styles.emptyContainer}>
           <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
@@ -2318,7 +2318,7 @@ function ClimbListInner() {
     return (
       <>
         <Stack.Screen options={stackOptions} />
-        {nativeRootHeader ? <NativeRootHeader onHeightChange={setSearchBarHeight} /> : null}
+        {nativeRootHeader ? <NativeRootHeader onHeightChange={handleChromeHeightChange} /> : null}
         <View style={styles.emptyContainer}>
           <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
@@ -2456,15 +2456,16 @@ function ClimbListInner() {
               onEndReachedThreshold={0.5}
               onViewableItemsChanged={handleViewableItemsChanged}
               viewabilityConfig={CLIMB_LIST_VIEWABILITY}
-              // The header is transparent on every path now, so the chrome owns the top
-              // inset and the list pads manually by the measured chrome height. Leaving
-              // this 'automatic' would double-inset under the (invisible) native header.
+              // UIKit supplies the navigation-bar inset; measured supplementary
+              // controls supply the remaining padding. Other paths own their inset.
               contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
               // The scroll reset on a new search targets the inset top, a negative
               // offset. React Native clamps a programmatic scroll at 0 unless told the
               // list may be scrolled past its content bounds.
               scrollToOverflowEnabled={nativeRootHeader}
               {...scrollEdge.list?.listProps}
+              onScroll={handleListScroll}
+              onCommitLayoutEffect={handleListCommitLayout}
               contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
               scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
               keyboardShouldPersistTaps="handled"
@@ -2613,7 +2614,7 @@ function ClimbListInner() {
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}
         anchorBoardButton
-        onHeightChange={setSearchBarHeight}
+        onHeightChange={handleChromeHeightChange}
         searchFieldRef={searchHeaderRef}
         searchInitialValue={name}
         searchPlaceholder={t('search.placeholders.climbs')}

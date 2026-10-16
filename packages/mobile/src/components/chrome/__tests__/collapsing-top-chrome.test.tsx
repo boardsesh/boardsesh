@@ -6,13 +6,11 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
     centerContent,
     centerActionWidths,
     children,
-    floatingContent,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     centerActionWidths?: { leading: number; trailing: number };
     children?: ReactNode;
-    floatingContent?: ReactNode;
     scrollEdge?: unknown;
   }) => {
     ctrl.nativeScrollEdge = scrollEdge;
@@ -22,7 +20,6 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
       null,
       createElement('div', { 'data-native-center': 'true' }, centerContent),
       createElement('div', { 'data-native-controls': 'true' }, children),
-      createElement('div', { 'data-native-floating': 'true' }, floatingContent),
     );
   },
 }));
@@ -223,15 +220,15 @@ const board: BoardFields = {
 };
 
 describe('CollapsingTopChrome', () => {
-  it('passes floating content separately from the reserved native controls', () => {
+  it('passes disclosed controls together with the reserved native controls', () => {
     ctrl.nativeHeader = true;
     const { container } = render(
-      <CollapsingTopChrome {...makeProps({ floatingContent: <button>Grade row</button> })}>
+      <CollapsingTopChrome {...makeProps()}>
         <span>Persistent filters</span>
+        <button>Grade row</button>
       </CollapsingTopChrome>,
     );
-    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filters');
-    expect(container.querySelector('[data-native-floating]')?.textContent).toBe('Grade row');
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Persistent filtersGrade row');
   });
 
   it('reserves the actual native action widths as controls are added or removed', () => {
