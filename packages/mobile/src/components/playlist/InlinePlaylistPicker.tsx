@@ -80,8 +80,10 @@ type InlinePlaylistPickerProps = {
   onBack?: () => void;
   /** When set, the header (with the back button) is pinned and the list scrolls
    *  within this height — so scrolling a long playlist list never hides "back".
-   *  Omit in a sheet host, whose own scroll already scrolls the body. */
+   *  Omit for a sheet host, which uses the bounded fill layout instead. */
   maxHeight?: number;
+  /** Fill the bounded body supplied by a sheet; overlays size to their content. */
+  layout?: 'content' | 'fill';
   /** Virtualized list host for the playlist rows: the RN `FlatList` in the reaction
    *  overlay (default), `BottomSheetFlatList` inside a `ModalSheet` so it scrolls
    *  with the sheet. Injected rather than `.map`-ing rows in a ScrollView. */
@@ -128,6 +130,7 @@ export function InlinePlaylistPicker({
   TextInputComponent,
   onBack,
   maxHeight,
+  layout = 'content',
   ListComponent = FlatList,
   onDetachedFailure,
 }: InlinePlaylistPickerProps) {
@@ -460,7 +463,7 @@ export function InlinePlaylistPicker({
   // Bound the scroll area to the space left under the pinned header, measured so
   // the list scrolls (not clips) whatever the header's height.
   const [headerHeight, setHeaderHeight] = useState(0);
-  const scrollMaxHeight = maxHeight != null ? Math.max(120, maxHeight - headerHeight) : undefined;
+  const scrollMaxHeight = maxHeight != null ? Math.max(0, maxHeight - headerHeight) : undefined;
   const onHeaderLayout = useCallback(
     (event: LayoutChangeEvent) => setHeaderHeight(event.nativeEvent.layout.height),
     [],
@@ -487,7 +490,7 @@ export function InlinePlaylistPicker({
   );
 
   return (
-    <View style={[styles.container, maxHeight != null ? { maxHeight } : null]}>
+    <View style={[styles.container, layout === 'fill' && styles.fill, maxHeight != null ? { maxHeight } : null]}>
       <View style={styles.header} onLayout={onHeaderLayout}>
         {onBack ? (
           <PressableSurface
@@ -520,7 +523,7 @@ export function InlinePlaylistPicker({
 
       {createOpen ? (
         <ScrollView
-          style={scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : undefined}
+          style={[layout === 'fill' && styles.fill, scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : null]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={false}
@@ -616,11 +619,16 @@ export function InlinePlaylistPicker({
           </View>
         </ScrollView>
       ) : !isAuthenticated ? (
-        <View style={styles.message}>
+        <ScrollView
+          style={[layout === 'fill' && styles.fill, scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : null]}
+          contentContainerStyle={styles.message}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('actions.playlist.popover.signInBlurb')}
           </Text>
-        </View>
+        </ScrollView>
       ) : isLoading && sortedPlaylists.length === 0 ? (
         // Spinner only before the user's playlists are cached at all; once they're
         // available we render immediately and checkmarks fill in.
@@ -637,7 +645,7 @@ export function InlinePlaylistPicker({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={false}
-          style={scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : undefined}
+          style={[layout === 'fill' && styles.fill, scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : null]}
           ListHeaderComponent={
             error ? (
               <Text variant="footnote" color={systemColors.error} style={styles.errorText}>
@@ -663,7 +671,12 @@ const createStyles = (textStyles: TypographyScale) =>
     container: {
       width: '100%',
     },
+    fill: {
+      flex: 1,
+      minHeight: 0,
+    },
     header: {
+      flexShrink: 0,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing[2],
@@ -735,6 +748,7 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     createActions: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'flex-end',
       alignItems: 'center',
       gap: spacing[3],

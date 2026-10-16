@@ -855,6 +855,19 @@ scroll body, or beside a composer. Preserve typed text and attachments on failur
 the error on retry. Root toasts appear behind native sheets and cannot explain
 why a form remains open. Logbook editing already follows this contract.
 
+**Focused inputs follow the visible body.** `AccessibleBottomSheetTextInput` uses the
+scrollable wrapper's reveal context automatically: focus raises the sheet and reveals the
+field, body resizing keeps it visible, and blur releases it. Fields with adjacent validation
+can pass a `sheetRevealTargetRef` for the containing view, so the message stays visible too.
+Pinned composer fields and inputs outside a scrollable sheet keep their existing behavior.
+Do not add keyboard insets to a sheet scroll view on top of the wrapper's keyboard padding.
+
+**A picker owns one bounded scroll viewport.** Put its fixed preview in the sheet's header
+and let its virtualized list or inline create form fill the remaining body. Content-sized
+overlay and popover hosts provide a height cap; subtract the measured picker header without
+forcing a minimum scroll height that exceeds that cap. Do not wrap the playlist list in a
+second scroll view.
+
 
 **Row swipe actions:** climb, queue, and logbook rows share an 88-point reveal,
 a 44-point reveal threshold, and a 192-point full-swipe release threshold. A short

@@ -1,12 +1,14 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, View, type ColorValue } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ClientError } from 'graphql-request';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useAuth } from '../providers/auth-provider';
+import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useDeleteAccount, useDeleteAccountInfo } from '../lib/graphql/hooks';
 import { borderRadius, spacing } from '../theme/tokens';
@@ -57,6 +59,8 @@ export function DeleteAccountScreen() {
   const { showToast } = useToast();
   const { signOut } = useAuth();
   const { scrollBottomPadding } = useBottomChromeMetrics();
+  const headerHeight = useHeaderHeight();
+  const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
 
   const [confirmText, setConfirmText] = useState('');
   const [removeSetterName, setRemoveSetterName] = useState(false);
@@ -112,82 +116,91 @@ export function DeleteAccountScreen() {
   // button stays in the body, below the typed confirmation it depends on (the
   // documented exception in docs/mobile-sheets-vs-routes.md).
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      style={{ backgroundColor: systemColors.groupedBackground }}
-      contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] }]}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.flex}
     >
-      {infoQuery.isLoading ? (
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
-          {t('deleteAccount.dialog.checking')}
-        </Text>
-      ) : null}
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        style={{ backgroundColor: systemColors.groupedBackground }}
+        contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] + keyboardHeight }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {infoQuery.isLoading ? (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
+            {t('deleteAccount.dialog.checking')}
+          </Text>
+        ) : null}
 
-      {hasPublishedClimbs ? (
+        {hasPublishedClimbs ? (
+          <View style={styles.section}>
+            <View
+              style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryGroupedBackground }]}
+            >
+              <SwitchRow
+                label={t('deleteAccount.dialog.removeSetterName')}
+                value={removeSetterName}
+                onValueChange={setRemoveSetterName}
+                disabled={isDeleting}
+              />
+            </View>
+            <View style={styles.footer}>
+              <EmphasizedText
+                text={t('deleteAccount.dialog.publishedClimbs', { count: publishedClimbCount })}
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+              />
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.section}>
-          <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
-            <SwitchRow
-              label={t('deleteAccount.dialog.removeSetterName')}
-              value={removeSetterName}
-              onValueChange={setRemoveSetterName}
-              disabled={isDeleting}
+          <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
+            <TextInput
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!isDeleting}
+              value={confirmText}
+              onChangeText={setConfirmText}
+              placeholder={t('deleteAccount.dialog.confirmPlaceholder')}
+              placeholderTextColor={systemColors.tertiaryLabel}
+              accessibilityLabel={t('deleteAccount.dialog.confirmPlaceholder')}
+              style={[styles.input, { color: systemColors.label }]}
             />
           </View>
-          <View style={styles.footer}>
+          <View style={[styles.footer, styles.footerParagraphs]}>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('deleteAccount.dialog.warning')}
+            </Text>
             <EmphasizedText
-              text={t('deleteAccount.dialog.publishedClimbs', { count: publishedClimbCount })}
+              text={t('deleteAccount.dialog.confirmInstruction')}
               variant="footnote"
               color={systemColors.secondaryLabel}
             />
           </View>
         </View>
-      ) : null}
 
-      <View style={styles.section}>
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
-          <TextInput
-            autoCapitalize="characters"
-            autoCorrect={false}
-            editable={!isDeleting}
-            value={confirmText}
-            onChangeText={setConfirmText}
-            placeholder={t('deleteAccount.dialog.confirmPlaceholder')}
-            placeholderTextColor={systemColors.tertiaryLabel}
-            accessibilityLabel={t('deleteAccount.dialog.confirmPlaceholder')}
-            style={[styles.input, { color: systemColors.label }]}
+        <View style={styles.actions}>
+          <Button
+            title={t('deleteAccount.dialog.confirm')}
+            variant="filled"
+            role="destructive"
+            onPress={() => {
+              void handleDelete();
+            }}
+            disabled={!isConfirmed || isDeleting || infoQuery.isLoading}
+            loading={isDeleting}
           />
         </View>
-        <View style={[styles.footer, styles.footerParagraphs]}>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('deleteAccount.dialog.warning')}
-          </Text>
-          <EmphasizedText
-            text={t('deleteAccount.dialog.confirmInstruction')}
-            variant="footnote"
-            color={systemColors.secondaryLabel}
-          />
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          title={t('deleteAccount.dialog.confirm')}
-          variant="filled"
-          role="destructive"
-          onPress={() => {
-            void handleDelete();
-          }}
-          disabled={!isConfirmed || isDeleting || infoQuery.isLoading}
-          loading={isDeleting}
-        />
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
+    flex: { flex: 1 },
     container: {
       width: '100%',
       maxWidth: 672,

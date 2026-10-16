@@ -34,10 +34,15 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 
 vi.mock('../ModalSheet', () => ({
-  ModalSheet: ({ visible, children, ...rest }: { visible?: boolean; children?: ReactNode }) => {
+  ModalSheet: ({ visible, children, ...rest }: { visible?: boolean; children?: ReactNode; header?: ReactNode }) => {
     captured.sheetVisible = visible;
     captured.sheetProps = rest;
-    return createElement('div', { 'data-modal-sheet': 'true' }, children);
+    return createElement(
+      'div',
+      { 'data-modal-sheet': 'true' },
+      createElement('header', null, rest.header as ReactNode),
+      children,
+    );
   },
 }));
 
@@ -90,13 +95,14 @@ describe('AddToPlaylistSheet', () => {
   it('renders the preview + inline picker with the climb/board props when a climb is present', () => {
     const { container } = renderSheet(climb);
     expect(captured.sheetVisible).toBe(true);
-    expect(container.querySelector('[data-climb-preview="true"]')).not.toBeNull();
+    expect(container.querySelector('header [data-climb-preview="true"]')).not.toBeNull();
     expect(container.querySelector('[data-inline-picker="true"]')).not.toBeNull();
     expect(captured.pickerProps).toMatchObject({
       climb,
       angle: 40,
       boardName: 'kilter',
       layoutId: 1,
+      layout: 'fill',
     });
     // The sheet injects the native bottom-sheet text input + list so they scroll
     // with the sheet.

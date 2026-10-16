@@ -259,12 +259,10 @@ function BetaUrlField({ value, invalid, onChangeText, onSubmit }: BetaUrlFieldPr
   const focusedRef = useRef(false);
   const handleFocus = useCallback(() => {
     focusedRef.current = true;
-    if (fieldRef.current) scrollIntoView?.reveal(fieldRef.current);
-  }, [scrollIntoView]);
+  }, []);
   const handleBlur = useCallback(() => {
     focusedRef.current = false;
-    if (fieldRef.current) scrollIntoView?.release(fieldRef.current);
-  }, [scrollIntoView]);
+  }, []);
   // The error line grows the wrapper after the focus reveal measured it, so
   // scroll again to keep the error above the keyboard. `follow`, not `reveal`:
   // it never moves the sheet's detent.
@@ -276,6 +274,7 @@ function BetaUrlField({ value, invalid, onChangeText, onSubmit }: BetaUrlFieldPr
       <BottomSheetTextInput
         value={value}
         onChangeText={onChangeText}
+        sheetRevealTargetRef={fieldRef}
         onFocus={handleFocus}
         onBlur={handleBlur}
         placeholder={t('mobile.betaVideos.urlPlaceholder')}

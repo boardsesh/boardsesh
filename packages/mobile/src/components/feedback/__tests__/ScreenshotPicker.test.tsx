@@ -5,17 +5,22 @@ import { createElement, type ReactNode } from 'react';
 import { FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 
 type ViewMockProps = { children?: ReactNode; accessibilityLabel?: string };
-type ImageMockProps = { source?: { uri?: string } };
+type ImageMockProps = { source?: { uri?: string }; style?: unknown };
+function serializeStyle(style: unknown): string {
+  return JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean)));
+}
 vi.mock('react-native', () => ({
   View: ({ children, accessibilityLabel }: ViewMockProps) =>
     createElement('div', { 'aria-label': accessibilityLabel }, children),
-  Image: ({ source }: ImageMockProps) => createElement('img', { 'data-uri': source?.uri }),
+  Image: ({ source, style }: ImageMockProps) =>
+    createElement('img', { 'data-uri': source?.uri, 'data-style': serializeStyle(style) }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-type TextMockProps = { children?: ReactNode };
+type TextMockProps = { children?: ReactNode; numberOfLines?: number };
 vi.mock('../../Text', () => ({
-  Text: ({ children }: TextMockProps) => createElement('span', {}, children),
+  Text: ({ children, numberOfLines }: TextMockProps) =>
+    createElement('span', { 'data-lines': numberOfLines }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
@@ -24,10 +29,15 @@ type PressableMockProps = {
   onPress?: () => void;
   accessibilityLabel?: string;
   disabled?: boolean;
+  style?: unknown;
 };
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress, accessibilityLabel, disabled }: PressableMockProps) =>
-    createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
+  PressableSurface: ({ children, onPress, accessibilityLabel, disabled, style }: PressableMockProps) =>
+    createElement(
+      'button',
+      { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-style': serializeStyle(style) },
+      children,
+    ),
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -206,5 +216,20 @@ describe('ScreenshotPicker warnings', () => {
     const { container } = render(<ScreenshotPicker uris={['file:///a.jpg']} onChange={vi.fn()} disabled />);
     expect(addTile(container).disabled).toBe(true);
     expect(removeButtons(container)[0].disabled).toBe(true);
+  });
+});
+
+describe('ScreenshotPicker enlarged text', () => {
+  it('lets the add tile grow and all disclosure text wrap while thumbnails stay square', () => {
+    const { container, getByText } = render(<ScreenshotPicker uris={['file:///a.jpg']} onChange={vi.fn()} />);
+    const tileStyle = JSON.parse(addTile(container).getAttribute('data-style') ?? '{}');
+    expect(tileStyle).toMatchObject({ minHeight: 72, paddingVertical: 8 });
+    expect(tileStyle).not.toHaveProperty('height');
+    expect(getByText('screenshots.addLabel').getAttribute('data-lines')).toBeNull();
+    expect(getByText('screenshots.publicWarning').getAttribute('data-lines')).toBeNull();
+    expect(JSON.parse(container.querySelector('img')?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      width: 72,
+      height: 72,
+    });
   });
 });

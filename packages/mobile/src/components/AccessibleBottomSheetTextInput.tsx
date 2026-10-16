@@ -1,12 +1,64 @@
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
-import type { ComponentPropsWithRef } from 'react';
+import { useCallback, useEffect, useRef, type ComponentPropsWithRef, type RefObject } from 'react';
+import type { TextInput } from 'react-native';
 import { useAccessibleInputStyle } from '../hooks/use-accessible-input-style';
+import { useSheetScrollIntoView, type SheetRevealTarget } from './sheet-scroll-into-view';
 
-/** Preserve Expo's sheet keyboard/ref host while applying content accessibility typography. */
+type AccessibleBottomSheetTextInputProps = ComponentPropsWithRef<typeof BottomSheetTextInput> & {
+  /** Include adjacent validation or help text in the focus reveal. */
+  sheetRevealTargetRef?: RefObject<SheetRevealTarget | null>;
+};
+
+/** Preserve Expo's keyboard/ref host and keep focused fields in the sheet's viewport. */
 export function AccessibleBottomSheetTextInput({
   style,
+  ref,
+  onFocus,
+  onBlur,
+  onContentSizeChange,
+  sheetRevealTargetRef,
   ...props
-}: ComponentPropsWithRef<typeof BottomSheetTextInput>) {
+}: AccessibleBottomSheetTextInputProps) {
   const inputStyle = useAccessibleInputStyle(style);
-  return <BottomSheetTextInput allowFontScaling maxFontSizeMultiplier={0} {...props} style={inputStyle} />;
+  const inputRef = useRef<TextInput | null>(null);
+  const activeTargetRef = useRef<SheetRevealTarget | null>(null);
+  const scrollIntoView = useSheetScrollIntoView();
+  const setInputRef = useCallback(
+    (input: TextInput | null) => {
+      inputRef.current = input;
+      if (typeof ref === 'function') return ref(input);
+      if (ref) ref.current = input;
+    },
+    [ref],
+  );
+
+  const release = useCallback(() => {
+    if (activeTargetRef.current) scrollIntoView?.release(activeTargetRef.current);
+    activeTargetRef.current = null;
+  }, [scrollIntoView]);
+  useEffect(() => release, [release]);
+
+  return (
+    <BottomSheetTextInput
+      allowFontScaling
+      maxFontSizeMultiplier={0}
+      {...props}
+      ref={setInputRef}
+      onFocus={(event) => {
+        const target = sheetRevealTargetRef?.current ?? inputRef.current;
+        activeTargetRef.current = target;
+        if (target) scrollIntoView?.reveal(target);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        release();
+        onBlur?.(event);
+      }}
+      onContentSizeChange={(event) => {
+        if (activeTargetRef.current) scrollIntoView?.follow(activeTargetRef.current);
+        onContentSizeChange?.(event);
+      }}
+      style={inputStyle}
+    />
+  );
 }

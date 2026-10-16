@@ -267,7 +267,7 @@ const createStyles = (textStyles: TypographyScale) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing[2],
-      height: 40,
+      minHeight: 40,
       borderRadius: 10,
       paddingHorizontal: spacing[3],
     },

@@ -34,6 +34,14 @@ const queryClientMock = vi.hoisted(() => ({
 }));
 const membershipStore = vi.hoisted(() => ({ setMembershipForClimb: vi.fn() }));
 const showToast = vi.hoisted(() => vi.fn());
+const layoutCapture = vi.hoisted(() => ({
+  onHeaderLayout: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined,
+}));
+
+function serializeStyle(style: unknown): string {
+  return JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean)));
+}
+
 const reportHandledError = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
@@ -47,24 +55,38 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({
+    children,
+    style,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    onLayout?: typeof layoutCapture.onHeaderLayout;
+  }) => {
+    if (onLayout) layoutCapture.onHeaderLayout = onLayout;
+    return createElement('div', { 'data-style': serializeStyle(style) }, children);
+  },
+  ScrollView: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-scroll-view': 'true', 'data-style': serializeStyle(style) }, children),
   FlatList: ({
     data,
     renderItem,
     keyExtractor,
     ListHeaderComponent,
     ListEmptyComponent,
+    style,
   }: {
     data?: readonly Playlist[];
     renderItem?: (info: { item: Playlist; index: number }) => ReactNode;
     keyExtractor?: (item: Playlist, index: number) => string;
     ListHeaderComponent?: ReactNode;
     ListEmptyComponent?: ReactNode;
+    style?: unknown;
   }) =>
     createElement(
       'div',
-      null,
+      { 'data-flat-list': 'true', 'data-style': serializeStyle(style) },
       ListHeaderComponent,
       data && data.length > 0
         ? data.map((item, index) =>
@@ -88,7 +110,11 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
-      values ? `${key}:${Object.entries(values).map(([name, value]) => `${name}=${String(value)}`)}` : key,
+      values
+        ? `${key}:${Object.entries(values)
+            .map(([name, value]) => `${name}=${String(value)}`)
+            .join(',')}`
+        : key,
   }),
 }));
 
@@ -739,5 +765,74 @@ describe('InlinePlaylistPicker', () => {
     await Promise.resolve();
 
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+  });
+});
+
+describe('InlinePlaylistPicker bounded layout', () => {
+  beforeEach(() => {
+    playlistContext.isAuthenticated = true;
+    playlistContext.isLoading = false;
+    playlistContext.playlists = [];
+    layoutCapture.onHeaderLayout = undefined;
+  });
+  const pickerProps = {
+    climb,
+    angle: 40,
+    boardName: 'kilter' as const,
+    layoutId: 1,
+    TextInputComponent: NameInput,
+  };
+
+  it('fills the native sheet body and gives list and create form a shrinkable viewport', () => {
+    playlistContext.isAuthenticated = true;
+    const { container, getByLabelText } = render(<InlinePlaylistPicker {...pickerProps} layout="fill" />);
+    expect(JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      flex: 1,
+      minHeight: 0,
+    });
+    expect(JSON.parse(container.querySelector('[data-flat-list]')?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      flex: 1,
+      minHeight: 0,
+    });
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    expect(JSON.parse(container.querySelector('[data-scroll-view]')?.getAttribute('data-style') ?? '{}')).toMatchObject(
+      { flex: 1, minHeight: 0 },
+    );
+  });
+
+  it('remeasures the content-host viewport below large headers without a minimum floor', () => {
+    playlistContext.isAuthenticated = true;
+    const { container, getByLabelText, rerender } = render(<InlinePlaylistPicker {...pickerProps} maxHeight={200} />);
+    const listStyle = () => JSON.parse(container.querySelector('[data-flat-list]')?.getAttribute('data-style') ?? '{}');
+    act(() => layoutCapture.onHeaderLayout?.({ nativeEvent: { layout: { height: 150 } } }));
+    expect(listStyle()).toEqual({ maxHeight: 50 });
+    act(() => layoutCapture.onHeaderLayout?.({ nativeEvent: { layout: { height: 230 } } }));
+    expect(listStyle()).toEqual({ maxHeight: 0 });
+    rerender(<InlinePlaylistPicker {...pickerProps} maxHeight={320} />);
+    expect(listStyle()).toEqual({ maxHeight: 90 });
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    expect(JSON.parse(container.querySelector('[data-scroll-view]')?.getAttribute('data-style') ?? '{}')).toEqual({
+      maxHeight: 90,
+    });
+  });
+
+  it('keeps enlarged signed-out copy scrollable within native fill and measured overlay bounds', () => {
+    playlistContext.isAuthenticated = false;
+    const { container, getByText, rerender } = render(<InlinePlaylistPicker {...pickerProps} layout="fill" />);
+    const scrollStyle = () =>
+      JSON.parse(container.querySelector('[data-scroll-view]')?.getAttribute('data-style') ?? '{}');
+    expect(scrollStyle()).toMatchObject({ flex: 1, minHeight: 0 });
+    expect(getByText('actions.playlist.popover.signInBlurb').closest('[data-scroll-view]')).not.toBeNull();
+    rerender(<InlinePlaylistPicker {...pickerProps} maxHeight={200} />);
+    act(() => layoutCapture.onHeaderLayout?.({ nativeEvent: { layout: { height: 150 } } }));
+    expect(scrollStyle()).toEqual({ maxHeight: 50 });
+    act(() => layoutCapture.onHeaderLayout?.({ nativeEvent: { layout: { height: 230 } } }));
+    expect(scrollStyle()).toEqual({ maxHeight: 0 });
+  });
+
+  it('keeps unconstrained content hosts content-sized', () => {
+    const { container } = render(<InlinePlaylistPicker {...pickerProps} />);
+    expect(JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}')).not.toHaveProperty('flex');
+    expect(JSON.parse(container.querySelector('[data-flat-list]')?.getAttribute('data-style') ?? '{}')).toEqual({});
   });
 });

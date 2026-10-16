@@ -12,15 +12,21 @@ vi.mock('../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { act, createElement, createRef, forwardRef, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 // Controls the resolved UI variant SearchHeader branches on.
-const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'material' | 'liquidGlass' }));
+const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'material' | 'liquidGlass', fontScale: 1 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  useWindowDimensions: () => ({ fontScale: ctrl.fontScale }),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement(
+      'div',
+      { 'data-height': readStyleField(style, 'height'), 'data-radius': readStyleField(style, 'borderRadius') },
+      children,
+    ),
   TextInput: forwardRef<
     HTMLInputElement,
     {
@@ -75,10 +81,17 @@ vi.mock('../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
 
-vi.mock('../../providers/theme-provider', () => ({
-  useOptionalTheme: () => null,
-  useTheme: () => ({ systemColors: { label: '#000', fill: '#eee' }, variant: ctrl.variant }),
-}));
+vi.mock('../../providers/theme-provider', async () => {
+  const { textStyles, materialTextStyles } = await import('../../theme/typography');
+  return {
+    useOptionalTheme: () => null,
+    useTheme: () => ({
+      systemColors: { label: '#000', fill: '#eee' },
+      variant: ctrl.variant,
+      textStyles: ctrl.variant === 'material' ? materialTextStyles : textStyles,
+    }),
+  };
+});
 
 vi.mock('../../theme/ios-colors', () => ({
   iosSystemColors: { systemGray: '#888', white: '#fff' },
@@ -106,8 +119,13 @@ vi.mock('react-native-paper', () => ({
       style?: unknown;
       inputStyle?: unknown;
       elevation?: number;
+      allowFontScaling?: boolean;
+      maxFontSizeMultiplier?: number;
     }
-  >(function SearchbarMock({ value, placeholder, onChangeText, style, inputStyle, elevation }, ref) {
+  >(function SearchbarMock(
+    { value, placeholder, onChangeText, style, inputStyle, elevation, allowFontScaling, maxFontSizeMultiplier },
+    ref,
+  ) {
     return createElement('input', {
       ref,
       'data-paper': 'searchbar',
@@ -115,6 +133,9 @@ vi.mock('react-native-paper', () => ({
       'data-radius': readStyleField(style, 'borderRadius'),
       'data-elevation': String(elevation ?? ''),
       'data-has-input-style': inputStyle ? 'true' : 'false',
+      'data-line-height': readStyleField(inputStyle, 'lineHeight'),
+      'data-allow-font-scaling': String(allowFontScaling),
+      'data-max-font-size-multiplier': String(maxFontSizeMultiplier),
       value,
       placeholder,
       onChange: (event: ChangeEvent<HTMLInputElement>) => onChangeText?.(event.currentTarget.value),
@@ -125,7 +146,63 @@ vi.mock('react-native-paper', () => ({
 
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 
+beforeEach(() => {
+  ctrl.fontScale = 1;
+  ctrl.variant = 'liquidGlass';
+});
+
 describe('SearchHeader', () => {
+  it.each(['liquidGlass', 'material'] as const)(
+    'grows the %s capsule at AX5 and keeps the requested minimum',
+    (variant) => {
+      ctrl.variant = variant;
+      const { container, rerender } = render(
+        <SearchHeader placeholder="Search climbs" onChangeText={() => {}} height={44} />,
+      );
+      const frame = () => container.firstElementChild;
+      expect(frame()?.getAttribute('data-height')).toBe('44');
+      rerender(<SearchHeader placeholder="Search climbs" onChangeText={() => {}} height={48} />);
+      expect(frame()?.getAttribute('data-height')).toBe('48');
+      ctrl.fontScale = 3.12;
+      rerender(<SearchHeader placeholder="Search climbs" onChangeText={() => {}} height={48} />);
+      const expectedHeight = Math.ceil((variant === 'material' ? 24 : 22) * ctrl.fontScale + 16);
+      expect(frame()?.getAttribute('data-height')).toBe(String(expectedHeight));
+      expect(frame()?.getAttribute('data-radius')).toBe(String(expectedHeight / 2));
+      if (variant === 'material') {
+        const searchbar = container.querySelector('[data-paper]');
+        expect(searchbar?.getAttribute('data-height')).toBe(String(expectedHeight));
+        expect(searchbar?.getAttribute('data-radius')).toBe(String(expectedHeight / 2));
+        expect(searchbar?.getAttribute('data-line-height')).toBe('24');
+        expect(searchbar?.getAttribute('data-allow-font-scaling')).toBe('true');
+        expect(searchbar?.getAttribute('data-max-font-size-multiplier')).toBe('0');
+      } else {
+        expect(container.querySelector('[data-glass]')?.nextElementSibling?.getAttribute('data-height')).toBe(
+          String(expectedHeight),
+        );
+      }
+      ctrl.fontScale = 1;
+      rerender(<SearchHeader placeholder="Search climbs" onChangeText={() => {}} height={48} />);
+      expect(frame()?.getAttribute('data-height')).toBe('48');
+    },
+  );
+  it.each(['liquidGlass', 'material'] as const)('preserves %s text APIs as the font scale changes', (variant) => {
+    ctrl.variant = variant;
+    const ref = createRef<SearchHeaderHandle>();
+    const onChangeText = vi.fn();
+    const { rerender, getByPlaceholderText } = render(
+      <SearchHeader ref={ref} placeholder="Search climbs" onChangeText={onChangeText} initialValue="Slopers" />,
+    );
+    expect(ref.current?.getText()).toBe('Slopers');
+    act(() => ref.current?.setText('Crimps', { silent: true }));
+    expect(onChangeText).not.toHaveBeenCalled();
+    ctrl.fontScale = 3.12;
+    rerender(<SearchHeader ref={ref} placeholder="Search climbs" onChangeText={onChangeText} initialValue="Slopers" />);
+    expect((getByPlaceholderText('Search climbs') as HTMLInputElement).value).toBe('Crimps');
+    act(() => ref.current?.setText('Pinches'));
+    expect(ref.current?.getText()).toBe('Pinches');
+    expect(onChangeText).toHaveBeenCalledExactlyOnceWith('Pinches');
+  });
+
   it('submits the current text when the keyboard search action fires', () => {
     ctrl.variant = 'liquidGlass';
     const onSubmit = vi.fn();

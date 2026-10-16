@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { type ChangeEvent, createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,11 +19,59 @@ const headerActions = vi.hoisted(() => ({
   trailing: null as null | { label: string; onPress: () => void; disabled?: boolean; loading?: boolean },
 }));
 
+const keyboard = vi.hoisted(() => ({
+  platform: 'ios',
+  listeners: new Map<string, (event: { endCoordinates: { height: number } }) => void>(),
+}));
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 96 }));
+
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Keyboard: {
+    addListener: (name: string, callback: (event: { endCoordinates: { height: number } }) => void) => {
+      keyboard.listeners.set(name, callback);
+      return { remove: () => keyboard.listeners.delete(name) };
+    },
+  },
+  LayoutAnimation: { configureNext: vi.fn() },
+  KeyboardAvoidingView: ({
+    children,
+    behavior,
+    keyboardVerticalOffset,
+  }: {
+    children?: ReactNode;
+    behavior?: string;
+    keyboardVerticalOffset?: number;
+  }) =>
+    createElement(
+      'div',
+      { 'data-keyboard-avoiding': true, 'data-behavior': behavior ?? '', 'data-offset': keyboardVerticalOffset },
+      children,
+    ),
+  Platform: {
+    get OS() {
+      return keyboard.platform;
+    },
+  },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scroll-view': true }, children),
+  ScrollView: ({
+    children,
+    contentContainerStyle,
+    automaticallyAdjustKeyboardInsets,
+  }: {
+    children?: ReactNode;
+    contentContainerStyle?: unknown;
+    automaticallyAdjustKeyboardInsets?: boolean;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-scroll-view': true,
+        'data-content-style': JSON.stringify(contentContainerStyle),
+        'data-automatic-keyboard': String(automaticallyAdjustKeyboardInsets),
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -62,7 +110,7 @@ vi.mock('../../hooks/use-header-actions', () => ({
 }));
 
 vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 28 }),
 }));
 
 vi.mock('../../providers/toast-provider', () => ({
@@ -139,6 +187,8 @@ function saveAction() {
 }
 
 beforeEach(() => {
+  keyboard.platform = 'ios';
+  keyboard.listeners.clear();
   headerActions.trailing = null;
   routerBackMock.mockClear();
   showToastMock.mockClear();
@@ -174,6 +224,34 @@ beforeEach(() => {
 });
 
 describe('EditProfileScreen', () => {
+  it('uses header-offset iOS keyboard avoidance without double-counting keyboard insets', () => {
+    const { container } = render(<EditProfileScreen />);
+    const avoiding = container.querySelector('[data-keyboard-avoiding]');
+    expect(avoiding?.getAttribute('data-behavior')).toBe('padding');
+    expect(avoiding?.getAttribute('data-offset')).toBe('96');
+    expect(container.querySelector('[data-scroll-view]')?.getAttribute('data-automatic-keyboard')).toBe('undefined');
+    expect(keyboard.listeners.size).toBe(0);
+  });
+
+  it('adds and clears Android keyboard space while preserving bottom chrome', () => {
+    keyboard.platform = 'android';
+    const { container, unmount } = render(<EditProfileScreen />);
+    const padding = () => {
+      const styles = JSON.parse(
+        container.querySelector('[data-scroll-view]')?.getAttribute('data-content-style') ?? '[]',
+      ) as { paddingBottom?: number }[];
+      return styles.find((style) => style.paddingBottom !== undefined)?.paddingBottom;
+    };
+    expect(container.querySelector('[data-keyboard-avoiding]')?.getAttribute('data-behavior')).toBe('');
+    expect(padding()).toBe(44);
+    act(() => keyboard.listeners.get('keyboardDidShow')?.({ endCoordinates: { height: 300 } }));
+    expect(padding()).toBe(344);
+    act(() => keyboard.listeners.get('keyboardDidHide')?.({ endCoordinates: { height: 0 } }));
+    expect(padding()).toBe(44);
+    unmount();
+    expect(keyboard.listeners.size).toBe(0);
+  });
+
   it('saves from a top-bar check that stays grey until something changed', () => {
     render(createElement(EditProfileScreen));
 

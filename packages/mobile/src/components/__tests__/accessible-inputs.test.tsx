@@ -3,7 +3,14 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, useImperativeHandle, type Ref } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TextInput as NativeTextInput, TextInputProps } from 'react-native';
-const signal = vi.hoisted(() => ({ bold: false, focus: vi.fn(), blur: vi.fn() }));
+const signal = vi.hoisted(() => ({
+  bold: false,
+  focus: vi.fn(),
+  blur: vi.fn(),
+  contentSizeChange: null as null | TextInputProps['onContentSizeChange'],
+}));
+const reveal = vi.hoisted(() => ({ reveal: vi.fn(), follow: vi.fn(), release: vi.fn() }));
+vi.mock('../sheet-scroll-into-view', () => ({ useSheetScrollIntoView: () => reveal }));
 vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => signal.bold }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({ textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } } }),
@@ -19,9 +26,11 @@ function InputHost({
   onFocus,
   onBlur,
   onChangeText,
+  onContentSizeChange,
   value,
   testID,
 }: TextInputProps & { ref?: Ref<{ focus: () => void; blur: () => void }> }) {
+  signal.contentSizeChange = onContentSizeChange;
   useImperativeHandle(ref, () => ({ focus: signal.focus, blur: signal.blur }));
   return createElement('input', {
     'data-testid': testID,
@@ -46,6 +55,7 @@ afterEach(() => {
   signal.bold = false;
   signal.focus.mockClear();
   signal.blur.mockClear();
+  vi.clearAllMocks();
 });
 for (const [name, Input] of [
   ['plain', AccessibleTextInput],
@@ -98,3 +108,60 @@ for (const [name, Input] of [
     });
   });
 }
+
+describe('sheet focus reveal', () => {
+  it('composes callbacks and tracks the native host only while focused', () => {
+    const ref = createRef<NativeTextInput>();
+    const onFocus = vi.fn(),
+      onBlur = vi.fn(),
+      onContentSizeChange = vi.fn();
+    const screen = render(
+      <AccessibleBottomSheetTextInput
+        ref={ref}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onContentSizeChange={onContentSizeChange}
+      />,
+    );
+    const host = screen.getByRole('textbox');
+    const growth = { nativeEvent: { contentSize: { width: 200, height: 100 } } } as Parameters<
+      NonNullable<TextInputProps['onContentSizeChange']>
+    >[0];
+    act(() => signal.contentSizeChange?.(growth));
+    expect(reveal.follow).not.toHaveBeenCalled();
+    expect(onContentSizeChange).toHaveBeenCalledWith(growth);
+    fireEvent.focus(host);
+    expect(onFocus).toHaveBeenCalledOnce();
+    expect(reveal.reveal).toHaveBeenCalledWith(ref.current);
+    act(() => signal.contentSizeChange?.(growth));
+    expect(reveal.follow).toHaveBeenCalledWith(ref.current);
+    fireEvent.blur(host);
+    expect(onBlur).toHaveBeenCalledOnce();
+    expect(reveal.release).toHaveBeenCalledWith(ref.current);
+    act(() => signal.contentSizeChange?.(growth));
+    expect(reveal.follow).toHaveBeenCalledOnce();
+  });
+
+  it('reveals the validation wrapper and releases it when unmounted while focused', () => {
+    const target = { measureLayout: vi.fn() };
+    const callbackRef = vi.fn();
+    const screen = render(
+      <AccessibleBottomSheetTextInput ref={callbackRef} sheetRevealTargetRef={{ current: target }} />,
+    );
+    expect(callbackRef).toHaveBeenCalledWith(expect.objectContaining({ focus: signal.focus }));
+    fireEvent.focus(screen.getByRole('textbox'));
+    expect(reveal.reveal).toHaveBeenCalledWith(target);
+    screen.unmount();
+    expect(reveal.release).toHaveBeenCalledWith(target);
+    expect(callbackRef).toHaveBeenLastCalledWith(null);
+  });
+});
+
+it('preserves a callback ref cleanup when the native sheet input unmounts', () => {
+  const detach = vi.fn();
+  const callbackRef = vi.fn(() => detach);
+  const screen = render(<AccessibleBottomSheetTextInput ref={callbackRef} />);
+  expect(callbackRef).toHaveBeenCalledWith(expect.objectContaining({ focus: signal.focus }));
+  screen.unmount();
+  expect(detach).toHaveBeenCalledOnce();
+});

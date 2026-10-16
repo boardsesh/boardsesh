@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
-vi.mock('../AccessibleBottomSheetTextInput', async () => {
-  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
-  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
-});
+vi.mock('../../hooks/use-accessible-input-style', () => ({ useAccessibleInputStyle: (style: unknown) => style }));
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { act, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useImperativeHandle, type Ref, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The paste field reveals itself above the keyboard on focus, then follows its
@@ -52,11 +49,14 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     onChangeText,
     onFocus,
     onBlur,
+    ref,
   }: {
+    ref?: Ref<unknown>;
     onChangeText?: (text: string) => void;
     onFocus?: () => void;
     onBlur?: () => void;
   }) => {
+    useImperativeHandle(ref, () => ({ measureLayout: vi.fn() }), []);
     captured.onChangeText = onChangeText ?? null;
     captured.onFocus = onFocus ?? null;
     captured.onBlur = onBlur ?? null;
@@ -144,6 +144,7 @@ describe('AddBetaVideoSheet URL field reveal', () => {
     expect(scrollIntoView.reveal).toHaveBeenCalledTimes(1);
     act(() => captured.onChangeText?.('not a url'));
     layoutUrlField();
+    expect(document.body.textContent).toContain('mobile.betaVideos.urlInvalid');
     expect(scrollIntoView.follow).toHaveBeenCalledTimes(1);
     expect(scrollIntoView.follow.mock.calls[0]?.[0]).toBe(scrollIntoView.reveal.mock.calls[0]?.[0]);
   });

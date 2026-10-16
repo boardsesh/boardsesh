@@ -4,9 +4,9 @@ vi.mock('../AccessibleBottomSheetTextInput', async () => {
   const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
   return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
 });
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
-import { createElement, forwardRef, useImperativeHandle, type ReactNode, type Ref } from 'react';
+import { describe, it, expect, vi } from 'vitest';
+import { act, render, fireEvent } from '@testing-library/react';
+import { createElement, useState, type ReactNode } from 'react';
 
 // Pulls `paddingBottom` out of a style that may be a single object or an array
 // of layers (the component passes `[styles.content, { paddingBottom }]`).
@@ -20,18 +20,62 @@ function readPaddingBottom(style: unknown): number | undefined {
   return undefined;
 }
 
-const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
-// The keyboard height the sheet reads; 0 = keyboard down.
-const keyboard = vi.hoisted(() => ({ height: 0 }));
-const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
+const coordinatedSheet = vi.hoisted(() => ({
+  onClose: undefined as (() => void) | undefined,
+  visible: false,
+}));
 
+// Keep the original raw-sheet implementation renderable for regression proof.
+// Both implementations must fail or pass on behavior, rather than missing mocks.
+vi.mock('../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => 0 }));
+vi.mock('../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 34 }));
+vi.mock('../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: ({ open, onClose }: { open: boolean; onClose?: () => void }) => {
+    coordinatedSheet.visible = open;
+    coordinatedSheet.onClose = onClose;
+    return { onChange: vi.fn(), onFullyDismissed: vi.fn() };
+  },
+}));
+
+vi.mock('../ModalSheet', () => ({
+  ModalSheet: ({
+    children,
+    header,
+    visible,
+    snapPoints,
+    scrollable,
+    androidContentSized,
+    enablePanDownToClose,
+    onClose,
+  }: {
+    children?: ReactNode;
+    header?: ReactNode;
+    visible?: boolean;
+    snapPoints?: string[];
+    scrollable?: boolean;
+    androidContentSized?: boolean;
+    enablePanDownToClose?: boolean;
+    onClose?: () => void;
+  }) => {
+    coordinatedSheet.onClose = onClose;
+    return createElement(
+      'div',
+      {
+        'data-sheet': 'true',
+        'data-visible': String(visible),
+        'data-snappoints': JSON.stringify(snapPoints),
+        'data-scrollable': String(scrollable),
+        'data-android-content-sized': String(androidContentSized),
+        'data-pan-close': String(enablePanDownToClose),
+      },
+      createElement('header', null, header),
+      createElement('main', null, children),
+    );
+  },
+}));
 type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 vi.mock('react-native', () => ({
-  Platform: {
-    get OS() {
-      return platform.os;
-    },
-  },
+  Platform: { OS: 'ios' },
   View: ({ children, style, testID }: ViewMockProps) =>
     createElement('div', { 'data-testid': testID, 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
   // Present so a regression back to a KeyboardAvoidingView shows up below.
@@ -39,42 +83,37 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 
-vi.mock('../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => keyboard.height }));
-
 // SESSION_NOTES_MAX_LENGTH flows onto the input's maxLength; mock the shared
 // constant so this jsdom test doesn't pull the whole schema package.
 vi.mock('@boardsesh/shared-schema', () => ({ SESSION_NOTES_MAX_LENGTH: 2000 }));
 
-// BottomSheet → div exposing the dynamic-sizing / snap-point props so a test can
-// assert the sheet is content-sized, with an imperative `expand` for the effect.
-type SheetMockProps = {
-  children?: ReactNode;
-  enableDynamicSizing?: boolean;
-  snapPoints?: (string | number)[];
-  index?: number;
-};
-type SheetViewMockProps = { children?: ReactNode };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: forwardRef(({ children, enableDynamicSizing, snapPoints, index }: SheetMockProps, ref: Ref<unknown>) => {
-    useImperativeHandle(ref, () => ({ expand: sheet.expand }));
-    return createElement(
+  default: ({
+    children,
+    snapPoints,
+    enablePanDownToClose,
+  }: {
+    children?: ReactNode;
+    snapPoints?: string[];
+    enablePanDownToClose?: boolean;
+  }) =>
+    createElement(
       'div',
       {
         'data-sheet': 'true',
-        'data-dynamic': enableDynamicSizing ? 'true' : 'false',
-        'data-snappoints': snapPoints ? JSON.stringify(snapPoints) : '',
-        'data-index': index === undefined ? '' : String(index),
+        'data-visible': String(coordinatedSheet.visible),
+        'data-snappoints': JSON.stringify(snapPoints),
+        'data-pan-close': String(enablePanDownToClose),
       },
       children,
-    );
-  }),
-  BottomSheetView: ({ children }: SheetViewMockProps) => createElement('div', { 'data-sheet-view': 'true' }, children),
+    ),
+  BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   BottomSheetTextInput: ({ placeholder, value, onChangeText, accessibilityLabel, maxLength }: TextInputMockProps) =>
     createElement('input', {
       'data-textinput': 'true',
       'data-placeholder': placeholder ?? '',
       'data-aria': accessibilityLabel ?? '',
-      'data-maxlength': maxLength === undefined ? '' : String(maxLength),
+      'data-maxlength': String(maxLength ?? ''),
       value: value ?? '',
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
     }),
@@ -87,35 +126,6 @@ type TextInputMockProps = {
   accessibilityLabel?: string;
   maxLength?: number;
 };
-
-// Isolate the sheet from the presentation coordinator (its serialization is
-// covered by sheet-presentation-provider.test.tsx). The sheet is always mounted
-// and opened/closed by the coordinator; these tests drive close via the Done
-// button's onDismiss prop, so a no-op managed handle is enough.
-vi.mock('../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
-    onChange: (index: number) => {
-      if (index === -1) onClose?.();
-    },
-    onFullyDismissed: () => {},
-    handle: {
-      present: () => {},
-      dismiss: () => {},
-      close: () => {},
-      forceClose: () => {},
-      snapToIndex: () => {},
-      snapToPosition: () => {},
-      expand: () => {},
-      collapse: () => {},
-    },
-  }),
-}));
-
-// Gesture-nav phone: a non-zero bottom inset is the case the dynamic-sizing fix
-// guards against (button row crowded under the home indicator).
-vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
-}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -238,17 +248,11 @@ const button = (root: HTMLElement, title: string) =>
 const textInput = (root: HTMLElement) => root.querySelector('[data-textinput]') as HTMLInputElement | null;
 
 describe('EndSessionSheet', () => {
-  beforeEach(() => {
-    sheet.expand.mockClear();
-  });
-
-  it('stays mounted but closed (index -1) until the coordinator opens it', () => {
-    // The sheet is always mounted now — present/dismiss route through the
-    // coordinator — so it renders at the closed index rather than returning null.
+  it('delegates controlled visibility to the coordinated wrapper', () => {
     const { container } = render(<EndSessionSheet {...makeProps({ visible: false })} />);
     const sheetEl = container.querySelector('[data-sheet]') as HTMLElement;
     expect(sheetEl).not.toBeNull();
-    expect(sheetEl.getAttribute('data-index')).toBe('-1');
+    expect(sheetEl.getAttribute('data-visible')).toBe('false');
   });
 
   it('shows the confirmation copy, climb count, and both actions when visible', () => {
@@ -260,50 +264,29 @@ describe('EndSessionSheet', () => {
     expect(button(container, 'mobile.queue.endSession')).not.toBeNull();
   });
 
-  it('sizes to content instead of a fixed snap point', () => {
+  it('bounds the scrolling body while pinning actions outside it', () => {
     const { container } = render(<EndSessionSheet {...makeProps()} />);
-    const sheetEl = container.querySelector('[data-sheet]') as HTMLElement;
-    expect(sheetEl.getAttribute('data-dynamic')).toBe('true');
-    expect(sheetEl.getAttribute('data-snappoints')).toBe('');
+    const sheetEl = container.querySelector('[data-sheet]')!;
+    expect(sheetEl.getAttribute('data-snappoints')).toBe('["50%","90%"]');
+    expect(sheetEl.getAttribute('data-scrollable')).toBe('true');
+    expect(sheetEl.getAttribute('data-android-content-sized')).toBe('true');
+    expect(container.querySelector('header [data-top-bar]')).not.toBeNull();
+    expect(container.querySelector('main [data-top-bar]')).toBeNull();
+    // Only decorative padding lives here; the shared wrapper owns keyboard clearance.
+    expect(container.querySelector('[data-testid="end-session-content"]')?.getAttribute('data-pb')).toBe('12');
   });
 
-  it('pads the content past the window bottom inset (34) plus spacing[3] (12)', () => {
-    keyboard.height = 0;
-    const { getByTestId } = render(<EndSessionSheet {...makeProps()} />);
-    expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
-  });
-
-  it('on Android pads the inset alone at rest, and keyboard plus inset when it is up', () => {
-    platform.os = 'android';
-    try {
-      keyboard.height = 0;
-      const atRest = render(<EndSessionSheet {...makeProps()} />);
-      expect(atRest.getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
-      atRest.unmount();
-
-      // RN's Android height leaves out the system bars, which this edge-to-edge
-      // sheet still sits over: 300 + 34 + spacing[3].
-      keyboard.height = 300;
-      const typing = render(<EndSessionSheet {...makeProps()} />);
-      expect(typing.getByTestId('end-session-content').getAttribute('data-pb')).toBe('346');
-    } finally {
-      keyboard.height = 0;
-      platform.os = 'ios';
+  it('retains typed recap across leave/end switches', () => {
+    function ControlledSheet() {
+      const [notes, onNotesChange] = useState('');
+      return <EndSessionSheet {...makeProps({ notes, onNotesChange })} />;
     }
-  });
-
-  it('on iOS pads by the keyboard height instead of the inset while the keyboard is up, never both', () => {
-    keyboard.height = 300;
-    try {
-      const { container, getByTestId } = render(<EndSessionSheet {...makeProps()} />);
-      // 300 + spacing[3]: the keyboard covers the inset, so it isn't added on top.
-      expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('312');
-      // RN 0.86's KeyboardAvoidingView measures a parent-relative frame and finds
-      // no overlap inside the sheet, so the sheet must not lean on one.
-      expect(container.querySelector('[data-kav]')).toBeNull();
-    } finally {
-      keyboard.height = 0;
-    }
+    const { container } = render(<ControlledSheet />);
+    fireEvent.change(textInput(container)!, { target: { value: 'A long recap' } });
+    fireEvent.click(button(container, 'mobile.queue.leaveInsteadAction')!);
+    expect(textInput(container)).toBeNull();
+    fireEvent.click(button(container, 'mobile.queue.endForEveryone')!);
+    expect(textInput(container)?.value).toBe('A long recap');
   });
 
   it('puts End session in the top bar as the trailing action and the exit as leading', () => {
@@ -328,6 +311,28 @@ describe('EndSessionSheet', () => {
     const { container } = render(<EndSessionSheet {...makeProps({ onDismiss, isEnding: true })} />);
     fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);
     expect(onDismiss).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-sheet]')?.getAttribute('data-pan-close')).toBe('false');
+  });
+
+  it.each(['ending', 'leaving'] as const)('clears controlled visibility when displaced while %s', (pendingExit) => {
+    function ControlledSheet() {
+      const [visible, setVisible] = useState(true);
+      return (
+        <EndSessionSheet
+          {...makeProps({
+            visible,
+            onDismiss: () => setVisible(false),
+            isEnding: pendingExit === 'ending',
+            isLeaving: pendingExit === 'leaving',
+          })}
+        />
+      );
+    }
+    const { container } = render(<ControlledSheet />);
+    expect(container.querySelector('[data-sheet]')?.getAttribute('data-pan-close')).toBe('false');
+    // Coordinator displacement notifies the parent even when user dismissal is locked.
+    act(() => coordinatedSheet.onClose?.());
+    expect(container.querySelector('[data-sheet]')?.getAttribute('data-visible')).toBe('false');
   });
 
   it('fires onConfirm when End session is pressed', () => {

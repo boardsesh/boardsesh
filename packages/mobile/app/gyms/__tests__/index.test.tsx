@@ -63,7 +63,8 @@ const captured = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
-  View: ({ children }: Children) => createElement('div', null, children),
+  View: ({ children, style }: Children & { style?: unknown }) =>
+    createElement('div', { 'data-native-style': JSON.stringify(style) }, children),
   Pressable: ({
     children,
     onPress,
@@ -238,6 +239,17 @@ function distinctQueries(queryMock: typeof queryMocks.gyms) {
 }
 
 describe('picking a board on the gym finder', () => {
+  it('lets the search field grow beyond its 44-point minimum', () => {
+    const { container } = render(<GymDiscovery />);
+    const input = container.querySelector('input');
+    const fieldStyles = JSON.parse(input?.parentElement?.getAttribute('data-native-style') ?? '[]') as {
+      minHeight?: number;
+      height?: number;
+    }[];
+    expect(Object.assign({}, ...fieldStyles)).toMatchObject({ minHeight: 44 });
+    expect(Object.assign({}, ...fieldStyles).height).toBeUndefined();
+  });
+
   it('binds through useActivateBoard, tagged as a gym finder pick', () => {
     render(createElement(GymDiscovery));
 

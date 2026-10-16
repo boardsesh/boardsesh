@@ -105,14 +105,14 @@ export function ScreenshotPicker({ uris, onChange, disabled = false }: Screensho
             style={[styles.addTile, { borderColor: systemColors.separator, backgroundColor: systemColors.fill }]}
           >
             <Icon name="plus" size={20} color={systemColors.secondaryLabel} />
-            <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
+            <Text variant="caption2" color={systemColors.secondaryLabel}>
               {t('screenshots.addLabel')}
             </Text>
           </PressableSurface>
         ) : null}
       </View>
 
-      <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={2}>
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
         {t('screenshots.publicWarning')}
       </Text>
     </View>
@@ -150,7 +150,8 @@ const styles = StyleSheet.create({
   },
   addTile: {
     width: THUMBNAIL_SIZE,
-    height: THUMBNAIL_SIZE,
+    minHeight: THUMBNAIL_SIZE,
+    paddingVertical: spacing[2],
     borderRadius: borderRadius.md,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',

@@ -609,7 +609,7 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       gap: spacing[2],
       paddingHorizontal: spacing[3],
-      height: 44,
+      minHeight: 44,
       borderRadius: borderRadius.lg,
       borderWidth: StyleSheet.hairlineWidth,
     },

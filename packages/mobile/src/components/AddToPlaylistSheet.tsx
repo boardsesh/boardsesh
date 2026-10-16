@@ -96,9 +96,8 @@ function AddToPlaylistSheet({
       onClose={onClose}
       onFullyDismissed={onFullyDismissed}
       enablePanDownToClose
-    >
-      {climb && (
-        <>
+      header={
+        climb ? (
           <ClimbPreviewCard
             climb={climb}
             boardName={boardName}
@@ -107,17 +106,19 @@ function AddToPlaylistSheet({
             setIds={setIds}
             angle={angle}
           />
-          {/* The picker's own BottomSheetFlatList scrolls with the sheet, so the
-              sheet itself isn't `scrollable` (no nested scroll views). */}
-          <InlinePlaylistPicker
-            climb={climb}
-            angle={angle}
-            boardName={boardName}
-            layoutId={layoutId}
-            TextInputComponent={SheetTextInput}
-            ListComponent={SheetFlatList}
-          />
-        </>
+        ) : undefined
+      }
+    >
+      {climb && (
+        <InlinePlaylistPicker
+          climb={climb}
+          angle={angle}
+          boardName={boardName}
+          layoutId={layoutId}
+          TextInputComponent={SheetTextInput}
+          ListComponent={SheetFlatList}
+          layout="fill"
+        />
       )}
     </ModalSheet>
   );

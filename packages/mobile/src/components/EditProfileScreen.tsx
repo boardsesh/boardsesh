@@ -1,5 +1,6 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,6 +8,7 @@ import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useHeaderActions } from '../hooks/use-header-actions';
+import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
 import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
@@ -31,6 +33,8 @@ export function EditProfileScreen() {
   const { showToast } = useToast();
   const router = useRouter();
   const { scrollBottomPadding } = useBottomChromeMetrics();
+  const headerHeight = useHeaderHeight();
+  const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
 
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
@@ -153,55 +157,62 @@ export function EditProfileScreen() {
   });
 
   return (
-    <ScrollView
-      contentInsetAdjustmentBehavior="automatic"
-      style={{ backgroundColor: systemColors.groupedBackground }}
-      contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] }]}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.flex}
     >
-      <View style={styles.avatarBlock}>
-        <Avatar uri={previewUri} name={avatarName} size={96} />
-        <Button
-          title={previewUri ? t('profile.avatar.change') : t('profile.avatar.upload')}
-          variant="outlined"
-          icon="camera"
-          onPress={() => {
-            void handlePickAvatar();
-          }}
-          disabled={isSaving}
-        />
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.avatarHint}>
-          {t('profile.avatar.hintMobile')}
-        </Text>
-      </View>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        style={{ backgroundColor: systemColors.groupedBackground }}
+        contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding + spacing[4] + keyboardHeight }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.avatarBlock}>
+          <Avatar uri={previewUri} name={avatarName} size={96} />
+          <Button
+            title={previewUri ? t('profile.avatar.change') : t('profile.avatar.upload')}
+            variant="outlined"
+            icon="camera"
+            onPress={() => {
+              void handlePickAvatar();
+            }}
+            disabled={isSaving}
+          />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.avatarHint}>
+            {t('profile.avatar.hintMobile')}
+          </Text>
+        </View>
 
-      <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
-        <AuthTextInput
-          label={t('profile.displayName.label')}
-          value={displayName}
-          onChangeText={handleChangeName}
-          placeholder={t('profile.displayName.placeholder')}
-          error={nameTooLong ? t('profile.validation.displayNameTooLong') : undefined}
-          editable={!isSaving}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-        />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
+          <AuthTextInput
+            label={t('profile.displayName.label')}
+            value={displayName}
+            onChangeText={handleChangeName}
+            placeholder={t('profile.displayName.placeholder')}
+            error={nameTooLong ? t('profile.validation.displayNameTooLong') : undefined}
+            editable={!isSaving}
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="done"
+          />
 
-        <AuthTextInput
-          label={t('profile.email.label')}
-          value={profile?.email ?? ''}
-          onChangeText={() => undefined}
-          editable={false}
-          hint={t('profile.email.help')}
-          autoCapitalize="none"
-        />
-      </View>
-    </ScrollView>
+          <AuthTextInput
+            label={t('profile.email.label')}
+            value={profile?.email ?? ''}
+            onChangeText={() => undefined}
+            editable={false}
+            hint={t('profile.email.help')}
+            autoCapitalize="none"
+          />
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: {
     width: '100%',
     maxWidth: 672,

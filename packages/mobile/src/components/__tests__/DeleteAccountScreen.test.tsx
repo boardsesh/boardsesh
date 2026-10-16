@@ -13,7 +13,7 @@ vi.mock('../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // DeleteAccountScreen drives the App Store-required account-deletion flow, so
@@ -35,9 +35,53 @@ const ctrl = vi.hoisted(() => ({
 
 type AnyProps = Record<string, unknown> & { children?: ReactNode };
 
+const keyboard = vi.hoisted(() => ({
+  platform: 'ios',
+  listeners: new Map<string, (event: { endCoordinates: { height: number } }) => void>(),
+}));
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 96 }));
+
 vi.mock('react-native', () => ({
+  Keyboard: {
+    addListener: (name: string, callback: (event: { endCoordinates: { height: number } }) => void) => {
+      keyboard.listeners.set(name, callback);
+      return { remove: () => keyboard.listeners.delete(name) };
+    },
+  },
+  LayoutAnimation: { configureNext: vi.fn() },
+  KeyboardAvoidingView: ({
+    children,
+    behavior,
+    keyboardVerticalOffset,
+  }: {
+    children?: ReactNode;
+    behavior?: string;
+    keyboardVerticalOffset?: number;
+  }) =>
+    createElement(
+      'div',
+      { 'data-keyboard-avoiding': true, 'data-behavior': behavior ?? '', 'data-offset': keyboardVerticalOffset },
+      children,
+    ),
   View: ({ children }: AnyProps) => createElement('div', {}, children),
-  ScrollView: ({ children }: AnyProps) => createElement('div', {}, children),
+  ScrollView: ({
+    children,
+    contentContainerStyle,
+    automaticallyAdjustKeyboardInsets,
+  }: {
+    children?: ReactNode;
+    contentContainerStyle?: unknown;
+    automaticallyAdjustKeyboardInsets?: boolean;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-scroll-view': true,
+        'data-content-style': JSON.stringify(contentContainerStyle),
+        'data-automatic-keyboard': String(automaticallyAdjustKeyboardInsets),
+      },
+      children,
+    ),
   TextInput: ({ value, onChangeText, editable, placeholder, accessibilityLabel }: AnyProps) =>
     createElement('input', {
       'aria-label': accessibilityLabel as string,
@@ -53,7 +97,12 @@ vi.mock('react-native', () => ({
   },
   // theme/tokens transitively imports theme/colors, which reads Platform.OS and
   // PlatformColor at module load — provide enough for that to evaluate.
-  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  Platform: {
+    get OS() {
+      return keyboard.platform;
+    },
+    select: (spec: Record<string, unknown>) => spec.ios,
+  },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
@@ -79,7 +128,7 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
 vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 28 }),
 }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ signOut: ctrl.signOut }) }));
 vi.mock('../../lib/graphql/hooks', () => ({
@@ -116,6 +165,8 @@ const CONFIRM_BTN = 'deleteAccount.dialog.confirm';
 const CONFIRM_PLACEHOLDER = 'deleteAccount.dialog.confirmPlaceholder';
 
 beforeEach(() => {
+  keyboard.platform = 'ios';
+  keyboard.listeners.clear();
   ctrl.infoData = 0;
   ctrl.infoLoading = false;
   ctrl.mutateAsync.mockReset().mockResolvedValue(true);
@@ -130,6 +181,34 @@ function typeConfirm(getByPlaceholderText: (text: string) => HTMLElement, value:
 }
 
 describe('DeleteAccountScreen', () => {
+  it('uses header-offset iOS keyboard avoidance without double-counting keyboard insets', () => {
+    const { container } = render(<DeleteAccountScreen />);
+    const avoiding = container.querySelector('[data-keyboard-avoiding]');
+    expect(avoiding?.getAttribute('data-behavior')).toBe('padding');
+    expect(avoiding?.getAttribute('data-offset')).toBe('96');
+    expect(container.querySelector('[data-scroll-view]')?.getAttribute('data-automatic-keyboard')).toBe('undefined');
+    expect(keyboard.listeners.size).toBe(0);
+  });
+
+  it('adds and clears Android keyboard space while preserving bottom chrome', () => {
+    keyboard.platform = 'android';
+    const { container, unmount } = render(<DeleteAccountScreen />);
+    const padding = () => {
+      const styles = JSON.parse(
+        container.querySelector('[data-scroll-view]')?.getAttribute('data-content-style') ?? '[]',
+      ) as { paddingBottom?: number }[];
+      return styles.find((style) => style.paddingBottom !== undefined)?.paddingBottom;
+    };
+    expect(container.querySelector('[data-keyboard-avoiding]')?.getAttribute('data-behavior')).toBe('');
+    expect(padding()).toBe(44);
+    act(() => keyboard.listeners.get('keyboardDidShow')?.({ endCoordinates: { height: 300 } }));
+    expect(padding()).toBe(344);
+    act(() => keyboard.listeners.get('keyboardDidHide')?.({ endCoordinates: { height: 0 } }));
+    expect(padding()).toBe(44);
+    unmount();
+    expect(keyboard.listeners.size).toBe(0);
+  });
+
   it('has no Cancel button in the body: back is cancel', () => {
     const { queryByTestId, getByTestId } = render(<DeleteAccountScreen />);
     expect(queryByTestId('deleteAccount.dialog.cancel')).toBeNull();

@@ -318,7 +318,7 @@ export function PlaylistFormSheet({
               accessibilityRole="button"
               style={[styles.removeChip, { borderColor: systemColors.separator }]}
             >
-              <Text variant="footnote" color={systemColors.error}>
+              <Text variant="footnote" color={systemColors.error} style={styles.removeLabel}>
                 {t('edit.fields.removeIcon')}
               </Text>
             </PressableSurface>
@@ -405,13 +405,16 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     iconRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       gap: spacing[3],
       marginTop: spacing[1],
     },
     emojiInput: {
-      width: 56,
-      height: 56,
+      minWidth: 56,
+      minHeight: 56,
+      maxWidth: '100%',
+      paddingHorizontal: spacing[2],
       borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
       fontSize: textStyles.title1.fontSize,
@@ -445,8 +448,14 @@ const createStyles = (textStyles: TypographyScale) =>
     emoji: {
       fontSize: textStyles.title2.fontSize,
     },
+    removeLabel: {
+      flexShrink: 1,
+      textAlign: 'center',
+    },
     removeChip: {
-      height: 40,
+      minHeight: 40,
+      maxWidth: '100%',
+      paddingVertical: spacing[2],
       paddingHorizontal: spacing[3],
       borderRadius: 10,
       borderWidth: StyleSheet.hairlineWidth,

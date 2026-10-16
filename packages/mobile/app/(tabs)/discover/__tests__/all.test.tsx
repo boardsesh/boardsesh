@@ -48,7 +48,8 @@ vi.mock('expo-router', () => ({
 // react-native primitives → DOM. FlatList renders its data (or the empty
 // component) plus the footer so the error/retry affordances are assertable.
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-native-style': JSON.stringify(style) }, children),
   Pressable: ({
     children,
     onPress,
@@ -162,6 +163,17 @@ beforeEach(() => {
 });
 
 describe('AllPlaylistsScreen', () => {
+  it('lets the search field grow beyond its 40-point minimum', () => {
+    const { getByLabelText } = render(<AllPlaylistsScreen />);
+    const input = getByLabelText('library.allPlaylists.searchPlaceholder');
+    const fieldStyles = JSON.parse(input?.parentElement?.getAttribute('data-native-style') ?? '[]') as {
+      minHeight?: number;
+      height?: number;
+    }[];
+    expect(Object.assign({}, ...fieldStyles)).toMatchObject({ minHeight: 40 });
+    expect(Object.assign({}, ...fieldStyles).height).toBeUndefined();
+  });
+
   it('shows an error state with a working retry when the initial load fails', () => {
     hook.hasError = true;
     const { getByText, getByLabelText } = render(<AllPlaylistsScreen />);

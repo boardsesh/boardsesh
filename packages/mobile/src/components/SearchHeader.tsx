@@ -2,12 +2,13 @@ import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { PressableSurface } from './PressableSurface';
 import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { View, type TextInput as NativeTextInput, StyleSheet } from 'react-native';
+import { View, type TextInput as NativeTextInput, StyleSheet, useWindowDimensions } from 'react-native';
 import { Searchbar } from 'react-native-paper';
 import { Icon } from './Icon';
 import { GlassSurface } from './GlassSurface';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
+import { textStyles } from '../theme/typography';
 import { selectByVariant } from '../theme/variants';
 
 export type SearchHeaderHandle = {
@@ -32,8 +33,7 @@ type SearchHeaderProps = {
   onBlur?: () => void;
   /** Seeds the field on mount — reflects a restored per-board search. */
   initialValue?: string;
-  /** Capsule height (defaults to 44). The top chrome passes its FAB height so the
-   *  expanded field matches them. The radius tracks height/2 for a pill. */
+  /** Minimum capsule height (defaults to 44); grows with the input text size. */
   height?: number;
 };
 
@@ -50,10 +50,15 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
 ) {
   const styles = useTypographyStyles(createStyles);
   const inputRef = useRef<NativeTextInput>(null);
-  const { systemColors, variant: uiVariant } = useTheme();
+  const { systemColors, variant: uiVariant, textStyles: themeTextStyles } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const isMaterial = selectByVariant(uiVariant, { material: true, liquidGlass: false });
+  const typography = themeTextStyles ?? textStyles;
+  const inputLineHeight = (isMaterial ? typography.callout.lineHeight : typography.body.lineHeight) ?? 22;
+  const resolvedHeight = Math.max(height, Math.ceil(inputLineHeight * fontScale + 16));
   const { t } = useTranslation('common');
   const [text, setText] = useState(initialValue);
-  const radius = height / 2;
+  const radius = resolvedHeight / 2;
 
   useImperativeHandle(ref, () => ({
     blur: () => inputRef.current?.blur(),
@@ -87,10 +92,9 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
   // Material variant: an authentic MD3 search bar. The imperative handle still
   // works because Paper's Searchbar forwards its ref to the inner TextInput
   // (blur/focus) and getText/setText stay backed by our own `text` state.
-  const isMaterial = selectByVariant(uiVariant, { material: true, liquidGlass: false });
   if (isMaterial) {
     return (
-      <View style={[styles.materialFrame, { height, borderRadius: radius }]}>
+      <View style={[styles.materialFrame, { height: resolvedHeight, borderRadius: radius }]}>
         <Searchbar
           ref={inputRef}
           value={text}
@@ -104,6 +108,8 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
+          allowFontScaling
+          maxFontSizeMultiplier={0}
           accessibilityLabel={placeholder}
           elevation={0}
           iconColor={systemColors.secondaryLabel as string}
@@ -115,7 +121,11 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           // slot. The wrapper owns the slot, and the Searchbar fills it.
           style={[
             styles.materialSearchbar,
-            { height, borderRadius: radius, backgroundColor: systemColors.tertiaryBackground as string },
+            {
+              height: resolvedHeight,
+              borderRadius: radius,
+              backgroundColor: systemColors.tertiaryBackground as string,
+            },
           ]}
         />
       </View>
@@ -123,7 +133,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
   }
 
   return (
-    <View style={[styles.capsule, { height, borderRadius: radius }]}>
+    <View style={[styles.capsule, { height: resolvedHeight, borderRadius: radius }]}>
       <GlassSurface
         glassEffectStyle="regular"
         fallbackColor={systemColors.fill}
@@ -131,7 +141,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <View style={[styles.content, { height }]}>
+      <View style={[styles.content, { height: resolvedHeight }]}>
         <Icon maxFontSizeMultiplier={1} name="search" size={18} color={systemColors.secondaryLabel} />
         <TextInput
           ref={inputRef}
@@ -184,24 +194,23 @@ const createStyles = (textStyles: TypographyScale) =>
       paddingVertical: 0,
       textAlignVertical: 'center',
       fontSize: textStyles.callout.fontSize,
+      lineHeight: textStyles.callout.lineHeight,
     },
     capsule: {
       flex: 1,
-      height: 44,
-      borderRadius: 22,
       overflow: 'hidden',
       justifyContent: 'center',
     },
     content: {
       flexDirection: 'row',
       alignItems: 'center',
-      height: 44,
       paddingHorizontal: 14,
       gap: 6,
     },
     input: {
       flex: 1,
       fontSize: textStyles.body.fontSize,
+      lineHeight: textStyles.body.lineHeight,
       paddingVertical: 0,
     },
     // 44 x 44 pt target (HIG Accessibility: touch targets; Material: 48dp) around the 18pt glyph.
