@@ -428,7 +428,7 @@
       "dateLabel": "Date",
       "timeLabel": "Heure",
       "gradeLabel": "Ma cotation",
-      "gradeHelp": "La cotation que tu verras sur ce bloc à partir de maintenant. Pas besoin de l'avoir enchaîné.",
+      "gradeHelp": "La cotation affichée pour toi sur ce bloc. Pas besoin de l’avoir enchaîné.",
       "starsLabel": "Étoiles",
       "triesLabel": "Essais",
       "noteLabel": "Note",
@@ -453,7 +453,7 @@
       "setTriesAria_one": "Mettre {{count}} essai",
       "setTriesAria_other": "Mettre {{count}} essais",
       "moreTriesAria": "Un essai de plus",
-      "firstAscent": "Première ascension. Ta cotation devient celle de ce bloc."
+      "firstAscent": "Première ascension : fixe la cotation du bloc pour enregistrer une croix."
     },
     "filter": {
       "climbType": {

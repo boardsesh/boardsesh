@@ -1136,6 +1136,11 @@ Its editable name centres when room permits, while the ellipsis and Save share a
 trailing toolbar on Liquid Glass. The actions keep their touch targets when a long
 name or translated Material label needs more space.
 
+The create-tick form groups Tries and Stars with one divider below Stars; grade
+guidance stays attached to the grade rail in secondary-label colour. Keep the
+personal-grade explanation and first-ascent logging requirement visible and
+wrapping. The date row meets the pinned footer without a duplicate divider.
+
 Tick comments stay visible above the create sheet's actions: one line at the
 medium detent and a larger field at the large detent. Focusing the field expands
 the sheet; the same native input stays mounted. Done dismisses the keyboard

@@ -428,7 +428,7 @@
       "dateLabel": "Fecha",
       "timeLabel": "Hora",
       "gradeLabel": "Mi grado",
-      "gradeHelp": "El grado que verás en este bloque a partir de ahora. No hace falta encadenarlo.",
+      "gradeHelp": "El grado que ves tú en este bloque. No hace falta encadenarlo.",
       "starsLabel": "Estrellas",
       "triesLabel": "Intentos",
       "noteLabel": "Nota",
@@ -453,7 +453,7 @@
       "setTriesAria_one": "Marcar {{count}} intento",
       "setTriesAria_other": "Marcar {{count}} intentos",
       "moreTriesAria": "Un intento más",
-      "firstAscent": "Primer ascenso. Tu grado será el grado de este bloque."
+      "firstAscent": "Primer ascenso: fija el grado del bloque para registrar un encadene."
     },
     "filter": {
       "climbType": {

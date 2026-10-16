@@ -27,7 +27,26 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    variant,
+    color,
+    numberOfLines,
+  }: {
+    children?: ReactNode;
+    variant?: string;
+    color?: string;
+    numberOfLines?: number;
+  }) =>
+    createElement(
+      'span',
+      {
+        'data-variant': variant,
+        'data-color': color,
+        'data-number-of-lines': numberOfLines ?? '',
+      },
+      children,
+    ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
@@ -190,6 +209,14 @@ describe('QuickTickBar row order', () => {
     ]);
   });
 
+  it('keeps only the divider beneath quality in the create form', () => {
+    const { container } = renderBar();
+    const dividedRows = Array.from(container.querySelectorAll('[data-row][data-separator="true"]')).map((row) =>
+      row.getAttribute('data-row'),
+    );
+    expect(dividedRows).toEqual(['mobile.tick.starsLabel']);
+  });
+
   it('puts date and time on a single row, both fields committing through one handler', () => {
     const { container, getByTestId, form } = renderBar();
 
@@ -272,6 +299,25 @@ describe('QuickTickBar first ascent (#5971)', () => {
     const { getByText, queryByText } = renderBar({ firstAscent: true });
     expect(getByText('mobile.tick.firstAscent')).toBeTruthy();
     expect(queryByText('mobile.tick.gradeHelp')).toBeNull();
+  });
+
+  it('keeps first-ascent help muted and fully wrapping like ordinary help', () => {
+    const firstAscent = renderBar({ firstAscent: true });
+    const firstHelp = firstAscent.getByText('mobile.tick.firstAscent');
+    const firstPresentation = {
+      variant: firstHelp.getAttribute('data-variant'),
+      color: firstHelp.getAttribute('data-color'),
+      numberOfLines: firstHelp.getAttribute('data-number-of-lines'),
+    };
+    expect(firstPresentation).toEqual({ variant: 'caption1', color: 'secondaryLabel', numberOfLines: '' });
+    firstAscent.unmount();
+    const ordinary = renderBar();
+    const ordinaryHelp = ordinary.getByText('mobile.tick.gradeHelp');
+    expect({
+      variant: ordinaryHelp.getAttribute('data-variant'),
+      color: ordinaryHelp.getAttribute('data-color'),
+      numberOfLines: ordinaryHelp.getAttribute('data-number-of-lines'),
+    }).toEqual(firstPresentation);
   });
 
   it('keeps the ordinary grade help otherwise', () => {

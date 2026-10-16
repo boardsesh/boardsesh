@@ -77,6 +77,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = 
           label={tClimbs('mobile.tick.triesLabel')}
           bleed
           height={TICK_RAIL_ROW_HEIGHT}
+          showSeparator={false}
           testID="tick-row-tries"
         >
           <TickCountRail
@@ -100,6 +101,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = 
         label={tClimbs('mobile.tick.gradeLabel')}
         bleed
         height={TICK_RAIL_ROW_HEIGHT}
+        showSeparator={false}
         testID="tick-row-grade"
       >
         {grades ? (
@@ -123,7 +125,12 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = 
       {/* On a first ascent the consequence is bigger: this grade becomes the
           climb's (#5971), and a flash or send cannot be logged without it. */}
       {firstAscent ? (
-        <Text variant="caption1" style={styles.gradeHelp} testID="tick-first-ascent">
+        <Text
+          variant="caption1"
+          color={systemColors.secondaryLabel}
+          style={styles.gradeHelp}
+          testID="tick-first-ascent"
+        >
           {tClimbs('mobile.tick.firstAscent')}
         </Text>
       ) : (
@@ -136,7 +143,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = 
           need a row of their own, separated by an `@`. Both fields commit
           through the same `onClimbedAtChange`, so touching either one pins
           the timestamp instead of logging a fresh save-time now. */}
-      <TickFormRow label={tClimbs('mobile.tick.dateLabel')} testID="tick-row-date">
+      <TickFormRow label={tClimbs('mobile.tick.dateLabel')} showSeparator={false} testID="tick-row-date">
         <TickDateRow
           value={climbedAt}
           maximumDate={maximumClimbedAtDate}

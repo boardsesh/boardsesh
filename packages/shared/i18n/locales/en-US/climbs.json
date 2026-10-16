@@ -428,7 +428,7 @@
       "dateLabel": "Date",
       "timeLabel": "Time",
       "gradeLabel": "My grade",
-      "gradeHelp": "The grade you'll see on this climb from now on. No send needed.",
+      "gradeHelp": "Shown to you on this climb. No send needed.",
       "starsLabel": "Stars",
       "triesLabel": "Tries",
       "noteLabel": "Note",
@@ -453,7 +453,7 @@
       "setTriesAria_one": "Set to {{count}} try",
       "setTriesAria_other": "Set to {{count}} tries",
       "moreTriesAria": "One more try",
-      "firstAscent": "First ascent. Your grade sets this climb's grade."
+      "firstAscent": "First ascent: set the climb’s grade to log a send."
     },
     "filter": {
       "climbType": {
