@@ -5,8 +5,8 @@
 // Purely presentational: no state, no save path, no colours of its own. Every
 // row is a `TickFormRow`, so the label seam and the control seam are the same
 // two verticals here as in the edit sheet.
-import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import React, { useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { StarRating } from '../StarRating';
 import { Text } from '../Text';
@@ -29,15 +29,9 @@ export type QuickTickBarProps = {
   form: QuickTickForm;
   /** LogAscentSheet keeps this field in its pinned action bar. */
   showNote?: boolean;
-  /** Intrinsic height of the two controls needed at the opening detent. */
-  onPrimaryFieldsLayout?: (height: number) => void;
 };
 
-export const QuickTickBar = React.memo(function QuickTickBar({
-  form,
-  showNote = true,
-  onPrimaryFieldsLayout,
-}: QuickTickBarProps) {
+export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = true }: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   // Resolved through the provider, never the static palette: these sheets sit
@@ -74,24 +68,11 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     [t],
   );
 
-  const primaryFieldsRef = useRef<View>(null);
-  // Re-measure even if a locale/geometry change leaves this group's outer size
-  // unchanged: its old cache was invalidated together with the other chrome.
-  useEffect(() => {
-    if (onPrimaryFieldsLayout)
-      primaryFieldsRef.current?.measure((_left, _top, _measuredWidth, height) => onPrimaryFieldsLayout(height));
-  }, [onPrimaryFieldsLayout]);
-  const handlePrimaryLayout = useCallback(
-    (event: LayoutChangeEvent) => onPrimaryFieldsLayout?.(event.nativeEvent.layout.height),
-    [onPrimaryFieldsLayout],
-  );
-
   return (
     <>
       {/* Put the common controls first so the opening sheet never scrolls past
-          date/grade before attempts and quality (#6503). Measure intrinsic rows,
-          never the scroll viewport, to size that opening detent. */}
-      <View ref={primaryFieldsRef} onLayout={handlePrimaryLayout} testID="tick-primary-fields">
+          date/grade before attempts and quality (#6503). */}
+      <View testID="tick-primary-fields">
         <TickFormRow
           label={tClimbs('mobile.tick.triesLabel')}
           bleed

@@ -4,9 +4,9 @@ import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { CREATE_TICK_SNAP_POINTS } from './tick/tick-sheet-metrics';
 import { SHEET_TOP_CHROME_PT, useSheetColumnStyle } from './use-sheet-column-style';
 
-type Measurements = { key: string; generation: number; header?: number; primary?: number; footer?: number };
+type Measurements = { key: string; generation: number; header?: number; body?: number; footer?: number };
 
-/** Keep the common create-tick controls above its pinned compact composer.
+/** Keep all create-tick fields above its pinned compact composer when the large ceiling permits.
  * Both detents must survive every measurement update: Expo's index-sync effect
  * also watches detent count, and changing it can dismiss a presented modal. */
 export function useCreateTickSnapPoints(locale: string | undefined, compact: boolean) {
@@ -29,7 +29,7 @@ export function useCreateTickSnapPoints(locale: string | undefined, compact: boo
   const { geometryGeneration, compactGeneration } = layoutContextRef.current;
   const [measurements, setMeasurements] = useState<Measurements>({ key, generation: geometryGeneration });
   const record = useCallback(
-    (field: 'header' | 'primary' | 'footer', height: number) => {
+    (field: 'header' | 'body' | 'footer', height: number) => {
       if (layoutContextRef.current.geometryGeneration !== geometryGeneration || !Number.isFinite(height) || height <= 0)
         return;
       const rounded = Math.ceil(height);
@@ -41,7 +41,7 @@ export function useCreateTickSnapPoints(locale: string | undefined, compact: boo
     [key, geometryGeneration],
   );
   const onHeaderLayout = useCallback((height: number) => record('header', height), [record]);
-  const onPrimaryFieldsLayout = useCallback((height: number) => record('primary', height), [record]);
+  const onBodyLayout = useCallback((height: number) => record('body', height), [record]);
   const onFooterLayout = useCallback(
     (measurement: { height: number; bottomInset: number }) => {
       // Ignore the expanded note. Remove the inset actually used in this layout;
@@ -59,18 +59,18 @@ export function useCreateTickSnapPoints(locale: string | undefined, compact: boo
       measurements.key !== key ||
       measurements.generation !== geometryGeneration ||
       measurements.header == null ||
-      measurements.primary == null ||
+      measurements.body == null ||
       measurements.footer == null ||
       typeof medium.height !== 'number' ||
       typeof large.height !== 'number'
     )
       return CREATE_TICK_SNAP_POINTS;
-    const required = Math.ceil(measurements.header + measurements.primary + measurements.footer + bottomInset);
+    const required = Math.ceil(measurements.header + measurements.body + measurements.footer + bottomInset);
     if (required <= medium.height) return CREATE_TICK_SNAP_POINTS;
     return [
       Math.min(required + SHEET_TOP_CHROME_PT, large.height + SHEET_TOP_CHROME_PT - 1),
       CREATE_TICK_SNAP_POINTS[1],
     ];
   }, [measurements, key, geometryGeneration, medium.height, large.height, bottomInset]);
-  return { snapPoints, onHeaderLayout, onPrimaryFieldsLayout, onFooterLayout };
+  return { snapPoints, onHeaderLayout, onBodyLayout, onFooterLayout };
 }

@@ -585,17 +585,17 @@ function reportLayout(testID: string, height: number) {
   if (!onLayout) throw new Error(`missing native layout callback: ${testID}`);
   act(() => onLayout({ nativeEvent: { layout: { height } } }));
 }
-function reportCompactMeasurements(header = 56, primary = 116, footer = 180) {
+function reportCompactMeasurements(header = 56, body = 116, footer = 180) {
   reportLayout('sheet-header', header);
-  reportLayout('tick-primary-fields', primary);
+  reportLayout('tick-form-fields', body);
   reportLayout('sheet-footer', footer);
 }
 function nativeSnapPoints(getByTestId: (id: string) => HTMLElement): (string | number)[] {
   return JSON.parse(getByTestId('native-sheet').getAttribute('data-snap-points') ?? '[]') as (string | number)[];
 }
 
-describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
-  it('measures the real tries/stars group before grade/help and date', () => {
+describe('LogAscentSheet all fields at the opening detent (#6503)', () => {
+  it('keeps tries/stars before grade/help and date inside the measured form', () => {
     const { getByTestId, container } = renderSheet();
     const primary = getByTestId('tick-primary-fields');
     expect(
@@ -611,11 +611,36 @@ describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
     expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
   });
 
+  it('fits the whole form including grade, date and audience above the pinned actions', () => {
+    const { getByTestId, container } = renderSheet();
+    const measuredForm = getByTestId('tick-form-fields');
+    for (const testID of ['tick-row-tries', 'tick-row-stars', 'tick-row-grade', 'tick-row-date', 'tick-privacy']) {
+      expect(measuredForm.contains(getByTestId(testID))).toBe(true);
+    }
+    expect(measuredForm.contains(getByTestId('tick-action-bar'))).toBe(false);
+    expect(measuredForm.textContent).toContain('mobile.tick.gradeHelp');
+    reportCompactMeasurements(56, 330, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+    expect(columnStyle(container).height).toBe(616);
+    // Audience/helper copy can wrap independently of the primary controls.
+    reportLayout('tick-form-fields', 360);
+    expect(nativeSnapPoints(getByTestId)).toEqual([666, '90%']);
+    expect(columnStyle(container).height).toBe(646);
+    expect(getByTestId('tick-note').getAttribute('data-compact')).toBe('true');
+  });
+
+  it('includes required first-ascent help in the measured form', () => {
+    const { getByTestId } = renderSheet({ boardName: 'spray', baseAscensionistCount: 0 });
+    expect(getByTestId('tick-form-fields').textContent).toContain('mobile.tick.firstAscent');
+    reportCompactMeasurements(56, 380, 180);
+    expect(nativeSnapPoints(getByTestId)).toEqual([636, '90%']);
+  });
+
   it('opens immediately at medium and keeps medium when the measured controls fit', () => {
     const { getByTestId, container } = renderSheet();
     expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
     reportLayout('sheet-header', 56);
-    reportLayout('tick-primary-fields', 116);
+    reportLayout('tick-form-fields', 116);
     expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
     reportLayout('sheet-footer', 180);
     expect(columnStyle(container).height).toBe(368);
@@ -628,7 +653,7 @@ describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
     reportCompactMeasurements();
     expect(columnStyle(container).height).toBe(352);
     expect(nativeSnapPoints(getByTestId)).toEqual([372, '90%']);
-    reportLayout('tick-primary-fields', 600);
+    reportLayout('tick-form-fields', 600);
     expect(nativeSnapPoints(getByTestId)).toEqual([538, '90%']);
     expect(columnStyle(container).height).toBe(518);
     fireEvent.click(getByTestId('simulate-expand'));
@@ -707,14 +732,14 @@ describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
       expect(nativeMeasurements.map((measurement) => measurement.testID).sort()).toEqual([
         'sheet-footer',
         'sheet-header',
-        'tick-primary-fields',
+        'tick-form-fields',
       ]);
       // No onLayout event: native geometry remained identical, so only the
       // imperative replay can refill the invalidated cache.
       act(() => {
         for (const measurement of nativeMeasurements.splice(0)) {
           measurement.deliver(
-            { 'sheet-header': 56, 'sheet-footer': 230, 'tick-primary-fields': 116 }[measurement.testID] ?? 0,
+            { 'sheet-header': 56, 'sheet-footer': 230, 'tick-form-fields': 116 }[measurement.testID] ?? 0,
           );
         }
       });
@@ -960,7 +985,7 @@ describe('LogAscentSheet keyboard', () => {
 // This suite exercises the existing flow before the server privacy rollout.
 vi.mock('../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: undefined }) }));
 vi.mock('../privacy/PublicationAudiencePicker', () => ({
-  PublicationAudiencePicker: () => null,
+  PublicationAudiencePicker: () => createElement('button', { 'data-testid': 'tick-privacy' }, 'audience'),
   SESSION_AUDIENCES: ['public', 'followers', 'invite_only'],
 }));
 vi.mock('../privacy/ContentAudienceControl', () => ({

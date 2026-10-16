@@ -870,9 +870,9 @@ an old entry under a new identity. Never recreate a deleted Aurora tick for Undo
 
 **Standard detents:** percentage-based sheets use the shared 50% medium and 90%
 large presets. QR share sheets and forms scroll at medium; large retains the
-keyboard expansion path and pinned footers. The create-tick sheet keeps tries and quality first and measures their intrinsic
-height plus its header and compact pinned footer. On iOS only, its opening detent
-grows above medium when those controls need more space, capped one point below
+keyboard expansion path and pinned footers. The create-tick sheet keeps tries and quality first and measures the entire
+form, including grade, date and audience, plus its header and compact pinned footer. On iOS only, its opening detent
+grows above medium when the full form needs more space, capped one point below
 large; both detents remain present during measurement updates because changing
 their count can dismiss Expo's native modal. The expanded note never sets the
 opening height. Measurements are invalidated for width, text size and locale;
