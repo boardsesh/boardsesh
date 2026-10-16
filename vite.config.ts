@@ -855,6 +855,8 @@ export default defineConfig({
       },
       'typecheck:create-climb-react': {
         command: 'pnpm --filter @boardsesh/create-climb-react run typecheck',
+        // This compiler follows shared-schema source while codegen rewrites it.
+        dependsOn: ['codegen'],
       },
       'typecheck:party-profile': {
         command: 'pnpm --filter @boardsesh/party-profile run typecheck',

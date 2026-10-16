@@ -87,3 +87,17 @@ describe('typecheck aggregate: build:X may only stand in for typecheck:X while b
     }
   });
 });
+
+describe('typecheck scheduling for generated shared-schema consumers', () => {
+  it('waits for codegen before create-climb-react reads generated schema types', () => {
+    const config = readFileSync(resolve(REPO_ROOT, 'vite.config.ts'), 'utf8');
+    const task = config.match(/^ {6}'typecheck:create-climb-react': \{\n[\s\S]*?^ {6}\},$/m)?.[0];
+    expect(task, 'vite.config.ts must define the create-climb-react typecheck task').toBeTruthy();
+    // Its imports follow shared-schema source to generated types.ts. Running
+    // alongside codegen's formatter can expose a partially rewritten file to
+    // TypeScript, so aggregate sibling order alone cannot make this safe.
+    expect(task, 'create-climb-react typecheck must wait for generated schema writes').toMatch(
+      /dependsOn:\s*\[[^\]]*['"]codegen['"]/,
+    );
+  });
+});
