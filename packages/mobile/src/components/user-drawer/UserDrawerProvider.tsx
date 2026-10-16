@@ -99,7 +99,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const navigateToPlaylists = useCallback(() => {
-    router.dismissTo('/(tabs)/discover/all');
+    router.navigate('/(tabs)/discover/all');
   }, []);
 
   const navigateToMyGyms = useCallback(() => {

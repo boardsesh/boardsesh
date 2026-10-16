@@ -15,10 +15,13 @@ vi.mock('../../PressableSurface', async () => {
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
+import { TabRouter } from 'expo-router/build/react-navigation/routers/TabRouter';
+import { StackRouter } from 'expo-router/build/react-navigation/routers/StackRouter';
+import { findDivergentState, getPayloadFromStateRoute } from 'expo-router/build/global-state/stateUtils';
 
 const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
-const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn(), navigate: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmSignOutMock = vi.hoisted(() => vi.fn(async (_signal?: AbortSignal) => {}));
 type RouteTransitionEvent = { data: { closing: boolean } };
@@ -327,9 +330,10 @@ beforeEach(() => {
   navigationMocks.accountListeners.clear();
   platform.OS = 'android';
   browser.openBrowserAsync.mockClear();
-  routerMock.push.mockClear();
-  routerMock.dismissTo.mockClear();
-  routerMock.back.mockClear();
+  routerMock.push.mockReset();
+  routerMock.dismissTo.mockReset();
+  routerMock.navigate.mockReset();
+  routerMock.back.mockReset();
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
   confirmSignOutMock.mockClear();
@@ -367,6 +371,145 @@ function flushDrawerClose() {
     callbacks.forEach((callback) => callback(true));
   });
 }
+
+// Use the installed routers, rather than treating a call to any navigation
+// method as success. Expo's navigate/dismissTo emit NAVIGATE/POP_TO respectively;
+// stateUtils selects the same deepest divergent navigator as getNavigateAction.
+function playlistNavigationState(initialTab: 'profile' | 'discover') {
+  const discoverRouter = StackRouter({ initialRouteName: 'index' });
+  const discoverConfig = { routeNames: ['index', 'all'], routeParamList: {}, routeGetIdList: {} };
+  let discoverState = discoverRouter.getInitialState(discoverConfig);
+  const tabRouter = TabRouter({ initialRouteName: initialTab });
+  const tabConfig = { routeNames: ['discover', 'profile'], routeParamList: {}, routeGetIdList: {} };
+  let tabState = tabRouter.getInitialState(tabConfig);
+  tabState = {
+    ...tabState,
+    routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
+  };
+  const rootRouter = StackRouter({ initialRouteName: '(tabs)' });
+  const rootConfig = {
+    routeNames: ['(tabs)', 'account', 'user-drawer'],
+    routeParamList: {},
+    routeGetIdList: {},
+  };
+  let rootState = rootRouter.getInitialState(rootConfig);
+  rootState = { ...rootState, routes: [{ ...rootState.routes[0], state: tabState }] };
+  const syncTabs = () => {
+    rootState = {
+      ...rootState,
+      routes: rootState.routes.map((route) => (route.name === '(tabs)' ? { ...route, state: tabState } : route)),
+    };
+  };
+  routerMock.push.mockImplementation((name: string) => {
+    const next = rootRouter.getStateForAction(
+      rootState,
+      { type: 'PUSH', payload: { name: name.slice(1) } },
+      rootConfig,
+    );
+    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
+  });
+  routerMock.back.mockImplementation(() => {
+    const next = rootRouter.getStateForAction(rootState, { type: 'POP', payload: { count: 1 } }, rootConfig);
+    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
+  });
+  const dispatch = (type: 'NAVIGATE' | 'POP_TO', href: string) => {
+    expect(href).toBe('/(tabs)/discover/all');
+    const destination = {
+      routes: [{ name: '(tabs)', state: { routes: [{ name: 'discover', state: { routes: [{ name: 'all' }] } }] } }],
+    };
+    const { navigationState, actionStateRoute } = findDivergentState(destination, rootState);
+    const payload = getPayloadFromStateRoute(actionStateRoute ?? {});
+    const action = {
+      type,
+      target: navigationState.key,
+      payload: { name: String(payload.screen), params: payload.params as object },
+    };
+    if (navigationState.key === tabState.key) {
+      const next =
+        type === 'NAVIGATE'
+          ? tabRouter.getStateForAction(tabState, { ...action, type: 'NAVIGATE' }, tabConfig)
+          : tabRouter.getStateForAction(
+              tabState,
+              // @ts-expect-error Deliberately replay the stack-only action that Expo sent to the tab router (#6508).
+              { ...action, type: 'POP_TO' },
+              tabConfig,
+            );
+      // POP_TO is unhandled by native TabRouter: the original bug stayed on Profile.
+      if (!next) return;
+      tabState = tabRouter.getRehydratedState(next, tabConfig);
+      const nestedScreen = (payload.params as { screen?: string }).screen;
+      const nextDiscover = discoverRouter.getStateForAction(
+        discoverState,
+        { type: 'NAVIGATE', payload: { name: nestedScreen ?? 'index' } },
+        discoverConfig,
+      );
+      if (nextDiscover) discoverState = discoverRouter.getRehydratedState(nextDiscover, discoverConfig);
+    } else if (navigationState.key === discoverState.key) {
+      const next = discoverRouter.getStateForAction(discoverState, action, discoverConfig);
+      if (next) discoverState = discoverRouter.getRehydratedState(next, discoverConfig);
+    }
+    tabState = {
+      ...tabState,
+      routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
+    };
+    syncTabs();
+  };
+  routerMock.navigate.mockImplementation((href: string) => dispatch('NAVIGATE', href));
+  routerMock.dismissTo.mockImplementation((href: string) => dispatch('POP_TO', href));
+  return {
+    root: () => rootState,
+    tab: () => tabState.routes[tabState.index].name,
+    screen: () => discoverState.routes[discoverState.index].name,
+  };
+}
+
+describe('My playlists switches to the existing Discover tab', () => {
+  it.each(['ios', 'android', 'web'])(
+    'opens playlists after the %s menu unmounts, including repeated visits',
+    (platformName) => {
+      platform.OS = platformName;
+      const navigation = playlistNavigationState('profile');
+      const tabsKey = navigation.root().routes[0].key;
+      const MenuHarness = ({ showScreen }: { showScreen: boolean }) => (
+        <UserDrawerProvider>
+          <DrawerTrigger />
+          {showScreen ? <AccountMenu presentation={platformName === 'ios' ? 'account' : 'drawer'} /> : null}
+        </UserDrawerProvider>
+      );
+      const { rerender } = render(<MenuHarness showScreen={false} />);
+
+      for (let visit = 0; visit < 2; visit += 1) {
+        fireEvent.click(screen.getByText('Open drawer'));
+        expect(navigation.root().routes).toHaveLength(2);
+        rerender(<MenuHarness showScreen />);
+        fireEvent.click(screen.getByText('My playlists'));
+        expect(routerMock.navigate).toHaveBeenCalledTimes(visit);
+        if (platformName !== 'ios') {
+          expect(navigation.root().routes).toHaveLength(2);
+          flushDrawerClose();
+        }
+        expect(navigation.root().routes).toHaveLength(1);
+        expect(routerMock.navigate).toHaveBeenCalledTimes(visit);
+        rerender(<MenuHarness showScreen={false} />);
+
+        expect(navigation.tab()).toBe('discover');
+        expect(navigation.screen()).toBe('all');
+        expect(navigation.root().routes.map((route) => route.key)).toEqual([tabsKey]);
+      }
+    },
+  );
+
+  it('opens playlists when Discover is already selected', () => {
+    const navigation = playlistNavigationState('discover');
+    const { rerender } = render(<Harness showScreen />);
+    fireEvent.click(screen.getByText('My playlists'));
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(navigation.tab()).toBe('discover');
+    expect(navigation.screen()).toBe('all');
+    expect(navigation.root().routes).toHaveLength(1);
+  });
+});
 
 describe('UserDrawerProvider opens the drawer route', () => {
   it('openUserDrawer pushes the user-drawer route', () => {
@@ -427,7 +570,7 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(routerMock.push).not.toHaveBeenCalled();
 
     rerender(<Harness showScreen={false} />);
-    const navigate = route === '/(tabs)/discover/all' ? routerMock.dismissTo : routerMock.push;
+    const navigate = route === '/(tabs)/discover/all' ? routerMock.navigate : routerMock.push;
     expect(navigate).toHaveBeenCalledWith(route);
   });
 

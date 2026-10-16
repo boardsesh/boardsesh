@@ -737,6 +737,9 @@ drafts.
   push inside its own stack; Back returns to the account menu. Android and the
   browser retain the side drawer. User search, connections, profiles and Settings
   opened directly from a tab resolve into that tab's stack, preserving the tab bar.
+  My playlists closes the menu first, then uses `router.navigate` to reach Discover's
+  playlist list. After the menu has popped, `dismissTo` from another tab targets the
+  tab navigator with an unsupported `POP_TO` action (#6508).
 - **Native iPad pickers** use an anchored `AnchoredPopover` at regular width; compact
   windows retain the phone sheet. `AppMenu` already anchors native UIKit menus.
   The angle toolbar picker keeps its diagram and slider in the popover.
