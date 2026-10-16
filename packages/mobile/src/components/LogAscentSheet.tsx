@@ -17,6 +17,7 @@ import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
+import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
 import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
 import type { ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
@@ -83,9 +84,14 @@ function LogAscentSheetContent({
   sessionId,
   consensusGradeName,
 }: LogAscentSheetProps) {
-  const { t } = useTranslation('climbs');
+  const { t, i18n } = useTranslation('climbs');
   const sheetRef = useRef<ManagedSheetHandle>(null);
   const [expanded, setExpanded] = useState(false);
+  const compactNote = Platform.OS !== 'android' && !expanded;
+  const { snapPoints, onHeaderLayout, onFooterLayout, onPrimaryFieldsLayout } = useCreateTickSnapPoints(
+    i18n?.resolvedLanguage,
+    compactNote,
+  );
 
   const handleDetentChange = useCallback((index: number) => {
     if (index >= 0) setExpanded(index > 0);
@@ -178,7 +184,9 @@ function LogAscentSheetContent({
       visible={visible}
       onClose={handleClose}
       onFullyDismissed={onFullyDismissed}
-      snapPoints={CREATE_TICK_SNAP_POINTS}
+      snapPoints={snapPoints}
+      onHeaderLayout={onHeaderLayout}
+      onFooterLayout={onFooterLayout}
       onChange={handleDetentChange}
       scrollable
       surface="solid"
@@ -205,7 +213,7 @@ function LogAscentSheetContent({
               onChangeText={form.onCommentChange}
               placeholder={t('mobile.tick.notePlaceholder')}
               accessibilityLabel={t('mobile.tick.noteAria')}
-              compact={Platform.OS !== 'android' && !expanded}
+              compact={compactNote}
               onFocus={handleNoteFocus}
             />
           }
@@ -227,7 +235,7 @@ function LogAscentSheetContent({
         />
       }
     >
-      <QuickTickBar form={form} showNote={false} />
+      <QuickTickBar form={form} showNote={false} onPrimaryFieldsLayout={onPrimaryFieldsLayout} />
       <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
     </ModalSheet>
   );

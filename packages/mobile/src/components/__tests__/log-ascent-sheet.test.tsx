@@ -2,7 +2,7 @@
 vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent } from '@testing-library/react';
-import { createElement, forwardRef, useState, type ReactNode, type Ref } from 'react';
+import { createElement, forwardRef, useImperativeHandle, useState, type ReactNode, type Ref } from 'react';
 
 // LogAscentSheet wraps `onClose` in a `handleClose` that fires
 // `Quick Tick Dismissed` unless the just-closed tick was actually saved
@@ -25,6 +25,13 @@ type KeyboardListener = (event: {
   duration?: number;
 }) => void;
 const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
+const dimensions = vi.hoisted(() => ({ width: 390, height: 844, fontScale: 1 }));
+const safeInsets = vi.hoisted(() => ({ top: 44, bottom: 34, left: 0, right: 0 }));
+const language = vi.hoisted(() => ({ resolvedLanguage: 'en-US' }));
+const layoutHandlers = vi.hoisted(
+  () => new Map<string, (event: { nativeEvent: { layout: { height: number } } }) => void>(),
+);
+const nativeMeasurements = vi.hoisted(() => [] as { testID: string; deliver: (height: number) => void }[]);
 const sheetControls = vi.hoisted(() => ({ snapToIndex: vi.fn() }));
 
 // Captures what LogAscentSheet handed the form hook, so the climb/board
@@ -51,8 +58,37 @@ vi.mock('react-native', () => ({
       platformMock.OS === 'ios' ? options.ios : options.android,
   },
   // Serialised so a test can read the style a view was handed.
-  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
-    createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children),
+  View: forwardRef(
+    (
+      {
+        children,
+        style,
+        testID,
+        onLayout,
+      }: {
+        children?: ReactNode;
+        style?: unknown;
+        testID?: string;
+        onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
+      },
+      ref: Ref<unknown>,
+    ) => {
+      if (testID && onLayout) layoutHandlers.set(testID, onLayout);
+      useImperativeHandle(
+        ref,
+        () => ({
+          measure: (callback: (left: number, top: number, width: number, height: number) => void) => {
+            if (testID) nativeMeasurements.push({ testID, deliver: (height) => callback(0, 0, 0, height) });
+          },
+          // Keep the existing keyboard fallback: this suite does not simulate a
+          // native window-frame callback, only intrinsic chrome measurements.
+          measureInWindow: () => {},
+        }),
+        [testID],
+      );
+      return createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children);
+    },
+  ),
   Keyboard: {
     addListener: (eventName: string, listener: KeyboardListener) => {
       keyboardListeners.set(eventName, listener);
@@ -87,11 +123,11 @@ vi.mock('react-native', () => ({
       return style as Record<string, unknown>;
     },
   },
-  useWindowDimensions: () => ({ width: 390, height: 844 }),
+  useWindowDimensions: () => dimensions,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }),
+  useSafeAreaInsets: () => safeInsets,
 }));
 
 // Stub BottomSheetModal: renders extra buttons that invoke the `onChange` prop —
@@ -99,8 +135,15 @@ vi.mock('react-native-safe-area-context', () => ({
 // sheet settling on its taller (keyboard-extended) detent.
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: forwardRef(
-    ({ children, onChange }: { children?: ReactNode; onChange?: (index: number) => void }, _ref: Ref<unknown>) =>
-      createElement('div', null, [
+    (
+      {
+        children,
+        onChange,
+        snapPoints,
+      }: { children?: ReactNode; onChange?: (index: number) => void; snapPoints?: (string | number)[] },
+      _ref: Ref<unknown>,
+    ) =>
+      createElement('div', { 'data-testid': 'native-sheet', 'data-snap-points': JSON.stringify(snapPoints) }, [
         createElement('button', {
           key: 'pandown',
           'data-testid': 'simulate-pandown',
@@ -124,7 +167,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: language }) }));
 
 // Isolate from the real presentation coordinator (covered by its own test);
 // forward straight to the `onClose` ModalSheet was given — a -1 onChange stands
@@ -157,6 +200,10 @@ vi.mock('../tick', async () => {
   const metrics = await vi.importActual<typeof import('../tick/tick-sheet-metrics')>('../tick/tick-sheet-metrics');
   return {
     ...metrics,
+    TickFormRow: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+      createElement('div', { 'data-testid': testID }, children),
+    TickCountRail: () => createElement('span', null, 'tries'),
+    TickDateRow: () => createElement('span', null, 'date'),
     TickSheetHeader: ({
       title,
       subtitle,
@@ -277,10 +324,9 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
   },
 }));
 
-vi.mock('../play-drawer/QuickTickBar', () => ({
-  QuickTickBar: ({ showNote }: { showNote?: boolean }) =>
-    createElement('div', { 'data-testid': 'tick-fields', 'data-show-note': String(showNote) }),
-}));
+vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
+vi.mock('../StarRating', () => ({ StarRating: () => createElement('span', null, 'stars') }));
+vi.mock('../grade', () => ({ GradeSingleSelectRail: () => createElement('span', null, 'grade') }));
 
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: { QuickTickDismissed: 'Quick Tick Dismissed' },
@@ -329,6 +375,11 @@ function footerPaddingBottom(container: HTMLElement): number | undefined {
 
 beforeEach(() => {
   keyboardListeners.clear();
+  layoutHandlers.clear();
+  nativeMeasurements.length = 0;
+  Object.assign(dimensions, { width: 390, height: 844, fontScale: 1 });
+  Object.assign(safeInsets, { top: 44, bottom: 34, left: 0, right: 0 });
+  language.resolvedLanguage = 'en-US';
   platformMock.OS = 'ios';
   platformMock.Version = '26.1';
   formInput.current = null;
@@ -523,9 +574,267 @@ describe('LogAscentSheet detent bound', () => {
     const { getByTestId } = renderSheet();
 
     const body = getByTestId('sheet-body');
-    expect(body.querySelector('[data-testid="tick-fields"]')).toBeTruthy();
+    expect(body.querySelector('[data-testid="tick-primary-fields"]')).toBeTruthy();
     expect(body.querySelector('[data-testid="tick-action-bar"]')).toBeNull();
     expect(getByTestId('tick-action-bar')).toBeTruthy();
+  });
+});
+
+function reportLayout(testID: string, height: number) {
+  const onLayout = layoutHandlers.get(testID);
+  if (!onLayout) throw new Error(`missing native layout callback: ${testID}`);
+  act(() => onLayout({ nativeEvent: { layout: { height } } }));
+}
+function reportCompactMeasurements(header = 56, primary = 116, footer = 180) {
+  reportLayout('sheet-header', header);
+  reportLayout('tick-primary-fields', primary);
+  reportLayout('sheet-footer', footer);
+}
+function nativeSnapPoints(getByTestId: (id: string) => HTMLElement): (string | number)[] {
+  return JSON.parse(getByTestId('native-sheet').getAttribute('data-snap-points') ?? '[]') as (string | number)[];
+}
+
+describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
+  it('measures the real tries/stars group before grade/help and date', () => {
+    const { getByTestId, container } = renderSheet();
+    const primary = getByTestId('tick-primary-fields');
+    expect(
+      Array.from(primary.querySelectorAll('[data-testid^="tick-row-"]')).map((row) => row.getAttribute('data-testid')),
+    ).toEqual(['tick-row-tries', 'tick-row-stars']);
+    expect(
+      Array.from(getByTestId('sheet-body').querySelectorAll('[data-testid^="tick-row-"]')).map((row) =>
+        row.getAttribute('data-testid'),
+      ),
+    ).toEqual(['tick-row-tries', 'tick-row-stars', 'tick-row-grade', 'tick-row-date']);
+    reportCompactMeasurements(56, 116, 230);
+    expect(columnStyle(container).height).toBe(402);
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+  });
+
+  it('opens immediately at medium and keeps medium when the measured controls fit', () => {
+    const { getByTestId, container } = renderSheet();
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+    reportLayout('sheet-header', 56);
+    reportLayout('tick-primary-fields', 116);
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+    reportLayout('sheet-footer', 180);
+    expect(columnStyle(container).height).toBe(368);
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+  });
+
+  it('fits a short iPhone and caps large-text content below the unchanged large detent', () => {
+    dimensions.height = 667;
+    const { getByTestId, container } = renderSheet();
+    reportCompactMeasurements();
+    expect(columnStyle(container).height).toBe(352);
+    expect(nativeSnapPoints(getByTestId)).toEqual([372, '90%']);
+    reportLayout('tick-primary-fields', 600);
+    expect(nativeSnapPoints(getByTestId)).toEqual([538, '90%']);
+    expect(columnStyle(container).height).toBe(518);
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(columnStyle(container).height).toBe(519);
+    expect(nativeSnapPoints(getByTestId)).toHaveLength(2);
+  });
+
+  it('normalizes keyboard footer padding and rejects expanded-note measurements', () => {
+    const { getByTestId, container } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({
+        endCoordinates: { height: 336, screenY: 508, width: 390 },
+        duration: 250,
+      }),
+    );
+    reportLayout('sheet-footer', 196); // Same composer, now without its 34pt window inset.
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+    fireEvent.click(getByTestId('simulate-expand'));
+    reportLayout('sheet-footer', 500); // Expanded note must never become the opening height.
+    fireEvent.click(getByTestId('simulate-collapse'));
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+    expect(columnStyle(container).height).toBe(402);
+  });
+
+  it.each(['width', 'fontScale', 'locale'] as const)('invalidates stale %s measurements', (changed) => {
+    const { getByTestId, rerender } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+    if (changed === 'width') dimensions.width = 320;
+    if (changed === 'fontScale') dimensions.fontScale = 2;
+    if (changed === 'locale') language.resolvedLanguage = 'de';
+    rerender(
+      createElement(LogAscentSheet, {
+        visible: true,
+        onClose: vi.fn(),
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        angle: 40,
+        isMirror: false,
+        isBenchmark: false,
+        baseAscensionistCount: 10,
+      }),
+    );
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+    reportCompactMeasurements(56, 160, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([466, '90%']);
+  });
+
+  it.each(['width', 'fontScale', 'locale'] as const)(
+    'remeasures unchanged native regions after %s changes without remounting controls',
+    (changed) => {
+      const { getByTestId, rerender } = renderSheet();
+      reportCompactMeasurements(56, 116, 230);
+      const note = getByTestId('tick-note');
+      const tries = getByTestId('tick-row-tries');
+      const stars = getByTestId('tick-row-stars');
+      nativeMeasurements.length = 0;
+      if (changed === 'width') dimensions.width = 320;
+      if (changed === 'fontScale') dimensions.fontScale = 1.2;
+      if (changed === 'locale') language.resolvedLanguage = 'de';
+      rerender(
+        createElement(LogAscentSheet, {
+          visible: true,
+          onClose: vi.fn(),
+          climbUuid: 'climb-1',
+          boardName: 'kilter',
+          angle: 40,
+          isMirror: false,
+          isBenchmark: false,
+          baseAscensionistCount: 10,
+        }),
+      );
+      expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+      expect(nativeMeasurements.map((measurement) => measurement.testID).sort()).toEqual([
+        'sheet-footer',
+        'sheet-header',
+        'tick-primary-fields',
+      ]);
+      // No onLayout event: native geometry remained identical, so only the
+      // imperative replay can refill the invalidated cache.
+      act(() => {
+        for (const measurement of nativeMeasurements.splice(0)) {
+          measurement.deliver(
+            { 'sheet-header': 56, 'sheet-footer': 230, 'tick-primary-fields': 116 }[measurement.testID] ?? 0,
+          );
+        }
+      });
+      expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+      expect(getByTestId('tick-note')).toBe(note);
+      expect(getByTestId('tick-row-tries')).toBe(tries);
+      expect(getByTestId('tick-row-stars')).toBe(stars);
+      expect(nativeMeasurements).toHaveLength(0);
+    },
+  );
+
+  it('rejects a late compact footer measurement delivered after expansion', () => {
+    const { getByTestId } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    const oldCompactFooterLayout = layoutHandlers.get('sheet-footer');
+    fireEvent.click(getByTestId('simulate-expand'));
+    act(() => oldCompactFooterLayout?.({ nativeEvent: { layout: { height: 500 } } }));
+    fireEvent.click(getByTestId('simulate-collapse'));
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+  });
+
+  it('ignores late native measurements captured before a geometry change', () => {
+    const { getByTestId, rerender } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    const staleHeaderLayout = layoutHandlers.get('sheet-header');
+    dimensions.width = 320;
+    rerender(
+      createElement(LogAscentSheet, {
+        visible: true,
+        onClose: vi.fn(),
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        angle: 40,
+        isMirror: false,
+        isBenchmark: false,
+        baseAscensionistCount: 10,
+      }),
+    );
+    reportCompactMeasurements(56, 160, 230);
+    act(() => staleHeaderLayout?.({ nativeEvent: { layout: { height: 999 } } }));
+    expect(nativeSnapPoints(getByTestId)).toEqual([466, '90%']);
+  });
+
+  it('rejects an old compact measurement after expanding and returning to compact', () => {
+    const { getByTestId } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    const oldCompactFooterLayout = layoutHandlers.get('sheet-footer');
+    fireEvent.click(getByTestId('simulate-expand'));
+    fireEvent.click(getByTestId('simulate-collapse'));
+    act(() => oldCompactFooterLayout?.({ nativeEvent: { layout: { height: 500 } } }));
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+  });
+
+  it('rejects old geometry callbacks after returning to the original width', () => {
+    const { getByTestId, rerender } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    const oldHeaderLayout = layoutHandlers.get('sheet-header');
+    const rerenderSheet = () =>
+      rerender(
+        createElement(LogAscentSheet, {
+          visible: true,
+          onClose: vi.fn(),
+          climbUuid: 'climb-1',
+          boardName: 'kilter',
+          angle: 40,
+          isMirror: false,
+          isBenchmark: false,
+          baseAscensionistCount: 10,
+        }),
+      );
+    dimensions.width = 320;
+    rerenderSheet();
+    dimensions.width = 390;
+    rerenderSheet();
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+    reportCompactMeasurements(56, 160, 230);
+    act(() => oldHeaderLayout?.({ nativeEvent: { layout: { height: 999 } } }));
+    expect(nativeSnapPoints(getByTestId)).toEqual([466, '90%']);
+  });
+
+  it('recomputes viewport bounds and resting insets without waiting for another content layout', () => {
+    const { getByTestId, rerender, container } = renderSheet();
+    reportCompactMeasurements(56, 116, 230);
+    dimensions.height = 600;
+    safeInsets.bottom = 20;
+    rerender(
+      createElement(LogAscentSheet, {
+        visible: true,
+        onClose: vi.fn(),
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        angle: 40,
+        isMirror: false,
+        isBenchmark: false,
+        baseAscensionistCount: 10,
+      }),
+    );
+    expect(nativeSnapPoints(getByTestId)).toEqual([408, '90%']);
+    expect(columnStyle(container).height).toBe(388);
+    dimensions.height = 1000;
+    rerender(
+      createElement(LogAscentSheet, {
+        visible: true,
+        onClose: vi.fn(),
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        angle: 40,
+        isMirror: false,
+        isBenchmark: false,
+        baseAscensionistCount: 10,
+      }),
+    );
+    expect(nativeSnapPoints(getByTestId)).toEqual(['50%', '90%']);
+  });
+
+  it('keeps Android content fitting after measurements', () => {
+    platformMock.OS = 'android';
+    const { getByTestId, container } = renderSheet();
+    reportCompactMeasurements(56, 500, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([]);
+    expect(columnStyle(container)).toEqual({ maxHeight: 780 });
   });
 });
 
@@ -537,7 +846,7 @@ describe('LogAscentSheet pinned comment', () => {
     expect(getByTestId('sheet-body').contains(note)).toBe(false);
     expect(getByTestId('tick-action-bar').contains(note)).toBe(true);
     expect(getByTestId('tick-action-bar').firstElementChild).toBe(note);
-    expect(getByTestId('tick-fields').getAttribute('data-show-note')).toBe('false');
+    expect(getByTestId('sheet-body').querySelector('[data-testid="tick-row-note"]')).toBeNull();
   });
 
   it('keeps the typed comment and focused input while expanding and collapsing', () => {

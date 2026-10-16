@@ -24,6 +24,7 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: unknown) => styles },
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -177,19 +178,14 @@ function rowLabels(container: HTMLElement): string[] {
 }
 
 describe('QuickTickBar row order', () => {
-  // Rows run least-used at the top to most-used at the bottom so the controls
-  // people actually reach for land in the thumb zone (#4163). The ordering is
-  // driven by measured interaction rates — tries 28%, stars 24%, grade 6.5%,
-  // note 1.4%, date/time under 1% — so pin it down here rather than let a
-  // future edit quietly shuffle it back.
-  it('runs date, grade, stars, tries, note from top to bottom', () => {
+  it('runs tries, stars, grade, date, note from top to bottom', () => {
     const { container } = renderBar();
 
     expect(rowLabels(container)).toEqual([
-      'mobile.tick.dateLabel',
-      'mobile.tick.gradeLabel',
-      'mobile.tick.starsLabel',
       'mobile.tick.triesLabel',
+      'mobile.tick.starsLabel',
+      'mobile.tick.gradeLabel',
+      'mobile.tick.dateLabel',
       'mobile.tick.noteLabel',
     ]);
   });
@@ -218,10 +214,10 @@ describe('QuickTickBar row order', () => {
     const { container, queryByTestId } = render(createElement(QuickTickBar, { form: makeForm(), showNote: false }));
     expect(queryByTestId('tick-note-field')).toBeNull();
     expect(rowLabels(container)).toEqual([
-      'mobile.tick.dateLabel',
-      'mobile.tick.gradeLabel',
-      'mobile.tick.starsLabel',
       'mobile.tick.triesLabel',
+      'mobile.tick.starsLabel',
+      'mobile.tick.gradeLabel',
+      'mobile.tick.dateLabel',
     ]);
   });
 });

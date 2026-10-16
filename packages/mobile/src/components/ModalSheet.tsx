@@ -84,6 +84,9 @@ type ModalSheetProps = {
   /** Optional fixed header, rendered above the body and outside its scroll — so a
    * title and close affordance stay put while the body scrolls. */
   header?: ReactNode;
+  /** Intrinsic chrome measurements, including the footer's padding/border. */
+  onHeaderLayout?: (height: number) => void;
+  onFooterLayout?: (measurement: { height: number; bottomInset: number }) => void;
   /** Size the sheet to its content on Android via `@expo/ui`'s content-fitting
    * path (`enableDynamicSizing` + no snap points) instead of the `%` detents.
    * For a multi-detent form whose pinned footer only fits at the last detent
@@ -118,6 +121,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     surface = 'glass',
     footerSurface = 'plate',
     header,
+    onHeaderLayout,
+    onFooterLayout,
     androidContentSized = false,
   },
   ref,
@@ -278,8 +283,29 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     </View>
   );
 
+  const headerRef = useRef<View>(null);
+  const footerRef = useRef<View>(null);
+  useEffect(() => {
+    if (onHeaderLayout) headerRef.current?.measure((_left, _top, _measuredWidth, height) => onHeaderLayout(height));
+  }, [onHeaderLayout]);
+  useEffect(() => {
+    if (onFooterLayout)
+      footerRef.current?.measure((_left, _top, _measuredWidth, height) => onFooterLayout({ height, bottomInset }));
+  }, [onFooterLayout, bottomInset]);
+  const handleHeaderLayout = useCallback(
+    (event: LayoutChangeEvent) => onHeaderLayout?.(event.nativeEvent.layout.height),
+    [onHeaderLayout],
+  );
+  const handleFooterLayout = useCallback(
+    (event: LayoutChangeEvent) => onFooterLayout?.({ height: event.nativeEvent.layout.height, bottomInset }),
+    [onFooterLayout, bottomInset],
+  );
+
   const footerBar = footer ? (
     <View
+      ref={footerRef}
+      onLayout={handleFooterLayout}
+      testID="sheet-footer"
       style={[
         styles.footer,
         {
@@ -339,7 +365,13 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
           ref={columnRef}
           onLayout={handleColumnLayout}
         >
-          {header}
+          {header && onHeaderLayout ? (
+            <View ref={headerRef} onLayout={handleHeaderLayout} testID="sheet-header">
+              {header}
+            </View>
+          ) : (
+            header
+          )}
           {body}
           {footerBar}
         </View>
