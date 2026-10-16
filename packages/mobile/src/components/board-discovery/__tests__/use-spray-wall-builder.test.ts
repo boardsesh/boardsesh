@@ -55,10 +55,10 @@ describe('useSprayWallBuilder', () => {
     expect(result.current.name).toBe('Garage wall');
   });
 
-  it('starts private, unlisted-off and location-hidden — a wall is somebody home', () => {
+  it('starts link-only and location-hidden', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     expect(result.current.isPublic).toBe(false);
-    expect(result.current.isUnlisted).toBe(false);
+    expect(result.current.isUnlisted).toBe(true);
     expect(result.current.hideLocation).toBe(true);
     expect(result.current.angle).toBe(DEFAULT_SPRAY_ANGLE);
   });
@@ -94,7 +94,7 @@ describe('useSprayWallBuilder', () => {
       name: 'Garage wall',
       angle: 25,
       isPublic: false,
-      isUnlisted: false,
+      isUnlisted: true,
       hideLocation: true,
       locationName: undefined,
       latitude: undefined,
@@ -107,6 +107,7 @@ describe('useSprayWallBuilder', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('Garage wall'));
     act(() => result.current.setIsPublic(true));
+    act(() => result.current.setIsUnlisted(false));
 
     // `createSprayWall` keeps the board private until the first publish and
     // applies this then — which is what lets a wall resumed on a later launch,
@@ -120,13 +121,13 @@ describe('useSprayWallBuilder', () => {
   it('has no second write to make for a wall left private', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('Garage wall'));
+    act(() => result.current.setIsUnlisted(false));
     expect(result.current.pendingVisibility()).toBeNull();
   });
 
-  it('remembers an unlisted choice too', () => {
+  it('sends link-only sharing by default through creation and publication', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('Garage wall'));
-    act(() => result.current.setIsUnlisted(true));
     expect(result.current.buildCreateInput()).toMatchObject({ isPublic: false, isUnlisted: true });
     expect(result.current.pendingVisibility()).toEqual({ isPublic: false, isUnlisted: true });
   });

@@ -1341,7 +1341,7 @@ describe('creating the wall at the upload', () => {
     return view;
   }
 
-  it('creates the wall with the default name, 40°, private and the location hidden', async () => {
+  it('creates the wall with the default name, 40°, link-only sharing and the location hidden', async () => {
     createWallMock.mockResolvedValue({
       uuid: 'wall-9',
       layoutId: 9,
@@ -1354,7 +1354,7 @@ describe('creating the wall at the upload', () => {
       name: "Marco's spray wall",
       angle: 40,
       isPublic: false,
-      isUnlisted: false,
+      isUnlisted: true,
       hideLocation: true,
       locationName: undefined,
       latitude: undefined,

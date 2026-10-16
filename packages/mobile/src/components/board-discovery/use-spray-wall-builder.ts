@@ -97,7 +97,7 @@ function sameCoords(
  *
  * The wall is CREATED before the climber sees that step (the photo upload needs
  * a wall they own), with whatever this holds then: the default name, 40° and
- * private. So the step is an edit of a wall that exists. `hydrate` records what
+ * link-only sharing pending publication. So the step edits an existing wall. `hydrate` records what
  * the server holds, and `buildDetailsUpdate` sends only what changed since.
  * After a save the screen hydrates again from the server's ANSWER, never from
  * what it sent: the server may clamp a choice (a visibility policy).
@@ -126,12 +126,10 @@ export function useSprayWallBuilder(
   const [angle, setAngle] = useState<number>(
     seed?.angle != null && isValidSprayAngle(seed.angle) ? seed.angle : DEFAULT_SPRAY_ANGLE,
   );
-  // A wall is somebody's home, so every visibility default is inverted from a
-  // catalogue board's: private, not listed, and — once a location is stamped at
-  // all — hidden. The same inversion the `createSprayWall` resolver applies
-  // server-side (`docs/spray-walls.md`, "the two fields it never takes").
+  // New walls default to link-only sharing with their location hidden.
+  // Saved visibility choices take precedence when editing or resuming a wall.
   const [isPublic, setIsPublic] = useState(seed?.isPublic ?? false);
-  const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? false);
+  const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? true);
   const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? true);
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -298,8 +296,8 @@ export function useSprayWallBuilder(
 
   /**
    * The visibility the climber asked for, to be applied once the wall has
-   * something worth seeing. Null when they left it private, which is the
-   * default and needs no second write.
+   * something worth seeing. Null when they chose private, which needs no
+   * second write.
    */
   const pendingVisibility = useCallback(
     (): { isPublic: boolean; isUnlisted: boolean } | null => (isPublic || isUnlisted ? { isPublic, isUnlisted } : null),
