@@ -2414,6 +2414,7 @@ export const sprayWallMutations = {
         ctx,
         gymUuid: validated.gymUuid,
         userId,
+        boardOwnerId: userId,
         boardLatitude: latitude,
         boardLongitude: longitude,
       });
@@ -3856,6 +3857,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         ctx,
         gymUuid: validated.gymUuid,
         userId: ctx.userId!,
+        boardOwnerId: board.ownerId,
         boardLatitude: nextLatitude,
         boardLongitude: nextLongitude,
       });

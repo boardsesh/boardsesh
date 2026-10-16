@@ -3,6 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   feedItems,
+  communityRoles,
+  gyms,
+  gymMembers,
   resourcePrivacy,
   syncDeletions,
   userBoards,
@@ -306,7 +309,7 @@ beforeEach(async () => {
   // catalogue rows a wall writes are keyed on a sequence that never rolls back,
   // so they are cleared explicitly rather than left to accumulate.
   await db.execute(sql`
-    TRUNCATE TABLE "spray_walls", "user_boards", "gym_members", "gyms",
+    TRUNCATE TABLE "spray_walls", "user_boards", "gym_members", "gyms", "community_roles",
                    "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_layouts", "board_product_sizes", "board_product_sizes_layouts_sets",
                    "board_holes", "board_placements", "board_difficulty_grades",
@@ -5998,6 +6001,117 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
       isPublic: false,
     });
     expect(Number(board.angle)).toBe(30);
+  });
+
+  describe('gym linking authorization', () => {
+    const sourcePoint = { latitude: 47, longitude: 8 };
+    const targetPoint = { latitude: 51.5007, longitude: -0.1246 };
+
+    async function gymForLink(
+      ownerId: string,
+      adminId: string | null,
+      point: { latitude: number; longitude: number } | null,
+    ): Promise<{ uuid: string; id: number }> {
+      const gymUuid = uuidv4();
+      const [gym] = await db
+        .insert(gyms)
+        .values({
+          uuid: gymUuid,
+          slug: gymUuid,
+          name: 'Link authorization gym',
+          ownerId,
+          isPublic: true,
+          latitude: point?.latitude ?? null,
+          longitude: point?.longitude ?? null,
+        })
+        .returning({ uuid: gyms.uuid, id: gyms.id });
+      if (adminId != null) await db.insert(gymMembers).values({ gymId: gym.id, userId: adminId, role: 'admin' });
+      return gym;
+    }
+
+    it.each(['gym owner', 'gym admin', 'spray community leader'] as const)(
+      'refuses a source %s self-linking another owner’s wall with injected target coordinates',
+      async (editAccess) => {
+        const isCommunityLeader = editAccess === 'spray community leader';
+        const sourceGym = await gymForLink(
+          editAccess === 'gym owner' ? STRANGER : OUTSIDER,
+          editAccess === 'gym admin' ? STRANGER : null,
+          sourcePoint,
+        );
+        // B's owner has no role at A and no community role. Reusing A's owner
+        // here would accidentally give the target staff edit rights already.
+        const targetGym = await gymForLink(GYM_EDITOR, null, targetPoint);
+        const wall = isCommunityLeader
+          ? (await createPublishedWall(OWNER, { ...sourcePoint, isPublic: true })).wall
+          : await createWall(OWNER, sourcePoint);
+        await db.update(userBoards).set({ gymId: sourceGym.id }).where(eq(userBoards.uuid, wall.uuid));
+        if (isCommunityLeader) {
+          await db.insert(communityRoles).values({ userId: STRANGER, role: 'community_leader', boardType: 'spray' });
+        }
+
+        // These editors still have ordinary wall-edit access.
+        await sprayWallMutations.updateSprayWall(
+          {},
+          { input: { uuid: wall.uuid, name: 'Allowed source edit' } },
+          ctxFor(STRANGER),
+        );
+        const [beforeLink] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+        expect(beforeLink.name).toBe('Allowed source edit');
+
+        await expect(
+          sprayWallMutations.updateSprayWall(
+            {},
+            { input: { uuid: wall.uuid, gymUuid: targetGym.uuid, name: 'Unauthorized transfer', ...targetPoint } },
+            ctxFor(STRANGER),
+          ),
+        ).rejects.toThrow('Not authorized to link board to this gym');
+
+        const [afterLink] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+        expect(afterLink).toMatchObject({
+          ownerId: OWNER,
+          gymId: sourceGym.id,
+          name: beforeLink.name,
+          latitude: beforeLink.latitude,
+          longitude: beforeLink.longitude,
+        });
+        await expect(
+          sprayWallMutations.updateSprayWall(
+            {},
+            { input: { uuid: wall.uuid, name: 'Target staff edit' } },
+            ctxFor(GYM_EDITOR),
+          ),
+        ).rejects.toThrow('Not authorized to update this board');
+      },
+    );
+
+    it.each(['owner', 'admin'] as const)(
+      'lets a non-owner wall editor who is the target gym %s link without coordinates',
+      async (targetAccess) => {
+        const sourceGym = await gymForLink(OUTSIDER, STRANGER, null);
+        const targetGym = await gymForLink(
+          targetAccess === 'owner' ? STRANGER : GYM_EDITOR,
+          targetAccess === 'admin' ? STRANGER : null,
+          null,
+        );
+        const wall = await createWall(OWNER);
+        await db.update(userBoards).set({ gymId: sourceGym.id }).where(eq(userBoards.uuid, wall.uuid));
+
+        await sprayWallMutations.updateSprayWall(
+          {},
+          { input: { uuid: wall.uuid, gymUuid: targetGym.uuid, name: 'Authorized staff link' } },
+          ctxFor(STRANGER),
+        );
+
+        const [linkedBoard] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+        expect(linkedBoard).toMatchObject({
+          ownerId: OWNER,
+          gymId: targetGym.id,
+          name: 'Authorized staff link',
+          latitude: null,
+          longitude: null,
+        });
+      },
+    );
   });
 
   it('refuses half a point', async () => {

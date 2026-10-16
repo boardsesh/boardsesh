@@ -2019,6 +2019,7 @@ export const socialBoardMutations = {
         ctx,
         gymUuid: validatedInput.gymUuid,
         userId,
+        boardOwnerId: userId,
         boardLatitude: incomingLocation.latitude,
         boardLongitude: incomingLocation.longitude,
       });

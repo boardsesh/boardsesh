@@ -558,8 +558,8 @@ export const MAX_FOREIGN_GYM_LINKS = 20;
 export const MAX_BOARDS_PER_FOREIGN_GYM = 5;
 
 /**
- * Gate for attaching a board the caller OWNS to a gym: owner/admin of the gym as
- * before, plus a self-service path so a climber can put their board on the gym
+ * Gate for attaching a board to a gym: owner/admin of the gym as before, plus
+ * an owner-only self-service path so a climber can put their board on the gym
  * they actually climb at without being staff there. Before #4166 this was
  * owner-or-admin only, which made the common case — "there's a MoonBoard at this
  * gym someone else listed, let me add it" — impossible.
@@ -577,10 +577,12 @@ export async function requireBoardGymLinkAccess(opts: {
   ctx: ConnectionContext;
   gymUuid: string;
   userId: string;
+  // Stored board owner, or the authenticated creator when inserting a board.
+  boardOwnerId: string;
   boardLatitude: number | null;
   boardLongitude: number | null;
 }): Promise<typeof dbSchema.gyms.$inferSelect> {
-  const { ctx, gymUuid, userId, boardLatitude, boardLongitude } = opts;
+  const { ctx, gymUuid, userId, boardOwnerId, boardLatitude, boardLongitude } = opts;
   const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
 
   // Staff keep the unconditional path — including for gyms or boards that have
@@ -597,6 +599,10 @@ export async function requireBoardGymLinkAccess(opts: {
   // public gym — "rate limit exceeded" means the uuid is a live private gym,
   // "not authorized" means it doesn't exist.
   if (!gym.isPublic) throw new Error('Gym not found');
+
+  // Editing a wall through its current gym or a community role is not consent
+  // to give another gym's staff edit rights. Only its owner can self-link it.
+  if (boardOwnerId !== userId) throw new Error('Not authorized to link board to this gym');
 
   // The tight bucket belongs to the self-service path only. Charged here rather
   // than at the call site so a gym owner adding several boards to their OWN gym
@@ -1543,6 +1549,7 @@ export const socialGymMutations = {
         ctx,
         gymUuid: validatedInput.gymUuid,
         userId,
+        boardOwnerId: board.ownerId,
         boardLatitude: board.latitude,
         boardLongitude: board.longitude,
       });

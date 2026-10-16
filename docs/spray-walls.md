@@ -812,10 +812,13 @@ unpublished, is parked on the same columns.
 (`locationName`, `latitude`, `longitude`, `hideLocation`). `latitude` and
 `longitude` go together, both or neither. They are applied before the gym-link
 check, so a wall with no point can be placed and linked to a nearby public gym
-in one call. `hideLocation` is owner-only, like visibility, checked again under the wall
-lock against the current flag (a re-stated equal value is fine), and on a wall with a
-location policy it is read through `legacyLocationAudience`, the same way
-`updateBoard` reads it.
+in one call. That self-service path requires the wall's owner; editing through
+its current gym or a community role does not permit linking it to another gym.
+An authorized wall editor who owns or administers the target gym can still link
+it without coordinates. `hideLocation` is owner-only, like visibility, checked
+again under the wall lock against the current flag (a re-stated equal value is
+fine), and on a wall with a location policy it is read through
+`legacyLocationAudience`, the same way `updateBoard` reads it.
 
 ### The wall's default look
 
