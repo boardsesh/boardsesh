@@ -803,6 +803,7 @@ export default defineConfig({
       // changed to ship build tooling into production images.
       'typecheck:scripts': {
         command: 'tsc -p scripts/tsconfig.json',
+        dependsOn: ['codegen'],
       },
       'typecheck:shared': {
         command: 'pnpm --filter @boardsesh/shared-schema run typecheck',
@@ -822,6 +823,7 @@ export default defineConfig({
       },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:queue': {
         command: 'pnpm --filter @boardsesh/queue run typecheck',
@@ -831,12 +833,16 @@ export default defineConfig({
       },
       'typecheck:queue-runtime': {
         command: 'pnpm --filter @boardsesh/queue-runtime run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:offline-sync': {
         command: 'pnpm --filter @boardsesh/offline-sync run typecheck',
+        // The mutation whitelist drift test reads generated schema types.
+        dependsOn: ['codegen'],
       },
       'typecheck:queue-react': {
         command: 'pnpm --filter @boardsesh/queue-react run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:board-presence': {
         command: 'pnpm --filter @boardsesh/board-presence run typecheck',
@@ -848,6 +854,7 @@ export default defineConfig({
       },
       'typecheck:playlists-react': {
         command: 'pnpm --filter @boardsesh/playlists-react run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:board-react': {
         command: 'pnpm --filter @boardsesh/board-react run typecheck',
@@ -875,12 +882,14 @@ export default defineConfig({
       },
       'typecheck:climb-actions': {
         command: 'pnpm --filter @boardsesh/climb-actions run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:key-value-storage': {
         command: 'pnpm --filter @boardsesh/key-value-storage run typecheck',
       },
       'typecheck:board-config': {
         command: 'pnpm --filter @boardsesh/board-config run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:board-render': {
         command: 'pnpm --filter @boardsesh/board-render run typecheck',
@@ -898,6 +907,7 @@ export default defineConfig({
       },
       'typecheck:play-view': {
         command: 'pnpm --filter @boardsesh/play-view run typecheck',
+        dependsOn: ['codegen'],
       },
       'typecheck:playback-react': {
         command: 'pnpm --filter @boardsesh/playback-react run typecheck',
