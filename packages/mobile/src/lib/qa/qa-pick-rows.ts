@@ -340,6 +340,15 @@ export type QaPickListState =
 
 type QaPickListStateInput = {
   isPending: boolean;
+  /**
+   * The PR metadata's first answer is still in flight. Risk and this tester's
+   * verdict both drive the sort, so rows shown before it lands come out in
+   * publish order and then jump once it arrives — a tester who spotted their PR
+   * by number would see it move under their thumb. False once the request
+   * settles either way (an error still renders bare rows) and when it never
+   * runs at all (signed out), so testing is never blocked on metadata.
+   */
+  isMetadataPending: boolean;
   isError: boolean;
   surfingOff: boolean;
   rows: QaPickRow[];
@@ -355,6 +364,7 @@ export function qaPickListState(input: QaPickListStateInput): QaPickListState {
   if (input.surfingOff) return { kind: 'surfing-off' };
   if (input.isPending) return { kind: 'loading' };
   if (input.isError) return { kind: 'unreachable' };
+  if (input.isMetadataPending) return { kind: 'loading' };
   // Before the empty check, not after. When nothing at all is published AND the
   // tester has typed a number, the escape hatch is the single most useful thing on
   // the screen — an empty list is the signature of a fingerprint drift, which is

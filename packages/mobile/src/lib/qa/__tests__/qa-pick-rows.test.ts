@@ -491,7 +491,7 @@ describe('unlistedPrNumber', () => {
 });
 
 describe('qaPickListState', () => {
-  const base = { isPending: false, isError: false, surfingOff: false, hasQuery: false };
+  const base = { isPending: false, isMetadataPending: false, isError: false, surfingOff: false, hasQuery: false };
   const rows = [row(5203, 'Fix the queue reducer')];
 
   it('reports the channel serving no previews ahead of everything else', () => {
@@ -503,6 +503,19 @@ describe('qaPickListState', () => {
   it('reports loading, then an unreachable server', () => {
     expect(qaPickListState({ ...base, isPending: true, rows: [], visibleRows: [] }).kind).toBe('loading');
     expect(qaPickListState({ ...base, isError: true, rows: [], visibleRows: [] }).kind).toBe('unreachable');
+  });
+
+  // Risk and verdict drive the sort, so rows shown before the metadata lands
+  // would reorder under the tester's thumb once it does.
+  it('keeps loading until the PR metadata has answered', () => {
+    expect(qaPickListState({ ...base, isMetadataPending: true, rows, visibleRows: rows }).kind).toBe('loading');
+    expect(qaPickListState({ ...base, rows, visibleRows: rows }).kind).toBe('rows');
+  });
+
+  it('still reports an unreachable branch list while metadata loads', () => {
+    expect(qaPickListState({ ...base, isError: true, isMetadataPending: true, rows: [], visibleRows: [] }).kind).toBe(
+      'unreachable',
+    );
   });
 
   it('separates "nothing published" from "nothing matches what you typed"', () => {

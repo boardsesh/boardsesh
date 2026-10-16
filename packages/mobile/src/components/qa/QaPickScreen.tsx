@@ -271,6 +271,9 @@ export function QaPickScreen({ presentation = 'prompt' }: { presentation?: 'prom
   const listState = qaPickListState({
     isPending: branchesQuery.isPending,
     isError: branchesQuery.isError,
+    // `isLoading`, not `isPending`: a disabled query (signed out) is pending
+    // forever but never fetching, and must not hold the list back.
+    isMetadataPending: previewsQuery.isLoading,
     surfingOff: branchesQuery.isSuccess && branches === null,
     rows,
     visibleRows,
