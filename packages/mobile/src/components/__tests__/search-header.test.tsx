@@ -100,11 +100,11 @@ vi.mock('../../theme/ios-colors', () => ({
 // Paper Searchbar forwards its ref to the inner TextInput; model that so the
 // imperative blur/focus path can be exercised on the Material variant.
 function readStyleField(style: unknown, field: string): string {
-  const styleItems = Array.isArray(style) ? style : [style];
-  const matchingStyle = styleItems.find(
-    (item): item is Record<string, unknown> => typeof item === 'object' && item !== null && field in item,
-  );
-  const fieldValue = matchingStyle?.[field];
+  const styleItems = [style]
+    .flat(10)
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const flattenedStyle = Object.assign({}, ...styleItems) as Record<string, unknown>;
+  const fieldValue = flattenedStyle[field];
   if (typeof fieldValue === 'number' || typeof fieldValue === 'string') return String(fieldValue);
   return '';
 }

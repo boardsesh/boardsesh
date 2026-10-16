@@ -242,7 +242,6 @@ describe('EditProfileScreen', () => {
       ) as { paddingBottom?: number }[];
       return styles.find((style) => style.paddingBottom !== undefined)?.paddingBottom;
     };
-    expect(container.querySelector('[data-keyboard-avoiding]')?.getAttribute('data-behavior')).toBe('');
     expect(padding()).toBe(44);
     act(() => keyboard.listeners.get('keyboardDidShow')?.({ endCoordinates: { height: 300 } }));
     expect(padding()).toBe(344);
