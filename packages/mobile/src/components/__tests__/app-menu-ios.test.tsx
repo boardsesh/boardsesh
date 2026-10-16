@@ -17,11 +17,12 @@ vi.mock('@expo/ui/swift-ui', () => ({
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   Image: ({ systemName }: { systemName: string }) => createElement('i', { 'data-symbol': systemName }),
 }));
-vi.mock('@expo/ui/swift-ui/modifiers', () =>
-  Object.fromEntries(
+vi.mock('@expo/ui/swift-ui/modifiers', () => ({
+  ...Object.fromEntries(
     [
       'buttonStyle',
       'clipShape',
+      'contentShape',
       'controlSize',
       'backgroundOverlay',
       'disabled',
@@ -33,7 +34,8 @@ vi.mock('@expo/ui/swift-ui/modifiers', () =>
       'accessibilityHint',
     ].map((kind) => [kind, (params: unknown) => ({ kind, params })]),
   ),
-);
+  shapes: { rectangle: () => ({ shape: 'rectangle' }) },
+}));
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },

@@ -17,12 +17,14 @@ import { Menu, Button, Divider, HStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
+  contentShape,
   controlSize,
   backgroundOverlay,
   disabled as disabledModifier,
   frame,
   font,
   lineLimit,
+  shapes,
   truncationMode,
   accessibilityLabel as a11yLabel,
   accessibilityHint as a11yHint,
@@ -48,7 +50,12 @@ const ICON_ANCHOR_GLYPH_SIZE = topBarByVariant.liquidGlass.glyphSize;
 
 // Semibold, as iOS 26's own bar glyphs draw. A `font` modifier wins over `size`,
 // so it carries the size too.
-const ICON_ANCHOR_GLYPH_MODIFIERS = [font({ size: ICON_ANCHOR_GLYPH_SIZE, weight: 'semibold' })];
+const ICON_ANCHOR_GLYPH_MODIFIERS = [
+  font({ size: ICON_ANCHOR_GLYPH_SIZE, weight: 'semibold' }),
+  // Plain menus hit-test their label, so the label must own the full button target.
+  frame({ width: ANCHOR_MIN_HEIGHT, height: ANCHOR_MIN_HEIGHT }),
+  contentShape(shapes.rectangle()),
+];
 
 export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
