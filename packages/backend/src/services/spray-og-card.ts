@@ -1,5 +1,13 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import sharp from 'sharp';
+import sharp, {
+  type JpegOptions,
+  type Metadata,
+  type OutputInfo,
+  type OverlayOptions,
+  type PngOptions,
+  type Sharp,
+  type WebpOptions,
+} from 'sharp';
 import { BoundedLru, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, type OutputFormat } from '@boardsesh/board-render';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
@@ -46,9 +54,9 @@ const MARK_FILL_OPACITY = 0.22;
 const PHOTO_FETCH_TIMEOUT_MS = 8_000;
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
 
-const JPEG_OPTIONS: sharp.JpegOptions = { quality: 85, chromaSubsampling: '4:4:4', mozjpeg: true };
-const PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
-const WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
+const JPEG_OPTIONS: JpegOptions = { quality: 85, chromaSubsampling: '4:4:4', mozjpeg: true };
+const PNG_OPTIONS: PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
+const WEBP_OPTIONS: WebpOptions = { quality: 80 };
 
 export type SprayOgWallRow = {
   wallId: number;
@@ -273,7 +281,7 @@ function formatPolygonPoints(points: readonly number[]): string {
   return pairs.join(' ');
 }
 
-function encodeCard(image: sharp.Sharp, format: OutputFormat): Promise<{ buffer: Buffer; contentType: string }> {
+function encodeCard(image: Sharp, format: OutputFormat): Promise<{ buffer: Buffer; contentType: string }> {
   if (format === 'png') {
     return image
       .png(PNG_OPTIONS)
@@ -392,8 +400,8 @@ export async function renderSprayOgCard(
     // Decode failures degrade rather than 500: the bytes are a photograph
     // somebody uploaded, so "sharp cannot read this" is the object being
     // unreadable, which is the same answer as the object being gone.
-    let sourceMetadata: sharp.Metadata;
-    let placed: { data: Buffer; info: sharp.OutputInfo };
+    let sourceMetadata: Metadata;
+    let placed: { data: Buffer; info: OutputInfo };
     try {
       const source = sharp(photoBytes);
       [sourceMetadata, placed] = await Promise.all([
@@ -431,7 +439,7 @@ export async function renderSprayOgCard(
       photoToPlaced,
     });
 
-    const composites: sharp.OverlayOptions[] = [{ input: placed.data, left, top }];
+    const composites: OverlayOptions[] = [{ input: placed.data, left, top }];
     if (overlaySvg !== null) composites.push({ input: Buffer.from(overlaySvg), left, top });
 
     const canvas = sharp({
