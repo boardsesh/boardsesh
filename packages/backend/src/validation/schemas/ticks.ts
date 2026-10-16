@@ -15,6 +15,24 @@ const MAX_DIFFICULTY_ID = BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_i
 
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
 
+// Keep API writes on today's selectable shared grades (10..33). The database
+// retains its historical 1..39 bound so legacy writers remain compatible.
+const TickDifficultySchema = z
+  .number()
+  .int()
+  .min(MIN_DIFFICULTY_ID, `Difficulty must be at least ${MIN_DIFFICULTY_ID}`)
+  .max(MAX_DIFFICULTY_ID, `Difficulty must be at most ${MAX_DIFFICULTY_ID}`)
+  .optional()
+  .nullable();
+
+/**
+ * A climb can't have been sent in the future. Applied to creates as well as
+ * updates: a rolling-window ranking treats a far-future `climbed_at` as
+ * permanently inside every window, so a create-path hole is not cosmetic.
+ */
+const isNotFutureClimbedAt = (value: string) =>
+  new Date(value).getTime() <= Date.now() + CLIMBED_AT_FUTURE_TOLERANCE_MS;
+
 /**
  * Fractional seconds of a client timestamp, capture group 1.
  *
@@ -64,13 +82,14 @@ export const SaveTickInputSchema = z
     status: TickStatusSchema,
     attemptCount: z.number().int().min(1).max(999),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().min(MIN_DIFFICULTY_ID).max(MAX_DIFFICULTY_ID).optional().nullable(),
+    difficulty: TickDifficultySchema,
     isBenchmark: z.boolean(),
     comment: z.string().max(2000),
     climbedAt: z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
-      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits'),
+      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits')
+      .refine(isNotFutureClimbedAt, 'Climbed at cannot be in the future'),
     sessionId: z.string().optional(),
     layoutId: z.number().int().positive().optional(),
     sizeId: z.number().int().positive().optional(),
@@ -258,17 +277,14 @@ export const UpdateTickInputSchema = z
     status: z.enum(['flash', 'send', 'attempt']).optional(),
     attemptCount: z.number().int().min(1).max(999).optional(),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().min(MIN_DIFFICULTY_ID).max(MAX_DIFFICULTY_ID).optional().nullable(),
+    difficulty: TickDifficultySchema,
     isBenchmark: z.boolean().optional(),
     comment: z.string().max(2000).optional(),
     climbedAt: z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
       .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits')
-      .refine(
-        (value) => new Date(value).getTime() <= Date.now() + CLIMBED_AT_FUTURE_TOLERANCE_MS,
-        'Climbed at cannot be in the future',
-      )
+      .refine(isNotFutureClimbedAt, 'Climbed at cannot be in the future')
       .optional(),
     // The board type comes from the stored tick, so the resolver performs the
     // board-aware check after lookup.

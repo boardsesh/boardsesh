@@ -1109,6 +1109,11 @@
       "title": "Cookies and privacy choices",
       "storageBody": "Required storage includes NextAuth login and sign-in-flow cookies, your language preference (boardsesh-locale), device preferences and the boardsesh-consent cookie. The consent cookie lasts one year and is shared between boardsesh.com and app.boardsesh.com. Outside the regions where we ask, the website sets it to the analytics default on your first visit. When analytics is on (your Allow, or the default outside the regions where we ask), PostHog stores identifiers and events (ph_* on the website and SDK storage in the app). Declining or withdrawing clears analytics identifiers and stops optional analytics, replay and install-attribution events. Basic crash and first-party performance diagnostics remain on. Feature flags still use an in-memory client; signed-in flags can use your account ID.",
       "changeBody": "Use Privacy choices in the website footer or Analytics in Settings → Privacy to change your answer. We save your decision on the device and, when signed in, on your account. Where analytics is on by default, that default stays on the device and is never saved to your account as consent. An account denial overrides device grants; an account grant fills devices that have not answered. We retain decision history as evidence of consent until account deletion. Anonymous, short-lived update-health and kiosk events remain enabled for service reliability."
+    },
+    "standings": {
+      "title": "Standings and public rankings",
+      "body": "Board rankings count your readable sends. Public rankings can show your name, photo and send count when your account, tick and board privacy allow it. Private activity and the option to stay anonymous on boards you do not own still apply.",
+      "control": "In Settings → Privacy, choose to show your name, count without your name, or stay out of rankings. This applies to the app and gym screens. Gym screens have an additional choice that can hide more. Leaving rankings does not delete anything from your logbook."
     }
   },
   "preview": {

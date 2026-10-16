@@ -82,6 +82,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSprayWallReports',
   'GetSprayWallTrainingConsent',
   'GetSprayWallWithVersions',
+  // Only Settings → Privacy mounts this hook; capture flows never open it.
+  'GetStandingsPrivacy',
   'GetUserAscentCaptionMatches',
   'GetUserAscentsFeed',
   'GetUserClimbs',

@@ -6,8 +6,8 @@
  * The development image deliberately represents the production-shaped database,
  * including a historical gap in the Drizzle ledger.  Running migrations here
  * would therefore give CI a different failure mode from production.  This script
- * only supplies the four backwards-compatible playlist fields that the two
- * arbitration specifications need.  It never applies a migration or changes the
+ * only supplies the backwards-compatible playlist fields and the internal-user
+ * flag that the arbitration specifications need.  It never applies a migration or changes the
  * migration ledger.
  */
 
@@ -45,6 +45,24 @@ export type PlaylistIndexDefinition = {
   readonly keyCollations: readonly string[];
   readonly keyOptions: readonly number[];
 };
+
+export type InternalUserColumnDefinition = {
+  readonly dataType: string;
+  readonly underlyingTypeSchema: string;
+  readonly underlyingTypeName: string;
+  readonly nullable: boolean;
+  readonly defaultExpression: string | null;
+};
+
+export function internalUserColumnMatchesCanonical(column: InternalUserColumnDefinition): boolean {
+  return (
+    column.dataType === 'boolean' &&
+    column.underlyingTypeSchema === 'pg_catalog' &&
+    column.underlyingTypeName === 'bool' &&
+    !column.nullable &&
+    column.defaultExpression === 'false'
+  );
+}
 
 export type LedgerSnapshot = {
   readonly row_count: string;
@@ -352,12 +370,29 @@ async function createCanonicalIndex(
   await transaction.unsafe(statements[index.indexName]);
 }
 
+async function ensureInternalUserColumn(transaction: TransactionSql): Promise<void> {
+  await transaction.unsafe(
+    'ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_internal boolean NOT NULL DEFAULT false',
+  );
+  const [column] = await transaction<InternalUserColumnDefinition[]>`
+    SELECT data_type AS "dataType", udt_schema AS "underlyingTypeSchema",
+      udt_name AS "underlyingTypeName", is_nullable = 'YES' AS nullable,
+      column_default AS "defaultExpression"
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'is_internal'
+  `;
+  if (!column || !internalUserColumnMatchesCanonical(column)) {
+    throw new Error('users.is_internal must be a pg_catalog boolean NOT NULL DEFAULT false.');
+  }
+}
+
 export async function prepareAuroraCircuitIntegrationDatabase(databaseUrl: string): Promise<void> {
   const client = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => undefined });
   try {
     await client.begin(async (transaction) => {
       await lockPlaylistTableForCompatibilityPatch(transaction);
       const ledgerBefore = await snapshotLedger(transaction);
+      await ensureInternalUserColumn(transaction);
       const columnsBefore = await readPlaylistColumns(transaction);
 
       for (const requiredColumn of REQUIRED_COLUMNS) {
@@ -403,7 +438,9 @@ async function main(): Promise<void> {
   requireCompatibilityOptIn(process.env);
   const databaseUrl = requireLocalDatabaseUrl(process.env.DATABASE_URL);
   await prepareAuroraCircuitIntegrationDatabase(databaseUrl);
-  console.info('[aurora-circuit-schema-compat] playlist compatibility verified without applying migrations.');
+  console.info(
+    '[aurora-circuit-schema-compat] playlist and internal-user compatibility verified without applying migrations.',
+  );
 }
 
 const invokedPath = process.argv[1];

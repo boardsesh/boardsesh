@@ -1954,6 +1954,13 @@
       "when": 1791976510687,
       "tag": "0278_spray_training_data",
       "breakpoints": true
+    },
+    {
+      "idx": 279,
+      "version": "7",
+      "when": 1792192752785,
+      "tag": "0279_standings_visibility_and_tick_bounds",
+      "breakpoints": true
     }
   ]
 }

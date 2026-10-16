@@ -7,6 +7,7 @@ import {
   isGraphQLEmptyResponseError,
   isRetryable,
   getErrorStatus,
+  getRateLimitRetryAfterMs,
   isNetworkError,
   isPermanentRejection,
   isClimbReferenceToDeletedClimb,
@@ -131,6 +132,12 @@ describe('isRetryable', () => {
 
   it('429 rate limit is retryable', () => {
     expect(isRetryable({ status: 429 })).toBe(true);
+  });
+
+  it('a RATE_LIMITED error carrying an explicit numeric status reads 429 and retries', () => {
+    const rateLimited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', status: 429 } }] } };
+    expect(getErrorStatus(rateLimited)).toBe(429);
+    expect(isRetryable(rateLimited)).toBe(true);
   });
 
   it('500 is retryable', () => {
@@ -676,8 +683,8 @@ describe('a string RATE_LIMITED GraphQL rejection (issue #4711)', () => {
   // The backend throws GraphQLError with the STRING extensions.code
   // 'RATE_LIMITED' and no numeric status, so getErrorStatus resolves null. The
   // old default dead-lettered it outright, losing a queued setter follow or a
-  // beta-link tick. Default-retry covers it with no bespoke branch: the
-  // drainer's backoff plus max_retries is the bound.
+  // beta-link tick. The drainer waits for the rate-limit window without
+  // spending the queued write's persistent retry budget.
   function rateLimited() {
     return Object.assign(new Error('Too many requests'), {
       response: {
@@ -692,6 +699,49 @@ describe('a string RATE_LIMITED GraphQL rejection (issue #4711)', () => {
 
   it('is retryable, so a queued follow or beta-link tick drains instead of vanishing', () => {
     expect(isRetryable(rateLimited())).toBe(true);
+  });
+});
+
+describe('getRateLimitRetryAfterMs', () => {
+  const extensions = { code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 30 };
+
+  it.each([
+    { extensions },
+    { errors: [{ extensions }] },
+    { response: { status: 200, errors: [{ extensions }] } },
+    { cause: { response: { errors: [{ extensions }] } } },
+  ])('reads the server cooldown from a supported error envelope: %j', (error) => {
+    expect(getRateLimitRetryAfterMs(error)).toBe(30_000);
+  });
+
+  it.each([undefined, -1, Number.NaN, Number.POSITIVE_INFINITY, '30'])(
+    'uses a minute when a rate-limit hint is missing or invalid: %s',
+    (retryAfterSeconds) => {
+      expect(getRateLimitRetryAfterMs({ extensions: { ...extensions, retryAfterSeconds } })).toBe(60_000);
+    },
+  );
+
+  it('uses a minute for an HTTP 429 without GraphQL metadata', () => {
+    expect(getRateLimitRetryAfterMs({ response: { status: 429 } })).toBe(60_000);
+  });
+
+  it('rounds fractional hints up and preserves an explicit zero', () => {
+    expect(getRateLimitRetryAfterMs({ extensions: { ...extensions, retryAfterSeconds: 0.0001 } })).toBe(1);
+    expect(getRateLimitRetryAfterMs({ extensions: { ...extensions, retryAfterSeconds: 0 } })).toBe(0);
+  });
+
+  it('waits for the longest cooldown in a response', () => {
+    expect(
+      getRateLimitRetryAfterMs({ errors: [{ extensions }, { extensions: { ...extensions, retryAfterSeconds: 75 } }] }),
+    ).toBe(75_000);
+  });
+
+  it('ignores retry hints on unrelated errors and bounds cyclic causes', () => {
+    const unrelated = { extensions: { code: 'BAD_USER_INPUT', retryAfterSeconds: 30 } };
+    const cyclic: { cause?: unknown } = {};
+    cyclic.cause = { cause: cyclic };
+    expect(getRateLimitRetryAfterMs(unrelated)).toBeNull();
+    expect(getRateLimitRetryAfterMs(cyclic)).toBeNull();
   });
 });
 

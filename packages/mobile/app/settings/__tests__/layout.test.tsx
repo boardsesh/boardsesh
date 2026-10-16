@@ -149,6 +149,7 @@ const SETTINGS_PAGES = [
   'general',
   'privacy',
   'privacy-people',
+  'standings-privacy',
   'account',
   'integrations',
   'board-look/index',

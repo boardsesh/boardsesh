@@ -2,8 +2,7 @@
 // reduce to the same row model so the rail renders one list either way.
 // No React; unit-tested with fixture histories/leaderboards.
 
-import { rankSessionClimbers, type RankedSessionClimber } from '@boardsesh/board-presence';
-import type { BoardLeaderboard, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardLeaderboard } from '@boardsesh/shared-schema';
 
 export const KIOSK_LEADERBOARD_MAX_ROWS = 10;
 
@@ -17,34 +16,6 @@ export type KioskLeaderboardRowData = {
   /** Only present in single-board period scope (grades don't merge across boards). */
   hardestGradeName: string | null;
 };
-
-/**
- * Live session ranking: merge the per-board presence histories and rank
- * climbers by distinct sends inside the rolling window.
- *
- * Visibility limit: each board's history is capped at 50 entries (HISTORY_CAP
- * in @boardsesh/board-presence), so on a wall with more than 50 sends inside
- * the session window the oldest ones fall off the ranking. Acceptable for a
- * gym-session leaderboard; deeper windows would need `boardHistory` paging.
- */
-export function buildSessionLeaderboardRows(
-  histories: BoardPresenceClimb[][],
-  options: { windowMinutes: number; now: Date; maxRows?: number },
-): KioskLeaderboardRowData[] {
-  const merged = histories.flat();
-  const ranked = rankSessionClimbers(merged, { windowMinutes: options.windowMinutes, now: options.now });
-  return ranked.slice(0, options.maxRows ?? KIOSK_LEADERBOARD_MAX_ROWS).map(sessionClimberToRow);
-}
-
-function sessionClimberToRow(climber: RankedSessionClimber): KioskLeaderboardRowData {
-  return {
-    key: climber.userId !== null ? `user:${climber.userId}` : `name:${climber.displayName ?? ''}`,
-    displayName: climber.displayName,
-    avatarUrl: climber.avatarUrl,
-    sendCount: climber.sendCount,
-    hardestGradeName: null,
-  };
-}
 
 /**
  * Period ranking (Last 24 hours / week / month): merge the per-board

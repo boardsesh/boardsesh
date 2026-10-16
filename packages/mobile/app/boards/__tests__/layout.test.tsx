@@ -182,8 +182,8 @@ describe('boards stack header on the spray wizard opened as a reset', () => {
   });
 
   it('titles the wizard as a reset only when it carries resetOf', () => {
-    expect(optionsFor('spray/new', { resetOf: 'wall-uuid' }).title).toBe('Reset this wall');
-    expect(optionsFor('spray/new').title).toBe('Add a spray wall');
+    expect(optionsFor('spray/new', { resetOf: 'wall-uuid' }).title).toBe('Reset this Spraywall');
+    expect(optionsFor('spray/new').title).toBe('Add a Spraywall');
   });
 });
 

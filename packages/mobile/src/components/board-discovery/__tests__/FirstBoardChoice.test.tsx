@@ -111,12 +111,12 @@ describe('FirstBoardChoice', () => {
   // own board cannot make a spray wall.
   it('offers a spray wall only when the screen passes the path', () => {
     renderChoice();
-    expect(screen.queryByRole('button', { name: 'Add my spray wall' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add my Spraywall' })).toBeNull();
     cleanup();
 
     const onAddSprayWall = vi.fn();
     render(<FirstBoardChoice gymState="idle" nearbyResults={null} {...callbacks} onAddSprayWall={onAddSprayWall} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add my spray wall' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add my Spraywall' }));
     expect(onAddSprayWall).toHaveBeenCalledTimes(1);
   });
 

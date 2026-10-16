@@ -636,5 +636,31 @@
     "publishLinkMessage": "Anyone with the link can open this board, even though it stays off search and the map. The link is built from the board's name, so it isn't secret. Keep its location hidden unless you choose to share it.",
     "publishLink": "Share by link",
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
+  },
+  "standings": {
+    "title": "Standings",
+    "inApp": {
+      "title": "In the app",
+      "description": "Applies to all Boardsesh standings, including gym screens."
+    },
+    "gymScreens": {
+      "title": "On gym screens",
+      "description": "Gym screens can show less than the app setting above, never more. Your name stays hidden here when you choose anonymity in the app."
+    },
+    "options": {
+      "public": {
+        "title": "Show my name",
+        "subtitle": "Other climbers see your name, your photo and your climbs."
+      },
+      "anonymous": {
+        "title": "Counted, not named",
+        "subtitle": "You still get a rank and still shape the field. Everyone else sees an unnamed climber."
+      },
+      "off": {
+        "title": "Keep me out",
+        "subtitle": "You won’t appear in this ranking. You can still read it."
+      }
+    },
+    "privacyPrecedence": "Private accounts and “Stay anonymous on boards I don’t own” still apply. These choices cannot make your activity more public."
   }
 }

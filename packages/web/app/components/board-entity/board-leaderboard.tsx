@@ -151,8 +151,8 @@ export default function BoardLeaderboard({ boardUuid }: BoardLeaderboardProps) {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {leaderboard.entries.map((entry: BoardLeaderboardEntry) => (
-                  <TableRow key={entry.userId}>
+                {leaderboard.entries.map((entry: BoardLeaderboardEntry, index) => (
+                  <TableRow key={entry.userId ?? `anonymous:${index}`}>
                     <TableCell>
                       <MuiTypography
                         variant="body2"
@@ -178,9 +178,13 @@ export default function BoardLeaderboard({ boardUuid }: BoardLeaderboardProps) {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
+                            // A climber who opted out of being named still holds
+                            // their rank and score; only the identity is muted.
+                            fontStyle: entry.isAnonymous ? 'italic' : undefined,
+                            color: entry.isAnonymous ? 'var(--color-text-secondary)' : undefined,
                           }}
                         >
-                          {entry.userDisplayName}
+                          {entry.isAnonymous ? t('boardLeaderboard.anonymousClimber') : entry.userDisplayName}
                         </MuiTypography>
                       </Box>
                     </TableCell>

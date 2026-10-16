@@ -4,6 +4,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivacySettings, UpdatePrivacySettingsInput } from '@boardsesh/graphql/operations/privacy';
 import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
+import type { StandingsPrivacyInput } from '../../../lib/graphql/hooks/use-standings-privacy';
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 function deferred<T = boolean>(): Deferred<T> {
@@ -46,6 +47,22 @@ const state = vi.hoisted(() => ({
     isPending: false,
     isError: false,
     variables: undefined as boolean | undefined,
+  },
+  standings: {
+    data: { leaderboardVisibility: 'public', gymScreenVisibility: 'public' } as
+      | { leaderboardVisibility: 'public' | 'anonymous' | 'off'; gymScreenVisibility: 'public' | 'anonymous' | 'off' }
+      | undefined,
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  },
+  updateStandings: {
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    isError: false,
+    variables: undefined as StandingsPrivacyInput | undefined,
   },
   confirm: vi.fn(),
   decideConsent: vi.fn(),
@@ -103,6 +120,10 @@ vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({
   useSetAnonymousOnForeignBoards: () => state.anonymous,
   useIncomingFollowRequests: () => ({ data: [] }),
 }));
+vi.mock('../../../lib/graphql/hooks/use-standings-privacy', () => ({
+  useStandingsPrivacy: () => state.standings,
+  useUpdateStandingsPrivacy: () => state.updateStandings,
+}));
 vi.mock('../../settings/use-session-recording-toggle', () => ({
   useSessionRecordingToggle: () => ({ value: false, disabled: true, onValueChange: vi.fn() }),
 }));
@@ -145,6 +166,14 @@ beforeEach(() => {
   };
   state.update = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false, variables: undefined };
   state.anonymous = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false, variables: undefined };
+  state.standings = {
+    data: { leaderboardVisibility: 'public', gymScreenVisibility: 'public' },
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  };
+  state.updateStandings = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false, variables: undefined };
   state.confirm = vi.fn();
   state.decideConsent = vi.fn(() => Promise.resolve());
   state.track = vi.fn();
@@ -428,6 +457,78 @@ describe('New session audience select', () => {
     renderScreen();
     act(() => row('sessionDefault', 'select').onSelect('unlisted'));
     expect(state.update.mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('Standings within Privacy', () => {
+  it('keeps standings alongside the anonymity control while account privacy is disabled', () => {
+    state.settings.data = { ...SERVER, enabled: false };
+    renderScreen();
+    expect(hasRow('anonymousOnForeignBoards')).toBe(true);
+    expect(row('leaderboardVisibility', 'select').selectedKey).toBe('public');
+    act(() => row('leaderboardVisibility', 'select').onSelect('anonymous'));
+    expect(state.updateStandings.mutate).toHaveBeenCalledExactlyOnceWith(
+      { leaderboardVisibility: 'anonymous' },
+      expect.anything(),
+    );
+    expect(state.update.mutate).not.toHaveBeenCalled();
+    expect(state.anonymous.mutate).not.toHaveBeenCalled();
+    expect(settingChangedEvents()).toEqual([]);
+    act(() => (state.updateStandings.mutate.mock.calls[0]?.[1] as MutateCallbacks | undefined)?.onSuccess?.());
+    expect(settingChangedEvents()).toEqual([
+      ['Setting Changed', { page: 'privacy', key: 'leaderboardVisibility', value: 'anonymous' }],
+    ]);
+  });
+
+  it('holds the selected audience until save settles, and restores a failed choice', () => {
+    renderScreen();
+    act(() => row('gymScreenVisibility', 'select').onSelect('off'));
+    expect(row('gymScreenVisibility', 'select').selectedKey).toBe('off');
+    expect(row('leaderboardVisibility', 'select').selectedKey).toBe('public');
+    act(() => (state.updateStandings.mutate.mock.calls[0]?.[1] as MutateCallbacks | undefined)?.onSettled?.());
+    expect(row('gymScreenVisibility', 'select').selectedKey).toBe('public');
+  });
+
+  it('locks all privacy writes during a standings save', () => {
+    state.updateStandings = { ...state.updateStandings, isPending: true, variables: { gymScreenVisibility: 'off' } };
+    renderScreen();
+    expect(row('gymScreenVisibility', 'select').disabled).toBe(true);
+    expect(row('privateAccount', 'toggle').disabled).toBe(true);
+    expect(row('anonymousOnForeignBoards', 'toggle').disabled).toBe(true);
+    expect(row('sessionDefault', 'select').disabled).toBe(true);
+    act(() => row('anonymousOnForeignBoards', 'toggle').onValueChange(true));
+    expect(state.anonymous.mutate).not.toHaveBeenCalled();
+  });
+
+  it('refuses changes offline or while another privacy save runs', () => {
+    state.offline = true;
+    const view = renderScreen();
+    expect(row('leaderboardVisibility', 'select').disabled).toBe(true);
+    act(() => row('leaderboardVisibility', 'select').onSelect('off'));
+    state.offline = false;
+    state.anonymous.isPending = true;
+    view.rerender(createElement(PrivacySettingsScreen));
+    act(() => row('leaderboardVisibility', 'select').onSelect('off'));
+    expect(state.updateStandings.mutate).not.toHaveBeenCalled();
+  });
+
+  it('offers a standings retry without blocking loaded account controls', () => {
+    state.standings = { ...state.standings, data: undefined, isError: true };
+    renderScreen();
+    expect(hasRow('standingsLoadFailed')).toBe(true);
+    expect(hasRow('leaderboardVisibility')).toBe(false);
+    expect(row('anonymousOnForeignBoards', 'toggle').disabled).toBe(false);
+    act(() => row('standingsRetry', 'button').onPress());
+    expect(state.standings.refetch).toHaveBeenCalledOnce();
+  });
+
+  it('shares the accessible save status with other privacy writes', () => {
+    state.updateStandings.isError = true;
+    renderScreen();
+    expect(hasRow('saveFailed')).toBe(true);
+    expect(state.announce).toHaveBeenCalledWith('privacy.saveFailed');
+    act(() => row('anonymousOnForeignBoards', 'toggle').onValueChange(true));
+    expect(state.updateStandings.reset).toHaveBeenCalled();
   });
 });
 

@@ -1,8 +1,43 @@
 import { isDatabaseLockedError } from '../db/lock-errors';
 
 type GraphqlErrorEntry = {
-  extensions?: { code?: unknown; status?: unknown };
+  extensions?: { code?: unknown; status?: unknown; retryAfterSeconds?: unknown };
 };
+
+const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
+
+function rateLimitDelayFromErrors(errors: unknown): number | null {
+  if (!Array.isArray(errors)) return null;
+  let retryAfterMs: number | null = null;
+  for (const entry of errors as GraphqlErrorEntry[]) {
+    const extensions = entry?.extensions;
+    if (extensions?.code !== 'RATE_LIMITED' && extensions?.code !== 429 && extensions?.status !== 429) continue;
+    const seconds = extensions.retryAfterSeconds;
+    const delay =
+      typeof seconds === 'number' && seconds >= 0 && Number.isFinite(seconds * 1000)
+        ? Math.ceil(seconds * 1000)
+        : DEFAULT_RATE_LIMIT_DELAY_MS;
+    retryAfterMs = Math.max(retryAfterMs ?? 0, delay);
+  }
+  return retryAfterMs;
+}
+
+/** A rate limit defers delivery without spending the queued write's retry budget. */
+export function getRateLimitRetryAfterMs(error: unknown, depth = 0): number | null {
+  if (error === null || typeof error !== 'object') return null;
+  const errorRecord = error as Record<string, unknown>;
+  const candidates = [rateLimitDelayFromErrors(errorRecord.errors), rateLimitDelayFromErrors([errorRecord])];
+  const response = errorRecord.response;
+  if (response !== null && typeof response === 'object') {
+    candidates.push(rateLimitDelayFromErrors((response as Record<string, unknown>).errors));
+  }
+  if (depth < MAX_CAUSE_DEPTH && errorRecord.cause !== error) {
+    candidates.push(getRateLimitRetryAfterMs(errorRecord.cause, depth + 1));
+  }
+  const delays = candidates.filter((delay): delay is number => delay !== null);
+  if (delays.length > 0) return Math.max(...delays);
+  return getErrorStatus(error) === 429 ? DEFAULT_RATE_LIMIT_DELAY_MS : null;
+}
 
 /**
  * Does any entry in a GraphQL `errors` array carry this STRING `extensions.code`?

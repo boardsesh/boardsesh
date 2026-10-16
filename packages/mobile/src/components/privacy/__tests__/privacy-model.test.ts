@@ -33,6 +33,7 @@ function makeInput(overrides: Partial<PrivacyModelInput> = {}): PrivacyModelInpu
     pendingRequestCount: 0,
     analytics: { preference: true, regionDefault: false },
     sessionRecording: { value: false, disabled: false },
+    standings: { settings: undefined, loading: false, loadFailed: false, onRetry: vi.fn(), onSelect: vi.fn() },
     onRetry: vi.fn(),
     onPrivateAccountChange: vi.fn(),
     onSessionAudienceSelect: vi.fn(),

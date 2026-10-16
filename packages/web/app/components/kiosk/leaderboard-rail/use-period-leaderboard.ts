@@ -23,7 +23,7 @@ import type { KioskLeaderboardPeriod } from '@boardsesh/kiosk';
 import { executeGraphQL } from '@/app/lib/graphql/client';
 import { mergeSettledPeriodLeaderboards, type KioskLeaderboardRowData } from './leaderboard-model';
 
-export type KioskPeriodLeaderboardPeriod = Exclude<KioskLeaderboardPeriod, 'session'>;
+export type KioskPeriodLeaderboardPeriod = KioskLeaderboardPeriod;
 
 /** Kiosk default: an unattended gym TV refreshes every minute. Embeds pass a
  * gentler interval (they run on arbitrary gym websites, one per visitor tab,
@@ -51,12 +51,14 @@ export function usePeriodLeaderboard(
      * background tab doesn't poll the leaderboard all night.
      */
     refetchIntervalInBackground?: boolean;
+    /** Online embeds use app consent; gym screens may only hide more. */
+    surface?: 'app' | 'gymScreen';
     /** Override the 60s kiosk default — embeds poll more gently. */
     refetchIntervalMs?: number;
   },
 ): PeriodLeaderboardResult {
   const { data, isError, dataUpdatedAt } = useQuery({
-    queryKey: ['kioskPeriodLeaderboard', period, boardUuids],
+    queryKey: ['kioskPeriodLeaderboard', options?.surface ?? 'app', period, boardUuids],
     enabled: enabled && boardUuids.length > 0,
     refetchInterval: options?.refetchIntervalMs ?? PERIOD_REFETCH_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? true,
@@ -64,7 +66,7 @@ export function usePeriodLeaderboard(
       const settled = await Promise.allSettled(
         boardUuids.map((boardUuid) =>
           executeGraphQL<GetBoardLeaderboardQueryResponse, GetBoardLeaderboardQueryVariables>(GET_BOARD_LEADERBOARD, {
-            input: { boardUuid, period, limit: PER_BOARD_FETCH_LIMIT },
+            input: { boardUuid, period, limit: PER_BOARD_FETCH_LIMIT, surface: options?.surface ?? 'app' },
           }),
         ),
       );
