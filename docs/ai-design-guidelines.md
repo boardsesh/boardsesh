@@ -1140,7 +1140,12 @@ Tick comments stay visible above the create sheet's actions: one line at the
 medium detent and a larger field at the large detent. Focusing the field expands
 the sheet; the same native input stays mounted. Done dismisses the keyboard
 without saving the tick or adding a newline. Both tick action surfaces preserve
-the same numeric height through their React Native touch wrappers.
+the same numeric height through their React Native touch wrappers. A blocked
+filled tick action keeps its violet fill at disabled opacity; its React Native
+touch owner remains disabled and exposes that state to accessibility. The
+noninteractive SwiftUI child supplies the paint without the native disabled
+style that turns the fill black. Loading and secondary actions keep their native
+state styling.
 
 Device QA remains required: iPhone/iPad AX1–AX5 plus Bold Text, VoiceOver/TalkBack
 hold editing and queue boundaries, native slider drag/accessibility commits,

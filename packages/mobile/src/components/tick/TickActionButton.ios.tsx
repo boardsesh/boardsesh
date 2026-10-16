@@ -13,6 +13,10 @@ const ignoreNativePress = () => {};
 export function TickActionButton(props: ButtonProps) {
   const { style, title, accessibilityLabel, disabled = false, loading = false, testID } = props;
   const handlePress = makeButtonPressHandler(props);
+  // SwiftUI paints a disabled prominent button black in this sheet host. Its
+  // child is decorative: RN owns taps and accessibility, so keep the filled
+  // paint enabled and dim the disabled RN owner instead.
+  const dimFilledSurface = (props.variant ?? 'filled') === 'filled' && disabled && !loading;
   // Preserve the numeric height through the touch wrapper. A percentage makes
   // Button's SwiftUI Host measure itself, so tonal and filled surfaces differ.
   const buttonStyle = useMemo<ViewStyle>(
@@ -28,7 +32,11 @@ export function TickActionButton(props: ButtonProps) {
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ disabled: disabled || loading, busy: loading }}
-      style={({ pressed }) => [style, pressed ? styles.pressed : undefined]}
+      style={({ pressed }) => [
+        style,
+        pressed ? styles.pressed : undefined,
+        dimFilledSurface ? styles.disabled : undefined,
+      ]}
     >
       <View
         pointerEvents="none"
@@ -36,10 +44,21 @@ export function TickActionButton(props: ButtonProps) {
         importantForAccessibility="no-hide-descendants"
         style={styles.surface}
       >
-        <Button {...props} style={buttonStyle} testID={undefined} onPress={ignoreNativePress} haptic={false} />
+        <Button
+          {...props}
+          disabled={dimFilledSurface ? false : props.disabled}
+          style={buttonStyle}
+          testID={undefined}
+          onPress={ignoreNativePress}
+          haptic={false}
+        />
       </View>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({ surface: { width: '100%', height: '100%' }, pressed: { opacity: opacity.subtle } });
+const styles = StyleSheet.create({
+  surface: { width: '100%', height: '100%' },
+  pressed: { opacity: opacity.subtle },
+  disabled: { opacity: opacity.disabled },
+});
