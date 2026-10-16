@@ -19,11 +19,11 @@ import { showSignOutFailure } from '../lib/sign-out-failure-alert';
  * apart from one of them again; the drawer used to sign out on the first tap with no
  * confirmation at all.
  *
- * It ALWAYS confirms, and composes the message from what is actually true for this
- * device: the downloaded-boards sentence only when a catalog is really on disk, the
- * unsynced-writes sentence only when the queue isn't empty, the failed-writes sentence
- * only when something has dead-lettered, and otherwise the plain "you'll need to sign
- * in again".
+ * Unless the initiating route cancels preparation, it confirms and composes the
+ * message from what is actually true for this device: the downloaded-boards sentence
+ * only when a catalog is really on disk, the unsynced-writes sentence only when the
+ * queue isn't empty, the failed-writes sentence only when something has dead-lettered,
+ * and otherwise the plain "you'll need to sign in again".
  *
  * Pending and dead-lettered writes are counted separately because they are lost in
  * different ways and the user can act on them differently. A pending write still gets
@@ -63,15 +63,26 @@ import { showSignOutFailure } from '../lib/sign-out-failure-alert';
  * already been read and skipped the probe behind it, so the dialog went quiet about
  * data the wipe was still about to delete.
  */
-async function probeOrNull<Result>(read: () => Promise<Result>): Promise<Result | null> {
+async function probeOrNull<Result>(read: () => Promise<Result>, signal?: AbortSignal): Promise<Result | null> {
+  if (signal?.aborted) return null;
+  let onAbort: (() => void) | undefined;
   try {
-    return await read();
+    if (!signal) return await read();
+    const aborted = new Promise<null>((resolve) => {
+      onAbort = () => resolve(null);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    // The read itself may not support cancellation. Racing releases the flow
+    // promptly while Promise.race still handles any late read rejection.
+    return await Promise.race([read(), aborted]);
   } catch {
     return null;
+  } finally {
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
   }
 }
 
-export function useConfirmSignOut(): () => Promise<void> {
+export function useConfirmSignOut(): (signal?: AbortSignal) => Promise<void> {
   const confirm = useConfirm();
   const { signOut } = useAuth();
   const { t } = useTranslation('common');
@@ -80,59 +91,69 @@ export function useConfirmSignOut(): () => Promise<void> {
   // without navigating away — leaves the button usable for a retry.
   const inFlightRef = useRef(false);
 
-  return useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    try {
-      if (getSchemaDowngrade() !== null) {
-        const leaving = await confirm({
+  return useCallback(
+    async (signal?: AbortSignal) => {
+      if (signal?.aborted || inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        if (getSchemaDowngrade() !== null) {
+          const leaving = await confirm({
+            title: t('mobile.settings.signOut.title'),
+            message: t('mobile.settings.signOut.downgradeMessage'),
+            confirmLabel: t('mobile.settings.signOut.downgradeConfirm'),
+            cancelLabel: t('mobile.settings.signOut.downgradeCancel'),
+            destructive: true,
+          });
+          if (!leaving) return;
+          await signOut('manual');
+          return;
+        }
+
+        // No handle means offline storage never initialised this session, so there is
+        // nothing local to lose. A read failure is not a reason to skip the warning —
+        // that probe falls back to "nothing to report" and the dialog still opens.
+        const localDb = getDatabaseHandle();
+        // One grouped read for both counts — the same gauge the sign-out drain gate
+        // and the outbox telemetry use, so the dialog can't disagree with them.
+        const outbox = localDb ? await probeOrNull(() => getOutboxSummary(localDb), signal) : null;
+        if (signal?.aborted) return;
+        // The honest signal for the boards sentence is whether a catalog is on disk
+        // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
+        // feature-flag rollback clears the list while the rows remain, and those
+        // users lose the most. See hasDownloadedBoardData.
+        const hasDownloads = localDb
+          ? ((await probeOrNull(() => hasDownloadedBoardData(localDb), signal)) ?? false)
+          : false;
+        if (signal?.aborted) return;
+        const pendingCount = outbox?.pendingCount ?? 0;
+        const deadLetterCount = outbox?.deadLetterCount ?? 0;
+
+        const message = [
+          hasDownloads ? t('mobile.settings.signOut.messageOffline') : t('mobile.settings.signOut.message'),
+          ...(pendingCount > 0 ? [t('mobile.settings.signOut.pendingMessage', { count: pendingCount })] : []),
+          ...(deadLetterCount > 0 ? [t('mobile.settings.signOut.failedMessage', { count: deadLetterCount })] : []),
+        ].join('\n\n');
+
+        // Closing Account cancels only preparation. Once the climber confirms,
+        // sign-out and its failure handling must finish even if the route closes.
+        if (signal?.aborted) return;
+        const confirmed = await confirm({
           title: t('mobile.settings.signOut.title'),
-          message: t('mobile.settings.signOut.downgradeMessage'),
-          confirmLabel: t('mobile.settings.signOut.downgradeConfirm'),
-          cancelLabel: t('mobile.settings.signOut.downgradeCancel'),
+          message,
+          confirmLabel: t('mobile.settings.signOut.confirm'),
+          cancelLabel: t('mobile.settings.signOut.cancel'),
           destructive: true,
         });
-        if (!leaving) return;
+        if (!confirmed) return;
+
         await signOut('manual');
-        return;
+      } catch (error) {
+        reportError(error);
+        showSignOutFailure(t('mobile.settings.signOut.failureTitle'), t('mobile.settings.signOut.failure'));
+      } finally {
+        inFlightRef.current = false;
       }
-
-      // No handle means offline storage never initialised this session, so there is
-      // nothing local to lose. A read failure is not a reason to skip the warning —
-      // that probe falls back to "nothing to report" and the dialog still opens.
-      const localDb = getDatabaseHandle();
-      // One grouped read for both counts — the same gauge the sign-out drain gate
-      // and the outbox telemetry use, so the dialog can't disagree with them.
-      const outbox = localDb ? await probeOrNull(() => getOutboxSummary(localDb)) : null;
-      // The honest signal for the boards sentence is whether a catalog is on disk
-      // (what the wipe deletes), NOT the syncEnabledBoards toggle list: a
-      // feature-flag rollback clears the list while the rows remain, and those
-      // users lose the most. See hasDownloadedBoardData.
-      const hasDownloads = localDb ? ((await probeOrNull(() => hasDownloadedBoardData(localDb))) ?? false) : false;
-      const pendingCount = outbox?.pendingCount ?? 0;
-      const deadLetterCount = outbox?.deadLetterCount ?? 0;
-
-      const message = [
-        hasDownloads ? t('mobile.settings.signOut.messageOffline') : t('mobile.settings.signOut.message'),
-        ...(pendingCount > 0 ? [t('mobile.settings.signOut.pendingMessage', { count: pendingCount })] : []),
-        ...(deadLetterCount > 0 ? [t('mobile.settings.signOut.failedMessage', { count: deadLetterCount })] : []),
-      ].join('\n\n');
-
-      const confirmed = await confirm({
-        title: t('mobile.settings.signOut.title'),
-        message,
-        confirmLabel: t('mobile.settings.signOut.confirm'),
-        cancelLabel: t('mobile.settings.signOut.cancel'),
-        destructive: true,
-      });
-      if (!confirmed) return;
-
-      await signOut('manual');
-    } catch (error) {
-      reportError(error);
-      showSignOutFailure(t('mobile.settings.signOut.failureTitle'), t('mobile.settings.signOut.failure'));
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, [confirm, signOut, t]);
+    },
+    [confirm, signOut, t],
+  );
 }

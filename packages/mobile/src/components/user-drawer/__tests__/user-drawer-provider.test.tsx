@@ -20,7 +20,38 @@ const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-const confirmSignOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const confirmSignOutMock = vi.hoisted(() => vi.fn(async (_signal?: AbortSignal) => {}));
+type RouteTransitionEvent = { data: { closing: boolean } };
+const navigationMocks = vi.hoisted(() => {
+  const focus = { current: true };
+  const indexListeners = new Map<string, Set<(event: RouteTransitionEvent) => void>>();
+  const accountListeners = new Map<string, Set<(event: RouteTransitionEvent) => void>>();
+  const subscribe = (
+    listeners: Map<string, Set<(event: RouteTransitionEvent) => void>>,
+    eventName: string,
+    listener: (event: RouteTransitionEvent) => void,
+  ) => {
+    const eventListeners = listeners.get(eventName) ?? new Set();
+    eventListeners.add(listener);
+    listeners.set(eventName, eventListeners);
+    return () => eventListeners.delete(listener);
+  };
+  const account = {
+    addListener: (eventName: string, listener: (event: RouteTransitionEvent) => void) =>
+      subscribe(accountListeners, eventName, listener),
+  };
+  return {
+    indexListeners,
+    accountListeners,
+    focus,
+    index: {
+      addListener: (eventName: string, listener: (event: RouteTransitionEvent) => void) =>
+        subscribe(indexListeners, eventName, listener),
+      getParent: () => account,
+      isFocused: () => focus.current,
+    },
+  };
+});
 // Mutable so a test can set the focused tab before openUserDrawer captures the
 // board returnTo (the capture happens at open time, while the tab is still focused).
 const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
@@ -82,11 +113,15 @@ vi.mock('react-native-reanimated', () => ({
   },
 }));
 
-vi.mock('../../HeaderActionButtons', () => ({ HeaderLeadingButton: () => null }));
+vi.mock('../../HeaderActionButtons', () => ({
+  HeaderLeadingButton: ({ onPress }: { onPress: () => void }) =>
+    createElement('button', { onClick: onPress, type: 'button' }, 'Close Account'),
+}));
 vi.mock('expo-router', () => ({
-  Stack: { Screen: () => null },
+  Stack: { Screen: ({ options }: { options?: { headerRight?: () => ReactNode } }) => options?.headerRight?.() ?? null },
   router: routerMock,
   useSegments: () => segmentsMock.current,
+  useNavigation: () => navigationMocks.index,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -287,6 +322,9 @@ function Harness({ showScreen }: { showScreen: boolean }) {
 }
 
 beforeEach(() => {
+  navigationMocks.focus.current = true;
+  navigationMocks.indexListeners.clear();
+  navigationMocks.accountListeners.clear();
   platform.OS = 'android';
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
@@ -669,6 +707,96 @@ describe('user-drawer crowdsourced-QA rows', () => {
 });
 
 describe('native Account navigation', () => {
+  it('aborts preparation before the Account close button pops its route', () => {
+    platform.OS = 'ios';
+    confirmSignOutMock.mockImplementationOnce(() => new Promise<void>(() => {}));
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Log out'));
+    const signal = confirmSignOutMock.mock.calls[0][0];
+    expect(signal?.aborted).toBe(false);
+    routerMock.back.mockImplementationOnce(() => expect(signal?.aborted).toBe(true));
+
+    fireEvent.click(screen.getByText('Close Account'));
+
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it.each(['unmount', 'blur'])('aborts preparation on Account %s', (boundary) => {
+    platform.OS = 'ios';
+    confirmSignOutMock.mockImplementationOnce(() => new Promise<void>(() => {}));
+    const { unmount } = render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Log out'));
+    const signal = confirmSignOutMock.mock.calls[0][0];
+
+    if (boundary === 'unmount') unmount();
+    else
+      act(() =>
+        navigationMocks.indexListeners.get('blur')?.forEach((listener) => listener({ data: { closing: true } })),
+      );
+
+    expect(signal?.aborted).toBe(true);
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+
+  it('cancels on the parent modal closing and preserves a fresh retry after gesture cancellation', async () => {
+    platform.OS = 'ios';
+    let finishOriginal = () => {};
+    confirmSignOutMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOriginal = resolve;
+        }),
+    );
+    confirmSignOutMock.mockImplementationOnce(() => new Promise<void>(() => {}));
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Log out'));
+    const originalSignal = confirmSignOutMock.mock.calls[0][0];
+    act(() =>
+      navigationMocks.indexListeners
+        .get('transitionStart')
+        ?.forEach((listener) => listener({ data: { closing: true } })),
+    );
+    expect(originalSignal?.aborted).toBe(false);
+
+    act(() =>
+      navigationMocks.accountListeners
+        .get('transitionStart')
+        ?.forEach((listener) => listener({ data: { closing: true } })),
+    );
+    expect(originalSignal?.aborted).toBe(true);
+    fireEvent.click(screen.getByText('Log out'));
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(1);
+
+    act(() =>
+      navigationMocks.accountListeners
+        .get('gestureCancel')
+        ?.forEach((listener) => listener({ data: { closing: false } })),
+    );
+    fireEvent.click(screen.getByText('Log out'));
+    const retrySignal = confirmSignOutMock.mock.calls[1][0];
+    expect(retrySignal).not.toBe(originalSignal);
+    expect(retrySignal?.aborted).toBe(false);
+    await act(async () => finishOriginal());
+
+    fireEvent.click(screen.getByText('Log out'));
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(2);
+    expect(retrySignal?.aborted).toBe(false);
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+
   it('confirms sign-out while iOS Account remains mounted and allows another attempt', async () => {
     platform.OS = 'ios';
     render(

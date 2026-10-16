@@ -32,7 +32,7 @@ type UserDrawerContextValue = {
   navigateToChangelog: () => void;
   navigateToAbout: () => void;
   openDiscord: () => void;
-  signOutAction: () => void;
+  signOutAction: (signal?: AbortSignal) => Promise<void>;
   setFeedbackMode: (mode: FeedbackSheetMode) => void;
   presentFeedback: () => void;
   /** Crowdsourced QA (tester-only): the list of PR previews this build can load. */
@@ -127,11 +127,10 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   // The drawer confirms after closing. iOS Account confirms while mounted so its
   // modal dismissal cannot race the native confirmation sheet (#6505). The shared
   // hook owns confirmation, double-tap protection and retry after cancel/failure.
+  // Account can cancel warning probes when it closes, before a dialog is shown.
   // This row used to call `signOut` straight through: one tap discarded the downloaded
   // boards and any unsynced writes with no warning at all (issue #3621).
-  const signOutAction = useCallback(() => {
-    void confirmSignOut();
-  }, [confirmSignOut]);
+  const signOutAction = useCallback((signal?: AbortSignal) => confirmSignOut(signal), [confirmSignOut]);
 
   const presentFeedback = useCallback(() => {
     setFeedbackVisible(true);

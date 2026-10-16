@@ -2,7 +2,7 @@ import { PressableSurface } from '../src/components/PressableSurface';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useNavigation, type NativeStackNavigationProp } from 'expo-router';
 import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +43,7 @@ const DRAWER_ANIMATION_MS = 220;
  */
 export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: 'drawer' | 'account' }) {
   const isAccount = presentation === 'account';
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, undefined>>>();
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
@@ -120,9 +121,40 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // so they do not start during the drawer's slide-out.
   const pendingAfterCloseRef = useRef<(() => void) | null>(null);
   const closingRef = useRef(false);
+  const signOutPreparationRef = useRef<AbortController | null>(null);
   // Guards popRoute against firing after this screen has unmounted (an interrupted
   // slide-out's completion callback could otherwise router.back() the wrong route).
   const mountedRef = useRef(true);
+  const cancelSignOutPreparation = useCallback(() => {
+    signOutPreparationRef.current?.abort();
+    signOutPreparationRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!isAccount || Platform.OS !== 'ios') return;
+    // Account's index is nested inside its own stack. Its parent navigation
+    // owns the native modal dismissal, including an interactive swipe.
+    const accountNavigation = navigation.getParent<NativeStackNavigationProp<Record<string, undefined>>>();
+    const unsubscribeBlur = navigation.addListener('blur', cancelSignOutPreparation);
+    const unsubscribeClosing = accountNavigation?.addListener('transitionStart', ({ data: { closing } }) => {
+      if (!closing) return;
+      closingRef.current = true;
+      cancelSignOutPreparation();
+    });
+    const unsubscribeGestureCancel = accountNavigation?.addListener('gestureCancel', () => {
+      closingRef.current = false;
+    });
+    const unsubscribeOpening = accountNavigation?.addListener('transitionEnd', ({ data: { closing } }) => {
+      if (!closing) closingRef.current = false;
+    });
+    return () => {
+      unsubscribeBlur();
+      unsubscribeClosing?.();
+      unsubscribeGestureCancel?.();
+      unsubscribeOpening?.();
+      cancelSignOutPreparation();
+    };
+  }, [cancelSignOutPreparation, isAccount, navigation]);
 
   // Slide in on mount.
   useEffect(() => {
@@ -137,15 +169,16 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // presentation transactions (#3211). React unmount does not guarantee native
   // dismissal has completed: iOS Account sign-out confirms while Account stays
   // mounted instead of relying on this frame to finish its modal dismissal.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
+      cancelSignOutPreparation();
       const after = pendingAfterCloseRef.current;
       pendingAfterCloseRef.current = null;
       if (after) requestAnimationFrame(after);
-    },
-    [],
-  );
+    };
+  }, [cancelSignOutPreparation]);
 
   const popRoute = useCallback(() => {
     if (!mountedRef.current) return;
@@ -158,6 +191,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
       closingRef.current = true;
       if (after) pendingAfterCloseRef.current = after;
       if (isAccount) {
+        cancelSignOutPreparation();
         popRoute();
         return;
       }
@@ -177,7 +211,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
         },
       );
     },
-    [drawerProgress, popRoute, isAccount],
+    [cancelSignOutPreparation, drawerProgress, popRoute, isAccount],
   );
 
   const backdropStyle = useAnimatedStyle(() => ({
@@ -205,7 +239,12 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
       // Present from the stable Account sheet. Dismissing it first can race the
       // native confirmation sheet (#6505). Cancel/failure keeps this row usable;
       // successful sign-out redirects through AuthProvider.
-      signOutAction();
+      if (!mountedRef.current || closingRef.current || !navigation.isFocused() || signOutPreparationRef.current) return;
+      const controller = new AbortController();
+      signOutPreparationRef.current = controller;
+      void signOutAction(controller.signal).finally(() => {
+        if (signOutPreparationRef.current === controller) signOutPreparationRef.current = null;
+      });
       return;
     }
     close(() => signOutAction());
