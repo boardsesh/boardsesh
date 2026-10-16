@@ -639,6 +639,7 @@ describe('LogAscentSheet common controls at the opening detent (#6503)', () => {
   it('normalizes keyboard footer padding and rejects expanded-note measurements', () => {
     const { getByTestId, container } = renderSheet();
     reportCompactMeasurements(56, 116, 230);
+    expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
     act(() =>
       keyboardListeners.get('keyboardWillChangeFrame')?.({
         endCoordinates: { height: 336, screenY: 508, width: 390 },
