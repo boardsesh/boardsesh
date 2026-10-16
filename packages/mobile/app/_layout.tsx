@@ -120,6 +120,7 @@ import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOn
 import { ClimbsTabReturnTip } from '../src/components/onboarding/ClimbsTabReturnTip';
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
+import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { EarlyUpdatesLaunchSync } from '../src/components/qa/EarlyUpdatesLaunchSync';
@@ -1039,6 +1040,7 @@ function RootLayout() {
                                                             it. Waits on the launch-ready context like
                                                             OnboardingGate, so it never paints over the splash. */}
                                                                         <ConnectivityBanner />
+                                                                        <OfflineDownloadPill />
                                                                         <OnboardingGate />
                                                                         <PrivacySyncBridge />
                                                                         {/* The connect-step test's (#5654) always-mounted half:

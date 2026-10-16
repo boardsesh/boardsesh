@@ -23,7 +23,7 @@ import { useSyncExternalStore } from 'react';
  * so consumers add it raw.
  */
 
-let bannerHeight = 0;
+const heights = { connectivity: 0, download: 0 };
 const listeners = new Set<() => void>();
 
 // Sub-half-pixel jitter is layout noise, not a geometry change; re-notifying the
@@ -45,14 +45,21 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): number {
-  return bannerHeight;
+  return heights.connectivity + heights.download;
 }
 
 /** Publish the measured banner height, or 0 once it is off screen. */
-export function publishConnectivityBannerHeight(height: number): void {
-  if (Math.abs(bannerHeight - height) < PUBLISH_EPSILON) return;
-  bannerHeight = height;
+export function publishBottomOverlayHeight(key: keyof typeof heights, height: number): void {
+  if (Math.abs(heights[key] - height) < PUBLISH_EPSILON) return;
+  heights[key] = height;
   notify();
+}
+export function publishConnectivityBannerHeight(height: number): void {
+  publishBottomOverlayHeight('connectivity', height);
+}
+/** Offset the download pill above the connectivity card without counting itself. */
+export function useConnectivityCardHeight(): number {
+  return useSyncExternalStore(subscribe, () => heights.connectivity);
 }
 
 /** The banner's current height; 0 whenever no banner is showing. */
@@ -61,6 +68,7 @@ export function useConnectivityBannerHeight(): number {
 }
 
 export function __resetConnectivityBannerHeightForTests(): void {
-  bannerHeight = 0;
+  heights.connectivity = 0;
+  heights.download = 0;
   notify();
 }

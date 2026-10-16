@@ -2,6 +2,7 @@ import type { OfflineDatabase, QueryInvalidator } from '../database';
 import {
   pullSync,
   type SyncProgress,
+  type SyncOptions,
   type SchemaDriftReporter,
   type BootstrapMetadataChangedReporter,
   type ScopeDownloadCompleteReporter,
@@ -54,6 +55,7 @@ export type SchedulerTriggers = {
 };
 
 export type SchedulerOptions = {
+  getPriorityBoards?: SyncOptions['getPriorityBoards'];
   onProgress?: SyncProgressSink;
   /**
    * Threaded through to pullSync's SyncOptions. Omitted → pullSync assumes
@@ -174,6 +176,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
     await drainQueue();
     await pullSync(db, queryClient, graphqlFetch, {
       enabledBoards: getEnabledBoards(),
+      getPriorityBoards: options?.getPriorityBoards,
       isOnline: options?.isOnline,
       onProgress: options?.onProgress,
       onSchemaDrift: options?.onSchemaDrift,

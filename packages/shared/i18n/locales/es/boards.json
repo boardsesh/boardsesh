@@ -366,6 +366,17 @@
       "bootstrapDownloading": "Descargando {{done}} de {{total}}",
       "bootstrapDownloadingUnknown": "Descargando {{total}}…",
       "bootstrapImporting": "Descomprimiendo los bloques…",
+      "bootstrapGrades": "Cargando grados…",
+      "screenAwakeHint": "La pantalla permanece encendida durante la descarga.",
+      "pill": {
+        "board": "Plafón",
+        "done": "Disponible sin conexión",
+        "waiting": "Esperando para descargar…",
+        "failed": "La descarga no terminó",
+        "percent": "{{percent}} %",
+        "more": "+{{count}} más",
+        "open": "Abre Mis plafones para {{name}}"
+      },
       "snapshotRetrying": "Descarga rápida interrumpida: se reintentará en la próxima sincronización",
       "snapshotRetryingAria": "La descarga rápida sin conexión de {{name}} se ha interrumpido. Se reintentará en la próxima sincronización.",
       "pagedFallbackPending": "Descarga rápida no disponible: descarga lenta pendiente",

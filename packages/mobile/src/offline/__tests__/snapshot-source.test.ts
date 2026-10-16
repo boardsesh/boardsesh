@@ -1351,6 +1351,100 @@ describe('downloadGradesArtifact', () => {
     expect(state.downloadCalls).toHaveLength(0);
   });
 
+  it('forwards grades cancellation and byte progress to the downloader', async () => {
+    const controller = new AbortController();
+    const onProgress = vi.fn();
+    state.downloadProgressFrames = [{ bytesWritten: 100, totalBytes: 200 }];
+    await mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT, {
+      signal: controller.signal,
+      onProgress,
+    });
+    expect(state.downloadCalls[0]).toMatchObject({ hasSignal: true, hasOnProgress: true });
+    expect(onProgress).toHaveBeenCalledWith({ bytesWritten: 100, totalBytes: 200 });
+  });
+
+  it('cancels the grades transfer through the forwarded abort signal', async () => {
+    const controller = new AbortController();
+    state.downloadProgressFrames = [{ bytesWritten: 100, totalBytes: 200 }];
+
+    await expect(
+      mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT, {
+        signal: controller.signal,
+        onProgress: () => controller.abort(),
+      }),
+    ).rejects.toThrow(/download cancelled/);
+
+    expect(state.files.size).toBe(0);
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ artifact: 'grades', outcome: 'aborted' }),
+    );
+  });
+
+  it('finishes a valid grades transfer when its progress callback throws', async () => {
+    state.downloadProgressFrames = [{ bytesWritten: 100, totalBytes: -1 }];
+    const onProgress = vi.fn(() => {
+      throw new Error('progress sink failed');
+    });
+
+    await expect(
+      mobileSnapshotSource.downloadGradesArtifact?.(GRADES_ARTIFACT, { onProgress }),
+    ).resolves.not.toBeNull();
+
+    expect(onProgress).toHaveBeenCalledWith({ bytesWritten: 100, totalBytes: null });
+    expect(reportArtifactTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ artifact: 'grades', outcome: 'completed' }),
+    );
+  });
+
+  describe.each([
+    {
+      label: 'both decoded sizes share one reserve',
+      entry: {
+        ...ENTRY,
+        uncompressedBytes: 3_000_000,
+        grades: { ...GRADES_ARTIFACT, uncompressedBytes: 5_000_000 },
+      },
+      requiredBytes: ENTRY.bytes + 3_000_000 + GRADES_ARTIFACT.bytes + 5_000_000 + 32 * 1024 * 1024,
+    },
+    {
+      label: 'legacy gzip artifacts keep both conservative estimates',
+      entry: { ...ENTRY, grades: GRADES_ARTIFACT },
+      requiredBytes: ENTRY.bytes * 6 + GRADES_ARTIFACT.bytes * 6,
+    },
+    {
+      label: 'legacy identity artifacts keep both conservative estimates',
+      entry: {
+        ...ENTRY,
+        contentEncoding: 'identity' as const,
+        grades: { ...GRADES_ARTIFACT, contentEncoding: 'identity' as const },
+      },
+      requiredBytes: ENTRY.bytes * 2 + GRADES_ARTIFACT.bytes * 2,
+    },
+    {
+      label: 'legacy grades keep their estimate beside an exact layout',
+      entry: { ...ENTRY, uncompressedBytes: 3_000_000, grades: GRADES_ARTIFACT },
+      requiredBytes: ENTRY.bytes + 3_000_000 + GRADES_ARTIFACT.bytes * 6 + 32 * 1024 * 1024,
+    },
+    {
+      label: 'a legacy layout keeps its estimate beside exact grades',
+      entry: { ...ENTRY, grades: { ...GRADES_ARTIFACT, uncompressedBytes: 5_000_000 } },
+      requiredBytes: ENTRY.bytes * 6 + GRADES_ARTIFACT.bytes + 5_000_000 + 32 * 1024 * 1024,
+    },
+  ])('combined space reservation: $label', ({ entry, requiredBytes }) => {
+    it.each([-1, 0, 1])('checks the combined requirement at offset %i bytes', async (offset) => {
+      state.availableDiskSpace = requiredBytes + offset;
+      state.downloadedFileSize = entry.uncompressedBytes ?? (entry.contentEncoding === 'identity' ? entry.bytes : null);
+
+      if (offset < 0) {
+        await expect(mobileSnapshotSource.downloadArtifact(entry)).rejects.toThrow(/insufficient disk space/);
+        expect(state.downloadCalls).toHaveLength(0);
+      } else {
+        await expect(mobileSnapshotSource.downloadArtifact(entry)).resolves.not.toBeNull();
+        expect(state.downloadCalls).toHaveLength(1);
+      }
+    });
+  });
+
   it('permanently misses (and deletes) a body that arrived still gzip-compressed', async () => {
     state.downloadBytes = GZIP_BYTES;
 
@@ -1380,6 +1474,21 @@ describe('downloadGradesArtifact', () => {
   describe('the exact decoded-size gate', () => {
     const DECODED_BYTES = 5_000_000;
     const SHAPE_2_GRADES = { ...GRADES_ARTIFACT, uncompressedBytes: DECODED_BYTES };
+
+    it.each([-1, 0, 1])('checks standalone grades plus one reserve at offset %i bytes', async (offset) => {
+      state.availableDiskSpace = GRADES_ARTIFACT.bytes + DECODED_BYTES + 32 * 1024 * 1024 + offset;
+      state.downloadedFileSize = DECODED_BYTES;
+
+      if (offset < 0) {
+        await expect(mobileSnapshotSource.downloadGradesArtifact?.(SHAPE_2_GRADES)).rejects.toThrow(
+          /insufficient disk space/,
+        );
+        expect(state.downloadCalls).toHaveLength(0);
+      } else {
+        await expect(mobileSnapshotSource.downloadGradesArtifact?.(SHAPE_2_GRADES)).resolves.not.toBeNull();
+        expect(state.downloadCalls).toHaveLength(1);
+      }
+    });
 
     it('accepts a grades file whose size is exactly the block’s uncompressedBytes', async () => {
       state.downloadedFileSize = DECODED_BYTES;

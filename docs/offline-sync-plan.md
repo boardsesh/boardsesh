@@ -1751,3 +1751,35 @@ impression than not nudging at all.
 `offlineNudgeStateV1` must be added to the logout wipe. A stale key across
 accounts on a shared device silently suppresses every nudge for the next user.
 `__resetNudgeStateCacheForTests` in `nudge-storage.ts` is the in-memory half.
+### Download activity on mobile
+
+The pull client emits `SyncProgress.download` for the whole scope: preparation,
+wire download, unpacking, grade import and the final catch-up. Mobile retains
+each scope's greatest percentage across interrupted cycles. Unknown totals stay
+indeterminate; page counts can still advance without a percentage.
+
+`download-activity-store` narrows engine frames to phase, rounded percentage,
+row counts, queue counts and lifecycle changes. My Boards reads that store and
+revision-only sync metadata; other rows stay memoized while one board advances.
+A root `OfflineDownloadPill` opens My Boards and reports queued scopes. The next
+waiting board appears immediately when the displayed board completes or is
+removed; the last completion remains visible for three seconds. It hides on board/play routes, during managed
+sheets (including dismissal), and in screenshot mode. Connectivity and download
+overlays publish independent measured heights so content and toasts clear both.
+
+A requested scope queued behind automatic work can hold the screen awake under
+the existing foreground, stale-progress and ten-minute limits. Automatic work
+alone does not acquire that lock. The row's hint appears only while the lock is
+active for a requested download. Indicator taps emit
+`Offline Download Indicator Tapped` with the scope and phase.
+
+Progress frames include the pending scope keys, so automatic work and new taps
+are counted once and removals update the queue immediately. The activity store
+preserves request order before the first engine frame, filters disabled scopes,
+and fences old-account callbacks after a reset. Re-enabling an already-complete
+cached board settles its indicator through the existing completion-marker check,
+without requiring another download-completed event.
+
+These progress and transfer changes use the existing single-cursor sync and
+snapshot compatibility rules. They introduce no privacy-event subscription or
+catalogue revalidation path.

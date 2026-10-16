@@ -1,7 +1,12 @@
+import {
+  getPendingUserStartedDownloads,
+  isDownloadKeepAwakeActive,
+  subscribeDownloadKeepAwake,
+} from '../../src/offline/download-keep-awake-store';
 import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
 import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
 import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
@@ -18,7 +23,8 @@ import {
   useOfflineDownloadsEnabled,
 } from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useSyncStatus } from '../../src/sync';
+import { getSyncStatusSnapshot, useSyncStatusMetadata } from '../../src/sync/sync-status';
+import { useDownloadActivity } from '../../src/sync/download-activity-store';
 import {
   getCheckpoint,
   getCheckpointKey,
@@ -168,12 +174,9 @@ export default function ManageBoards() {
   snapshotManifestRef.current = snapshotManifest;
   // Not `useSQLiteContext()` directly: see src/db/use-offline-database.
   const db = useOfflineDatabase();
-  const syncStatus = useSyncStatus();
-  // Mirrored for the toggle-off handler, which only reads it at tap time: keeping
-  // the live status out of that callback's deps means a progress frame can't churn
-  // its identity and re-render every memoised row.
-  const syncStatusRef = useRef(syncStatus);
-  syncStatusRef.current = syncStatus;
+  const syncStatus = useSyncStatusMetadata();
+  const downloadActivity = useDownloadActivity();
+  const keepsScreenAwake = useSyncExternalStore(subscribeDownloadKeepAwake, isDownloadKeepAwakeActive, () => false);
   // This must be the same source the sync bridge uses. A build without the
   // snapshot base URL safely gets the ordinary paged downloader.
   const snapshotSource = useSnapshotSource();
@@ -196,15 +199,31 @@ export default function ManageBoards() {
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const enabledSet = useMemo(() => new Set(enabledBoards), [enabledBoards]);
   const isSyncing = syncStatus.isSyncing;
-  const currentTable = syncStatus.progress?.currentTable ?? null;
-  const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
-  const currentPhase = syncStatus.progress?.phase ?? null;
-  // The live snapshot download frame, whichever scope it names (issue #4311).
-  // Read once here and matched per row below, so a row that is NOT the one
-  // downloading gets a stable `null` prop and its memo holds.
-  const snapshotFrame = syncStatus.progress?.snapshot;
+  const downloadFrame = downloadActivity?.status === 'active' ? downloadActivity.progress : undefined;
+  const isPagedFrame =
+    downloadFrame?.phase === 'downloading' &&
+    downloadFrame.wireBytes === null &&
+    downloadFrame.rowsProcessed !== undefined;
+  const currentTable =
+    downloadFrame?.phase === 'finishing'
+      ? null
+      : downloadFrame
+        ? isPagedFrame
+          ? `board_climbs:${downloadFrame.scopeKey}`
+          : downloadFrame.scopeKey
+        : null;
+  const currentTableProcessed = downloadFrame?.rowsProcessed;
+  const currentPhase =
+    downloadFrame?.phase === 'finishing'
+      ? ('user_data' as const)
+      : downloadFrame
+        ? isPagedFrame
+          ? ('board_data' as const)
+          : ('bootstrap' as const)
+        : syncStatus.phase;
   // Compatibility seam retained while the row API still accepts a boolean;
   // native snapshot progress is permanently enabled.
+  const pendingUserStarted = useMemo(() => new Set(getPendingUserStartedDownloads()), [downloadActivity]);
   const downloadProgressEnabled = useOfflineDownloadProgressEnabled();
 
   // Per-scope "downloaded" signal: which scopes actually have a board_climbs
@@ -271,17 +290,14 @@ export default function ManageBoards() {
       const key = offlineBoardKeyForBoard(board);
       const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
       if (alreadyEnabled) {
-        // How far had it got? Read BEFORE the setting write, so the cancel event
-        // below carries the live progress frame (issue #4316). It needs a
-        // snapshot frame naming this exact scope, so it is silent for a paged
-        // crawl — the funnel terminal further down is the signal that always
-        // fires, this is the extra detail when we happen to have it.
+        // Read the live frame before disabling; telemetry keeps the last visible progress.
         const liveProgress = boardDownloadProgress({
           scopeKey: key,
-          isSyncing: syncStatusRef.current.isSyncing,
-          currentTable: syncStatusRef.current.progress?.currentTable ?? null,
-          phase: syncStatusRef.current.progress?.phase ?? null,
-          snapshot: syncStatusRef.current.progress?.snapshot,
+          isSyncing: getSyncStatusSnapshot().isSyncing,
+          currentTable: getSyncStatusSnapshot().progress?.currentTable ?? null,
+          phase: getSyncStatusSnapshot().progress?.phase ?? null,
+          download: getSyncStatusSnapshot().progress?.download,
+          snapshot: getSyncStatusSnapshot().progress?.snapshot,
           // The progress hook is permanently true on native. Keeping the value
           // explicit here makes the cancellation telemetry contract obvious.
           progressEnabled: downloadProgressEnabled,
@@ -583,6 +599,7 @@ export default function ManageBoards() {
         downloaded: isDownloaded,
         currentTable,
         phase: currentPhase,
+        download: downloadFrame,
       };
       const downloadState = offlineDownloadsEnabled ? boardDownloadState(downloadStateInput) : undefined;
       const isBootstrapping = downloadState === 'downloading' && boardIsBootstrapping(downloadStateInput);
@@ -607,16 +624,17 @@ export default function ManageBoards() {
       // flag; every other row gets undefined/false (stable props), so its
       // memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
-      const downloadProgress = isBootstrapping
-        ? boardDownloadProgress({
-            scopeKey,
-            isSyncing,
-            currentTable,
-            phase: currentPhase,
-            snapshot: snapshotFrame,
-            progressEnabled: downloadProgressEnabled,
-          })
-        : null;
+      const downloadProgress =
+        downloadState === 'downloading' || downloadState === 'finalizing'
+          ? boardDownloadProgress({
+              scopeKey,
+              isSyncing,
+              currentTable,
+              phase: currentPhase,
+              download: downloadFrame,
+              progressEnabled: downloadProgressEnabled,
+            })
+          : null;
       // Offered only where it can actually help: a board that has settled onto
       // the crawl and has not yet finished it. A completed scope already holds
       // the whole catalog, so an artifact buys it nothing.
@@ -638,6 +656,11 @@ export default function ManageBoards() {
           downloadCount={downloadCount}
           isBootstrapping={isBootstrapping}
           downloadProgress={downloadProgress}
+          keepsScreenAwake={
+            keepsScreenAwake &&
+            pendingUserStarted.has(scopeKey) &&
+            (downloadState === 'downloading' || downloadState === 'finalizing')
+          }
           downloadNotice={downloadNotice}
           canRetryFastDownload={canRetryFastDownload}
           onRetryFastDownload={handleRetryFastDownload}
@@ -656,7 +679,9 @@ export default function ManageBoards() {
       currentTable,
       currentTableProcessed,
       currentPhase,
-      snapshotFrame,
+      downloadFrame,
+      pendingUserStarted,
+      keepsScreenAwake,
       downloadProgressEnabled,
       bootstrapMetadataByScope,
       snapshotSourceAvailable,

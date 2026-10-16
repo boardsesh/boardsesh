@@ -9,6 +9,12 @@
 // pure functions in `download-keep-awake.ts`.
 
 import { AppState, type AppStateStatus, type NativeEventSubscription } from 'react-native';
+import {
+  completeDownloadActivity,
+  forgetDownloadActivity,
+  queueDownloadActivity,
+  setDownloadActivityEnabledScopes,
+} from '../sync/download-activity-store';
 import type { SyncProgress } from '@boardsesh/offline-sync';
 import {
   forgetUserStartedDownload,
@@ -48,6 +54,8 @@ export type DownloadTelemetry = {
 // The settings value is the truth; this is its in-memory copy, narrowed to the
 // boards still in `syncEnabledBoards`. Null until the first read.
 let userStartedScopeKeys: Set<string> | null = null;
+let enabledScopeKeysSnapshot: Set<string> | null = null;
+const waitingScopeKeys = new Set<string>();
 let unsubscribeSettings: (() => void) | null = null;
 let isPruningDelisted = false;
 
@@ -90,8 +98,11 @@ function telemetryFor(scopeKey: string): DownloadTelemetry {
  * rule covers all three without each call site having to remember the
  * keep-awake.
  */
-function readUserStarted(): { pending: Set<string>; delisted: string[] } {
+function readUserStarted(): { pending: Set<string>; delisted: string[]; removed: string[] } {
   const enabledScopeKeys = new Set(getSetting('syncEnabledBoards'));
+  setDownloadActivityEnabledScopes([...enabledScopeKeys]);
+  const removed = [...(enabledScopeKeysSnapshot ?? [])].filter((scopeKey) => !enabledScopeKeys.has(scopeKey));
+  enabledScopeKeysSnapshot = enabledScopeKeys;
   const pending = new Set<string>();
   const delisted: string[] = [];
   // Forgetting a board writes a setting, which calls straight back into the
@@ -109,7 +120,7 @@ function readUserStarted(): { pending: Set<string>; delisted: string[] } {
   } finally {
     isPruningDelisted = false;
   }
-  return { pending, delisted };
+  return { pending, delisted, removed };
 }
 
 /**
@@ -139,12 +150,16 @@ function quietly(work: () => void): void {
 function handleSettingsChange(): void {
   if (isPruningDelisted) return;
   quietly(() => {
-    const { pending, delisted } = readUserStarted();
+    const { pending, delisted, removed } = readUserStarted();
     userStartedScopeKeys = pending;
     if (tracking.scopeKey !== null && !pending.has(tracking.scopeKey)) tracking = IDLE_KEEP_AWAKE_TRACKING;
     evaluate();
     // After the evaluation: closing a hold that was still open charges it.
-    for (const scopeKey of delisted) forgetDownloadState(scopeKey);
+    for (const scopeKey of new Set([...delisted, ...removed])) {
+      waitingScopeKeys.delete(scopeKey);
+      forgetDownloadState(scopeKey);
+      forgetDownloadActivity(scopeKey);
+    }
   });
 }
 
@@ -153,6 +168,10 @@ function userStarted(): Set<string> {
   unsubscribeSettings = subscribeSettings(handleSettingsChange);
   const { pending } = readUserStarted();
   userStartedScopeKeys = pending;
+  for (const scopeKey of pending) {
+    waitingScopeKeys.add(scopeKey);
+    queueDownloadActivity(scopeKey);
+  }
   return pending;
 }
 
@@ -167,6 +186,17 @@ export function markUserStartedDownload(scopeKey: string): void {
   heldMsByScope.delete(scopeKey);
   if (currentHold?.scopeKey === scopeKey) currentHold.startedAt = Date.now();
   rememberUserStartedDownload(scopeKey);
+  waitingScopeKeys.add(scopeKey);
+  queueDownloadActivity(scopeKey);
+  if (heartbeatTimer !== null && tracking.scopeKey === null) {
+    tracking = trackDownloadProgress(
+      tracking,
+      { kind: 'scope', scopeKey },
+      (requestedScope) => userStarted().has(requestedScope),
+      Date.now(),
+    );
+    evaluate();
+  }
 }
 
 /**
@@ -175,8 +205,10 @@ export function markUserStartedDownload(scopeKey: string): void {
  */
 export function clearUserStartedDownload(scopeKey: string): void {
   userStarted();
+  completeDownloadActivity(scopeKey);
   // The settings write runs the listener, which closes any hold still open.
   forgetUserStartedDownload(scopeKey);
+  waitingScopeKeys.delete(scopeKey);
   forgetDownloadState(scopeKey);
 }
 
@@ -299,7 +331,16 @@ export function noteDownloadProgress(progress: SyncProgress): DownloadProgressSu
     startHeartbeat(now);
     cycleScopeKey = subject.kind === 'scope' ? subject.scopeKey : null;
   }
-  tracking = trackDownloadProgress(tracking, subject, (scopeKey) => userStarted().has(scopeKey), now);
+  userStarted();
+  if (subject.kind === 'scope') waitingScopeKeys.delete(subject.scopeKey);
+  const queuedRequestedScope = [...waitingScopeKeys].find((scopeKey) => userStarted().has(scopeKey));
+  const holdSubject =
+    subject.kind !== 'idle' &&
+    queuedRequestedScope &&
+    (subject.kind !== 'scope' || !userStarted().has(subject.scopeKey))
+      ? { kind: 'scope' as const, scopeKey: queuedRequestedScope }
+      : subject;
+  tracking = trackDownloadProgress(tracking, holdSubject, (scopeKey) => userStarted().has(scopeKey), now);
   evaluate(now);
   return subject.kind;
 }
@@ -327,6 +368,7 @@ function handleAppStateChange(nextState: AppStateStatus): void {
 
 /** Subscribe to the one boolean. The listener runs only when it flips. */
 export function subscribeDownloadKeepAwake(listener: () => void): () => void {
+  userStarted(); // Also observe removal of automatic downloads before any requested frame.
   listeners.add(listener);
   if (appStateSubscription === null) {
     isForeground = AppState.currentState !== 'background';
@@ -357,6 +399,8 @@ export function __resetDownloadKeepAwakeForTests(): void {
   appStateSubscription?.remove();
   appStateSubscription = null;
   userStartedScopeKeys = null;
+  enabledScopeKeysSnapshot = null;
+  waitingScopeKeys.clear();
   isPruningDelisted = false;
   tracking = IDLE_KEEP_AWAKE_TRACKING;
   isKeepAwakeActive = false;

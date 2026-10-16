@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SyncProgress } from '@boardsesh/offline-sync';
+import { getDownloadActivity, noteDownloadActivity, resetDownloadActivity } from '../../sync/download-activity-store';
 
 const mockSettingsStorage = new Map<string, string>();
 vi.mock('react-native-mmkv', () => {
@@ -100,6 +101,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-11T12:00:00.000Z'));
   __resetDownloadKeepAwakeForTests();
+  resetDownloadActivity();
   resetAllSettings();
   appState.currentState = 'active';
   appState.listeners.clear();
@@ -107,6 +109,7 @@ beforeEach(() => {
 
 afterEach(() => {
   __resetDownloadKeepAwakeForTests();
+  resetDownloadActivity();
   vi.useRealTimers();
 });
 
@@ -682,4 +685,79 @@ describe('noteDownloadProgress', () => {
     expect(noteDownloadProgress(SHARED_FRAME)).toBe('shared');
     expect(noteDownloadProgress(IDLE_FRAME)).toBe('idle');
   });
+});
+
+describe('queued user downloads', () => {
+  it('keeps a requested download awake while an automatic board runs first', () => {
+    startDownloads(TENSION);
+    mountConsumer();
+    noteDownloadProgress({
+      phase: 'bootstrap',
+      currentTable: KILTER,
+      documentsProcessed: 0,
+      download: {
+        scopeKey: KILTER,
+        phase: 'downloading',
+        fraction: 0.1,
+        wireBytes: null,
+        wireBytesDone: null,
+        queuedScopes: 1,
+      },
+    });
+    expect(isDownloadKeepAwakeActive()).toBe(true);
+    noteDownloadProgress(IDLE_FRAME);
+    expect(isDownloadKeepAwakeActive()).toBe(false);
+  });
+  it('does not hold automatic queued downloads awake', () => {
+    mountConsumer();
+    noteDownloadProgress({
+      phase: 'bootstrap',
+      currentTable: KILTER,
+      documentsProcessed: 0,
+      download: {
+        scopeKey: KILTER,
+        phase: 'downloading',
+        fraction: 0.1,
+        wireBytes: null,
+        wireBytesDone: null,
+        queuedScopes: 1,
+      },
+    });
+    expect(isDownloadKeepAwakeActive()).toBe(false);
+  });
+});
+
+it('clears the indicator when an automatic scope is disabled', () => {
+  setSetting('syncEnabledBoards', [KILTER]);
+  mountConsumer();
+  noteDownloadActivity({
+    phase: 'bootstrap',
+    currentTable: KILTER,
+    documentsProcessed: 0,
+    download: {
+      scopeKey: KILTER,
+      phase: 'downloading',
+      fraction: 0.1,
+      wireBytes: null,
+      wireBytesDone: null,
+      queuedScopes: 0,
+    },
+  });
+  expect(getDownloadActivity()).not.toBeNull();
+  setSetting('syncEnabledBoards', []);
+  expect(getDownloadActivity()).toBeNull();
+});
+
+it('takes the lock immediately for a mid-cycle tap behind automatic work', () => {
+  setSetting('syncEnabledBoards', [KILTER]);
+  mountConsumer();
+  noteDownloadProgress(bootstrapFrame(KILTER));
+  expect(isDownloadKeepAwakeActive()).toBe(false);
+  setSetting('syncEnabledBoards', [KILTER, TENSION]);
+  markUserStartedDownload(TENSION);
+  expect(isDownloadKeepAwakeActive()).toBe(true);
+  noteDownloadProgress(bootstrapFrame(KILTER));
+  expect(isDownloadKeepAwakeActive()).toBe(true);
+  noteDownloadProgress(IDLE_FRAME);
+  expect(isDownloadKeepAwakeActive()).toBe(false);
 });

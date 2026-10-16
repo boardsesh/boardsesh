@@ -64,6 +64,7 @@ export type DownloadProgressSubject = { kind: 'scope'; scopeKey: string } | { ki
  */
 export function downloadProgressSubject(progress: SyncProgress): DownloadProgressSubject {
   if (progress.phase === 'idle') return { kind: 'idle' };
+  if (progress.download) return { kind: 'scope', scopeKey: progress.download.scopeKey };
   if (progress.snapshot) return { kind: 'scope', scopeKey: progress.snapshot.scopeKey };
   if (progress.currentTable === null) return { kind: 'shared' };
   if (progress.phase === 'bootstrap') return { kind: 'scope', scopeKey: progress.currentTable };

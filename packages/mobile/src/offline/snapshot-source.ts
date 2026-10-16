@@ -88,7 +88,7 @@ const RETENTION_FREE_SPACE_FLOOR_BYTES = 1.5 * 1024 * 1024 * 1024;
 // ~618 MB free to download a file that needs ~374 MB, so a storage-tight phone
 // is refused a download it could have completed. They are now only the fallback
 // for manifest entries built before `uncompressedBytes` shipped (issue #4311) —
-// with that field the requirement is computed exactly in `requiredFreeBytes`.
+// with that field the requirement is computed exactly in `requiredArtifactFreeBytes`.
 const IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER = 2;
 const GZIP_FREE_SPACE_SAFETY_MULTIPLIER = 6;
 
@@ -97,23 +97,27 @@ const GZIP_FREE_SPACE_SAFETY_MULTIPLIER = 6;
 const EXACT_FREE_SPACE_SLACK_BYTES = 32 * 1024 * 1024;
 
 /**
- * Free disk space this download needs. Exact when the manifest carries the
- * decoded artifact size — the compressed body and the decompressed SQLite file
- * can both be on disk at once, so it is the sum plus slack — and a coarse
- * multiplier otherwise.
+ * Free disk space for artifacts that can coexist during bootstrap. Exact when
+ * the manifest carries decoded sizes: wire + decoded bytes per artifact, with
+ * one shared reserve for filesystem rounding and SQLite side files. Older
+ * artifacts keep the conservative multiplier, including its implicit headroom.
  */
-/** The coarse multiplier, for artifacts the manifest gives no decoded size for. */
-function gradesFreeSpaceMultiplier(contentEncoding: 'gzip' | 'identity'): number {
-  return contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
-}
-
-function requiredFreeBytes(entry: SnapshotManifestEntry): number {
-  if (typeof entry.uncompressedBytes === 'number' && entry.uncompressedBytes > 0) {
-    return entry.uncompressedBytes + entry.bytes + EXACT_FREE_SPACE_SLACK_BYTES;
+function requiredArtifactFreeBytes(
+  artifacts: ReadonlyArray<Pick<SnapshotGradesArtifact, 'bytes' | 'uncompressedBytes' | 'contentEncoding'>>,
+): number {
+  let artifactBytes = 0;
+  let needsExactSizeReserve = false;
+  for (const artifact of artifacts) {
+    if (typeof artifact.uncompressedBytes === 'number' && artifact.uncompressedBytes > 0) {
+      artifactBytes += artifact.uncompressedBytes + artifact.bytes;
+      needsExactSizeReserve = true;
+    } else {
+      const multiplier =
+        artifact.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
+      artifactBytes += artifact.bytes * multiplier;
+    }
   }
-  const multiplier =
-    entry.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
-  return entry.bytes * multiplier;
+  return artifactBytes + (needsExactSizeReserve ? EXACT_FREE_SPACE_SLACK_BYTES : 0);
 }
 
 const GZIP_MAGIC_BYTE_0 = 0x1f;
@@ -605,7 +609,11 @@ async function downloadSnapshotFile(
                 // Android reports -1 for a gzip body (OkHttp gunzips transparently,
                 // so Content-Length is meaningless); the engine expects null for
                 // "no usable total" and resolves the denominator itself.
-                options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
+                try {
+                  options.onProgress?.({ bytesWritten, totalBytes: totalBytes > 0 ? totalBytes : null });
+                } catch {
+                  // A broken progress sink must not fail a valid transfer.
+                }
               },
             }
           : {}),
@@ -739,7 +747,7 @@ async function downloadArtifact(
     {
       label: `${entry.boardType}:${entry.layoutId}`,
       url: entry.url,
-      requiredBytes: requiredFreeBytes(entry),
+      requiredBytes: requiredArtifactFreeBytes(entry.grades ? [entry, entry.grades] : [entry]),
       contentEncoding: entry.contentEncoding,
       fileName: `${entry.boardType}-${entry.layoutId}-${safeBuiltAt}.db`,
       telemetryExtra: { boardType: entry.boardType, layoutId: entry.layoutId, url: entry.url },
@@ -763,27 +771,32 @@ async function downloadArtifact(
  * pair, because the manifest's grades block does not carry them; the key is
  * already content-addressed by build stamp, so it is unique per build.
  */
-async function downloadGradesArtifact(artifact: SnapshotGradesArtifact): Promise<{ filePath: string } | null> {
+async function downloadGradesArtifact(
+  artifact: SnapshotGradesArtifact,
+  options?: SnapshotDownloadOptions,
+): Promise<{ filePath: string } | null> {
   const safeKey = artifact.key.replace(/[^a-zA-Z0-9]/g, '-');
-  return downloadSnapshotFile({
-    label: `grades ${artifact.key}`,
-    url: artifact.url,
-    // The coarse multiplier, whether or not the grades block carries
-    // `uncompressedBytes` (a shape-2 block does): cheap either way at a few MB.
-    requiredBytes: artifact.bytes * gradesFreeSpaceMultiplier(artifact.contentEncoding),
-    contentEncoding: artifact.contentEncoding,
-    fileName: `${safeKey}.db`,
-    telemetryExtra: { gradesKey: artifact.key, url: artifact.url },
-    kind: 'grades',
-    wireBytes: artifact.bytes,
-    // A shape-2 grades block carries `uncompressedBytes`, so its file is held
-    // to that exact size, the same gate the layout artifact passes. A shape-1
-    // gzip block carries none and is not gated; an identity grades artifact is
-    // gated on `bytes`, which there IS the decoded size.
-    ...(expectedDecodedBytesFor(artifact) !== undefined
-      ? { expectedDecodedBytes: expectedDecodedBytesFor(artifact) }
-      : {}),
-  });
+  return downloadSnapshotFile(
+    {
+      label: `grades ${artifact.key}`,
+      url: artifact.url,
+      // Prefer the decoded size; older gzip manifests need a coarse estimate.
+      requiredBytes: requiredArtifactFreeBytes([artifact]),
+      contentEncoding: artifact.contentEncoding,
+      fileName: `${safeKey}.db`,
+      telemetryExtra: { gradesKey: artifact.key, url: artifact.url },
+      kind: 'grades',
+      wireBytes: artifact.bytes,
+      // A shape-2 grades block carries `uncompressedBytes`, so its file is held
+      // to that exact size, the same gate the layout artifact passes. A shape-1
+      // gzip block carries none and is not gated; an identity grades artifact is
+      // gated on `bytes`, which there IS the decoded size.
+      ...(expectedDecodedBytesFor(artifact) !== undefined
+        ? { expectedDecodedBytes: expectedDecodedBytesFor(artifact) }
+        : {}),
+    },
+    options,
+  );
 }
 
 async function deleteArtifact(filePath: string): Promise<void> {

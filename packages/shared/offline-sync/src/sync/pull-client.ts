@@ -142,7 +142,10 @@ import { createInvalidationBatch, type InvalidationBatch } from './invalidation-
 type BootstrapErrorInput = Omit<SnapshotBootstrapErrorReport, 'reason' | 'aborted'> &
   Partial<Pick<SnapshotBootstrapErrorReport, 'reason' | 'aborted'>>;
 
+import { createScopeDownloadProgress, type ScopeDownloadPhase, type ScopeDownloadProgress } from './download-progress';
+
 export type SyncProgress = {
+  download?: ScopeDownloadProgress;
   phase: 'bootstrap' | 'user_data' | 'board_data' | 'deletions' | 'idle';
   currentTable: string | null;
   documentsProcessed: number;
@@ -248,6 +251,8 @@ export type ScopeDownloadPhaseBreakdown = {
    * meaningful only when at least one of the two is present.
    */
   gradesArtifactRows?: number;
+  /** Time waiting for grades after the layout import; transfers overlap it. */
+  gradesWaitMs?: number;
   /**
    * The whole-layout import, split (issue #4310). ABSENT — never 0 — on any
    * cycle that ran no import, which is most of them: a completion whose artifact
@@ -293,9 +298,8 @@ export type ScopeDownloadPhaseBreakdown = {
    * the other phases. Same absent-when-unknown rule: no grades artifact imported
    * this cycle means no key, not a zero.
    *
-   * `gradesLockMs` is the grades import's exclusive hold. It is still ONE
-   * unbatched transaction, so it is reported next to `importLockMaxMs` rather
-   * than folded into it.
+   * `gradesLockMs` is the longest grades batch hold, including COMMIT,
+   * reported separately from the layout's `importLockMaxMs`.
    *
    * DO NOT filter these three on `importMs IS NOT NULL`. `importGradesForScope`
    * has a second call site — the retrofit path for a scope that is already
@@ -586,6 +590,8 @@ export type RowsDeletedSink = (info: {
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
+  /** User-started scopes go first in both bootstrap and board pulls. */
+  getPriorityBoards?: () => readonly string[];
   /** Per-page side-effect sink for board reference data. See DocumentsPulledSink. */
   onDocumentsPulled?: DocumentsPulledSink;
   /** Per-page side-effect sink for applied tombstones. See RowsDeletedSink. */
@@ -1473,6 +1479,31 @@ async function resolveManifestOnce(
   return cache.value;
 }
 
+/** Re-read tap order between scopes; current work is never interrupted. */
+function* prioritizeDownloadScopes(scopes: readonly BoardScope[], getPriorityBoards?: () => readonly string[]) {
+  const remaining = [...scopes];
+  while (remaining.length > 0) {
+    const priorityBoards = getPriorityBoards?.() ?? [];
+    let selectedIndex = 0;
+    let selectedRank = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < remaining.length; index += 1) {
+      const rank = priorityBoards.indexOf(remaining[index].scopeKey);
+      if (rank >= 0 && rank < selectedRank) {
+        selectedIndex = index;
+        selectedRank = rank;
+      }
+    }
+    yield remaining.splice(selectedIndex, 1)[0];
+  }
+}
+
+type ReportScopeDownload = (
+  scopeKey: string,
+  phase: ScopeDownloadPhase,
+  phaseFraction: number | null,
+  detail?: { wireBytes?: number | null; wireBytesDone?: number | null; rowsProcessed?: number; hasGrades?: boolean },
+) => void;
+
 /**
  * Snapshot-bootstrap phase (runs BEFORE deletions). For each enabled scope the
  * shared eligibility gate vouches for, warm it from a pre-built artifact instead
@@ -1555,6 +1586,7 @@ async function resolveManifestOnce(
  * delta pull can land cycles after the import.
  */
 async function runBootstrapPhase(params: {
+  reportDownload: ReportScopeDownload;
   db: OfflineDatabase;
   /** The cycle's batch. An import flushes it at once: nothing later in the phase queues for it. */
   invalidations: InvalidationBatch;
@@ -1573,6 +1605,7 @@ async function runBootstrapPhase(params: {
   random: () => number;
 }): Promise<{ skipPagedPull: Set<string>; cycleInterrupted: boolean }> {
   const {
+    reportDownload,
     db,
     invalidations,
     source,
@@ -1658,6 +1691,10 @@ async function runBootstrapPhase(params: {
           ...report,
           reason: report.reason ?? classifySnapshotBootstrapFailure(report.cause),
           aborted: report.aborted ?? false,
+          transferCompleted:
+            report.stage === 'import' ||
+            report.stage === 'grades-import' ||
+            report.cause instanceof SnapshotPermanentMissError,
         });
       }
     : undefined;
@@ -1717,152 +1754,195 @@ async function runBootstrapPhase(params: {
   // these are deleted outright in the finally below. Re-fetching a few MB next
   // cycle is the cheaper failure.
   const gradesArtifactPaths = new Set<string>();
-  // Absent = not yet attempted for this layout; null = unavailable this cycle.
-  const gradesDownloadByLayout = new Map<string, { filePath: string } | null>();
+  type GradesDownloadRecord = {
+    controller: AbortController;
+    promise: Promise<{ file: { filePath: string } | null; cause: unknown }>;
+    startedInForeground: boolean;
+    aborted: boolean;
+    abortedReason: SnapshotBootstrapFailureReason | null;
+    suspensionWindowOpen: boolean;
+    progressScopeKey: string | null;
+    fraction: number | null;
+  };
+  const gradesDownloadByLayout = new Map<string, GradesDownloadRecord>();
+  const allGradesDownloads = new Set<GradesDownloadRecord>();
 
-  /**
-   * Import the layout's Boardsesh grades from its separate artifact, replacing
-   * the paged crawl of `board_climb_grades` — the term the whole-layout
-   * artifact never covered, and the reason a Kilter/Tension download takes ~6x
-   * a MoonBoard layout of the same size (issue #4310).
-   *
-   * Called on two paths: straight after a successful whole-layout import, and
-   * — for a scope that was bootstrapped before this shipped, or crashed between
-   * the two transactions — whenever the grades checkpoint is ABSENT on a scope
-   * whose climb catalog is already COMPLETE (`bootstrap-done` or
-   * `scope-complete`). An absent grades checkpoint is proof no grade page was
-   * ever consumed (`syncTable` checkpoints per page), so importing and stamping
-   * at the artifact's watermark cannot skip a row the crawl already had; the
-   * completeness gate is what stops the stamp landing above grade rows whose
-   * climbs a half-finished crawl has not fetched yet.
-   *
-   * Every failure here is free: it never touches the whole-layout attempt
-   * counter, and the worst case is that the scope crawls grades exactly as it
-   * does today.
-   */
+  // Start once per layout before the layout import. The promise always resolves,
+  // including a synchronous throw from an injected downloader.
+  const prefetchGrades = async (
+    scope: BoardScope,
+    entry: SnapshotManifestEntry,
+  ): Promise<GradesDownloadRecord | null> => {
+    const artifact = entry.grades;
+    if (!artifact || !source.downloadGradesArtifact || !isSnapshotEntryUsable(artifact)) return null;
+    if ((await getGradesBootstrapAttempts(db, scope.scopeKey)) >= MAX_GRADES_BOOTSTRAP_ATTEMPTS) return null;
+    const layoutKey = purgeNamespaceKey(scope);
+    const existing = gradesDownloadByLayout.get(layoutKey);
+    if (existing) return existing.aborted ? null : existing;
+    if (teardownVerdict(scope.scopeKey)) return null;
+    const record: GradesDownloadRecord = {
+      controller: new AbortController(),
+      promise: Promise.resolve({ file: null, cause: null }),
+      startedInForeground: !isBackgrounded(),
+      aborted: false,
+      abortedReason: null,
+      suspensionWindowOpen: false,
+      progressScopeKey: null,
+      fraction: 0,
+    };
+    const startedAt = Date.now();
+    let anchor = createDownloadFractionAnchor();
+    const unsubscribe = onTeardown(() => {
+      if (isSigningOut() || hasPurgeLanded(purgeToken, layoutKey)) {
+        record.aborted = true;
+        record.abortedReason = 'aborted-wipe';
+        record.controller.abort();
+      } else if (isBackgrounded()) record.suspensionWindowOpen = true;
+    });
+    record.promise = Promise.resolve()
+      .then(() =>
+        source.downloadGradesArtifact!(artifact, {
+          signal: record.controller.signal,
+          onProgress: ({ bytesWritten, totalBytes }) => {
+            if (record.aborted) return;
+            if (!isBackgrounded()) record.suspensionWindowOpen = false;
+            const resolved = resolveDownloadFraction({
+              entry: artifact,
+              bytesWritten,
+              reportedTotalBytes: totalBytes,
+              anchor,
+            });
+            anchor = resolved.anchor;
+            record.fraction = resolved.fraction;
+            if (record.progressScopeKey)
+              reportDownload(
+                record.progressScopeKey,
+                'grades',
+                resolved.fraction === null ? null : resolved.fraction * 0.5,
+              );
+          },
+        }),
+      )
+      .then(
+        (file) => {
+          if (file) gradesArtifactPaths.add(file.filePath);
+          record.fraction = file ? 1 : record.fraction;
+          return { file: file ?? null, cause: null };
+        },
+        (cause: unknown) => {
+          // A foreground byte closes the suspension window. Even with the
+          // window open, HTTP, disk and programming errors spend real retries.
+          if (
+            !record.abortedReason &&
+            record.suspensionWindowOpen &&
+            (isNetworkError(cause) || isBackgroundTransferDecodeError(cause))
+          )
+            record.abortedReason = 'aborted-background';
+          return { file: null, cause };
+        },
+      )
+      .finally(() => {
+        unsubscribe();
+        const phases = phaseTimings(scope.scopeKey);
+        phases.gradesDownloadMs = (phases.gradesDownloadMs ?? 0) + Date.now() - startedAt;
+      });
+    gradesDownloadByLayout.set(layoutKey, record);
+    allGradesDownloads.add(record);
+    return record;
+  };
+
+  const gradesVerdict = (scope: BoardScope, record: GradesDownloadRecord): TeardownVerdict | null => {
+    // Background never cancels work which this foreground cycle already started.
+    if (record.aborted || isSigningOut() || hasPurgeLanded(purgeToken, purgeNamespaceKey(scope)))
+      return { reason: 'aborted-wipe', kind: hasPurgeLanded(purgeToken) || isSigningOut() ? 'cycle' : 'scope' };
+    const verdict = teardownVerdict(scope.scopeKey);
+    return verdict?.reason === 'aborted-background' && record.startedInForeground ? null : verdict;
+  };
+
   const importGradesForScope = async (
     scope: BoardScope,
     entry: SnapshotManifestEntry,
   ): Promise<TeardownVerdict['kind'] | null> => {
-    const gradesArtifact = entry.grades;
-    if (!gradesArtifact || !source.downloadGradesArtifact) return null;
-    // A grades artifact built at an older client schema would NULL-fill columns
-    // this app added and then stamp the cursor past them — same permanent-miss
-    // rule the whole-layout artifact gets.
-    if (!isSnapshotEntryUsable(gradesArtifact)) return null;
-    if ((await getGradesBootstrapAttempts(db, scope.scopeKey)) >= MAX_GRADES_BOOTSTRAP_ATTEMPTS) return null;
-
-    // One artifact serves every size of a layout, which is exactly why the purge
-    // namespace is keyed the same way — the two must never drift.
-    const layoutKey = purgeNamespaceKey(scope);
-    let gradesDownload = gradesDownloadByLayout.get(layoutKey);
-    if (gradesDownload === undefined) {
-      const preDownloadVerdict = teardownVerdict(scope.scopeKey);
-      if (preDownloadVerdict) return preDownloadVerdict.kind;
-
-      // A background→foreground transition can complete before the native
-      // promise rejects. Latch teardown only for a DEAD transfer; a successful
-      // grades file may still be imported when the app is active again, just
-      // like the retained whole-layout download above.
-      let latchedDownloadVerdict: TeardownVerdict | null = null;
-      const unsubscribeGradesTeardown = onTeardown(() => {
-        latchedDownloadVerdict ??= teardownVerdict(scope.scopeKey);
-      });
-      let downloadCause: unknown = null;
-      const gradesDownloadStartedAt = Date.now();
-      try {
-        gradesDownload = (await source.downloadGradesArtifact(gradesArtifact)) ?? null;
-      } catch (error) {
-        gradesDownload = null;
-        downloadCause = error;
-      } finally {
-        unsubscribeGradesTeardown();
-        // Closes half of the ~11s p50 residual between `durationMs` and the sum
-        // of the other phases: this transfer never touched `phases.downloadMs`.
-        // Charged on the failure path too — a grades transfer that timed out
-        // spent that time just as surely as one that landed.
-        const gradesPhases = phaseTimings(scope.scopeKey);
-        gradesPhases.gradesDownloadMs = (gradesPhases.gradesDownloadMs ?? 0) + (Date.now() - gradesDownloadStartedAt);
-      }
-      // A NULL return counts exactly as a throw does. `SnapshotSource` lets a
-      // source signal "unusable this cycle" either way (see downloadArtifact's
-      // contract), and the whole-layout path settles a failure on both — so
-      // leaving the null arm uncounted here would let a null-returning source
-      // re-fetch the artifact on every cycle for the life of the install,
-      // straight past MAX_GRADES_BOOTSTRAP_ATTEMPTS.
-      if (!gradesDownload) {
-        // A cycle that is being torn down did not fail — it was interrupted.
-        // Charging a grades attempt here spent one of the three tries this
-        // artifact ever gets on a pocketed phone, and three screen locks left a
-        // Kilter board crawling grades over GraphQL for the life of the install
-        // (issue #4390).
-        // Scope-aware (issue #4370): another board's removal never charges this
-        // layout a grades attempt, and never masks a real grades failure as an
-        // abort either.
-        const gradesTeardown = teardownVerdict(scope.scopeKey) ?? latchedDownloadVerdict;
-        if (gradesTeardown) {
-          reportBootstrapAbort(scope.scopeKey, 'grades-download', gradesTeardown.reason, downloadCause);
-          gradesDownloadByLayout.set(layoutKey, null);
-          return gradesTeardown.kind;
-        }
-        const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({
-          scopeKey: scope.scopeKey,
-          stage: 'grades-download',
-          attempt,
-          cause: downloadCause,
-          expected: isNetworkError(downloadCause),
-        });
-      }
-      gradesDownloadByLayout.set(layoutKey, gradesDownload);
-      if (gradesDownload) gradesArtifactPaths.add(gradesDownload.filePath);
-    }
-    if (!gradesDownload) return null;
-    const preImportVerdict = teardownVerdict(scope.scopeKey);
-    if (preImportVerdict) {
-      reportBootstrapAbort(scope.scopeKey, 'grades-download', preImportVerdict.reason, null);
-      return preImportVerdict.kind;
-    }
-
+    const record = await prefetchGrades(scope, entry);
+    if (!record) return teardownVerdict(scope.scopeKey)?.kind ?? null;
+    record.progressScopeKey = scope.scopeKey;
+    const emitGradeProgress = (): void =>
+      reportDownload(scope.scopeKey, 'grades', record.fraction === null ? null : record.fraction * 0.5);
+    emitGradeProgress();
+    // Heartbeats keep the screen hold alive on a long, stalled native transfer.
+    const heartbeat = setInterval(() => {
+      if (record.aborted || record.progressScopeKey === null) return;
+      onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
+      emitGradeProgress();
+    }, 20_000);
+    const waitStartedAt = Date.now();
+    let result: Awaited<GradesDownloadRecord['promise']>;
     try {
-      const { rowsImported, gradesVerifyMs, gradesLockMs } = await bootstrapScopeGradesFromSnapshot({
-        db,
-        scope,
-        scopeKey: scope.scopeKey,
-        filePath: gradesDownload.filePath,
-        replayFromEpoch: entry.privacyVersion === 1,
-        onSchemaDrift,
-      });
-      // The artifact's own row count, reported alongside the paged crawl's
-      // (issue #4393): it is what tells a truthful `gradesRows: 0` — the crawl
-      // behind a fresh artifact has nothing left to fetch — apart from a board
-      // that has no grades at all. Accumulating rather than assigning because
-      // the two call sites (post-import and the retrofit path) are mutually
-      // exclusive per scope today, and `+=` stays correct if that changes.
-      const phases = phaseTimings(scope.scopeKey);
-      phases.gradesArtifactRows = (phases.gradesArtifactRows ?? 0) + rowsImported;
-      phases.gradesVerifyMs = (phases.gradesVerifyMs ?? 0) + gradesVerifyMs;
-      // MAX, like importLockMaxMs: the question is the worst hold a concurrent
-      // write met, which does not add up across scopes of the same layout.
-      phases.gradesLockMs = Math.max(phases.gradesLockMs ?? 0, gradesLockMs);
-      invalidations.add(TABLE_CONFIGS.board_climb_grades.invalidateKeys, scope);
-      invalidations.flush();
-    } catch (error) {
-      // A wipe rolls the transaction back; no checkpoint, nothing to count.
-      const importVerdict = teardownVerdict(scope.scopeKey);
-      if (error instanceof SnapshotWipedError || importVerdict) {
-        const resolvedVerdict = importVerdict ?? { reason: 'aborted-wipe' as const, kind: 'cycle' as const };
-        reportBootstrapAbort(scope.scopeKey, 'grades-import', resolvedVerdict.reason, error);
-        return resolvedVerdict.kind;
+      result = await record.promise;
+    } finally {
+      clearInterval(heartbeat);
+    }
+    const phases = phaseTimings(scope.scopeKey);
+    phases.gradesWaitMs = (phases.gradesWaitMs ?? 0) + Date.now() - waitStartedAt;
+    const verdict = gradesVerdict(scope, record);
+    if (verdict) {
+      reportBootstrapAbort(scope.scopeKey, 'grades-download', verdict.reason, result.cause);
+      record.progressScopeKey = null;
+      return verdict.kind;
+    }
+    if (!result.file) {
+      const interrupted = record.abortedReason ? { reason: record.abortedReason, kind: 'cycle' as const } : null;
+      if (interrupted) {
+        reportBootstrapAbort(scope.scopeKey, 'grades-download', interrupted.reason, result.cause);
+        record.progressScopeKey = null;
+        return interrupted.kind;
       }
       const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
       onSnapshotBootstrapError?.({
         scopeKey: scope.scopeKey,
-        stage: 'grades-import',
+        stage: 'grades-download',
         attempt,
-        cause: error,
-        expected: false,
+        cause: result.cause,
+        expected: isNetworkError(result.cause),
       });
+      record.progressScopeKey = null;
+      return null;
+    }
+    reportDownload(scope.scopeKey, 'grades', 0.5);
+    try {
+      const imported = await bootstrapScopeGradesFromSnapshot({
+        db,
+        scope,
+        scopeKey: scope.scopeKey,
+        filePath: result.file.filePath,
+        replayFromEpoch: entry.privacyVersion === 1,
+        onSchemaDrift,
+        onBatch: ({ rowsImported }) => {
+          const rowCount = entry.grades?.tables.board_climb_grades.rowCount ?? 0;
+          reportDownload(
+            scope.scopeKey,
+            'grades',
+            rowCount > 0 ? 0.5 + 0.5 * Math.min(1, rowsImported / rowCount) : 0.5,
+          );
+        },
+      });
+      phases.gradesArtifactRows = (phases.gradesArtifactRows ?? 0) + imported.rowsImported;
+      phases.gradesVerifyMs = (phases.gradesVerifyMs ?? 0) + imported.gradesVerifyMs;
+      phases.gradesLockMs = Math.max(phases.gradesLockMs ?? 0, imported.gradesLockMs);
+      reportDownload(scope.scopeKey, 'grades', 1);
+      invalidations.add(TABLE_CONFIGS.board_climb_grades.invalidateKeys, scope);
+      invalidations.flush();
+    } catch (cause) {
+      const importVerdict = gradesVerdict(scope, record);
+      if (cause instanceof SnapshotWipedError || importVerdict) {
+        const resolved = importVerdict ?? { reason: 'aborted-wipe' as const, kind: 'cycle' as const };
+        reportBootstrapAbort(scope.scopeKey, 'grades-import', resolved.reason, cause);
+        return resolved.kind;
+      }
+      const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
+      onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'grades-import', attempt, cause, expected: false });
+    } finally {
+      record.progressScopeKey = null;
     }
     return null;
   };
@@ -1912,7 +1992,7 @@ async function runBootstrapPhase(params: {
   };
 
   try {
-    for (const scope of scopes) {
+    for (const scope of prioritizeDownloadScopes(scopes, options?.getPriorityBoards)) {
       // Progress state belongs to one scope. Keeping the high-water mark or
       // throttle window across boards can make scope B inherit scope A's last
       // fraction if a future path omits one of today's explicit stage flushes.
@@ -1921,6 +2001,12 @@ async function runBootstrapPhase(params: {
       const progressThrottle = createSnapshotProgressThrottle({ now });
       const emitSnapshotFrame = (frame: SnapshotBootstrapProgress | null): void => {
         if (!frame) return;
+        reportDownload(
+          frame.scopeKey,
+          frame.stage === 'manifest' ? 'preparing' : frame.stage === 'download' ? 'downloading' : 'unpacking',
+          frame.stage === 'manifest' ? 1 : frame.fraction,
+          { wireBytes: frame.wireBytes, wireBytesDone: frame.wireBytesDone },
+        );
         onProgress?.({
           phase: 'bootstrap',
           currentTable: frame.scopeKey,
@@ -2611,6 +2697,7 @@ async function runBootstrapPhase(params: {
           }),
         );
 
+        reportDownload(scope.scopeKey, 'unpacking', 0, { hasGrades: entry.grades !== undefined });
         phases.artifactBytes = entry.bytes;
         phases.artifactReused = download.reused === true;
         const importStartedAt = Date.now();
@@ -2629,6 +2716,9 @@ async function runBootstrapPhase(params: {
           // ordering rules out, and the deletions rewind rides in the same
           // transaction so the tombstone-replay window can never be narrower
           // than the rows it must cover.
+          await prefetchGrades(scope, entry);
+          const beforeImport = teardownVerdict(scope.scopeKey);
+          if (beforeImport && beforeImport.reason !== 'aborted-background') throw new SnapshotWipedError();
           const imported = await bootstrapScopeFromSnapshot({
             db,
             scope,
@@ -2704,6 +2794,11 @@ async function runBootstrapPhase(params: {
           // Not skipped: the board-data phase delta-pulls from the watermark
           // checkpoints and fires markScopeDownloadComplete through the tail logic.
         } catch (error) {
+          const failedGradesPrefetch = gradesDownloadByLayout.get(purgeNamespaceKey(scope));
+          if (failedGradesPrefetch) {
+            failedGradesPrefetch.aborted = true;
+            failedGradesPrefetch.controller.abort();
+          }
           phases.importMs += Date.now() - importStartedAt;
           // A wipe mid-import rolls the transaction back and bails the phase — no
           // burn (the pull is being torn down, not failing). Reported all the
@@ -2839,6 +2934,11 @@ async function runBootstrapPhase(params: {
       }
     }
   } finally {
+    for (const record of allGradesDownloads) {
+      record.progressScopeKey = null;
+      record.controller.abort();
+    }
+    await Promise.allSettled([...allGradesDownloads].map((record) => record.promise));
     // Hand every artifact back rather than deleting it outright. A source with
     // no retention support falls through to deleteArtifact and behaves exactly
     // as it did before #4310; a retention-capable one keeps the files the phase
@@ -3145,6 +3245,67 @@ async function performPullSync(
       if (scope) boardScopes.push({ ...scope, scopeKey });
     }
 
+    const pendingDownloads = new Set<string>();
+    const snapshotDownloads = new Set<string>();
+    for (const scope of boardScopes) {
+      if (!(await isScopeDownloadComplete(db, scope.scopeKey))) {
+        pendingDownloads.add(scope.scopeKey);
+        if (await isBootstrapDone(db, scope.scopeKey)) snapshotDownloads.add(scope.scopeKey);
+      }
+    }
+    if (cycleAborted()) return reportInterruptedCycle();
+    const downloadTrackers = new Map<string, ReturnType<typeof createScopeDownloadProgress>>();
+    const reportDownload: ReportScopeDownload = (scopeKey, phase, phaseFraction, detail) => {
+      const namespace = purgeNamespaceForScopeKey(scopeKey);
+      if (isSigningOut() || hasPurgeLanded(purgeToken, namespace) || !pendingDownloads.has(scopeKey)) return;
+      let tracker = downloadTrackers.get(scopeKey);
+      if (!tracker) {
+        tracker = createScopeDownloadProgress({
+          scopeKey,
+          hasGrades: detail?.hasGrades ?? true,
+          now: options?.now ?? Date.now,
+        });
+        downloadTrackers.set(scopeKey, tracker);
+      }
+      // A tap during this cycle belongs to the next pull, but is already
+      // waiting behind this scope. Union avoids counting captured taps twice.
+      const queuedScopeKeys = new Set(
+        [...pendingDownloads].filter(
+          (pendingScope) => !hasPurgeLanded(purgeToken, purgeNamespaceForScopeKey(pendingScope)),
+        ),
+      );
+      for (const requestedScope of options?.getPriorityBoards?.() ?? []) {
+        if (
+          parseOfflineBoardKey(requestedScope) &&
+          !hasPurgeLanded(purgeToken, purgeNamespaceForScopeKey(requestedScope))
+        )
+          queuedScopeKeys.add(requestedScope);
+      }
+      const download = tracker.offer({
+        phase,
+        phaseFraction,
+        ...detail,
+        queuedScopes: Math.max(0, queuedScopeKeys.size - 1),
+        pendingScopeKeys: [...queuedScopeKeys],
+      });
+      if (!download) return;
+      onProgress?.({
+        phase: phase === 'finishing' ? 'board_data' : 'bootstrap',
+        currentTable: phase === 'finishing' ? `board_climbs:${scopeKey}` : scopeKey,
+        documentsProcessed: totalDocuments,
+        download,
+      });
+    };
+    const finishGlobalStep = (step: number): void => {
+      const scopeKey = pendingDownloads.values().next().value;
+      if (scopeKey)
+        reportDownload(
+          scopeKey,
+          snapshotDownloads.has(scopeKey) ? 'finishing' : 'preparing',
+          snapshotDownloads.has(scopeKey) ? step / (USER_DATA_TABLES.length + 1 + BOARD_DATA_TABLES.length) : null,
+        );
+    };
+
     // Per-scope start timestamp for ScopeDownloadCompleteInfo.durationMs, stamped
     // when the cycle FIRST touches that scope (bootstrap eligibility check, or
     // its turn in the board-data loop) — NOT once at cycle start, which would
@@ -3206,6 +3367,7 @@ async function performPullSync(
     if (options?.snapshotSource && boardScopes.length > 0) {
       onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
       const bootstrapPhase = await runBootstrapPhase({
+        reportDownload,
         db,
         invalidations,
         source: options.snapshotSource,
@@ -3220,6 +3382,9 @@ async function performPullSync(
         random: options.random ?? Math.random,
       });
       skipBootstrapPagedPull = bootstrapPhase.skipPagedPull;
+      for (const scopeKey of pendingDownloads) {
+        if (await isBootstrapDone(db, scopeKey)) snapshotDownloads.add(scopeKey);
+      }
       // The bootstrap phase latches lifecycle teardown across its long native
       // awaits. If the app foregrounds again before the rejected download is
       // handled, the live outer guard is already clear; do not let that stale
@@ -3250,6 +3415,8 @@ async function performPullSync(
     // purge, backgrounding) consumed an unknown prefix of the stream, so claiming a
     // fresh retention window off it would hide a real gap. See deletions-coverage.ts.
     if (deletionsResult.reachedTail) await setDeletionsCoverageAt(db, Date.now());
+    let globalFinishSteps = 1;
+    finishGlobalStep(globalFinishSteps);
 
     let allUserTablesReachedTail = true;
     for (const tableName of USER_DATA_TABLES) {
@@ -3270,6 +3437,8 @@ async function performPullSync(
         options?.onSchemaDrift,
       );
       if (!userTableResult.reachedTail) allUserTablesReachedTail = false;
+      globalFinishSteps += 1;
+      finishGlobalStep(globalFinishSteps);
     }
 
     // Only now are the user tables complete enough for a local reader to serve
@@ -3301,7 +3470,7 @@ async function performPullSync(
     // Each enabled board is a "boardType:layoutId:sizeId" scope key (already parsed
     // into boardScopes). currentTable carries the full scope key so a per-board UI
     // can match itself.
-    for (const boardScope of boardScopes) {
+    for (const boardScope of prioritizeDownloadScopes(boardScopes, options?.getPriorityBoards)) {
       // boardScopes is the pre-cycle snapshot of the enabled set. A GLOBAL teardown
       // makes every remaining entry suspect, so it stops the cycle. A per-namespace
       // purge only invalidates its own scope — the one being deleted right now,
@@ -3350,6 +3519,16 @@ async function performPullSync(
       // into a heal. Never a scope the bootstrap has finished with (#6306).
       if (skipBootstrapPagedPull.has(scopeKey)) continue;
       let allTablesReachedTail = true;
+      let scopeFinishSteps = globalFinishSteps;
+      let scopeRowsProcessed = 0;
+      const finishSteps = globalFinishSteps + BOARD_DATA_TABLES.length;
+      const emitBoardProgress = (rowsProcessed = 0): void =>
+        reportDownload(
+          scopeKey,
+          snapshotDownloads.has(scopeKey) ? 'finishing' : 'downloading',
+          snapshotDownloads.has(scopeKey) ? Math.min(0.99, scopeFinishSteps / finishSteps) : null,
+          { rowsProcessed: scopeRowsProcessed + rowsProcessed },
+        );
       for (const tableName of BOARD_DATA_TABLES) {
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) {
@@ -3361,6 +3540,7 @@ async function performPullSync(
           break;
         }
         const tableLabel = `${tableName}:${scopeKey}`;
+        emitBoardProgress();
         onProgress?.({
           phase: 'board_data',
           currentTable: tableLabel,
@@ -3382,6 +3562,7 @@ async function performPullSync(
           boardScope,
           (tableProcessed) => {
             totalDocuments = baseCount + tableProcessed;
+            emitBoardProgress(tableProcessed);
             onProgress?.({
               phase: 'board_data',
               currentTable: tableLabel,
@@ -3394,6 +3575,9 @@ async function performPullSync(
           options?.onDocumentsPulled,
           tableName === 'spray_walls' ? () => confirmWallRemoval(boardScope) : undefined,
         );
+        if (reachedTail) scopeFinishSteps += 1;
+        emitBoardProgress(rowsProcessed);
+        scopeRowsProcessed += rowsProcessed;
         const tableMs = Date.now() - tableStartedAt;
         if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;
         else if (tableName === 'board_climb_stats') phases.statsPullMs += tableMs;
@@ -3440,7 +3624,12 @@ async function performPullSync(
         if (scopePurged(boardScope)) continue;
         // Clears the persisted start stamp as well as writing the complete marker.
         await markScopeDownloadComplete(db, scopeKey);
+        if (cycleAborted()) return reportInterruptedCycle();
+        if (scopePurged(boardScope)) continue;
         if (wasScopeComplete) continue;
+        reportDownload(scopeKey, 'finishing', 1);
+        downloadTrackers.get(scopeKey)?.cancel();
+        pendingDownloads.delete(scopeKey);
         // The marker is what opens this board to local reads, so its queries must
         // run again now that it is down. Rows moving is not enough of a signal: a
         // snapshot can satisfy the scope outright, the delta pull above then
@@ -3486,7 +3675,7 @@ async function performPullSync(
 
     // Ordinary deltas retain priority and their own checkpoint, including on cellular.
     // Only already-complete catalogs need this conservative replay after an upgrade.
-    for (const boardScope of boardScopes) {
+    for (const boardScope of prioritizeDownloadScopes(boardScopes, options?.getPriorityBoards)) {
       if (cycleAborted()) return reportInterruptedCycle();
       if (
         retiredWalls.has(boardScope.scopeKey) ||
@@ -3546,7 +3735,7 @@ async function performPullSync(
     // already has, so the next cycle, or the reader that needs it, rebuilds it.
     const holdIndex = options?.holdIndex;
     if (holdIndex) {
-      for (const boardScope of boardScopes) {
+      for (const boardScope of prioritizeDownloadScopes(boardScopes, options?.getPriorityBoards)) {
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope) || retiredWalls.has(boardScope.scopeKey)) continue;
         try {

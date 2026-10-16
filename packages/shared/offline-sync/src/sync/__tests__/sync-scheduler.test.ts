@@ -103,6 +103,19 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('forwards the live requested-board priority getter', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    const getPriorityBoards = () => ['tension:2:10', 'kilter:1:5'];
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, { getPriorityBoards });
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ getPriorityBoards }),
+    );
+  });
+
   it('forwards per-scope bootstrap metadata settlement to pullSync', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     const onBootstrapMetadataChanged = vi.fn();

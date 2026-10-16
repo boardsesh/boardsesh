@@ -200,6 +200,8 @@ export type {
   SnapshotBootstrapErrorReporter,
   BootstrapScopeMetadata,
 } from './sync/snapshot-bootstrap';
+export { createScopeDownloadProgress, DOWNLOAD_PHASE_WEIGHTS } from './sync/download-progress';
+export type { ScopeDownloadPhase, ScopeDownloadProgress } from './sync/download-progress';
 export { classifySnapshotBootstrapFailure } from './sync/bootstrap-failure-reason';
 export type { SnapshotBootstrapFailureReason } from './sync/bootstrap-failure-reason';
 

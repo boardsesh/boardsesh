@@ -366,6 +366,17 @@
       "bootstrapDownloading": "Downloading {{done}} of {{total}}",
       "bootstrapDownloadingUnknown": "Downloading {{total}}…",
       "bootstrapImporting": "Unpacking climbs…",
+      "bootstrapGrades": "Loading grades…",
+      "screenAwakeHint": "Your screen stays on while this downloads.",
+      "pill": {
+        "board": "Board",
+        "done": "Available offline",
+        "waiting": "Waiting to download…",
+        "failed": "Download didn't finish",
+        "percent": "{{percent}}%",
+        "more": "+{{count}} more",
+        "open": "Open My Boards for {{name}}"
+      },
       "snapshotRetrying": "Faster download interrupted — will retry on the next sync",
       "snapshotRetryingAria": "The faster offline download for {{name}} was interrupted. It will retry on the next sync.",
       "pagedFallbackPending": "Faster download unavailable — slower download pending",

@@ -33,6 +33,7 @@
  * mid-animation).
  */
 
+import { publishSheetVisibility } from '../lib/sheet-visibility-store';
 import {
   createContext,
   useCallback,
@@ -145,6 +146,8 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
   const dismissWaiters = useRef(new Map<string, Set<(result: DismissAndWaitResult) => void>>());
   const seqCounter = useRef(0);
 
+  useEffect(() => () => publishSheetVisibility(false), []);
+
   const coordinator = useMemo<SheetCoordinator>(() => {
     function groupState(group: PresenterGroup): GroupState {
       let state = groups.current.get(group);
@@ -184,6 +187,12 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       for (const resolve of waiters) resolve(result);
     }
 
+    function publishVisibility(): void {
+      publishSheetVisibility(
+        [...groups.current.values()].some((state) => state.presentedId !== null || state.inFlight !== null),
+      );
+    }
+
     function onSettle(group: PresenterGroup, viaCeiling: boolean): void {
       const state = groupState(group);
       const inFlight = state.inFlight;
@@ -208,12 +217,14 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         }
       }
       pump(group);
+      publishVisibility();
     }
 
     function startTransition(group: PresenterGroup, op: 'present' | 'dismiss', id: string): void {
       const state = groupState(group);
       const timer = setTimeout(() => onSettle(group, true), SETTLE_MS);
       state.inFlight = { op, id, timer, expectNative: op === 'dismiss' && Platform.OS === 'ios' };
+      publishVisibility();
       const registration = registrations.current.get(id);
       if (op === 'present') registration?.present();
       else registration?.dismiss();
@@ -298,6 +309,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
             // The registration is already gone, so no native onDismiss can match
             // here — the ceiling is the only possible settle; don't warn on it.
             state.inFlight = { op: 'dismiss', id: reg.id, timer, expectNative: false };
+            publishVisibility();
           } else {
             pump(reg.group);
           }
@@ -372,6 +384,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           // A user pan-down / backdrop tap still fires SwiftUI's onDismiss on iOS,
           // so the native settle is expected to early-resolve this window there.
           state.inFlight = { op: 'dismiss', id, timer, expectNative: Platform.OS === 'ios' };
+          publishVisibility();
         } else {
           pump(group);
         }

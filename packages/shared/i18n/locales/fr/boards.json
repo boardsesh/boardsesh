@@ -366,6 +366,17 @@
       "bootstrapDownloading": "Téléchargement de {{done}} sur {{total}}",
       "bootstrapDownloadingUnknown": "Téléchargement de {{total}}…",
       "bootstrapImporting": "Décompression des blocs…",
+      "bootstrapGrades": "Chargement des cotations…",
+      "screenAwakeHint": "Ton écran reste allumé pendant le téléchargement.",
+      "pill": {
+        "board": "Board",
+        "done": "Disponible hors ligne",
+        "waiting": "En attente du téléchargement…",
+        "failed": "Le téléchargement n’a pas abouti",
+        "percent": "{{percent}} %",
+        "more": "+{{count}} de plus",
+        "open": "Ouvre Mes boards pour {{name}}"
+      },
       "snapshotRetrying": "Téléchargement rapide interrompu — nouvelle tentative à la prochaine synchronisation",
       "snapshotRetryingAria": "Le téléchargement rapide hors ligne de {{name}} a été interrompu. Une nouvelle tentative aura lieu lors de la prochaine synchronisation.",
       "pagedFallbackPending": "Téléchargement rapide indisponible — téléchargement lent en attente",

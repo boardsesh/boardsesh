@@ -884,7 +884,7 @@ export const SHARED_EVENTS = {
   // importMs?, bootstrapHealed?, manifestMs, artifactReused, climbsPullMs,
   // statsPullMs, gradesPullMs, gradesRows?, gradesArtifactRows?,
   // importVerifyMs?, importReconcileMs?, importRowsMs?, importLockMaxMs?,
-  // importBatches?, gradesDownloadMs?, gradesVerifyMs?, gradesLockMs?,
+  // importBatches?, gradesDownloadMs?, gradesWaitMs?, gradesVerifyMs?, gradesLockMs?,
   // keepAwake, suspendedMs? (iOS only), offlineEngineEnabled }.
   // Every optional prop is ABSENT rather than faked when this cycle cannot vouch
   // for it — most often because the completing delta pull landed in a later cycle
@@ -913,7 +913,7 @@ export const SHARED_EVENTS = {
   // TWO DIFFERENT FILTERS, and mixing them up drops the population you want:
   //  - The six `import*` props: filter on `importMs IS NOT NULL`. Unfiltered,
   //    the p90 reads near zero whatever the import is doing.
-  //  - The three `grades*` props: filter each on ITS OWN `IS NOT NULL`, never on
+  //  - The four `grades*` props: filter each on ITS OWN `IS NOT NULL`, never on
   //    `importMs`. The grades retrofit path imports grades for a scope that is
   //    ALREADY bootstrapped, in a cycle with no whole-layout import — which is
   //    precisely the still-crawling population #4719 is about, so an `importMs`
@@ -931,10 +931,10 @@ export const SHARED_EVENTS = {
   //    with the lock-acquisition wait subtracted out of the last two and
   //    reported on its own as `importLockWaitMs`; `importBatches` counts the
   //    exclusive transactions the rows took.
-  //  - `gradesDownloadMs` / `gradesVerifyMs` / `gradesLockMs` cover the SEPARATE
-  //    grades artifact, whose transfer and (still unbatched) exclusive
-  //    transaction were invisible to every phase field — most of the ~11s p50
-  //    gap between `durationMs` and the sum of the phases.
+  //  - `gradesDownloadMs` covers the grades transfer overlapping layout import;
+  //    `gradesWaitMs` is the remaining wait after layout import. `gradesVerifyMs`
+  //    covers verification and watermark selection. `gradesLockMs` is the
+  //    longest bounded primary-key batch hold, COMMIT included.
   //
   // KEEP-AWAKE AND SUSPENSION (issue #4310), also on `Offline Board Download
   // Failed` for every reason except the three 'abandoned-*' ones:
@@ -971,7 +971,7 @@ export const SHARED_EVENTS = {
   // A bootstrap stage failed, or was cut short. Props: { scopeKey, stage:
   // 'manifest' | 'download' | 'import' | 'grades-download' | 'grades-import' |
   // 'board-removed' | 'abandoned', attempt, expected, reason, aborted,
-  // errorMessage, keepAwake?, suspendedMs? (iOS only), offlineEngineEnabled }.
+  // errorMessage, transferCompleted?, keepAwake?, suspendedMs? (iOS only), offlineEngineEnabled }.
   // `keepAwake` and `suspendedMs` are defined on the Completed event above.
   // Neither is sent on the three 'abandoned-*' reasons, where no attempt ran.
   // On a `reason: 'aborted-background'` report, `suspendedMs` is how long the
@@ -1053,6 +1053,8 @@ export const SHARED_EVENTS = {
   // this one only adds `fraction` / `bytesDone` on the runs where we happen to
   // have them. Kept for that detail, not as a count of anything.
   OfflineBoardDownloadCancelled: 'Offline Board Download Cancelled',
+  // The root download pill opened My Boards. Props: { scopeKey, phase }.
+  OfflineDownloadIndicatorTapped: 'Offline Download Indicator Tapped',
   // One artifact transfer that actually moved bytes — the per-download
   // throughput measurement the funnel could not give us (issue #4394). Completed
   // fires at SCOPE completion, omits `downloadMs` whenever the delta pull lands

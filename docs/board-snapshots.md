@@ -950,10 +950,13 @@ tonight's export cannot win a lock race either.
   longest SINGLE exclusive hold, which is the number to read before changing the batch size or the
   local-write retry ladder. `importMs` itself is the whole call and was never a lock hold; two in-repo retry
   ladders were once sized as if it were.
-- The three `grades*` props (`gradesDownloadMs`, `gradesVerifyMs`, `gradesLockMs`) — filter each on its own
+- The four `grades*` timings (`gradesDownloadMs`, `gradesWaitMs`, `gradesVerifyMs`, `gradesLockMs`) — filter each on its own
   `IS NOT NULL`, **not** on `importMs`. The grades retrofit path imports grades for a scope that is already
   bootstrapped, in a cycle with no whole-layout import, and that is exactly the still-crawling population
-  issue #4719 is about. The grades import is still one unbatched exclusive transaction.
+  issue #4719 is about. `gradesWaitMs` measures only the transfer wait remaining after the layout import;
+  `gradesDownloadMs` includes its overlap with that import. Grades commit in primary-key batches of 5,000
+  rows; `gradesLockMs` is the longest single hold, including COMMIT. The grades checkpoint and schema
+  refresh marker commit only after every batch. A failed batch leaves a safely replayable row prefix.
 
 `importLockMaxMs` is stamped from after `BEGIN EXCLUSIVE` succeeds, so it is a hold and never a wait; the
 wait (busy_timeout blocking plus the retry ladder's sleeps) is reported separately as `importLockWaitMs` and
@@ -986,6 +989,22 @@ pre-import empty result set.
   shared with `runBootstrapPhase` so the UI can never disagree with the engine about which artifact a
   scope would download. Note `bytes` is the **stored** object size — the wire figure, and deliberately
   the same scale the download progress row renders, so the dialog and the bar can never disagree.
+
+- **Whole-download progress**: `SyncProgress.download` carries the scope, phase, overall fraction, wire
+  counters, pending scope identities, queue count, and optional paged row count. The phases are preparing,
+  downloading, unpacking, grades, and finishing. Their weights are 1%, 44%, 31%, 9%, and 15%; layouts with
+  no grades artifact give its weight to unpacking. Fractions retain their high-water mark within an
+  attempt. Paged fallback uses row counts with an unknown fraction. The final 100% frame follows the
+  committed scope-complete marker. Complete scopes' ordinary delta pulls emit no download frames.
+  Requested boards keep tap order, reconsidered between scope jobs without interrupting active work.
+
+- **Grades overlap**: one grades transfer per layout starts before the layout import and is shared by
+  its sizes. Import waits for the layout rows so grade filtering cannot advance a cursor past missing
+  climbs. Layout import failure, sign-out, or that layout's purge aborts the transfer; every grades
+  artifact is deleted when the phase ends. A successful foreground-started transfer may finish and import
+  while backgrounded. A failed transfer is a free suspension interruption only while no foreground byte
+  has arrived since backgrounding and the cause is network loss or the recognized background decode
+  interruption. HTTP, disk, and programming failures still spend the three-attempt grades budget.
 
 - **Download progress (issue #4311)**: `runBootstrapPhase` emits three staged frames per scope on the
   existing `onProgress` sink — `manifest` → `download` → `import` — carried as
@@ -1051,9 +1070,9 @@ pre-import empty result set.
 
   A transfer that **finishes** while backgrounded is never a pause. The file is on disk with its
   `.complete` sidecar, the phase hands it back through `releaseArtifact({ imported: false })`, and the
-  next foreground cycle returns it as `reused: true` with zero bytes re-fetched. The grades stage
-  follows the same rule: `importGradesForScope` checks the teardown reason before spending one of the
-  three attempts that artifact ever gets.
+  next foreground cycle returns it as `reused: true` with zero bytes re-fetched. Grades already prefetched
+  for a foreground-started import may finish and import while backgrounded; new work and paged tails
+  wait for the next foreground cycle. Failed grades transfers use the narrow suspension test above.
 
 - **Download transport (issues #4394 / #4390)**. Every snapshot uses expo-file-system's DownloadTask.
   `resolveSnapshotDownloadStrategy` (`packages/mobile/src/offline/download-strategy.ts`) selects only by
@@ -1185,9 +1204,9 @@ pre-import empty result set.
   holding the global single-flight latch forever.
 - **Interrupted cycles terminalize their live status**: every expected background/offline/purge/sign-out
   exit emits `phase: 'idle', interrupted: true`. This clears the per-board spinner without stamping
-  `lastSyncedAt`. Bootstrap and grades downloads also latch a cycle teardown across their native awaits,
-  so a foreground event that arrives before a rejection is handled queues a fresh cycle instead of letting
-  the stale one continue into deletions or paged pulls.
+  `lastSyncedAt`. Bootstrap and grades downloads latch self-aborts and suspension-related transport
+  interruptions across their native awaits, so a foreground event arriving before those rejections queues
+  a fresh cycle. A prior background transition never exempts an unrelated HTTP, disk, or import failure.
 - **Gzip magic-byte sniff** (`packages/mobile/src/offline/snapshot-source.ts`): identity artifacts skip
   gzip verification. For manifest entries with `contentEncoding: 'gzip'`, the expectation is that the
   native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `DownloadTask`)

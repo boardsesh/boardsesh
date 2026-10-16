@@ -47,13 +47,14 @@ type BoardManageRowProps = {
    */
   isBootstrapping?: boolean;
   /**
-   * Live byte/percent detail for the snapshot warm-up (issue #4311), for THIS
+   * Live byte/percent and phase detail for the whole download, for THIS
    * row only — null on every other row, so their memo holds while this one
    * re-renders. Null also covers a build where the progress flag is off or the
    * downloader emits nothing, in which case the row keeps the plain
    * "Downloading board…" caption.
    */
   downloadProgress?: BoardDownloadProgress | null;
+  keepsScreenAwake?: boolean;
   /** Durable context for a retrying snapshot or a paged-crawl fallback. */
   downloadNotice?: BoardDownloadNotice;
   /**
@@ -90,6 +91,7 @@ function BoardManageRowComponent({
   downloadCount,
   isBootstrapping,
   downloadProgress = null,
+  keepsScreenAwake = false,
   downloadNotice = null,
   canRetryFastDownload = false,
   onRetryFastDownload,
@@ -144,21 +146,26 @@ function BoardManageRowComponent({
   // dialog quoted. Falls back to the plain "Downloading board…" string whenever
   // there is no frame yet — first render, flag off, or a downloader that never
   // reports.
-  const bootstrapProgressStatus =
-    isBootstrapping && downloadProgress
-      ? downloadProgress.stage === 'manifest'
-        ? t('mobile.offline.bootstrapPreparing')
-        : downloadProgress.stage === 'import'
-          ? t('mobile.offline.bootstrapImporting')
-          : downloadProgress.bytesDone !== null && downloadProgress.bytesTotal !== null
-            ? t('mobile.offline.bootstrapDownloading', {
-                done: formatBytes(downloadProgress.bytesDone, i18n.language),
-                total: formatBytes(downloadProgress.bytesTotal, i18n.language),
-              })
-            : t('mobile.offline.bootstrapDownloadingUnknown', {
-                total: formatBytes(downloadProgress.bytesTotal ?? 0, i18n.language),
-              })
-      : null;
+  const bootstrapProgressStatus = downloadProgress
+    ? downloadProgress.phase === 'grades'
+      ? t('mobile.offline.bootstrapGrades')
+      : downloadProgress.phase === 'finishing'
+        ? t('mobile.offline.finalizing')
+        : downloadProgress.stage === 'manifest'
+          ? t('mobile.offline.bootstrapPreparing')
+          : downloadProgress.stage === 'import'
+            ? t('mobile.offline.bootstrapImporting')
+            : downloadProgress.bytesDone !== null && downloadProgress.bytesTotal !== null
+              ? t('mobile.offline.bootstrapDownloading', {
+                  done: formatBytes(downloadProgress.bytesDone, i18n.language),
+                  total: formatBytes(downloadProgress.bytesTotal, i18n.language),
+                })
+              : downloadProgress.rowsProcessed !== undefined
+                ? t('mobile.offline.downloadingCount', { count: downloadProgress.rowsProcessed })
+                : t('mobile.offline.bootstrapDownloadingUnknown', {
+                    total: formatBytes(downloadProgress.bytesTotal ?? 0, i18n.language),
+                  })
+    : null;
 
   const offlineStatus =
     effectiveDownloadNotice === 'snapshot-retrying'
@@ -168,9 +175,10 @@ function BoardManageRowComponent({
           ? t('mobile.offline.pagedFallbackActive')
           : t('mobile.offline.pagedFallbackPending')
         : downloadState === 'downloading'
-          ? isBootstrapping
-            ? (bootstrapProgressStatus ?? t('mobile.offline.bootstrapping'))
-            : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+          ? (bootstrapProgressStatus ??
+            (isBootstrapping
+              ? (bootstrapProgressStatus ?? t('mobile.offline.bootstrapping'))
+              : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })))
           : downloadState === 'downloaded'
             ? t('mobile.offline.available')
             : downloadState === 'finalizing'
@@ -276,6 +284,11 @@ function BoardManageRowComponent({
             {offlineStatus}
           </Text>
         ) : null}
+        {keepsScreenAwake ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {t('mobile.offline.screenAwakeHint')}
+          </Text>
+        ) : null}
         {pagedFallbackProgress ? (
           <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
             {pagedFallbackProgress}
@@ -285,9 +298,7 @@ function BoardManageRowComponent({
             first progress frame cannot change the row's height inside the
             FlashList and jump the scroll position. */}
         {downloadState !== undefined && !board.sprayImport ? (
-          <OfflineDownloadProgressBar
-            fraction={downloadProgress && downloadProgress.stage === 'download' ? downloadProgress.fraction : undefined}
-          />
+          <OfflineDownloadProgressBar fraction={downloadProgress?.fraction} />
         ) : null}
         {canRetryFastDownload && onRetryFastDownload ? (
           <PressableSurface

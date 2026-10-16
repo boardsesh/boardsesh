@@ -255,8 +255,8 @@ describe('BoardManageRow offline toggle gating', () => {
       />,
     );
     expect(importing.queryByText('mobile.offline.bootstrapImporting')).not.toBeNull();
-    // The bar is only meaningful while bytes are moving.
-    expect(progressBarProps.last?.fraction).toBeUndefined();
+    // Import keeps the phase bar visible even without a known denominator.
+    expect(progressBarProps.last?.fraction).toBeNull();
   });
 
   it('keeps the legacy caption when no progress frame has arrived (flag off, or a downloader that never reports)', () => {

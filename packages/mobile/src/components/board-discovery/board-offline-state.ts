@@ -45,6 +45,7 @@ export type BoardDownloadStateInput = {
    * paged-crawl match below still applies.
    */
   phase?: SyncProgress['phase'] | null;
+  download?: SyncProgress['download'];
 };
 
 /**
@@ -70,6 +71,8 @@ function isBootstrappingThisScope(
  */
 export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloadState {
   if (!input.enabled) return 'off';
+  if (input.isSyncing && input.download?.scopeKey === input.scopeKey && input.download.phase === 'finishing')
+    return 'finalizing';
 
   const isCurrentBoard =
     isBootstrappingThisScope(input) ||
@@ -147,6 +150,8 @@ export function boardIsBootstrapping(input: BoardDownloadStateInput): boolean {
  */
 export type BoardDownloadProgress = {
   stage: 'manifest' | 'download' | 'import';
+  phase?: NonNullable<SyncProgress['download']>['phase'];
+  rowsProcessed?: number;
   /** 0..1, or null when no honest denominator exists (byte counter, no bar). */
   fraction: number | null;
   /** Bytes downloaded so far, wire scale. Null before the first byte frame. */
@@ -161,6 +166,7 @@ export type BoardDownloadProgressInput = Pick<
 > & {
   /** From useSyncStatus().progress?.snapshot — the live frame, whichever scope it names. */
   snapshot?: SyncProgress['snapshot'];
+  download?: SyncProgress['download'];
   /**
    * `useOfflineDownloadProgressEnabled()`. Required for compatibility with the
    * row API; the native hook is permanently true now that every snapshot uses a
@@ -179,6 +185,17 @@ export type BoardDownloadProgressInput = Pick<
 export function boardDownloadProgress(input: BoardDownloadProgressInput): BoardDownloadProgress | null {
   if (!input.progressEnabled) return null;
   if (!input.isSyncing) return null;
+  if (input.download?.scopeKey === input.scopeKey) {
+    const frame = input.download;
+    return {
+      stage: frame.phase === 'preparing' ? 'manifest' : frame.phase === 'downloading' ? 'download' : 'import',
+      phase: frame.phase,
+      rowsProcessed: frame.rowsProcessed,
+      fraction: frame.fraction,
+      bytesDone: frame.wireBytesDone,
+      bytesTotal: frame.wireBytes,
+    };
+  }
   if (!isBootstrappingThisScope(input)) return null;
   const frame = input.snapshot;
   if (!frame || frame.scopeKey !== input.scopeKey) return null;

@@ -69,6 +69,7 @@ import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
+import { getDownloadActivityGeneration } from '../sync/download-activity-store';
 import {
   clearUserStartedDownload,
   getPendingUserStartedDownloads,
@@ -231,6 +232,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
   expected,
   reason,
   aborted,
+  transferCompleted,
 }) => {
   // The funnel's Failed leg (issue #4316). Sentry alone could never answer "what
   // fraction of downloads fail, and at which stage" — it groups by exception
@@ -256,6 +258,7 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({
     expected,
     reason,
     aborted,
+    ...(transferCompleted === undefined ? {} : { transferCompleted }),
     errorMessage: cause instanceof Error ? cause.message : String(cause),
     ...(downloadAbandoned ? {} : downloadKeepAwakeProps(scopeKey)),
     offlineEngineEnabled: isOfflineEngineEnabled(),
@@ -434,6 +437,7 @@ const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({
     ...(phases.importLockWaitMs === undefined ? {} : { importLockWaitMs: phases.importLockWaitMs }),
     ...(phases.importBatches === undefined ? {} : { importBatches: phases.importBatches }),
     ...(phases.gradesDownloadMs === undefined ? {} : { gradesDownloadMs: phases.gradesDownloadMs }),
+    ...(phases.gradesWaitMs === undefined ? {} : { gradesWaitMs: phases.gradesWaitMs }),
     ...(phases.gradesVerifyMs === undefined ? {} : { gradesVerifyMs: phases.gradesVerifyMs }),
     ...(phases.gradesLockMs === undefined ? {} : { gradesLockMs: phases.gradesLockMs }),
     ...downloadKeepAwakeProps(scopeKey),
@@ -479,7 +483,9 @@ function combinedScopeDownloadCompleteReporter(
   onScopeDownloadComplete: ScopeDownloadCompleteReporter | undefined,
   queryClient?: QueryClient,
 ): ScopeDownloadCompleteReporter {
+  const generation = getDownloadActivityGeneration();
   return (info) => {
+    if (generation !== getDownloadActivityGeneration()) return;
     reportScopeDownloadComplete(info);
     // After the event has read its telemetry: the download is done, so the
     // screen lock goes back and the store forgets the board.
@@ -785,9 +791,12 @@ export function drainMutationQueue(
  * one primary-key read per pending download, which is almost always none.
  */
 async function forgetCompletedUserStartedDownloads(db: OfflineDatabase): Promise<void> {
+  const generation = getDownloadActivityGeneration();
   try {
     for (const scopeKey of getPendingUserStartedDownloads()) {
-      if (await isScopeDownloadComplete(db, scopeKey)) clearUserStartedDownload(scopeKey);
+      const completed = await isScopeDownloadComplete(db, scopeKey);
+      if (generation !== getDownloadActivityGeneration()) return;
+      if (completed) clearUserStartedDownload(scopeKey);
     }
   } catch {
     // A database that cannot answer now is asked again at the end of the next cycle.
@@ -802,7 +811,9 @@ async function forgetCompletedUserStartedDownloads(db: OfflineDatabase): Promise
  * is never worth failing a sync over.
  */
 function downloadTrackingProgressSink(db: OfflineDatabase, onProgress: SyncProgressSink | undefined): SyncProgressSink {
+  const generation = getDownloadActivityGeneration();
   return (progress) => {
+    if (generation !== getDownloadActivityGeneration()) return;
     try {
       if (noteDownloadProgress(progress) === 'idle') void forgetCompletedUserStartedDownloads(db);
     } catch (error) {
@@ -837,6 +848,7 @@ export function startSyncScheduler(
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
+    getPriorityBoards: getPendingUserStartedDownloads,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
@@ -869,6 +881,7 @@ export function triggerSync(
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
+    getPriorityBoards: getPendingUserStartedDownloads,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,

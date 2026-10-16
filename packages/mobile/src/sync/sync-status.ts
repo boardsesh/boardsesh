@@ -8,6 +8,7 @@
 // one hook, so non-React callers (the bridge) can publish without a render.
 
 import { useSyncExternalStore } from 'react';
+import { completeDownloadActivity, noteDownloadActivity, resetDownloadActivity } from './download-activity-store';
 import type { BootstrapMetadataChangedInfo, ScopeDownloadCompleteInfo, SyncProgress } from '@boardsesh/offline-sync';
 
 export type SyncStatus = {
@@ -62,6 +63,7 @@ export function getSyncStatusSnapshot(): SyncStatus {
  * every other frame keeps `isSyncing` true.
  */
 export function setSyncProgress(progress: SyncProgress): void {
+  noteDownloadActivity(progress);
   const reachedIdle = progress.phase === 'idle';
   const completed = reachedIdle && !progress.failed && !progress.interrupted;
   currentStatus = {
@@ -88,7 +90,8 @@ export function notifyBootstrapMetadataChanged(_info: BootstrapMetadataChangedIn
  * progress for later scopes in the same cycle. SQLite markers are committed
  * before this fires, so revision-keyed queries can read the completed state now.
  */
-export function notifyScopeDownloadComplete(_info: ScopeDownloadCompleteInfo): void {
+export function notifyScopeDownloadComplete(info: ScopeDownloadCompleteInfo): void {
+  completeDownloadActivity(info.scopeKey);
   currentStatus = {
     ...currentStatus,
     scopeCompletionRevision: currentStatus.scopeCompletionRevision + 1,
@@ -102,6 +105,7 @@ export function notifyScopeDownloadComplete(_info: ScopeDownloadCompleteInfo): v
  * describing somebody else's sync, over data that is gone.
  */
 export function resetSyncStatus(): void {
+  resetDownloadActivity();
   currentStatus = IDLE_STATUS;
   emit();
 }
@@ -114,4 +118,31 @@ export function __resetSyncStatusForTests(): void {
 /** Subscribe a React component to the live sync status. */
 export function useSyncStatus(): SyncStatus {
   return useSyncExternalStore(subscribe, getSyncStatusSnapshot, () => IDLE_STATUS);
+}
+
+// Management lists observe lifecycle facts, rather than every incoming byte.
+type SyncStatusMetadata = Omit<SyncStatus, 'progress'> & { phase: SyncProgress['phase'] | null };
+const IDLE_METADATA: SyncStatusMetadata = {
+  isSyncing: false,
+  lastSyncedAt: null,
+  bootstrapMetadataRevision: 0,
+  scopeCompletionRevision: 0,
+  phase: null,
+};
+let metadataSnapshot: SyncStatusMetadata = IDLE_METADATA;
+function getMetadataSnapshot(): SyncStatusMetadata {
+  if (
+    metadataSnapshot.phase !== (currentStatus.progress?.phase ?? null) ||
+    metadataSnapshot.isSyncing !== currentStatus.isSyncing ||
+    metadataSnapshot.lastSyncedAt !== currentStatus.lastSyncedAt ||
+    metadataSnapshot.bootstrapMetadataRevision !== currentStatus.bootstrapMetadataRevision ||
+    metadataSnapshot.scopeCompletionRevision !== currentStatus.scopeCompletionRevision
+  ) {
+    const { progress: _progress, ...metadata } = currentStatus;
+    metadataSnapshot = { ...metadata, phase: currentStatus.progress?.phase ?? null };
+  }
+  return metadataSnapshot;
+}
+export function useSyncStatusMetadata(): SyncStatusMetadata {
+  return useSyncExternalStore(subscribe, getMetadataSnapshot, () => IDLE_METADATA);
 }

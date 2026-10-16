@@ -146,6 +146,7 @@ import {
   subscribeDownloadKeepAwake,
 } from '../download-keep-awake-store';
 import { __resetSyncStatusForTests, setSyncProgress } from '../../sync';
+import { getDownloadActivity } from '../../sync/download-activity-store';
 import {
   drainMutationQueue,
   startSyncScheduler,
@@ -1416,6 +1417,7 @@ describe('download keep-awake bindings (issue #4310)', () => {
     );
     expect(isDownloadKeepAwakeActive()).toBe(false);
     expect(getUserStartedDownloads()).toEqual([]);
+    expect(getDownloadActivity()?.status).toBe('done');
   });
 
   it('reports how long the JS thread was stopped during the download', () => {
@@ -1531,6 +1533,34 @@ describe('download keep-awake bindings (issue #4310)', () => {
 
     expect(isScopeDownloadCompleteCore).toHaveBeenCalledWith(db, KILTER);
     expect(getUserStartedDownloads()).toEqual([]);
+    expect(getDownloadActivity()?.status).toBe('done');
+  });
+
+  it('ignores progress and completion callbacks from the previous account generation', () => {
+    startKilterDownload();
+    const options = schedulerOptions();
+    __resetSyncStatusForTests();
+    markUserStartedDownload(KILTER);
+    options.onProgress?.(downloadFrame);
+    options.onScopeDownloadComplete?.({ scopeKey: KILTER, method: 'snapshot', durationMs: 10, phases: NO_PHASES });
+    expect(getDownloadActivity()?.status).toBe('waiting');
+    expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
+    expect(isDownloadKeepAwakeActive()).toBe(false);
+  });
+
+  it('ignores a cached completion read that resolves after the account resets', async () => {
+    startKilterDownload();
+    const completion = Promise.withResolvers<boolean>();
+    isScopeDownloadCompleteCore.mockReturnValueOnce(completion.promise);
+    const options = schedulerOptions();
+    options.onProgress?.(idleFrame);
+    expect(isScopeDownloadCompleteCore).toHaveBeenCalledOnce();
+    __resetSyncStatusForTests();
+    markUserStartedDownload(KILTER);
+    completion.resolve(true);
+    await completion.promise;
+    expect(getDownloadActivity()?.status).toBe('waiting');
+    expect(getPendingUserStartedDownloads()).toEqual([KILTER]);
   });
 
   it('keeps a user-started download that is still incomplete when a cycle ends', async () => {

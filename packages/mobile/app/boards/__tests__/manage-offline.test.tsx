@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import type { ScopeDownloadProgress } from '@boardsesh/offline-sync';
 
 type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress?: () => void };
@@ -73,13 +74,7 @@ const state = vi.hoisted(() => ({
       phase: string;
       currentTable: string | null;
       currentTableProcessed?: number;
-      snapshot?: {
-        scopeKey: string;
-        stage: 'manifest' | 'download' | 'import';
-        fraction: number | null;
-        wireBytes: number | null;
-        wireBytesDone: number | null;
-      };
+      download?: ScopeDownloadProgress;
     } | null,
     bootstrapMetadataRevision: 0,
     scopeCompletionRevision: 0,
@@ -107,6 +102,22 @@ const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): 
     ownerId: 'me',
     ...overrides,
   }) as unknown as UserBoard;
+
+function downloadFrame(
+  scopeKey: string,
+  phase: ScopeDownloadProgress['phase'],
+  rowsProcessed?: number,
+): ScopeDownloadProgress {
+  return {
+    scopeKey,
+    phase,
+    fraction: null,
+    wireBytes: null,
+    wireBytesDone: null,
+    queuedScopes: 0,
+    ...(rowsProcessed !== undefined ? { rowsProcessed } : {}),
+  };
+}
 
 function deferred<Result>() {
   let resolvePromise!: (result: Result) => void;
@@ -325,7 +336,21 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
     return { userId: state.storedUserId, isLoading: state.isStoredUserIdLoading };
   },
 }));
-vi.mock('../../../src/sync', () => ({ useSyncStatus: () => state.syncStatus }));
+vi.mock('../../../src/sync/sync-status', () => ({
+  getSyncStatusSnapshot: () => state.syncStatus,
+  useSyncStatusMetadata: () => ({ ...state.syncStatus, phase: state.syncStatus.progress?.phase ?? null }),
+}));
+vi.mock('../../../src/sync/download-activity-store', () => ({
+  useDownloadActivity: () => {
+    const progress = state.syncStatus.progress?.download;
+    return progress ? { status: 'active', progress } : null;
+  },
+}));
+vi.mock('../../../src/offline/download-keep-awake-store', () => ({
+  getPendingUserStartedDownloads: () => [],
+  isDownloadKeepAwakeActive: () => false,
+  subscribeDownloadKeepAwake: () => () => {},
+}));
 vi.mock('../../../src/offline/use-board-downloads', () => ({
   useBoardDownloads: () => ({ enableBoardsOffline: vi.fn(), retryFastDownload: retryFastDownloadMock }),
 }));
@@ -569,6 +594,7 @@ describe('My Boards with no usable network list', () => {
         phase: 'board_data',
         currentTable: 'board_climbs:kilter:8:17',
         currentTableProcessed: 12,
+        download: downloadFrame('kilter:8:17', 'downloading', 12),
       },
       bootstrapMetadataRevision: 0,
       scopeCompletionRevision: 0,
@@ -701,6 +727,7 @@ describe('My Boards with no usable network list', () => {
       progress: {
         phase: 'bootstrap',
         currentTable: 'tension:2:10',
+        download: downloadFrame('tension:2:10', 'unpacking'),
       },
       bootstrapMetadataRevision: 1,
       scopeCompletionRevision: 0,
@@ -754,9 +781,10 @@ describe('My Boards with no usable network list', () => {
       progress: {
         phase: 'bootstrap',
         currentTable: 'kilter:8:17',
-        snapshot: {
+        download: {
           scopeKey: 'kilter:8:17',
-          stage: 'download',
+          phase: 'downloading',
+          queuedScopes: 0,
           fraction: 0.4,
           wireBytes: 103_000_000,
           wireBytesDone: 41_200_000,
@@ -769,11 +797,11 @@ describe('My Boards with no usable network list', () => {
     return document.querySelector('[data-board="net-1"]');
   };
 
-  it('hands the downloading row its live snapshot frame', () => {
+  it('hands the downloading row its whole-download frame', () => {
     expect(renderBootstrappingRow()?.getAttribute('data-download-stage')).toBe('download');
   });
 
-  it('withholds the snapshot frame from the row when the progress kill switch is off', () => {
+  it('withholds the whole-download frame from the row when the progress kill switch is off', () => {
     state.downloadProgressEnabled = false;
     const row = renderBootstrappingRow();
     expect(row?.getAttribute('data-download-stage')).toBe('');
@@ -807,6 +835,7 @@ describe('My Boards with no usable network list', () => {
         phase: 'board_data',
         currentTable: 'board_climb_grades:kilter:8:17',
         currentTableProcessed: 73,
+        download: downloadFrame('kilter:8:17', 'downloading', 73),
       },
       bootstrapMetadataRevision: 1,
       scopeCompletionRevision: 0,
@@ -866,6 +895,7 @@ describe('My Boards with no usable network list', () => {
         progress: {
           phase,
           currentTable: phase === 'user_data' ? 'boardsesh_ticks' : null,
+          download: downloadFrame('tension:2:10', 'finishing'),
         },
         bootstrapMetadataRevision: 0,
         scopeCompletionRevision: 0,
@@ -925,7 +955,15 @@ describe('My Boards with no usable network list', () => {
       ]);
       state.syncStatus = {
         isSyncing: true,
-        progress: { phase, currentTable },
+        progress: {
+          phase,
+          currentTable,
+          download: downloadFrame(
+            'tension:2:10',
+            phase === 'bootstrap' ? 'unpacking' : 'downloading',
+            phase === 'board_data' ? 0 : undefined,
+          ),
+        },
         bootstrapMetadataRevision: isSecondBootstrapDone ? 2 : 1,
         scopeCompletionRevision: 0,
       };
@@ -962,7 +1000,11 @@ describe('My Boards with no usable network list', () => {
     state.bootstrapMetadataRead = Promise.resolve(beforeImport);
     state.syncStatus = {
       isSyncing: true,
-      progress: { phase: 'bootstrap', currentTable: 'kilter:8:17' },
+      progress: {
+        phase: 'bootstrap',
+        currentTable: 'kilter:8:17',
+        download: downloadFrame('kilter:8:17', 'unpacking'),
+      },
       bootstrapMetadataRevision: 0,
       scopeCompletionRevision: 0,
     };
@@ -994,7 +1036,8 @@ describe('My Boards with no usable network list', () => {
     };
     rerender(createElement(ManageBoards));
 
-    // The prior revision's unfinished marker is rejected while the new-key read
+    // Without a scope finishing frame, the prior revision's unfinished marker
+    // is rejected while the new-key read
     // is pending, so the row cannot claim finalizing until SQLite confirms it.
     expect(document.querySelector('[data-board="board-a"]')?.getAttribute('data-download-state')).toBe('pending');
 
@@ -1035,6 +1078,7 @@ describe('My Boards with no usable network list', () => {
         phase: 'board_data',
         currentTable: 'board_climbs:kilter:8:17',
         currentTableProcessed: 42,
+        download: downloadFrame('kilter:8:17', 'downloading', 42),
       },
       bootstrapMetadataRevision: 1,
       scopeCompletionRevision: 0,
@@ -1061,6 +1105,7 @@ describe('My Boards with no usable network list', () => {
         phase: 'board_data',
         currentTable: 'board_climbs:tension:2:10',
         currentTableProcessed: 7,
+        download: downloadFrame('tension:2:10', 'downloading', 7),
       },
       bootstrapMetadataRevision: 1,
       scopeCompletionRevision: 1,
