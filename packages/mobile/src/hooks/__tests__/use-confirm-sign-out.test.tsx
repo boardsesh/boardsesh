@@ -310,6 +310,21 @@ describe('useConfirmSignOut', () => {
       'mobile.settings.signOut.failure',
     );
   });
+
+  it('lets the user confirm and retry after a failed sign-out', async () => {
+    signOutMock.mockRejectedValueOnce(new Error('NextAuth sign-out unavailable'));
+    const { press } = renderConfirmSignOut();
+
+    await press();
+    expect(showSignOutFailureMock).toHaveBeenCalledTimes(1);
+
+    await press();
+
+    expect(confirmMock).toHaveBeenCalledTimes(2);
+    expect(signOutMock).toHaveBeenCalledTimes(2);
+    expect(signOutMock).toHaveBeenLastCalledWith('manual');
+    expect(showSignOutFailureMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('useConfirmSignOut when the offline database belongs to a newer app version', () => {

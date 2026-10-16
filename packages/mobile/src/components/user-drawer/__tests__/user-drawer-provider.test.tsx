@@ -193,8 +193,8 @@ vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: drawerState.isAuthenticated, signOut: signOutMock }),
 }));
 // Raising the dialog and running the wipe is the hook's job, covered by its own
-// test. What matters here is that Log out routes through it at all — the drawer used
-// to sign out directly, with no confirmation — and only once the drawer has closed.
+// test. These tests pin whether Log out keeps iOS Account mounted or closes the
+// drawer first; the hook tests cover cancellation, errors and double-tap protection.
 vi.mock('../../../hooks/use-confirm-sign-out', () => ({
   useConfirmSignOut: () => confirmSignOutMock,
 }));
@@ -309,9 +309,8 @@ beforeEach(() => {
   segmentsMock.current = [];
   changelogSeen.getLastSeenChangelogDate.mockResolvedValue('2026-01-01T00:00:00.000Z');
   changelogSeen.hasUnseenChangelog.mockReturnValue(false);
-  // The route defers its post-close action one frame past unmount (so the route
-  // VC dismissal flushes before a sheet presents). Run rAF synchronously so the
-  // deferral resolves within the unmounting rerender the tests drive.
+  // The route defers its post-close action one frame past React unmount. Run rAF
+  // synchronously so the deferral resolves within the unmounting rerender.
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
     return 0;
@@ -467,8 +466,7 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(feedbackPresent).toHaveBeenCalled();
   });
 
-  // The dialog is a native Alert on iOS, so raising it before the drawer has slid
-  // away would put it over a half-dismissed drawer.
+  // The animated drawer retains its close-first confirmation flow.
   it('Log out closes the drawer, then asks to confirm', () => {
     const { rerender } = render(<Harness showScreen />);
 
@@ -671,6 +669,67 @@ describe('user-drawer crowdsourced-QA rows', () => {
 });
 
 describe('native Account navigation', () => {
+  it('confirms sign-out while iOS Account remains mounted and allows another attempt', async () => {
+    platform.OS = 'ios';
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Log out'));
+    });
+
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(1);
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
+    expect(signOutMock).not.toHaveBeenCalled();
+
+    // The hook resolves without navigation on cancel or a handled sign-out
+    // failure. The same mounted row must still work after either outcome.
+    await act(async () => {
+      fireEvent.click(screen.getByText('Log out'));
+    });
+
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(2);
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+
+  it.each(['android', 'web'])('closes Account before confirming on %s', async (platformName) => {
+    platform.OS = platformName;
+    const AccountHarness = ({ showScreen }: { showScreen: boolean }) => (
+      <UserDrawerProvider>{showScreen ? <AccountMenu presentation="account" /> : null}</UserDrawerProvider>
+    );
+    const { rerender } = render(<AccountHarness showScreen />);
+
+    fireEvent.click(screen.getByText('Log out'));
+
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(confirmSignOutMock).not.toHaveBeenCalled();
+    await act(async () => {
+      rerender(<AccountHarness showScreen={false} />);
+    });
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['ios', 'android', 'web'])('keeps drawer sign-out close-first on %s', async (platformName) => {
+    platform.OS = platformName;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Log out'));
+
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(confirmSignOutMock).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(confirmSignOutMock).not.toHaveBeenCalled();
+    await act(async () => {
+      rerender(<Harness showScreen={false} />);
+    });
+    expect(confirmSignOutMock).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the native account sheet from the iOS avatar', () => {
     platform.OS = 'ios';
     render(<Harness showScreen={false} />);

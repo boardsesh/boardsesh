@@ -1,6 +1,6 @@
 import { PressableSurface } from '../src/components/PressableSurface';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Stack, router } from 'expo-router';
 import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
@@ -37,9 +37,8 @@ const DRAWER_ANIMATION_MS = 220;
  *
  * The panel runs its OWN reanimated slide (the route is registered with
  * `animation: 'none'`). `close(after)` slides the panel out, pops the route on
- * settle, and runs the optional `after` in THIS screen's unmount cleanup — i.e.
- * once the route's view controller is gone. That ordering is what lets a row
- * navigate or present the (root-mounted) FeedbackSheet without ever stacking a
+ * settle, and queues the optional `after` one frame after React unmounts. That
+ * ordering lets a row navigate or present the root-mounted FeedbackSheet without stacking a
  * second presentation over the still-up drawer.
  */
 export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: 'drawer' | 'account' }) {
@@ -116,10 +115,9 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   const profileEmail = profile?.email ?? null;
 
   const drawerProgress = useSharedValue(0);
-  // Queued action to run once THIS route has unmounted (see close). The native
-  // FeedbackSheet lives at the provider root and a destination route may itself
-  // present a second VC — running them only after the drawer's VC is gone is what
-  // keeps two presentations from overlapping and deadlocking UIKit.
+  // Queued action to run after THIS route has unmounted (see close). The native
+  // FeedbackSheet lives at the provider root; drawer actions defer presentation
+  // so they do not start during the drawer's slide-out.
   const pendingAfterCloseRef = useRef<(() => void) | null>(null);
   const closingRef = useRef(false);
   // Guards popRoute against firing after this screen has unmounted (an interrupted
@@ -135,13 +133,10 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     });
   }, [drawerProgress, isAccount]);
 
-  // Fire the queued action once the route's view controller is gone. Deferring it
-  // ONE FRAME past unmount is load-bearing: router.back() (the pop) and a deferred
-  // native sheet present (FeedbackSheet, off the root window VC) would otherwise
-  // land in the SAME native transaction in undefined order — presenting a sheet
-  // while the route's VC is still tearing down is exactly the concurrent-
-  // presentation deadlock (#3211) this route exists to avoid. The frame yield lets
-  // the dismissal flush first. Mirrors the old RN-Modal's requestAnimationFrame.
+  // Defer drawer actions one frame past React unmount to separate the pop and
+  // presentation transactions (#3211). React unmount does not guarantee native
+  // dismissal has completed: iOS Account sign-out confirms while Account stays
+  // mounted instead of relying on this frame to finish its modal dismissal.
   useEffect(
     () => () => {
       mountedRef.current = false;
@@ -203,6 +198,17 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   const handleReportBug = () => {
     setFeedbackMode('bug');
     close(() => presentFeedback());
+  };
+
+  const handleSignOut = () => {
+    if (isAccount && Platform.OS === 'ios') {
+      // Present from the stable Account sheet. Dismissing it first can race the
+      // native confirmation sheet (#6505). Cancel/failure keeps this row usable;
+      // successful sign-out redirects through AuthProvider.
+      signOutAction();
+      return;
+    }
+    close(() => signOutAction());
   };
 
   const menuContent = (
@@ -346,7 +352,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
           icon="logout"
           title={t('userDrawer.logout')}
           tintColor={brandColors.error}
-          onPress={() => close(() => signOutAction())}
+          onPress={handleSignOut}
           showSeparator={false}
         />
       </View>
