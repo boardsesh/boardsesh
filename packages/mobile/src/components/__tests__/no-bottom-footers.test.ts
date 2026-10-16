@@ -46,8 +46,9 @@ const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([
   // The same shape as ClimbFilterSheet: it pushes the setter picker route and
   // restores its scroll offset through useSheetSubRoute when it re-presents.
   'src/components/you/LogbookFilterSheet.tsx',
-  // LogAscentSheet would be listed too, but it is a ModalSheet now and gets the
-  // hook from the wrapper; it only mentions the hook in a comment.
+  // The permanent LogAscentSheet composer measures both snap points so its
+  // pinned Attempt / Save row stays visible while logging (#6507).
+  'src/components/use-create-tick-snap-points.ts',
 ]);
 
 /** Where useSheetColumnStyle is defined. */

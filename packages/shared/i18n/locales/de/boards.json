@@ -1028,8 +1028,7 @@
         "holds": "Griffe markieren",
         "name": "Benennen",
         "step": "{{number}}. {{label}}"
-      },
-      "trainingNote": "Dein Foto und die Griffe, die du markierst, helfen der App, Griffe zu erkennen. „Hilf beim Training der Grifferkennung“ kannst du im vorigen Schritt ausschalten oder jederzeit unter „Board bearbeiten“."
+      }
     },
     "adjust": {
       "title": "Zuschneiden und drehen",
@@ -1168,8 +1167,7 @@
       "title": "Was soll die Wand zeigen?",
       "body": "Wische, um das Foto, nur die Wand oder nur die Griffe zu vergleichen.",
       "unsupported": "Aktuell ist nur das Foto verfügbar. Du kannst deine Wand trotzdem fertigstellen."
-    },
-    "meta": {}
+    }
   },
   "sprayResetConfirm": {
     "title": "Wand zurücksetzen?",

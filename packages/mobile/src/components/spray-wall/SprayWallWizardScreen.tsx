@@ -321,7 +321,7 @@ export function SprayWallWizardScreen({
    * wait: a photo picked or a crop started now would be overtaken by the answer.
    */
   const [resumeDeciding, setResumeDeciding] = useState(false);
-  const photoControlsBusy = pickerBusy || resumeDeciding;
+  const photoControlsBusy = pickerBusy || resumeDeciding || consentSaving;
 
   const createWall = useCreateSprayWall();
   const createVersion = useCreateSprayWallVersion();
@@ -814,7 +814,7 @@ export function SprayWallWizardScreen({
 
   const pickPhoto = useCallback(
     async (source: 'library' | 'camera') => {
-      if (photoControlsBusy) return;
+      if (photoControlsBusy || consentSavingNow()) return;
       setPickerBusy(true);
       hapticSelection();
       try {
@@ -834,7 +834,7 @@ export function SprayWallWizardScreen({
         setPickerBusy(false);
       }
     },
-    [photoControlsBusy, showToast, t],
+    [photoControlsBusy, consentSavingNow, showToast, t],
   );
 
   /** The empty tile's tap: the camera where this binary and phone have one, the library otherwise. */
@@ -1441,7 +1441,9 @@ export function SprayWallWizardScreen({
     headerTrailing = {
       kind: 'forward',
       label: t('sprayWizard.next'),
-      onPress: () => { if (!consentSavingNow()) dispatch({ type: 'PHOTO_CONFIRMED' }); },
+      onPress: () => {
+        if (!consentSavingNow()) dispatch({ type: 'PHOTO_CONFIRMED' });
+      },
       disabled: !photoPicked || waitingForResume || busy,
       loading: consentSaving || (photoPicked && waitingForResume && resumeError == null),
       prominent: true,
@@ -1890,11 +1892,6 @@ export function SprayWallWizardScreen({
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
                 {t('sprayWizard.photo.tip')}
               </Text>
-              {!state.wall && builder.trainingConsent ? (
-                <Text variant="footnote" color={systemColors.secondaryLabel}>
-                  {t('sprayWizard.photo.trainingNote')}
-                </Text>
-              ) : null}
               <PressableSurface
                 onPress={openPhotoGuide}
                 hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
@@ -1908,6 +1905,12 @@ export function SprayWallWizardScreen({
                 </Text>
               </PressableSurface>
             </>
+          )}
+          {/* Keep the choice below photo controls before the first upload. */}
+          {state.wall ? (
+            <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
+          ) : (
+            <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
           )}
         </>
       ) : null}

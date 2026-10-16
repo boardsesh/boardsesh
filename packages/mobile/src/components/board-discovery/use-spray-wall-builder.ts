@@ -134,8 +134,8 @@ export function useSprayWallBuilder(
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(null);
-  // "Help train hold finding" (SW-20, #5471). On by default; the switch sits
-  // beside visibility and the photo step says so.
+  // "Help train hold finding" (SW-20, #5471). On by default; the photo step
+  // asks before the first upload, and Edit board can change it later.
   const [trainingConsent, setTrainingConsent] = useState(true);
 
   /**

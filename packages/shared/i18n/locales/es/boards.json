@@ -1028,8 +1028,7 @@
         "holds": "Marca las presas",
         "name": "Ponle nombre",
         "step": "{{number}}. {{label}}"
-      },
-      "trainingNote": "Tu foto y las presas que marques ayudan a enseñar a la app a encontrar presas. Puedes desactivar «Ayuda a entrenar la detección de presas» en el paso anterior o cuando quieras en «Editar plafón»."
+      }
     },
     "adjust": {
       "title": "Recorta y gira",
@@ -1168,8 +1167,7 @@
       "title": "¿Qué debería mostrar el muro?",
       "body": "Desliza para comparar la foto, solo el muro o solo las presas.",
       "unsupported": "Ahora solo está disponible la foto. Aún puedes terminar tu muro."
-    },
-    "meta": {}
+    }
   },
   "sprayResetConfirm": {
     "title": "¿Resetear este muro?",

@@ -185,12 +185,16 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayTrainingConsentField: () => null,
 }));
 vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
-vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({ useSprayWallTrainingConsentSaving: () => false, isSprayWallTrainingConsentSaving: () => false }));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsentSaving: () => false,
+  isSprayWallTrainingConsentSaving: () => false,
+}));
 vi.mock('../../CollapsibleSection', () => ({
   CollapsibleSection: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { displayName: 'Marco' } }) }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));

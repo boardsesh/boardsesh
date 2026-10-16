@@ -1028,8 +1028,7 @@
         "holds": "Marque les prises",
         "name": "Donne-lui un nom",
         "step": "{{number}}. {{label}}"
-      },
-      "trainingNote": "Ta photo et les prises que tu marques aident l'app à apprendre à repérer les prises. Tu peux désactiver « Aider à entraîner la détection des prises » à l'étape précédente, ou à tout moment dans « Modifier la board »."
+      }
     },
     "adjust": {
       "title": "Recadre et pivote",
@@ -1168,8 +1167,7 @@
       "title": "Que doit montrer le mur ?",
       "body": "Fais glisser pour comparer la photo, le mur seul ou les prises seules.",
       "unsupported": "Seule la photo est disponible pour le moment. Tu peux quand même terminer ton mur."
-    },
-    "meta": {}
+    }
   },
   "sprayResetConfirm": {
     "title": "Réinitialiser ce mur ?",

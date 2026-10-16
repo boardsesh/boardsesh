@@ -57,6 +57,8 @@ vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../../ble/TimerPairingSheet', () => ({ TimerPairingSheet: () => null }));
 vi.mock('../GymPickerSheet', () => ({ GymPickerSheet: () => null }));
+// The gym-location warning has its own hook coverage; these tests exercise form slots.
+vi.mock('../OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
 vi.mock('../BoardConfigChips', () => ({ BoardConfigChips: () => null }));
 vi.mock('../../privacy/AudiencePicker', () => ({ AudiencePicker: () => null, BOARD_AUDIENCES: [] }));
 // The two controls that say who sees the wall, one per mode, as markers.
