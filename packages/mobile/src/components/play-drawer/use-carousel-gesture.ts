@@ -4,6 +4,7 @@ import {
   cancelAnimation,
   runOnJS,
   runOnUI,
+  useAnimatedReaction,
   useSharedValue,
   withSpring,
   type SharedValue,
@@ -44,6 +45,14 @@ type UseCarouselGestureReturn = {
   gesture: GestureType;
 };
 
+type PendingSwipeRelease = {
+  direction: 1 | -1;
+  velocity: number;
+  anchor: number;
+  step: number;
+  generation: number;
+};
+
 /**
  * The horizontal swipe between climbs.
  *
@@ -82,6 +91,10 @@ export function useCarouselGesture({
     reachTrackEnd,
   } = pager;
   const hasTriggeredHaptic = useSharedValue(false);
+  // Only a released swipe waits here. A drag still needs a mounted neighbour
+  // before moving the board; catching up must never expose an empty page.
+  const pendingRelease = useSharedValue<PendingSwipeRelease | null>(null);
+  const touchCancelled = useSharedValue(false);
 
   // Mirror enabled into a shared value so the gesture useMemo doesn't rebuild
   // when it flips — recomposing mid-session left RNGH stuck on iOS.
@@ -115,12 +128,13 @@ export function useCarouselGesture({
     () => () => {
       runOnUI(() => {
         'worklet';
+        pendingRelease.value = null;
         if (flingDirection.value !== 0) return;
         cancelAnimation(translateX);
         translateX.value = 0;
       })();
     },
-    [flingDirection, translateX],
+    [flingDirection, pendingRelease, translateX],
   );
 
   // Captured ONCE by the gesture memo (it composes a single time per mount):
@@ -151,7 +165,7 @@ export function useCarouselGesture({
   // belonged to the old page.
   const dragGeneration = useSharedValue(0);
 
-  const gesture = useMemo(() => {
+  const { gesture, startFling } = useMemo(() => {
     /** Whether the page one step that way is mounted. The JS thread mounts one each side of ITS middle page. */
     const canStep = (direction: 1 | -1) => {
       'worklet';
@@ -200,11 +214,30 @@ export function useCarouselGesture({
       dragOrigin.value = translationX;
     };
 
+    const startFling = (direction: 1 | -1, velocity: number) => {
+      'worklet';
+      uiSteps.value += 1;
+      untoldStep.value = uiSteps.value;
+      isAnimating.value = true;
+      flingDirection.value = direction;
+      // Clear the full viewport, including the board's letterbox margins.
+      translateX.value = withSpring(
+        -direction * (screenWidthSV.value + SWIPE_OFFSCREEN_PAD),
+        { ...springs.interactive, velocity, overshootClamping: true },
+        (finished) => {
+          'worklet';
+          if (finished) landFling(false);
+        },
+      );
+    };
+
     const pan = Gesture.Pan()
       .manualActivation(true)
       .maxPointers(1)
       .onTouchesDown((event, state) => {
         'worklet';
+        pendingRelease.value = null;
+        touchCancelled.value = false;
         directionLock.value = 0;
         if (event.allTouches.length > 1) {
           state.fail();
@@ -253,6 +286,8 @@ export function useCarouselGesture({
       })
       .onStart((event) => {
         'worklet';
+        pendingRelease.value = null;
+        touchCancelled.value = false;
         hasTriggeredHaptic.value = false;
         dragGeneration.value = resetGeneration.value;
         if (isAnimating.value) {
@@ -294,6 +329,9 @@ export function useCarouselGesture({
       })
       .onEnd((event) => {
         'worklet';
+        // A navigation reset can arrive after the final update. That finger
+        // travel belongs to the page the pager has already abandoned.
+        if (dragGeneration.value !== resetGeneration.value) return;
         const offset = translateX.value;
         const velocity = event.velocityX ?? 0;
         // Judged on the finger's own travel, like the haptic: a hard flick must
@@ -311,26 +349,28 @@ export function useCarouselGesture({
         const direction = commitDirection === 'next' ? 1 : commitDirection === 'previous' ? -1 : 0;
 
         if (direction !== 0 && canStep(direction)) {
-          uiSteps.value += 1;
-          untoldStep.value = uiSteps.value;
-          isAnimating.value = true;
-          flingDirection.value = direction;
-          // Fling fully off-screen (Tinder throw) — past the screen edge so the
-          // letterbox clears. The anchor moves on COMPLETION (card off-screen,
-          // incoming board in the middle), in the same frame the offset resets.
-          translateX.value = withSpring(
-            -direction * (screenWidthSV.value + SWIPE_OFFSCREEN_PAD),
-            { ...springs.interactive, velocity, overshootClamping: true },
-            (finished) => {
-              'worklet';
-              if (finished) landFling(false);
-            },
-          );
+          startFling(direction, velocity);
           return;
         }
-        // A forward swipe past the list's last climb shows the end card. The
-        // board springs back: the climb on screen does not change.
-        if (direction === 1 && !canStep(1) && trackEndAvailable.value) {
+        // A fast second release can beat the render that mounts its neighbour.
+        // Keep its intent, but take no step until that render confirms the page.
+        if (
+          direction !== 0 &&
+          !touchCancelled.value &&
+          enabledSV.value &&
+          !isZoomedSV?.value &&
+          jsState.value.processedStep !== uiSteps.value
+        ) {
+          pendingRelease.value = {
+            direction,
+            velocity,
+            anchor: anchorPage.value,
+            step: uiSteps.value,
+            generation: resetGeneration.value,
+          };
+        // A forward swipe past the list's last climb shows the end card only
+        // once React has confirmed that this really is the end of the track.
+        } else if (direction === 1 && !canStep(1) && trackEndAvailable.value) {
           runOnJS(reachTrackEnd)();
         }
         if (offset !== 0) {
@@ -344,6 +384,8 @@ export function useCarouselGesture({
       // simultaneous scroll still works (the "frozen, scroll-but-no-tap" bug).
       .onTouchesCancelled((_event, stateManager) => {
         'worklet';
+        pendingRelease.value = null;
+        touchCancelled.value = true;
         stateManager.fail();
       })
       // Catch-all terminal reset: on any end/fail/cancel, clear the direction lock
@@ -352,7 +394,7 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
-    return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
+    return { gesture: scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan, startFling };
   }, [
     boardWidthSV,
     screenWidthSV,
@@ -376,8 +418,46 @@ export function useCarouselGesture({
     tellUntoldStep,
     trackEndAvailable,
     reachTrackEnd,
+    pendingRelease,
+    touchCancelled,
     scrollRef,
   ]);
+
+  useAnimatedReaction(
+    () => {
+      const pending = pendingRelease.value;
+      if (pending === null) return null;
+      return {
+        pending,
+        state: jsState.value,
+        anchor: anchorPage.value,
+        step: uiSteps.value,
+        generation: resetGeneration.value,
+        enabled: enabledSV.value,
+        zoomed: isZoomedSV?.value ?? false,
+      };
+    },
+    (snapshot) => {
+      if (snapshot === null) return;
+      const { pending, state } = snapshot;
+      if (
+        !snapshot.enabled ||
+        snapshot.zoomed ||
+        snapshot.anchor !== pending.anchor ||
+        snapshot.step !== pending.step ||
+        snapshot.generation !== pending.generation
+      ) {
+        pendingRelease.value = null;
+        return;
+      }
+      if (state.processedStep !== pending.step) return;
+      // A queue change or refused step may have put a different page in the
+      // middle. A real queue boundary must still reject the retained release.
+      pendingRelease.value = null;
+      if (state.center !== pending.anchor || !(pending.direction > 0 ? state.hasNext : state.hasPrevious)) return;
+      startFling(pending.direction, pending.velocity);
+    },
+  );
 
   return { gesture };
 }

@@ -38,7 +38,8 @@ import {
  * either side of ITS middle page, because those are the boards it has mounted.
  * A second swipe the same way has to wait for it to render the first step, 30 to
  * 66 ms on an iPhone 13 Pro from when it is told; a swipe back never does. A
- * second flick let go inside that wait springs back (#6351).
+ * qualifying second release inside that wait is retained until the render
+ * confirms its neighbour (#6351), unless another touch or navigation replaces it.
  *
  * The JS thread takes the steps one at a time (`requestStep`). Two of them can
  * be waiting when it has been busy, and the navigation callbacks read state that

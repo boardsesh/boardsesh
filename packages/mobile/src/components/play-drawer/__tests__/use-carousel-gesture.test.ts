@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { useState } from 'react';
+import type { SharedValue } from 'react-native-reanimated';
 import { SWIPE_OFFSCREEN_PAD, SWIPE_THRESHOLD } from '@boardsesh/play-view';
 
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
@@ -17,6 +19,7 @@ vi.mock('react-native', () => ({ Platform: platform }));
 
 const springCallbacks = vi.hoisted(() => [] as ((finished: boolean) => void)[]);
 const cancelAnimation = vi.hoisted(() => vi.fn());
+const reactions = vi.hoisted(() => [] as { prepare: () => unknown; react: (snapshot: never) => void }[]);
 
 // Mirror reanimated's contract: useSharedValue returns the SAME mutable ref
 // across re-renders; animations resolve to their target value synchronously.
@@ -29,9 +32,11 @@ vi.mock('react-native-reanimated', async () => {
       return ref.current;
     },
     cancelAnimation,
-    // Only the real pager registers reactions (one test below uses it). Nothing
-    // here drives them: a fling that lands hands its step over by itself.
-    useAnimatedReaction: () => {},
+    // Reactions run only when a test delivers a UI-thread update. In
+    // particular React can remain behind across a second complete gesture.
+    useAnimatedReaction: (prepare: () => unknown, react: (snapshot: never) => void) => {
+      reactions.push({ prepare, react });
+    },
     withTiming: (toValue: unknown) => toValue,
     // Resolves to its target at once, like the rest of this mock, and hands the
     // completion callback to the test, which decides when the fling lands.
@@ -97,7 +102,7 @@ const SCREEN_WIDTH = 390;
 const FLING_TARGET = SCREEN_WIDTH + SWIPE_OFFSCREEN_PAD;
 
 function shared<Value>(value: Value) {
-  return { value } as unknown as SwipePager['translateX'] & { value: Value };
+  return { value } as unknown as SharedValue<Value>;
 }
 
 /**
@@ -165,8 +170,14 @@ function landFling() {
   onFinished(true);
 }
 
+function pendingReaction() {
+  const reaction = reactions[reactions.length - 1];
+  return () => reaction.react(reaction.prepare() as never);
+}
+
 describe('useCarouselGesture', () => {
   beforeEach(() => {
+    reactions.length = 0;
     vi.clearAllMocks();
     recordedBuilders.length = 0;
     springCallbacks.length = 0;
@@ -380,6 +391,194 @@ describe('useCarouselGesture', () => {
     expect(pager.translateX.value).toBe(-50);
   });
 
+  describe('a release waiting for React to mount its neighbour', () => {
+    function releaseWhileBehind(direction: 1 | -1 = 1, options: Partial<Options> = {}) {
+      const pager = makePager();
+      const carousel = renderHook((options: Options) => useCarouselGesture(options), {
+        initialProps: makeOptions({ ...options, pager }),
+      });
+      const handlers = latestHandlers();
+      const catchUp = pendingReaction();
+      swipe(handlers, -direction * (SWIPE_THRESHOLD + 1));
+      landFling();
+      // A second short, hard flick qualifies before its page exists.
+      swipe(handlers, -direction * 20, -direction * 1200);
+      handlers.onFinalize();
+      return { pager, handlers, carousel, catchUp };
+    }
+
+    it.each([1, -1] as const)(
+      'retains a fast release toward %s and commits exactly once after catch-up',
+      (direction) => {
+        const { pager, catchUp } = releaseWhileBehind(direction);
+        expect(pager.uiSteps.value).toBe(1);
+        expect(pager.translateX.value).toBe(0);
+        catchUp();
+        expect(pager.isAnimating.value).toBe(false);
+
+        pager.jsState.value = { center: direction, hasPrevious: true, hasNext: true, processedStep: 1 };
+        catchUp();
+
+        expect(pager.uiSteps.value).toBe(2);
+        expect(pager.flingDirection.value).toBe(direction);
+        expect(pager.translateX.value).toBe(-direction * FLING_TARGET);
+        catchUp();
+        expect(pager.uiSteps.value).toBe(2);
+        landFling();
+        expect(pager.anchorPage.value).toBe(2 * direction);
+        expect(pager.requestStep).toHaveBeenLastCalledWith(direction, 2);
+        expect(pager.requestStep).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it('waits for an actual React commit before starting the second fling', async () => {
+      const climbs = ['a', 'b', 'c', 'd', 'e'];
+      const drawer = renderHook(() => {
+        const [currentIndex, setCurrentIndex] = useState(1);
+        const { pager, stepSignal } = useSwipePager();
+        useSwipePages(pager, stepSignal, climbs[currentIndex - 1], climbs[currentIndex], climbs[currentIndex + 1]);
+        useSwipeNavigation(
+          pager,
+          () => setCurrentIndex(currentIndex + 1),
+          () => setCurrentIndex(currentIndex - 1),
+        );
+        return { pager, currentIndex };
+      });
+      const { pager } = drawer.result.current;
+      renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      const handlers = latestHandlers();
+      const catchUp = pendingReaction();
+
+      await act(async () => {
+        swipe(handlers, -(SWIPE_THRESHOLD + 1));
+        landFling();
+        swipe(handlers, -(SWIPE_THRESHOLD + 1));
+        catchUp();
+        expect(pager.uiSteps.value).toBe(1);
+        expect(pager.jsState.value.processedStep).toBe(0);
+      });
+
+      expect(drawer.result.current.currentIndex).toBe(2);
+      expect(pager.jsState.value.processedStep).toBe(1);
+      act(() => catchUp());
+      expect(pager.uiSteps.value).toBe(2);
+      await act(async () => landFling());
+      expect(drawer.result.current.currentIndex).toBe(3);
+      expect(pager.jsState.value.processedStep).toBe(2);
+    });
+
+    it.each([1, -1] as const)('discards the release at the confirmed queue boundary toward %s', (direction) => {
+      const { pager, catchUp } = releaseWhileBehind(direction);
+      pager.jsState.value = {
+        center: direction,
+        hasPrevious: direction > 0,
+        hasNext: direction < 0,
+        processedStep: 1,
+      };
+      catchUp();
+      pager.jsState.value = { center: direction, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.isAnimating.value).toBe(false);
+    });
+
+    it('discards the release when the queue refused or replaced the preceding step', () => {
+      const { pager, catchUp } = releaseWhileBehind();
+      pager.jsState.value = { center: 0, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it.each(['reset', 'anchor', 'step'] as const)(
+      'discards the release when its %s changes while React is behind',
+      (change) => {
+        const { pager, catchUp } = releaseWhileBehind();
+        if (change === 'reset') pager.resetGeneration.value += 1;
+        if (change === 'anchor') pager.anchorPage.value = 0;
+        if (change === 'step') pager.uiSteps.value = 2;
+        catchUp();
+        pager.resetGeneration.value = 0;
+        pager.anchorPage.value = 1;
+        pager.uiSteps.value = 1;
+        pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+        catchUp();
+        expect(pager.uiSteps.value).toBe(1);
+      },
+    );
+
+    it.each(['touch', 'start', 'cancel'] as const)('discards the release on a new %s interaction', (interaction) => {
+      const { pager, handlers, catchUp } = releaseWhileBehind();
+      if (interaction === 'touch') handlers.onTouchesDown({ allTouches: [{ absoluteX: 100, absoluteY: 100 }] });
+      if (interaction === 'start') handlers.onStart({ translationX: 0 });
+      if (interaction === 'cancel') handlers.onTouchesCancelled({ allTouches: [] }, { fail: vi.fn() });
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it('lets a new reverse swipe replace the waiting forward release', () => {
+      const { pager, handlers, catchUp } = releaseWhileBehind();
+      swipe(handlers, SWIPE_THRESHOLD + 1);
+      landFling();
+      pager.jsState.value = { center: 0, hasPrevious: true, hasNext: true, processedStep: 2 };
+      catchUp();
+      expect(pager.anchorPage.value).toBe(0);
+      expect(pager.uiSteps.value).toBe(2);
+      expect(pager.requestStep).toHaveBeenLastCalledWith(-1, 2);
+    });
+
+    it('does not recreate a waiting release when cancellation is followed by onEnd', () => {
+      const { pager, handlers, catchUp } = releaseWhileBehind();
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -(SWIPE_THRESHOLD + 1) });
+      handlers.onTouchesCancelled({ allTouches: [] }, { fail: vi.fn() });
+      handlers.onEnd({ translationX: -(SWIPE_THRESHOLD + 1), velocityX: -1200 }, false);
+      handlers.onFinalize({}, false);
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it('discards the release while swiping is disabled, even if re-enabled before catch-up', () => {
+      const { pager, carousel, catchUp } = releaseWhileBehind();
+      carousel.rerender(makeOptions({ pager, enabled: false }));
+      catchUp();
+      carousel.rerender(makeOptions({ pager, enabled: true }));
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it('discards the release when the board is zoomed', () => {
+      const isZoomedSV = shared(false);
+      const { pager, catchUp } = releaseWhileBehind(1, { isZoomedSV });
+      isZoomedSV.value = true;
+      catchUp();
+      isZoomedSV.value = false;
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it('discards the release when the carousel unmounts', () => {
+      const { pager, carousel, catchUp } = releaseWhileBehind();
+      carousel.unmount();
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+
+    it('does not retain a drag released below the threshold', () => {
+      const { pager, handlers, catchUp } = releaseWhileBehind();
+      swipe(handlers, -(SWIPE_THRESHOLD - 1));
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+    });
+  });
+
   it('springs back without committing below the threshold', () => {
     const pager = makePager();
     renderHook(() => useCarouselGesture(makeOptions({ pager })));
@@ -409,6 +608,19 @@ describe('useCarouselGesture', () => {
     expect(pager.translateX.value).toBe(0);
     handlers.onUpdate({ translationX: -95 });
     expect(pager.translateX.value).toBe(-25);
+  });
+
+  it('ignores old finger travel when navigation resets after the final update', () => {
+    const pager = makePager();
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    const handlers = latestHandlers();
+    handlers.onStart({ translationX: 0 });
+    handlers.onUpdate({ translationX: -(SWIPE_THRESHOLD + 1) });
+    pager.resetGeneration.value += 1;
+    pager.translateX.value = 0;
+    handlers.onEnd({ translationX: -(SWIPE_THRESHOLD + 1), velocityX: -1200 });
+    expect(pager.uiSteps.value).toBe(0);
+    expect(pager.isAnimating.value).toBe(false);
   });
 
   it('fires the haptic once the finger has travelled the commit distance, and only towards a page', async () => {
@@ -471,7 +683,7 @@ describe('useCarouselGesture', () => {
 
     // With the real pager and navigation hooks, since the step's own render can
     // be what takes the carousel down while the drawer goes on rendering. The
-    // pager's UI-thread reactions are stubbed in this file: the step reaches
+    // pager's UI-thread reactions are not driven in these tests: the step reaches
     // the JS thread because the fling lands, and where the anchor ends up is
     // the pager tests' business.
     it('changes the climb with the callbacks of the render the drawer made after the carousel went', () => {
@@ -600,7 +812,7 @@ describe('useCarouselGesture', () => {
       expect(pager.anchorPage.value).toBe(2);
     });
 
-    it('settles on the page it reached when the JS thread has not mounted the one after', () => {
+    it('waits on the page it reached until the JS thread has mounted the one after', () => {
       const pager = makePager();
       renderHook(() => useCarouselGesture(makeOptions({ pager })));
       const handlers = latestHandlers();
@@ -610,7 +822,7 @@ describe('useCarouselGesture', () => {
       handlers.onUpdate({ translationX: -60 });
       handlers.onEnd({ translationX: -60, velocityX: -2500 });
 
-      // Page 2 does not exist yet, so this swipe changes nothing more; the first one stands.
+      // Page 2 does not exist yet. The second release waits; the first step stands.
       expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
       expect(pager.uiSteps.value).toBe(1);
       expect(pager.anchorPage.value).toBe(1);
