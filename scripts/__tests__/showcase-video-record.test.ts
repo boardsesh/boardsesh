@@ -17,6 +17,7 @@ import {
   SHOWCASE_DEVICES,
   showcaseDevice,
   showcaseCalendarPattern,
+  showcaseBoardHistoryPattern,
   showcaseFilterPatterns,
   type ShowcaseFilterCatalog,
   anchorArrivalsFromChunk,
@@ -105,6 +106,44 @@ describe('native all-board progress calendar labels', () => {
     const pattern = new RegExp(`^${showcaseCalendarPattern('Calendar (all boards) [climbs].')}$`);
     expect(pattern.test('Calendar (all boards) [climbs].')).toBe(true);
     expect(pattern.test('Calendar all boards climbsX')).toBe(false);
+  });
+});
+
+describe('localized board-history showcase controls', () => {
+  it.each(SHOWCASE_LOCALES)(
+    'matches real %s history labels without matching list options or an empty board',
+    (locale) => {
+      const catalog = JSON.parse(
+        readFileSync(new URL(`../../packages/shared/i18n/locales/${locale}/climbs.json`, import.meta.url), 'utf8'),
+      ) as { mobile: { listOptions: { history: string; title: string; viewOptions: string } } };
+      const { history, title, viewOptions } = catalog.mobile.listOptions;
+      const pattern = new RegExp(showcaseBoardHistoryPattern(history));
+      for (const board of ["Marco's Board • 35°", 'High Point Climbing Orlando • 40°']) {
+        expect(pattern.test(history.replace('{{board}}', board))).toBe(true);
+      }
+      expect(pattern.test(title)).toBe(false);
+      expect(pattern.test(viewOptions)).toBe(false);
+      expect(pattern.test(history.replace('{{board}}', ''))).toBe(false);
+      expect(pattern.test(history.replace('{{board}}', '\n'))).toBe(false);
+      expect(pattern.test(`Unrelated ${history.replace('{{board}}', 'Kilter')}`)).toBe(false);
+    },
+  );
+
+  it('escapes literal prefix and suffix punctuation and rejects malformed templates', () => {
+    const pattern = new RegExp(showcaseBoardHistoryPattern('History (board) [{{board}}].'));
+    expect(pattern.test('History (board) [Garage wall • 40°].')).toBe(true);
+    expect(pattern.test('History board Garage wallX')).toBe(false);
+    expect(pattern.test('History (board) [Garage wall • 40°]. unrelated')).toBe(false);
+    for (const malformed of ['History', '{{board}} {{board}}']) {
+      expect(() => showcaseBoardHistoryPattern(malformed)).toThrow('one {{board}} placeholder');
+    }
+  });
+
+  it.each(['wall.yaml', 'android/wall.yaml'])('opens history by label in %s', (flowName) => {
+    const [, commands] = parseAllDocuments(readFileSync(showcaseFlowPath(flowName), 'utf8')).map((document) =>
+      document.toJSON(),
+    ) as [unknown, Array<{ tapOn?: string | { point: string } }>];
+    expect(commands.filter((command) => command.tapOn)).toEqual([{ tapOn: '${SHOWCASE_BOARD_HISTORY_LABEL}' }]);
   });
 });
 

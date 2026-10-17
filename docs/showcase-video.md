@@ -205,7 +205,7 @@ what every coordinate hits.
 | --- | --- | --- |
 | `boards-<type>` (9) | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=N`, or a board-config link | Holds a lit climb still for 7 s. |
 | `spray` | `climbs?screenshotOpenFirst=1&screenshotBoardIndex=6` | The first climb on the spray wall's photo, then two swipes to the next climb. |
-| `wall` | `climbs?screenshotBoardIndex=0` | Taps the board button; the sheet shows the climb on the wall, then drags up to "Lit on this wall". |
+| `wall` | `climbs?screenshotBoardIndex=0` | Taps the history clock by its localized label; the sheet shows the climb on the wall, then drags up to "Lit on this wall". |
 | `crew` | the first climb, then `record` | See below. |
 | `workouts` | the first climb, then `record` | Picks Pyramid, arms a fixed-window 0:30 rest timer, taps Start (a private session, ended afterwards). |
 | `lock-screen` | the first Tension climb, then `record` | See below. The id stays; the take shows the Dynamic Island. |
