@@ -1,0 +1,1 @@
+下载训练板数据，没信号也能爬。还有 Boardsesh 难度：一个在 Kilter、Tension 和 MoonBoard 上读法一致的数字，来自真实的完攀记录。

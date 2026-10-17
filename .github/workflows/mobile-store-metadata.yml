@@ -45,9 +45,11 @@ name: Mobile Store Metadata
 
 on:
   push:
-    # Both lines: from main the lane targets main's version, from release/next the
-    # train's — the version comes from app.config.ts on the ref it checks out, and
-    # deliver/supply skip cleanly when no editable version exists for it.
+    # Both lines push the checked-out ref's text. The ios metadata lane passes no
+    # app_version: deliver writes onto whichever App Store version is editable,
+    # and skips cleanly when none is. So a push to main while the train's version
+    # is in Prepare for Submission puts main's What's New on that draft, in every
+    # locale. Hold listing-text PRs into main until the train has merged back.
     branches: [main, release/next]
     paths:
       - 'fastlane/metadata/**'

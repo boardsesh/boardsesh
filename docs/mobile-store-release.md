@@ -48,7 +48,9 @@ When using a train, cut it from `main` and merge it back after store acceptance.
 
 2. **Land the release identity on the train, before the final native change.**
    Bump `version` in `packages/mobile/app.config.ts` and update the localized iOS
-   and Android release notes for `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`.
+   and Android release notes for `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`,
+   plus Simplified Chinese (`zh-Hans` for the App Store, `zh-CN` for Play;
+   terms in `docs/i18n-chinese-glossary.md`).
    Those PRs target `release/next`. Keep this order so the automatic builds carry
    the intended version and copy. The version no longer moves the fingerprint, so
    landing it first does not cost the store fleet its OTAs; it just means the
@@ -406,7 +408,13 @@ edit with the asset uploads and briefly desync which commit the notes name
 from which shards actually landed (last writer wins); acceptable given how
 rarely two full captures for the same platform land at the same time.
 
-The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
+The iOS `release_notes.txt` is pushed by Mobile Store Metadata. The lane writes
+every locale folder onto whichever App Store version is editable, from the ref
+that was pushed; it does not read the version in `app.config.ts`. So while the
+train's version sits in Prepare for Submission, a push to `main` that touches
+`fastlane/metadata/**` replaces that draft's What's New in every locale with
+`main`'s older notes. Hold such a PR until the train has merged back, or target
+`release/next`. Android release
 notes ship with the AAB from each
 `fastlane/metadata/android/<locale>/changelogs/default.txt`; Play caps each file
 at 500 characters.
