@@ -458,6 +458,13 @@ describe('PlaylistDetailView', () => {
     expect(container.querySelector('[data-icon="back"]')).toBeNull();
   });
 
+  // iOS 26's scroll edge effect would dim the top of the colour hero.
+  it('hides the system top scroll edge effect over the hero', () => {
+    render(<PlaylistDetailView {...makeProps()} />);
+
+    expect(lastHeaderOptions()).toMatchObject({ scrollEdgeEffects: { top: 'hidden' } });
+  });
+
   it('draws no native title over the hero, which already carries the name', () => {
     render(<PlaylistDetailView {...makeProps()} />);
 

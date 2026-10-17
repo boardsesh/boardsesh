@@ -317,6 +317,10 @@ export function PlaylistDetailView({
       headerLargeTitle: false,
       headerTransparent: true,
       headerBlurEffect: 'none',
+      // iOS 26 dims the scroll view under a transparent bar. The hero runs up under
+      // it, so that dim reads as a dark band; the collapsed blur bar below is our
+      // own edge effect once the hero scrolls away.
+      scrollEdgeEffects: { top: 'hidden' },
       title: headerTitle,
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions` and `collapsed`, never on a rendered node:
