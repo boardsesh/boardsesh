@@ -72,6 +72,14 @@ export function showcaseCalendarPattern(heading: string): string {
   return heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Match the localized history button while allowing its active board label. */
+export function showcaseBoardHistoryPattern(label: string): string {
+  const fragments = label.split('{{board}}');
+  if (fragments.length !== 2) throw new Error('Board history label must contain one {{board}} placeholder');
+  const escapeLiteral = (fragment: string) => fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `^${escapeLiteral(fragments[0])}[^\\r\\n]+${escapeLiteral(fragments[1])}$`;
+}
+
 /** Only the catalog fields used to identify a genuine native filter presentation. */
 export type ShowcaseFilterCatalog = {
   mobile: {

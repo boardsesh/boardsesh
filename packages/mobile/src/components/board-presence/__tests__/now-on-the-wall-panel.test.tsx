@@ -56,6 +56,7 @@ type PressableMockProps = ViewMockProps & {
 };
 type ListMockProps = {
   data: BoardPresenceClimb[];
+  contentContainerStyle?: { paddingBottom?: number };
   renderItem: (info: { item: BoardPresenceClimb }) => ReactNode;
   ListHeaderComponent?: ReactNode;
   ListEmptyComponent?: ReactNode;
@@ -154,7 +155,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetFlatList: (props: ListMockProps & { refreshControl?: ReactNode }) =>
     createElement(
       'div',
-      { 'data-bottom-sheet-list': 'true' },
+      { 'data-bottom-sheet-list': 'true', 'data-padding-bottom': props.contentContainerStyle?.paddingBottom },
       props.refreshControl,
       props.ListHeaderComponent,
       props.data.length === 0
@@ -564,30 +565,26 @@ describe('NowOnTheWallPanel', () => {
     expect(container.querySelector('[data-live-sessions-block]')).toBeNull();
   });
 
-  it('adds the bottom safe-area inset to the switch-board footer in both sheet and inline variants', () => {
-    // The native sheet does not pad its content for the Android edge-to-edge
-    // navigation bar, so the footer adds insets.bottom (34) + spacing[3] (12)
-    // itself in every variant — otherwise the switch-board button sits under the
-    // 3-button nav bar (the reported bug).
+  it('gives the sheet footer space to history while retaining the inline switch-board action', () => {
     safeArea.insets = { top: 0, bottom: 34, left: 0, right: 0 };
-    const { getByLabelText, rerender } = render(panelElement({ variant: 'sheet' }));
+    const { queryByLabelText, getByLabelText, rerender } = render(panelElement({ variant: 'sheet' }));
 
-    expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('46');
+    expect(queryByLabelText('mobile.boardPresence.switchBoardAria')).toBeNull();
 
     rerender(panelElement({ variant: 'column' }));
 
     expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('46');
   });
 
-  it('pads the sheet footer by the WINDOW inset, not an in-tab inset that folds in the tab bar (#3776)', () => {
+  it('pads the history list by the WINDOW inset without adding the tab bar (#3776)', () => {
     // Mounted inside a NativeTabs tab, the local inset is 139 (34 home indicator
     // + 49 bar + 56 accessory, DEVICE_VERIFIED iPhone 17 Pro). The sheet covers
-    // that chrome, so its footer clears only the window's 34 + spacing[3].
+    // that chrome, so the last history row clears only the window's 34 + spacing[4].
     safeArea.insets = { top: 0, bottom: 139, left: 0, right: 0 };
     act(() => publishWindowInsetBottom(34));
-    const { getByLabelText, rerender } = render(panelElement({ variant: 'sheet' }));
+    const { container, getByLabelText, rerender } = render(panelElement({ variant: 'sheet' }));
 
-    expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('46');
+    expect(container.querySelector('[data-bottom-sheet-list]')?.getAttribute('data-padding-bottom')).toBe('50');
 
     // The inline column is not a sheet: it keeps the inset of the surface it sits in.
     rerender(panelElement({ variant: 'column' }));
@@ -604,7 +601,7 @@ describe('NowOnTheWallPanel', () => {
     analytics.track.mockImplementation((event: string) => callOrder.push(`track:${event}`));
     const onSwitchBoard = vi.fn(() => callOrder.push('onSwitchBoard'));
 
-    const { getByLabelText } = render(panelElement({ onSwitchBoard }));
+    const { getByLabelText } = render(panelElement({ variant: 'column', onSwitchBoard }));
     fireEvent.click(getByLabelText('mobile.boardPresence.switchBoardAria'));
 
     expect(callOrder).toEqual(['track:Board Swap Tapped', 'onSwitchBoard']);

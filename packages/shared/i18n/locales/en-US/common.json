@@ -563,7 +563,7 @@
         "offlineSkip": "Skip for now",
         "downloadAria": "Keep {{name}} on this phone"
       },
-      "boardRevealTip": "Tap to see what other Boardsesh users have sent to the wall.",
+      "boardRevealTip": "Tap the clock to see what's been lit on this wall.",
       "quickActionsTip": "Long-press a climb for quick actions like queue, tick and playlists.",
       "tips": {
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",

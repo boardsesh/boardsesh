@@ -92,6 +92,7 @@ import {
   SHOWCASE_DEFAULT_BOARDS,
   showcaseDevice,
   showcaseCalendarPattern,
+  showcaseBoardHistoryPattern,
   showcaseFilterPatterns,
   type ShowcaseFilterCatalog,
   anchorArrivalsFromChunk,
@@ -1209,6 +1210,13 @@ function showcaseQueueLabel(locale: ShowcaseRecordArgs['locales'][number]): stri
   return catalog.playView.actionBar.queueCountAria.replace('{{count}}', '.*');
 }
 
+function showcaseBoardHistoryLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'climbs.json'), 'utf8'),
+  ) as { mobile: { listOptions: { history: string } } };
+  return showcaseBoardHistoryPattern(catalog.mobile.listOptions.history);
+}
+
 function showcaseCloseLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
   const catalog = JSON.parse(
     readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'common.json'), 'utf8'),
@@ -1258,6 +1266,7 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
     signalUrl: context.signal.url,
     env: {
       SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
+      SHOWCASE_BOARD_HISTORY_LABEL: showcaseBoardHistoryLabel(context.args.locales[0]),
       SHOWCASE_CREW_PEER_ROW_LABEL: showcasePeerQueueRowLabel(context.args.locales[0]),
       SHOWCASE_CREW_PEER_ROW_FALLBACK_POINT: crewPeerRowFallbackPoint(
         context.args.kind,

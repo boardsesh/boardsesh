@@ -3,7 +3,7 @@ name: showcase take - what is on the wall
 ---
 # Take: wall -> .boardsesh/showcase-video/work/footage/wall/ (homepage showcase, scene "wall")
 #
-# Records: the Climbs tab, then a tap on the board button in the top chrome;
+# Records: the Climbs tab, then a tap on the history clock in the top chrome;
 # the board sheet rises with the climb on the wall now (the hero), the wall's
 # stats, and, once the sheet is dragged up, "Lit on this wall": the climbs lit
 # before it, each with who lit it. Callouts: board-history-button, now-on-wall,
@@ -17,8 +17,8 @@ name: showcase take - what is on the wall
 #
 # Marks (work/marks/wall.json): sheet-open, history-shown.
 #
+# The history clock is selected by its localized accessibility label.
 # Coordinates (iPhone 16 Pro Max portrait):
-#   91%,10%            the board button (grid glyph), top right of the Climbs chrome
 #   50%,50% -> 50%,12% drag the sheet up to its full detent
 
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
@@ -28,8 +28,7 @@ name: showcase take - what is on the wall
     timeout: 1200
     optional: true
 
-- tapOn:
-    point: '91%,10%'
+- tapOn: '${SHOWCASE_BOARD_HISTORY_LABEL}'
 - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/sheet-open')}
 

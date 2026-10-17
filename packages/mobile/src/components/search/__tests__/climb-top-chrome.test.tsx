@@ -127,6 +127,7 @@ vi.mock('react-native-reanimated', () => ({
 }));
 
 vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
   useFocusEffect: (effect: () => void | (() => void)) => {
     ctrl.focusEffects.push(effect);
   },
@@ -140,7 +141,29 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { board?: string }) =>
+      key === 'mobile.listOptions.history' ? `Board history, ${options?.board}` : key,
+  }),
+}));
+
+vi.mock('../../AppMenu', () => ({
+  AppMenu: ({
+    actions,
+    onSelectIndex,
+    accessibilityLabel,
+  }: {
+    actions: Array<{ label: string }>;
+    onSelectIndex: (index: number) => void;
+    accessibilityLabel: string;
+  }) =>
+    createElement(
+      'div',
+      { 'data-menu': accessibilityLabel },
+      actions.map((action, index) =>
+        createElement('button', { key: action.label, onClick: () => onSelectIndex(index) }, action.label),
+      ),
+    ),
 }));
 
 vi.mock('react-native-paper', () => ({
@@ -165,7 +188,11 @@ vi.mock('react-native-paper', () => ({
     }) =>
       createElement(
         'button',
-        { onClick: onPress, 'data-appbar-action': accessibilityLabel ?? '' },
+        {
+          onClick: onPress,
+          'data-appbar-action': accessibilityLabel ?? '',
+          'data-capsule': accessibilityLabel?.includes('•') ? accessibilityLabel : '',
+        },
         typeof icon === 'function' ? icon({ color: '#000', size: 24 }) : icon,
       ),
   },
@@ -453,7 +480,7 @@ function makeProps(over: Partial<Parameters<typeof ClimbTopChrome>[0]> = {}) {
 const createAction = (root: HTMLElement) =>
   root.querySelector('[data-pressable="mobile.create.fab.ariaLabel"]') as HTMLButtonElement | null;
 const angleAction = (root: HTMLElement) =>
-  root.querySelector('[data-pressable="mobile.angleSelector.title"]') as HTMLButtonElement | null;
+  [...root.querySelectorAll('button')].find((button) => button.textContent === 'mobile.listOptions.angle') ?? null;
 const lightbulb = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="ble.connectBoard"]') ??
     root.querySelector('[data-pressable="lightControl.disconnect"]')) as HTMLButtonElement | null;
@@ -512,19 +539,19 @@ describe('ClimbTopChrome', () => {
   it('builds a typed-board label from display name, size, and angle', () => {
     ctrl.board = typedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12 • 40°');
+    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');
   });
 
   it('leads with the custom board name when the board is named', () => {
     ctrl.board = namedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Garage Wall • 25°');
+    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Board history, Garage Wall • 25°');
   });
 
   it('omits the angle segment when angle is absent', () => {
     ctrl.board = { ...typedBoard, angle: null as unknown as number };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12');
+    expect(capsule(container)?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12');
   });
 
   it('hides the create FAB unless canCreate is true', () => {
@@ -542,11 +569,12 @@ describe('ClimbTopChrome', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the angle selector in the right toolbar group (with the board glyph)', () => {
+  it('puts angle in the menu beside a dedicated history glyph', () => {
     ctrl.board = typedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
     expect(angleAction(container)).not.toBeNull();
-    expect(angleAction(container)?.textContent).toBe('40°');
+    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
+    expect(capsule(container)?.querySelector('[data-icon="history"]')).not.toBeNull();
   });
 
   it('mounts the "On the wall" capsule (glass centre slot) when a distinct wall climb is live', () => {
@@ -748,7 +776,7 @@ describe('ClimbTopChrome', () => {
     ).toBe('#010203');
   });
 
-  it('renders the Material branch with the board switcher, search, and grade controls', () => {
+  it('renders Material with a static board title, separate history, search, and grade controls', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const onOpenBoardDetail = vi.fn();
@@ -767,15 +795,9 @@ describe('ClimbTopChrome', () => {
     );
 
     expect(container.querySelector('[data-gradient]')).toBeNull();
-    // The board switcher replaces the static Appbar.Content subtitle: the board
-    // label shows as the title with a down-caret affordance. Assert the hint too
-    // so this pins the BoardSwitcherButton specifically, not any [data-capsule].
-    const switcher = capsule(container);
-    // The Material board switcher drops the angle from the title (it rides its own
-    // filter chip now), so the label is the board name + size without "• 40°".
-    expect(switcher?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12');
-    expect(switcher?.getAttribute('data-hint')).toBe('mobile.search.boardSwitcherHint');
-    expect(container.querySelector('[data-icon="chevron.down"]')).not.toBeNull();
+    expect(container.querySelector('[data-appbar-title]')?.textContent).toBe('Display:kilter • 12x12 • 40°');
+    const history = capsule(container);
+    expect(history?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');
     expect(container.querySelector('[data-search-field]')).not.toBeNull();
     const gradeLabel = container.querySelector('[data-pressable="mobile.search.gradeAction"]')?.textContent;
     expect(gradeLabel).toContain('Grade');

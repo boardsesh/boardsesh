@@ -240,6 +240,29 @@ describe('CollapsingTopChrome', () => {
     expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 88, trailing: 88 });
   });
 
+  it('sizes custom board controls instead of reserving the default angle and board pair', () => {
+    ctrl.nativeHeader = true;
+    ctrl.board = board;
+    render(
+      <CollapsingTopChrome
+        {...makeProps({ boardControls: { content: <button>List options</button>, actionCount: 1 } })}
+      />,
+    );
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 44, trailing: 44 });
+  });
+
+  it('replaces the floating board and angle pair with the supplied controls', () => {
+    ctrl.board = board;
+    const { container, getByRole } = render(
+      <CollapsingTopChrome
+        {...makeProps({ boardControls: { content: <button>List options</button>, actionCount: 1 } })}
+      />,
+    );
+    expect(getByRole('button', { name: 'List options' })).not.toBeNull();
+    expect(boardAction(container)).toBeNull();
+    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
+  });
+
   beforeEach(() => {
     ctrl.board = null;
     ctrl.bluetooth = null;

@@ -69,7 +69,7 @@ const managedSheet = vi.hoisted(() => ({
 const climbRows = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const thumbnails = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 // Mutable safe-area inset so a test can simulate an Android 3-button nav bar
-// (a non-zero bottom inset) and assert it reaches the switch-board footer.
+// (a non-zero bottom inset) and assert the last history row stays above it.
 const safeArea = vi.hoisted(() => ({ bottom: 0 }));
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
@@ -173,6 +173,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl,
     onEndReached,
     onScrollBeginDrag,
+    contentContainerStyle,
   }: {
     data: BoardPresenceClimb[];
     renderItem: (info: { item: BoardPresenceClimb }) => ReactNode;
@@ -183,10 +184,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl?: ReactNode;
     onEndReached?: () => void;
     onScrollBeginDrag?: () => void;
+    contentContainerStyle?: { paddingBottom?: number };
   }) =>
     createElement(
       'div',
-      { 'data-list': 'true' },
+      { 'data-list': 'true', 'data-padding-bottom': contentContainerStyle?.paddingBottom },
       refreshControl,
       ListHeaderComponent,
       data.length === 0
@@ -1405,10 +1407,10 @@ describe('BoardSheet', () => {
     expect(onClimbPress).not.toHaveBeenCalled();
   });
 
-  it('fires onSwitchBoard from the footer switch control', () => {
+  it('reserves the sheet body for history without a switch-board footer', () => {
     const onSwitchBoard = vi.fn();
     const ref = createRef<BoardSheetHandle>();
-    const { container, getByLabelText } = render(
+    const { container, queryByLabelText } = render(
       createElement(BoardSheet, {
         ref,
         boardLabel: 'Garage Wall',
@@ -1419,19 +1421,17 @@ describe('BoardSheet', () => {
       }),
     );
     act(() => ref.current?.present());
-    expect(container.querySelector('[data-icon="transfer"]')).not.toBeNull();
-    expect(container.textContent).toContain('mobile.boardPresence.switchBoard');
-    fireEvent.click(getByLabelText('mobile.boardPresence.switchBoardAria'));
-    expect(onSwitchBoard).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-icon="transfer"]')).toBeNull();
+    expect(queryByLabelText('mobile.boardPresence.switchBoardAria')).toBeNull();
+    expect(onSwitchBoard).not.toHaveBeenCalled();
   });
 
-  it('pads the switch-board footer for the bottom safe-area inset (Android 3-button nav bar)', () => {
+  it('pads history for the bottom safe-area inset (Android 3-button nav bar)', () => {
     // Simulate a device whose system nav bar reserves a bottom inset — the native
-    // sheet does not pad content for it, so the footer must add it itself or the
-    // switch-board button sits under the nav bar (the reported bug).
+    // sheet does not pad content for it, so the history list must add it itself.
     safeArea.bottom = 34;
     const ref = createRef<BoardSheetHandle>();
-    const { getByLabelText } = render(
+    const { container } = render(
       createElement(BoardSheet, {
         ref,
         boardLabel: 'Garage Wall',
@@ -1443,9 +1443,8 @@ describe('BoardSheet', () => {
     );
     act(() => ref.current?.present());
 
-    // insets.bottom (34) + spacing[3] (12) — the inset is included, not dropped.
-    const footer = getByLabelText('mobile.boardPresence.switchBoardAria');
-    expect(footer.getAttribute('data-padding-bottom')).toBe(String(34 + 12));
+    // Window inset (34) + spacing[4] (16).
+    expect(container.querySelector('[data-list]')?.getAttribute('data-padding-bottom')).toBe('50');
   });
 
   it('fires onClose from the header chevron', () => {

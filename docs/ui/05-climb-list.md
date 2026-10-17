@@ -1,6 +1,30 @@
 ## Climb List
 
-### Board Page Climb List
+### Mobile toolbar and board history
+
+The Climbs tab keeps history separate from the list's options. Its trailing native toolbar contains a
+clock-arrow history button followed by an ellipsis menu. History opens the existing board sheet in one
+tap; its accessibility label names the active board. The four-square board glyph no longer represents
+history.
+
+- **History:** `clock.arrow.circlepath` on iOS and `history` on Android. The existing onboarding tip
+  points to this control and calls it the clock.
+- **Options menu:** Angle (including the current degree value), View options, then Switch board.
+  Angle opens the existing angle picker. Switch board opens the existing board picker.
+- **View options:** Pushes the existing climb-list settings within the Climbs navigation stack.
+  Back returns to the same list, and settings keep their existing persistence.
+- **History sheet:** The pinned Switch board footer is removed so its space belongs to history.
+  The header, current climb, stats and history rows keep their existing layout. The iPad history
+  column retains its Switch board control.
+
+Use the shared native menu and toolbar primitives so iPhone, Material and iPad share the same
+actions with their platform's presentation. The history sheet and iPad column continue to share
+their history content.
+
+### Legacy Web Board Page Climb List
+
+The following describes the earlier web climbing surface. The current climbing UI lives in the
+Expo app.
 
 **Web component:** `packages/web/app/components/board-page/climbs-list.tsx`
 

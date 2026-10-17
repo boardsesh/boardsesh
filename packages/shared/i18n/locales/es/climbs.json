@@ -319,6 +319,13 @@
     "untitledClimb": "Bloque sin título"
   },
   "mobile": {
+    "listOptions": {
+      "title": "Opciones de la lista de bloques",
+      "angle": "Ángulo · {{angle}}°",
+      "viewOptions": "Opciones de vista",
+      "history": "Historial del plafón, {{board}}",
+      "historyHint": "Mira los bloques que se han iluminado en este muro"
+    },
     "moderation": {
       "title": "Moderación",
       "pinnedFromNotification": "De tu notificación",
@@ -575,7 +582,6 @@
       "gradeAction": "Ajustar el rango de grado",
       "gradeOpenHint": "Abre el selector de grado",
       "gradeCloseHint": "Cierra el selector de grado",
-      "boardSwitcherHint": "Abre el selector de plafón",
       "allClimbs": "Todas las vías",
       "clearRecentSearches": "Borrar búsquedas recientes",
       "chips": {

@@ -3,8 +3,8 @@
 // A native BottomSheetModal (`@expo/ui/community/bottom-sheet`) sibling of
 // QueueSheet, presented/dismissed through the shared sheet coordinator
 // (`useManagedSheet`) so it never overlaps another sheet's transition. The wall's
-// now-on-the-wall hero, VIRTUALIZED history list, stat tiles, pull-to-refresh and
-// the "Switch board" footer all live in `NowOnTheWallPanel` (variant="sheet"),
+// now-on-the-wall hero, VIRTUALIZED history list, stat tiles and pull-to-refresh
+// all live in `NowOnTheWallPanel` (variant="sheet"),
 // which this sheet renders as its body. Keeping the body in a shared panel lets
 // the iPad shell render the same content inline as a standalone column
 // (variant="column").
@@ -72,7 +72,7 @@ type BoardSheetProps = {
   onClose: () => void;
   /** Optional: fired AFTER the dismiss animation has actually settled. */
   onDismissed?: () => void;
-  /** Open the existing board switcher from the footer control. */
+  /** Shared panel callback; only the inline column renders the switch footer. */
   onSwitchBoard: () => void;
   /** The board the climber is on — names the gym whose other boards we list. */
   activeBoard?: UserBoard | null;

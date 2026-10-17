@@ -130,8 +130,8 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   - `queue-row-avatar`: the added-by avatar on the first upcoming queue row only.
   - `play-next`: the Play next row in the long-press climb menu.
   - `profile-board-filter`: the Progress tab's Filter button.
-  - `board-history-button`: the board glyph at the top right of the Climbs list (liquid
-    glass chrome only), which opens the board sheet.
+  - `board-history-button`: the clock-arrow glyph beside the ellipsis at the top right of the
+    Climbs list (liquid glass chrome only), which opens the board sheet.
   - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
     header. Only the sheet reports them, never the iPad column or the Wall tab.
   - `workout-type`: the selected tile in the Session tab's workout shelf.
