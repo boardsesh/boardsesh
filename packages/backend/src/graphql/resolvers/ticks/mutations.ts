@@ -280,6 +280,16 @@ export async function lockCanonicalTickBoardId(
   return resolveLockedTickBoardId(lockedBoards, requestedBoardId, 'saveTick');
 }
 
+// Ceiling on tick writes per user per minute. See the note at the saveTick
+// call site for how this number was chosen and why a burst drain survives it.
+const SAVE_TICK_RATE_LIMIT_PER_MINUTE = 120;
+
+// Edits get the same ceiling as creates. `climbedAt` is editable, so an edit can
+// move an old tick into the current rolling window — the same capability a
+// create has, and pointless to bound on one path only. Same headroom: an offline
+// outbox drain replays edits alongside creates.
+const UPDATE_TICK_RATE_LIMIT_PER_MINUTE = 120;
+
 // Beta links are only attached on successful ascents (flash / send), never
 // on `attempt`. Returns the URL to attach, or null if the tick shouldn't
 // carry one. Typed against the shared TickStatus enum so adding a new
@@ -1072,6 +1082,13 @@ export const tickMutations = {
   saveTick: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<unknown> => {
     requireAuthenticated(ctx);
 
+    // Roll out only after the outbox Retry-After fix reaches installed apps.
+    // Older clients charge throttles to their dead-letter budget, so enabling
+    // the new ceiling during backend-first deployment could lose queued ticks.
+    if (process.env.TICK_WRITE_RATE_LIMIT_ENABLED === 'true') {
+      await applyRateLimit(ctx, SAVE_TICK_RATE_LIMIT_PER_MINUTE, 'saveTick');
+    }
+
     // Validate input with business rules
     const validatedInput = validateInput(SaveTickInputSchema, input, 'input');
 
@@ -1749,6 +1766,9 @@ export const tickMutations = {
     ctx: ConnectionContext,
   ): Promise<unknown> => {
     requireAuthenticated(ctx);
+    if (process.env.TICK_WRITE_RATE_LIMIT_ENABLED === 'true') {
+      await applyRateLimit(ctx, UPDATE_TICK_RATE_LIMIT_PER_MINUTE, 'updateTick');
+    }
     const userId = ctx.userId!;
 
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');

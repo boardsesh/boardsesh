@@ -126,6 +126,35 @@ export type GetProfileQueryResponse = {
   profile: UserProfile | null;
 };
 
+// Only the Privacy page needs these consent fields. Keep the
+// widely used GetProfile document compatible with its existing recording.
+export const GET_STANDINGS_PRIVACY = gql`
+  query GetStandingsPrivacy {
+    profile {
+      leaderboardVisibility
+      gymScreenVisibility
+    }
+  }
+`;
+
+export type GetStandingsPrivacyQueryResponse = {
+  profile: Pick<UserProfile, 'leaderboardVisibility' | 'gymScreenVisibility'> | null;
+};
+
+/** Standings controls can fail independently when the backend predates these fields. */
+export const UPDATE_STANDINGS_PRIVACY = gql`
+  mutation UpdateStandingsPrivacy($input: UpdateProfileInput!) {
+    updateProfile(input: $input) {
+      leaderboardVisibility
+      gymScreenVisibility
+    }
+  }
+`;
+
+export type UpdateStandingsPrivacyMutationResponse = {
+  updateProfile: NonNullable<GetStandingsPrivacyQueryResponse['profile']>;
+};
+
 export const UPDATE_PROFILE = gql`
   mutation UpdateProfile($input: UpdateProfileInput!) {
     updateProfile(input: $input) {

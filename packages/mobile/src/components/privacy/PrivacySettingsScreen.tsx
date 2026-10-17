@@ -38,6 +38,9 @@ import {
 } from './privacy-settings-changes';
 import { PRIVACY_POLICY_URL } from './privacy-policy-url';
 import type { PrivacyPeopleMode } from './PrivacyPeopleScreen';
+import { useStandingsPrivacy, useUpdateStandingsPrivacy } from '../../lib/graphql/hooks/use-standings-privacy';
+import { STANDINGS_ROW_KEYS, isStandingsVisibility, type StandingsVisibilityField } from './standings-privacy-model';
+import type { StandingsPrivacyInput } from '../../lib/graphql/hooks/use-standings-privacy';
 
 const SETTINGS_PAGE = 'privacy';
 /**
@@ -51,6 +54,7 @@ const UNTRACKED_ROW_KEYS: ReadonlySet<string> = new Set([
   PRIVATE_ACCOUNT_ROW_KEY,
   SESSION_DEFAULT_ROW_KEY,
   ANALYTICS_ROW_KEY,
+  ...STANDINGS_ROW_KEYS,
 ]);
 
 /** Who was signed in when a change was asked, so an answer never lands on another account. */
@@ -85,6 +89,8 @@ export function PrivacySettingsScreen() {
   const settings = usePrivacySettings();
   const update = useUpdatePrivacySettings();
   const anonymousOnBoards = useSetAnonymousOnForeignBoards();
+  const standings = useStandingsPrivacy(isAuthenticated ? viewerId : undefined);
+  const updateStandings = useUpdateStandingsPrivacy(isAuthenticated ? viewerId : undefined);
   const enabled = settings.data?.enabled === true;
   const requests = useIncomingFollowRequests(isAuthenticated && enabled);
   const analyticsPreference = useAnalyticsPreference();
@@ -93,6 +99,7 @@ export function PrivacySettingsScreen() {
   const [confirmingIsPrivate, setConfirmingIsPrivate] = useState<boolean | null>(null);
   const [confirmingAudience, setConfirmingAudience] = useState<PrivacyResourceAudience | null>(null);
   const [heldAnonymous, setHeldAnonymous] = useState<boolean | null>(null);
+  const [heldStandings, setHeldStandings] = useState<{ input: StandingsPrivacyInput; scope: ViewerScope } | null>(null);
   // The account switch reads the server again before it writes; that read is
   // part of the write, so it locks the rows and its failure is a failed save.
   const [readingBeforeWrite, setReadingBeforeWrite] = useState(false);
@@ -102,9 +109,20 @@ export function PrivacySettingsScreen() {
   const latestViewerId = useRef(viewerId);
   latestViewerId.current = viewerId;
 
-  const writePending = update.isPending || anonymousOnBoards.isPending || readingBeforeWrite;
+  const heldStandingsForViewer =
+    heldStandings &&
+    heldStandings.scope.viewerId === viewerId &&
+    isAuthCredentialGenerationCurrent(heldStandings.scope.credentialGeneration)
+      ? heldStandings.input
+      : undefined;
+  const writePending =
+    update.isPending ||
+    anonymousOnBoards.isPending ||
+    updateStandings.isPending ||
+    heldStandingsForViewer !== undefined ||
+    readingBeforeWrite;
   const writeLocked = writePending || effectiveOffline;
-  const saveFailed = update.isError || anonymousOnBoards.isError || readBeforeWriteFailed;
+  const saveFailed = update.isError || anonymousOnBoards.isError || updateStandings.isError || readBeforeWriteFailed;
   const saveFailedMessage = t('privacy.saveFailed');
 
   useEffect(() => {
@@ -119,6 +137,7 @@ export function PrivacySettingsScreen() {
   const startWrite = () => {
     update.reset();
     anonymousOnBoards.reset();
+    updateStandings.reset();
     setReadBeforeWriteFailed(false);
   };
 
@@ -221,6 +240,22 @@ export function PrivacySettingsScreen() {
     );
   };
 
+  const selectStandingsVisibility = (field: StandingsVisibilityField, choice: string) => {
+    if (!standings.data || writeLocked || !isStandingsVisibility(choice)) return;
+    if (choice === standings.data[field]) return;
+    hapticSelection();
+    const input: StandingsPrivacyInput =
+      field === 'leaderboardVisibility' ? { leaderboardVisibility: choice } : { gymScreenVisibility: choice };
+    setHeldStandings({ input, scope: captureViewer() });
+    startWrite();
+    updateStandings.mutate(input, {
+      onSuccess: () => trackSettingChanged(SETTINGS_PAGE, field, choice),
+      onSettled: () => setHeldStandings(null),
+    });
+  };
+
+  const pendingStandings =
+    heldStandingsForViewer ?? (updateStandings.isPending ? updateStandings.variables : undefined);
   const model = withSettingTracking(
     buildPrivacyModel({
       t,
@@ -242,6 +277,16 @@ export function PrivacySettingsScreen() {
       pendingRequestCount: requests.data?.length ?? 0,
       analytics: { preference: analyticsPreference, regionDefault: analyticsRegionDefault },
       sessionRecording,
+      standings: {
+        settings: standings.data ? { ...standings.data, ...pendingStandings } : undefined,
+        loading: standings.isLoading || profileQuery.isLoading,
+        loadFailed: standings.isError || profileQuery.isError || (!standings.isPending && !standings.data),
+        onSelect: selectStandingsVisibility,
+        onRetry: () => {
+          if (!viewerId || profileQuery.isError) void profileQuery.refetch();
+          if (viewerId) void standings.refetch();
+        },
+      },
       onRetry: () => {
         // A recovered profile starts the settings read on its own.
         if (profileQuery.isError || !viewerId) void profileQuery.refetch();

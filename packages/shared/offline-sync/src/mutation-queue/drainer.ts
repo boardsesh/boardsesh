@@ -9,6 +9,7 @@ import {
   isServerUnavailableError,
   isServerFailureSignal,
   getErrorStatus,
+  getRateLimitRetryAfterMs,
   isClimbReferenceToDeletedClimb,
 } from './error-classification';
 import { isDatabaseLockedError } from '../db/lock-errors';
@@ -22,6 +23,10 @@ import { parseQueueTimestamp } from './queue-timestamps';
 // guards coordinate the drainer, the pull client, and sign-out, which all live
 // in that one context.
 let _isDraining = false;
+
+// Retain the server's deadline when an exhausted cycle or backgrounding ends a
+// drain. A foreground/local-write trigger must not bypass the same cooldown.
+let _rateLimitRetryAt = 0;
 
 // Sign-out guard (account lifecycle): while sign-out is wiping local user data,
 // a scheduler- or listener-triggered drain must not run concurrently — it could
@@ -137,7 +142,10 @@ function notifyTeardown(): void {
 }
 
 export function setSigningOut(value: boolean): void {
-  if (value && !_isSigningOut) _globalWipeEpoch += 1;
+  if (value && !_isSigningOut) {
+    _globalWipeEpoch += 1;
+    _rateLimitRetryAt = 0;
+  }
   _isSigningOut = value;
   if (value) notifyTeardown();
 }
@@ -247,6 +255,7 @@ function notifyPurgeSettled(namespace: string): void {
  */
 export function beginGlobalPurge(): void {
   _globalWipeEpoch += 1;
+  _rateLimitRetryAt = 0;
   notifyTeardown();
 }
 
@@ -423,6 +432,22 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForRateLimit(sleep: (ms: number) => Promise<void>, startEpoch: number): Promise<void> {
+  let unsubscribe = () => {};
+  try {
+    const teardown = new Promise<void>((resolve) => {
+      unsubscribe = onTeardown(() => {
+        if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) resolve();
+      });
+    });
+    // setTimeout overflows above a signed 32-bit delay. The outer loop waits
+    // any remaining time before reading or sending another queued write.
+    await Promise.race([sleep(Math.min(_rateLimitRetryAt - Date.now(), 2_147_483_647)), teardown]);
+  } finally {
+    unsubscribe();
+  }
+}
+
 // Full-jitter exponential backoff: random in [0, min(cap, base * 2^attempt)].
 // `attempt` is 0-based (first retry after a failure uses attempt 0).
 function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
@@ -511,10 +536,16 @@ export async function drainMutationQueue(
   try {
     while (true) {
       if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) break;
+      if (_rateLimitRetryAt > Date.now()) {
+        await waitForRateLimit(sleep, startEpoch);
+        if (!options.isOnline()) break;
+        continue;
+      }
       const batch = await peekPending(db, 10);
       if (batch.length === 0) break;
 
       let retryableHit = false;
+      let rateLimitedHit = false;
       let networkStop = false;
 
       for (const mutation of batch) {
@@ -556,6 +587,18 @@ export async function drainMutationQueue(
           });
         } catch (error: unknown) {
           const errorMessage = formatError(error);
+
+          const rateLimitDelayMs = getRateLimitRetryAfterMs(error);
+          if (rateLimitDelayMs !== null) {
+            if (_globalWipeEpoch === startEpoch) {
+              _rateLimitRetryAt = Math.max(_rateLimitRetryAt, Date.now() + rateLimitDelayMs);
+            }
+            // A burst drain can hit the write limit repeatedly. Waiting is the
+            // remedy; persistent strikes would eventually lose a valid send.
+            retryableHit = true;
+            rateLimitedHit = true;
+            break;
+          }
 
           if (isGraphQLEmptyResponseError(error)) {
             // A 2xx response with no usable GraphQL body is ambiguous: the
@@ -738,7 +781,7 @@ export async function drainMutationQueue(
         // Lifecycle/connectivity may change after the failed request but before
         // backoff starts. Avoid sleeping when this cycle can no longer retry.
         if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
-        await sleep(backoffDelay(retryAttempts, baseDelayMs, maxDelayMs));
+        if (!rateLimitedHit) await sleep(backoffDelay(retryAttempts, baseDelayMs, maxDelayMs));
         retryAttempts += 1;
         // The app may sign out, background, or lose connectivity during the
         // sleep. Re-check before touching SQLite or sending the mutation again.
@@ -768,6 +811,7 @@ export function isDraining(): boolean {
 
 export function __resetDrainerStateForTests(): void {
   _isDraining = false;
+  _rateLimitRetryAt = 0;
   _isSigningOut = false;
   _isBackgrounded = false;
   // Epoch checks are relative (capture-then-compare), so a residual value is

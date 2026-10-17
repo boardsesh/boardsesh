@@ -636,5 +636,31 @@
     "publishLinkMessage": "Toute personne disposant du lien peut ouvrir cette board, même si elle n'apparaît ni dans la recherche ni sur la carte. Le lien reprend le nom de la board, il n'est donc pas secret. Garde son emplacement masqué si tu ne souhaites pas le partager.",
     "publishLink": "Partager le lien",
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
+  },
+  "standings": {
+    "title": "Classements",
+    "inApp": {
+      "title": "Dans l’app",
+      "description": "S’applique à tous les classements Boardsesh, y compris aux écrans de la salle."
+    },
+    "gymScreens": {
+      "title": "Sur les écrans de la salle",
+      "description": "Les écrans de la salle peuvent afficher moins que le réglage de l’app, jamais plus. Ton nom reste masqué ici si tu choisis l’anonymat dans l’app."
+    },
+    "options": {
+      "public": {
+        "title": "Afficher mon nom",
+        "subtitle": "Les autres grimpeurs voient ton nom, ta photo et tes croix."
+      },
+      "anonymous": {
+        "title": "Compté, pas nommé",
+        "subtitle": "Tu gardes ton rang et tu comptes toujours dans le total. Les autres voient un grimpeur sans nom."
+      },
+      "off": {
+        "title": "Laisse-moi en dehors",
+        "subtitle": "Tu n’apparaîtras pas dans ce classement. Tu pourras toujours le consulter."
+      }
+    },
+    "privacyPrecedence": "Le compte privé et « Rester anonyme sur les boards qui ne m’appartiennent pas » restent prioritaires. Ces choix ne peuvent pas rendre ton activité plus publique."
   }
 }

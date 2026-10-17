@@ -636,5 +636,31 @@
     "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen, auch wenn es in Suche und Karte nicht auftaucht. Der Link enthält den Namen des Boards, er ist also nicht geheim. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
     "publishLink": "Per Link teilen",
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
+  },
+  "standings": {
+    "title": "Rangliste",
+    "inApp": {
+      "title": "In der App",
+      "description": "Gilt für alle Boardsesh-Ranglisten, auch auf Bildschirmen in der Halle."
+    },
+    "gymScreens": {
+      "title": "Auf Hallen-Bildschirmen",
+      "description": "Hallen-Bildschirme dürfen weniger zeigen als die App-Einstellung oben, niemals mehr. Dein Name bleibt hier verborgen, wenn du in der App anonym bleibst."
+    },
+    "options": {
+      "public": {
+        "title": "Meinen Namen zeigen",
+        "subtitle": "Andere sehen deinen Namen, dein Foto und deine Begehungen."
+      },
+      "anonymous": {
+        "title": "Gezählt, nicht genannt",
+        "subtitle": "Du bekommst weiter einen Rang und zählst weiter mit. Alle anderen sehen eine*n Kletterer*in ohne Namen."
+      },
+      "off": {
+        "title": "Lass mich raus",
+        "subtitle": "Du erscheinst nicht in dieser Rangliste. Lesen kannst du sie weiterhin."
+      }
+    },
+    "privacyPrecedence": "Private Konten und „Auf fremden Boards anonym bleiben“ gelten weiterhin. Diese Auswahl kann deine Aktivität nicht öffentlicher machen."
   }
 }

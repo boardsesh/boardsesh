@@ -107,6 +107,7 @@ export default function SettingsLayout() {
         <Stack.Screen name="privacy" options={{ title: settingsPageTitle('privacy', t) }} />
         {/* No title here: the page names itself after the list it shows. */}
         <Stack.Screen name="privacy-people" />
+        <Stack.Screen name="standings-privacy" options={{ title: settingsPageTitle('privacy', t) }} />
         <Stack.Screen name="account" options={{ title: settingsPageTitle('account', t) }} />
         <Stack.Screen name="integrations" options={{ title: settingsPageTitle('integrations', t) }} />
         {/* Board is a parent plus two leaves: the parent asks "which look?" and

@@ -106,7 +106,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupBoardPresenceCatalogFixtures();
+  try {
+    await cleanupBoardPresenceCatalogFixtures();
+  } finally {
+    await redisClientManager.disconnect();
+  }
 });
 
 async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
@@ -3807,6 +3811,284 @@ describe('board-presence connection holder', () => {
       expect(owned.entries).toEqual([]);
       expect(owned.totalCount).toBe(0);
     });
+
+    // --- consent, internal accounts, distinct counting and tied ranks ---
+
+    async function setVisibility(userId: string, values: { leaderboard?: string; gymScreen?: string }): Promise<void> {
+      await db.execute(sql`
+        INSERT INTO user_profiles (user_id, leaderboard_visibility, gym_screen_visibility)
+        VALUES (${userId}, ${values.leaderboard ?? 'public'}, ${values.gymScreen ?? 'public'})
+        ON CONFLICT (user_id) DO UPDATE
+          SET leaderboard_visibility = EXCLUDED.leaderboard_visibility,
+              gym_screen_visibility = EXCLUDED.gym_screen_visibility
+      `);
+    }
+
+    /** One send per (user, climb) on the given board, all inside every window. */
+    async function seedSends(boardId: number, rows: { userId: string; climbUuid: string }[]): Promise<void> {
+      let sequence = 0;
+      for (const row of rows) {
+        await db.execute(sql`
+          INSERT INTO boardsesh_ticks
+            (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count,
+             difficulty, is_benchmark, comment, climbed_at, created_at, updated_at, board_id)
+          VALUES
+            (${`tick-vis-${Date.now()}-${sequence++}`}, ${row.userId}, 'kilter', ${row.climbUuid}, 40, false,
+             'send', 1, 17, false, '', now(), now(), now(), ${boardId})
+        `);
+      }
+    }
+
+    afterEach(async () => {
+      // Visibility and is_internal would otherwise leak between tests in this
+      // block. Both default to the permissive value, so a leaked 'off' silently
+      // empties a later leaderboard and reads as a ranking bug.
+      await setVisibility(TEST_USER_ID, {});
+      await setVisibility(SECOND_USER_ID, {});
+      await db.execute(sql`UPDATE users SET is_internal = false WHERE id IN (${TEST_USER_ID}, ${SECOND_USER_ID})`);
+    });
+
+    it("drops an 'off' climber from the entries AND the denominator, so nobody else's rank shifts", async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const beforeOptOut = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(beforeOptOut.totalCount).toBe(2);
+
+      await setVisibility(SECOND_USER_ID, { leaderboard: 'off' });
+
+      const afterOptOut = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(afterOptOut.entries.map((entry) => entry.userId)).toEqual([TEST_USER_ID]);
+      // Filtered inside the ranking query, not stripped from the page: were the
+      // opted-out climber merely hidden, totalCount would still read 2 and the
+      // UI would promise a row it can never show.
+      expect(afterOptOut.totalCount).toBe(1);
+    });
+
+    it('keeps an anonymous climber ranked and counted but strips their name, avatar and real user id', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: 'anonymous' });
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+
+      expect(board.totalCount).toBe(1);
+      const [entry] = board.entries;
+      expect(entry.isAnonymous).toBe(true);
+      expect(entry.rank).toBe(1);
+      expect(entry.totalSends).toBe(1);
+      expect(entry.userDisplayName).toBeNull();
+      expect(entry.userAvatarUrl).toBeNull();
+      // The whole point: a real user id resolves to a profile page, so handing
+      // one out beside isAnonymous would leak the name that was just withheld.
+      expect(entry.userId).not.toBe(TEST_USER_ID);
+      expect(entry.userId?.startsWith('anon:')).toBe(true);
+
+      // Stable across calls, or the kiosk's cross-board merge and client-side
+      // React keys break for every anonymous climber.
+      const again = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(again.entries[0].userId).toBe(entry.userId);
+    });
+
+    it('reads gym_screen_visibility for the gymScreen surface, so a climber can be named in-app but not on the gym wall', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: 'public', gymScreen: 'anonymous' });
+
+      const inApp = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'app' } },
+        authCtx(),
+      );
+      expect(inApp.entries[0].isAnonymous).toBe(false);
+      expect(inApp.entries[0].userDisplayName).toBe(SENDER_DISPLAY_NAME);
+
+      const onWall = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'gymScreen' } },
+        authCtx(),
+      );
+      expect(onWall.entries[0].isAnonymous).toBe(true);
+      expect(onWall.entries[0].userDisplayName).toBeNull();
+
+      // Omitting `surface` must fall back to the in-app column, never the
+      // gym-screen one — a forgetful caller should under-publish, not over-.
+      const defaulted = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(defaulted.entries[0].isAnonymous).toBe(false);
+    });
+
+    it.each([
+      ['public', 'public', 'public'],
+      ['public', 'anonymous', 'anonymous'],
+      ['public', 'off', 'off'],
+      ['anonymous', 'public', 'anonymous'],
+      ['anonymous', 'anonymous', 'anonymous'],
+      ['anonymous', 'off', 'off'],
+      ['off', 'public', 'off'],
+      ['off', 'anonymous', 'off'],
+      ['off', 'off', 'off'],
+    ])('applies the app ceiling to gym rankings: %s + %s => %s', async (app, gym, expected) => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: app, gymScreen: gym });
+      const leaderboard = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'gymScreen' } },
+        authCtx({ isAuthenticated: false, userId: undefined }),
+      );
+      if (expected === 'off') {
+        expect(leaderboard.totalCount).toBe(0);
+        expect(leaderboard.entries).toEqual([]);
+      } else {
+        expect(leaderboard.totalCount).toBe(1);
+        expect(leaderboard.entries[0].isAnonymous).toBe(expected === 'anonymous');
+        expect(leaderboard.entries[0].userDisplayName).toBe(expected === 'anonymous' ? null : SENDER_DISPLAY_NAME);
+      }
+    });
+
+    it.each(['app', 'gymScreen'])('keeps foreign-board anonymity under public %s ranking consent', async (surface) => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: SECOND_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(SECOND_USER_ID, {});
+      await db.execute(
+        sql`UPDATE user_profiles SET anonymous_on_foreign_boards = true WHERE user_id = ${SECOND_USER_ID}`,
+      );
+      const leaderboard = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface } },
+        authCtx(),
+      );
+      expect(leaderboard.totalCount).toBe(1);
+      expect(leaderboard.entries[0]).toMatchObject({
+        userId: null,
+        userDisplayName: null,
+        userAvatarUrl: null,
+        isAnonymous: true,
+        totalSends: 1,
+      });
+    });
+
+    it('uses the same ranking consent for the rolling three-hour session window', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+      await db.execute(
+        sql`UPDATE boardsesh_ticks SET climbed_at = NOW() - INTERVAL '181 minutes' WHERE user_id = ${SECOND_USER_ID}`,
+      );
+      await setVisibility(TEST_USER_ID, { gymScreen: 'anonymous' });
+      const leaderboard = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'gymScreen', period: 'session' } },
+        authCtx({ isAuthenticated: false, userId: undefined }),
+      );
+      expect(leaderboard.totalCount).toBe(1);
+      expect(leaderboard.entries[0]).toMatchObject({ isAnonymous: true, userDisplayName: null, totalSends: 1 });
+      await setVisibility(TEST_USER_ID, { gymScreen: 'off' });
+      const optedOut = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid, surface: 'gymScreen', period: 'session' } },
+        authCtx({ isAuthenticated: false, userId: undefined }),
+      );
+      expect(optedOut.totalCount).toBe(0);
+      expect(optedOut.entries).toEqual([]);
+    });
+
+    it('does not expose a pseudonym when current profile privacy denies identity', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [{ userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID }]);
+      await setVisibility(TEST_USER_ID, { leaderboard: 'anonymous' });
+      await db.execute(
+        sql`UPDATE user_profiles SET is_private = true, privacy_revision = 0 WHERE user_id = ${TEST_USER_ID}`,
+      );
+      await db.execute(sql`
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience, public_consent_revision)
+        SELECT 'tick', uuid, user_id, 'public', 0 FROM boardsesh_ticks WHERE user_id = ${TEST_USER_ID}
+      `);
+
+      const leaderboard = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid } },
+        authCtx({ userId: SECOND_USER_ID }),
+      );
+      expect(leaderboard.totalCount).toBe(1);
+      expect(leaderboard.entries).toHaveLength(1);
+      expect(leaderboard.entries[0]).toMatchObject({
+        userId: null,
+        userDisplayName: null,
+        userAvatarUrl: null,
+        isAnonymous: true,
+      });
+    });
+
+    it('filters private ticks before ranking and the population denominator', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+      await db.execute(sql`
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+        SELECT 'tick', uuid, user_id, 'only_me' FROM boardsesh_ticks WHERE user_id = ${TEST_USER_ID}
+      `);
+
+      const leaderboard = await socialBoardQueries.boardLeaderboard(
+        undefined,
+        { input: { boardUuid } },
+        authCtx({ userId: SECOND_USER_ID }),
+      );
+      expect(leaderboard.totalCount).toBe(1);
+      expect(leaderboard.entries).toHaveLength(1);
+      expect(leaderboard.entries[0]).toMatchObject({ userId: SECOND_USER_ID, rank: 1 });
+    });
+
+    it('excludes internal accounts entirely', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+      await db.execute(sql`UPDATE users SET is_internal = true WHERE id = ${SECOND_USER_ID}`);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries.map((entry) => entry.userId)).toEqual([TEST_USER_ID]);
+      expect(board.totalCount).toBe(1);
+    });
+
+    it('counts distinct climbs, so re-logging the same climb does not climb the ranking', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      // Three ticks, two of them the same climb → two distinct climbs.
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: TEST_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries[0].totalSends).toBe(2);
+    });
+
+    it('gives tied climbers the SAME rank rather than ordering them arbitrarily', async () => {
+      const { boardId, boardUuid } = await makeLeaderboardBoard(true);
+      await seedSends(boardId, [
+        { userId: TEST_USER_ID, climbUuid: TEST_CLIMB_UUID },
+        { userId: SECOND_USER_ID, climbUuid: OTHER_TEST_CLIMB_UUID },
+      ]);
+
+      const board = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(board.entries).toHaveLength(2);
+      expect(board.entries.map((entry) => entry.totalSends)).toEqual([1, 1]);
+      expect(board.entries.map((entry) => entry.rank)).toEqual([1, 1]);
+
+      // And the in-tie order is stable across refetches, so rows do not shuffle
+      // under a reader between polls.
+      const again = await socialBoardQueries.boardLeaderboard(undefined, { input: { boardUuid } }, authCtx());
+      expect(again.entries.map((entry) => entry.userId)).toEqual(board.entries.map((entry) => entry.userId));
+    });
   });
 
   // Per-connection backstop bookkeeping is pure in-memory roomManager state, so
@@ -3842,10 +4124,6 @@ describe('board-presence connection holder', () => {
       if (!redisOn) {
         console.warn('[board-presence] pubsub Redis unavailable — skipping holder integration tests');
       }
-    });
-
-    afterAll(async () => {
-      if (redisOn) await redisClientManager.disconnect().catch(() => {});
     });
 
     it('hands off to a new emitter and dedups same-emitter repeats', async () => {
@@ -3976,17 +4254,10 @@ describe('board-presence connection holder', () => {
 });
 
 // ============================================================
-// PR A perf work: pipelined commit (A1), write-side idempotency (A2), seq
-// continuity across dormancy (A3), stats cache (A4). Appended at the END —
-// never disturb the timing-racy concurrent-config-create test earlier in the
-// file (the only permitted mid-file edit was retargeting the three dwell-gate
-// spies above from getBoardMembershipFirstSeen to getBoardReportGate).
-//
-// These describes reconnect `redisClientManager` directly rather than via
-// `pubsub.initialize()`: that call is a one-time no-op once the "holder state
-// + hand-off" describe above already initialized pubsub, and that describe's
-// own afterAll disconnects redisClientManager — so exercising the real Redis
-// paths again here needs an explicit reconnect.
+// Pipelined commit, write-side idempotency, sequence continuity across dormancy,
+// and stats-cache integration coverage. All suites share the PubSub Redis
+// connections until the file-level teardown: its adapter retains those clients,
+// so reconnecting only the client manager would leave the adapter disconnected.
 // ============================================================
 
 async function ensureRedisConnectedForTest(): Promise<boolean> {
@@ -4124,17 +4395,8 @@ describe('board-presence write-side idempotency (Redis)', () => {
     return Number((row as { count: number }).count);
   }
 
-  // These tests verify through directly-observable state (the Redis FIFO
-  // history list, the writer key, and durable Postgres rows) rather than by
-  // subscribing to pubsub.subscribeBoardPresence: this file's earlier "holder
-  // state + hand-off (Redis)" describe already disconnected redisClientManager
-  // in its own afterAll (a describe we may not touch), which leaves pubsub's
-  // internal Redis *subscriber* connection permanently closed for the rest of
-  // this file — a test-harness artifact of reconnecting the publisher-side
-  // client directly, not a production concern (ioredis reconnects live
-  // clients automatically; only the test teardown calls `.quit()`). Every
-  // write path exercised below (INCR/SET/EVAL/pipelines) goes through the
-  // publisher client, which IS healthy after `ensureRedisConnectedForTest`.
+  // Verify the Redis history, writer key, and durable Postgres rows directly
+  // so retries must preserve both transient and persisted state.
 
   it('collapses an exact retry (same user/climb/angle) into a no-op: one history entry, one durable row, seq consumed once', async () => {
     if (!redisOn || !testRedis) return;

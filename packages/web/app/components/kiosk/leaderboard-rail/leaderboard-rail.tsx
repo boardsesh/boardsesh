@@ -10,12 +10,10 @@ import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GymKioskBoard } from '@boardsesh/shared-schema';
 import type { KioskLeaderboardConfig } from '../kiosk-view-model';
-import { useSessionLeaderboard } from './use-session-leaderboard';
-import { usePeriodLeaderboard, type KioskPeriodLeaderboardPeriod } from './use-period-leaderboard';
+import { usePeriodLeaderboard } from './use-period-leaderboard';
 import LeaderboardRow from './leaderboard-row';
 import styles from './leaderboard-rail.module.css';
 
-const EMPTY_BOARD_IDS: number[] = [];
 const MIN_RANKED_CLIMBERS = 2;
 
 export default function LeaderboardRail({
@@ -37,23 +35,17 @@ export default function LeaderboardRail({
       leaderboard.boardUuid === null ? boards : boards.filter((board) => board.boardUuid === leaderboard.boardUuid),
     [boards, leaderboard.boardUuid],
   );
-  const scopedBoardIds = useMemo(() => scopedBoards.map((board) => board.boardId), [scopedBoards]);
   const scopedBoardUuids = useMemo(() => scopedBoards.map((board) => board.boardUuid), [scopedBoards]);
 
-  // Both hooks always run (rules of hooks); each is inert for the other mode.
-  const sessionRows = useSessionLeaderboard(isSession ? scopedBoardIds : EMPTY_BOARD_IDS);
-  const periodResult = usePeriodLeaderboard(
-    scopedBoardUuids,
-    (isSession ? 'week' : leaderboard.period) as KioskPeriodLeaderboardPeriod,
-    !isSession,
-    { refetchIntervalInBackground: refetchInBackground },
-  );
-
-  const rows = isSession ? sessionRows : periodResult.rows;
-  // Period fetches failed with nothing cached (backend blip, or a 'day' rail
-  // against a backend that predates #3629): honest "unavailable" copy instead
-  // of a fake "no sends yet". Stale rows from an earlier success keep showing.
-  const showUnavailableState = !isSession && periodResult.isError && rows.length === 0;
+  // Session and calendar windows use the same server privacy projection.
+  // Raw board history may legitimately retain opted-out climbers' activity;
+  // it must not be ranked on the client under a different consent policy.
+  const periodResult = usePeriodLeaderboard(scopedBoardUuids, leaderboard.period, true, {
+    refetchIntervalInBackground: refetchInBackground,
+    surface: 'gymScreen',
+  });
+  const rows = periodResult.rows;
+  const showUnavailableState = periodResult.isError && rows.length === 0;
   const showEmptyState = scopedBoards.length === 0 || rows.length < MIN_RANKED_CLIMBERS;
 
   const periodTitle =

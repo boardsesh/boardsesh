@@ -4496,10 +4496,12 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
-    expect(mockTrack).toHaveBeenCalledWith(
-      'Bluetooth Connection Failed',
-      expect.objectContaining({ failureReason: 'user_cancelled' }),
-    );
+    expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Cancelled', {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 1,
+    });
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
   });
 
   // The Android session notification's bulb connects with the app in the
@@ -4519,10 +4521,12 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
-    expect(mockTrack).toHaveBeenCalledWith(
-      'Bluetooth Connection Failed',
-      expect.objectContaining({ failureReason: 'user_cancelled' }),
-    );
+    expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Cancelled', {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 1,
+    });
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
 
     // The next bulb tap scans again instead of being swallowed.
     await act(async () => {
@@ -4704,10 +4708,12 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
-    expect(mockTrack).toHaveBeenCalledWith(
-      'Bluetooth Connection Failed',
-      expect.objectContaining({ failureReason: 'user_cancelled' }),
-    );
+    expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Cancelled', {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 1,
+    });
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
 
     // The saved board advertising after the cancel connects nothing.
     act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));

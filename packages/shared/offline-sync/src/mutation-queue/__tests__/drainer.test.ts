@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { OfflineDatabase, QueryInvalidator } from '../../database';
 import type { PendingMutation } from '../queue';
 
@@ -20,6 +20,7 @@ vi.mock('../error-classification', () => ({
   isServerUnavailableError: vi.fn().mockReturnValue(false),
   isServerFailureSignal: vi.fn().mockReturnValue(false),
   getErrorStatus: vi.fn().mockReturnValue(null),
+  getRateLimitRetryAfterMs: vi.fn().mockReturnValue(null),
   isClimbReferenceToDeletedClimb: vi.fn().mockReturnValue(false),
 }));
 
@@ -40,6 +41,7 @@ import {
   isServerUnavailableError,
   isServerFailureSignal,
   getErrorStatus,
+  getRateLimitRetryAfterMs,
   isClimbReferenceToDeletedClimb,
 } from '../error-classification';
 
@@ -54,6 +56,7 @@ const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
 const mockIsServerUnavailableError = isServerUnavailableError as ReturnType<typeof vi.fn>;
 const mockIsServerFailureSignal = isServerFailureSignal as ReturnType<typeof vi.fn>;
 const mockGetErrorStatus = getErrorStatus as ReturnType<typeof vi.fn>;
+const mockGetRateLimitRetryAfterMs = getRateLimitRetryAfterMs as ReturnType<typeof vi.fn>;
 const mockIsClimbReferenceToDeletedClimb = isClimbReferenceToDeletedClimb as ReturnType<typeof vi.fn>;
 
 // The suite mocks the classifier so each branch can be driven in isolation. The
@@ -69,6 +72,7 @@ function useRealClassification(): void {
   mockIsServerUnavailableError.mockImplementation(realClassification.isServerUnavailableError);
   mockIsServerFailureSignal.mockImplementation(realClassification.isServerFailureSignal);
   mockGetErrorStatus.mockImplementation(realClassification.getErrorStatus);
+  mockGetRateLimitRetryAfterMs.mockImplementation(realClassification.getRateLimitRetryAfterMs);
   mockIsClimbReferenceToDeletedClimb.mockImplementation(realClassification.isClimbReferenceToDeletedClimb);
 }
 
@@ -115,6 +119,7 @@ describe('drainMutationQueue', () => {
     mockIsServerUnavailableError.mockReturnValue(false);
     mockIsServerFailureSignal.mockReturnValue(false);
     mockGetErrorStatus.mockReturnValue(null);
+    mockGetRateLimitRetryAfterMs.mockReturnValue(null);
     mockIsClimbReferenceToDeletedClimb.mockReturnValue(false);
     mockRecordFailure.mockResolvedValue({ status: 'pending', retryCount: 1 });
   });
@@ -962,6 +967,127 @@ describe('drainMutationQueue', () => {
     expect(delays[0]).toBeLessThanOrEqual(100);
 
     randomSpy.mockRestore();
+  });
+
+  describe('rate-limit cooldowns', () => {
+    const rateLimitError = {
+      response: {
+        status: 200,
+        errors: [{ extensions: { code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 60 } }],
+      },
+    };
+    const advanceSleep = vi.fn(async (milliseconds: number) => {
+      vi.setSystemTime(Date.now() + milliseconds);
+    });
+
+    beforeEach(() => {
+      useRealClassification();
+      vi.useFakeTimers({ toFake: ['Date'] });
+      mockProcessMutation.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('honors retryAfterSeconds beyond the backoff cap and then delivers in order', async () => {
+      const tick = makeMutation({ retry_count: 9 });
+      const nextTick = makeMutation({ id: 2 });
+      mockPeekPending
+        .mockResolvedValueOnce([tick, nextTick])
+        .mockResolvedValueOnce([tick, nextTick])
+        .mockResolvedValue([]);
+      mockProcessMutation.mockRejectedValueOnce(rateLimitError);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        sleep: advanceSleep,
+        maxDelayMs: 10,
+      });
+
+      expect(advanceSleep).toHaveBeenCalledWith(60_000);
+      expect(mockProcessMutation.mock.calls.map(([mutation]) => mutation.id)).toEqual([1, 1, 2]);
+      expect(mockMarkCompleted).toHaveBeenCalledTimes(2);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
+    it('bounds repeated rate-limit attempts without dead-lettering a valid send', async () => {
+      mockPeekPending.mockResolvedValue([makeMutation({ retry_count: 9 })]);
+      mockProcessMutation.mockRejectedValue(rateLimitError);
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        sleep: advanceSleep,
+        maxCycleAttempts: 2,
+        onMutationDeadLettered,
+      });
+
+      expect(mockProcessMutation).toHaveBeenCalledTimes(3);
+      expect(advanceSleep).toHaveBeenCalledTimes(2);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+    });
+
+    it('preserves the server deadline when a new drain follows an exhausted cycle', async () => {
+      const tick = makeMutation();
+      mockPeekPending.mockResolvedValueOnce([tick]).mockResolvedValueOnce([tick]).mockResolvedValue([]);
+      mockProcessMutation.mockRejectedValueOnce(rateLimitError);
+      const options = { ...ONLINE, sleep: advanceSleep, maxCycleAttempts: 0 };
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, options);
+      vi.setSystemTime(Date.now() + 10_000);
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, options);
+
+      expect(advanceSleep).toHaveBeenCalledExactlyOnceWith(50_000);
+      expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, tick.id);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+    });
+
+    it('releases the drain on backgrounding and keeps the cooldown for foregrounding', async () => {
+      const tick = makeMutation();
+      mockPeekPending.mockResolvedValueOnce([tick]).mockResolvedValueOnce([tick]).mockResolvedValue([]);
+      mockProcessMutation.mockRejectedValueOnce(rateLimitError);
+      const interruptedSleep = vi.fn(async () => {
+        setBackgrounded(true);
+        await new Promise<void>(() => {});
+      });
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        sleep: interruptedSleep,
+      });
+      expect(isDraining()).toBe(false);
+      expect(mockProcessMutation).toHaveBeenCalledTimes(1);
+      setBackgrounded(false);
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, { ...ONLINE, sleep: advanceSleep });
+
+      expect(advanceSleep).toHaveBeenCalledExactlyOnceWith(60_000);
+      expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, tick.id);
+    });
+
+    it('releases the drain on sign-out without imposing the old account cooldown', async () => {
+      const tick = makeMutation();
+      mockPeekPending.mockResolvedValueOnce([tick]).mockResolvedValueOnce([tick]).mockResolvedValue([]);
+      mockProcessMutation.mockRejectedValueOnce(rateLimitError);
+      const interruptedSleep = vi.fn(async () => {
+        setSigningOut(true);
+        setSigningOut(false);
+        await new Promise<void>(() => {});
+      });
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        sleep: interruptedSleep,
+      });
+      expect(isDraining()).toBe(false);
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, { ...ONLINE, sleep: advanceSleep });
+
+      expect(advanceSleep).not.toHaveBeenCalled();
+      expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, tick.id);
+    });
   });
 
   // Issue #5295: two transport shapes the classifier did not recognise reached

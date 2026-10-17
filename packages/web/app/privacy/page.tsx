@@ -41,6 +41,11 @@ export default async function PrivacyPolicyPage() {
         </Prose>
       </PageSection>
 
+      <PageSection title={t('privacy.standings.title')}>
+        <Prose>{t('privacy.standings.body')}</Prose>
+        <Prose>{t('privacy.standings.control')}</Prose>
+      </PageSection>
+
       <PageSection title={t('privacy.bluetooth.title')}>
         <Prose>{t('privacy.bluetooth.body')}</Prose>
       </PageSection>

@@ -459,6 +459,11 @@ export default defineConfig({
         cache: false,
       },
 
+      'db:mark-internal-users': {
+        command: 'tsx packages/db/scripts/mark-internal-users.ts',
+        cache: false,
+      },
+
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct workspace-binary invocation; no remote package runner.
       // print-schema concatenates the modular gql typeDefs into a single SDL

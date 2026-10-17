@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   columnMatchesCanonical,
   indexMatchesCanonical,
+  internalUserColumnMatchesCanonical,
+  type InternalUserColumnDefinition,
   ledgerSnapshotsMatch,
   requireCompatibilityOptIn,
   requireLocalDatabaseUrl,
@@ -100,6 +102,22 @@ describe('Aurora circuit schema compatibility guards', () => {
     expect(indexMatchesCanonical({ ...canonicalIndex, keyCollations: ['public.custom'] }, expectedIndex)).toBe(false);
     expect(indexMatchesCanonical({ ...canonicalIndex, keyOptions: [1] }, expectedIndex)).toBe(false);
     expect(indexMatchesCanonical({ ...canonicalIndex, keyOptions: [2] }, expectedIndex)).toBe(false);
+  });
+
+  it('requires the safe false default and exact boolean type for the internal-user flag', () => {
+    const column: InternalUserColumnDefinition = {
+      dataType: 'boolean',
+      underlyingTypeSchema: 'pg_catalog',
+      underlyingTypeName: 'bool',
+      nullable: false,
+      defaultExpression: 'false',
+    };
+    expect(internalUserColumnMatchesCanonical(column)).toBe(true);
+    expect(internalUserColumnMatchesCanonical({ ...column, defaultExpression: 'true' })).toBe(false);
+    expect(internalUserColumnMatchesCanonical({ ...column, defaultExpression: null })).toBe(false);
+    expect(internalUserColumnMatchesCanonical({ ...column, nullable: true })).toBe(false);
+    expect(internalUserColumnMatchesCanonical({ ...column, underlyingTypeSchema: 'custom' })).toBe(false);
+    expect(internalUserColumnMatchesCanonical({ ...column, dataType: 'text', underlyingTypeName: 'text' })).toBe(false);
   });
 
   it('detects changes to complete ledger rows even when created_at is null', () => {

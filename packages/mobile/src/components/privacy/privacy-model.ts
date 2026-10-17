@@ -5,6 +5,7 @@ import type {
 } from '@boardsesh/graphql/operations/privacy';
 import type { MoreFormModel, MoreOption, MoreRow, MoreSection } from '../MoreForm.types';
 import type { PrivacyTranslate } from './privacy-settings-changes';
+import { buildStandingsPrivacySections, type StandingsPrivacyModelInput } from './standings-privacy-model';
 
 /**
  * The defaults the server stores for new sessions. Narrower than
@@ -59,6 +60,7 @@ export type PrivacyModelInput = {
     regionDefault: boolean;
   };
   sessionRecording: { value: boolean; disabled: boolean };
+  standings: StandingsPrivacyModelInput;
   onRetry: () => void;
   onPrivateAccountChange: (nextIsPrivate: boolean) => void;
   onSessionAudienceSelect: (audienceKey: string) => void;
@@ -108,9 +110,9 @@ function audienceLabel(audience: PrivacyResourceAudience, t: PrivacyTranslate): 
 }
 
 /**
- * The Privacy page as plain data: every privacy control in one place, in at
- * most six groups: Private account, People, New session audience, Boards,
- * Analytics, and the privacy policy. A status group goes above them while the
+ * The Privacy page as plain data: every privacy control in one place, in
+ * groups for account, people, sessions, boards, standings, analytics and the
+ * privacy policy. A status group goes above them while the
  * settings load, fail, or can't be saved.
  *
  * Nothing here saves on a button. Each switch and the select write once, the
@@ -253,6 +255,8 @@ export function buildPrivacyModel(input: PrivacyModelInput): MoreFormModel {
       rows: boardRows,
     });
   }
+
+  if (signedIn) sections.push(...buildStandingsPrivacySections(input.standings, t, writeLocked));
 
   // Local consent, not a server write: works signed out and offline alike. The
   // footer explains both switches; the recording switch also says when to use it.
