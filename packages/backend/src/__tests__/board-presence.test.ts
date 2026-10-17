@@ -106,7 +106,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupBoardPresenceCatalogFixtures();
+  try {
+    await cleanupBoardPresenceCatalogFixtures();
+  } finally {
+    await redisClientManager.disconnect();
+  }
 });
 
 async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
@@ -4122,10 +4126,6 @@ describe('board-presence connection holder', () => {
       }
     });
 
-    afterAll(async () => {
-      if (redisOn) await redisClientManager.disconnect().catch(() => {});
-    });
-
     it('hands off to a new emitter and dedups same-emitter repeats', async () => {
       if (!redisOn) return;
       const boardId = await makeHolderBoard(authCtx());
@@ -4254,17 +4254,10 @@ describe('board-presence connection holder', () => {
 });
 
 // ============================================================
-// PR A perf work: pipelined commit (A1), write-side idempotency (A2), seq
-// continuity across dormancy (A3), stats cache (A4). Appended at the END —
-// never disturb the timing-racy concurrent-config-create test earlier in the
-// file (the only permitted mid-file edit was retargeting the three dwell-gate
-// spies above from getBoardMembershipFirstSeen to getBoardReportGate).
-//
-// These describes reconnect `redisClientManager` directly rather than via
-// `pubsub.initialize()`: that call is a one-time no-op once the "holder state
-// + hand-off" describe above already initialized pubsub, and that describe's
-// own afterAll disconnects redisClientManager — so exercising the real Redis
-// paths again here needs an explicit reconnect.
+// Pipelined commit, write-side idempotency, sequence continuity across dormancy,
+// and stats-cache integration coverage. All suites share the PubSub Redis
+// connections until the file-level teardown: its adapter retains those clients,
+// so reconnecting only the client manager would leave the adapter disconnected.
 // ============================================================
 
 async function ensureRedisConnectedForTest(): Promise<boolean> {
@@ -4402,17 +4395,8 @@ describe('board-presence write-side idempotency (Redis)', () => {
     return Number((row as { count: number }).count);
   }
 
-  // These tests verify through directly-observable state (the Redis FIFO
-  // history list, the writer key, and durable Postgres rows) rather than by
-  // subscribing to pubsub.subscribeBoardPresence: this file's earlier "holder
-  // state + hand-off (Redis)" describe already disconnected redisClientManager
-  // in its own afterAll (a describe we may not touch), which leaves pubsub's
-  // internal Redis *subscriber* connection permanently closed for the rest of
-  // this file — a test-harness artifact of reconnecting the publisher-side
-  // client directly, not a production concern (ioredis reconnects live
-  // clients automatically; only the test teardown calls `.quit()`). Every
-  // write path exercised below (INCR/SET/EVAL/pipelines) goes through the
-  // publisher client, which IS healthy after `ensureRedisConnectedForTest`.
+  // Verify the Redis history, writer key, and durable Postgres rows directly
+  // so retries must preserve both transient and persisted state.
 
   it('collapses an exact retry (same user/climb/angle) into a no-op: one history entry, one durable row, seq consumed once', async () => {
     if (!redisOn || !testRedis) return;
