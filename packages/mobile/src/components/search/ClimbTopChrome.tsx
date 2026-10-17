@@ -22,7 +22,9 @@ import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
-import { BoardSwitcherButton, CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
+import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
+import { ClimbListBoardActions, ClimbListBoardTitle } from '../chrome/ClimbListBoardActions';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
@@ -136,6 +138,7 @@ function ClimbTopChromeComponent({
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
+  const { data: activeBoard } = useActiveBoard();
   const glassGradeRail = useFloatingHeaderControls();
   const insets = useSafeAreaInsets();
   const usesCustomSearch = searchMode === 'custom';
@@ -185,8 +188,8 @@ function ClimbTopChromeComponent({
   if (isMaterial) {
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
-    // are suppressed — the chips own filtering. The app-bar search field, the angle
-    // chip, and the in-chrome grade rail (opened and hidden by the chip row's Grade chip) stay.
+    // are suppressed — the chips own filtering. Angle and view options live in
+    // the toolbar menu; the Grade chip continues to open the in-chrome rail.
     const showTopChromeFilters = !showPersistentChips;
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
@@ -222,12 +225,7 @@ function ClimbTopChromeComponent({
             style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
           >
             <UserAvatarToolbarAction variant="material" />
-            <BoardSwitcherButton
-              onPress={onOpenBoardDetail}
-              accessibilityHint={t('mobile.search.boardSwitcherHint')}
-              badge={showBoardBadge}
-              showcaseAnchor={anchorBoardButton}
-            />
+            <ClimbListBoardTitle />
             {canCreate ? (
               <Appbar.Action
                 icon={iconMap.plus.android}
@@ -236,10 +234,12 @@ function ClimbTopChromeComponent({
                 accessibilityLabel={t('mobile.create.fab.ariaLabel')}
               />
             ) : null}
-            {/* Angle is a quick-row chip below (it re-grades the whole list — a list
-              param, not an app-bar action). No toolbar lightbulb on the climbs tab
-              either — board-LED control lives on the queue bar / current-climb pill
-              (BoardControlIndicator), in step with the glass `hideLight`. */}
+            <ClimbListBoardActions
+              material
+              onOpenHistory={onOpenBoardDetail}
+              badge={showBoardBadge}
+              showcaseAnchor={anchorBoardButton}
+            />
           </Appbar.Header>
 
           {/* "On the wall" status — a compact capsule in a slim centred row under the
@@ -299,10 +299,8 @@ function ClimbTopChromeComponent({
                 default; it sits directly under the search field, like Liquid Glass. */}
               {showPersistentChips ? filterChrome : null}
 
-              {/* The angle now rides as the first chip in the persistent chip row above
-                (FilterChipRow on Android); the quick row only carries the condensed filter
-                summary, which shows only when the top-chrome filters are active (i.e.
-                the persistent chip row is off). */}
+              {/* The quick row carries the condensed summary when the persistent
+                chip row is off. Angle is owned by the toolbar options menu. */}
               {visibleFilterSummary ? (
                 <View pointerEvents="box-none" style={styles.materialQuickRow}>
                   <Chip
@@ -354,6 +352,16 @@ function ClimbTopChromeComponent({
       onOpenBoardSwitcher={onOpenBoardDetail}
       boardBadge={showBoardBadge}
       anchorBoardButton={anchorBoardButton}
+      boardControls={{
+        content: (
+          <ClimbListBoardActions
+            onOpenHistory={onOpenBoardDetail}
+            badge={showBoardBadge}
+            showcaseAnchor={anchorBoardButton}
+          />
+        ),
+        actionCount: activeBoard ? 2 : 1,
+      }}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
       hideLight

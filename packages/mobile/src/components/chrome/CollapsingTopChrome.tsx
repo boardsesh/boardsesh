@@ -38,6 +38,8 @@ type CollapsingTopChromeProps = {
   boardPillAccessibilityHint?: string;
   /** Show a brand-coloured dot on the board glyph — the one-time onboarding cue. */
   boardBadge?: boolean;
+  /** Replace the default angle/board pair while retaining shared toolbar sizing. */
+  boardControls?: { content: ReactNode; actionCount: number };
   /** Report the measured chrome height so the list can inset its top padding. */
   onHeightChange: (height: number) => void;
   /** Optional persistent plain centre title (Climbs filter summary). */
@@ -92,6 +94,7 @@ export function CollapsingTopChrome({
   onOpenBoardSwitcher,
   boardPillAccessibilityHint,
   boardBadge = false,
+  boardControls,
   onHeightChange,
   centerTitle,
   centerContent,
@@ -174,14 +177,13 @@ export function CollapsingTopChrome({
   // The board glyph shows whenever a board is set; the lightbulb is hidden when
   // `hideLight` (e.g. the active-session header / climbs tab). The angle slot is
   // counted only when adjustable so fixed-angle boards don't get a phantom slot.
-  const angleActions = canOpenAngle ? 1 : 0;
-  const boardActions = activeBoard ? 1 : 0;
+  const boardActionCount = boardControls?.actionCount ?? (canOpenAngle ? 1 : 0) + (activeBoard ? 1 : 0);
   const lightActions = bluetooth && !hideLight ? 1 : 0;
   // Reserve a slot only for a real element — a `false`/`null` from a `cond && <…>`
   // caller must not widen the toolbar by a phantom 48px. Callers passing a fragment
   // of several actions supply `trailingActionCount` explicitly.
   const trailingActions = trailingActionCount ?? (isValidElement(trailingAction) ? 1 : 0);
-  const rightActionCount = angleActions + boardActions + lightActions + trailingActions;
+  const rightActionCount = boardActionCount + lightActions + trailingActions;
   const rightToolbarWidth = rightActionCount * TOP_ACTION_SIZE;
 
   const leftActions = (
@@ -194,6 +196,23 @@ export function CollapsingTopChrome({
         </GlassToolbarAction>
       ) : null}
     </GlassActionToolbar>
+  );
+
+  const boardControlContent = boardControls ? (
+    boardControls.content
+  ) : (
+    <>
+      <AngleToolbarAction />
+      {activeBoard ? (
+        <ShowcaseAnchorView name="board-history-button" enabled={anchorBoardButton}>
+          <BoardToolbarAction
+            onPress={onOpenBoardSwitcher}
+            accessibilityHint={boardPillAccessibilityHint}
+            badge={boardBadge}
+          />
+        </ShowcaseAnchorView>
+      ) : null}
+    </>
   );
 
   // Right glass toolbar: angle + board glyph + lightbulb (+ optional trailing
@@ -218,16 +237,7 @@ export function CollapsingTopChrome({
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        <AngleToolbarAction />
-        {activeBoard ? (
-          <ShowcaseAnchorView name="board-history-button" enabled={anchorBoardButton}>
-            <BoardToolbarAction
-              onPress={onOpenBoardSwitcher}
-              accessibilityHint={boardPillAccessibilityHint}
-              badge={boardBadge}
-            />
-          </ShowcaseAnchorView>
-        ) : null}
+        {boardControlContent}
         {bluetooth && !hideLight ? <LightbulbToolbarAction /> : null}
         {trailingAction}
       </View>
@@ -246,14 +256,7 @@ export function CollapsingTopChrome({
         rightActions={
           rightActionCount > 0 ? (
             <GlassActionToolbar actionCount={rightActionCount}>
-              <AngleToolbarAction />
-              {activeBoard ? (
-                <BoardToolbarAction
-                  onPress={onOpenBoardSwitcher}
-                  accessibilityHint={boardPillAccessibilityHint}
-                  badge={boardBadge}
-                />
-              ) : null}
+              {boardControlContent}
               {bluetooth && !hideLight ? <LightbulbToolbarAction /> : null}
               {trailingAction}
             </GlassActionToolbar>

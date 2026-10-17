@@ -563,7 +563,7 @@
         "offlineSkip": "Plus tard",
         "downloadAria": "Garder {{name}} sur ce téléphone"
       },
-      "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont allumé au mur.",
+      "boardRevealTip": "Touche l’horloge pour voir les blocs allumés sur ce mur.",
       "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",
       "tips": {
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",

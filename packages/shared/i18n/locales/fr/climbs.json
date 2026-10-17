@@ -319,6 +319,13 @@
     "unknown": "Inconnu"
   },
   "mobile": {
+    "listOptions": {
+      "title": "Options de la liste de blocs",
+      "angle": "Inclinaison · {{angle}}°",
+      "viewOptions": "Options d’affichage",
+      "history": "Historique de la board, {{board}}",
+      "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
+    },
     "moderation": {
       "title": "Modération",
       "pinnedFromNotification": "Depuis ta notification",
@@ -575,7 +582,6 @@
       "gradeAction": "Définir la plage de cotation",
       "gradeOpenHint": "Ouvre le sélecteur de cotation",
       "gradeCloseHint": "Ferme le sélecteur de cotation",
-      "boardSwitcherHint": "Ouvre le sélecteur de board",
       "allClimbs": "Toutes les voies",
       "clearRecentSearches": "Effacer les recherches récentes",
       "chips": {

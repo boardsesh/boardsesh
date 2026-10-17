@@ -11,7 +11,7 @@ import { DEFAULT_PINNED_CHIPS, PINNABLE_CHIP_CATALOG } from '../../../lib/pinnab
 import type { RecentFilter } from '../../../lib/recent-filter-store';
 import { isCapsuleActive } from '../../filter-capsules/CapsuleRow.logic';
 import type { Capsule, MenuCapsule, RailCapsule, ToggleMenuCapsule } from '../../filter-capsules/CapsuleRow.types';
-import { buildClimbCapsules, type ClimbAngleCapsule } from '../climb-capsules';
+import { buildClimbCapsules } from '../climb-capsules';
 import type { DimensionChip, FilterChipRowProps } from '../FilterChipRow.types';
 
 // Returns the key, with the interpolated count where there is one, so each
@@ -78,11 +78,9 @@ function capsuleByKey<K extends Capsule['kind']>(
   return capsule as Extract<Capsule, { kind: K }>;
 }
 
-const ANGLE: ClimbAngleCapsule = { label: '40°', accessibilityLabel: 'angleSelector.selectAngle', onPress: vi.fn() };
-
 describe('buildClimbCapsules: the resting row', () => {
   it('renders the default pins in catalog order, all resting', () => {
-    expect(summarize(buildClimbCapsules(makeProps(), mockT, null))).toEqual([
+    expect(summarize(buildClimbCapsules(makeProps(), mockT))).toEqual([
       ['sheet', 'filters', 'mobile.filter.title', false],
       ['rail', 'grade', 'Grade', false],
       ['menu', 'progress', 'mobile.filter.progress.label', false],
@@ -92,34 +90,18 @@ describe('buildClimbCapsules: the resting row', () => {
     ]);
   });
 
-  it('leads with the Angle capsule on Android / web, before Filters', () => {
-    const capsules = buildClimbCapsules(makeProps(), mockT, ANGLE);
-    expect(summarize(capsules).slice(0, 2)).toEqual([
-      ['sheet', 'angle', '40°', false],
-      ['sheet', 'filters', 'mobile.filter.title', false],
-    ]);
-    const angle = capsuleByKey(capsules, 'angle', 'sheet');
-    expect(angle.accessibilityLabel).toBe('angleSelector.selectAngle');
-    expect(angle.icon).toBeUndefined();
-    expect(angle.onPress).toBe(ANGLE.onPress);
-  });
-
   it('hides Your progress when signed out, keeping the pin', () => {
-    const keys = buildClimbCapsules(makeProps({ canFilterProgress: false }), mockT, null).map(({ key }) => key);
+    const keys = buildClimbCapsules(makeProps({ canFilterProgress: false }), mockT).map(({ key }) => key);
     expect(keys).toEqual(['filters', 'grade', 'collection', 'popularity', 'rating']);
   });
 
   it('drops an unpinned chip and keeps the fixed chrome', () => {
-    const keys = buildClimbCapsules(makeProps({ pinnedChips: ['rating'] }), mockT, null).map(({ key }) => key);
+    const keys = buildClimbCapsules(makeProps({ pinnedChips: ['rating'] }), mockT).map(({ key }) => key);
     expect(keys).toEqual(['filters', 'rating']);
   });
 
   it('shows the active filter count on Filters and lights it', () => {
-    const filters = capsuleByKey(
-      buildClimbCapsules(makeProps({ activeFilterCount: 3 }), mockT, null),
-      'filters',
-      'sheet',
-    );
+    const filters = capsuleByKey(buildClimbCapsules(makeProps({ activeFilterCount: 3 }), mockT), 'filters', 'sheet');
     expect(filters.label).toBe('mobile.search.chips.filtersWithCount(3)');
     expect(filters.count).toBe(3);
     expect(filters.icon).toBe('filters');
@@ -157,7 +139,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 
   it('renders in catalog order with each value as its label', () => {
-    expect(summarize(buildClimbCapsules(props, mockT, null))).toEqual([
+    expect(summarize(buildClimbCapsules(props, mockT))).toEqual([
       ['sheet', 'filters', 'mobile.search.chips.filtersWithCount(9)', true],
       ['menu', 'recent', 'mobile.search.recentFilters', false],
       ['rail', 'grade', 'V4–V6', true],
@@ -175,7 +157,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 
   it('marks the selected option in each menu', () => {
-    const capsules = buildClimbCapsules(props, mockT, null);
+    const capsules = buildClimbCapsules(props, mockT);
     const selected = (key: string) => capsuleByKey(capsules, key, 'menu').selected;
     expect(selected('accuracy')).toBe('0.1');
     expect(selected('progress')).toBe('unsent');
@@ -187,7 +169,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 
   it('offers the supported options in each menu', () => {
-    const capsules = buildClimbCapsules(props, mockT, null);
+    const capsules = buildClimbCapsules(props, mockT);
     const values = (key: string) => capsuleByKey(capsules, key, 'menu').options.map(({ value }) => value);
     expect(values('accuracy')).toEqual(['off', '0.2', '0.1', '0.05']);
     expect(values('progress')).toEqual(['all', 'unsent', 'untried', 'projects', 'sent']);
@@ -214,12 +196,12 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 
   it('drops personal collections when signed out and Benchmarks on a spray wall', () => {
-    const signedOut = buildClimbCapsules(makeProps({ canFilterPersonalCollections: false }), mockT, null);
+    const signedOut = buildClimbCapsules(makeProps({ canFilterPersonalCollections: false }), mockT);
     expect(capsuleByKey(signedOut, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
       'any',
       'benchmarks',
     ]);
-    const spray = buildClimbCapsules(makeProps({ isSprayWall: true }), mockT, null);
+    const spray = buildClimbCapsules(makeProps({ isSprayWall: true }), mockT);
     expect(capsuleByKey(spray, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
       'any',
       'drafts',
@@ -228,11 +210,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 
   it('labels and selects Liked when it is active', () => {
-    const liked = capsuleByKey(
-      buildClimbCapsules(makeProps({ collection: 'liked' }), mockT, null),
-      'collection',
-      'menu',
-    );
+    const liked = capsuleByKey(buildClimbCapsules(makeProps({ collection: 'liked' }), mockT), 'collection', 'menu');
     expect(liked.label).toBe('mobile.filter.collection.liked');
     expect(liked.active).toBe(true);
     expect(liked.selected).toBe('liked');
@@ -253,7 +231,7 @@ describe('buildClimbCapsules: Recent', () => {
   ];
 
   it('is hidden with no saved searches', () => {
-    expect(buildClimbCapsules(makeProps(), mockT, null).some(({ key }) => key === 'recent')).toBe(false);
+    expect(buildClimbCapsules(makeProps(), mockT).some(({ key }) => key === 'recent')).toBe(false);
   });
 
   it('checks the saved search in force and re-applies any tap, the checked one too', () => {
@@ -263,7 +241,6 @@ describe('buildClimbCapsules: Recent', () => {
       buildClimbCapsules(
         makeProps({ recentFilters: recents, currentSearchText: 'crimp', onApplyRecent, onClearRecent }),
         mockT,
-        null,
       ),
       'recent',
       'menu',
@@ -294,7 +271,7 @@ describe('buildClimbCapsules: Recent', () => {
 
   it('checks nothing when no saved search is in force', () => {
     const recent = capsuleByKey(
-      buildClimbCapsules(makeProps({ recentFilters: recents, currentSearchText: 'jugs' }), mockT, null),
+      buildClimbCapsules(makeProps({ recentFilters: recents, currentSearchText: 'jugs' }), mockT),
       'recent',
       'menu',
     );
@@ -305,11 +282,7 @@ describe('buildClimbCapsules: Recent', () => {
 describe('buildClimbCapsules: Grade', () => {
   it('opens the rail while closed', () => {
     const onOpenGrade = vi.fn();
-    const grade: RailCapsule = capsuleByKey(
-      buildClimbCapsules(makeProps({ onOpenGrade }), mockT, null),
-      'grade',
-      'rail',
-    );
+    const grade: RailCapsule = capsuleByKey(buildClimbCapsules(makeProps({ onOpenGrade }), mockT), 'grade', 'rail');
     expect(grade.expanded).toBe(false);
     expect(grade.onPress).toBe(onOpenGrade);
     expect(grade.accessibilityHint).toBe('mobile.search.gradeOpenHint');
@@ -320,7 +293,7 @@ describe('buildClimbCapsules: Grade', () => {
     const onCloseGrade = vi.fn();
     const content = createElement('div');
     const grade = capsuleByKey(
-      buildClimbCapsules(makeProps({ gradeRailOpen: true, onCloseGrade, gradePopoverContent: content }), mockT, null),
+      buildClimbCapsules(makeProps({ gradeRailOpen: true, onCloseGrade, gradePopoverContent: content }), mockT),
       'grade',
       'rail',
     );
@@ -340,7 +313,6 @@ describe('buildClimbCapsules: Tall / Wide', () => {
         dimensionChips: [dimension('tall'), dimension('wide')],
       }),
       mockT,
-      null,
     ).map(({ key }) => key);
     expect(keys).toEqual(['filters', 'grade', 'progress', 'collection', 'tall', 'popularity', 'rating']);
   });
@@ -348,7 +320,7 @@ describe('buildClimbCapsules: Tall / Wide', () => {
   it('taps to toggle and offers Lock on an unlocked chip', () => {
     const tall = dimension('tall');
     const capsule: ToggleMenuCapsule = capsuleByKey(
-      buildClimbCapsules(makeProps({ dimensionChips: [tall] }), mockT, null),
+      buildClimbCapsules(makeProps({ dimensionChips: [tall] }), mockT),
       'tall',
       'toggleMenu',
     );
@@ -362,7 +334,7 @@ describe('buildClimbCapsules: Tall / Wide', () => {
   it('shows a lock and offers Unlock on a locked chip', () => {
     const wide = dimension('wide', { active: true, locked: true });
     const capsule = capsuleByKey(
-      buildClimbCapsules(makeProps({ dimensionChips: [wide] }), mockT, null),
+      buildClimbCapsules(makeProps({ dimensionChips: [wide] }), mockT),
       'wide',
       'toggleMenu',
     );
@@ -376,7 +348,7 @@ describe('buildClimbCapsules: Tall / Wide', () => {
 
 describe('buildClimbCapsules: what each capsule commits', () => {
   function pinnedEverything(overrides: Partial<FilterChipRowProps> = {}) {
-    return buildClimbCapsules(makeProps({ pinnedChips: PINNABLE_CHIP_CATALOG, ...overrides }), mockT, null);
+    return buildClimbCapsules(makeProps({ pinnedChips: PINNABLE_CHIP_CATALOG, ...overrides }), mockT);
   }
   const menu = (capsules: Capsule[], key: string): MenuCapsule => capsuleByKey(capsules, key, 'menu');
 

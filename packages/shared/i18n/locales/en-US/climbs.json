@@ -319,6 +319,13 @@
     "unknown": "Unknown"
   },
   "mobile": {
+    "listOptions": {
+      "title": "Climb list options",
+      "angle": "Angle · {{angle}}°",
+      "viewOptions": "View options",
+      "history": "Board history, {{board}}",
+      "historyHint": "See what has been lit on this wall"
+    },
     "moderation": {
       "title": "Moderation",
       "pinnedFromNotification": "From your notification",
@@ -575,7 +582,6 @@
       "gradeAction": "Set grade range",
       "gradeOpenHint": "Opens the grade picker",
       "gradeCloseHint": "Closes the grade picker",
-      "boardSwitcherHint": "Opens the board switcher",
       "allClimbs": "All climbs",
       "clearRecentSearches": "Clear recent searches",
       "chips": {

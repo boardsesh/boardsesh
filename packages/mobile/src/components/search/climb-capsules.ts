@@ -3,11 +3,9 @@
 // imports), so the order, labels, active states and visibility rules are locked
 // by a unit test instead of three hand-written platform trees.
 //
-// Order: [Angle] Filters · N, Recent, then the pinnable chips in catalog order
+// Order: Filters · N, Recent, then the pinnable chips in catalog order
 // (lib/pinnable-chips.ts): Grade, Grade accuracy, Your progress, Collection,
 // Climb type, Tall, Wide, Beta videos, Popularity, Min rating, Sort.
-//   • Angle is the Android / web first capsule (iOS keeps its toolbar angle
-//     island); the caller passes it, or null.
 //   • Recent shows only when there are saved searches.
 //   • Your progress hides when signed out (`canFilterProgress`); its pin persists.
 //   • Tall / Wide show only on board sizes that have them (`dimensionChips`) and
@@ -45,21 +43,10 @@ import {
 } from './FilterChipRow.logic';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
-/** The Android / web Angle capsule: the active board's angle, opening the angle sheet. */
-export type ClimbAngleCapsule = {
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-};
-
 const CLIMB_TYPE_VALUES = ['boulders', 'routes', 'both'] as const;
 
 /** Builds the climbs capsule row. Memoise the call on the props it reads. */
-export function buildClimbCapsules(
-  props: FilterChipRowProps,
-  t: TFunction<'climbs'>,
-  angle: ClimbAngleCapsule | null,
-): Capsule[] {
+export function buildClimbCapsules(props: FilterChipRowProps, t: TFunction<'climbs'>): Capsule[] {
   const {
     pinnedChips,
     activeFilterCount,
@@ -99,16 +86,6 @@ export function buildClimbCapsules(
   } = props;
   const isPinned = (kind: (typeof pinnedChips)[number]) => pinnedChips.includes(kind);
   const capsules: Capsule[] = [];
-
-  if (angle) {
-    capsules.push({
-      kind: 'sheet',
-      key: 'angle',
-      label: angle.label,
-      accessibilityLabel: angle.accessibilityLabel,
-      onPress: angle.onPress,
-    });
-  }
 
   // The compact icon/count control retains its full localised spoken label.
   const filtersLabel =

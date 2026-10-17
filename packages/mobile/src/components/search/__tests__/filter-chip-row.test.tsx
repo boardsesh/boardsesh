@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// FilterChipRow, the climbs adapter: builds the capsules and adds the Angle
-// capsule + its sheet only off iOS. Screen suites import the extensionless
+// FilterChipRow keeps angle out of filtering on every platform. Screen suites import the extensionless
 // `search/FilterChipRow`, which mobile Vitest aliases to a null stub; this
 // relative import (`../FilterChipRow`) is not aliased, so it runs the real one.
 // The platform is read once at module load, so each case re-imports it.
@@ -136,23 +135,11 @@ describe('FilterChipRow', () => {
     expect(state.angleControlCalls).toBe(0);
   });
 
-  it.each(['android', 'web'] as const)('on %s leads with the Angle capsule and mounts its sheet', async (os) => {
+  it.each(['android', 'web'] as const)('on %s keeps Angle out of the filter row and mounts no picker', async (os) => {
     const capsules = await renderOn(os);
-    expect(capsules.map(({ key }) => key).slice(0, 2)).toEqual(['angle', 'filters']);
-    const [angle] = capsules;
-    expect(angle).toMatchObject({
-      kind: 'sheet',
-      label: '40°',
-      accessibilityLabel: 'angleSelector.selectAngle',
-      onPress: state.open,
-    });
-    expect(state.angleSheets.at(-1)).toMatchObject({ boardName: 'kilter', layoutId: 1, currentAngle: 40 });
-  });
-
-  it('drops the Angle capsule and its sheet on a fixed-angle board', async () => {
-    state.angle.canAdjust = false;
-    const capsules = await renderOn('android');
     expect(capsules[0].key).toBe('filters');
+    expect(capsules.some(({ key }) => key === 'angle')).toBe(false);
     expect(state.angleSheets).toHaveLength(0);
+    expect(state.angleControlCalls).toBe(0);
   });
 });

@@ -319,6 +319,13 @@
     "unknown": "Unbekannt"
   },
   "mobile": {
+    "listOptions": {
+      "title": "Optionen für die Boulderliste",
+      "angle": "Winkel · {{angle}}°",
+      "viewOptions": "Ansichtsoptionen",
+      "history": "Board-Verlauf, {{board}}",
+      "historyHint": "Sieh, welche Boulder an diesem Board beleuchtet wurden"
+    },
     "moderation": {
       "title": "Moderation",
       "pinnedFromNotification": "Aus deiner Benachrichtigung",
@@ -575,7 +582,6 @@
       "gradeAction": "Grad-Bereich einstellen",
       "gradeOpenHint": "Öffnet die Grad-Auswahl",
       "gradeCloseHint": "Schließt die Grad-Auswahl",
-      "boardSwitcherHint": "Öffnet den Board-Wechsler",
       "allClimbs": "Alle Boulder",
       "clearRecentSearches": "Letzte Suchen löschen",
       "chips": {

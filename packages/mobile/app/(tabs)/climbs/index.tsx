@@ -362,8 +362,8 @@ function ClimbListInner() {
   // Declared here so handleOpenBoardDetail can clear it — tapping the board
   // button dismisses the badge + banner once the cue has done its job.
   const [revealTipVisible, setRevealTipVisible] = useState(false);
-  // The board capsule opens the wall's "now on the wall" sheet (the board
-  // switcher lives inside it).
+  // History opens the wall's "now on the wall" sheet; board switching lives in
+  // the adjacent climb-list options menu.
   const handleOpenBoardDetail = useCallback(() => {
     openBoardSheet();
     setRevealTipVisible(false);
@@ -2131,7 +2131,7 @@ function ClimbListInner() {
         {showRevealTip ? (
           <OnboardingTipBanner
             text={tCommon('mobile.onboarding.boardRevealTip')}
-            icon="boards"
+            icon="history"
             dismissLabel={tCommon('actions.close')}
             onPress={handleOpenBoardDetail}
             onDismiss={dismissRevealTip}

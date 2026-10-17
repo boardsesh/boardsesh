@@ -835,7 +835,7 @@
         "offlineSkip": "Ahora no",
         "downloadAria": "Guardar {{name}} en este móvil"
       },
-      "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
+      "boardRevealTip": "Toca el reloj para ver los bloques que se han iluminado en este muro.",
       "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",
       "tips": {
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",

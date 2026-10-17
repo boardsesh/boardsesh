@@ -190,7 +190,7 @@ export type NowOnTheWallPanelProps = {
    * native modal never starts presenting while the sheet is still leaving.
    */
   dismissAndWait?: () => Promise<DismissAndWaitResult>;
-  /** Open the existing board switcher from the footer control. */
+  /** Open the existing board switcher from the inline column's footer. */
   onSwitchBoard: () => void;
   /**
    * The board the climber is on. Sheet variant only: it is what names the gym
@@ -850,19 +850,18 @@ function NowOnTheWallPanelComponent(
     [isLoadingOlder, t, hasMore, loadOlder, loadError, brandColors.primary],
   );
 
-  const listContentContainerStyle = useMemo(() => ({ paddingBottom: spacing[4] }), []);
+  const listContentContainerStyle = useMemo(
+    () => ({ paddingBottom: spacing[4] + (variant === 'sheet' ? windowBottomInset : 0) }),
+    [variant, windowBottomInset],
+  );
 
   // In sheet mode the native drag handle supplies the top spacing, so the header
   // needs none; the inline column and full-screen tab render with no chrome and
-  // own the top inset themselves. The footer, however, always adds the bottom
-  // safe-area inset on both platforms — the native sheet does NOT pad content for
-  // the Android edge-to-edge navigation bar, so without it the switch-board button
-  // sits under the 3-button nav bar. Matches the shared Sheet/ModalSheet footers.
+  // own the top inset themselves. The sheet list clears the window's bottom inset
+  // now that its switch-board footer lives in the Climbs options menu.
   const headerTopPadding = variant === 'sheet' ? 0 : insets.top + spacing[2];
-  // The sheet variant presents over the tab bar, so it clears the WINDOW's
-  // bottom inset rather than the mount point's (#3776). The inline column is not
-  // a sheet and keeps the inset of the surface it sits in.
-  const footerBottomPadding = (variant === 'sheet' ? windowBottomInset : insets.bottom) + spacing[3];
+  // The inline column keeps its switch-board action and its own surface inset.
+  const footerBottomPadding = insets.bottom + spacing[3];
 
   const refreshControl = (
     <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={systemColors.secondaryLabel} />
@@ -956,40 +955,38 @@ function NowOnTheWallPanelComponent(
         />
       )}
 
-      <PressableSurface
-        onPress={handleSwitchBoard}
-        accessibilityRole="button"
-        accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-        style={[
-          styles.footer,
-          {
-            borderTopColor: systemColors.separator,
-            paddingBottom: footerBottomPadding,
-            // The sheet's ground is the native material now, so a pinned footer
-            // without a plate has the history list scrolling visibly under its
-            // text. Both shared sheet wrappers plate their pinned footers for
-            // this reason.
-            backgroundColor: systemColors.secondaryBackground,
-          },
-        ]}
-      >
-        <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
-          <Icon name="transfer" size={20} color={systemColors.label} />
-        </View>
-        <View style={styles.footerText}>
-          <Text variant="body" color={systemColors.label}>
-            {/* Stays "Switch board": the gym's own boards live behind the header
+      {variant === 'column' ? (
+        <PressableSurface
+          onPress={handleSwitchBoard}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
+          style={[
+            styles.footer,
+            {
+              borderTopColor: systemColors.separator,
+              paddingBottom: footerBottomPadding,
+              backgroundColor: systemColors.secondaryBackground,
+            },
+          ]}
+        >
+          <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
+            <Icon name="transfer" size={20} color={systemColors.label} />
+          </View>
+          <View style={styles.footerText}>
+            <Text variant="body" color={systemColors.label}>
+              {/* Stays "Switch board": the gym's own boards live behind the header
                 title now, so this is the way out to every board anywhere. */}
-            {t('mobile.boardPresence.switchBoard')}
-          </Text>
-          {boardLabel ? (
-            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-              {boardLabel}
+              {t('mobile.boardPresence.switchBoard')}
             </Text>
-          ) : null}
-        </View>
-        <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-      </PressableSurface>
+            {boardLabel ? (
+              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+                {boardLabel}
+              </Text>
+            ) : null}
+          </View>
+          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
+        </PressableSurface>
+      ) : null}
     </>
   );
 }
