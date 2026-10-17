@@ -812,11 +812,20 @@ export function PlaylistDetailView({
   );
 
   return (
-    <View style={styles.container}>
-      {/* Paints the status-bar / dynamic-island strip in the playlist colour so it
-          is never the bare screen background — even on the first frame before the
-          list lays its full-bleed hero out behind the island. */}
-      <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
+    // The background paints the status-bar / dynamic-island strip in the playlist
+    // colour so it is never the bare screen background, even on the first frame
+    // before the list lays its full-bleed hero out behind the island. It is a
+    // background rather than a sibling view so the list stays the first child:
+    // react-native-screens finds the scroll view for `scrollEdgeEffects` by
+    // following first children only.
+    <View
+      style={[
+        styles.container,
+        {
+          experimental_backgroundImage: `linear-gradient(to bottom, ${baseColor} ${insets.top}px, transparent ${insets.top}px)`,
+        },
+      ]}
+    >
       <ReadableColumn style={styles.container}>
         <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
           <FlashList
@@ -1044,12 +1053,6 @@ const createStyles = (textStyles: TypographyScale) =>
     container: {
       flex: 1,
       minHeight: 0,
-    },
-    islandFill: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
     },
     headerBar: {
       position: 'absolute',

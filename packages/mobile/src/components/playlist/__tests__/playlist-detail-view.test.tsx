@@ -465,6 +465,16 @@ describe('PlaylistDetailView', () => {
     expect(lastHeaderOptions()).toMatchObject({ scrollEdgeEffects: { top: 'hidden' } });
   });
 
+  // react-native-screens applies `scrollEdgeEffects` to the scroll view it reaches
+  // by following first children only, so nothing may render ahead of the list.
+  it('keeps the list on the first-child chain so the edge setting reaches it', () => {
+    const { container } = render(<PlaylistDetailView {...makeProps()} />);
+
+    let node = container.firstElementChild;
+    while (node && !node.hasAttribute('data-list')) node = node.firstElementChild;
+    expect(node).not.toBeNull();
+  });
+
   it('draws no native title over the hero, which already carries the name', () => {
     render(<PlaylistDetailView {...makeProps()} />);
 
