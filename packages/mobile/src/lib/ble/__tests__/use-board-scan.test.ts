@@ -5,6 +5,11 @@ import {
   reactNativePermissionHarness,
   resetReactNativePermissionHarness,
 } from './react-native-permissions-test-harness';
+import {
+  installIosBluetoothAuthorization,
+  nativeBluetoothAuthorizationHarness,
+  resetNativeBluetoothAuthorizationHarness,
+} from './native-bluetooth-authorization-test-harness';
 
 const mockBleManager = vi.hoisted(() => ({
   state: vi.fn(),
@@ -32,7 +37,19 @@ vi.mock('react-native-ble-plx', () => ({
   },
 }));
 
-vi.mock('../ble-manager', () => ({ bleManager: mockBleManager }));
+vi.mock('../ble-manager', () => ({ getBleManager: () => mockBleManager }));
+
+// The real bluetooth-authorization reads the iOS-only BoardBle module. Null (the
+// default) is Android, web, or an iOS binary that still asks at launch.
+vi.mock('../../../../modules/live-activity/src/index', async () => {
+  const { nativeBluetoothAuthorizationHarness: harness } =
+    await import('./native-bluetooth-authorization-test-harness');
+  return {
+    get boardBleNative() {
+      return harness.nativeModule;
+    },
+  };
+});
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../../analytics', () => ({ track: analytics.track }));
@@ -90,6 +107,7 @@ describe('useBoardScan', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     resetReactNativePermissionHarness();
+    resetNativeBluetoothAuthorizationHarness();
     mockBleManager.state.mockResolvedValue('PoweredOn');
     mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
   });
@@ -355,6 +373,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     resetReactNativePermissionHarness();
+    resetNativeBluetoothAuthorizationHarness();
     mockBleManager.state.mockResolvedValue('PoweredOn');
     mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
   });
@@ -858,5 +877,96 @@ describe('useBoardScan keeps boards with no serial', () => {
       serialless_count: 0,
       moonboard_count: 0,
     });
+  });
+});
+
+// The iOS alert used to appear at launch, before sign-in. Binaries that expose
+// the native authorization read ask at the first scan instead, and this sheet's
+// scan is the tap that asks.
+describe('useBoardScan asking for Bluetooth on iOS at the first scan', () => {
+  beforeEach(() => {
+    permissionStatusOverride.status = null;
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetReactNativePermissionHarness();
+    resetNativeBluetoothAuthorizationHarness();
+    reactNativePermissionHarness.platform.OS = 'ios';
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function trackedEventNames(): unknown[] {
+    return analytics.track.mock.calls.map(([eventName]) => eventName);
+  }
+
+  function requestMock() {
+    const request = nativeBluetoothAuthorizationHarness.nativeModule?.requestBluetoothAuthorization;
+    if (!request || !vi.isMockFunction(request)) throw new Error('installIosBluetoothAuthorization first');
+    return request;
+  }
+
+  it('asks at the scan tap, then scans straight after an Allow', async () => {
+    installIosBluetoothAuthorization('notDetermined', 'allowedAlways');
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(nativeBluetoothAuthorizationHarness.requestCount).toBe(1);
+    // ble-plx is only created (its first state read) once the answer is known,
+    // so its own central never raises a second alert.
+    expect(requestMock().mock.invocationCallOrder[0]).toBeLessThan(mockBleManager.state.mock.invocationCallOrder[0]);
+    expect(result.current.status).toBe('scanning');
+    expect(mockBleManager.startDeviceScan).toHaveBeenCalledOnce();
+  });
+
+  it("shows the blocked state after Don't Allow, without creating ble-plx", async () => {
+    installIosBluetoothAuthorization('notDetermined', 'denied');
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('unauthorized');
+    expect(analytics.track).toHaveBeenCalledWith('Bluetooth Unavailable', {
+      reason: 'unauthorized',
+      surface: 'quickstart_scan',
+      platform: 'ios',
+    });
+    expect(mockBleManager.state).not.toHaveBeenCalled();
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+  });
+
+  it('treats an unanswered alert as not asked yet, never as Bluetooth Unavailable', async () => {
+    installIosBluetoothAuthorization('notDetermined', 'notDetermined');
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('not_asked');
+    expect(trackedEventNames()).not.toContain('Bluetooth Unavailable');
+    expect(mockBleManager.state).not.toHaveBeenCalled();
+  });
+
+  it('does not ask again once the climber has answered', async () => {
+    installIosBluetoothAuthorization('allowedAlways');
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(nativeBluetoothAuthorizationHarness.requestCount).toBe(0);
+    expect(result.current.status).toBe('scanning');
   });
 });

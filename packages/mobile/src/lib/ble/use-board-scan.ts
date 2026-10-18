@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { advertisedBoardTypesBySerial, type AdvertisedBoardTypes } from './advertised-board-type';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
-import { bleManager } from './ble-manager';
+import { getBleManager } from './ble-manager';
 import { waitForBlePoweredOn } from './availability';
 import {
   classifyQuickstartDevice,
@@ -49,6 +49,7 @@ export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable';
  * act on. 'permission_denied' is an Android "Don't allow" answered in the dialog:
  * scanning again shows the dialog again. A blocked permission (iOS denial,
  * Android never-ask-again) is 'unauthorized', which only the Settings app fixes.
+ * 'not_asked' is an iOS Bluetooth alert left unanswered: scanning again asks.
  */
 export type BoardScanUnavailableReason = 'permission_denied' | BluetoothUnavailableReason;
 
@@ -99,7 +100,7 @@ export function useBoardScan(): BoardScan {
       timeoutRef.current = null;
     }
     if (scanningRef.current) {
-      bleManager.stopDeviceScan();
+      void getBleManager().stopDeviceScan();
       scanningRef.current = false;
       track(SHARED_EVENTS.BoardQuickstartScanFinished, {
         outcome,
@@ -160,8 +161,9 @@ export function useBoardScan(): BoardScan {
     if (!isCurrentScanAttempt()) return;
 
     if (!bluetoothPoweredOn) {
-      // iOS reports a denied Bluetooth permission here, as the Unauthorized radio
-      // state, not from the permission request above.
+      // iOS reports a denied Bluetooth permission here, not from the permission
+      // request above: waitForBlePoweredOn is where iOS asks (at this first scan,
+      // on binaries that no longer ask at launch) and hears the answer.
       const reason = await readBluetoothUnavailableReason();
       if (!isCurrentScanAttempt()) return;
       trackBluetoothUnavailable(reason, 'quickstart_scan');
@@ -191,7 +193,7 @@ export function useBoardScan(): BoardScan {
     // rides the scan-response PDU, leaving an empty quickstart list — same root
     // cause as the picker scan in adapter.ts.
     // High-power scan options (LowLatency on Android) — see scan-options.ts.
-    void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (error, device) => {
+    void getBleManager().startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (error, device) => {
       if (!isCurrentScanAttempt()) return;
       if (error) {
         stop('error');

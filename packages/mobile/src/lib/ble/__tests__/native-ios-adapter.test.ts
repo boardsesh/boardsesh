@@ -772,3 +772,69 @@ describe('NativeIosBleAdapter connect diagnostics (#3480)', () => {
     await expect(adapter.getLastConnectDiagnostics()).resolves.toBeNull();
   });
 });
+
+// ── Asking for Bluetooth at the connect tap, not at launch ───────────────────
+
+describe('NativeIosBleAdapter.isAvailable on binaries that ask at the first scan', () => {
+  // The climber's answer once asked; `authorization` is what the native read
+  // returns right now.
+  let authorization = 'notDetermined';
+  let answer = 'allowedAlways';
+  const getBluetoothAuthorization = vi.fn(() => authorization);
+  const requestBluetoothAuthorization = vi.fn(async () => {
+    if (authorization === 'notDetermined') authorization = answer;
+    return authorization;
+  });
+
+  beforeEach(() => {
+    authorization = 'notDetermined';
+    answer = 'allowedAlways';
+    getBluetoothAuthorization.mockClear();
+    requestBluetoothAuthorization.mockClear();
+    Object.assign(nativeMock, { getBluetoothAuthorization, requestBluetoothAuthorization });
+  });
+
+  afterEach(() => {
+    const binary = nativeMock as Record<string, unknown>;
+    delete binary.getBluetoothAuthorization;
+    delete binary.requestBluetoothAuthorization;
+  });
+
+  it('asks before reading availability, so an Allow carries on into the scan', async () => {
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.isAvailable()).resolves.toBe(true);
+
+    expect(requestBluetoothAuthorization).toHaveBeenCalledOnce();
+    expect(requestBluetoothAuthorization.mock.invocationCallOrder[0]).toBeLessThan(
+      nativeMock.isAvailable.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(['denied', 'restricted'])('is unavailable after %s, without asking native for its state', async (refusal) => {
+    answer = refusal;
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.isAvailable()).resolves.toBe(false);
+    expect(nativeMock.isAvailable).not.toHaveBeenCalled();
+  });
+
+  it('does not ask again once the climber has answered', async () => {
+    authorization = 'allowedAlways';
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.isAvailable()).resolves.toBe(true);
+    expect(requestBluetoothAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('keeps the old path on a binary without the authorization surface', async () => {
+    const binary = nativeMock as Record<string, unknown>;
+    delete binary.getBluetoothAuthorization;
+    delete binary.requestBluetoothAuthorization;
+    nativeMock.isAvailable.mockResolvedValueOnce({ available: false });
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.isAvailable()).resolves.toBe(false);
+    expect(nativeMock.isAvailable).toHaveBeenCalledOnce();
+  });
+});

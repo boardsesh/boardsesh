@@ -1,3 +1,4 @@
+import CoreBluetooth
 import ExpoModulesCore
 import Foundation
 import os.log
@@ -50,6 +51,11 @@ public class BoardBleModule: Module {
 
         Events("scanResult", "disconnected", "connected")
 
+        // Expo creates every module at app start, so this is the first touch of
+        // BoardBleManager.shared and decides whether CoreBluetooth starts now.
+        // It does only when the climber has already answered the Bluetooth
+        // question (state restoration needs it at launch); otherwise the first
+        // scan creates it. See BoardBleManager.shouldCreateCentralManagerAtLaunch.
         OnCreate {
             BoardBleManager.shared.setEventHandlers(
                 onScanResult: { [weak self] result in
@@ -109,6 +115,26 @@ public class BoardBleModule: Module {
 
         AsyncFunction("isAvailable") { () -> [String: Any] in
             return ["available": BoardBleManager.shared.isAvailable]
+        }
+
+        // The app's Bluetooth authorization, read from the class property
+        // CoreBluetooth offers before any manager exists: no side effects, no
+        // alert. JS reads it at launch to tell "never asked" apart from an
+        // answer, and its presence is the JS feature gate for the deferred
+        // Bluetooth question (older binaries ask at launch). Synchronous so the
+        // provider can decide during its first render.
+        Function("getBluetoothAuthorization") { () -> String in
+            BoardBleManager.authorizationName(CBManager.authorization)
+        }
+
+        // Ask for Bluetooth at the climber's scan or connect tap: shows the
+        // system alert when the question is unanswered, and resolves with the
+        // answer (same names as getBluetoothAuthorization) once CoreBluetooth
+        // reports it. Resolves at once when it was already answered.
+        AsyncFunction("requestBluetoothAuthorization") { (promise: Promise) in
+            BoardBleManager.shared.requestAuthorization { authorization in
+                promise.resolve(BoardBleManager.authorizationName(authorization))
+            }
         }
 
         AsyncFunction("startScan") { (services: [String]?, promise: Promise) in

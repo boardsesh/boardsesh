@@ -37,7 +37,9 @@ type AlertBluetoothUnavailableOptions = {
 /**
  * Tell the climber why a connect stopped, and record it as Bluetooth Unavailable.
  * Blocked gets its own title and an Open Settings button; every other reason keeps
- * the existing "Bluetooth is off" copy, which is right for a radio that's off.
+ * the existing "Bluetooth is off" copy, which is right for a radio that's off. An
+ * iOS climber who hasn't answered the Bluetooth alert yet is asked to allow it,
+ * and nothing is recorded: they haven't refused anything.
  */
 export async function alertBluetoothUnavailable({
   reason,
@@ -46,6 +48,11 @@ export async function alertBluetoothUnavailable({
   tCommon,
 }: AlertBluetoothUnavailableOptions): Promise<BluetoothUnavailableReason> {
   const resolvedReason = reason ?? (await readBluetoothUnavailableReason());
+  if (resolvedReason === 'not_asked') {
+    // The next connect tap asks again, so the plain "allow it" copy is the whole fix.
+    Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+    return resolvedReason;
+  }
   trackBluetoothUnavailable(resolvedReason, 'connect', boardName);
 
   if (resolvedReason !== 'unauthorized') {

@@ -482,9 +482,9 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         NSBluetoothPeripheralUsageDescription:
           'Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.',
         NSLocationWhenInUseUsageDescription:
-          'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+          'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+          'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         NSSupportsLiveActivities: true,
         // bluetooth-central: continuous BLE reconnect + write-during-background.
         // remote-notification: lets the backend's 90s APNs heartbeat update
@@ -628,7 +628,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'expo-location',
         {
           locationWhenInUsePermission:
-            'Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.',
+            'Boardsesh uses your location to show boards and gyms near you, and to put a board you add on the map.',
         },
       ],
       // Board search map. Location permissions are already handled by

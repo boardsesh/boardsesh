@@ -153,6 +153,12 @@ export type NativeBleConfigureBoardOptions = {
   appActive?: boolean;
 };
 
+/**
+ * The app's Bluetooth authorization, as CoreBluetooth reports it before any
+ * manager exists. `notDetermined` means the climber has never been asked.
+ */
+export type NativeBluetoothAuthorization = 'notDetermined' | 'allowedAlways' | 'denied' | 'restricted';
+
 type BoardBleNativeModule = {
   /**
    * Boards this binary's Swift BLE layer can encode and drive natively.
@@ -164,6 +170,22 @@ type BoardBleNativeModule = {
    */
   nativeBoardControlBoards?: string[];
   isAvailable(): Promise<{ available: boolean }>;
+  /**
+   * Synchronous, side-effect free read of the app's Bluetooth authorization
+   * (`CBManager.authorization`). Only on binaries that ask for Bluetooth at the
+   * first scan instead of at launch: gate on
+   * `typeof getBluetoothAuthorization === 'function'` (an OTA JS update can run
+   * against an older binary). Any value outside `NativeBluetoothAuthorization`
+   * means "can't tell". Read it through src/lib/ble/bluetooth-authorization.ts.
+   */
+  getBluetoothAuthorization?(): string;
+  /**
+   * Show the system Bluetooth alert if the climber has never answered it, and
+   * resolve with their answer (same names as `getBluetoothAuthorization`).
+   * Resolves at once when the question was already answered. Same binary gate
+   * as `getBluetoothAuthorization`.
+   */
+  requestBluetoothAuthorization?(): Promise<string>;
   /** An empty `services` array means "scan unfiltered" on newer binaries. */
   startScan(services?: string[]): Promise<void>;
   stopScan(): Promise<void>;

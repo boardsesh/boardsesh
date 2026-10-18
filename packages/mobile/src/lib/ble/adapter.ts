@@ -10,7 +10,7 @@ import {
   MAX_BLUETOOTH_MESSAGE_SIZE,
   parseSerialNumber,
 } from '@boardsesh/ble-protocol';
-import { bleManager } from './ble-manager';
+import { getBleManager } from './ble-manager';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
@@ -171,9 +171,9 @@ export class RNBleAdapter implements BluetoothAdapter {
       // actively in the foreground and merges ADV + SCAN_RSP before filtering, so
       // the native iOS path keeps its service filter on purpose.
       // High-power scan options (LowLatency on Android) — see scan-options.ts.
-      void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
+      void getBleManager().startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
         if (scanError) {
-          void bleManager.stopDeviceScan();
+          void getBleManager().stopDeviceScan();
           // Surface the failure immediately so the user sees feedback instead
           // of waiting out the 30s scan window (the picker, if open, closes too).
           rejectSelection(new Error(`BLE scan failed: ${scanError.message}`));
@@ -230,7 +230,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       pickerFallbackId = hasTarget ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
 
       scanTimeoutId = setTimeout(() => {
-        void bleManager.stopDeviceScan();
+        void getBleManager().stopDeviceScan();
         // Belt-and-suspenders: end a search still running even if the grace
         // window never fired, so the picker is showing the list.
         endTargetSearch();
@@ -248,7 +248,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
-      void bleManager.stopDeviceScan();
+      void getBleManager().stopDeviceScan();
     }
 
     let selectedDeviceName: string | undefined;
@@ -265,10 +265,12 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const connected = await Promise.race([
-      bleManager.connectToDevice(selectedDeviceId),
+      getBleManager().connectToDevice(selectedDeviceId),
       new Promise<never>((_resolve, reject) => {
         connectionTimeoutId = setTimeout(() => {
-          bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+          getBleManager()
+            .cancelDeviceConnection(selectedDeviceId)
+            .catch(() => {});
           reject(new Error('Connection timed out — board may be powered off'));
         }, CONNECTION_TIMEOUT_MS);
       }),
@@ -316,14 +318,14 @@ export class RNBleAdapter implements BluetoothAdapter {
     }
 
     if (!writeCharacteristic) {
-      await bleManager.cancelDeviceConnection(selectedDeviceId);
+      await getBleManager().cancelDeviceConnection(selectedDeviceId);
       throw new Error('UART write characteristic not found');
     }
 
     this.connectedDevice = deviceWithServices;
     this.writeCharacteristic = writeCharacteristic;
 
-    this.disconnectSubscription = bleManager.onDeviceDisconnected(selectedDeviceId, (error, _device) => {
+    this.disconnectSubscription = getBleManager().onDeviceDisconnected(selectedDeviceId, (error, _device) => {
       this.connectedDevice = null;
       this.writeCharacteristic = null;
       this.disconnectSubscription?.remove();
@@ -350,7 +352,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       this.connectedDevice = null;
       this.writeCharacteristic = null;
       try {
-        await bleManager.cancelDeviceConnection(deviceId);
+        await getBleManager().cancelDeviceConnection(deviceId);
       } catch {
         // Device may already be disconnected
       }

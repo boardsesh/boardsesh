@@ -8,7 +8,7 @@ const trackMock = vi.hoisted(() => vi.fn());
 const permissionMock = vi.hoisted(() => vi.fn());
 const poweredOnMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../ble-manager', () => ({ bleManager: mockBleManager }));
+vi.mock('../ble-manager', () => ({ getBleManager: () => mockBleManager }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
 vi.mock('../availability', () => ({ waitForBlePoweredOn: poweredOnMock }));
 vi.mock('../use-ble-permissions', () => ({ requestBleRuntimePermissions: permissionMock }));

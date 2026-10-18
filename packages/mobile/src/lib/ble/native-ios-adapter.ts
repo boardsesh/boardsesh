@@ -25,6 +25,11 @@ import type {
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { upsertDiscoveredDevice } from './scan-device-cache';
+import {
+  allowsBluetoothUse,
+  readBluetoothAuthorization,
+  requestBluetoothAuthorization,
+} from './bluetooth-authorization';
 
 /**
  * True when the running binary ships the newer BoardBle native surface
@@ -121,6 +126,16 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
 
   async isAvailable(): Promise<boolean> {
     const native = this.requireNative();
+    // The connect tap is where an iOS phone that has never answered the
+    // Bluetooth question gets asked: this shows the alert and waits for the
+    // answer, so an Allow carries straight on into the scan below without a
+    // second tap. On a binary that asked at launch it just returns that answer.
+    // A no ends the connect here, and the caller reads why
+    // (bluetooth-unavailable.ts) to show the blocked copy. An older binary (no
+    // authorization surface) reads null and keeps its exact old path.
+    let authorization = readBluetoothAuthorization();
+    if (authorization === 'notDetermined') authorization = await requestBluetoothAuthorization();
+    if (!allowsBluetoothUse(authorization)) return false;
     const result = await native.isAvailable();
     return result.available;
   }

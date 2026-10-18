@@ -10,7 +10,7 @@ was rewritten as Expo `Module` / `AsyncFunction` / `Events` calls.
 
 | Class                | JS lookup                                     | What it wraps                                                                                                                                                   |
 | -------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BoardBleModule`     | `requireOptionalNativeModule('BoardBle')`     | The `BoardBleManager` singleton — scan, connect, write, configureBoard, plus `scanResult` and `disconnected` listener events                                    |
+| `BoardBleModule`     | `requireOptionalNativeModule('BoardBle')`     | The `BoardBleManager` singleton — scan, connect, write, configureBoard, the Bluetooth authorization read and request, plus `scanResult` and `disconnected` listener events |
 | `LiveActivityModule` | `requireOptionalNativeModule('LiveActivity')` | The Live Activity lifecycle (start/end/update), push-token registration with the backend, and the widget `queueNavigate` event the Darwin notification surfaces |
 
 Both classes register independently via `expo-module.config.json`. JS
@@ -32,6 +32,23 @@ binary, so they live in the same Expo Module.
 Side benefit: iOS BLE traffic that goes through the JS adapter also runs
 through the same Swift singleton, so the App Group's queue state and
 `BoardBleManager.configuration` stay coherent for the widget intent path.
+
+## When iOS asks for Bluetooth
+
+Expo creates `BoardBleModule` at app start, and its `OnCreate` is the first
+touch of `BoardBleManager.shared`. The manager creates its `CBCentralManager`
+there only when `CBManager.authorization` is already answered (allowed,
+denied or restricted), because CoreBluetooth state restoration needs a central
+with our restore identifier during launch. While the answer is
+`.notDetermined`, creating a central would show the system alert before
+sign-in, so the manager waits: the first scan creates it, or JS asks
+explicitly through `requestBluetoothAuthorization` at the scan or connect tap
+and resolves once the climber answers. Nothing can be restored without
+permission, so deferring loses nothing. `getBluetoothAuthorization` reads the
+answer with no side effects; JS gates on both functions existing, so OTA JS on
+an older binary keeps that binary's ask-at-launch behaviour. The JS side of the
+same rule (ble-plx's manager is created on first use) is in
+`src/lib/ble/bluetooth-authorization.ts`.
 
 ## Widget extension target — duplicated files
 

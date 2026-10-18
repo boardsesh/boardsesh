@@ -26,7 +26,7 @@ vi.mock('react-native-ble-plx', () => ({
 }));
 
 vi.mock('../ble-manager', () => ({
-  bleManager: mockBleManager,
+  getBleManager: () => mockBleManager,
 }));
 
 import {
