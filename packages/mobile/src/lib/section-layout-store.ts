@@ -3,9 +3,11 @@ import { subscribeSettings } from '../settings/hooks';
 import {
   isSameSectionLayout,
   sanitiseSectionLayout,
+  unknownSectionVisibility,
   withAllSectionsVisible,
   withSectionMoved,
   withSectionVisible,
+  withUnknownSectionsKept,
   type SectionLayout,
   type SectionLayoutRecord,
   type SectionLayoutSpec,
@@ -16,13 +18,18 @@ import {
 // is known before the first frame: no loading state, and no hidden section
 // mounting (and starting its queries) while storage answers.
 //
-// Each store keeps its own snapshot and listeners instead of going through
-// `useSetting`, whose cache hands an object-valued key a new identity on every
-// unrelated setting write. Here the layout only changes identity when it
-// changes.
+// Each store is the only reader and writer of its key. It keeps its own
+// snapshot and listeners instead of going through `useSetting`, whose cache
+// hands an object-valued key a new identity on every unrelated setting write.
+// Here the layout only changes identity when it changes. It still looks at
+// storage on every settings change, so a record the first read missed, or a
+// reset of every setting, reaches it.
 //
 // A layout equal to the defaults is stored as `null`, so a climber who never
 // customised (or restored the defaults) follows a later release's defaults.
+// Ids a later release stored are written back where they were, with their
+// switches, so an OTA rollback and one edit do not lose them; while any remain
+// the record is kept even when the rest matches the defaults.
 
 export type SectionLayoutStorage = {
   /** The stored record, read synchronously. */
@@ -59,8 +66,11 @@ export function createSectionLayoutStore<Id extends string>({
   write,
 }: { spec: SectionLayoutSpec<Id> } & SectionLayoutStorage): SectionLayoutStore<Id> {
   const listeners = new Set<() => void>();
+  // Cleaned once, so a spec with a stray or missing id cannot leak into a layout.
+  const defaults = sanitiseSectionLayout(spec, spec.defaults);
 
-  function readStored(): { record: object | null; serialized: string | null } {
+  type StoredRecord = { order?: unknown; visible?: unknown };
+  function readStored(): { record: StoredRecord | null; serialized: string | null } {
     let stored: unknown = null;
     try {
       stored = read();
@@ -70,10 +80,10 @@ export function createSectionLayoutStore<Id extends string>({
     if (typeof stored !== 'object' || stored === null || !('version' in stored) || stored.version !== 1) {
       return { record: null, serialized: null };
     }
-    return { record: stored, serialized: JSON.stringify(stored) };
+    return { record: stored as StoredRecord, serialized: JSON.stringify(stored) };
   }
-  function layoutOf(record: object | null): SectionLayout<Id> {
-    return record === null ? spec.defaults : sanitiseSectionLayout(spec, record);
+  function layoutOf(record: StoredRecord | null): SectionLayout<Id> {
+    return record === null ? defaults : sanitiseSectionLayout(spec, record);
   }
 
   const initial = readStored();
@@ -81,6 +91,7 @@ export function createSectionLayoutStore<Id extends string>({
   // What storage held when this store last looked, kept apart from `layout`: a
   // write that did not stick leaves memory ahead of storage, and that is fine.
   let seenSerialized = initial.serialized;
+  let seenRecord = initial.record;
 
   function adopt(next: SectionLayout<Id>): void {
     if (isSameSectionLayout(next, layout)) return;
@@ -98,7 +109,16 @@ export function createSectionLayoutStore<Id extends string>({
     const { record, serialized } = readStored();
     if (!reset && serialized === seenSerialized) return;
     seenSerialized = serialized;
+    seenRecord = record;
     adopt(layoutOf(record));
+  }
+
+  function recordFor(next: SectionLayout<Id>): SectionLayoutRecord | null {
+    const order = withUnknownSectionsKept(spec, next.order, seenRecord?.order);
+    const unknownVisible = unknownSectionVisibility(spec, seenRecord?.visible);
+    const keepsUnknown = order.length > next.order.length || Object.keys(unknownVisible).length > 0;
+    if (!keepsUnknown && isSameSectionLayout(next, defaults)) return null;
+    return { version: 1, order, visible: { ...unknownVisible, ...next.visible } };
   }
 
   function mutate(change: (current: SectionLayout<Id>) => SectionLayout<Id>): void {
@@ -106,21 +126,18 @@ export function createSectionLayoutStore<Id extends string>({
     const next = change(layout);
     if (isSameSectionLayout(next, layout)) return;
     adopt(next);
-    const record: SectionLayoutRecord | null = isSameSectionLayout(next, spec.defaults)
-      ? null
-      : { version: 1, order: [...next.order], visible: { ...next.visible } };
     try {
-      write(record);
+      write(recordFor(next));
     } catch {
       // The settings store throws when its file cannot be written. The choice
       // stands in memory for this launch.
     }
-    seenSerialized = readStored().serialized;
+    // Look at what stuck; the write's own change signal may have done so already.
+    syncWithStorage();
   }
 
-  subscribeSettings((change) => {
-    if (change.kind === 'reset') syncWithStorage(true);
-  });
+  // Our own writes come back here too; `adopt` compares by value, so they are no-ops.
+  subscribeSettings((change) => syncWithStorage(change.kind === 'reset'));
 
   return {
     getLayout: () => layout,
@@ -134,7 +151,7 @@ export function createSectionLayoutStore<Id extends string>({
     setAllVisible: (visible) => mutate((current) => withAllSectionsVisible(current, visible)),
     move: (sectionId, direction) => mutate((current) => withSectionMoved(spec, current, sectionId, direction)),
     apply: (preset) => mutate(() => sanitiseSectionLayout(spec, preset)),
-    restoreDefaults: () => mutate(() => spec.defaults),
+    restoreDefaults: () => mutate(() => defaults),
   };
 }
 

@@ -5,10 +5,12 @@ import {
   isSameSectionOrder,
   sanitiseSectionLayout,
   sanitiseSectionOrder,
+  unknownSectionVisibility,
   visibleSectionIds,
   withAllSectionsVisible,
   withSectionMoved,
   withSectionVisible,
+  withUnknownSectionsKept,
   type SectionLayoutSpec,
 } from '../section-layout';
 
@@ -138,5 +140,59 @@ describe('comparing layouts', () => {
     expect(isSameSectionLayout(SPEC.defaults, withSectionVisible(SPEC.defaults, 'board', true))).toBe(false);
     expect(isSameSectionLayout(SPEC.defaults, withSectionMoved(SPEC, SPEC.defaults, 'board', 1))).toBe(false);
     expect(isSameSectionOrder(['board'], ['board', 'feed'])).toBe(false);
+  });
+});
+
+describe('a spec with mistakes', () => {
+  it('ignores a locked id the spec does not list instead of dropping the last section', () => {
+    const spec = { ...SPEC, lockedLast: 'gone' as HomeLikeId };
+    expect(sanitiseSectionOrder(spec, ['feed', 'playlists', 'session', 'board'])).toEqual([
+      'feed',
+      'playlists',
+      'session',
+      'board',
+    ]);
+  });
+
+  it('leaves a stray default id out and shows a section whose default is missing', () => {
+    const spec: SectionLayoutSpec<HomeLikeId> = {
+      ids: SPEC.ids,
+      defaults: {
+        order: ['board', 'gone' as HomeLikeId, 'session', 'playlists', 'feed'],
+        visible: { board: false, session: true, playlists: false } as Record<HomeLikeId, boolean>,
+      },
+    };
+    expect(sanitiseSectionLayout(spec, spec.defaults)).toEqual({
+      order: ['board', 'session', 'playlists', 'feed'],
+      visible: { board: false, session: true, playlists: false, feed: true },
+    });
+  });
+});
+
+describe('ids a later release stored', () => {
+  it('go back in after the id they followed, or first', () => {
+    const stored = ['newFirst', 'feed', 'board', 'newAfterBoard', 'session', 'playlists', 'newLast'];
+    const order = sanitiseSectionOrder(SPEC, stored);
+    expect(order).toEqual(['feed', 'board', 'session', 'playlists']);
+    const moved = withSectionMoved(SPEC, { order, visible: SPEC.defaults.visible }, 'session', -1).order;
+    expect(withUnknownSectionsKept(SPEC, moved, stored)).toEqual([
+      'newFirst',
+      'feed',
+      'session',
+      'board',
+      'newAfterBoard',
+      'playlists',
+      'newLast',
+    ]);
+  });
+
+  it('leaves the order alone when the record has none, or nothing unknown', () => {
+    expect(withUnknownSectionsKept(SPEC, SPEC.defaults.order, undefined)).toEqual(SPEC.defaults.order);
+    expect(withUnknownSectionsKept(SPEC, SPEC.defaults.order, ['feed', 3, 'board'])).toEqual(SPEC.defaults.order);
+  });
+
+  it('keep their switches', () => {
+    expect(unknownSectionVisibility(SPEC, { board: true, later: false, odd: 'yes' })).toEqual({ later: false });
+    expect(unknownSectionVisibility(SPEC, null)).toEqual({});
   });
 });

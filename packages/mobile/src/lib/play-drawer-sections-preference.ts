@@ -5,6 +5,7 @@ import {
   isSameSectionOrder,
   sanitiseSectionOrder,
   withSectionMoved,
+  withUnknownSectionsKept,
   type SectionLayoutSpec,
   type SectionMoveDirection,
 } from './section-layout';
@@ -45,12 +46,15 @@ export const BELOW_FOLD_SECTION_LAYOUT: SectionLayoutSpec<BelowFoldSectionId> = 
   defaults: { order: DEFAULT_PLAY_DRAWER_SECTION_ORDER, visible: DEFAULT_PLAY_DRAWER_SECTIONS },
 };
 
-// One AsyncStorage record: `{ version: 1, sections, order }`. `order` came after
+// One AsyncStorage record: `{ version: 1, sections, order? }`. `order` came after
 // `sections` under the same version, so a bundle from before it still reads the
 // switches. Such a bundle writes the record without `order`, which puts that
-// climber's order back to the default; their switches survive. Fields and
-// section ids this bundle does not know are written back as they were read, so
-// a newer bundle's additions survive this one's writes.
+// climber's order back to the default; their switches survive. `order` is left
+// out while it matches the default, so a later release's default order still
+// reaches climbers who never moved anything. Fields, switches and ordered ids
+// this bundle does not know are written back as they were read (an unknown id
+// straight after the id it followed), so a newer bundle's additions survive an
+// OTA rollback and this one's writes.
 const STORAGE_KEY = 'playDrawerSections';
 type Snapshot = {
   sections: PlayDrawerSectionsVisibility;
@@ -121,18 +125,25 @@ export function ensurePlayDrawerSectionsLoaded(): Promise<void> {
   return loadPromise;
 }
 
+function recordToWrite(): Record<string, unknown> {
+  const otherFields = { ...lastReadRecord };
+  delete otherFields.order;
+  const order = withUnknownSectionsKept(BELOW_FOLD_SECTION_LAYOUT, snapshot.order, lastReadRecord.order);
+  return {
+    ...otherFields,
+    version: 1,
+    sections: { ...storedSectionsMap(lastReadRecord), ...snapshot.sections },
+    ...(isSameSectionOrder(order, DEFAULT_PLAY_DRAWER_SECTION_ORDER) ? {} : { order }),
+  };
+}
+
 function persist(): void {
   // Wait for an existing read to merge untouched fields, then serialize writes.
   const pendingRead = loadPromise;
   writeQueue = writeQueue
     .then(async () => {
       await pendingRead;
-      await setPreference(STORAGE_KEY, {
-        ...lastReadRecord,
-        version: 1,
-        sections: { ...storedSectionsMap(lastReadRecord), ...snapshot.sections },
-        order: snapshot.order,
-      });
+      await setPreference(STORAGE_KEY, recordToWrite());
     })
     .catch(() => {
       addErrorBreadcrumb({

@@ -31,9 +31,15 @@ function createStorage(initial: unknown = null) {
     write: vi.fn((record: SectionLayoutRecord | null) => {
       if (storage.failWrites) throw new Error('settings file could not be written');
       storage.value = JSON.parse(JSON.stringify(record));
+      // The settings store signals every write, the store's own included.
+      announceSettingWrite();
     }),
   };
   return storage;
+}
+
+function announceSettingWrite(): void {
+  for (const listener of settings.listeners) listener({ kind: 'setting', key: 'climbRowDisplayV1' });
 }
 
 function resetEverySetting(): void {
@@ -48,7 +54,7 @@ describe('createSectionLayoutStore', () => {
   it('reads the defaults with nothing stored, and keeps one identity until a change', () => {
     const storage = createStorage();
     const store = createSectionLayoutStore({ spec: SPEC, ...storage });
-    expect(store.getLayout()).toBe(SPEC.defaults);
+    expect(store.getLayout()).toEqual(SPEC.defaults);
     expect(store.getLayout()).toBe(store.getLayout());
   });
 
@@ -67,7 +73,7 @@ describe('createSectionLayoutStore', () => {
 
   it.each([{ version: 2, order: ['queue'] }, 'broken', 42])('reads %j as the defaults', (stored) => {
     const store = createSectionLayoutStore({ spec: SPEC, ...createStorage(stored) });
-    expect(store.getLayout()).toBe(SPEC.defaults);
+    expect(store.getLayout()).toEqual(SPEC.defaults);
   });
 
   it('writes each change and tells subscribers once', () => {
@@ -97,7 +103,7 @@ describe('createSectionLayoutStore', () => {
     store.setAllVisible(true);
     expect(storage.write).not.toHaveBeenCalled();
     expect(listener).not.toHaveBeenCalled();
-    expect(store.getLayout()).toBe(SPEC.defaults);
+    expect(store.getLayout()).toEqual(SPEC.defaults);
   });
 
   it('stores null for a layout that matches the defaults, so later defaults still apply', () => {
@@ -164,7 +170,7 @@ describe('createSectionLayoutStore', () => {
       throw new Error('locked');
     });
     const store = createSectionLayoutStore({ spec: SPEC, ...storage });
-    expect(store.getLayout()).toBe(SPEC.defaults);
+    expect(store.getLayout()).toEqual(SPEC.defaults);
   });
 
   it('re-renders a reader only when its layout changes', () => {
@@ -181,5 +187,56 @@ describe('createSectionLayoutStore', () => {
     expect(renders).toBe(2);
     expect(result.current).not.toBe(first);
     expect(result.current.order).toEqual(['mirror', 'favorite', 'queue', 'share']);
+  });
+
+  it('picks up a record, or a null, written from elsewhere', () => {
+    const storage = createStorage();
+    const store = createSectionLayoutStore({ spec: SPEC, ...storage });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    storage.value = { version: 1, order: ['queue', 'mirror', 'favorite', 'share'], visible: { share: false } };
+    announceSettingWrite();
+    expect(store.getLayout().order).toEqual(['queue', 'mirror', 'favorite', 'share']);
+    expect(store.getLayout().visible.share).toBe(false);
+    storage.value = null;
+    announceSettingWrite();
+    expect(store.getLayout()).toEqual(SPEC.defaults);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a later release's sections through this release's writes, as after an OTA rollback", () => {
+    const storage = createStorage({
+      version: 1,
+      order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
+      visible: { mirror: true, favorite: true, angle: false, share: true, queue: true },
+    });
+    const store = createSectionLayoutStore({ spec: SPEC, ...storage });
+    expect(store.getLayout()).toEqual(SPEC.defaults);
+    store.move('queue', -1);
+    expect(storage.value).toEqual({
+      version: 1,
+      order: ['mirror', 'favorite', 'angle', 'queue', 'share'],
+      visible: { mirror: true, favorite: true, angle: false, share: true, queue: true },
+    });
+    store.move('queue', 1);
+    store.restoreDefaults();
+    // Back to the defaults here, but the later release's switch still needs a home.
+    expect(storage.value).toEqual({
+      version: 1,
+      order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
+      visible: { mirror: true, favorite: true, angle: false, share: true, queue: true },
+    });
+  });
+
+  it('cleans a spec once, so a stray default id never reaches a layout', () => {
+    const spec = {
+      ...SPEC,
+      defaults: { ...SPEC.defaults, order: ['mirror', 'gone', 'favorite', 'share', 'queue'] as ButtonId[] },
+    };
+    const store = createSectionLayoutStore({ spec, ...createStorage() });
+    expect(store.getLayout().order).toEqual(['mirror', 'favorite', 'share', 'queue']);
+    store.move('favorite', 1);
+    store.restoreDefaults();
+    expect(store.getLayout().order).toEqual(['mirror', 'favorite', 'share', 'queue']);
   });
 });

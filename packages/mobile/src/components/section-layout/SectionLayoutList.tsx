@@ -1,9 +1,10 @@
 import { memo, useCallback, useMemo, type ComponentType } from 'react';
-import { AccessibilityInfo, FlatList, StyleSheet, View, type FlatListProps } from 'react-native';
+import { FlatList, StyleSheet, View, type FlatListProps } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
+import { announceQueued } from '../../lib/announce-queued';
 import { hapticSelection } from '../../lib/haptics';
 import type { SectionMoveDirection } from '../../lib/section-layout';
 import { useTheme } from '../../providers/theme-provider';
@@ -89,10 +90,11 @@ function SectionLayoutRowBase<Id extends string>({
   const handleVisibleChange = useCallback((next: boolean) => onVisibleChange(id, next), [id, onVisibleChange]);
   const move = useCallback(
     (direction: SectionMoveDirection) => {
+      if (disabled || !(direction < 0 ? canMoveUp : canMoveDown)) return;
       hapticSelection();
       onMove(id, direction);
       // The row moves under the screen reader's focus; say where it landed.
-      AccessibilityInfo.announceForAccessibility(
+      announceQueued(
         t('mobile.settings.sectionLayout.moved', {
           section: label,
           position: position + direction,
@@ -100,11 +102,10 @@ function SectionLayoutRowBase<Id extends string>({
         }),
       );
     },
-    [id, label, position, movableCount, onMove, t],
+    [disabled, canMoveUp, canMoveDown, id, label, position, movableCount, onMove, t],
   );
   const moveUp = useCallback(() => move(-1), [move]);
   const moveDown = useCallback(() => move(1), [move]);
-  const arrowColor = (enabled: boolean) => (enabled ? brandColors.primary : systemColors.tertiaryLabel);
   return (
     <View
       style={[
@@ -126,7 +127,8 @@ function SectionLayoutRowBase<Id extends string>({
               style={styles.arrow}
               testID={`section-layout-move-up-${id}`}
             >
-              <Icon name="arrow.up" size={20} color={arrowColor(!disabled && canMoveUp)} />
+              {/* PressableSurface dims a disabled arrow; the glyph keeps one colour. */}
+              <Icon name="arrow.up" size={20} color={brandColors.primary} />
             </PressableSurface>
             <PressableSurface
               onPress={moveDown}
@@ -136,7 +138,7 @@ function SectionLayoutRowBase<Id extends string>({
               style={styles.arrow}
               testID={`section-layout-move-down-${id}`}
             >
-              <Icon name="arrow.down" size={20} color={arrowColor(!disabled && canMoveDown)} />
+              <Icon name="arrow.down" size={20} color={brandColors.primary} />
             </PressableSurface>
           </View>
         ) : null}
@@ -170,9 +172,11 @@ function keyOfRow(row: { id: string }): string {
   return row.id;
 }
 
-type SectionLayoutListProps<Id extends string> = Pick<
+// Every list prop but the three the list owns passes straight through, so a sheet
+// or a page never has to edit this component for its own list needs.
+type SectionLayoutListProps<Id extends string> = Omit<
   FlatListProps<PlacedSectionLayoutRow<Id>>,
-  'style' | 'contentContainerStyle' | 'ListHeaderComponent' | 'ListFooterComponent'
+  'data' | 'renderItem' | 'keyExtractor'
 > & {
   /** In the order to draw: switch-only rows (if any) as their own group, the rows with arrows together. */
   rows: readonly SectionLayoutRowModel<Id>[];
@@ -196,10 +200,7 @@ export function SectionLayoutList<Id extends string>({
   onVisibleChange,
   onMove,
   ListComponent = FlatList,
-  style,
-  contentContainerStyle,
-  ListHeaderComponent,
-  ListFooterComponent,
+  ...listProps
 }: SectionLayoutListProps<Id>) {
   const placedRows = useMemo(() => placeSectionLayoutRows(rows), [rows]);
   const renderItem = useCallback(
@@ -210,14 +211,11 @@ export function SectionLayoutList<Id extends string>({
   );
   return (
     <ListComponent
-      style={style}
-      contentContainerStyle={contentContainerStyle}
+      showsVerticalScrollIndicator={false}
+      {...listProps}
       data={placedRows}
       renderItem={renderItem}
       keyExtractor={keyOfRow}
-      ListHeaderComponent={ListHeaderComponent}
-      ListFooterComponent={ListFooterComponent}
-      showsVerticalScrollIndicator={false}
     />
   );
 }

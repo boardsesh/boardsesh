@@ -303,7 +303,88 @@ describe('play drawer section preferences', () => {
       expect(result.current.sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
       expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
       expect(module.isDefaultPlayDrawerLayout(result.current)).toBe(true);
-      await waitFor(() => expect(storedRecord().order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER));
+      // The default order is left out, so a later release's default order still applies.
+      await waitFor(() => expect(storedRecord().sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS));
+      expect(storedRecord()).not.toHaveProperty('order');
+    });
+
+    it('saves no order for a switch flip while the order is the default', async () => {
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      act(() => result.current.setSection('community', false));
+      await waitFor(() => expect(storedRecord().sections).toMatchObject({ community: false }));
+      expect(storedRecord()).not.toHaveProperty('order');
+    });
+
+    it("keeps a later release's section in its place through a write, as after an OTA rollback", async () => {
+      storage.set(
+        'playDrawerSections',
+        JSON.stringify({
+          version: 1,
+          sections: { activeHolds: true, community: false },
+          order: [
+            'similarClimbs',
+            'crewNotes',
+            'logbook',
+            'climberLogs',
+            'setterNotes',
+            'betaVideos',
+            'boardseshGrade',
+            'community',
+          ],
+        }),
+      );
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(result.current.order).not.toContain('crewNotes');
+      act(() => result.current.move('community', -1));
+      await waitFor(() => expect(write).toHaveBeenCalled());
+      expect(storedRecord()).toMatchObject({
+        sections: { activeHolds: true, community: false },
+        order: [
+          'similarClimbs',
+          'crewNotes',
+          'logbook',
+          'climberLogs',
+          'setterNotes',
+          'betaVideos',
+          'community',
+          'boardseshGrade',
+        ],
+      });
+      // Back to this release's default order, the later release's section still holds its place.
+      act(() => result.current.restoreDefaults());
+      await waitFor(() => expect(storedRecord().sections).toMatchObject({ community: true }));
+      expect(storedRecord().order).toEqual([
+        'logbook',
+        'climberLogs',
+        'setterNotes',
+        'betaVideos',
+        'boardseshGrade',
+        'community',
+        'similarClimbs',
+        'crewNotes',
+      ]);
+    });
+
+    it('keeps a restore made after a failed read, for the switches and the order alike', async () => {
+      read.mockRejectedValueOnce(new Error('locked storage'));
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      storage.set(
+        'playDrawerSections',
+        JSON.stringify({ version: 1, sections: { logbook: false }, order: MOVED_ORDER }),
+      );
+      act(() => result.current.restoreDefaults());
+      await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(write).toHaveBeenCalled());
+      expect(result.current.sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
+      expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
+      expect(storedRecord().sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
+      expect(storedRecord()).not.toHaveProperty('order');
     });
 
     it('lists Settings rows in the saved order, with Restore defaults only when something changed', async () => {

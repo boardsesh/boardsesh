@@ -288,13 +288,17 @@ has Restore defaults too, but the order only changes in View options: Settings s
 the native form. Order and switches share the `playDrawerSections` record,
 `{ version: 1, sections, order }`. `order` came later under the same version, so an older
 bundle still reads the switches; if it writes the record, the order goes back to the
-default and the switches survive. Writes keep fields and section ids this bundle does not
-know. Only the below-the-fold ids (`BELOW_FOLD_SECTION_IDS`) are ordered; the
+default and the switches survive. `order` is left out while it matches the default, so a
+later release's default order still reaches climbers who never moved anything. Writes keep
+fields, switches and ordered ids this bundle does not know (an unknown id goes back after
+the id it followed), so a newer bundle's sections survive an OTA rollback and an edit. Only the below-the-fold ids (`BELOW_FOLD_SECTION_IDS`) are ordered; the
 `BOARD_SECTION_IDS` group, empty today, is for switch-only rows that sit under the board
 and never move. The pure rules live in `src/lib/section-layout.ts` (a section the stored
 order lacks slots in after the one it follows in the defaults);
 `src/lib/section-layout-store.ts` keeps the same layout in the synchronous settings store
-for surfaces that must know it before the first frame.
+for surfaces that must know it before the first frame: one store per key, the only writer of
+that key, re-reading it on every settings change, and storing `null` for the defaults unless
+a later release's ids still need a home.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
