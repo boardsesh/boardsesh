@@ -84,6 +84,7 @@ const state = vi.hoisted(() => ({
   nearbyLoading: false,
   // The query is showing the previous search's answer while a new one loads.
   nearbyPlaceholder: false,
+  nearbyPaused: false,
   nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
 }));
@@ -148,7 +149,7 @@ function nearbyBoardsResult() {
     isLoading: state.nearbyLoading,
     isFetching: state.nearbyLoading,
     isPlaceholderData: state.nearbyPlaceholder,
-    fetchStatus: state.nearbyLoading ? 'fetching' : 'idle',
+    fetchStatus: state.nearbyPaused ? 'paused' : state.nearbyLoading ? 'fetching' : 'idle',
     isError: state.nearbyError,
     refetch: refetchNearbyMock,
   };
@@ -329,6 +330,7 @@ beforeEach(() => {
   state.nearbyBoards = [];
   state.nearbyLoading = false;
   state.nearbyPlaceholder = false;
+  state.nearbyPaused = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
   refreshLocationMock.mockResolvedValue(false);
@@ -962,6 +964,22 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     state.nearbyBoards = [];
     rerender(createElement(BoardSelection));
     expect(choice().gymState).toBe('none_nearby');
+  });
+
+  // Offline, the narrowed search pauses and never answers. Holding "searching"
+  // there would spin forever, so a paused search reads as done.
+  it('stops searching when the narrowed search is paused offline', () => {
+    const { rerender } = render(createElement(BoardSelection));
+    openScan();
+    act(() => {
+      quickstart().onFindAtGym('moonboard');
+    });
+    state.locationStatus = 'granted';
+    state.nearbyBoards = [gymWall];
+    state.nearbyPlaceholder = true;
+    state.nearbyPaused = true;
+    rerender(createElement(BoardSelection));
+    expect(choice().gymState).not.toBe('searching');
   });
 
   it('shows no empty line in the ordinary picker before the narrowed search answers', () => {
