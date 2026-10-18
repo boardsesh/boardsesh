@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
@@ -12,6 +12,12 @@ type SwitchBoardOverlayProps = {
   /** Switch to the climb's board — one-tap when the user owns it, otherwise the
    *  board picker. Provided by DrawerHostProvider. */
   onSwitchBoard: () => void;
+  /**
+   * The card's measured height. The host keeps the controls region at least
+   * this tall while the card is up, so the card never spills onto the board or
+   * the header, where those views would take its taps.
+   */
+  onCardHeight?: (height: number) => void;
 };
 
 /**
@@ -37,12 +43,19 @@ type SwitchBoardOverlayProps = {
  * Uses climb-scoped `session.boardMismatch.*` copy (the playlist-detail screen
  * has its own banner with playlist-worded copy).
  */
-export function SwitchBoardOverlay({ boardLabel, onSwitchBoard }: SwitchBoardOverlayProps) {
+export function SwitchBoardOverlay({ boardLabel, onSwitchBoard, onCardHeight }: SwitchBoardOverlayProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const handleCardLayout = onCardHeight
+    ? (event: LayoutChangeEvent) => onCardHeight(event.nativeEvent.layout.height)
+    : undefined;
   return (
     <View style={styles.scrim} accessibilityViewIsModal>
-      <View testID="switch-board-card" style={[styles.card, { backgroundColor: systemColors.elevatedSurface }]}>
+      <View
+        testID="switch-board-card"
+        onLayout={handleCardLayout}
+        style={[styles.card, { backgroundColor: systemColors.elevatedSurface }]}
+      >
         <Icon name="lock" size={22} color={systemColors.label} />
         <Text variant="headline" color={systemColors.label} style={styles.centered}>
           {t('boardMismatch.title', { board: boardLabel })}

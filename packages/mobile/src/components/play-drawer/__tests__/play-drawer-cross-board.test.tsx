@@ -124,10 +124,12 @@ vi.mock('react-native', () => ({
     children,
     onLayout,
     style,
+    testID,
   }: {
     children?: ReactNode;
     onLayout?: (event: LayoutChangeEvent) => void;
     style?: Props[] | Props;
+    testID?: string;
   }) => {
     const firstScreenStyle = Array.isArray(style)
       ? style.find((entry) => entry && 'height' in entry && 'paddingTop' in entry)
@@ -135,6 +137,14 @@ vi.mock('react-native', () => ({
     if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
     if (onLayout && style && !Array.isArray(style) && 'marginHorizontal' in style) recorded.boardLayout = onLayout;
     else if (onLayout && !style) recorded.headerLayout = onLayout;
+    if (testID === 'play-drawer-controls-region') {
+      const flattened = Object.assign({}, ...[style].flat(10).filter(Boolean)) as Props;
+      return createElement(
+        'div',
+        { 'data-testid': testID, 'data-min-height': flattened.minHeight, 'data-z-index': flattened.zIndex },
+        children,
+      );
+    }
     return createElement('div', null, children);
   },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
@@ -1140,6 +1150,42 @@ describe('PlayDrawer controls position (#6229)', () => {
     // The scrim stays a sibling of the controls it covers, in the same region.
     expect(scrim.parentElement?.contains(bar)).toBe(true);
     expect(recorded.actionBar.at(-1)?.edge).toBe('bottom');
+  });
+
+  // The card is taller than the controls, more so with the small row off. Left
+  // to spill, it would sit under the board (above the fold) or the first section
+  // (below it), and they would take the taps meant for Switch board.
+  it('holds the whole switch-board card inside the controls, above the board with every small button off', () => {
+    setSetting('playerButtonsPosition', 'above');
+    setSetting('playerButtonsV1', {
+      version: 1,
+      order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
+      visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
+    });
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    const screen = renderDrawer(vi.fn());
+    const region = screen.getByTestId('play-drawer-controls-region');
+
+    // A typical card until the real one is measured, plus 8 pt above and below.
+    expect(region.getAttribute('data-min-height')).toBe('200');
+    const reportCardHeight = recorded.switchOverlay.at(-1)?.onCardHeight as ((height: number) => void) | undefined;
+    if (!reportCardHeight) throw new Error('SwitchBoardOverlay was never handed onCardHeight');
+    act(() => reportCardHeight(231.4));
+    expect(region.getAttribute('data-min-height')).toBe(String(232 + 16));
+    // Over its later siblings, the lost-holds banner and the board.
+    expect(region.getAttribute('data-z-index')).toBe('1');
+  });
+
+  it('holds the card under the board too, and lets the region go back to its own height on its own board', () => {
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    const mismatch = renderDrawer(vi.fn());
+    expect(mismatch.getByTestId('play-drawer-controls-region').getAttribute('data-min-height')).toBe('200');
+    expect(mismatch.getByTestId('play-drawer-controls-region').getAttribute('data-z-index')).toBeNull();
+    mismatch.unmount();
+
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const ownBoard = renderDrawer(vi.fn());
+    expect(ownBoard.getByTestId('play-drawer-controls-region').getAttribute('data-min-height')).toBeNull();
   });
 
   it('follows a position change while the player is open', () => {

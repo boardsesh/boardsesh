@@ -164,6 +164,11 @@ const DEFAULT_SECTION_HEADER_HEIGHT = 52;
  */
 export const SHARED_BROWSE_LATCH_RELEASE_MS = 10_000;
 
+/** A typical switch-board card at the default text size, until the real one is measured. */
+const SWITCH_BOARD_CARD_HEIGHT_ESTIMATE = 184;
+/** Room kept above and below the card inside the controls region. */
+const SWITCH_BOARD_CARD_MARGIN = spacing[2];
+
 /**
  * Full-screen "now playing" player (Spotify-style track view). Rendered as the
  * content of the `app/play.tsx` modal route (`presentation: 'transparentModal'`):
@@ -404,6 +409,13 @@ export function PlayCore({
     const { y, height } = event.nativeEvent.layout;
     const measured = Math.round(y + height);
     setControlsBottomY((previous) => (Math.abs(previous - measured) > 2 ? measured : previous));
+  }, []);
+  // The switch-board card's height, so the controls region can hold all of it
+  // (see `controlsRegion`). Starts from a typical card and follows the measured one.
+  const [switchBoardCardHeight, setSwitchBoardCardHeight] = useState(SWITCH_BOARD_CARD_HEIGHT_ESTIMATE);
+  const handleSwitchBoardCardHeight = useCallback((height: number) => {
+    const measured = Math.ceil(height);
+    setSwitchBoardCardHeight((previous) => (Math.abs(previous - measured) > 1 ? measured : previous));
   }, []);
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
@@ -1518,6 +1530,15 @@ export function PlayCore({
   // climber chose Above the board (#6229). The block moves whole, so the scrim
   // and its card still cover every control. Above the board the bar leads and
   // the playback slider follows, so the slider stays next to the board.
+  //
+  // The card is taller than the controls (more so with the small row switched
+  // off), and a card that spilled out of the region would sit under whichever
+  // sibling comes next (the board above the fold, the first section below it),
+  // which then takes the taps meant for Switch board. So while the card is up
+  // the region is at least as tall as the card. Above the board the region also
+  // sits over its later siblings, in case a font change outgrows the last
+  // measurement for a frame.
+  const showSwitchBoardCard = showBoardMismatch && onSwitchBoard != null;
   const playbackControls = playback.isAnimatable ? (
     <PlaybackControls
       frameIndex={playback.frameIndex}
@@ -1602,7 +1623,15 @@ export function PlayCore({
     />
   );
   const controlsRegion = (
-    <View style={styles.controlsRegion} onLayout={controlsAbove ? handleControlsLayout : undefined}>
+    <View
+      testID="play-drawer-controls-region"
+      style={[
+        styles.controlsRegion,
+        controlsAbove && styles.controlsRegionAbove,
+        showSwitchBoardCard && { minHeight: switchBoardCardHeight + SWITCH_BOARD_CARD_MARGIN * 2 },
+      ]}
+      onLayout={controlsAbove ? handleControlsLayout : undefined}
+    >
       <View
         accessibilityElementsHidden={showBoardMismatch}
         importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
@@ -1611,8 +1640,12 @@ export function PlayCore({
         {controlsAbove ? playbackControls : actionBar}
       </View>
 
-      {showBoardMismatch && onSwitchBoard ? (
-        <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
+      {showSwitchBoardCard ? (
+        <SwitchBoardOverlay
+          boardLabel={switchBoardLabel ?? ''}
+          onSwitchBoard={handleSwitchBoard}
+          onCardHeight={handleSwitchBoardCardHeight}
+        />
       ) : null}
     </View>
   );
@@ -2075,5 +2108,9 @@ const styles = StyleSheet.create({
   // action controls, leaving the board art and header above it interactive.
   controlsRegion: {
     position: 'relative',
+  },
+  // Over the lost-holds banner and the board, its later siblings.
+  controlsRegionAbove: {
+    zIndex: 1,
   },
 });

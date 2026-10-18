@@ -365,7 +365,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           brings it back. */}
       {hasSecondaryRow ? (
         <View
-          style={[drawerActionBarStyles.rowSecondary, inCommitMode && { backgroundColor: theme.systemColors.fill }]}
+          style={[
+            drawerActionBarStyles.rowSecondary,
+            styles.rowSecondaryHeight,
+            inCommitMode && { backgroundColor: theme.systemColors.fill },
+          ]}
         >
           {/* `inCommitMode` already needs both handlers; restated so TS sees them. */}
           {layout.secondaryRow === 'commit' && onBackToLive && onCommit ? (
@@ -577,6 +581,11 @@ const styles = StyleSheet.create({
   // The first row closes the bar on its own, so it takes the second row's bottom padding.
   rowPrimaryAlone: {
     paddingBottom: spacing[3],
+  },
+  // The second row's usual 64pt (its padding plus one small button), held even
+  // when a draft leaves it nothing to draw, so the board doesn't move.
+  rowSecondaryHeight: {
+    minHeight: spacing[2] + SIZES.sm.dim + spacing[3],
   },
   // Holder avatar overlaid on the lightbulb's top-right corner.
   connectionBadge: {

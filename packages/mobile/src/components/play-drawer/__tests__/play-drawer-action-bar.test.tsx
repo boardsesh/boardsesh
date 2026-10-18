@@ -41,6 +41,7 @@ vi.mock('react-native', () => ({
         'data-padding-bottom': flattenedStyle.paddingBottom,
         'data-border-top': flattenedStyle.borderTopWidth,
         'data-border-bottom': flattenedStyle.borderBottomWidth,
+        'data-min-height': flattenedStyle.minHeight,
       },
       children,
     );
@@ -407,6 +408,22 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
     expect(secondRows(container)).toHaveLength(0);
     expect(container.querySelector('[data-padding-bottom="12"]')).not.toBeNull();
     expect(labels(container)).not.toContain(FAVORITE_LABEL);
+    expect(labels(container)).not.toContain(SHARE_LABEL);
+  });
+
+  it('holds an empty 64pt second row for a draft when Share is the only small button on', () => {
+    const shareOnly = { order, visible: { mirror: false, favorite: false, angle: false, share: true, queue: true } };
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        supportsMirroring: false,
+        buttons: shareOnly,
+        onShare: undefined,
+      }),
+    );
+    const secondRow = secondRows(container)[0];
+    expect(secondRow).toBeDefined();
+    expect(secondRow?.getAttribute('data-min-height')).toBe('64');
     expect(labels(container)).not.toContain(SHARE_LABEL);
   });
 

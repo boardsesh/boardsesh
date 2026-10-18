@@ -88,7 +88,9 @@ function isLeadingButton(buttonId: PlayerButtonId): buttonId is 'mirror' | 'queu
  *   second row. Whatever goes is flagged in `hidden`, as is every button the
  *   climber switched off, and the player's ⋯ menu picks it up.
  * - With nothing left to draw, no pill and no commit bar, there is no second
- *   row: the board gets its height back.
+ *   row: the board gets its height back. Share switched on keeps the row even
+ *   on a draft, where it can't draw: it is the one button that comes and goes
+ *   climb to climb, and the board must not jump 52 pt mid-swipe.
  * - An anonymous reader gets today's bar whatever is stored on the device: no
  *   account to favourite with, no queue that means anything, and no ⋯ to bring
  *   a hidden button back, so nothing is flagged for them either.
@@ -142,7 +144,7 @@ export function resolveActionBarLayout({
     secondaryRow = 'commit';
   } else if (showConnectPill) {
     secondaryRow = [...startGroup, 'spacer', 'connectPill'];
-  } else if (startGroup.length + endGroup.length === 0) {
+  } else if (startGroup.length + endGroup.length === 0 && !utilities.includes('share')) {
     secondaryRow = [];
   } else {
     secondaryRow = [...startGroup, 'spacer', ...endGroup];

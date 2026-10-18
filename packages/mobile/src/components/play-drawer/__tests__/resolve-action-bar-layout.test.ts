@@ -185,10 +185,19 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
     ]);
   });
 
-  it('collapses the row when what is left on cannot draw here', () => {
+  it('collapses the row when all that is left on is an angle this board cannot change', () => {
+    const angleOnly = buttons(PLAYER_ORDER, ['mirror', 'favorite', 'share', 'queue']);
+    expect(resolveActionBarLayout({ ...MEMBER, buttons: angleOnly, angleAvailable: false }).secondaryRow).toEqual([]);
+    expect(resolveActionBarLayout({ ...MEMBER, buttons: angleOnly }).secondaryRow).toEqual(['angle', 'spacer']);
+  });
+
+  // Share is the one button that comes and goes climb to climb. Collapsing for
+  // a draft would move the board 52 pt on the swipe there and back.
+  it('keeps an empty row for a switched-on Share on a draft, so the board does not jump', () => {
     const shareOnly = buttons(PLAYER_ORDER, ['mirror', 'favorite', 'angle', 'queue']);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly, hasShare: false }).secondaryRow).toEqual([]);
     expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly }).secondaryRow).toEqual(['share', 'spacer']);
+    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly, hasShare: false }).secondaryRow).toEqual(['spacer']);
+    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly, hasShare: false }).hidden.share).toBe(false);
   });
 
   // Tension: [☰] [⏮] [✓] [⏭] [💡] / [⇄] [♡] ··· [40°] [⬆]

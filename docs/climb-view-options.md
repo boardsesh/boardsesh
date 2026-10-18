@@ -47,7 +47,11 @@ Small row   [first half of the rest] ········ [last half]
 - **The connect pill** replaces the right-hand group; **commit mode** replaces the whole small row. Whatever they
   push out, and every button the climber switched off, is flagged in `hidden`, and ⋯ carries a row for each.
 - **Nothing left to draw**, no pill and no commit bar: there is no small row (`secondaryRow: []`). The board gets
-  about 52 pt back; commit mode and the connect pill bring the row back while they need it.
+  52 pt back (the 8 pt gap and the 44 pt row; the 12 pt bottom padding moves to the big row). Commit mode and the
+  connect pill bring the row back while they need it. Share switched on keeps the row even on a draft, where it
+  can't draw (`['spacer']`, held at the row's usual 64 pt): it is the one button that comes and goes climb to
+  climb, and the board must not jump mid-swipe. The angle depends on the board, not the climb, so an angle-only
+  row on a fixed-angle board does collapse.
 - **The anonymous web reader** gets today's bar under the board whatever the device stored: they have no ⋯ to bring
   a hidden button back, and no View options to undo a choice left in a shared browser.
 
@@ -72,7 +76,13 @@ orientation included); Change angle opens the player's own angle sheet, so it pr
 `PlayCore` renders the controls region (playback slider, bar, and the switch-board scrim over both) either after
 the board or between the header and the lost-holds banner. The block moves whole, so the scrim and its card still
 cover every control. Above the board the bar comes first and the slider follows, so the slider stays next to the
-board, and the bar's hairline moves to its bottom edge (`edge="bottom"`), the side that faces the board. The region
+board, and the bar's hairline moves to its bottom edge (`edge="bottom"`), the side that faces the board.
+
+The switch-board card (another board's climb) is taller than the controls, more so with the small row off. A card
+that spilled out of the region would sit under the next sibling (the board above the fold, the first section below
+it), and that view would take the taps meant for Switch board. So while the card is up the region's `minHeight` is
+the card's measured height plus 8 pt above and below (a typical 184 pt card until the first measurement), in both
+positions. Above the board the region also has `zIndex: 1` over the lost-holds banner and the board. The region
 is measured while it sits above, and the wall-state callout hangs below it instead of below the header, so the
 notice never covers Log. The opening-layout cache keys on the resolved small row and the position, since both move
 the board. The iPad pane renders the same `PlayCore`, so all of this applies there too.
@@ -127,6 +137,6 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 
 ## Adding a section
 
-Below-the-fold sections join `BELOW_FOLD_SECTION_IDS` in `play-drawer-sections-preference.ts`; a switch-only row
-that sits under the board joins `BOARD_SECTION_IDS`. See
+Every section sits below the fold and takes part in the order: add its id to `BELOW_FOLD_SECTION_IDS` in
+`play-drawer-sections-preference.ts`, a default visibility, a label, and a `case` in `DeferredSections`. See
 [mobile-sheets-vs-routes.md](mobile-sheets-vs-routes.md#play-drawer-section-controls) for the record and the fold.
