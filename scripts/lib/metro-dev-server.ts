@@ -273,15 +273,13 @@ export function startMetro(env: NodeJS.ProcessEnv, options: StartMetroOptions = 
  * app-side console output (auth errors, a redbox, a missing `$screen /home`) is
  * surfaced for debugging.
  */
-export function dumpMetroLogTail(lines = 80): void {
-  if (!existsSync(METRO_LOG_PATH)) {
-    console.error(`${LOG} (no Metro log at ${METRO_LOG_PATH} to dump)`);
+export function dumpMetroLogTail(lines = 80, logPath: string = METRO_LOG_PATH): void {
+  if (!existsSync(logPath)) {
+    console.error(`${LOG} (no Metro log at ${logPath} to dump)`);
     return;
   }
-  const tail = readFileSync(METRO_LOG_PATH, 'utf8').split('\n').slice(-lines).join('\n');
-  console.error(
-    `${LOG} --- last ${lines} lines of Metro log (${METRO_LOG_PATH}) ---\n${tail}\n${LOG} --- end Metro log ---`,
-  );
+  const tail = readFileSync(logPath, 'utf8').split('\n').slice(-lines).join('\n');
+  console.error(`${LOG} --- last ${lines} lines of Metro log (${logPath}) ---\n${tail}\n${LOG} --- end Metro log ---`);
 }
 
 /**

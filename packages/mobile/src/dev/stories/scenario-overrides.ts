@@ -4,6 +4,16 @@ import type { SessionUser } from '@boardsesh/shared-schema';
  * Live values a story can fake on top of the real app. Each field patches one
  * value the real provider computes; anything left out keeps the real value.
  *
+ * The patch reaches only readers of the split queue contexts below
+ * DevScenarioOverrides. These still see the real session, so judge what they
+ * draw from the real app, not the story:
+ * - full `useQueue()` readers: BluetoothProvider (the wall's session id),
+ *   QueueBottomAccessory (the persistent queue bar) and LiveActivityBridge.
+ *   QueueContext is left alone on purpose: patching it would start a Live
+ *   Activity under a fake session id.
+ * - BoardAdapterWrapper, which sits above DevScenarioOverrides, so tick logging
+ *   files ticks under the real session id.
+ *
  * Add a field here when a screen's state depends on something you can't reach
  * on a simulator alone (a second phone, a lit wall, a server push), and patch it
  * in DevScenarioOverrides.
@@ -20,7 +30,11 @@ export type ScenarioOverrides = {
      * so any request made with it fails.
      */
     sessionId?: string;
-    /** The roster the session screen and crew faces read. */
+    /**
+     * The roster the session screen and crew faces read. Also patches
+     * `sessionMemberUserIds` on the session controls (the lightbulb's "is the
+     * wall holder in my session"), from each member's `userId`.
+     */
     sessionUsers?: SessionUser[];
   };
 };

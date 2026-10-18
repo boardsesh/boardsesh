@@ -12,7 +12,9 @@ export type ComponentStory = {
   render: () => ReactNode;
   /**
    * Live values to fake while this story is on screen, for a component that
-   * reads them from context instead of props. Cleared when the story unmounts.
+   * reads them from context instead of props. Applied on focus, cleared on blur
+   * unless a newer story replaced them. Left out, the story clears any
+   * scenario's overrides, so it draws the same whatever ran before it.
    */
   overrides?: ScenarioOverrides;
   /** `padded` (default) scrolls the canvas under a caption; `fullscreen` draws edge to edge. */
@@ -24,8 +26,8 @@ export type ComponentStory = {
  * real route. Use it for whole screens whose state is hard to reach by hand, such
  * as a crew session with nobody else around.
  *
- * The overrides stay on after navigating away, until another story replaces them
- * or `dev/stories/reset` clears them.
+ * The overrides stay on after navigating away, until another story (scenario
+ * or component) replaces them or `dev/stories/reset` clears them.
  */
 export type ScenarioStory = {
   name: string;
@@ -59,6 +61,8 @@ export type RegisteredStory = {
   moduleId: string;
   title: string;
   story: Story;
+  /** Declaration order across all files; a bare module id opens its file's lowest. */
+  order: number;
 };
 
 export function isScenarioStory(story: Story): story is ScenarioStory {

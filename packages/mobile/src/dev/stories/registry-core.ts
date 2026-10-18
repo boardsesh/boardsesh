@@ -33,13 +33,22 @@ export function buildStoryRegistry(entries: readonly { path: string; module: Sto
         throw new Error(`Story id "${id}" is defined twice: ${firstPath} and ${path}`);
       }
       firstPathById.set(id, path);
-      stories.push({ id, moduleId, title: module.title, story });
+      stories.push({ id, moduleId, title: module.title, story, order: stories.length });
     }
   }
   return stories.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-/** An exact story id, or a bare module id, which opens that file's first story. */
+/**
+ * An exact story id, or a bare module id, which opens the story declared first
+ * in that file (the list itself is sorted by id, for the index).
+ */
 export function findStory(stories: readonly RegisteredStory[], id: string): RegisteredStory | null {
-  return stories.find((entry) => entry.id === id) ?? stories.find((entry) => entry.moduleId === id) ?? null;
+  const exact = stories.find((entry) => entry.id === id);
+  if (exact) return exact;
+  let firstDeclared: RegisteredStory | null = null;
+  for (const entry of stories) {
+    if (entry.moduleId === id && (firstDeclared === null || entry.order < firstDeclared.order)) firstDeclared = entry;
+  }
+  return firstDeclared;
 }

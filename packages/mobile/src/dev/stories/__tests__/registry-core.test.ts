@@ -63,8 +63,18 @@ describe('findStory', () => {
     expect(findStory(stories, 'crew-browse--pills')?.id).toBe('crew-browse--pills');
   });
 
-  it('opens the first story of a bare module id', () => {
-    expect(findStory(stories, 'crew-browse')?.id).toBe('crew-browse--commit-bar');
+  it('opens the first declared story of a bare module id, not the first by id', () => {
+    expect(stories.map((entry) => entry.id)).toEqual(['crew-browse--commit-bar', 'crew-browse--pills']);
+    expect(findStory(stories, 'crew-browse')?.id).toBe('crew-browse--pills');
+  });
+
+  it('resolves a bare module id within its own file', () => {
+    const twoFiles = buildStoryRegistry([
+      { path: './Zebra.stories.tsx', module: storyModule('Zebra', ['stripes']) },
+      { path: './CrewBrowse.stories.tsx', module: storyModule('Crew', ['pills', 'commitBar']) },
+    ]);
+    expect(findStory(twoFiles, 'crew-browse')?.id).toBe('crew-browse--pills');
+    expect(findStory(twoFiles, 'zebra')?.id).toBe('zebra--stripes');
   });
 
   it('returns null for an unknown id', () => {

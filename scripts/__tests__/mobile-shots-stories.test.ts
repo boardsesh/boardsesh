@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSy
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   METRO_LOG_PATH,
@@ -21,6 +21,7 @@ import { parseShotsArgs, portAppIsCurrent, portAppPath } from '../mobile-ios-sho
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -34,14 +35,14 @@ describe('mobile-ios-shots --story', () => {
   it('opens the story route and labels the shot with the id', () => {
     const options = parseShotsArgs(['screenshot', '--story', 'crew-browse--pills']);
     expect(options.command).toBe('screenshot');
-    expect(options.to).toBe('dev/stories/crew-browse--pills');
+    expect(options.to).toMatch(/^dev\/stories\/crew-browse--pills\?shot=\d+$/);
     expect(options.label).toBe('crew-browse--pills');
   });
 
   it('appends --theme and --variant as query params and to the label', () => {
     const options = parseShotsArgs(['--', '--story', 'wall-state', '--theme', 'light', '--variant', 'material']);
     expect(options.command).toBe('run');
-    expect(options.to).toBe('dev/stories/wall-state?theme=light&variant=material');
+    expect(options.to).toMatch(/^dev\/stories\/wall-state\?theme=light&variant=material&shot=\d+$/);
     expect(options.label).toBe('wall-state-light-material');
   });
 
@@ -89,7 +90,7 @@ describe('mobile-ios-shots --story', () => {
 describe('mobile-android-shots --story', () => {
   it('mirrors the iOS route, label and validation', () => {
     const options = parseAndroidShotsArgs(['screenshot', '--story', 'wall-state--lit', '--theme', 'dark']);
-    expect(options.to).toBe('dev/stories/wall-state--lit?theme=dark');
+    expect(options.to).toMatch(/^dev\/stories\/wall-state--lit\?theme=dark&shot=\d+$/);
     expect(options.label).toBe('wall-state--lit-dark');
     expect(() => parseAndroidShotsArgs(['--theme', 'dark'])).toThrow(/need --story/);
     expect(shotsMetroWatch(parseAndroidShotsArgs([]))).toBe(true);
@@ -98,9 +99,16 @@ describe('mobile-android-shots --story', () => {
 });
 
 describe('story helpers', () => {
-  it('builds the bare route without a query', () => {
-    expect(storyRoute({ id: 'crew-browse--empty', theme: null, variant: null })).toBe('dev/stories/crew-browse--empty');
+  it('adds a shot nonce, so re-shooting the story on screen logs its ready line again', () => {
+    const target = { id: 'crew-browse--empty', theme: null, variant: null };
+    expect(storyRoute(target, 1)).toBe('dev/stories/crew-browse--empty?shot=1');
+    expect(storyRoute({ ...target, theme: 'light' }, 2)).toBe('dev/stories/crew-browse--empty?theme=light&shot=2');
+    expect(storyRoute(target)).not.toBe(storyRoute(target, 0));
     expect(assertStoryId('reset')).toBe('reset');
+  });
+
+  it('finds the reset line', () => {
+    expect(findStoryLogEvent(' LOG  [stories] ready reset\n', 'reset')).toEqual({ kind: 'ready', storyId: 'reset' });
   });
 
   it('finds the ready line for an exact id, and for a bare module id', () => {
@@ -156,15 +164,43 @@ describe('Metro log helpers', () => {
     expect(isIosBundledLine('Android Bundled 40ms index.ts')).toBe(false);
   });
 
-  it('prefers --metro-log, then the newest candidate log', () => {
+  it('prefers --metro-log over everything', () => {
+    expect(resolveMetroLogPath('relative.log', makeTempDir(), 8087)).toMatch(/^\/.*\/relative\.log$/);
+  });
+
+  it("off 8081, reads that port's log even when another log in TMPDIR is newer", () => {
+    // TMPDIR is shared across sessions: the newest log may be another session's Metro.
+    vi.stubEnv('TMPDIR', makeTempDir());
     const root = makeTempDir();
-    expect(resolveMetroLogPath('relative.log', root)).toMatch(/^\/.*\/relative\.log$/);
+    const portLog = metroLogPathForPort(8087);
+    expect(portLog.startsWith(process.env.TMPDIR ?? '')).toBe(true);
+    // Nothing yet: the port's log, which `run` will create.
+    expect(resolveMetroLogPath(null, root, 8087)).toBe(portLog);
+
+    // Only `vp run dev:mobile` ran in this checkout: its log.
+    mkdirSync(join(root, '.boardsesh'));
+    const devMobileLog = join(root, '.boardsesh', 'mobile-metro.log');
+    writeFileSync(devMobileLog, '');
+    expect(resolveMetroLogPath(null, root, 8087)).toBe(devMobileLog);
+
+    // `run` on this port wrote its log: that one, however fresh the others are.
+    writeFileSync(portLog, '');
+    const future = new Date(Date.now() + 365 * 24 * 3600 * 1000);
+    utimesSync(devMobileLog, future, future);
+    writeFileSync(metroLogPathForPort(8088), '');
+    utimesSync(metroLogPathForPort(8088), future, future);
+    expect(resolveMetroLogPath(null, root, 8087)).toBe(portLog);
+  });
+
+  it('on 8081, reads the newer of the 8081 log and the dev:mobile log', () => {
+    const root = makeTempDir();
     mkdirSync(join(root, '.boardsesh'));
     const devMobileLog = join(root, '.boardsesh', 'mobile-metro.log');
     writeFileSync(devMobileLog, '');
     const future = new Date(Date.now() + 365 * 24 * 3600 * 1000);
     utimesSync(devMobileLog, future, future);
-    expect(resolveMetroLogPath(null, root, 8099)).toBe(devMobileLog);
+    expect(resolveMetroLogPath(null, root, 8081)).toBe(devMobileLog);
+    expect(resolveMetroLogPath(null, makeTempDir(), 8081)).toBe(METRO_LOG_PATH);
   });
 
   it('turns watching on by dropping CI and pinning the Tailscale hostname', () => {

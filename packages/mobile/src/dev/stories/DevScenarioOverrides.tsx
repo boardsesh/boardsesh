@@ -34,6 +34,15 @@ export function DevScenarioOverrides({ children }: { children: ReactNode }) {
         : { isSharedSession: patchedSharedSession },
     [sharedSession, patchedSharedSession],
   );
+  // The real provider derives the member set from the roster, so a patched roster
+  // patches it too. Same rule: anonymous members have no userId to match.
+  const patchedMemberUserIds = useMemo<ReadonlySet<string> | undefined>(
+    () =>
+      patchedSessionUsers === undefined
+        ? undefined
+        : new Set(patchedSessionUsers.flatMap((user) => (user.userId ? [user.userId] : []))),
+    [patchedSessionUsers],
+  );
   const sessionIdContextValue = useMemo(
     () =>
       sessionIdValue === null || patchedSessionId === undefined
@@ -43,10 +52,14 @@ export function DevScenarioOverrides({ children }: { children: ReactNode }) {
   );
   const sessionControlsValue = useMemo(
     () =>
-      sessionControls === null || patchedSessionId === undefined
+      sessionControls === null || (patchedSessionId === undefined && patchedMemberUserIds === undefined)
         ? sessionControls
-        : { ...sessionControls, sessionId: patchedSessionId },
-    [sessionControls, patchedSessionId],
+        : {
+            ...sessionControls,
+            sessionId: patchedSessionId ?? sessionControls.sessionId,
+            sessionMemberUserIds: patchedMemberUserIds ?? sessionControls.sessionMemberUserIds,
+          },
+    [sessionControls, patchedSessionId, patchedMemberUserIds],
   );
   const liveStatsValue = useMemo(
     () =>

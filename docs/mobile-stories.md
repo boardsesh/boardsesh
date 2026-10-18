@@ -43,6 +43,11 @@ Query parameters on the route:
 | --------- | -------------------------------- | ------------------------------------------------------------ |
 | `theme`   | `dark`, `light`, `system`        | Switches the whole app, like Settings. Persists on the sim.  |
 | `variant` | `liquidGlass`, `material`, `auto` | The Material look on iOS, for checking Android parity.      |
+| `shot`    | any value                        | A new value re-logs the ready line of the story on screen.   |
+
+The shots scripts add `shot=<timestamp>` to every `--story` capture, so shooting the story
+already on screen again (after an edit, or with another `--theme`) still gets a fresh
+`[stories] ready` line instead of waiting out the 15 s timeout.
 
 Stories only exist in a dev bundle (the simulator dev client, `vp run dev:mobile`). A store
 build or OTA update sends `dev/stories/*` home.
@@ -50,10 +55,12 @@ build or OTA update sends `dev/stories/*` home.
 ## Story ids
 
 `<file>--<key>`, kebab-cased. In `CrewBrowse.stories.tsx`, the key `crewFlagOn` is
-`crew-browse--crew-flag-on`. A bare file id (`crew-browse`) opens that file's first story. Two
-stories with the same id fail at load, naming both files.
+`crew-browse--crew-flag-on`. A bare file id (`crew-browse`) opens the story declared first in
+that file; the index lists stories sorted by id. Two stories with the same id fail at load,
+naming both files.
 
-`dev/stories/reset` clears scenario overrides and goes back to the index.
+`dev/stories/reset` clears scenario overrides, goes back to the index and logs
+`[stories] ready reset`.
 
 ## Write a story
 
@@ -93,7 +100,9 @@ export default stories;
 - `render` runs inside the real providers, so hooks like `useTheme` and `useTranslation` work.
 - `layout: 'fullscreen'` drops the caption and padding.
 - A component story can take `overrides` too, for a component that reads them from context.
-  They are cleared when the story unmounts.
+  They go on when the story comes into focus and come off when it leaves, unless a newer story
+  has replaced them by then. A component story without `overrides` clears any scenario's, so a
+  component draws the same whatever you opened before it.
 - A scenario's `route` can carry the screenshot-mode params
   (`climbs?screenshotOpenFirst=1`, `?screenshotOpenPreview=1`); see
   `packages/mobile/src/lib/screenshot-mode.ts`. Run Metro in screenshot mode
@@ -109,7 +118,16 @@ anything left out keeps the real value.
 | ------------------------ | ------------------------------------------------------------ |
 | `queue.isSharedSession`  | `useIsSharedSession()`: whether gestures browse first (#4281) |
 | `queue.sessionId`        | `useQueueSessionId()` and `useQueueSessionControls()`       |
-| `queue.sessionUsers`     | The roster in `useQueueLiveStats()`                          |
+| `queue.sessionUsers`     | The roster in `useQueueLiveStats()`, and `sessionMemberUserIds` in `useQueueSessionControls()` (from each member's `userId`) |
+
+Some readers keep the real session, so judge what they draw from the real app:
+
+| Reader                                   | Why it isn't patched                                         |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| `BluetoothProvider` (`useQueue()`)       | Reads the full `QueueContext`, which is left alone on purpose |
+| `QueueBottomAccessory` (`useQueue()`)    | Same: the persistent queue bar shows the real session        |
+| `LiveActivityBridge` (`useQueue()`)      | Same: patching it would start a Live Activity under a fake id |
+| `BoardAdapterWrapper`                    | Sits above `DevScenarioOverrides`; ticks go to the real session |
 
 The fake session id exists only on the phone. Anything that sends it to the server fails, so
 judge the screen, not the network calls behind it.
@@ -119,7 +137,9 @@ To fake something new, add a field to `ScenarioOverrides` and patch its context 
 queue and presence providers, so it can patch either.
 
 Scenario overrides stay on after the story navigates away. They clear when another story
-replaces them, on `dev/stories/reset`, on the index's reset row, or on a reload.
+replaces them (a scenario, or a component story with or without `overrides`), on
+`dev/stories/reset`, on the index's reset row, or on a reload. Opening the index alone leaves
+them on.
 
 ## How it stays out of production
 
@@ -127,9 +147,11 @@ replaces them, on `dev/stories/reset`, on the index's reset row, or on a reload.
 every story file are loaded through a `require` behind `__DEV__`, which Metro folds to `false`
 in a production bundle before it collects dependencies. Two checks hold this:
 
-- `story-harness-prod-exclusion.test.ts`: app code imports the harness only through `load.ts`,
-  and every `require` there sits behind `__DEV__`.
-- `vp run check:mobile-bundle`: exports both platforms and fails if `[stories] ready` is in the
+- `story-harness-prod-exclusion.test.ts`: app code imports the harness only through `load.ts`
+  (a type-only `import type` is fine, judged per statement), never imports a `*.stories` file,
+  and every `require` in `load.ts` sits behind `__DEV__`.
+- `vp run check:mobile-bundle`: exports both platforms and fails if `[stories] ready` (the story
+  screens) or `[stories] registry` (the registry, which pulls in every story file) is in the
   bundle.
 
 The one piece that ships is `DevScenarioOverrides`, which production swaps for a pass-through.
@@ -138,7 +160,9 @@ The one piece that ships is `DevScenarioOverrides`, which production swaps for a
 
 The story screens log through Metro, which is how the shots scripts know when to capture:
 
-- `[stories] ready <id>`: a component story has painted.
+- `[stories] ready <id>`: a component story has painted. `dev/stories/reset` logs
+  `[stories] ready reset`.
+- `[stories] registry <n> stories`: the registry loaded (once per bundle).
 - `[stories] scenario <id> -> <route>`: a scenario applied its overrides and navigated.
 - `[stories] missing <id> (did you mean …)`: no such story.
 - `[stories] scenario overrides {…}` / `cleared`: the override store changed.

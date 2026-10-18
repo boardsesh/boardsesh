@@ -52,7 +52,7 @@ import { adbPath, androidEnv, ensureAndroidSdk, resolveAndroidHome } from './lib
 import { bootEmulator, resolveRunningEmulator, shutdownEmulator } from './lib/android-emulator';
 import { ANDROID_DEV_PACKAGE, ANDROID_SCHEME } from './lib/android-app';
 import { ensureAndroidApk } from './mobile-android-apk';
-import { METRO_LOG_PATH, METRO_PORT, metroLogOffset, shotsMetroWatch, stopMetro } from './lib/metro-dev-server';
+import { METRO_PORT, metroLogOffset, metroLogPathForPort, shotsMetroWatch, stopMetro } from './lib/metro-dev-server';
 import {
   STORY_THEMES,
   STORY_VARIANTS,
@@ -528,8 +528,12 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
     : { ...process.env };
   const watch = shotsMetroWatch(options);
+  // Same log as mobile-ios-shots: this port's own file, so `screenshot` reads this
+  // Metro's lines and not another session's 8081 Metro sharing TMPDIR.
+  const metroLogPath = options.metroLog ?? metroLogPathForPort(METRO_PORT);
   console.log(
-    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend}, watch=${watch})...`,
+    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend}, ` +
+      `watch=${watch}, log ${metroLogPath})...`,
   );
 
   // Declared before the try so a Metro startup failure (startMetroForDevClient
@@ -538,11 +542,11 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   let session: DevClientSession | null = null;
   let succeeded = false;
   try {
-    session = startMetroForDevClient(metroEnv, { watch });
+    session = startMetroForDevClient(metroEnv, { watch, logPath: metroLogPath });
     connectDevClient(adbBinary, serial);
 
     if (options.screenshotMode) {
-      if (launchDevClientToHome(adbBinary, serial, { logPrefix: LOG })) {
+      if (launchDevClientToHome(adbBinary, serial, { logPrefix: LOG, metroLogPath })) {
         console.log(`${LOG} App reached home.`);
       } else {
         console.warn(
@@ -561,8 +565,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     if (options.flow) runMaestroFlow(serial, options, env);
 
     if (options.to) {
-      // startMetroForDevClient tees to METRO_LOG_PATH, whatever the port.
-      navigateAndSettle(serial, env, options, METRO_LOG_PATH);
+      navigateAndSettle(serial, env, options, metroLogPath);
       const file = captureScreenshot(serial, env, options.label ?? options.to, options.outDir);
       console.log(`${LOG} Saved ${file}`);
     }

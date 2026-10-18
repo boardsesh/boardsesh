@@ -17,6 +17,7 @@ import type { ChildProcess } from 'node:child_process';
 import { runCapture, runInherit } from './exec';
 import { ANDROID_DEV_PACKAGE } from './android-app';
 import {
+  METRO_LOG_PATH,
   METRO_PORT,
   SCREENSHOT_READY_PORT,
   dumpMetroLogTail,
@@ -39,6 +40,8 @@ const DEFAULT_LOG_PREFIX = '[android-dev-client]';
 export interface DevClientSession {
   metro: ChildProcess;
   readinessServer: ChildProcess;
+  /** Where Metro's output is tee'd: the reach-home marker and story lines land here. */
+  metroLogPath: string;
 }
 
 /** Install the dev-client APK, starting from a clean container. */
@@ -49,16 +52,21 @@ export function installDevClient(adbBinary: string, serial: string, apkPath: str
   runCapture(adbBinary, ['-s', serial, 'shell', 'pm', 'clear', ANDROID_DEV_PACKAGE]); // fresh: signed out, no stale board
 }
 
-/** Bring up Metro (+ readiness server) for the dev-client to load its JS from. */
+/**
+ * Bring up Metro (+ readiness server) for the dev-client to load its JS from.
+ * `logPath` defaults to METRO_LOG_PATH, which the store capture reads and CI
+ * uploads; the ad-hoc shots script passes metroLogPathForPort() instead.
+ */
 export function startMetroForDevClient(
   metroEnv: NodeJS.ProcessEnv,
-  metroOptions: Pick<StartMetroOptions, 'watch'> = {},
+  metroOptions: Pick<StartMetroOptions, 'watch' | 'logPath'> = {},
 ): DevClientSession {
   if (portInUse(METRO_PORT)) {
     throw new Error(`port ${METRO_PORT} is already in use; stop it or set BOARDSESH_METRO_PORT to a free port.`);
   }
+  const metroLogPath = metroOptions.logPath ?? METRO_LOG_PATH;
   const readinessServer = startReadinessServer();
-  const metro = startMetro(metroEnv, metroOptions);
+  const metro = startMetro(metroEnv, { ...metroOptions, logPath: metroLogPath });
   if (!waitForMetro()) {
     // Clean up what this call already started rather than leaking a detached
     // Metro/readiness process group back to the caller, which has no handle on
@@ -68,7 +76,7 @@ export function startMetroForDevClient(
     throw new Error(`Metro did not become ready on port ${METRO_PORT}`);
   }
   prewarmMetroBundle('android');
-  return { metro, readinessServer };
+  return { metro, readinessServer, metroLogPath };
 }
 
 /** Run one `adb reverse` and throw, naming the port, if it doesn't exit 0. */
@@ -119,13 +127,16 @@ export function launchDevClientToHome(
     logPrefix?: string;
     /** Ends the wait, and the relaunches, as soon as it returns true. See waitForHomeReady. */
     giveUpWhen?: () => boolean;
+    /** The log Metro tees to (DevClientSession.metroLogPath). Defaults to METRO_LOG_PATH. */
+    metroLogPath?: string;
   } = {},
 ): boolean {
   const logPrefix = options.logPrefix ?? DEFAULT_LOG_PREFIX;
   const timeoutSeconds = options.timeoutSeconds ?? 240;
   const attempts = options.attempts ?? 3;
+  const metroLogPath = options.metroLogPath ?? METRO_LOG_PATH;
 
-  const markerBaseline = homeReadyMarkerCount();
+  const markerBaseline = homeReadyMarkerCount(metroLogPath);
   const readyBaseline = screenshotReadinessCount();
 
   let reachedHome = false;
@@ -137,11 +148,11 @@ export function launchDevClientToHome(
     }
     console.log(`${logPrefix} Launching dev-client against Metro...`);
     launchDevClient(adbBinary, serial);
-    reachedHome = waitForHomeReady(markerBaseline, readyBaseline, timeoutSeconds, options.giveUpWhen);
+    reachedHome = waitForHomeReady(markerBaseline, readyBaseline, timeoutSeconds, options.giveUpWhen, metroLogPath);
   }
 
   if (!reachedHome) {
-    dumpMetroLogTail();
+    dumpMetroLogTail(undefined, metroLogPath);
   }
   return reachedHome;
 }

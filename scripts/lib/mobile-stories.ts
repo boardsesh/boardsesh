@@ -13,7 +13,13 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { METRO_LOG_PATH, METRO_PORT, metroLogPathForPort, waitForMetroLogLine } from './metro-dev-server';
+import {
+  DEFAULT_METRO_PORT,
+  METRO_LOG_PATH,
+  METRO_PORT,
+  metroLogPathForPort,
+  waitForMetroLogLine,
+} from './metro-dev-server';
 import { sleepSeconds } from './exec';
 
 export const STORY_THEMES = ['dark', 'light'] as const;
@@ -28,7 +34,7 @@ export const STORY_READY_SETTLE_SECONDS = 0.5;
 
 // Kebab-case module id, optionally `--` and a kebab-case story key
 // (packages/mobile/src/dev/stories/registry-core.ts). A bare module id opens
-// that file's first story.
+// the story declared first in that file.
 const STORY_ID = /^[a-z0-9]+(?:--?[a-z0-9]+)*$/;
 
 export interface StoryTarget {
@@ -44,13 +50,18 @@ export function assertStoryId(id: string): string {
   return id;
 }
 
-/** The deep-link route (no scheme) that opens a story. */
-export function storyRoute(target: StoryTarget): string {
+/**
+ * The deep-link route (no scheme) that opens a story. `shot` is a nonce: a new
+ * value makes the story already on screen log its ready line again, so a
+ * re-shoot after an edit, or with another `--theme`, doesn't wait out the timeout.
+ */
+export function storyRoute(target: StoryTarget, shot: number = Date.now()): string {
   const query = [
     target.theme ? `theme=${target.theme}` : null,
     target.variant ? `variant=${target.variant}` : null,
+    `shot=${shot}`,
   ].filter((part): part is string => part !== null);
-  return `dev/stories/${target.id}${query.length > 0 ? `?${query.join('&')}` : ''}`;
+  return `dev/stories/${target.id}?${query.join('&')}`;
 }
 
 /** Default screenshot label: the story id, plus the theme/variant when passed. */
@@ -102,19 +113,24 @@ export function findStoryLogEvent(logText: string, id: string): StoryLogEvent | 
 }
 
 /**
- * The Metro log a `screenshot`/`navigate` run should watch: `--metro-log` when
- * given, otherwise the most recently written of this port's tee log, the 8081
- * tee log, and `vp run dev:mobile`'s `.boardsesh/mobile-metro.log`.
+ * The Metro log a `screenshot`/`navigate` run should watch. `--metro-log` wins.
+ * On a port other than 8081 it is that port's `run` tee log, or this checkout's
+ * `vp run dev:mobile` log (`.boardsesh/mobile-metro.log`) when there is no tee
+ * log: never the newest log in TMPDIR, which other sessions share, so another
+ * session's 8081 Metro could win. On 8081 it is the newer of the 8081 tee log
+ * and the dev:mobile log.
  */
 export function resolveMetroLogPath(explicit: string | null, rootDir: string, port: number = METRO_PORT): string {
   if (explicit) return resolve(explicit);
-  const candidates = [
-    ...new Set([metroLogPathForPort(port), METRO_LOG_PATH, join(rootDir, '.boardsesh', 'mobile-metro.log')]),
-  ];
-  const existing = candidates
+  const portLog = metroLogPathForPort(port);
+  const devMobileLog = join(rootDir, '.boardsesh', 'mobile-metro.log');
+  if (port !== DEFAULT_METRO_PORT) {
+    return existsSync(portLog) || !existsSync(devMobileLog) ? portLog : devMobileLog;
+  }
+  const existing = [METRO_LOG_PATH, devMobileLog]
     .filter((path) => existsSync(path))
     .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs);
-  return existing[0] ?? candidates[0];
+  return existing[0] ?? METRO_LOG_PATH;
 }
 
 /**
@@ -146,8 +162,8 @@ export function settleAfterStory(
   if (event === null) {
     console.warn(
       `${logPrefix} WARNING: no "[stories] ready ${id}" in ${logPath} after ${STORY_READY_TIMEOUT_SECONDS}s; ` +
-        `capturing anyway. (Re-opening the story already on screen doesn't remount it; ` +
-        `Metro started elsewhere needs --metro-log <its log>.)`,
+        `capturing anyway. (Wrong log? Set BOARDSESH_METRO_PORT to the port \`run\` used, ` +
+        `or pass --metro-log <its log> for a Metro started elsewhere.)`,
     );
     return;
   }

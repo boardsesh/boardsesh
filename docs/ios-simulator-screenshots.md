@@ -72,15 +72,20 @@ vp run mobile:ios-shots -- screenshot --story crew-browse--pills
 vp run mobile:ios-shots -- screenshot --story crew-browse--pills --theme light --variant material
 ```
 
-- It is `--to dev/stories/<id>` plus `?theme=dark|light` and `?variant=liquidGlass|material`.
-  The label defaults to the id, with the theme and variant appended when passed.
+- It is `--to dev/stories/<id>` plus `?theme=dark|light`, `?variant=liquidGlass|material` and a
+  `shot=<timestamp>` nonce. The label defaults to the id, with the theme and variant appended
+  when passed.
 - Instead of the fixed settle it waits up to 15 s for `[stories] ready <id>` in the Metro log,
   then 0.5 s more. A scenario story (`[stories] scenario <id> -> <route>`) gets the normal
   `--settle` for its real screen. An unknown id fails with the app's "did you mean" list.
-- No ready line in 15 s: it warns and captures anyway. Re-opening the story already on screen
-  does not remount it, so that case always waits the full 15 s.
-- `screenshot` and `navigate` read the newest of the `run` Metro log and `vp run dev:mobile`'s
-  `.boardsesh/mobile-metro.log`. Point `--metro-log <path>` at any other Metro's output.
+- No ready line in 15 s: it warns and captures anyway. The `shot` nonce makes the story already
+  on screen log its line again, so re-shooting it after an edit doesn't hit the timeout.
+- `screenshot` and `navigate` read the Metro log of `BOARDSESH_METRO_PORT`. Off 8081 that is the
+  `run` log for that port (`$TMPDIR/boardsesh-screenshot-metro-<port>.log`), or this checkout's
+  `vp run dev:mobile` log (`.boardsesh/mobile-metro.log`) when `run` never wrote one; never the
+  newest log in `$TMPDIR`, which other sessions share. On 8081 it is the newer of
+  `$TMPDIR/boardsesh-screenshot-metro.log` and the dev:mobile log. Point `--metro-log <path>` at
+  any other Metro's output.
 
 ### Screens (`--to`)
 
@@ -217,7 +222,7 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 | `--shutdown`           | off                          | Tear down after the run instead of holding Metro.                |
 | `--keep-alive`         | —                            | Inverse of `--shutdown` (hold Metro).                            |
 | `--watch`/`--no-watch` | on unless `--shutdown`       | Metro file watching for `run`.                                   |
-| `--metro-log <path>`   | newest known Metro log       | Log to read story lines from.                                    |
+| `--metro-log <path>`   | this port's Metro log        | Log to read story lines from (`run`: the log Metro tees to).    |
 
 ## Subcommands
 
@@ -230,7 +235,8 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 
 - **macOS only**; no software-GPU/KVM story like Android — `simctl` runs the simulator natively.
 - **Set `BOARDSESH_METRO_PORT` on every subcommand** when `run` used a port other than 8081;
-  `screenshot` finds the right Metro log and the port check from it.
+  `screenshot` checks that port is up and reads that port's Metro log
+  (`$TMPDIR/boardsesh-screenshot-metro-<port>.log`) for story lines.
 - **First run is slow** (~30-min `.app` build); cached afterward. Pass `--app-path` to skip it.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you

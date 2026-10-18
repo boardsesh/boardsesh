@@ -16,3 +16,12 @@ export const STORIES = buildStoryRegistry(
     module: (storyFiles(path) as { default: StoryModule }).default,
   })),
 );
+
+// `vp run check:mobile-bundle` fails if this string is in a production export:
+// it means the registry, and with it every story file, escaped the `__DEV__`
+// gate in load.ts. The log is deliberately not behind `__DEV__` itself, or a
+// minifier could drop the string from a leaked registry and the check would
+// pass. This file only ever runs in a dev bundle.
+const STORY_REGISTRY_MARKER = '[stories] registry';
+// eslint-disable-next-line no-console
+console.log(`${STORY_REGISTRY_MARKER} ${STORIES.length} stories`);

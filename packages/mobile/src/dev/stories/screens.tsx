@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isThemeOverride, isUiVariantPreference } from '@boardsesh/key-value-storage';
 import { Text } from '../../components/Text';
@@ -38,36 +38,51 @@ function logReady(id: string): void {
   console.log(`[stories] ready ${id}`);
 }
 
-/** `dev/stories/<id>`: draws a component story, or applies a scenario and opens its route. */
+/**
+ * `dev/stories/<id>`: draws a component story, or applies a scenario and opens its route.
+ *
+ * `?shot=<nonce>` is set by the shots scripts on every `--story` capture. A new
+ * value re-runs the story's effects, so re-shooting the story already on screen
+ * (after an edit, or with another `--theme`) logs its line again.
+ */
 export function StoryScreen() {
-  const params = useLocalSearchParams<{ id: string; theme?: string; variant?: string }>();
+  const params = useLocalSearchParams<{ id: string; theme?: string; variant?: string; shot?: string }>();
   const id = firstParam(params.id) ?? '';
+  const shot = firstParam(params.shot) ?? '';
   useStoryAppearance(firstParam(params.theme), firstParam(params.variant));
 
-  if (id === 'reset') return <ResetScenario />;
+  if (id === 'reset') return <ResetScenario shot={shot} />;
   const entry = findStory(STORIES, id);
-  if (!entry) return <MissingStory id={id} />;
+  if (!entry) return <MissingStory id={id} shot={shot} />;
   if (isScenarioStory(entry.story)) {
-    return <OpenScenario key={entry.id} entry={entry} story={entry.story} />;
+    return <OpenScenario key={entry.id} entry={entry} story={entry.story} shot={shot} />;
   }
-  return <ComponentStoryCanvas key={entry.id} entry={entry} story={entry.story} />;
+  return <ComponentStoryCanvas key={entry.id} entry={entry} story={entry.story} shot={shot} />;
 }
 
-function ComponentStoryCanvas({ entry, story }: { entry: RegisteredStory; story: ComponentStory }) {
+function ComponentStoryCanvas({ entry, story, shot }: { entry: RegisteredStory; story: ComponentStory; shot: string }) {
   const insets = useSafeAreaInsets();
   const { systemColors } = useTheme();
-  const { overrides } = story;
+  const overrides = story.overrides ?? null;
 
-  useEffect(() => {
-    if (!overrides) return undefined;
-    setScenarioOverrides(overrides);
-    return () => setScenarioOverrides(null);
-  }, [overrides]);
+  // Every story sets the whole override state while it is on screen: one
+  // without overrides clears a scenario's, so a component draws the same
+  // whatever was opened before it. Applied on focus, so going back to this story
+  // re-applies them. On blur, clear only our own: a newer story may already
+  // have replaced them.
+  useFocusEffect(
+    useCallback(() => {
+      setScenarioOverrides(overrides);
+      return () => {
+        if (overrides !== null && getScenarioOverrides() === overrides) setScenarioOverrides(null);
+      };
+    }, [overrides]),
+  );
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => logReady(entry.id));
     return () => cancelAnimationFrame(frame);
-  }, [entry.id]);
+  }, [entry.id, shot]);
 
   if (story.layout === 'fullscreen') {
     return (
@@ -99,7 +114,7 @@ function ComponentStoryCanvas({ entry, story }: { entry: RegisteredStory; story:
   );
 }
 
-function OpenScenario({ entry, story }: { entry: RegisteredStory; story: ScenarioStory }) {
+function OpenScenario({ entry, story, shot }: { entry: RegisteredStory; story: ScenarioStory; shot: string }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -113,19 +128,20 @@ function OpenScenario({ entry, story }: { entry: RegisteredStory; story: Scenari
     return () => {
       cancelled = true;
     };
-  }, [entry.id, story]);
+  }, [entry.id, story, shot]);
   return <StoryMessage title={`Opening ${entry.id}`} body={story.route} />;
 }
 
-function ResetScenario() {
+function ResetScenario({ shot }: { shot: string }) {
   useEffect(() => {
     setScenarioOverrides(null);
     router.replace('/dev/stories' as Href);
-  }, []);
+    logReady('reset');
+  }, [shot]);
   return <StoryMessage title="Clearing scenario overrides" body="" />;
 }
 
-function MissingStory({ id }: { id: string }) {
+function MissingStory({ id, shot }: { id: string; shot: string }) {
   const nearby = useMemo(() => {
     const needle = id.split('--')[0] ?? id;
     return STORIES.filter((entry) => entry.id.includes(needle))
@@ -135,7 +151,7 @@ function MissingStory({ id }: { id: string }) {
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.log(`[stories] missing ${id}${nearby.length > 0 ? ` (did you mean ${nearby.join(', ')})` : ''}`);
-  }, [id, nearby]);
+  }, [id, nearby, shot]);
   return (
     <StoryMessage
       title={`No story "${id}"`}
