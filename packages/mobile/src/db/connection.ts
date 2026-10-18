@@ -976,13 +976,20 @@ export function resetDatabaseInitializationForTests(): void {
  * store next to this call, which is strictly more than these rows name and so
  * also reclaims a file some earlier failed wipe orphaned.
  *
- * First-ascent names are the other per-account part of the catalogue. The stats
- * sync sends a first ascensionist's name only to a viewer allowed to see it
- * (`privateSafeFirstAscentName(…, ctx.userId)` in the backend's sync queries), so
- * `fa_username` and `fa_at` hold what THIS account was shown. They are blanked
- * here and nothing else is: the stats rows and every board checkpoint stay, so on
- * a board already downloaded the names stay blank until each row next changes.
- * Nothing on the phone reads them today.
+ * First-ascent names are the other per-account part of the catalogue, on climbs
+ * set on Boardsesh only. For those the stats sync sends the first ascensionist
+ * THIS account may see (`privateSafeFirstAscentName(…, ctx.userId)` in the
+ * backend's sync queries), so `fa_username` and `fa_at` are blanked here for
+ * every stats row whose climb has a Boardsesh owner. A manufacturer credit is the
+ * stored name, the same for every viewer, and stays. Nothing else is touched: the
+ * stats rows and every board checkpoint stay, so on a board already downloaded the
+ * blanked names stay blank until each row next changes. Nothing on the phone reads
+ * them today.
+ *
+ * Known gap: the server also projects the credit for a climb whose author deleted
+ * their account (`is_boardsesh_authored`), but the phone does not sync that flag
+ * and such a climb arrives with no `user_id`. Its stats keep the previous
+ * account's first-ascent name until those rows change.
  *
  * This wipe (the sign-outs the climber did not choose, and the owner-stamp
  * recovery in `OfflineSyncBridge`) and `purgeLocalDataForSignOut` are the only
@@ -1016,9 +1023,12 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     for (const table of SPRAY_SCOPED_BOARD_TABLES) {
       await txn.runAsync(`DELETE FROM ${table} WHERE board_type = ?`, [SPRAY_BOARD_TYPE]);
     }
-    // Per-viewer columns (see the docblock). No checkpoint moves with them.
+    // Per-viewer columns on Boardsesh-authored climbs (see the docblock). No
+    // checkpoint moves with them.
     await txn.runAsync(
-      'UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL WHERE fa_username IS NOT NULL OR fa_at IS NOT NULL',
+      `UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL
+       WHERE (fa_username IS NOT NULL OR fa_at IS NOT NULL)
+         AND climb_uuid IN (SELECT uuid FROM board_climbs WHERE user_id IS NOT NULL)`,
     );
     await deleteUserCheckpoints(txn);
 

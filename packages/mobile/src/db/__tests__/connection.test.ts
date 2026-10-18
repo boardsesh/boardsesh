@@ -282,9 +282,15 @@ describe('clearUserData', () => {
       `INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, is_listed) VALUES (?, 'kilter', ?, ?, 1)`,
       ['draft-by-a', 'account-a', 1],
     );
-    // The first-ascent name the stats sync projected for A.
+    // First-ascent credits. climb-1 has no Boardsesh owner: a manufacturer credit,
+    // the same for every viewer. The Boardsesh climb's credit is the one the stats
+    // sync projected for A.
     await db.runAsync(
-      `UPDATE board_climb_stats SET fa_username = 'private-climber', fa_at = '2026-01-01T00:00:00Z' WHERE climb_uuid = 'climb-1'`,
+      `UPDATE board_climb_stats SET fa_username = 'manufacturer-fa', fa_at = '2019-01-01T00:00:00Z' WHERE climb_uuid = 'climb-1'`,
+    );
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, fa_username, fa_at)
+       VALUES ('kilter', 'published-by-someone', 40, 4, 'private-climber', '2026-01-01T00:00:00Z')`,
     );
     // A spray wall A could see, with a climb on it and its scope markers.
     await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
@@ -316,12 +322,16 @@ describe('clearUserData', () => {
       expect(await getCheckpoint(db, getCheckpointKey(tableName, 'kilter:1:1')), tableName).not.toBeNull();
     }
     expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
-    expect(
-      await db.getFirstAsync(
-        'SELECT ascensionist_count, fa_username, fa_at FROM board_climb_stats WHERE climb_uuid = ?',
-        ['climb-1'],
-      ),
-    ).toEqual({ ascensionist_count: 12, fa_username: null, fa_at: null });
+    const credit = (climbUuid: string) =>
+      db.getFirstAsync('SELECT ascensionist_count, fa_username, fa_at FROM board_climb_stats WHERE climb_uuid = ?', [
+        climbUuid,
+      ]);
+    expect(await credit('climb-1')).toEqual({
+      ascensionist_count: 12,
+      fa_username: 'manufacturer-fa',
+      fa_at: '2019-01-01T00:00:00Z',
+    });
+    expect(await credit('published-by-someone')).toEqual({ ascensionist_count: 4, fa_username: null, fa_at: null });
   });
 });
 

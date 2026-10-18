@@ -272,10 +272,11 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'ascensionist_count',
       'difficulty_average',
       'quality_average',
-      // Per viewer, not catalogue data: the server sends a first ascensionist's
-      // name only to viewers allowed to see it, so these hold what the signed-in
-      // account was shown. `clearUserData` blanks them at the account boundary.
-      // Read them locally only for that same account.
+      // Per viewer on climbs set on Boardsesh: the server sends the first
+      // ascensionist the signed-in account may see, so these hold what that
+      // account was shown. `clearUserData` blanks them for climbs with a
+      // Boardsesh owner at the account boundary; manufacturer credits are the
+      // same for everyone. Read them locally only for that same account.
       'fa_username',
       'fa_at',
       'updated_at',
