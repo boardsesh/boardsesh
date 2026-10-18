@@ -510,8 +510,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var centralStateOverrideForTesting: CBManagerState?
     /// Test-only interception of `CBCentralManager` creation. The XCTest host
     /// has no bluetooth-central background mode, so a real central with a
-    /// restore identifier would crash it; tests count creations instead.
+    /// restore identifier would crash it; tests count creations instead. The
+    /// handler runs once per manager, as a real creation does: production
+    /// stores the central and every later call reuses it.
     private var centralManagerCreationOverrideForTesting: (() -> Void)?
+    /// Whether the creation override has already stood in for this manager's
+    /// one creation. Reset whenever a handler is installed.
+    private var centralCreatedByOverrideForTesting = false
     /// Test-only interception of the single `scanForPeripherals` call site,
     /// handed the service filter (nil = unfiltered).
     private var scanForPeripheralsOverrideForTesting: (([CBUUID]?) -> Void)?
@@ -624,7 +629,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         #if DEBUG || BOARDSESH_TESTS
         if let overrideForTesting = centralManagerCreationOverrideForTesting {
-            overrideForTesting()
+            // Nothing concrete is stored (createdCentralManager stays nil, so
+            // state reads keep peeking), but only the first call counts.
+            if !centralCreatedByOverrideForTesting {
+                centralCreatedByOverrideForTesting = true
+                overrideForTesting()
+            }
             return nil
         }
         #endif
@@ -3492,12 +3502,15 @@ extension BoardBleManager {
             manager.centralStateOverrideForTesting = state
         }
 
-        /// Count `CBCentralManager` creations instead of performing them. With
-        /// this set, `centralManagerCreatingIfNeeded` calls the handler every
-        /// time (nothing is stored), so each count is one path that would have
-        /// created the central, and with it shown the Bluetooth alert.
+        /// Count `CBCentralManager` creations instead of performing them. The
+        /// handler runs on the first `centralManagerCreatingIfNeeded` call only,
+        /// matching production, where later calls reuse the stored central: a
+        /// count of 1 means a path created the central (and with it showed the
+        /// Bluetooth alert), 0 means nothing did. Installing a handler resets
+        /// the "already created" flag.
         func setCentralManagerCreationOverride(_ handler: (() -> Void)?) {
             manager.centralManagerCreationOverrideForTesting = handler
+            manager.centralCreatedByOverrideForTesting = false
         }
 
         /// Whether a `requestAuthorization` completion is still waiting for
