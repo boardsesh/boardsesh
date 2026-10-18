@@ -15,7 +15,7 @@
 // DeferredBoard, whether the switch gate is up, which board "Switch board"
 // targets, and that a neighbouring climb from another board is not peeked under
 // the current art.
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { render as renderInitial, act } from '@testing-library/react';
 import { createElement, useEffect, useRef, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -401,6 +401,7 @@ vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
 
 const { PlayDrawer } = await import('../PlayDrawer');
+const { setSetting, resetAllSettings } = await import('../../../settings');
 
 // The Original 12x12 the climber switched TO.
 const TWELVE_BY_TWELVE = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
@@ -1088,6 +1089,63 @@ describe('PlayDrawer ⋯ menu', () => {
   it('tells ⋯ which bar buttons are put away', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
-    expect(recorded.actionsMenu.at(-1)?.hidden).toEqual({ favorite: false, share: false, queue: false });
+    expect(recorded.actionsMenu.at(-1)?.hidden).toEqual({
+      favorite: false,
+      share: false,
+      queue: false,
+      mirror: false,
+      angle: false,
+    });
+  });
+
+  it('hands ⋯ a button the climber switched off, and the bar the same buttons', () => {
+    onTestFinished(() => resetAllSettings());
+    setSetting('playerButtonsV1', {
+      version: 1,
+      order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
+      visible: { share: false },
+    });
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({ share: true, favorite: false });
+    expect(recorded.actionBar.at(-1)?.buttons).toMatchObject({ visible: { share: false } });
+    // Mirror and the angle sheet from ⋯ run the bar's own handlers.
+    expect(recorded.actionsMenu.at(-1)?.onToggleMirror).toBe(recorded.actionBar.at(-1)?.onMirror);
+    expect(recorded.actionsMenu.at(-1)?.onOpenAngle).toBe(recorded.actionBar.at(-1)?.onOpenAngleSelector);
+  });
+});
+
+describe('PlayDrawer controls position (#6229)', () => {
+  afterEach(() => resetAllSettings());
+  const follows = (first: Element, second: Element) =>
+    (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  it('draws the controls under the board by default, with the hairline facing it', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const screen = renderDrawer();
+    expect(follows(screen.getByTestId('board'), screen.getByTestId('action-bar'))).toBe(true);
+    expect(recorded.actionBar.at(-1)?.edge).toBe('top');
+  });
+
+  it('moves the whole controls block above the board, switch-board scrim and all', () => {
+    setSetting('playerButtonsPosition', 'above');
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    const screen = renderDrawer(vi.fn());
+    const bar = screen.getByTestId('action-bar');
+    const scrim = screen.getByTestId('switch-board-overlay');
+    const board = screen.getByTestId('board');
+
+    expect(follows(bar, board)).toBe(true);
+    expect(follows(scrim, board)).toBe(true);
+    // The scrim stays a sibling of the controls it covers, in the same region.
+    expect(scrim.parentElement?.contains(bar)).toBe(true);
+    expect(recorded.actionBar.at(-1)?.edge).toBe('bottom');
+  });
+
+  it('follows a position change while the player is open', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const screen = renderDrawer();
+    act(() => setSetting('playerButtonsPosition', 'above'));
+    expect(follows(screen.getByTestId('action-bar'), screen.getByTestId('board'))).toBe(true);
   });
 });

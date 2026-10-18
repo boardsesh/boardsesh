@@ -226,6 +226,45 @@ describe('useClimbActions gating', () => {
     expect(viewOptions?.icon).not.toBe(result.current.find((action) => action.id === 'preview')?.icon);
   });
 
+  // #6229: the player's ⋯ stands in for its Mirror and angle buttons while the
+  // climber has them switched off. Nothing else passes these.
+  it('adds Mirror and Change angle only when the player passes them, worded by the mirror state', () => {
+    const plain = ids({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    expect(plain).not.toContain('mirror');
+    expect(plain).not.toContain('angle');
+
+    const onToggle = vi.fn();
+    const order: string[] = [];
+    const { result, rerender } = renderHook(
+      ({ isMirrored }: { isMirrored: boolean }) =>
+        useClimbActions({
+          climb,
+          boardConfig: kilterBoard,
+          isAuthenticated: false,
+          onSelectPlaylist: noopSelectPlaylist,
+          onAfterAction: () => order.push('closed'),
+          mirrorControl: { isMirrored, onToggle },
+          onOpenAngle: () => order.push('angle opened'),
+        }),
+      { initialProps: { isMirrored: false } },
+    );
+    const mirror = () => result.current.find((action) => action.id === 'mirror');
+    expect(mirror()).toMatchObject({ title: 'session:playView.actionBar.mirrorAria', icon: 'mirror' });
+    act(() => mirror()?.run());
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.find((action) => action.id === 'angle')?.run());
+    // Closed first, like the queue: the angle sheet opens under a menu on its way out.
+    expect(order).toEqual(['closed', 'closed', 'angle opened']);
+    expect(result.current.find((action) => action.id === 'angle')).toMatchObject({
+      title: 'session:playView.actionBar.changeAngle',
+      icon: 'angle',
+    });
+
+    rerender({ isMirrored: true });
+    expect(mirror()?.title).toBe('session:playView.actionBar.unmirrorAria');
+  });
+
   it('adds "Edit entry" only when onEditEntry is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, onEditEntry: () => {} })).toContain(
       'editEntry',

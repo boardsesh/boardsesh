@@ -1483,6 +1483,26 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.defaults);
   });
 
+  // Same reason as the sections: the reader can't reach View options to put the
+  // controls back, so a member's choice left in this browser never applies.
+  it('keeps the controls under the board for a signed-out reader, whatever this device stored', () => {
+    setSetting('playerButtonsPosition', 'above');
+    const screen = renderDrawer('anonymous');
+    const board = screen.getByTestId('board');
+    expect(board.compareDocumentPosition(screen.getByTestId('action-bar')) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
+    expect(lastActionBarProps().edge).toBe('top');
+  });
+
+  it('moves a member’s controls above the board', () => {
+    setSetting('playerButtonsPosition', 'above');
+    const screen = renderDrawer('member');
+    const bar = screen.getByTestId('action-bar');
+    expect(bar.compareDocumentPosition(screen.getByTestId('board')) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(lastActionBarProps().edge).toBe('bottom');
+  });
+
   it("keeps a member's stored Hide all", () => {
     auth.isAuthenticated = true;
     drawerSections.sections = {
@@ -1500,7 +1520,7 @@ describe('PlayDrawer — the anonymous joins', () => {
   });
 
   // A guest without an account is still a member viewer: ⋯ → View options and
-  // Settings → Below the climb both write the stored choices, so the drawer has to
+  // Settings → Climb view both write the stored choices, so the drawer has to
   // honour them. Only the anonymous reader, who can reach neither, is overridden.
   it('keeps a signed-out member viewer on their stored Hide all', () => {
     drawerSections.sections = {

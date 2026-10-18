@@ -1,6 +1,6 @@
 # Climb list rows
 
-Settings → Climbs & grades → Climb list, above the Below the climb section, opens `/settings/climb-list`. The Climbs tab has no shortcut to it: the filter chips keep the whole row (#6397). The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
+Settings → Climbs & grades → Climb list, above the Climb view row, opens `/settings/climb-list`. The Climbs tab has no shortcut to it: the filter chips keep the whole row (#6397). The screen uses the same row visual as the lists, with staged personal leaves so the example works without signing in or loading a logbook.
 
 ## Fields and presets
 

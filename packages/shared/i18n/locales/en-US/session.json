@@ -743,7 +743,8 @@
       "addFavoriteAria": "Add favorite",
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
-      "queueCountAria": "Queue, {{count}} climbs"
+      "queueCountAria": "Queue, {{count}} climbs",
+      "changeAngle": "Change angle"
     },
     "tickFab": {
       "logAscentAria": "Log ascent"

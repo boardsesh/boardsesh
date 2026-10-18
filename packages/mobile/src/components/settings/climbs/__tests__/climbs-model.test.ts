@@ -14,7 +14,8 @@ function makeInput(overrides: Partial<ClimbsModelInput> = {}): ClimbsModelInput 
     boardseshGrades: null,
     climbListPresetLabel: 'Default',
     onOpenClimbList: vi.fn(),
-    climbDrawerSection: { key: 'climbDrawer', title: 'Below the climb', rows: [] },
+    climbViewLabel: 'Default',
+    onOpenClimbView: vi.fn(),
     ...overrides,
   };
 }
@@ -28,14 +29,22 @@ function findRow(input: ClimbsModelInput, key: string): MoreRow {
 }
 
 describe('buildClimbsModel', () => {
-  it('runs grades, then the climb list, then the climb view', () => {
+  it('runs grades, then the climb list and climb view rows', () => {
     // The Maestro tutorial finds the "Use my grades" switch by its neighbours:
-    // the Below the climb section has to stay below it.
-    expect(buildClimbsModel(makeInput()).sections.map((section) => section.key)).toEqual([
-      'grades',
-      'climbList',
-      'climbDrawer',
-    ]);
+    // the Climb view row has to stay below it.
+    const sections = buildClimbsModel(makeInput()).sections;
+    expect(sections.map((section) => section.key)).toEqual(['grades', 'climbList']);
+    expect(sections[1].rows.map((row) => row.key)).toEqual(['climbList', 'climbView']);
+  });
+
+  it('shows whether the climb view is customised, and opens its page', () => {
+    const onOpenClimbView = vi.fn();
+    const row = findRow(makeInput({ climbViewLabel: 'Custom', onOpenClimbView }), 'climbView');
+    if (row.kind !== 'nav') throw new Error('climbView is not a nav row');
+    expect(row.label).toBe('mobile.settings.climbView.title');
+    expect(row.value).toBe('Custom');
+    row.onPress();
+    expect(onOpenClimbView).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the grade format description as the grades footer', () => {

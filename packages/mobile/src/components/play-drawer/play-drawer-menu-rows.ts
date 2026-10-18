@@ -7,14 +7,16 @@ export type PlayDrawerMenuRow = AppMenuAction & { id: ClimbActionId; run: () => 
 
 /**
  * Action-bar buttons this viewer is entitled to but the bar is not showing right
- * now (commit mode, the connect pill). ⋯ carries a row for each one that is true,
- * so the action never disappears with its button. Resolved by
- * `resolveActionBarLayout`.
+ * now (switched off in View options, commit mode, the connect pill). ⋯ carries a
+ * row for each one that is true, so the action never disappears with its
+ * button. Resolved by `resolveActionBarLayout`.
  */
 export type PlayDrawerHiddenButtons = {
   favorite: boolean;
   share: boolean;
   queue: boolean;
+  mirror: boolean;
+  angle: boolean;
 };
 
 export type PlayDrawerMenuRowOptions = {
@@ -36,6 +38,7 @@ export type PlayDrawerMenuRowOptions = {
  */
 const MENU_GROUPS: readonly (readonly ClimbActionId[])[] = [
   ['playNext', 'queue', 'openQueue'],
+  ['mirror', 'angle'],
   ['playlist', 'favorite', 'share'],
   ['betaVideo', 'edit', 'fork'],
   ['viewOptions', 'openInApp'],
@@ -58,14 +61,18 @@ function isOffered(id: ClimbActionId, { hidden, isActiveClimb }: PlayDrawerMenuR
   switch (id) {
     case 'playNext':
       return !isActiveClimb;
-    // These three are bar buttons first. The menu only stands in while the bar
-    // has put the button away, so the same action never shows up twice.
+    // These are bar buttons first. The menu only stands in while the bar has
+    // put the button away, so the same action never shows up twice.
     case 'openQueue':
       return hidden.queue;
     case 'favorite':
       return hidden.favorite;
     case 'share':
       return hidden.share;
+    case 'mirror':
+      return hidden.mirror;
+    case 'angle':
+      return hidden.angle;
     default:
       return true;
   }

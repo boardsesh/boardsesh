@@ -125,6 +125,7 @@ export default function SettingsLayout() {
         <Stack.Screen name="developer" options={{ title: settingsPageTitle('developer', t) }} />
         {/* The pages those pages open. */}
         <Stack.Screen name="climb-list" options={{ title: t('mobile.settings.climbList.title') }} />
+        <Stack.Screen name="climb-view" options={{ title: t('mobile.settings.climbView.title') }} />
         <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
         <Stack.Screen name="privacy-access" options={{ title: tSettings('privacy.manageAccess') }} />
         <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />

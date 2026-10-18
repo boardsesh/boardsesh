@@ -1,5 +1,7 @@
 import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
+import type { SectionLayoutRecord } from '../lib/section-layout';
+import type { PlayerButtonsPosition } from '../lib/player-buttons';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
@@ -197,6 +199,18 @@ export type AppSettings = {
    * re-render. Bump the `V1` suffix on an incompatible shape change.
    */
   climbRowDisplayV1: StoredClimbRowDisplay | null;
+  /**
+   * The player's buttons (#6229): their order and switches, `null` while they
+   * match the defaults so a later release's defaults still apply. Read and
+   * written ONLY through `playerButtonsStore` (`lib/player-buttons-preference.ts`),
+   * which keeps its own snapshot; never `useSetting` this key. In this store, not
+   * AsyncStorage, because the bar has to be right on the player's first frame.
+   */
+  playerButtonsV1: SectionLayoutRecord | null;
+  /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
+  playerPreviousNext: boolean;
+  /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
+  playerButtonsPosition: PlayerButtonsPosition;
 };
 
 export type SettingsKey = keyof AppSettings;

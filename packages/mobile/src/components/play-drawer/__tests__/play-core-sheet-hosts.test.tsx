@@ -79,6 +79,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     activeAngle: 40,
     climbBoardMismatch: false,
     sectionsSettingsOpen: open,
+    buttonsPreviewBoard: { supportsMirroring: false, angleAvailable: true, angle: 40, showLightbulb: true },
     addBetaVideoOpen: open,
     addToPlaylistOpen: open,
     fullLogbookClimbUuid: open ? pinnedClimb.uuid : null,

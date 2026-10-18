@@ -42,6 +42,8 @@ export type ClimbActionId =
   | 'queue'
   | 'openQueue'
   | 'playNext'
+  | 'mirror'
+  | 'angle'
   | 'playlist'
   | 'favorite'
   | 'tick'
@@ -84,6 +86,13 @@ export type ClimbActionsAnalyticsSource = 'play_drawer_menu';
 export type ClimbActionsFavoriteControl = {
   isFavorited: boolean;
   /** Runs instead of the hook's own mutation. The caller tracks the toggle. */
+  onToggle: () => void;
+};
+
+/** The player's mirror toggle, for its ⋯ row while the bar's button is switched off. */
+export type ClimbActionsMirrorControl = {
+  isMirrored: boolean;
+  /** The same toggle the bar's button runs, shared-session orientation included. */
   onToggle: () => void;
 };
 
@@ -158,6 +167,17 @@ type UseClimbActionsArgs = {
    * opener, so the sheet presents above `/play`.
    */
   onOpenViewOptions?: () => void;
+  /**
+   * When provided, adds the player-only Mirror row. The play drawer passes it
+   * while its bar has no mirror button showing; nothing else mirrors a climb.
+   */
+  mirrorControl?: ClimbActionsMirrorControl;
+  /**
+   * When provided, adds the player-only "Change angle" row, which runs this. The
+   * play drawer passes its own angle-sheet opener while its bar has no angle pill
+   * showing, so the sheet presents above `/play`.
+   */
+  onOpenAngle?: () => void;
   /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** `/play`-owned native-stack close waiter; absent for every inline surface. */
@@ -195,6 +215,8 @@ export function useClimbActions({
   onReportClimb,
   onOpenQueue,
   onOpenViewOptions,
+  mirrorControl,
+  onOpenAngle,
   dismissSourceSheet,
   dismissPlayerAndWait,
   analyticsSource,
@@ -352,6 +374,36 @@ export function useClimbActions({
           // prompt sits above the dismissed sheet, so `after()` must not wait on it.
           void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
           after();
+        },
+      });
+    }
+
+    if (mirrorControl) {
+      items.push({
+        id: 'mirror',
+        title: mirrorControl.isMirrored
+          ? t('session:playView.actionBar.unmirrorAria')
+          : t('session:playView.actionBar.mirrorAria'),
+        icon: 'mirror',
+        color: accentColor,
+        run: () => {
+          mirrorControl.onToggle();
+          after();
+        },
+      });
+    }
+
+    if (onOpenAngle) {
+      items.push({
+        id: 'angle',
+        title: t('session:playView.actionBar.changeAngle'),
+        icon: 'angle',
+        color: accentColor,
+        run: () => {
+          // Close the menu first, like the queue: the angle sheet opens from the
+          // play route, under an overlay that is already on its way out.
+          after();
+          onOpenAngle();
         },
       });
     }
@@ -623,6 +675,8 @@ export function useClimbActions({
     onReportClimb,
     onOpenQueue,
     onOpenViewOptions,
+    mirrorControl,
+    onOpenAngle,
     moderationEnabled,
     dismissSourceSheet,
     dismissPlayerAndWait,

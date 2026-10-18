@@ -12,7 +12,11 @@ import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useBoardseshGradeEnabled } from '../../../providers/feature-flags-provider';
 import { climbRowPresetLabel } from '../climb-list/climb-list-settings-model';
-import { usePlayDrawerSectionControls } from '../use-play-drawer-section-controls';
+import {
+  isDefaultPlayDrawerLayout,
+  usePlayDrawerSectionsPreference,
+} from '../../../lib/play-drawer-sections-preference';
+import { isDefaultPlayerButtons, usePlayerButtonsPreference } from '../../../lib/player-buttons-preference';
 import { buildClimbsModel } from './climbs-model';
 
 export function ClimbsSettingsScreen() {
@@ -28,7 +32,12 @@ export function ClimbsSettingsScreen() {
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   const climbRowDisplay = useClimbRowDisplay();
-  const { settingsSection: climbDrawerSection } = usePlayDrawerSectionControls();
+  const sectionsPreference = usePlayDrawerSectionsPreference();
+  const playerButtons = usePlayerButtonsPreference();
+  // Until the sections' stored record lands, they read as the defaults.
+  const climbViewIsDefault =
+    isDefaultPlayerButtons(playerButtons) &&
+    (!sectionsPreference.ready || isDefaultPlayDrawerLayout(sectionsPreference));
 
   const model = useMemo(
     () =>
@@ -59,7 +68,13 @@ export function ClimbsSettingsScreen() {
             hapticSelection();
             router.push('/settings/climb-list');
           },
-          climbDrawerSection,
+          climbViewLabel: climbViewIsDefault
+            ? t('mobile.settings.climbView.valueDefault')
+            : t('mobile.settings.climbView.valueCustom'),
+          onOpenClimbView: () => {
+            hapticSelection();
+            router.push('/settings/climb-view');
+          },
         }),
         'climbs',
       ),
@@ -73,7 +88,7 @@ export function ClimbsSettingsScreen() {
       showBoardseshGrades,
       setShowBoardseshGrades,
       climbRowDisplay,
-      climbDrawerSection,
+      climbViewIsDefault,
     ],
   );
 

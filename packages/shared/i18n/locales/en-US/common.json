@@ -450,7 +450,11 @@
         },
         "sheetTitle": "View options",
         "groupTitle": "Below the climb",
-        "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling."
+        "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling.",
+        "tabs": {
+          "sections": "Below the climb",
+          "buttons": "Buttons"
+        }
       },
       "sectionLayout": {
         "moveUp": "Move {{section}} up",
@@ -492,6 +496,41 @@
         "samplePlaylistTwo": "Warm-ups",
         "playlistTagsDescription": "See which playlists each climb is in, right on the list.",
         "quickActionsDescription": "Add a ⋮ button to each climb that opens queue, tick, playlists and more. You can always long-press instead."
+      },
+      "playerButtons": {
+        "title": "Buttons",
+        "description": "Pick the buttons around Log, their order, and where they sit.",
+        "position": {
+          "label": "Position",
+          "below": "Below the board",
+          "above": "Above the board",
+          "footer": "Log and Board light always keep their places."
+        },
+        "previousNext": "Previous and next",
+        "previousNextDescription": "Swiping the board still moves between climbs.",
+        "buttons": {
+          "mirror": "Mirror",
+          "favorite": "Favorite",
+          "angle": "Angle",
+          "share": "Share",
+          "queue": "Queue"
+        },
+        "mirrorDescription": "Only on boards that mirror",
+        "angleDescription": "Only on boards with an adjustable angle",
+        "fixed": {
+          "previous": "Previous",
+          "next": "Next",
+          "log": "Log",
+          "boardLight": "Board light"
+        },
+        "footer": "Whichever of Queue and Mirror comes first gets the big button. A hidden button stays in the ⋯ menu. With every small button off, the board gets their row.",
+        "settingsFooter": "To change the order, open the ⋯ menu on a climb and pick View options.",
+        "previewLabel": "Preview, {{position}}: {{buttons}}"
+      },
+      "climbView": {
+        "title": "Climb view",
+        "valueDefault": "Default",
+        "valueCustom": "Custom"
       }
     },
     "sendRecovery": {
