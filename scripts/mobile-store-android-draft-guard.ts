@@ -43,9 +43,10 @@ export function productionDraftDecision(
       };
     }
   }
-  // Checked after the loop above, so the build's own state wins its message.
+  // Checked after the loop above, so the build's own state wins its message. A
+  // pending record with no build has nothing to protect, so it never blocks.
   for (const release of releases) {
-    if (PENDING.has(release.releaseLifecycleState)) {
+    if (PENDING.has(release.releaseLifecycleState) && release.activeArtifacts.length > 0) {
       const codes = release.activeArtifacts.map((artifact) => artifact.versionCode).join(', ');
       return {
         skip: true,

@@ -48,6 +48,11 @@ describe('production draft guard', () => {
     },
   );
 
+  it('ignores a pending record that holds no build', () => {
+    const empty = { releaseLifecycleState: 'RELEASE_LIFECYCLE_STATE_IN_REVIEW', activeArtifacts: [] };
+    expect(productionDraftDecision([empty, release(2001108, 'PUBLISHED')], VERSION + 50).skip).toBe(false);
+  });
+
   it.each(['PUBLISHED', 'NOT_APPROVED', 'DRAFT'])('still drafts a newer build beside an older %s release', (state) => {
     expect(productionDraftDecision([release(VERSION, state)], VERSION + 50).skip).toBe(false);
   });
