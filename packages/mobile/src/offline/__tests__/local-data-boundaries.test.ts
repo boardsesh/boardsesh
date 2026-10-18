@@ -65,7 +65,7 @@ describe('local-data boundaries', () => {
   });
 
   it('counts a purge on a credential signal and ignores one in a comment', () => {
-    const stray = 'subscribeToPrivacyRevocations(() => beginGlobalPurge());\n// beginGlobalPurge() in prose\n';
+    const stray = 'subscribeToCredentialChanges(() => beginGlobalPurge());\n// beginGlobalPurge() in prose\n';
     expect(countPurgeCalls(stray)).toBe(1);
   });
 });
