@@ -17,7 +17,7 @@
 
 import type { TFunction } from 'i18next';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
-import { getFilterKey } from '../../lib/filter-key';
+import { applyRecentFilterById, findCurrentRecentFilter } from '../../lib/recent-filter-selection';
 import {
   POPULARITY_BUCKETS,
   popularityTag,
@@ -107,10 +107,7 @@ export function buildClimbCapsules(props: FilterChipRowProps, t: TFunction<'clim
   // Recent ▾: shown while pinned and there are saved searches. Each one is
   // something to apply, so a tap re-applies even the checked (current) one.
   if (isPinned('recent') && recentFilters.length > 0) {
-    const currentRecentKey = getFilterKey(currentFilters, currentSearchText);
-    const current = recentFilters.find(
-      (recent) => getFilterKey(recent.filters, recent.searchText) === currentRecentKey,
-    );
+    const current = findCurrentRecentFilter(recentFilters, currentFilters, currentSearchText);
     capsules.push({
       kind: 'menu',
       key: 'recent',
@@ -120,10 +117,7 @@ export function buildClimbCapsules(props: FilterChipRowProps, t: TFunction<'clim
       optionStyle: 'commands',
       options: recentFilters.map((recent) => ({ value: recent.id, label: recent.label })),
       selected: current?.id,
-      onSelect: (id) => {
-        const recent = recentFilters.find((entry) => entry.id === id);
-        if (recent) onApplyRecent(recent.filters, recent.searchText);
-      },
+      onSelect: (id) => applyRecentFilterById(recentFilters, id, onApplyRecent),
       actions: [
         { key: 'clear', label: t('mobile.search.clearRecentSearches'), destructive: true, onPress: onClearRecent },
       ],

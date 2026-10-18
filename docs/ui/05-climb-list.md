@@ -24,8 +24,10 @@ their history content.
 ### Recent chip
 
 The Recent chip (saved searches) has a pin under Climb name in Filters, like every other chip.
-Unpinning it hides the chip and keeps the last 10 searches; pinning it again brings them back.
-The iOS 26 empty search field still lists recent searches either way.
+That row lists the last 10 searches as chips, newest first; a tap applies one, the same as picking
+it from the toolbar chip's menu, and the sheet stays open. With no searches yet, a line says they
+will show there. Unpinning hides the toolbar chip and keeps the searches; pinning it again brings
+it back. The iOS 26 empty search field still lists recent searches either way.
 
 ### Legacy Web Board Page Climb List
 

@@ -497,7 +497,7 @@
       },
       "pinChip": "Fijar {{name}} en la fila superior",
       "unpinChip": "Quitar {{name}} de la fila superior",
-      "recentDescription": "Tus últimas 10 búsquedas. Quitar el chip no las borra.",
+      "recentDescription": "Tus últimas 10 búsquedas aparecerán aquí.",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",

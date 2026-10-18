@@ -2650,6 +2650,8 @@ function ClimbListInner() {
           onSelectionChange={handleLiveFilterSelectionChange}
           onNameChange={handleSheetNameChange}
           onClearName={handleSheetClearName}
+          recentFilters={recentFilters}
+          onApplyRecent={handleApplyRecentFilter}
           lockedDimensions={lockedDimensions}
         />
       ) : null}

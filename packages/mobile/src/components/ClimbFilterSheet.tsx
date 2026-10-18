@@ -38,8 +38,11 @@ import { FilterLabelRow } from './filter-sheet/FilterLabelRow';
 import { FilterChip, FilterChipGroup } from './filter-sheet/FilterChip';
 import { FilterNameField } from './filter-sheet/FilterNameField';
 import { FilterTappableRow } from './filter-sheet/FilterTappableRow';
+import { RecentSearchRail } from './filter-sheet/RecentSearchRail';
 import { filterSheetStyles } from './filter-sheet/filter-sheet-styles';
 import { usePinnedChips } from '../lib/pinned-chips-store';
+import type { RecentFilter } from '../lib/recent-filter-store';
+import { applyRecentFilterById, findCurrentRecentFilter, type ApplyRecentFilter } from '../lib/recent-filter-selection';
 import { PINNABLE_CHIP_KINDS, type PinnableChipKind } from '../lib/pinnable-chips';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
 import {
@@ -97,6 +100,13 @@ type ClimbFilterSheetProps = {
    *  for the same reason as `onNameChange`: without it, clearing would blank the
    *  field while the committed search term quietly survived. */
   onClearName: () => void;
+  /** The saved searches, newest first, shown as chips under Recent. */
+  recentFilters: readonly RecentFilter[];
+  /**
+   * Puts a saved search in force: the same handler the toolbar's Recent menu
+   * calls. The sheet stays open and follows the new search through its props.
+   */
+  onApplyRecent: ApplyRecentFilter;
   /**
    * Tall/Wide dimensions whose chip-row lock is in force (iOS only; see
    * lib/dimension-chips.ts). Their switch shows on and is disabled, and the
@@ -145,6 +155,8 @@ export function ClimbFilterSheet({
   onSelectionChange,
   onNameChange,
   onClearName,
+  recentFilters,
+  onApplyRecent,
   lockedDimensions = NO_LOCKED_DIMENSIONS,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
@@ -750,6 +762,15 @@ export function ClimbFilterSheet({
   }, [togglePin]);
   const pinProps = (kind: PinnableChipKind) => ({ pinned: isPinned(kind), onTogglePin: pinToggles[kind] });
 
+  // The saved searches under Recent, applied the way the toolbar's Recent menu
+  // applies them. Stable while the history and handler are, so a chip only
+  // re-renders when its own current state flips.
+  const handleSelectRecent = useCallback(
+    (id: string) => applyRecentFilterById(recentFilters, id, onApplyRecent),
+    [recentFilters, onApplyRecent],
+  );
+  const currentRecentId = findCurrentRecentFilter(recentFilters, currentFilters, searchName ?? '')?.id;
+
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = selectedFilters.gradeAccuracy ?? 'off';
   // Reset greys out until there's actually something to reset.
@@ -828,14 +849,23 @@ export function ClimbFilterSheet({
                 placeholder={t('search.placeholders.climbs')}
                 accessibilityLabel={t('mobile.filter.section.name')}
               />
-              {/* The Recent chip's pin. Shown with or without saved
-                  searches, so the chip can be hidden before it ever appears. */}
+              {/* Recent: the saved searches as chips, a tap applies one. The
+                  row and its pin (the toolbar Recent chip's) show with no
+                  history too, with a line saying where searches will appear. */}
               <View style={filterSheetStyles.subsectionGap} />
               <FilterLabelRow
                 label={t('mobile.search.recentFilters')}
-                description={t('mobile.filter.recentDescription')}
+                description={recentFilters.length > 0 ? undefined : t('mobile.filter.recentDescription')}
                 {...pinProps('recent')}
               />
+              {recentFilters.length > 0 ? (
+                <RecentSearchRail
+                  recents={recentFilters}
+                  currentId={currentRecentId}
+                  onSelect={handleSelectRecent}
+                  style={filterSheetStyles.inlineRail}
+                />
+              ) : null}
             </FilterSheetSection>
 
             {/* 2 · DIFFICULTY — grade bound + grade accuracy. */}

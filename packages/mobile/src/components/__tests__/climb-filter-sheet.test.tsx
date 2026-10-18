@@ -27,6 +27,7 @@ import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CLIMB_FILTER_STATE, type ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
+import type { RecentFilter } from '../../lib/recent-filter-store';
 import { ClimbFilterSheet } from '../ClimbFilterSheet';
 import { emitSetterFilterSelection } from '../../lib/setter-filter-handoff';
 import { hapticSelection } from '../../lib/haptics';
@@ -481,6 +482,36 @@ vi.mock('../grade', () => ({
     }),
 }));
 
+// The saved-search chips, one button each, so a test can read their order and
+// which one is current, and tap one. The strip itself is tested on its own.
+vi.mock('../filter-sheet/RecentSearchRail', () => ({
+  RecentSearchRail: ({
+    recents,
+    currentId,
+    onSelect,
+  }: {
+    recents: readonly RecentFilter[];
+    currentId?: string;
+    onSelect: (id: string) => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'recent-search-rail' },
+      recents.map((recent) =>
+        createElement(
+          'button',
+          {
+            key: recent.id,
+            'data-recent': recent.id,
+            'data-current': recent.id === currentId ? 'true' : 'false',
+            onClick: () => onSelect(recent.id),
+          },
+          recent.label,
+        ),
+      ),
+    ),
+}));
+
 type FilterSheetProps = Parameters<typeof ClimbFilterSheet>[0];
 
 // The production parent echoes each committed selection back into props without
@@ -513,6 +544,8 @@ function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet
     onSelectionChange: vi.fn(),
     onNameChange: vi.fn(),
     onClearName: vi.fn(),
+    recentFilters: [],
+    onApplyRecent: vi.fn(),
     ...overrides,
   };
 
@@ -835,6 +868,8 @@ describe('ClimbFilterSheet live selections and dismissal', () => {
           onSelectionChange={onSelectionChange}
           onNameChange={vi.fn()}
           onClearName={vi.fn()}
+          recentFilters={[]}
+          onApplyRecent={vi.fn()}
         />
       </StrictMode>,
     );
@@ -2007,15 +2042,66 @@ describe('ClimbFilterSheet pins', () => {
     expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(11);
   });
 
-  // The sheet never reads search history, so the pin is there before the chip
-  // has ever appeared, and signed out too.
-  it.each([true, false])('offers the Recent pin under Climb name (signed in: %s)', (isAuthenticated) => {
-    authMock.isAuthenticated = isAuthenticated;
-    pinStore.pinnedKind = 'recent';
-    const { getByText, getByLabelText } = renderFilterSheet();
+  // With no saved searches the row stays, so the chip can be hidden before it
+  // has ever appeared: a line says where searches will show. Signed out too.
+  it.each([true, false])(
+    'offers the Recent pin under Climb name with no history (signed in: %s)',
+    (isAuthenticated) => {
+      authMock.isAuthenticated = isAuthenticated;
+      pinStore.pinnedKind = 'recent';
+      const { getByText, getByLabelText, queryByTestId } = renderFilterSheet();
 
-    expect(getByText('mobile.search.recentFilters')).toBeTruthy();
-    expect(getByText('mobile.filter.recentDescription')).toBeTruthy();
+      expect(getByText('mobile.search.recentFilters')).toBeTruthy();
+      expect(getByText('mobile.filter.recentDescription')).toBeTruthy();
+      expect(queryByTestId('recent-search-rail')).toBeNull();
+      fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
+      expect(pinStore.togglePin.mock.calls).toEqual([['recent']]);
+    },
+  );
+});
+
+describe('ClimbFilterSheet saved searches under Recent', () => {
+  const recents: RecentFilter[] = [
+    { id: 'newest', label: '"crimp"', filters: currentFilters, searchText: 'crimp', timestamp: 3 },
+    {
+      id: 'middle',
+      label: 'Beta only',
+      filters: { ...currentFilters, onlyWithBetaVideos: true },
+      searchText: '',
+      timestamp: 2,
+    },
+    { id: 'oldest', label: '"jugs"', filters: currentFilters, searchText: 'jugs', timestamp: 1 },
+  ];
+  const chipIds = (rail: HTMLElement) =>
+    [...rail.querySelectorAll('button')].map((chip) => chip.getAttribute('data-recent'));
+
+  it('shows the saved searches as chips, newest first, in place of the empty line', () => {
+    const { getByTestId, queryByText } = renderFilterSheet({ recentFilters: recents });
+    expect(chipIds(getByTestId('recent-search-rail'))).toEqual(['newest', 'middle', 'oldest']);
+    expect(queryByText('mobile.filter.recentDescription')).toBeNull();
+  });
+
+  it('marks the saved search in force as current', () => {
+    const { getByTestId } = renderFilterSheet({ recentFilters: recents, searchName: 'jugs' });
+    const current = [...getByTestId('recent-search-rail').querySelectorAll('[data-current="true"]')];
+    expect(current.map((chip) => chip.getAttribute('data-recent'))).toEqual(['oldest']);
+  });
+
+  it('applies the tapped search through the toolbar menu’s handler and stays open', () => {
+    const onApplyRecent = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText } = renderFilterSheet({ recentFilters: recents, onApplyRecent, onDismiss });
+
+    fireEvent.click(getByText('Beta only'));
+    expect(onApplyRecent.mock.calls).toEqual([[recents[1].filters, '']]);
+    fireEvent.click(getByText('"crimp"'));
+    expect(onApplyRecent.mock.calls[1]).toEqual([recents[0].filters, 'crimp']);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Recent pin on the row while the chips show', () => {
+    pinStore.pinnedKind = 'recent';
+    const { getByLabelText } = renderFilterSheet({ recentFilters: recents });
     fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
     expect(pinStore.togglePin.mock.calls).toEqual([['recent']]);
   });

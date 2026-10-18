@@ -2246,6 +2246,30 @@ describe('ClimbList with the Recent chip unpinned', () => {
     expect(mocks.getRecentFilters.mock.calls.length).toBe(historyReadsBefore);
   });
 
+  // Filters lists the same history as chips; a chip goes through the very
+  // handler the toolbar's Recent menu calls, whatever the pin says.
+  it.each([true, false])(
+    'hands Filters the saved searches and the menu’s apply handler (pinned: %s)',
+    async (pinned) => {
+      if (!pinned) {
+        await act(async () => {
+          await unpinRecent();
+        });
+      }
+      render(<ClimbList />);
+      await waitFor(() => expect(chipRowProps().recentFilters).toEqual([savedSearch]));
+      act(() => mocks.openFiltersFromChips?.());
+      await waitFor(() => expect(mocks.filterSheetProps).toBeDefined());
+
+      expect(mocks.filterSheetProps?.recentFilters).toEqual([savedSearch]);
+      expect(mocks.filterSheetProps?.onApplyRecent).toBe(chipRowProps().onApplyRecent);
+      mocks.replaceSearch.mockClear();
+      act(() => mocks.filterSheetProps?.onApplyRecent(savedSearch.filters, savedSearch.searchText));
+      expect(mocks.replaceSearch).toHaveBeenCalledTimes(1);
+      expect(mocks.replaceSearch.mock.calls[0]?.[1]).toBe('crimp');
+    },
+  );
+
   it('still saves a search finished while the chip is hidden', async () => {
     await act(async () => {
       await unpinRecent();

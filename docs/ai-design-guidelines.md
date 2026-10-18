@@ -553,8 +553,11 @@ run when a pin changes. An active filter whose capsule isn't pinned still shows 
 token under the row, so a filtered list always says why.
 
 Climbs' Recent menu (saved searches) is a pinnable kind too, first in the catalog and pinned by
-default, with its pin under Climb name in Filters. It still shows only while there are saved
-searches, and unpinning it never deletes them. Every list saved before Recent was pinnable lacks
+default, with its pin under Climb name in Filters. That Filters row also lists the saved searches as
+a horizontal strip of grade-rail chips (`RecentSearchRail`), or a one-line hint while there are
+none. A chip and the toolbar menu apply a search through the same helpers
+(`src/lib/recent-filter-selection.ts`) and the screen's one apply handler. The toolbar chip still
+shows only while there are saved searches, and unpinning it never deletes them. Every list saved before Recent was pinnable lacks
 it, so the climbs `fromStored` adds `recent` to a list that holds neither `recent` nor the
 `!recent` marker, which is what `toStored` writes when Recent is unpinned. An empty list still loads
 the full defaults, and older bundles drop both values. The Filters capsule itself is never

@@ -497,7 +497,7 @@
       },
       "pinChip": "Épingler {{name}} dans la rangée du haut",
       "unpinChip": "Retirer {{name}} de la rangée du haut",
-      "recentDescription": "Tes 10 dernières recherches. Retirer la puce ne les efface pas.",
+      "recentDescription": "Tes 10 dernières recherches s'afficheront ici.",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
