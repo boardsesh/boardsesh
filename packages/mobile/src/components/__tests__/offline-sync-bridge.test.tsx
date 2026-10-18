@@ -41,6 +41,19 @@ vi.mock('../../lib/analytics-offline-engine-state', () => ({
 // Native offline mode is baked on. The bridge still owns auth/schema lifecycle,
 // scheduler teardown, progress wiring, and notifications.
 
+// Nothing in the bridge's graph imports react-native today. The stub is here so a
+// foreground listener someone adds (the shape the removed catalogue pass had)
+// receives the test's 'active' event instead of failing to import.
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+vi.mock('react-native', () => ({
+  AppState: {
+    currentState: 'active',
+    addEventListener: (_type: string, listener: (state: string) => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
+}));
 const startSyncSchedulerStop = vi.fn();
 const startSyncSchedulerMock = vi.fn(() => startSyncSchedulerStop);
 const notifyBootstrapMetadataChangedMock = vi.hoisted(() => vi.fn());
@@ -329,6 +342,33 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
       onlineManager.setOnline(true);
     });
     expectNoCull();
+  });
+
+  it('starts no purge when the app comes back to the foreground', async () => {
+    await renderSignedIn();
+    for (const state of ['background', 'active']) {
+      await act(async () => {
+        for (const listener of appState.listeners) listener(state);
+      });
+    }
+    expectNoCull();
+  });
+
+  // A dead-handle recovery (#5410) publishes a new connection. The scheduler
+  // moves to it; nothing is purged, wiped or re-stamped.
+  it('starts no purge when a new database handle is published', async () => {
+    const { view, queryClient } = await renderSignedIn();
+    const republished = { tag: 'db-republished' };
+    providedDatabase = republished;
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenLastCalledWith(republished, 'user-1'));
+    await waitFor(() => expect(loadFollowedAuthorsMock).toHaveBeenCalledTimes(2));
+    expect((startSyncSchedulerMock.mock.calls[1] as unknown[])[0]).toBe(republished);
+    expect(beginGlobalPurgeMock).not.toHaveBeenCalled();
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+    expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
   });
 });
 

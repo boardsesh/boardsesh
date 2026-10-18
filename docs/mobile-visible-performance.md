@@ -46,7 +46,7 @@ Every edit is an exact-text replacement that asserts its anchor occurs once. Whe
 | `background-load` | A board photo layer loaded | `cacheType`, `width` |
 | `search-page` | A page of the climb list arrived | `page`, `fetchMs` as the list experienced it |
 | `offline-request` | A local-first request was answered | `lane` (`local` or `network`), `surface`, `ms` |
-| `offline-gate` | The decision whether a request may be answered locally | `gateMs`, `canServe` |
+| `offline-gate` | The decision whether a request may be answered locally | `gateMs`, `owner`, `canServe`. Since #6545 `gateMs` times the owner-stamp check where it used to time the catalogue marker check, so compare gate timings only between runs on the same side of that change |
 | `climb-press`, `play-route-mounted`, `play-carousel-mounted`, `play-board-measured` | Stages of opening the play drawer | time since `climb-press` |
 | `js-frame-gap` | The JS thread went 34 ms or more between two frame callbacks | `gapMs` |
 

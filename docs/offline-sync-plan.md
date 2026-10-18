@@ -1409,13 +1409,15 @@ Card lifecycle, since no single event covers it:
 
 ## Account lifecycle
 
-On logout or account switch:
+On sign-out (`runSignedOutCleanup`, for the explicit, forced and expiry sign-outs alike):
 
 1. Cancel any in-progress sync pull or mutation queue drain.
-2. Delete user data tables from SQLite (`boardsesh_ticks`, `playlists`, `playlist_climbs`, `user_favorites`, `user_follows`, `setter_follows`, `playlist_follows`, `user_playlist_pins`, `pending_mutations`). Board reference data stays — no need to re-copy the 150-200MB pre-warmed database.
+2. Delete the user data tables from SQLite (`USER_DATA_TABLES_TO_CLEAR` in `packages/mobile/src/db/connection.ts`: ticks, playlists, favourites, follows, `followed_author_snapshots`, `pending_mutations` and `spray_walls`), the spray walls' climbs, and the first-ascent names. Board reference data stays, so a 150-200MB download is not fetched again. The explicit sign-out deletes the downloads too.
 3. Clear the TanStack Query cache.
 4. Reset `syncEnabledBoards` and the `offlineBoardsV1` snapshots (board names must not survive into the next account on a shared device).
 5. On new login, sync pull client fetches the new user's data (small, seconds).
+
+The owner-stamp recovery in `OfflineSyncBridge` covers the account switches where no sign-out ran (a session that expired before launch, a keychain read that failed, a reinstall, a restored backup). It runs step 2 only, through `clearUserData`, and re-stamps the database for the signed-in account. It does not clear the query cache, `syncEnabledBoards` or `offlineBoardsV1`, so after such a handover the next account inherits the previous one's enabled boards and board names (#6563).
 
 **These wipes are the only local-data boundaries (#6545).** The explicit sign-out (`purgeLocalDataForSignOut`) deletes everything. The forced sign-outs and the owner-stamp recovery in `OfflineSyncBridge` run `clearUserData`, which keeps the downloaded catalogue and its checkpoints and deletes user data, the outbox, spray walls with their climbs, and the per-viewer first-ascent names. Nothing else removes downloaded data: not a privacy change, a reconnect, a token refresh or a republished database handle. The app used to run a catalogue revalidation pass on every new token. It deleted other setters' published climbs and, with them, every board checkpoint and completion marker, so each weekly token refresh re-downloaded every board page by page, although the server sends those climbs to every device. Accepted trade-off: a climb or spray wall whose audience narrows stays on a phone that already downloaded it until that board is downloaded again.
 

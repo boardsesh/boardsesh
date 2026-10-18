@@ -241,11 +241,13 @@ edit("src/lib/graphql/offline-request.ts", [
 """      localDb = getDatabaseHandle();
       if (PERF_PROBE_ENABLED && variables !== undefined) {
         const probeGateStartedAtMs = perfNow();
-        const probeCanServe = localDb ? await operation.canServeLocal(localDb, variables as never) : false;
+        const probeOwner = localDb ? await isLocalDataOwnerCurrent(localDb) : false;
+        const probeCanServe = localDb && probeOwner ? await operation.canServeLocal(localDb, variables as never) : false;
         perfProbe('offline-gate', {
           surface: String(operation.surface),
           allowed: localAllowed(),
           hasDb: localDb != null,
+          owner: probeOwner,
           canServe: probeCanServe === true,
           online: isOnline,
           gateMs: Math.round(perfNow() - probeGateStartedAtMs),

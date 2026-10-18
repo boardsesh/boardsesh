@@ -1711,20 +1711,19 @@ describe('downloaded boards answer with no catalogue marker', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  // A token refresh writes a new token under the same generation
-  // (`auth-interceptor.ts` → `storeTokensForGeneration`): same account, nothing moves.
-  it('keeps answering locally across a token refresh', async () => {
+  // What a token refresh leaves behind (`auth-interceptor.ts` writes the new token
+  // under the same generation): the same account and the same stamp, and still no
+  // marker. The token string itself is not modelled here; nothing reads it.
+  it('keeps answering locally for a stamped account with no marker', async () => {
     setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
     ownerStamp.userId = 'me';
     favoritesGate.readLocalUserId.mockResolvedValue('me');
-    expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
-      uuid: 'local-detail',
-    });
-    // The refreshed token decodes to the same account and the generation stays.
-    expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
-      uuid: 'local-detail',
-    });
+    for (let read = 0; read < 2; read += 1) {
+      expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
+        uuid: 'local-detail',
+      });
+    }
     expect(getClimbLocal).toHaveBeenCalledTimes(2);
   });
 

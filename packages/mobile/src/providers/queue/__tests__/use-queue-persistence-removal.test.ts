@@ -6,10 +6,18 @@ import type { QueueAction, QueueState } from '@boardsesh/queue';
 
 // Offline cold start: the profile has not answered, so the queue owner comes from
 // the phone, the token's account when the owner stamp names that same account.
-const owner = vi.hoisted(() => ({ stamp: null as string | null, token: undefined as string | undefined }));
+const owner = vi.hoisted(() => ({
+  getLocalUserId: vi.fn(async (): Promise<string | null> => null),
+  readLocalUserId: vi.fn(async (): Promise<string | undefined> => undefined),
+}));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
-vi.mock('@boardsesh/offline-sync', () => ({ getLocalUserId: async () => owner.stamp }));
-vi.mock('../../../lib/local-user-id', () => ({ readLocalUserId: async () => owner.token }));
+vi.mock('@boardsesh/offline-sync', () => ({ getLocalUserId: owner.getLocalUserId }));
+vi.mock('../../../lib/local-user-id', () => ({ readLocalUserId: owner.readLocalUserId }));
+
+function stampAndToken(stamp: string | null, token: string | undefined) {
+  owner.getLocalUserId.mockReset().mockResolvedValue(stamp);
+  owner.readLocalUserId.mockReset().mockResolvedValue(token);
+}
 
 const snapshots = vi.hoisted(() => ({ generation: 0, get: vi.fn(), set: vi.fn() }));
 vi.mock('../../../lib/queue-snapshot-store', () => ({
@@ -126,18 +134,18 @@ const savedReferences = {
 it('restores an offline queue when the token and the owner stamp name the same account', async () => {
   snapshots.get.mockReset();
   snapshots.set.mockReset();
-  owner.stamp = 'viewer-a';
-  owner.token = 'viewer-a';
+  stampAndToken('viewer-a', 'viewer-a');
   snapshots.get.mockResolvedValue(savedReferences);
   const dispatch = vi.fn();
   const { unmount } = renderOfflineColdStart(dispatch);
-  await waitFor(() => expect(snapshots.get).toHaveBeenCalledWith({ userId: 'viewer-a', authSessionId: '' }), {
-    timeout: 5_000,
-  });
-  expect(dispatch).toHaveBeenCalledWith({
-    type: 'UPDATE_QUEUE',
-    payload: { queue: savedReferences.queue, currentClimbQueueItem: null },
-  });
+  await waitFor(() => expect(owner.readLocalUserId).toHaveBeenCalled());
+  await waitFor(() => expect(snapshots.get).toHaveBeenCalledWith({ userId: 'viewer-a', authSessionId: '' }));
+  await waitFor(() =>
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_QUEUE',
+      payload: { queue: savedReferences.queue, currentClimbQueueItem: null },
+    }),
+  );
   unmount();
 });
 
@@ -148,14 +156,15 @@ it.each([
 ])('restores no offline queue when %s', async (_case, stamp, token) => {
   snapshots.get.mockReset();
   snapshots.set.mockReset();
-  owner.stamp = stamp;
-  owner.token = token;
+  stampAndToken(stamp, token);
   snapshots.get.mockResolvedValue(savedReferences);
   const dispatch = vi.fn();
   const { unmount } = renderOfflineColdStart(dispatch);
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, SOLO_QUEUE_SAVE_DEBOUNCE_MS + 30));
-  });
+  // The owner decision has run (both reads made), not merely not yet started.
+  await waitFor(() => expect(owner.readLocalUserId).toHaveBeenCalled());
+  await waitFor(() => expect(owner.getLocalUserId).toHaveBeenCalled());
+  await act(async () => {});
+  await act(async () => {});
   expect(snapshots.get).not.toHaveBeenCalled();
   expect(snapshots.set).not.toHaveBeenCalled();
   expect(dispatch).not.toHaveBeenCalled();
