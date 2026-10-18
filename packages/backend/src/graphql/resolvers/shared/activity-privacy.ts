@@ -7,6 +7,7 @@ import {
   ownedOrPublicClimbCondition,
   playlistClimbEntityClimbUuid,
   playlistClimbEntityPlaylistUuid,
+  publicClimbCondition,
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
@@ -448,12 +449,15 @@ export function commentPrivacyCondition(
 
 /**
  * Whether the viewer may see who acted on an entity (a notification's or feed
- * row's actor). A climb has no audience, so on a climb only the actor's
- * account privacy decides, for its author as for anyone else acting on it (a
- * vote, a proposal): a published climb is public whoever set it, but the
- * account behind it keeps its identity, and a viewer who may not see that
- * account's activity is not told who set it. Every other entity type keeps its
- * item audience.
+ * row's actor). A climb has no audience. Who set a published, listed climb is
+ * public with it, so its author is named to everyone, a private account
+ * included. Anyone else acting on a climb (a vote, a proposal), and the author
+ * of a draft or an unlisted climb, keeps their own account privacy. Every
+ * other entity type keeps its item audience.
+ *
+ * Whether the row may be shown at all is a separate test: an inbox or feed
+ * pairs this with {@link socialEntityPrivacyCondition}, which keeps a draft
+ * and an unlisted climb out for everyone but the owner.
  */
 export function entityActorVisibilityCondition(
   entityType: SQLWrapper,
@@ -461,7 +465,15 @@ export function entityActorVisibilityCondition(
   actorId: SQLWrapper,
   viewerId: string | null | undefined,
 ): SQL {
-  return sql`(CASE WHEN ${entityType}::text = 'climb' THEN ${userActivityVisibilityCondition(actorId, viewerId)}
+  const climb = alias(schema.boardClimbs, 'privacy_actor_climb');
+  const actorSetPublicClimb = exists(
+    queryBuilder
+      .select({ uuid: climb.uuid })
+      .from(climb)
+      .where(and(eq(climb.uuid, entityId), eq(climb.userId, actorId), publicClimbCondition(climb))),
+  );
+  return sql`(CASE WHEN ${entityType}::text = 'climb'
+    THEN (${actorSetPublicClimb} OR ${userActivityVisibilityCondition(actorId, viewerId)})
     ELSE ${contentVisibilityCondition(entityType, entityId, actorId, viewerId)} END)`;
 }
 

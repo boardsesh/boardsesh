@@ -13,6 +13,7 @@ import { playlistClimbs } from '../graphql/resolvers/playlists/queries/playlist-
 import { smartPlaylist } from '../graphql/resolvers/playlists/queries/smart-playlists';
 import { climbQueries } from '../graphql/resolvers/climbs/queries';
 import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
+import { resolveClimbAuthorId } from '../graphql/resolvers/climbs/climb-author';
 import {
   canReadSocialEntity,
   canSeeActorOnEntity,
@@ -35,7 +36,9 @@ import { resetAllRateLimits } from '../utils/rate-limiter';
 // since deleted their account changes nothing. A draft is its owner's alone,
 // by uuid too. An unlisted climb is out of the lists but still opens by uuid.
 // The first-ascent name is a tick rule: the earliest send this viewer may read.
-// What a private account keeps is the link from its setter name to its identity.
+// Who set a published, listed climb is public with it (#6418): its account id,
+// and the account behind its setter name, go to everyone. What a private
+// account keeps private is its activity.
 // ---------------------------------------------------------------------------
 
 const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip : describe;
@@ -272,41 +275,27 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     });
   });
 
-  it('withholds the link from the setter name to a private identity, from strangers only', async () => {
-    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+  it('names the private account behind its setter name to everyone', async () => {
+    // Who set a published, listed climb is public with it, and the setter page
+    // only exists for such climbs.
+    for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
       const profile = await setterFollowQueries.setterProfile(undefined, { input: { username: SETTER_NAME } }, ctx);
-      expect(profile?.linkedUserId ?? null).toBeNull();
+      expect(profile).toMatchObject({ linkedUserId: PRIVATE_AUTHOR, linkedUserDisplayName: `Name ${PRIVATE_AUTHOR}` });
     }
-    const followerView = await setterFollowQueries.setterProfile(
-      undefined,
-      { input: { username: SETTER_NAME } },
-      ctxFor(FOLLOWER),
-    );
-    expect(followerView?.linkedUserId).toBe(PRIVATE_AUTHOR);
   });
 
-  it("lists a private account's climbs under it to followers and the owner only, never to a stranger", async () => {
-    // The climbs are public everywhere else; this list is the link from them to
-    // the private account, so a stranger gets what an account with none gets.
-    for (const ctx of [ctxFor(STRANGER), anonymous]) {
-      expect(await setterFollowQueries.userClimbs(undefined, { input: { userId: PRIVATE_AUTHOR } }, ctx)).toEqual({
-        climbs: [],
-        totalCount: 0,
-        hasMore: false,
-      });
+  it("lists a private account's published, listed climbs under it to everyone", async () => {
+    // A stranger, an anonymous caller and a follower get the same list: the
+    // published, listed ones, its linked setter name's included, and not the
+    // one the community hid, the unlisted one or the draft.
+    for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
+      const listed = await setterFollowQueries.userClimbs(undefined, { input: { userId: PRIVATE_AUTHOR } }, ctx);
+      expect(listed.climbs.map((climb) => climb.uuid).sort()).toEqual(
+        [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY].sort(),
+      );
+      expect(listed.totalCount).toBe(3);
+      expect(listed.climbs.every((climb) => climb.is_hidden !== true)).toBe(true);
     }
-
-    // A follower gets the published, listed ones, its linked setter name's
-    // included, and not the one the community hid.
-    const forFollower = await setterFollowQueries.userClimbs(
-      undefined,
-      { input: { userId: PRIVATE_AUTHOR } },
-      ctxFor(FOLLOWER),
-    );
-    expect(forFollower.climbs.map((climb) => climb.uuid).sort()).toEqual(
-      [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY].sort(),
-    );
-    expect(forFollower.totalCount).toBe(3);
 
     // The owner also sees their unlisted climb, and the hidden one flagged.
     const forOwner = await setterFollowQueries.userClimbs(
@@ -362,10 +351,10 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await firstAscent(ctxFor(FOLLOWER))).toEqual({ name: `Name ${PRIVATE_SENDER}`, at: '2026-01-01' });
   });
 
-  it('names any private actor on a climb, its author included, only to who may see that account', async () => {
+  it("names a published climb's author to everyone, and any other private actor on it only to who may see them", async () => {
     await db.insert(schema.notifications).values([
-      // The private author published it. The climb is public; the account
-      // behind it keeps its identity, as on every other surface.
+      // The private author published it. Who set a published, listed climb is
+      // public with it, as on every other surface.
       {
         uuid: 'matrix-n-author',
         recipientId: STRANGER,
@@ -397,15 +386,21 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       }
       return visible;
     };
-    expect(await visibleTo(STRANGER)).toEqual([]);
+    // The stranger is told who set the climb, never who else acted on it.
+    expect(await visibleTo(STRANGER)).toEqual(['matrix-n-author']);
     // An approved follower of both accounts sees both.
     expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
 
     // The worker's check before it writes a notification agrees.
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(false);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
     expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, FOLLOWER)).toBe(true);
     expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
     expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
+    // An unlisted climb and a draft are not public, so their private author
+    // keeps the account rule.
+    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, STRANGER)).toBe(false);
+    expect(await canSeeActorOnEntity('climb', DRAFT, PRIVATE_AUTHOR, STRANGER)).toBe(false);
+    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, FOLLOWER)).toBe(true);
   });
 
   it("still delivers a deleted author's published climb in a notification, never their draft", async () => {
@@ -670,25 +665,21 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
         vi.restoreAllMocks();
       });
 
-      it('returns and counts the same climbs to every viewer, and the author id only to those allowed', async () => {
+      it('returns and counts the same climbs to every viewer, each with its author id', async () => {
         // The owner first: on the cached run every later viewer is served the
         // page the owner's search stored, so a viewer-dependent field in the
         // cached rows would leak here.
-        const viewers: Array<[ConnectionContext, string | null]> = [
-          [ctxFor(PRIVATE_AUTHOR), PRIVATE_AUTHOR],
-          [ctxFor(STRANGER), null],
-          [anonymous, null],
-          [ctxFor(FOLLOWER), PRIVATE_AUTHOR],
-        ];
-        for (const [ctx, expectedAuthor] of viewers) {
+        const viewers = [ctxFor(PRIVATE_AUTHOR), ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)];
+        for (const ctx of viewers) {
           const { searchClimbs } = await run<SearchAnswer>(SEARCH, { input: searchInput }, ctx);
           // Drafts, the unlisted climb and the hidden ones are out for everyone.
           expect(searchClimbs.climbs.map((climb) => climb.uuid).sort()).toEqual(SEARCHABLE);
           expect(searchClimbs.totalCount).toBe(SEARCHABLE.length);
           const authorOf = (uuid: string) => searchClimbs.climbs.find((climb) => climb.uuid === uuid)?.userId ?? null;
-          // The private account's id goes to its follower and itself only.
-          expect(authorOf(PRIVATE_PUBLISHED)).toBe(expectedAuthor);
-          expect(authorOf(TICKED_PUBLISHED)).toBe(expectedAuthor);
+          // Who set a published, listed climb is public with it, a private
+          // account's included.
+          expect(authorOf(PRIVATE_PUBLISHED)).toBe(PRIVATE_AUTHOR);
+          expect(authorOf(TICKED_PUBLISHED)).toBe(PRIVATE_AUTHOR);
           // A public account's id is public with its climbs; a deleted one has none.
           expect(authorOf(PUBLIC_SHOWN)).toBe(PUBLIC_SENDER);
           expect(authorOf(DELETED_PUBLISHED)).toBeNull();
@@ -698,24 +689,66 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       });
     });
 
-    it('names the author of a climb opened by uuid only to viewers allowed to see that account', async () => {
-      const variables = {
-        boardName: BOARD,
-        layoutId: LAYOUT_ID,
-        sizeId: 1,
-        setIds: '1',
-        angle: ANGLE,
-        climbUuid: PRIVATE_PUBLISHED,
-      };
+    const climbVariables = (climbUuid: string) => ({
+      boardName: BOARD,
+      layoutId: LAYOUT_ID,
+      sizeId: 1,
+      setIds: '1',
+      angle: ANGLE,
+      climbUuid,
+    });
+
+    it('names the author of a published, listed climb opened by uuid to everyone', async () => {
+      for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER), ctxFor(PRIVATE_AUTHOR)]) {
+        const { climb } = await run<{ climb: { uuid: string; userId: string | null } | null }>(
+          CLIMB,
+          climbVariables(PRIVATE_PUBLISHED),
+          ctx,
+        );
+        expect(climb).toEqual({ uuid: PRIVATE_PUBLISHED, userId: PRIVATE_AUTHOR });
+      }
+    });
+
+    it('names the private author of an unlisted climb opened by its link only to who may see the account', async () => {
       for (const [ctx, expectedAuthor] of [
         [ctxFor(STRANGER), null],
         [anonymous, null],
         [ctxFor(FOLLOWER), PRIVATE_AUTHOR],
         [ctxFor(PRIVATE_AUTHOR), PRIVATE_AUTHOR],
       ] as const) {
-        const { climb } = await run<{ climb: { uuid: string; userId: string | null } | null }>(CLIMB, variables, ctx);
-        expect(climb).toEqual({ uuid: PRIVATE_PUBLISHED, userId: expectedAuthor });
+        const { climb } = await run<{ climb: { uuid: string; userId: string | null } | null }>(
+          CLIMB,
+          climbVariables(UNLISTED),
+          ctx,
+        );
+        expect(climb).toEqual({ uuid: UNLISTED, userId: expectedAuthor });
       }
+    });
+  });
+
+  describe('Climb.userId on a parent the server did not read (a queued climb)', () => {
+    // A session queue carries the climb a member sent, so the parent's
+    // `userId` is the sender's claim. Only a published, listed row in
+    // `board_climbs` makes the author public.
+    it("keeps a draft's private author from a stranger, and gives the owner their own id", async () => {
+      const draft = { uuid: DRAFT, userId: PRIVATE_AUTHOR };
+      expect(await resolveClimbAuthorId(draft, ctxFor(STRANGER))).toBeNull();
+      expect(await resolveClimbAuthorId(draft, anonymous)).toBeNull();
+      expect(await resolveClimbAuthorId(draft, ctxFor(FOLLOWER))).toBe(PRIVATE_AUTHOR);
+      expect(await resolveClimbAuthorId(draft, ctxFor(PRIVATE_AUTHOR))).toBe(PRIVATE_AUTHOR);
+    });
+
+    it("takes the author from the row, so a claimed private author on someone else's climb stays hidden", async () => {
+      // PRIVATE_PUBLISHED is the private author's; the claim names another
+      // private account, which a stranger may not see.
+      const spoofed = { uuid: PRIVATE_PUBLISHED, userId: PRIVATE_SENDER };
+      expect(await resolveClimbAuthorId(spoofed, ctxFor(STRANGER))).toBeNull();
+      // Resolved in one batch with the real claim, each parent gets its own answer.
+      const [real, claimed] = await Promise.all([
+        resolveClimbAuthorId({ uuid: PRIVATE_PUBLISHED, userId: PRIVATE_AUTHOR }, ctxFor(STRANGER)),
+        resolveClimbAuthorId(spoofed, ctxFor(STRANGER)),
+      ]);
+      expect([real, claimed]).toEqual([PRIVATE_AUTHOR, null]);
     });
   });
 

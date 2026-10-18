@@ -1,19 +1,26 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { ANGLES, getRoutableBoardAngles } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 
 vi.mock('server-only', () => ({}));
+// Every raw statement the module hands `executeRows`, for the identity lookup's test.
+const executedStatements = vi.hoisted(() => [] as unknown[]);
 // A drizzle instance with no client behind it: building and rendering a query
 // never touches the connection, and the test must not need a database.
 vi.mock('@/app/lib/db/db', () => ({
   dbz: drizzle({} as never),
   dbzRead: drizzle({} as never),
-  executeRows: async () => [],
+  executeRows: async (_db: unknown, statement: unknown) => {
+    executedStatements.push(statement);
+    return [];
+  },
 }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
-const { buildSetterClimbsQuery, buildSetterProfileQuery } = await import('../server-setter-data');
+const { buildSetterClimbsQuery, buildSetterProfileQuery, fetchSetterIdentity } = await import('../server-setter-data');
 // From the module that owns it: a re-export hop only gives a grep two answers.
 const { SETTER_PAGE_SIZE } = await import('@/app/lib/seo/sitemap/setter-page-contract');
 const { buildTier2ClimbQuery } = await import('@/app/lib/seo/sitemap/climb-query');
@@ -202,5 +209,20 @@ describe('the setter page queries', () => {
 
   it('asks for one row past the page so `hasMore` needs no second count', () => {
     expect(climbs.params).toContain(SETTER_PAGE_SIZE + 1);
+  });
+});
+
+describe('the setter hero identity', () => {
+  it('names the account behind the setter name whatever its privacy: no account privacy is read', async () => {
+    // Who set a published, listed climb is public with it (#6418), and the
+    // page only exists for such climbs. So the lookup reads the linked account
+    // and nothing that decides whether its activity is visible.
+    executedStatements.length = 0;
+    await fetchSetterIdentity('marco');
+    expect(executedStatements).toHaveLength(1);
+    const sql = normalise(new PgDialect().sqlToQuery(executedStatements[0] as SQL).sql);
+    expect(sql).toContain('from user_board_mappings ubm');
+    expect(sql).not.toContain('is_private');
+    expect(sql).not.toContain('user_follows');
   });
 });

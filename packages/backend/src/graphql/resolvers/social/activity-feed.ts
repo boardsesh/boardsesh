@@ -160,8 +160,10 @@ export const activityFeedQueries = {
     const conditions = [
       eq(dbSchema.feedItems.recipientId, myUserId),
       // A row names its actor only to a viewer who may see that account's
-      // activity; on a climb, its author keeps that identity too. The climb's
-      // draft rule and spray-wall rule are in socialEntityPrivacyCondition below.
+      // activity, except the author of a published, listed climb, who is public
+      // with it: a setter name's followers see its new climbs whoever set them.
+      // The climb's draft rule and spray-wall rule are in
+      // socialEntityPrivacyCondition below.
       entityActorVisibilityCondition(
         dbSchema.feedItems.entityType,
         dbSchema.feedItems.entityId,

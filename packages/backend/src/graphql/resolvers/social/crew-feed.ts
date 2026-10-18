@@ -13,7 +13,6 @@ import { followedAuthorCondition, sprayClimbVisibilityCondition, withSerialPlan 
 import { rowsFromResult } from '@boardsesh/db/client';
 import { boardClimbs, boardClimbStats, boardDifficultyGrades, users, userProfiles } from '@boardsesh/db/schema';
 import { dbRead } from '../../../db/client';
-import { visibleActivityUserIds } from '../../../services/privacy';
 import { requireAuthenticated, applyRateLimit, resolveClimbNoMatch } from '../shared/helpers';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 import { getSessionFeed } from './session-feed';
@@ -124,18 +123,11 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
     .leftJoin(users, eq(users.id, boardClimbs.userId))
     .leftJoin(userProfiles, eq(userProfiles.userId, boardClimbs.userId))
     .where(and(inArray(boardClimbs.uuid, climbUuids), ...visibleClimbs(viewerId)));
-  // A published climb is public whoever set it, and following its setter name
-  // needs no approval, but the account behind it keeps its identity: a viewer
-  // who may not see that account's activity gets the card under the setter
-  // name, with no account id or avatar. Decided on the primary, like every
-  // other policy read.
-  const setterIdentityVisible = await visibleActivityUserIds(
-    rows.map(({ climb }) => climb.userId),
-    viewerId,
-  );
+  // A published climb is public whoever set it, and so is who set it: the card
+  // names the account behind it, a private account's included. Following a
+  // setter name needs no approval.
   return new Map(
     rows.map(({ climb, angle, difficultyName, actorDisplayName, actorAvatarUrl, ...stats }) => {
-      const showSetter = !!climb.userId && setterIdentityVisible.has(climb.userId);
       return [
         climb.uuid,
         {
@@ -143,9 +135,9 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
           type: 'new_climb',
           entityType: 'climb',
           entityId: climb.uuid,
-          actorId: showSetter ? climb.userId : null,
-          actorDisplayName: (showSetter ? actorDisplayName : null) ?? climb.setterUsername,
-          actorAvatarUrl: showSetter ? actorAvatarUrl : null,
+          actorId: climb.userId,
+          actorDisplayName: actorDisplayName ?? climb.setterUsername,
+          actorAvatarUrl,
           climbUuid: climb.uuid,
           climbName: climb.name,
           boardType: climb.boardType,

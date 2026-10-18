@@ -1,5 +1,4 @@
 import { requestPrivacyFollow, removePrivacyFollow } from '../privacy';
-import { canViewUserActivity, userActivityVisibilityCondition } from '../../../services/privacy';
 import { eq, and, count, sql, ilike, inArray } from 'drizzle-orm';
 import { isSizeScopedBoard, resolveRenderBoard } from '@boardsesh/board-config';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
@@ -35,10 +34,11 @@ const DEFAULT_ANGLE = 40;
  * against the setter, so there is no "it's your own draft" case to preserve:
  * the caller is always someone else looking at someone else's work.
  *
- * A published, listed climb is public whoever set it, so a private account's
- * climbs list here like anyone's. What a private account keeps from strangers
- * is the link from the setter name to its Boardsesh identity (`linkedUser*` in
- * `setterProfile`).
+ * A published, listed climb is public whoever set it, and so is who set it: a
+ * private account's climbs list here like anyone's, and `setterProfile` names
+ * the Boardsesh account behind the setter name (`linkedUser*`) to everyone.
+ * What a private account keeps private is its activity: ticks, sessions,
+ * comments and likes.
  */
 function visibleSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
   return [
@@ -116,7 +116,9 @@ export const setterFollowQueries = {
       isFollowedByMe = Number(followCheck?.count ?? 0) > 0;
     }
 
-    // Check for linked Boardsesh user
+    // The linked Boardsesh account. The profile resolves only from published,
+    // listed climbs (above), and who set those is public with them, so no
+    // account privacy is read here.
     const linkedUsers = await db
       .select({
         userId: dbSchema.userBoardMappings.userId,
@@ -128,12 +130,7 @@ export const setterFollowQueries = {
       .from(dbSchema.userBoardMappings)
       .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
-      .where(
-        and(
-          eq(dbSchema.userBoardMappings.boardUsername, username),
-          userActivityVisibilityCondition(dbSchema.userBoardMappings.userId, ctx.isAuthenticated ? ctx.userId : null),
-        ),
-      )
+      .where(eq(dbSchema.userBoardMappings.boardUsername, username))
       .limit(1);
 
     const linkedUser = linkedUsers[0];
@@ -560,16 +557,11 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;
 
-    // A published, listed climb is public whoever set it, everywhere else: in
-    // search, on its page, on the setter page under its setter name. What a
-    // private account keeps is the link from those climbs to itself. This list
-    // IS that link (these climbs, under this account), so a viewer who may not
-    // see the account's activity gets an empty list, the same answer an account
-    // with no climbs gives. Followers and the owner get the full list.
+    // A published, listed climb is public whoever set it, and so is who set it,
+    // so this list goes to everyone, a private account's included. Anyone but
+    // the owner gets the published, listed, unhidden climbs only (below); the
+    // owner also gets their unlisted and community-hidden ones.
     const isSelf = !!ctx.userId && ctx.userId === userId;
-    if (!isSelf && !(await canViewUserActivity(ctx.userId, userId))) {
-      return { climbs: [], totalCount: 0, hasMore: false };
-    }
 
     // 1. Look up linked Aurora usernames
     const mappings = await db
