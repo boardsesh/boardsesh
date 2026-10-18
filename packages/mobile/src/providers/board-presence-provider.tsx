@@ -52,6 +52,8 @@ import {
 } from '../lib/auth-store';
 import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use-connectivity';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
+import { fetchBoardByUuid } from '../lib/graphql/hooks/fetch-board-by-uuid';
+import { boardUuidOrNull } from '../lib/boards/board-identity';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
 export type ResolveBoardArgs = {
@@ -75,6 +77,12 @@ export type ResolveBoardConfigArgs = Omit<ResolveBoardArgs, 'serial' | 'advertis
 
 export type ResolveBoardUuidArgs = {
   boardUuid: string;
+  /**
+   * The numeric id the stored selection carries for `boardUuid`, when it has
+   * one. The resolver follows a merged-away board's uuid to the survivor's id,
+   * so a different answer means the stored uuid no longer names that board.
+   */
+  boardId?: number | null;
 };
 
 /** Stable identity needed by BLE lifetime attribution. Resolver callers must
@@ -202,6 +210,39 @@ const BoardPresenceControlsContext = createContext<BoardPresenceControlsValue | 
 const USES_SEED_TRANSPORT = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
 const readNoScreenshotBoardKey = (): null => null;
 const subscribeNoScreenshotBoardKey = (): (() => void) => () => {};
+
+/**
+ * The uuid a uuid binding may present with `resolvedBoardId`, or null.
+ *
+ * `ResolvedBoard` carries no uuid, and the resolver follows a merged-away
+ * board's uuid to the survivor's numeric id. A stored selection whose own
+ * numeric id differs from the answer is that case: its uuid is not the
+ * survivor's link. `board(uuid)` answers with the survivor's uuid only when this
+ * viewer may hold it, and that uuid is paired only once it resolves to the same
+ * numeric id. Anything else binds the numeric id alone; a numeric id never
+ * supplies a uuid.
+ */
+async function uuidForResolvedBoard(
+  resolveBoardForUuid: (args: { boardUuid: string }) => Promise<ResolvedBoard>,
+  args: ResolveBoardUuidArgs,
+  resolvedBoardId: number,
+): Promise<string | null> {
+  // The seed transport answers every uuid with one sentinel id, so there is no
+  // numeric id to compare against in a screenshot build.
+  if (USES_SEED_TRANSPORT || args.boardId == null || args.boardId === resolvedBoardId) return args.boardUuid;
+  try {
+    const canonicalUuid = boardUuidOrNull((await fetchBoardByUuid(args.boardUuid))?.uuid);
+    // Null: the survivor is not this viewer's to link, as across owners.
+    if (!canonicalUuid) return null;
+    // Unmerged: the stored numeric id was the stale half, and this uuid
+    // resolved to its own row.
+    if (canonicalUuid === args.boardUuid) return canonicalUuid;
+    const canonical = await resolveBoardForUuid({ boardUuid: canonicalUuid });
+    return canonical.boardId === resolvedBoardId ? canonicalUuid : null;
+  } catch {
+    return null;
+  }
+}
 
 export function MobileBoardPresenceProvider({ children }: { children: ReactNode }) {
   // Always-on: presence shipped GA, so the provider is never inert. `enabled` is
@@ -457,7 +498,9 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   const resolveAndBindBoardByUuid = useCallback(
     (args: ResolveBoardUuidArgs): Promise<BoardBindingIdentity | null> => {
       const activeClient = clientRef.current;
-      if (!enabledRef.current || activeClient === null || !activeClient.resolveBoardForUuid) {
+      const resolveBoardForUuid = activeClient?.resolveBoardForUuid;
+      // An empty uuid is a hidden board's geometry, never a link to bind by.
+      if (!enabledRef.current || !resolveBoardForUuid || !args.boardUuid) {
         return Promise.resolve(null);
       }
       const resolutionKey = boardUuidResolveKey(args);
@@ -481,10 +524,10 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
       bindingIntentRef.current = { kind: 'uuid', args: { ...args } };
       const newResolution = beginResolution(resolutionKey, 'uuid');
-      void activeClient
-        .resolveBoardForUuid(args)
-        .then((resolved) => {
-          settleActiveResolution(newResolution, { boardId: resolved.boardId, boardUuid: args.boardUuid });
+      void resolveBoardForUuid({ boardUuid: args.boardUuid })
+        .then(async (resolved) => {
+          const boardUuid = await uuidForResolvedBoard(resolveBoardForUuid, args, resolved.boardId);
+          settleActiveResolution(newResolution, { boardId: resolved.boardId, ...(boardUuid ? { boardUuid } : {}) });
         })
         .catch((error: unknown) => {
           settleActiveResolution(newResolution, null);

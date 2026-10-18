@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations/board-presence';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
+import { boardUuidOrNull } from '../../boards/board-identity';
 
 type BoardRecentClimbsResponse = { boardRecentClimbs: BoardPresenceClimb[] };
 
@@ -28,12 +29,20 @@ const RECENT_CLIMB_GC_TIME_MS = 10 * 60 * 1000;
 /**
  * The newest climb lit on `boardId`, or null when the board has no history (or
  * no board id — a board nobody has ever connected to has no presence row).
+ *
+ * `boardUuid` is the board's link. The numeric id alone is the no-link reading,
+ * so an Unlisted board's history opens only when its uuid rides along. It is in
+ * the key so a read made without the link is never served to one made with it.
  */
-export function useBoardRecentClimb(boardId: number | null | undefined) {
+export function useBoardRecentClimb(boardId: number | null | undefined, boardUuid?: string | null) {
+  const heldBoardUuid = boardUuidOrNull(boardUuid);
   const { data } = useQuery({
-    queryKey: ['boardRecentClimb', boardId ?? null] as const,
+    queryKey: ['boardRecentClimb', boardId ?? null, heldBoardUuid] as const,
     queryFn: () =>
-      getHttpClient().request<BoardRecentClimbsResponse>(BOARD_RECENT_CLIMBS, { boardId: boardId as number }),
+      getHttpClient().request<BoardRecentClimbsResponse>(BOARD_RECENT_CLIMBS, {
+        boardId: boardId as number,
+        ...(heldBoardUuid ? { boardUuid: heldBoardUuid } : {}),
+      }),
     select: (response) => response.boardRecentClimbs[0] ?? null,
     enabled: boardId != null,
     staleTime: RECENT_CLIMB_STALE_TIME_MS,

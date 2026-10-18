@@ -13,6 +13,7 @@ import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates';
 import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
+import { boardRowKeys } from '../../lib/boards/board-identity';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { Sheet } from '../Sheet';
@@ -50,6 +51,8 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       () => selectBleBoardCandidates(boards, serialConfigs, advertisedTypes),
       [advertisedTypes, boards, serialConfigs],
     );
+    // A hidden board found by serial has an empty uuid, so rows can't key on it.
+    const visibleBoardKeys = useMemo(() => boardRowKeys(visibleBoards), [visibleBoards]);
     const isResolving = isResolvingBoards || isResolvingPreferences;
 
     // `!isResolving` matters: the scan reports 'done' the moment the radio work
@@ -161,9 +164,9 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       if (visibleBoards.length > 0 && !isResolvingPreferences) {
         return (
           <View style={styles.list}>
-            {visibleBoards.map((board) => (
+            {visibleBoards.map((board, boardIndex) => (
               <PressableSurface
-                key={board.uuid}
+                key={visibleBoardKeys[boardIndex]}
                 accessibilityRole="button"
                 onPress={() => onSelect(board)}
                 style={[styles.row, { borderColor: systemColors.separator }]}

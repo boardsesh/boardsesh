@@ -59,6 +59,7 @@ import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
+import { boardUuidOrNull } from '../lib/boards/board-identity';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from './sheet-presentation-provider';
 
@@ -545,10 +546,16 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const activeSprayLayoutId = activeBoardConfig?.boardName === 'spray' ? activeBoardConfig.layoutId : null;
   useSprayWall(activeSprayLayoutId);
 
+  const selectedBoardUuid = boardUuidOrNull(activeBoard?.uuid);
+  const selectedBoardId = activeBoard?.boardId;
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
-    if (!activeBoard) return null;
-    return { boardUuid: activeBoard.uuid };
-  }, [activeBoard?.uuid]);
+    // A hidden board picked from a signed-out scan is geometry with an empty
+    // uuid: no link to bind by. A Bluetooth connect binds it by its serial.
+    if (!selectedBoardUuid) return null;
+    // The numeric id the stored board carries lets the binding notice a uuid that
+    // a merge has since redirected to another board.
+    return { boardUuid: selectedBoardUuid, ...(selectedBoardId != null ? { boardId: selectedBoardId } : {}) };
+  }, [selectedBoardUuid, selectedBoardId]);
 
   useEffect(() => {
     if (!boardPresenceEnabled) return;

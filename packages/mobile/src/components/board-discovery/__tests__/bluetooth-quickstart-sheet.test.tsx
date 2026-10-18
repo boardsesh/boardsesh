@@ -463,6 +463,46 @@ describe('BluetoothQuickstartSheet board rows', () => {
     expect(hasText(container, 'Garage')).toBe(true);
     expect(hasText(container, 'MILES')).toBe(false);
   });
+
+  // #6392: a signed-out scan resolves a hidden board to geometry with uuid ''.
+  // Keyed on that, two of them shared one React key and the second row could
+  // stand in for the first.
+  it('lists and picks two hidden boards found by serial, each under its own key', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const hidden = {
+      uuid: '',
+      slug: '',
+      boardId: null,
+      name: 'kilter',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      angle: 40,
+      sizeName: null,
+    };
+    const first = { ...hidden, serialNumber: '751945' };
+    const second = { ...hidden, serialNumber: '812002' };
+    boards.data = [first, second];
+    const onSelect = vi.fn();
+
+    try {
+      const { container } = render(
+        createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect }),
+      );
+
+      const rows = container.querySelectorAll('button');
+      expect(rows).toHaveLength(2);
+      (rows[1] as HTMLButtonElement).click();
+      expect(onSelect).toHaveBeenCalledWith(second);
+      const duplicateKeyWarnings = consoleError.mock.calls.filter((call) =>
+        call.some((part) => typeof part === 'string' && part.includes('same key')),
+      );
+      expect(duplicateKeyWarnings).toEqual([]);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });
 
 // #5654: every stop read "Turn on Bluetooth to scan", including a climber whose

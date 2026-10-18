@@ -532,6 +532,33 @@ describe('DrawerHostProvider board presence binding', () => {
     expect(presence.resolveAndBindBoardByUuid).not.toHaveBeenCalled();
   });
 
+  // #6392: a hidden board picked from a signed-out scan is geometry with an
+  // empty uuid. That is no link, so nothing may be resolved with it.
+  it('binds no presence for a hidden board kept as geometry', async () => {
+    presence.enabled = true;
+    activeBoard.stored = { ...activeBoard.defaultStored, uuid: '', slug: '', name: 'kilter', boardId: null };
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    await waitFor(() => {
+      expect(presence.resetPresence).toHaveBeenCalledTimes(1);
+    });
+    expect(presence.resolveAndBindBoardByUuid).not.toHaveBeenCalled();
+  });
+
+  it("passes the stored board's numeric id so the binding can spot a merged-away uuid", async () => {
+    presence.enabled = true;
+    activeBoard.stored = { ...activeBoard.defaultStored, boardId: 7 };
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    await waitFor(() => {
+      expect(presence.resolveAndBindBoardByUuid).toHaveBeenCalledWith({ boardUuid: 'board-1', boardId: 7 });
+    });
+  });
+
   it('resets board presence when the selected active board is cleared', async () => {
     presence.enabled = true;
     const hosts: Array<HostValue> = [];

@@ -145,7 +145,7 @@ const GymWallRow = memo(function GymWallRow({
   // with history reads at a glance — you recognise the wall you were on and what
   // is on it now — where the generic glyph this replaces was the same picture on
   // every row. A board nobody has lit yet still renders its own art, just bare.
-  const recentClimb = useBoardRecentClimb(board.boardId);
+  const recentClimb = useBoardRecentClimb(board.boardId, board.uuid);
   const thumbnailBoardConfig = useMemo(
     () => ({
       boardName: board.boardType,

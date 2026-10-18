@@ -206,6 +206,27 @@ describe('useActiveBoardFollowHeal', () => {
     expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
   });
 
+  // #6392: a hidden board picked from a signed-out scan is geometry with an
+  // empty uuid. Signing in keeps it bound, and must not turn it into a board
+  // read or a follow for ''.
+  it('sends nothing for a hidden board kept through sign-in', async () => {
+    const hiddenGeometry = makeBoard({ uuid: '', ownerId: '', name: 'kilter', gymUuid: null, boardId: null });
+    state.activeBoard = hiddenGeometry;
+    state.isAuthenticated = false;
+    spies.fetchBoardByUuid.mockImplementation(() => Promise.resolve(hiddenGeometry));
+    const { rerender } = renderHook(() => useActiveBoardFollowHeal());
+    await settle();
+
+    state.isAuthenticated = true;
+    rerender();
+    await settle();
+    await settle();
+
+    expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
+    expect(spies.followBoard).not.toHaveBeenCalled();
+    expect(state.storage.has(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toBe(false);
+  });
+
   it('does nothing while signed out', async () => {
     state.isAuthenticated = false;
     renderHook(() => useActiveBoardFollowHeal());

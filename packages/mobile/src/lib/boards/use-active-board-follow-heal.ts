@@ -45,6 +45,7 @@ import {
   captureActiveBoardSelfHealValidationEpoch,
   isActiveBoardSelfHealValidationEpochCurrent,
 } from './active-board-self-heal-validation-cache';
+import { boardUuidOrNull } from './board-identity';
 
 /** `${userId}:${boardUuid}` for every heal that reached a definitive answer. */
 export const ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY = 'activeBoardFollowHealed';
@@ -109,7 +110,9 @@ export function useActiveBoardFollowHeal(): void {
   // the effect on every render; `use-adopt-found-board.ts` does the same.
   const followBoardAsync = followBoard.mutateAsync;
 
-  const boardUuid = activeBoard?.uuid ?? null;
+  // A hidden board picked from a signed-out scan is geometry with an empty uuid.
+  // It is no board to follow, and asking the server about '' would only fail.
+  const boardUuid = boardUuidOrNull(activeBoard?.uuid);
   // The stored snapshot answers the common case with no request: your own board,
   // or one you followed when you picked it. `ownerId` compared directly, not
   // through `boardIsOwnedBy`, whose `isOwned` fallback for a snapshot with no
