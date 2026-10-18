@@ -39,7 +39,6 @@ import {
 import { useDetentDragHaptic } from './sheet-detent-haptic';
 import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
 import {
-  dismissManagedSheetAndWait,
   useManagedSheet,
   type DismissAndWaitResult,
   type ManagedSheetHandle,
@@ -112,11 +111,22 @@ type SheetProps = {
  * closed before presenting it.
  *
  * The ref is typed as the native methods so consumers keep their
- * `useRef<BottomSheet>`, but the object behind it is the coordinator's managed
- * handle (see `useImperativeHandle` below), which can wait.
+ * `useRef<BottomSheet>`, and the object behind it is normally the
+ * coordinator's managed handle (see `useImperativeHandle` below), which can
+ * wait. Anything else (a plain native ref) is closed and reported dismissed
+ * at once, since there is no settle signal to wait for.
  */
 export function dismissSheetAndWait(sheet: BottomSheetMethods | null | undefined): Promise<DismissAndWaitResult> {
-  return dismissManagedSheetAndWait(sheet as unknown as ManagedSheetHandle | null | undefined);
+  if (!sheet) return Promise.resolve({ status: 'dismissed' });
+  if (canWaitForDismissal(sheet)) return sheet.dismissAndWait();
+  sheet.close();
+  return Promise.resolve({ status: 'dismissed' });
+}
+
+function canWaitForDismissal(
+  sheet: BottomSheetMethods,
+): sheet is BottomSheetMethods & Pick<ManagedSheetHandle, 'dismissAndWait'> {
+  return 'dismissAndWait' in sheet && typeof sheet.dismissAndWait === 'function';
 }
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(

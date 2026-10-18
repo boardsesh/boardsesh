@@ -361,6 +361,24 @@ Rule: any imperative native call that could be OTA-ahead of the native binary mu
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
 instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.11.patch`.
 
+### Invariant: an OTA can't claim a manifest flag the binary lacks
+
+The same gap runs the other way for facts compiled into the binary: Android manifest flags,
+Info.plist keys, entitlements. An OTA lands on binaries built before and after such a change, and
+nothing in the JS bundle says which one it is running on. JS that depends on one reads the
+installed binary through `expo-application` (`nativeBuildVersion` is the Android versionCode,
+`nativeApplicationVersion` the marketing version; no OTA can move either) against a floor that
+names the first build carrying it, and treats an unreadable value as "not there".
+
+Example: `packages/mobile/src/lib/ble/android-scan-location-gate.ts` treats `BLUETOOTH_SCAN`'s
+`neverForLocation` flag as present only from versionCode 2000761
+(`FIRST_ANDROID_BUILD_WITH_NEVER_FOR_LOCATION`, the first release build containing db21745fe7).
+Older installs keep the "allow Location to see boards" hint they still need. Dev-client APKs take
+the workflow run number as their versionCode, so they read as older: the safe direction. A native
+rebuild from a release anchor older than the flag would read as newer, which is one more reason
+backports to an older fingerprint ship as OTAs only. `src/lib/spray/camera-capability.ts` does the
+same for the camera permission strings with a marketing-version floor.
+
 ## Publishing a production update
 
 **Automatic.** A mobile-affecting push to `main` is detected by

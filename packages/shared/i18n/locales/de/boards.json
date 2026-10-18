@@ -105,7 +105,7 @@
       "openSettings": "Einstellungen öffnen",
       "notNow": "Nicht jetzt",
       "nearbyEmptyMoonboard": "Keine MoonBoards im Umkreis von 20 km",
-      "nearbyEmptyType": "Keine {{board}} Boards im Umkreis von 20 km"
+      "nearbyEmptyType": "Keine {{board}}-Boards im Umkreis von 20 km"
     },
     "firstConnect": {
       "card": {
@@ -151,7 +151,7 @@
       "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoards in deiner Nähe",
-      "nearbyTitleType": "{{board}} Boards in deiner Nähe",
+      "nearbyTitleType": "{{board}}-Boards in deiner Nähe",
       "nearbyShowAll": "Alle zeigen"
     },
     "create": {

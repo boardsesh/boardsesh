@@ -170,7 +170,7 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-import { Sheet } from '../Sheet';
+import { Sheet, dismissSheetAndWait } from '../Sheet';
 
 beforeEach(() => {
   captures.onChange = null;
@@ -508,5 +508,42 @@ describe('Sheet', () => {
     captures.onChange?.(-1);
     captures.onChange?.(0);
     expect(hapticSelection).toHaveBeenCalledTimes(2);
+  });
+});
+
+// A sheet that hands off to a route or a system prompt waits for the slide-away
+// first. Behind `Sheet`'s ref is the coordinator's handle, which can wait; a
+// plain native ref can't, so it is closed and counts as dismissed at once.
+describe('dismissSheetAndWait', () => {
+  function nativeMethods() {
+    return {
+      snapToIndex: vi.fn(),
+      snapToPosition: vi.fn(),
+      expand: vi.fn(),
+      collapse: vi.fn(),
+      close: vi.fn(),
+      forceClose: vi.fn(),
+      present: vi.fn(),
+      dismiss: vi.fn(),
+    };
+  }
+
+  it("waits on the coordinator's handle", async () => {
+    const handle = { ...nativeMethods(), dismissAndWait: vi.fn(async () => ({ status: 'aborted' as const })) };
+
+    await expect(dismissSheetAndWait(handle)).resolves.toEqual({ status: 'aborted' });
+    expect(handle.dismissAndWait).toHaveBeenCalledTimes(1);
+    expect(handle.close).not.toHaveBeenCalled();
+  });
+
+  it('closes a plain native ref and reports it dismissed', async () => {
+    const plain = nativeMethods();
+
+    await expect(dismissSheetAndWait(plain)).resolves.toEqual({ status: 'dismissed' });
+    expect(plain.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a sheet that was never mounted as dismissed', async () => {
+    await expect(dismissSheetAndWait(null)).resolves.toEqual({ status: 'dismissed' });
   });
 });

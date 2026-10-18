@@ -8,7 +8,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
 import {
   useMyBoards,
   usePopularBoardConfigs,
@@ -73,6 +72,7 @@ import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
 import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-board-picker-tracking';
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
 import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
+import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
 import { openAppSettings } from '../../src/lib/open-app-settings';
 import { spacing } from '../../src/theme/tokens';
 
@@ -274,9 +274,17 @@ export default function BoardSelection() {
   const {
     data: nearby,
     isFetching: isNearbyFetching,
+    isPlaceholderData: isNearbyPlaceholder,
+    fetchStatus: nearbyFetchStatus,
     isError: isNearbyError,
     refetch: refetchNearby,
   } = useNearbyBoards(location.coords, 20, undefined, undefined, nearbyBoardTypes);
+  // The list on screen can be the previous search's answer (`keepPreviousData`),
+  // held while a newly narrowed one loads. It says nothing about the new type
+  // until that lands, so it counts as still searching: otherwise the list would
+  // flash "No MoonBoards within 20 km" first. Not while paused offline, which
+  // would spin for good.
+  const isNearbySearching = isNearbyFetching || (isNearbyPlaceholder && nearbyFetchStatus !== 'paused');
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
@@ -413,11 +421,7 @@ export default function BoardSelection() {
   // Narrowed to one type, the title says which and Show all goes back to every
   // board, so a climber in a gym full of Kilters isn't left looking at "Near
   // you" with only MoonBoards in it.
-  const nearbyTitle = !nearbyBoardType
-    ? t('mobile.discovery.nearbyTitle')
-    : nearbyBoardType === 'moonboard'
-      ? t('mobile.discovery.nearbyTitleMoonboard')
-      : t('mobile.discovery.nearbyTitleType', { board: formatBoardDisplayName(nearbyBoardType) });
+  const nearbyTitle = nearbyListTitle(t, nearbyBoardType);
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section
@@ -878,7 +882,7 @@ export default function BoardSelection() {
     locationStatus: location.status,
     // Any request in flight, not only the first load: a retry after an error
     // keeps the query in `error` while it runs, and should read as searching.
-    nearbyLoading: isNearbyFetching,
+    nearbyLoading: isNearbySearching,
     nearbyFailed: isNearbyError,
     nearbyCount: nearbyItems.length,
   });

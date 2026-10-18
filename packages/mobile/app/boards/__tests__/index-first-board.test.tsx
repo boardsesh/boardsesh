@@ -82,6 +82,8 @@ const state = vi.hoisted(() => ({
   myBoards: [] as unknown[],
   nearbyBoards: [] as unknown[],
   nearbyLoading: false,
+  // The query is showing the previous search's answer while a new one loads.
+  nearbyPlaceholder: false,
   nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
 }));
@@ -145,6 +147,8 @@ function nearbyBoardsResult() {
     data: { boards: state.nearbyBoards },
     isLoading: state.nearbyLoading,
     isFetching: state.nearbyLoading,
+    isPlaceholderData: state.nearbyPlaceholder,
+    fetchStatus: state.nearbyLoading ? 'fetching' : 'idle',
     isError: state.nearbyError,
     refetch: refetchNearbyMock,
   };
@@ -324,6 +328,7 @@ beforeEach(() => {
   state.myBoards = [];
   state.nearbyBoards = [];
   state.nearbyLoading = false;
+  state.nearbyPlaceholder = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
   refreshLocationMock.mockResolvedValue(false);
@@ -936,6 +941,46 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     fireEvent.click(screen.getByText('mobile.discovery.nearbyShowAll'));
     expect(nearbyArgs.last[4]).toBeUndefined();
     expect(screen.getByText('mobile.firstBoard.nearbyEmpty')).toBeTruthy();
+  });
+
+  // Until the narrowed search answers, the list holds the previous, unfiltered
+  // one. Read through the filter it holds no MoonBoard, which must not flash
+  // "No MoonBoards within 20 km" before the real answer lands.
+  it('keeps searching, not empty, while the narrowed search has not answered', () => {
+    const { rerender } = render(createElement(BoardSelection));
+    openScan();
+    act(() => {
+      quickstart().onFindAtGym('moonboard');
+    });
+    state.locationStatus = 'granted';
+    state.nearbyBoards = [gymWall];
+    state.nearbyPlaceholder = true;
+    rerender(createElement(BoardSelection));
+    expect(choice().gymState).toBe('searching');
+
+    state.nearbyPlaceholder = false;
+    state.nearbyBoards = [];
+    rerender(createElement(BoardSelection));
+    expect(choice().gymState).toBe('none_nearby');
+  });
+
+  it('shows no empty line in the ordinary picker before the narrowed search answers', () => {
+    state.params = {};
+    state.myBoards = [gymWall];
+    const { rerender } = render(createElement(BoardSelection));
+    act(() => {
+      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
+    });
+    act(() => {
+      quickstart().onFindAtGym('moonboard');
+    });
+    state.locationStatus = 'granted';
+    state.nearbyBoards = [gymWall];
+    state.nearbyPlaceholder = true;
+    rerender(createElement(BoardSelection));
+
+    expect(screen.queryByText('mobile.firstBoard.nearbyEmptyMoonboard')).toBeNull();
+    expect(modeCards.byLabel.get('mobile.discovery.findNearby')?.state).toBe('loading');
   });
 
   it('clears the type when the climber taps Find nearby', () => {

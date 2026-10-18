@@ -5,7 +5,7 @@ import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { canOpenAppSettings } from '../../lib/open-app-settings';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { nearbyEmptyLine } from './nearby-board-type-copy';
 import type { FirstBoardGymState } from '../../lib/boards/first-board-gym-state';
 import { spacing } from '../../theme/tokens';
 
@@ -63,13 +63,7 @@ export function NearbySearchStatus({
       // full of other boards: say which type there's none of, and offer the rest.
       return (
         <View style={styles.panel} accessibilityLiveRegion="polite">
-          <Text variant="subheadline">
-            {!boardType
-              ? t('mobile.firstBoard.nearbyEmpty')
-              : boardType === 'moonboard'
-                ? t('mobile.firstBoard.nearbyEmptyMoonboard')
-                : t('mobile.firstBoard.nearbyEmptyType', { board: formatBoardDisplayName(boardType) })}
-          </Text>
+          <Text variant="subheadline">{nearbyEmptyLine(t, boardType)}</Text>
           {boardType && onShowAll ? (
             <View style={styles.actions}>
               <Button title={t('mobile.discovery.nearbyShowAll')} variant="tonal" size="small" onPress={onShowAll} />
