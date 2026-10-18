@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   DEFAULT_PLAY_DRAWER_SECTIONS,
   type PlayDrawerSectionsVisibility,
 } from '../../../lib/play-drawer-sections-preference';
@@ -20,6 +21,7 @@ const NO_SECTIONS: PlayDrawerSectionsVisibility = {
 };
 const ELIGIBLE_INPUT = {
   sections: DEFAULT_PLAY_DRAWER_SECTIONS,
+  order: DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   isAuthenticated: true,
   boardseshGradeEnabled: true,
   description: 'Start with your left hand on the sidepull.',
@@ -37,6 +39,62 @@ describe('visiblePlayDrawerSections', () => {
       'community',
       'similarClimbs',
     ]);
+  });
+
+  it("walks the climber's order", () => {
+    const order = [
+      'similarClimbs',
+      'community',
+      'logbook',
+      'climberLogs',
+      'setterNotes',
+      'betaVideos',
+      'boardseshGrade',
+    ] as const;
+    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, order })).toEqual(order);
+  });
+
+  it('keeps a hidden section in its place, so showing it again puts it back', () => {
+    const order = [
+      'community',
+      'logbook',
+      'similarClimbs',
+      'climberLogs',
+      'setterNotes',
+      'betaVideos',
+      'boardseshGrade',
+    ] as const;
+    const hidden = { ...DEFAULT_PLAY_DRAWER_SECTIONS, logbook: false };
+    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, order, sections: hidden }).slice(0, 2)).toEqual([
+      'community',
+      'similarClimbs',
+    ]);
+    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, order }).slice(0, 3)).toEqual([
+      'community',
+      'logbook',
+      'similarClimbs',
+    ]);
+  });
+
+  it('applies eligibility in any order', () => {
+    const order = [
+      'setterNotes',
+      'climberLogs',
+      'boardseshGrade',
+      'logbook',
+      'betaVideos',
+      'community',
+      'similarClimbs',
+    ] as const;
+    expect(
+      visiblePlayDrawerSections({
+        ...ELIGIBLE_INPUT,
+        order,
+        isAuthenticated: false,
+        description: 'No match',
+        boardseshGradeEnabled: false,
+      })[0],
+    ).toBe('logbook');
   });
 
   it('moves the first preview to the first eligible section after Logbook is hidden', () => {

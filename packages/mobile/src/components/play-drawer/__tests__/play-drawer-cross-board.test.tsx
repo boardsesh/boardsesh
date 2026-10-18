@@ -90,24 +90,21 @@ const drawerSections = vi.hoisted(() => ({
   },
   ready: true,
 }));
-vi.mock('../../../lib/play-drawer-sections-preference', () => ({
-  DEFAULT_PLAY_DRAWER_SECTIONS: drawerSections.defaults,
-  PLAY_DRAWER_SECTION_IDS: [
-    'logbook',
-    'climberLogs',
-    'setterNotes',
-    'betaVideos',
-    'boardseshGrade',
-    'community',
-    'similarClimbs',
-  ],
-  usePlayDrawerSectionsPreference: () => ({
-    sections: drawerSections.sections,
-    ready: drawerSections.ready,
-    setSection: vi.fn(),
-    setAll: vi.fn(),
-  }),
-}));
+vi.mock('../../../lib/play-drawer-sections-preference', () => {
+  const order = ['logbook', 'climberLogs', 'setterNotes', 'betaVideos', 'boardseshGrade', 'community', 'similarClimbs'];
+  return {
+    DEFAULT_PLAY_DRAWER_SECTIONS: drawerSections.defaults,
+    DEFAULT_PLAY_DRAWER_SECTION_ORDER: order,
+    PLAY_DRAWER_SECTION_IDS: order,
+    usePlayDrawerSectionsPreference: () => ({
+      sections: drawerSections.sections,
+      order,
+      ready: drawerSections.ready,
+      setSection: vi.fn(),
+      setAll: vi.fn(),
+    }),
+  };
+});
 vi.mock('../use-deliberate-scroll-gesture', () => ({
   useDeliberateScrollGesture: (options: Props) => {
     recorded.scrollGate.push(options);

@@ -218,6 +218,7 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 import { DeferredSections } from '../DeferredSections';
 import {
   DEFAULT_PLAY_DRAWER_SECTIONS,
+  type BelowFoldSectionId,
   type PlayDrawerSectionsVisibility,
 } from '../../../lib/play-drawer-sections-preference';
 
@@ -233,6 +234,7 @@ type RenderOptions = {
   enabled?: boolean;
   contentEnabled?: boolean;
   sections?: PlayDrawerSectionsVisibility;
+  order?: readonly BelowFoldSectionId[];
   onFirstSectionHeaderLayout?: (height: number) => void;
   description?: string | null;
   climbOverrides?: Partial<Climb>;
@@ -257,6 +259,7 @@ function renderSections(options: RenderOptions = {}) {
       enabled={options.enabled ?? true}
       contentEnabled={options.contentEnabled ?? false}
       sections={options.sections}
+      order={options.order}
       onFirstSectionHeaderLayout={options.onFirstSectionHeaderLayout}
       onSimilarClimbPress={vi.fn()}
       onOpenFullLogbook={options.onOpenFullLogbook}
@@ -828,5 +831,59 @@ describe('DeferredSections visibility preferences', () => {
       description: 'No match',
     });
     expect(container.childElementCount).toBe(0);
+  });
+
+  describe("in the climber's order", () => {
+    const SIMILAR_FIRST: BelowFoldSectionId[] = [
+      'similarClimbs',
+      'community',
+      'boardseshGrade',
+      'betaVideos',
+      'setterNotes',
+      'climberLogs',
+      'logbook',
+    ];
+    const sectionTitles = (container: HTMLElement) =>
+      [...container.querySelectorAll('section[data-title]')].map((node) => node.getAttribute('data-title'));
+
+    it('draws the sections in that order', () => {
+      deferred.ready = true;
+      const { container } = renderSections({
+        order: SIMILAR_FIRST,
+        contentEnabled: true,
+        description: 'Left hand first.',
+      });
+      expect(sectionTitles(container)).toEqual([
+        'mobile.similarClimbs.title',
+        'mobile.community.title',
+        'boardseshGrade.title',
+        'mobile.betaVideos.title',
+        'mobile.setterNotes.title',
+        'mobile.climberLogs.title',
+        'mobile.logbook.title',
+      ]);
+    });
+
+    it('mounts only the first header at the fold; Logbook waits like the rest when it is not first', () => {
+      const onFirstSectionHeaderLayout = vi.fn();
+      const { container } = renderSections({ order: SIMILAR_FIRST, onFirstSectionHeaderLayout });
+      expect(sectionTitles(container)).toEqual(['mobile.similarClimbs.title']);
+      expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
+      expect(screen.queryByTestId('similar-climbs')).toBeNull();
+      expect(screen.queryByTestId('logbook')).toBeNull();
+    });
+
+    it('starts no query for a hidden section wherever it sits', () => {
+      deferred.ready = true;
+      renderSections({
+        order: SIMILAR_FIRST,
+        sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, logbook: false, climberLogs: false, boardseshGrade: false },
+        contentEnabled: true,
+      });
+      expect(logbook.calls.every(({ boardName }) => boardName === null)).toBe(true);
+      expect(boardseshGradeQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+      expect(everyoneQuery.calls).toHaveLength(0);
+      expect(screen.getByTestId('similar-climbs')).not.toBeNull();
+    });
   });
 });

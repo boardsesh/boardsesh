@@ -80,6 +80,7 @@ import {
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
 import { useDeliberateScrollGesture } from './use-deliberate-scroll-gesture';
 import {
+  DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   DEFAULT_PLAY_DRAWER_SECTIONS,
   usePlayDrawerSectionsPreference,
 } from '../../lib/play-drawer-sections-preference';
@@ -384,6 +385,7 @@ export function PlayCore({
   // account included, keeps their stored choices: they can reach both ⋯ → View
   // options and Settings → Below the climb, and those write exactly that store.
   const sections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
+  const sectionOrder = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTION_ORDER : storedSectionsPreference.order;
   const sectionsReady = isAnonymous || storedSectionsPreference.ready;
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
@@ -404,12 +406,13 @@ export function PlayCore({
     () =>
       visiblePlayDrawerSections({
         sections,
+        order: sectionOrder,
         isAuthenticated,
         boardseshGradeEnabled: drawerGradeSectionEnabled,
         description: displayedClimb?.description,
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
-    [sections, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
+    [sections, sectionOrder, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
@@ -1360,7 +1363,7 @@ export function PlayCore({
           pixelRatio: PixelRatio.get(),
           locale: i18n.language,
           insets,
-          preferencesFingerprint: JSON.stringify(sections),
+          preferencesFingerprint: JSON.stringify([sections, sectionOrder]),
           firstSectionId: hasVisibleSections ? (firstSectionId ?? null) : null,
           presentation: isPane ? 'pane' : 'sheet',
           paneInset: paneTopInset ? insets.top : 0,
@@ -1871,6 +1874,7 @@ export function PlayCore({
                         enabled={isSheetOpen}
                         contentEnabled={belowFoldContentRequested}
                         sections={sections}
+                        order={sectionOrder}
                         onSimilarClimbPress={handleSimilarClimbPress}
                         onFirstSectionHeaderLayout={onSectionHeaderMeasured}
                         onFirstSectionLayout={handleFirstSectionLayout}

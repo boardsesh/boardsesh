@@ -1,8 +1,21 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
 import { addErrorBreadcrumb } from './error-reporting';
+import {
+  isSameSectionOrder,
+  sanitiseSectionOrder,
+  withSectionMoved,
+  type SectionLayoutSpec,
+  type SectionMoveDirection,
+} from './section-layout';
 
-export const PLAY_DRAWER_SECTION_IDS = [
+/**
+ * Sections that describe the board and sit directly under it: a switch each,
+ * never reordered and never counted for scrolling. None yet.
+ */
+export const BOARD_SECTION_IDS = [] as const;
+/** The sections below the fold. Only these take part in the climber's order. */
+export const BELOW_FOLD_SECTION_IDS = [
   'logbook',
   'climberLogs',
   'setterNotes',
@@ -11,6 +24,9 @@ export const PLAY_DRAWER_SECTION_IDS = [
   'community',
   'similarClimbs',
 ] as const;
+/** Every section with a switch. */
+export const PLAY_DRAWER_SECTION_IDS = [...BOARD_SECTION_IDS, ...BELOW_FOLD_SECTION_IDS] as const;
+export type BelowFoldSectionId = (typeof BELOW_FOLD_SECTION_IDS)[number];
 export type PlayDrawerSectionId = (typeof PLAY_DRAWER_SECTION_IDS)[number];
 export type PlayDrawerSectionsVisibility = Readonly<Record<PlayDrawerSectionId, boolean>>;
 
@@ -23,9 +39,29 @@ export const DEFAULT_PLAY_DRAWER_SECTIONS: PlayDrawerSectionsVisibility = Object
   community: true,
   similarClimbs: true,
 });
+export const DEFAULT_PLAY_DRAWER_SECTION_ORDER: readonly BelowFoldSectionId[] = BELOW_FOLD_SECTION_IDS;
+export const BELOW_FOLD_SECTION_LAYOUT: SectionLayoutSpec<BelowFoldSectionId> = {
+  ids: BELOW_FOLD_SECTION_IDS,
+  defaults: { order: DEFAULT_PLAY_DRAWER_SECTION_ORDER, visible: DEFAULT_PLAY_DRAWER_SECTIONS },
+};
+
+// One AsyncStorage record: `{ version: 1, sections, order }`. `order` came after
+// `sections` under the same version, so a bundle from before it still reads the
+// switches. Such a bundle writes the record without `order`, which puts that
+// climber's order back to the default; their switches survive. Fields and
+// section ids this bundle does not know are written back as they were read, so
+// a newer bundle's additions survive this one's writes.
 const STORAGE_KEY = 'playDrawerSections';
-type Snapshot = { sections: PlayDrawerSectionsVisibility; ready: boolean };
-const SERVER_SNAPSHOT: Snapshot = { sections: DEFAULT_PLAY_DRAWER_SECTIONS, ready: false };
+type Snapshot = {
+  sections: PlayDrawerSectionsVisibility;
+  order: readonly BelowFoldSectionId[];
+  ready: boolean;
+};
+const SERVER_SNAPSHOT: Snapshot = {
+  sections: DEFAULT_PLAY_DRAWER_SECTIONS,
+  order: DEFAULT_PLAY_DRAWER_SECTION_ORDER,
+  ready: false,
+};
 let snapshot = SERVER_SNAPSHOT;
 let loadedSuccessfully = false;
 let loadPromise: Promise<void> | null = null;
@@ -33,19 +69,29 @@ let writeQueue = Promise.resolve();
 const listeners = new Set<() => void>();
 // A read retry can fill untouched fields without replacing choices made since launch.
 const changedSections = new Set<PlayDrawerSectionId>();
+let changedOrder = false;
+let lastReadRecord: Record<string, unknown> = {};
 
-function publish(sections: PlayDrawerSectionsVisibility, ready: boolean): void {
-  snapshot = { sections, ready };
+function publish({ sections, order }: Pick<Snapshot, 'sections' | 'order'>, ready: boolean): void {
+  snapshot = { sections, order, ready };
   for (const listener of listeners) listener();
 }
 
-function storedSections(stored: unknown): PlayDrawerSectionsVisibility {
+function storedRecord(stored: unknown): Record<string, unknown> | null {
+  if (typeof stored !== 'object' || stored === null || !('version' in stored) || stored.version !== 1) return null;
+  return stored as Record<string, unknown>;
+}
+
+function storedSectionsMap(record: Record<string, unknown> | null): Record<string, unknown> {
+  const stored = record?.sections;
+  return typeof stored === 'object' && stored !== null ? (stored as Record<string, unknown>) : {};
+}
+
+function storedSections(record: Record<string, unknown> | null): PlayDrawerSectionsVisibility {
   const sections = { ...DEFAULT_PLAY_DRAWER_SECTIONS };
-  if (typeof stored !== 'object' || stored === null || !('version' in stored) || stored.version !== 1) return sections;
-  if (!('sections' in stored) || typeof stored.sections !== 'object' || stored.sections === null) return sections;
-  const storedVisibility = stored.sections;
+  const storedVisibility = storedSectionsMap(record);
   for (const sectionId of PLAY_DRAWER_SECTION_IDS) {
-    const enabled = (storedVisibility as Record<string, unknown>)[sectionId];
+    const enabled = storedVisibility[sectionId];
     if (typeof enabled === 'boolean') sections[sectionId] = enabled;
   }
   return sections;
@@ -56,15 +102,18 @@ export function ensurePlayDrawerSectionsLoaded(): Promise<void> {
   if (loadPromise) return loadPromise;
   loadPromise = getPreference<unknown>(STORAGE_KEY)
     .then((stored) => {
-      const sections = { ...storedSections(stored) };
+      const record = storedRecord(stored);
+      const sections = { ...storedSections(record) };
       for (const sectionId of changedSections) sections[sectionId] = snapshot.sections[sectionId];
+      const order = changedOrder ? snapshot.order : sanitiseSectionOrder(BELOW_FOLD_SECTION_LAYOUT, record?.order);
+      lastReadRecord = record ?? {};
       loadedSuccessfully = true;
-      publish(sections, true);
+      publish({ sections, order }, true);
     })
     .catch(() => {
       // iOS can lock storage before first unlock during a background launch.
       // Defaults remain usable; another mount retries without reporting an error.
-      publish(snapshot.sections, true);
+      publish(snapshot, true);
     })
     .finally(() => {
       loadPromise = null;
@@ -78,7 +127,12 @@ function persist(): void {
   writeQueue = writeQueue
     .then(async () => {
       await pendingRead;
-      await setPreference(STORAGE_KEY, { version: 1, sections: snapshot.sections });
+      await setPreference(STORAGE_KEY, {
+        ...lastReadRecord,
+        version: 1,
+        sections: { ...storedSectionsMap(lastReadRecord), ...snapshot.sections },
+        order: snapshot.order,
+      });
     })
     .catch(() => {
       addErrorBreadcrumb({
@@ -89,22 +143,57 @@ function persist(): void {
     });
 }
 
-export function setPlayDrawerSection(sectionId: PlayDrawerSectionId, enabled: boolean): void {
+function loadBeforeWriting(): void {
   if (!loadedSuccessfully && !loadPromise) void ensurePlayDrawerSectionsLoaded();
+}
+
+export function setPlayDrawerSection(sectionId: PlayDrawerSectionId, enabled: boolean): void {
+  loadBeforeWriting();
   changedSections.add(sectionId);
-  publish({ ...snapshot.sections, [sectionId]: enabled }, snapshot.ready);
+  publish({ order: snapshot.order, sections: { ...snapshot.sections, [sectionId]: enabled } }, snapshot.ready);
   persist();
 }
 
 export function setAllPlayDrawerSections(enabled: boolean): void {
-  if (!loadedSuccessfully && !loadPromise) void ensurePlayDrawerSectionsLoaded();
+  loadBeforeWriting();
   const sections = { ...snapshot.sections };
   for (const sectionId of PLAY_DRAWER_SECTION_IDS) {
     changedSections.add(sectionId);
     sections[sectionId] = enabled;
   }
-  publish(sections, snapshot.ready);
+  publish({ order: snapshot.order, sections }, snapshot.ready);
   persist();
+}
+
+/** Moves a below-the-fold section one place past its neighbour, hidden or not. */
+export function movePlayDrawerSection(sectionId: BelowFoldSectionId, direction: SectionMoveDirection): void {
+  const { order } = withSectionMoved(
+    BELOW_FOLD_SECTION_LAYOUT,
+    { order: snapshot.order, visible: snapshot.sections },
+    sectionId,
+    direction,
+  );
+  if (order === snapshot.order) return;
+  loadBeforeWriting();
+  changedOrder = true;
+  publish({ order, sections: snapshot.sections }, snapshot.ready);
+  persist();
+}
+
+export function restorePlayDrawerSectionDefaults(): void {
+  loadBeforeWriting();
+  for (const sectionId of PLAY_DRAWER_SECTION_IDS) changedSections.add(sectionId);
+  changedOrder = true;
+  publish({ sections: DEFAULT_PLAY_DRAWER_SECTIONS, order: DEFAULT_PLAY_DRAWER_SECTION_ORDER }, snapshot.ready);
+  persist();
+}
+
+/** True while the switches and the order match a fresh install. */
+export function isDefaultPlayDrawerLayout({ sections, order }: Pick<Snapshot, 'sections' | 'order'>): boolean {
+  return (
+    PLAY_DRAWER_SECTION_IDS.every((sectionId) => sections[sectionId] === DEFAULT_PLAY_DRAWER_SECTIONS[sectionId]) &&
+    isSameSectionOrder(order, DEFAULT_PLAY_DRAWER_SECTION_ORDER)
+  );
 }
 
 function subscribe(listener: () => void): () => void {
@@ -123,10 +212,18 @@ function getServerSnapshot(): Snapshot {
 export function usePlayDrawerSectionsPreference(): Snapshot & {
   setSection: typeof setPlayDrawerSection;
   setAll: typeof setAllPlayDrawerSections;
+  move: typeof movePlayDrawerSection;
+  restoreDefaults: typeof restorePlayDrawerSectionDefaults;
 } {
   const current = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   useEffect(() => {
     void ensurePlayDrawerSectionsLoaded();
   }, []);
-  return { ...current, setSection: setPlayDrawerSection, setAll: setAllPlayDrawerSections };
+  return {
+    ...current,
+    setSection: setPlayDrawerSection,
+    setAll: setAllPlayDrawerSections,
+    move: movePlayDrawerSection,
+    restoreDefaults: restorePlayDrawerSectionDefaults,
+  };
 }

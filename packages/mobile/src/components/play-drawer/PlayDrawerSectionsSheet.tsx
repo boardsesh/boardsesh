@@ -1,56 +1,19 @@
-import { memo, useCallback, useMemo, type ComponentType } from 'react';
+import { useMemo, type ComponentType } from 'react';
 import { Platform, StyleSheet, View, type FlatListProps } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
-import { SwitchRow } from '../SwitchRow';
 import { Button } from '../Button';
 import { Text } from '../Text';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
-import {
-  usePlayDrawerSectionControls,
-  type PlayDrawerSectionControl,
-} from '../settings/use-play-drawer-section-controls';
-import { PLAY_DRAWER_SECTION_IDS, type PlayDrawerSectionId } from '../../lib/play-drawer-sections-preference';
+import { usePlayDrawerSectionControls } from '../settings/use-play-drawer-section-controls';
+import { SectionLayoutList, type PlacedSectionLayoutRow } from '../section-layout/SectionLayoutList';
+import type { PlayDrawerSectionId } from '../../lib/play-drawer-sections-preference';
 import { useTheme } from '../../providers/theme-provider';
-import { borderRadius, spacing } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 
-const SheetFlatList = BottomSheetFlatList as ComponentType<FlatListProps<PlayDrawerSectionControl>>;
-const LAST_SECTION_INDEX = PLAY_DRAWER_SECTION_IDS.length - 1;
-function keyExtractor(control: PlayDrawerSectionControl): string {
-  return control.id;
-}
-const SectionRow = memo(function SectionRow({
-  id,
-  label,
-  enabled,
-  ready,
-  first,
-  last,
-  onSectionChange,
-}: PlayDrawerSectionControl & {
-  ready: boolean;
-  first: boolean;
-  last: boolean;
-  onSectionChange: (id: PlayDrawerSectionId, enabled: boolean) => void;
-}) {
-  const { systemColors } = useTheme();
-  const onValueChange = useCallback((next: boolean) => onSectionChange(id, next), [id, onSectionChange]);
-  return (
-    <View
-      style={[
-        styles.sectionRow,
-        { backgroundColor: systemColors.secondaryBackground },
-        first && styles.firstRow,
-        last && styles.lastRow,
-      ]}
-    >
-      <SwitchRow label={label} value={enabled} onValueChange={onValueChange} disabled={!ready} />
-      {!last ? <View style={[styles.separator, { backgroundColor: systemColors.separator }]} /> : null}
-    </View>
-  );
-});
+const SheetFlatList = BottomSheetFlatList as ComponentType<FlatListProps<PlacedSectionLayoutRow<PlayDrawerSectionId>>>;
 
 /** Keep mounted inside PlayDrawer so its managed presenter sits above /play. */
 export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
@@ -62,12 +25,16 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
     ready,
     controls,
     onSectionChange,
+    onMove,
     hideAllLabel,
     showAllLabel,
+    restoreDefaultsLabel,
     hideAll,
     showAll,
+    restoreDefaults,
     canHideAll,
     canShowAll,
+    canRestoreDefaults,
   } = usePlayDrawerSectionControls();
   const { systemColors } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
@@ -77,25 +44,26 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
     Platform.OS === 'ios' && iosBackgroundStyle === undefined
       ? undefined
       : { backgroundColor: systemColors.groupedBackground };
-  const renderItem = useCallback(
-    ({ item, index }: { item: PlayDrawerSectionControl; index: number }) => (
-      <SectionRow
-        {...item}
-        ready={ready}
-        first={index === 0}
-        last={index === LAST_SECTION_INDEX}
-        onSectionChange={onSectionChange}
-      />
-    ),
-    [ready, onSectionChange],
-  );
   const listFooter = useMemo(
     () => (
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.guidance}>
-        {footer}
-      </Text>
+      <View style={styles.footer}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.guidance}>
+          {footer}
+        </Text>
+        <View style={styles.restoreDefaults}>
+          <Button
+            title={restoreDefaultsLabel}
+            onPress={restoreDefaults}
+            disabled={!canRestoreDefaults}
+            haptic={false}
+            variant="text"
+            minHeight={44}
+            testID="play-drawer-sections-restore-defaults"
+          />
+        </View>
+      </View>
     ),
-    [footer, systemColors.secondaryLabel],
+    [footer, systemColors.secondaryLabel, restoreDefaultsLabel, restoreDefaults, canRestoreDefaults],
   );
   return (
     <ModalSheet
@@ -149,14 +117,15 @@ export function PlayDrawerSectionsSheet({ visible, onClose }: { visible: boolean
         </View>
       }
     >
-      <SheetFlatList
+      <SectionLayoutList
+        ListComponent={SheetFlatList}
         style={[styles.list, contentGround]}
         contentContainerStyle={styles.listContent}
-        data={controls}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
+        rows={controls}
+        disabled={!ready}
+        onVisibleChange={onSectionChange}
+        onMove={onMove}
         ListFooterComponent={listFooter}
-        showsVerticalScrollIndicator={false}
       />
     </ModalSheet>
   );
@@ -170,9 +139,8 @@ const styles = StyleSheet.create({
   actionSlot: { flex: 1 },
   actionButton: { width: '100%' },
   groupTitle: { paddingHorizontal: spacing[4], fontWeight: '600' },
-  sectionRow: { overflow: 'hidden' },
-  firstRow: { borderTopLeftRadius: borderRadius.lg, borderTopRightRadius: borderRadius.lg },
-  lastRow: { borderBottomLeftRadius: borderRadius.lg, borderBottomRightRadius: borderRadius.lg },
-  separator: { height: StyleSheet.hairlineWidth, marginLeft: spacing[4] },
-  guidance: { paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
+  footer: { paddingVertical: spacing[3], gap: spacing[2] },
+  guidance: { paddingHorizontal: spacing[4] },
+  // Lines the action up with the guidance above it.
+  restoreDefaults: { paddingHorizontal: spacing[4] },
 });

@@ -1,26 +1,27 @@
 import { getDisplayDescription } from '@boardsesh/shared-schema';
-import {
-  PLAY_DRAWER_SECTION_IDS,
-  type PlayDrawerSectionId,
-  type PlayDrawerSectionsVisibility,
-} from '../../lib/play-drawer-sections-preference';
+import type { BelowFoldSectionId, PlayDrawerSectionsVisibility } from '../../lib/play-drawer-sections-preference';
+import { visibleSectionIds } from '../../lib/section-layout';
 
-/** Eligibility is synchronous so the first enabled header can always mount at the fold. */
+/**
+ * The below-the-fold sections to draw, in the climber's order. Eligibility is
+ * synchronous so the first enabled header can always mount at the fold.
+ */
 export function visiblePlayDrawerSections({
   sections,
+  order,
   isAuthenticated,
   boardseshGradeEnabled,
   description,
   screenshotMode,
 }: {
   sections: PlayDrawerSectionsVisibility;
+  order: readonly BelowFoldSectionId[];
   isAuthenticated: boolean;
   boardseshGradeEnabled: boolean;
   description: string | null | undefined;
   screenshotMode: boolean;
-}): PlayDrawerSectionId[] {
-  return PLAY_DRAWER_SECTION_IDS.filter((sectionId) => {
-    if (!sections[sectionId]) return false;
+}): BelowFoldSectionId[] {
+  return visibleSectionIds({ order, visible: sections }, (sectionId) => {
     if (sectionId === 'climberLogs') return isAuthenticated && !screenshotMode;
     if (sectionId === 'setterNotes') return Boolean(getDisplayDescription(description));
     if (sectionId === 'boardseshGrade') return boardseshGradeEnabled;

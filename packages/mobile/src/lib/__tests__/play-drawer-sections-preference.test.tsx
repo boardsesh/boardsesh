@@ -168,17 +168,182 @@ describe('play drawer section preferences', () => {
     expect(settings.result.current.settingsSection.rows).toHaveLength(1);
     expect(settings.result.current.settingsSection.rows[0]?.kind).toBe('info');
     act(() => drawer.result.current.hideAll());
-    expect(drawer.result.current.controls.every((control) => control.enabled)).toBe(true);
+    expect(drawer.result.current.controls.every((control) => control.visible)).toBe(true);
     await act(async () => gate.resolve(null));
-    expect(settings.result.current.settingsSection.rows).toHaveLength(9);
+    expect(settings.result.current.settingsSection.rows).toHaveLength(10);
     act(() => drawer.result.current.hideAll());
-    expect(settings.result.current.controls.every((control) => !control.enabled)).toBe(true);
+    expect(settings.result.current.controls.every((control) => !control.visible)).toBe(true);
     const logbookToggle = settings.result.current.settingsSection.rows[0];
     if (logbookToggle?.kind !== 'toggle') throw new Error('Expected logbook toggle');
     act(() => logbookToggle.onValueChange(true));
-    expect(drawer.result.current.controls[0]).toMatchObject({ id: 'logbook', enabled: true });
+    expect(drawer.result.current.controls[0]).toMatchObject({ id: 'logbook', visible: true });
     act(() => settings.result.current.showAll());
-    expect(drawer.result.current.controls.every((control) => control.enabled)).toBe(true);
+    expect(drawer.result.current.controls.every((control) => control.visible)).toBe(true);
     await waitFor(() => expect(write).toHaveBeenCalledTimes(3));
+  });
+
+  describe('order', () => {
+    const MOVED_ORDER = [
+      'similarClimbs',
+      'logbook',
+      'climberLogs',
+      'setterNotes',
+      'betaVideos',
+      'boardseshGrade',
+      'community',
+    ];
+
+    function storedRecord(): Record<string, unknown> {
+      return JSON.parse(storage.get('playDrawerSections') ?? '{}');
+    }
+
+    it("reads a record without an order, as an older bundle wrote it, in today's order", async () => {
+      storeSections({ community: false });
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
+      expect(result.current.sections.community).toBe(false);
+    });
+
+    it('reads a saved order, dropping unknown ids and slotting missing ones in at their default place', async () => {
+      storage.set(
+        'playDrawerSections',
+        JSON.stringify({
+          version: 1,
+          sections: {},
+          order: ['similarClimbs', 'retired', 'community', 'logbook', 'logbook', 'betaVideos'],
+        }),
+      );
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(result.current.order).toEqual([
+        'similarClimbs',
+        'community',
+        'logbook',
+        'climberLogs',
+        'setterNotes',
+        'betaVideos',
+        'boardseshGrade',
+      ]);
+    });
+
+    it('moves a section one place, hidden or not, and saves the order beside the switches', async () => {
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      act(() => result.current.setSection('similarClimbs', false));
+      for (let step = 0; step < 6; step += 1) act(() => result.current.move('similarClimbs', -1));
+      expect(result.current.order).toEqual(MOVED_ORDER);
+      expect(result.current.sections.similarClimbs).toBe(false);
+      await waitFor(() => expect(storedRecord().order).toEqual(MOVED_ORDER));
+      expect(storedRecord()).toMatchObject({ version: 1, sections: { similarClimbs: false } });
+    });
+
+    it('does nothing at either end', async () => {
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      const before = result.current.order;
+      act(() => {
+        result.current.move('logbook', -1);
+        result.current.move('similarClimbs', 1);
+      });
+      expect(result.current.order).toBe(before);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('keeps a move made before the read lands, and still fills the switches from it', async () => {
+      const gate = deferred<string>();
+      read.mockImplementationOnce(() => gate.promise);
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      act(() => result.current.move('logbook', 1));
+      await act(async () =>
+        gate.resolve(
+          JSON.stringify({
+            version: 1,
+            sections: { community: false },
+            order: ['community', 'logbook', 'climberLogs'],
+          }),
+        ),
+      );
+      expect(result.current.order.slice(0, 2)).toEqual(['climberLogs', 'logbook']);
+      expect(result.current.sections.community).toBe(false);
+    });
+
+    it('writes back fields and sections this bundle does not know', async () => {
+      storage.set(
+        'playDrawerSections',
+        JSON.stringify({ version: 1, sections: { logbook: false, activeHolds: true }, later: { kept: true } }),
+      );
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      act(() => result.current.move('community', -1));
+      await waitFor(() => expect(write).toHaveBeenCalled());
+      expect(storedRecord()).toMatchObject({
+        version: 1,
+        later: { kept: true },
+        sections: { logbook: false, activeHolds: true },
+      });
+    });
+
+    it('restores the default switches and order together', async () => {
+      storage.set(
+        'playDrawerSections',
+        JSON.stringify({ version: 1, sections: { logbook: false }, order: MOVED_ORDER }),
+      );
+      const module = await import('../play-drawer-sections-preference');
+      const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      expect(module.isDefaultPlayDrawerLayout(result.current)).toBe(false);
+      act(() => result.current.restoreDefaults());
+      expect(result.current.sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
+      expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
+      expect(module.isDefaultPlayDrawerLayout(result.current)).toBe(true);
+      await waitFor(() => expect(storedRecord().order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER));
+    });
+
+    it('lists Settings rows in the saved order, with Restore defaults only when something changed', async () => {
+      storage.set('playDrawerSections', JSON.stringify({ version: 1, sections: {}, order: MOVED_ORDER }));
+      const { usePlayDrawerSectionControls } =
+        await import('../../components/settings/use-play-drawer-section-controls');
+      const { result } = renderHook(usePlayDrawerSectionControls);
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      const rows = result.current.settingsSection.rows;
+      expect(rows.slice(0, 7).map((row) => row.key)).toEqual(MOVED_ORDER);
+      expect(result.current.controls.every((control) => control.movable)).toBe(true);
+      const restore = rows.find((row) => row.key === 'restoreDefaults');
+      if (restore?.kind !== 'button') throw new Error('Expected a Restore defaults button');
+      expect(restore.disabled).toBe(false);
+      act(() => restore.onPress());
+      expect(result.current.controls.map((control) => control.id)).toEqual([
+        'logbook',
+        'climberLogs',
+        'setterNotes',
+        'betaVideos',
+        'boardseshGrade',
+        'community',
+        'similarClimbs',
+      ]);
+      expect(result.current.canRestoreDefaults).toBe(false);
+      const restoreAfter = result.current.settingsSection.rows.find((row) => row.key === 'restoreDefaults');
+      expect(restoreAfter?.kind === 'button' && restoreAfter.disabled).toBe(true);
+    });
+
+    it('ignores moves from the controls until storage has answered', async () => {
+      const gate = deferred<string | null>();
+      read.mockImplementationOnce(() => gate.promise);
+      const { usePlayDrawerSectionControls } =
+        await import('../../components/settings/use-play-drawer-section-controls');
+      const { result } = renderHook(usePlayDrawerSectionControls);
+      act(() => result.current.onMove('similarClimbs', -1));
+      expect(result.current.controls.at(-1)?.id).toBe('similarClimbs');
+      await act(async () => gate.resolve(null));
+      act(() => result.current.onMove('similarClimbs', -1));
+      expect(result.current.controls.at(-2)?.id).toBe('similarClimbs');
+    });
   });
 });
