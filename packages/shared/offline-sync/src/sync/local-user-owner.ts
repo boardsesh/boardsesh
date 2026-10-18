@@ -44,9 +44,15 @@ export const USER_DATA_COMPLETE_KEY = 'checkpoint:user_data_complete';
 export type LocalUserOwnership =
   /** The stamp names the signed-in user; user-scoped local reads may proceed. */
   | 'ok'
-  /** No stamp yet (fresh install, pre-upgrade database, never synced). */
+  /**
+   * No stamp yet (fresh install, pre-upgrade database, never synced), and no
+   * user row on disk names another account.
+   */
   | 'unstamped'
-  /** The stamp names somebody else. Do not serve; wipe and re-stamp. */
+  /**
+   * The stamp names somebody else, or there is no stamp but user rows on disk
+   * name another account. Do not serve; wipe and re-stamp.
+   */
   | 'mismatch';
 
 export async function getLocalUserId(db: SqlExecutor): Promise<string | null> {
@@ -76,9 +82,36 @@ export async function assertLocalUserDataOwner(
   currentUserId: string | null | undefined,
 ): Promise<LocalUserOwnership> {
   const stampedUserId = await getLocalUserId(db);
-  if (stampedUserId === null) return 'unstamped';
+  if (stampedUserId === null) {
+    return currentUserId && (await holdsAnotherAccountsRows(db, currentUserId)) ? 'mismatch' : 'unstamped';
+  }
   if (!currentUserId) return 'mismatch';
   return stampedUserId === currentUserId ? 'ok' : 'mismatch';
+}
+
+/**
+ * Whether an unstamped database already holds user rows that name an account
+ * other than `currentUserId`. A database restored from a backup, carried over by
+ * a reinstall, or migrated from a bundle that never stamped can hold another
+ * climber's synced ticks with no stamp to say so; stamping it for the signed-in
+ * account would hand them over. Answering `'mismatch'` instead makes readers
+ * decline and `OfflineSyncBridge` run the account wipe.
+ *
+ * Only `boardsesh_ticks` and `user_favorites` carry a user column, so only they
+ * can tell. Rows with no `user_id` say nothing either way: they are this
+ * device's own offline writes made before the stamp existed, which must survive,
+ * or a legacy row from before the writer stamped `user_id`, which cannot be told
+ * apart. Playlists, follows and the outbox carry no user column at all.
+ */
+async function holdsAnotherAccountsRows(db: SqlExecutor, currentUserId: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT (
+       EXISTS (SELECT 1 FROM boardsesh_ticks WHERE user_id IS NOT NULL AND user_id <> ?)
+       OR EXISTS (SELECT 1 FROM user_favorites WHERE user_id IS NOT NULL AND user_id <> ?)
+     ) AS found`,
+    [currentUserId, currentUserId],
+  );
+  return Boolean(row?.found);
 }
 
 export async function markUserDataComplete(db: SqlExecutor): Promise<void> {

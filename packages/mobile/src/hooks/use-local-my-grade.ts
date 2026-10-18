@@ -59,7 +59,11 @@ export function useLocalMyGrade(
     queryFn: async (): Promise<LocalMyGrade> => {
       const db = getDatabaseHandle();
       if (!db || !boardName) return null;
-      const ownerUserId = await getLocalUserId(db);
+      const { readLocalUserId } = await import('../lib/local-user-id');
+      const [ownerUserId, viewerId] = await Promise.all([getLocalUserId(db), readLocalUserId()]);
+      // Rows stamped for another account (a sign-out wipe that failed or never
+      // ran) answer nothing until the owner-stamp wipe replaces them.
+      if (ownerUserId !== null && ownerUserId !== viewerId) return null;
       const row = await db.getFirstAsync<{ difficulty: number; climbed_at: string }>(
         `SELECT difficulty, climbed_at
          FROM boardsesh_ticks

@@ -23,6 +23,10 @@ import { effectiveStatsSql, isDetailCrossAngleStats, mapRowToClimb, type LocalCl
  * Boardsesh owner. Those rows stay on disk and read as missing here, so online the
  * request goes to the server, which decides. Nothing on the phone writes a draft
  * into `board_climbs` itself: every row comes from the server, owner included.
+ *
+ * The send and attempt counts read the viewer's ticks only (`user_id = viewerId`,
+ * or no `user_id` for this device's own offline writes), like every other local
+ * tick read (docs/offline-reads.md, the auth-scoping contract).
  */
 export type GetClimbLocalInput = {
   boardName: string;
@@ -60,9 +64,11 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
       g.confidence AS boardsesh_confidence,
       (SELECT COUNT(*) FROM boardsesh_ticks t
-        WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status IN ('flash', 'send')) AS user_ascents,
+        WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status IN ('flash', 'send')
+          AND (t.user_id = ? OR t.user_id IS NULL)) AS user_ascents,
       (SELECT COUNT(*) FROM boardsesh_ticks t
-        WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status = 'attempt') AS user_attempts
+        WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND t.status = 'attempt'
+          AND (t.user_id = ? OR t.user_id IS NULL)) AS user_attempts
     FROM board_climbs c
     LEFT JOIN board_climb_stats s
       ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
@@ -78,8 +84,10 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   const binds = [
     boardName,
     angle,
+    viewerId,
     boardName,
     angle,
+    viewerId,
     boardName,
     angle,
     ...(crossAngle ? [boardName] : []),

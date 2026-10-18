@@ -335,6 +335,53 @@ describe('clearUserData', () => {
   });
 });
 
+// What OfflineSyncBridge does with an UNSTAMPED database (#6560 review): a
+// restored backup or a reinstall can carry another climber's synced rows with no
+// stamp. The bridge asks `assertLocalUserDataOwner`, wipes on 'mismatch', then
+// stamps. These run that exact sequence against the real DDL.
+describe('an unstamped database meeting the signed-in account', () => {
+  async function insertTick(uuid: string, userId: string | null): Promise<void> {
+    await db.runAsync(
+      `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status) VALUES (?, ?, 'kilter', 'climb-1', 40, 'send')`,
+      [uuid, userId],
+    );
+  }
+
+  async function bridgeHandover(currentUserId: string): Promise<string> {
+    const ownership = await assertLocalUserDataOwner(db, currentUserId);
+    if (ownership === 'mismatch') await clearUserData(db);
+    if (ownership !== 'ok') await stampLocalUserId(db, currentUserId);
+    return ownership;
+  }
+
+  it("wipes another account's ticks instead of claiming them, and keeps the catalogue", async () => {
+    await seedSignedInDevice();
+    await insertTick('tick-by-a', 'account-a');
+
+    expect(await bridgeHandover('account-b')).toBe('mismatch');
+
+    expect(await db.getAllAsync('SELECT uuid FROM boardsesh_ticks')).toEqual([]);
+    expect(await getLocalUserId(db)).toBe('account-b');
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
+  });
+
+  it("keeps the signed-in account's own unsynced ticks and outbox, and stamps", async () => {
+    await insertTick('synced-tick-by-b', 'account-b');
+    await insertTick('offline-tick', null);
+    await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'offline-tick');
+
+    expect(await bridgeHandover('account-b')).toBe('unstamped');
+
+    expect(await db.getAllAsync('SELECT uuid FROM boardsesh_ticks ORDER BY uuid')).toEqual([
+      { uuid: 'offline-tick' },
+      { uuid: 'synced-tick-by-b' },
+    ]);
+    expect(await getPendingCount(db)).toBe(1);
+    expect(await getLocalUserId(db)).toBe('account-b');
+  });
+});
+
 describe('purgeLocalDataForSignOut', () => {
   it('clears the user rows, the queue AND the downloaded board catalog', async () => {
     await seedSignedInDevice();

@@ -83,6 +83,42 @@ describe('local user-data ownership', () => {
   });
 });
 
+// A restored backup, a reinstall that kept the file, or a database a bundle from
+// before the stamp migrated: no stamp, but another climber's synced rows on disk.
+// Stamping that for the signed-in account would hand the rows over.
+describe('an unstamped database', () => {
+  async function insertTick(uuid: string, userId: string | null): Promise<void> {
+    await db.runAsync(
+      `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status) VALUES (?, ?, 'kilter', 'climb-1', 40, 'send')`,
+      [uuid, userId],
+    );
+  }
+
+  it('is a mismatch when a tick names another account', async () => {
+    await insertTick('a-tick', CLIMBER_A);
+    await expect(assertLocalUserDataOwner(db, CLIMBER_B)).resolves.toBe('mismatch');
+  });
+
+  it('is a mismatch when a favourite names another account', async () => {
+    await db.runAsync(
+      `INSERT INTO user_favorites (board_name, climb_uuid, angle, user_id) VALUES ('kilter', 'climb-1', 40, ?)`,
+      [CLIMBER_A],
+    );
+    await expect(assertLocalUserDataOwner(db, CLIMBER_B)).resolves.toBe('mismatch');
+  });
+
+  it("stays unstamped with only the signed-in account's rows and unowned offline writes", async () => {
+    await insertTick('b-tick', CLIMBER_B);
+    await insertTick('offline-tick', null);
+    await expect(assertLocalUserDataOwner(db, CLIMBER_B)).resolves.toBe('unstamped');
+  });
+
+  it('stays unstamped while nobody is signed in, since no account can be compared', async () => {
+    await insertTick('a-tick', CLIMBER_A);
+    await expect(assertLocalUserDataOwner(db, null)).resolves.toBe('unstamped');
+  });
+});
+
 describe('user-data completeness marker', () => {
   it('is absent until a cycle pulls every user table to its tail', async () => {
     await expect(isUserDataComplete(db)).resolves.toBe(false);

@@ -350,3 +350,40 @@ describe('drafts read for their owner only', () => {
     expect(published.stats).toHaveLength(1);
   });
 });
+
+// The detail read's send and attempt counts are the viewer's own: another
+// account's ticks left on the phone never count as theirs. A tick with no
+// user_id is this device's own offline write and counts.
+describe("getClimbLocal — the viewer's own ticks only", () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await insertClimb(db, 'c1');
+    for (const [uuid, userId, status] of [
+      ['send-by-a', 'account-a', 'send'],
+      ['attempt-by-a', 'account-a', 'attempt'],
+      ['send-by-b', 'account-b', 'send'],
+      ['offline-attempt', null, 'attempt'],
+    ] as const) {
+      await db.runAsync(
+        `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status) VALUES (?, ?, 'kilter', 'c1', 40, ?)`,
+        [uuid, userId, status],
+      );
+    }
+  });
+
+  it("counts the viewer's ticks and this device's offline writes, never another account's", async () => {
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'c1',
+      viewerId: 'account-b',
+    });
+    expect(climb?.userAscents).toBe(1);
+    expect(climb?.userAttempts).toBe(1);
+  });
+});
