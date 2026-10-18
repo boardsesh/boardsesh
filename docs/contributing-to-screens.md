@@ -11,6 +11,7 @@ Good entry points right now:
 - [#6230](https://github.com/boardsesh/boardsesh/issues/6230): queue, playlist and search model.
 - [#6229](https://github.com/boardsesh/boardsesh/issues/6229): the order of sections on the climb view.
 - [#6291](https://github.com/boardsesh/boardsesh/issues/6291): Boardz workouts.
+- Anything open under the [`epic:climbing-experience`](https://github.com/boardsesh/boardsesh/labels/epic%3Aclimbing-experience) label.
 
 Questions go in the issue, or on [Discord](https://discord.gg/YXA8GsXfQK).
 
@@ -57,7 +58,7 @@ A shared version of "ordered sections with visibility" is planned under #6229. U
 - Presets sit on top of the switches. A manual mix reads Custom.
 - `climb-row-display-preference.ts` keeps a synchronous snapshot, so rows do not wait on storage.
 - Steps for adding a switch: [docs/climb-list-rows.md](./climb-list-rows.md).
-- The options menu from #6523 shows how a screen links to its settings from the place the climber is already looking.
+- The climb list's options menu (`packages/mobile/src/components/chrome/ClimbListBoardActions.tsx`) shows how a screen links to its settings from the place the climber is already looking.
 
 ### Checklist for a new preference
 
