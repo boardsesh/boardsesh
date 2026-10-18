@@ -5,7 +5,8 @@ import { createElement, type ReactNode } from 'react';
 
 type Modifier = { kind: string; params: unknown };
 vi.mock('@expo/ui', () => ({
-  Host: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  Host: ({ children, ignoreSafeArea }: { children: ReactNode; ignoreSafeArea?: string }) =>
+    createElement('div', { 'data-host-ignore-safe-area': ignoreSafeArea }, children),
 }));
 vi.mock('@expo/ui/swift-ui', () => ({
   Menu: ({ label, children, modifiers }: { label: ReactNode; children: ReactNode; modifiers: Modifier[] }) =>
@@ -112,5 +113,17 @@ describe('AppMenu (iOS) dividers', () => {
     expect(rows).toEqual(['button', 'button', 'hr', 'button']);
     fireEvent.click(getByText('Report'));
     expect(onSelectIndex).toHaveBeenCalledWith(2);
+  });
+});
+
+describe('AppMenu (iOS) hosting', () => {
+  it('never takes the screen safe-area inset, so a menu that mounts scrolled under the status bar stays in its frame', () => {
+    for (const props of [{ iconName: 'more' as const, accessibilityLabel: 'More actions' }, { label: 'Everyone' }]) {
+      const { container, unmount } = render(createElement(AppMenu, { ...props, actions, onSelectIndex: vi.fn() }));
+      expect(container.querySelector('[data-host-ignore-safe-area]')?.getAttribute('data-host-ignore-safe-area')).toBe(
+        'all',
+      );
+      unmount();
+    }
   });
 });

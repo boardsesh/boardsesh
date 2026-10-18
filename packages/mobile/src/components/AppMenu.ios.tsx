@@ -96,8 +96,14 @@ export function AppMenu(props: AppMenuProps) {
     [iconName, plainIcon, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
   );
 
+  // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
+  // mounts while it is scrolled up under the status bar takes the screen's
+  // safe-area inset and keeps it, so once it scrolls back its anchor draws up
+  // to a whole button lower than its frame. The player's ⋯ sits in the
+  // drawer's scrolling top row and remounts on every climb, and ended up on top
+  // of the grade that way. Same fix as Button's `ignoreContainerSafeArea`.
   return (
-    <Host matchContents style={[styles.host, style]}>
+    <Host matchContents ignoreSafeArea="all" style={[styles.host, style]}>
       <Menu
         modifiers={menuModifiers}
         label={
