@@ -153,7 +153,7 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
   });
 
   it('remounts only composers for new credentials', () => {
-    const { container, getByLabelText, rerender } = render(<ScopedHosts open />);
+    const { getByLabelText, rerender } = render(<ScopedHosts open />);
     for (const name of ['beta', 'playlist', 'report', 'tick']) {
       fireEvent.change(getByLabelText(name), { target: { value: `Draft ${name}` } });
       expect(recorded.props.get(name)).toMatchObject({ climb: pinnedClimb, boardName: 'tension', angle: 35 });

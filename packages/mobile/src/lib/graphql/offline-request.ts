@@ -540,8 +540,8 @@ export async function offlineAwareRequest<TResponse>(
 ): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
   const signal = options?.signal;
-  const privacyGeneration = getCredentialGeneration();
-  const localAllowed = () => getCredentialGeneration() === privacyGeneration;
+  const credentialGeneration = getCredentialGeneration();
+  const localAllowed = () => getCredentialGeneration() === credentialGeneration;
   const assertNotCancelled = () => {
     if (signal?.aborted) throw createAbortError('Request cancelled');
   };

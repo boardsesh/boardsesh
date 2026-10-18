@@ -40,7 +40,7 @@ export function resetActiveBoardSelfHealForTests(): void {
 }
 
 export function useActiveBoardSelfHeal(): void {
-  const privacyGeneration = useSyncExternalStore(
+  const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
     getCredentialGeneration,
     getCredentialGeneration,
@@ -156,7 +156,7 @@ export function useActiveBoardSelfHeal(): void {
   useEffect(() => {
     mountedRef.current = true;
     validate('initial');
-  }, [activeUuid, validate, privacyGeneration]);
+  }, [activeUuid, validate, credentialGeneration]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
