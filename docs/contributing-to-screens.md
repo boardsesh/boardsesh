@@ -46,11 +46,11 @@ When you change a screen, ask what the climber should be able to show, hide, reo
 ### Example A: play drawer sections (#6279)
 
 - `packages/mobile/src/lib/play-drawer-sections-preference.ts` holds the section ids, the defaults and the stored value.
-- `packages/mobile/src/components/play-drawer/PlayDrawerSectionsSheet.tsx` is the sheet, with Show all and Hide all.
-- `packages/mobile/src/components/settings/use-play-drawer-section-controls.ts` feeds the Settings entry in `packages/mobile/app/settings/index.tsx`.
-- A hidden section starts no queries.
+- `packages/mobile/src/components/play-drawer/PlayDrawerSectionsSheet.tsx` is the sheet, with Show all, Hide all, ↑/↓ per section and Restore defaults.
+- `packages/mobile/src/components/settings/use-play-drawer-section-controls.ts` feeds the sheet and Settings → Climbs & grades → Climb view (`packages/mobile/src/components/settings/climb-view/ClimbViewSettingsScreen.tsx`).
+- A hidden section, or one below the fold the climber has not scrolled to, starts no queries.
 
-A shared version of "ordered sections with visibility" is planned under #6229. Until it lands, copy the pattern above rather than inventing a new one.
+The shared pieces for "ordered sections with visibility" landed with #6229. Build a new list on them rather than inventing a pattern: `packages/mobile/src/lib/section-layout.ts` (pure order and visibility rules), `packages/mobile/src/lib/section-layout-store.ts` (the same layout in the synchronous settings store) and `packages/mobile/src/components/section-layout/SectionLayoutList.tsx` (switch rows with ↑/↓). The player's Buttons tab uses all three; [docs/climb-view-options.md](./climb-view-options.md) has the steps.
 
 ### Example B: climb list rows (#6369)
 
