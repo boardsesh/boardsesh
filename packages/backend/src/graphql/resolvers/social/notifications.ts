@@ -329,6 +329,7 @@ export const socialNotificationQueries = {
     const gymEntityIds: string[] = [];
     const commentEntityIds: string[] = [];
     const tickEntityIds: string[] = [];
+    const boardEntityIds: string[] = [];
     for (const group of groups) {
       if (!group.entityId) continue;
       if (group.type === 'new_climbs_synced' || climbTypes.includes(group.type)) {
@@ -347,6 +348,7 @@ export const socialNotificationQueries = {
         // climb {{climb}}", "on your gym {{gym}}") and draw the climb.
         else if (group.type === 'comment_on_climb') climbEntityIds.push(group.entityId);
         else if (group.type === 'comment_on_gym') gymEntityIds.push(group.entityId);
+        else if (group.type === 'comment_on_board') boardEntityIds.push(group.entityId);
       }
     }
 
@@ -444,6 +446,20 @@ export const socialNotificationQueries = {
       }
     }
 
+    // Batch-fetch the board type behind a comment_on_board row: a spray wall is
+    // a Spraywall in every locale, never a bare "board", so the client words it
+    // apart. The type is not the board's identity (name, place), which stays out.
+    const boardTypeMap = new Map<string, string>();
+    if (boardEntityIds.length > 0) {
+      const boardRows = await db
+        .select({ uuid: dbSchema.userBoards.uuid, boardType: dbSchema.userBoards.boardType })
+        .from(dbSchema.userBoards)
+        .where(inArray(dbSchema.userBoards.uuid, boardEntityIds));
+      for (const row of boardRows) {
+        boardTypeMap.set(row.uuid, row.boardType);
+      }
+    }
+
     // Batch-fetch gym names (entityId is the gym UUID for gym_claim_approved)
     const gymNameMap = new Map<string, string>();
     if (gymEntityIds.length > 0) {
@@ -514,6 +530,10 @@ export const socialNotificationQueries = {
 
         if (group.type === 'comment_on_gym') {
           group.gymName = gymNameMap.get(group.entityId) ?? undefined;
+          continue;
+        }
+        if (group.type === 'comment_on_board') {
+          group.boardType = boardTypeMap.get(group.entityId) ?? undefined;
           continue;
         }
         if (group.type === 'comment_on_climb') {

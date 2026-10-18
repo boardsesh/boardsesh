@@ -1,6 +1,6 @@
 import { eq, and, ne } from 'drizzle-orm';
 import { executeRows } from '@boardsesh/db/client';
-import { entityOwnerIdsQuery } from '@boardsesh/db/queries';
+import { entityOwnerIdsQuery, SYSTEM_USER_ID, type OwnedEntityType } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
@@ -12,17 +12,20 @@ export type RecipientInfo = {
 
 /**
  * The notification an item's owner gets for a comment on it, by the commented
- * item's entity type. Only items with an owner are here: a proposal has none,
- * and a comment's own author hears about replies through `comment_reply`.
+ * item's entity type. Typed over every owned entity type, so a type added to
+ * the owner table fails typecheck here until it has a notification. A comment's
+ * own author is the one exception: they hear about replies through
+ * `comment_reply`. A proposal has no owner, so it is not here.
  */
-const COMMENT_ON_OWNED_ITEM = new Map<string, NotificationType>([
-  ['tick', 'comment_on_tick'],
-  ['session', 'comment_on_session'],
-  ['climb', 'comment_on_climb'],
-  ['playlist_climb', 'comment_on_playlist'],
-  ['board', 'comment_on_board'],
-  ['gym', 'comment_on_gym'],
-]);
+const COMMENT_ON_OWNED_ITEM: Record<Exclude<OwnedEntityType, 'comment'>, NotificationType> = {
+  tick: 'comment_on_tick',
+  session: 'comment_on_session',
+  climb: 'comment_on_climb',
+  playlist_climb: 'comment_on_playlist',
+  board: 'comment_on_board',
+  gym: 'comment_on_gym',
+};
+const commentOnOwnedItemType = new Map<string, NotificationType>(Object.entries(COMMENT_ON_OWNED_ITEM));
 
 /**
  * Everyone who owns an item, read from the same owner definition the privacy
@@ -30,12 +33,17 @@ const COMMENT_ON_OWNED_ITEM = new Map<string, NotificationType>([
  * the climb's Boardsesh setter (`board_climbs.user_id`; an Aurora-only
  * `setter_id` names no Boardsesh account here), the playlist's owner, the
  * live board's or gym's owner.
+ *
+ * The system catalogue account is dropped. It holds unclaimed synced gyms and
+ * the walls a deleted account hands over, nobody reads its inbox, and a row
+ * there would only keep other climbers' activity against an account. It stays
+ * an owner for reads (`entityOwnerCondition`); it just gets no notifications.
  */
 async function resolveEntityOwnerIds(entityType: string, entityId: string): Promise<string[]> {
   const ownerQuery = entityOwnerIdsQuery(entityType, entityId);
   if (!ownerQuery) return [];
   const owners = await executeRows<{ owner_id: string }>(db, ownerQuery);
-  return owners.map((owner) => owner.owner_id);
+  return owners.map((owner) => owner.owner_id).filter((ownerId) => ownerId !== SYSTEM_USER_ID);
 }
 
 /**
@@ -70,7 +78,7 @@ export async function resolveCommentRecipients(
   }
 
   // Notify the item's owner(s)
-  const ownerNotificationType = COMMENT_ON_OWNED_ITEM.get(entityType);
+  const ownerNotificationType = commentOnOwnedItemType.get(entityType);
   if (ownerNotificationType) {
     for (const ownerId of await resolveEntityOwnerIds(entityType, entityId)) {
       recipients.push({ recipientId: ownerId, notificationType: ownerNotificationType });

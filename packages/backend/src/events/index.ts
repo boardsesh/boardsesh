@@ -108,7 +108,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         );
         for (const recipient of commentRecipients) {
           if (!(await canReadSocialEntity('comment', commentUuid, recipient.recipientId, 'listed'))) continue;
-          await writeInlineNotification(event, recipient.recipientId, recipient.notificationType);
+          await writeInlineNotification(event, recipient.recipientId, recipient.notificationType, commentUuid);
         }
         return;
       }
@@ -318,31 +318,46 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
 /**
  * Write one inline notification and push it: the tail every single-recipient
  * case shares, and the loop body of the multi-recipient comment case. Never to
- * the actor themselves, and not twice for the same actor, recipient, type and
- * item within an hour.
+ * the actor themselves.
+ *
+ * A comment notification stores its comment, like the worker's, so the inbox
+ * shows the body and reads the row by the comment rule. Each comment is its own
+ * notification, as in the worker; everything else is written once per actor,
+ * recipient, type and item within an hour.
  */
 async function writeInlineNotification(
   event: SocialEvent,
   recipientId: string,
   notificationType: dbSchema.NotificationType,
+  commentUuid?: string,
 ): Promise<void> {
   if (recipientId === event.actorId) return;
 
-  // Deduplicate: check if a similar notification already exists recently
-  const [existing] = await db
-    .select({ id: dbSchema.notifications.id })
-    .from(dbSchema.notifications)
-    .where(
-      and(
-        eq(dbSchema.notifications.actorId, event.actorId),
-        eq(dbSchema.notifications.recipientId, recipientId),
-        eq(dbSchema.notifications.type, notificationType),
-        eq(dbSchema.notifications.entityId, event.entityId),
-        sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
-      ),
-    )
-    .limit(1);
-  if (existing) return;
+  let commentId: number | undefined;
+  if (commentUuid) {
+    const [comment] = await db
+      .select({ id: dbSchema.comments.id })
+      .from(dbSchema.comments)
+      .where(eq(dbSchema.comments.uuid, commentUuid))
+      .limit(1);
+    commentId = comment?.id;
+  } else {
+    // Deduplicate: check if a similar notification already exists recently
+    const [existing] = await db
+      .select({ id: dbSchema.notifications.id })
+      .from(dbSchema.notifications)
+      .where(
+        and(
+          eq(dbSchema.notifications.actorId, event.actorId),
+          eq(dbSchema.notifications.recipientId, recipientId),
+          eq(dbSchema.notifications.type, notificationType),
+          eq(dbSchema.notifications.entityId, event.entityId),
+          sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
+        ),
+      )
+      .limit(1);
+    if (existing) return;
+  }
 
   // `follow.created` carries entityType 'user', which is NOT a member of the
   // social_entity_type enum — passing it through threw on insert and the catch
@@ -358,6 +373,7 @@ async function writeInlineNotification(
     type: notificationType,
     entityType,
     entityId: event.entityId,
+    commentId,
   });
 
   // Enrich and push via PubSub

@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} comentó en tu playlist",
     "commentOnBoardWithBody": "{{actor}} comentó en tu plafón: \"{{body}}\"",
     "commentOnBoard": "{{actor}} comentó en tu plafón",
+    "commentOnSprayWallWithBody": "{{actor}} comentó en tu Spraywall: \"{{body}}\"",
+    "commentOnSprayWall": "{{actor}} comentó en tu Spraywall",
     "commentOnGymWithBody": "{{actor}} comentó en tu rocódromo: \"{{body}}\"",
     "commentOnGym": "{{actor}} comentó en tu rocódromo {{gym}}",
     "commentOnGymGeneric": "{{actor}} comentó en tu rocódromo",

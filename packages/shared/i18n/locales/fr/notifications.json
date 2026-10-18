@@ -25,6 +25,8 @@
     "commentOnPlaylist": "{{actor}} a commenté ta playlist",
     "commentOnBoardWithBody": "{{actor}} a commenté ta board : « {{body}} »",
     "commentOnBoard": "{{actor}} a commenté ta board",
+    "commentOnSprayWallWithBody": "{{actor}} a commenté ton Spraywall : « {{body}} »",
+    "commentOnSprayWall": "{{actor}} a commenté ton Spraywall",
     "commentOnGymWithBody": "{{actor}} a commenté ta salle : « {{body}} »",
     "commentOnGym": "{{actor}} a commenté ta salle {{gym}}",
     "commentOnGymGeneric": "{{actor}} a commenté ta salle",

@@ -229,6 +229,20 @@ describe('notificationCopy', () => {
     expect(copy).toEqual({ textI18nKey: 'items.commentOnClimb', params: { actor: 'Alex', climb: 'Crimp line' } });
   });
 
+  it('calls a spray wall a Spraywall, never a bare board', () => {
+    const spray = (commentBody: string | null) =>
+      notificationCopy(makeNotification({ type: 'comment_on_board', boardType: 'spray', commentBody }), 'Alex');
+    expect(spray('nice set')).toEqual({
+      textI18nKey: 'items.commentOnSprayWallWithBody',
+      params: { actor: 'Alex', body: 'nice set' },
+    });
+    expect(spray(null)).toEqual({ textI18nKey: 'items.commentOnSprayWall', params: { actor: 'Alex' } });
+    // Any other board, or an older backend that sends no type, stays a board.
+    expect(
+      notificationCopy(makeNotification({ type: 'comment_on_board', boardType: 'kilter' }), 'Alex').textI18nKey,
+    ).toBe('items.commentOnBoard');
+  });
+
   it('names your gym on a comment_on_gym row with no preview', () => {
     const copy = notificationCopy(makeNotification({ type: 'comment_on_gym', gymName: 'Boulder Barn' }), 'Alex');
     expect(copy).toEqual({ textI18nKey: 'items.commentOnGym', params: { actor: 'Alex', gym: 'Boulder Barn' } });

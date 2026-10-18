@@ -135,6 +135,13 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
         ? { textI18nKey: 'items.commentOnPlaylistWithBody', params: { actor, body: commentBody } }
         : { textI18nKey: 'items.commentOnPlaylist', params: { actor } };
     case 'comment_on_board':
+      // A spray wall is a Spraywall in every locale, never a bare board
+      // ("plafón", "Board"), so it gets its own pair of keys.
+      if (notification.boardType === 'spray') {
+        return commentBody
+          ? { textI18nKey: 'items.commentOnSprayWallWithBody', params: { actor, body: commentBody } }
+          : { textI18nKey: 'items.commentOnSprayWall', params: { actor } };
+      }
       return commentBody
         ? { textI18nKey: 'items.commentOnBoardWithBody', params: { actor, body: commentBody } }
         : { textI18nKey: 'items.commentOnBoard', params: { actor } };

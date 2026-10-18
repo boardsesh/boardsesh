@@ -61,6 +61,11 @@ const DELETED_BOARD_UUID = `${PREFIX}-deleted-board`;
 const GYM_UUID = `${PREFIX}-gym`;
 const GYM_NAME = 'Owner comment bouldering';
 const AURORA_USER_ID = 616_385;
+// The system catalogue account: owner of unclaimed synced gyms and handed-over walls.
+const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
+const UNCLAIMED_GYM_UUID = `${PREFIX}-unclaimed-gym`;
+const SYSTEM_BOARD_UUID = `${PREFIX}-system-board`;
+const SPRAY_BOARD_UUID = `${PREFIX}-spray-board`;
 
 const viewer = (userId: string): ConnectionContext =>
   ({ connectionId: `${PREFIX}-${userId}`, isAuthenticated: true, userId }) as ConnectionContext;
@@ -192,6 +197,35 @@ beforeAll(async () => {
     })),
   );
   await db.insert(dbSchema.gyms).values({ uuid: GYM_UUID, name: GYM_NAME, ownerId: GYM_OWNER });
+  await db
+    .insert(dbSchema.users)
+    .values({ id: SYSTEM_OWNER, email: 'system@boardsesh.com', name: 'Boardsesh' })
+    .onConflictDoNothing();
+  await db.insert(dbSchema.gyms).values({ uuid: UNCLAIMED_GYM_UUID, name: 'Unclaimed wall', ownerId: SYSTEM_OWNER });
+  await db.insert(dbSchema.userBoards).values([
+    {
+      uuid: SYSTEM_BOARD_UUID,
+      slug: SYSTEM_BOARD_UUID,
+      ownerId: SYSTEM_OWNER,
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 30,
+      setIds: '1',
+      name: SYSTEM_BOARD_UUID,
+      isPublic: true,
+    },
+    {
+      uuid: SPRAY_BOARD_UUID,
+      slug: SPRAY_BOARD_UUID,
+      ownerId: BOARD_OWNER,
+      boardType: 'spray',
+      layoutId: 990_385,
+      sizeId: 990_385,
+      setIds: '1',
+      name: SPRAY_BOARD_UUID,
+      isPublic: true,
+    },
+  ]);
 });
 
 beforeEach(async () => {
@@ -296,6 +330,36 @@ describe('the owner of a commented item', () => {
     expect(await notificationsAbout(AURORA_CLIMB_UUID)).toEqual([]);
   });
 
+  it('does not write into the system account for an unclaimed gym or a system-owned board', async () => {
+    // It owns them for reads, but nobody reads its inbox.
+    await commentThroughWorker({ entityType: 'gym', entityId: UNCLAIMED_GYM_UUID }, PRIVATE_COMMENTER);
+    await commentThroughWorker({ entityType: 'board', entityId: SYSTEM_BOARD_UUID }, PRIVATE_COMMENTER);
+    const gymComment = await insertComment({ entityType: 'gym', entityId: UNCLAIMED_GYM_UUID }, PUBLIC_COMMENTER);
+    await publishSocialEvent(
+      commentEvent({ entityType: 'gym', entityId: UNCLAIMED_GYM_UUID }, PUBLIC_COMMENTER, gymComment),
+    );
+
+    expect(await notificationsAbout(UNCLAIMED_GYM_UUID)).toEqual([]);
+    expect(await notificationsAbout(SYSTEM_BOARD_UUID)).toEqual([]);
+  });
+
+  it('marks a comment on a Spraywall so the copy never calls it a bare board', async () => {
+    await commentThroughWorker({ entityType: 'board', entityId: SPRAY_BOARD_UUID }, PUBLIC_COMMENTER);
+    await commentThroughWorker({ entityType: 'board', entityId: BOARD_UUID }, PUBLIC_COMMENTER);
+
+    const { groups } = await socialNotificationQueries.groupedNotifications(null, {}, viewer(BOARD_OWNER));
+    expect(
+      groups
+        .map((group) => [group.type, group.entityId, group.boardType])
+        .sort(([, first], [, second]) => String(first).localeCompare(String(second))),
+    ).toEqual(
+      [
+        ['comment_on_board', BOARD_UUID, 'kilter'],
+        ['comment_on_board', SPRAY_BOARD_UUID, 'spray'],
+      ].sort(([, first], [, second]) => String(first).localeCompare(String(second))),
+    );
+  });
+
   it('gives a deleted board no owner to tell', async () => {
     await commentThroughWorker({ entityType: 'board', entityId: DELETED_BOARD_UUID }, PUBLIC_COMMENTER);
     expect(await notificationsAbout(DELETED_BOARD_UUID)).toEqual([]);
@@ -332,6 +396,21 @@ describe('a draft or unlisted climb', () => {
 });
 
 describe('local-only mode (no Redis)', () => {
+  it('writes every comment with its comment id, as the worker does', async () => {
+    await seedSession();
+    const session: Commentable = { entityType: 'session', entityId: SESSION_ID };
+    for (let count = 0; count < 2; count++) {
+      const commentUuid = await insertComment(session, PUBLIC_COMMENTER);
+      await publishSocialEvent(commentEvent(session, PUBLIC_COMMENTER, commentUuid));
+    }
+
+    // Two comments inside the hour are two notifications, each carrying its comment.
+    const rows = await notificationsAbout(SESSION_ID);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.type === 'comment_on_session' && row.commentId !== null)).toBe(true);
+    expect(new Set(rows.map((row) => row.commentId)).size).toBe(2);
+  });
+
   it('tells the same owner, naming a private commenter', async () => {
     await seedSession();
     const session: Commentable = { entityType: 'session', entityId: SESSION_ID };
@@ -370,6 +449,9 @@ describe('one owner definition', () => {
       ['board', BOARD_UUID],
       ['board', DELETED_BOARD_UUID],
       ['gym', GYM_UUID],
+      // The system account still owns an unclaimed gym here, for reads; only
+      // the recipient resolver drops it.
+      ['gym', UNCLAIMED_GYM_UUID],
       ['comment', strangerComment],
     ];
     for (const [entityType, entityId] of cases) {
@@ -377,7 +459,7 @@ describe('one owner definition', () => {
       if (!ownerQuery) throw new Error(`${entityType} should have an owner query`);
       const recipients = (await executeRows<{ owner_id: string }>(db, ownerQuery)).map((row) => row.owner_id);
       const owners: string[] = [];
-      for (const userId of ALL_USERS) {
+      for (const userId of [...ALL_USERS, SYSTEM_OWNER]) {
         const [probe] = await db
           .select({ owned: entityOwnerCondition(entityType, sql`${entityId}::text`, userId) })
           .from(sql`(SELECT 1) owner_probe`);
