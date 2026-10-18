@@ -5,7 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Matrix
 import android.graphics.Bitmap
@@ -130,10 +133,55 @@ class BoardSessionService : Service() {
     // a Chronometer can't change on its own (colour, the next beat's base).
     private val restTransition = Runnable { onRestTransition() }
 
+    // The re-post above runs on the main Handler, whose clock is uptime: it stops
+    // while the phone is in deep sleep. The Chronometer's base is elapsedRealtime,
+    // which keeps counting through sleep. A rest that ends while the screen is off
+    // would otherwise show negative digits under its old caption and colour (or a
+    // fixed window running negative under "Every 1:00") until the leftover
+    // awake-time delay ran out. So re-render the moment the climber can see the
+    // notification again; the re-post also re-arms the next transition from now.
+    // SCREEN_ON / USER_PRESENT are protected system broadcasts: no other app can
+    // send them, so registering without the export flag below API 33 is safe.
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (restTimer != null) onRestTransition()
+        }
+    }
+    private var screenOnReceiverRegistered = false
+
+    private fun registerScreenOnReceiver() {
+        if (screenOnReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenOnReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(screenOnReceiver, filter)
+            }
+            screenOnReceiverRegistered = true
+        } catch (error: Exception) {
+            Log.w(TAG, "screen-on receiver registration failed: ${error.message}")
+        }
+    }
+
+    private fun unregisterScreenOnReceiver() {
+        if (!screenOnReceiverRegistered) return
+        screenOnReceiverRegistered = false
+        try {
+            unregisterReceiver(screenOnReceiver)
+        } catch (error: IllegalArgumentException) {
+            Log.w(TAG, "screen-on receiver was not registered: ${error.message}")
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         cancelOnMain(restTransition)
+        unregisterScreenOnReceiver()
         foregrounded = false
         super.onDestroy()
     }
@@ -210,12 +258,14 @@ class BoardSessionService : Service() {
         if (intent?.action == ACTION_STOP || !promoted) {
             foregrounded = false
             cancelOnMain(restTransition)
+            unregisterScreenOnReceiver()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
         foregrounded = true
+        registerScreenOnReceiver()
         scheduleRestTransition()
         // Image compositing never runs before promotion: the notification was
         // already built (with the cached bitmap or a placeholder) and posted above.

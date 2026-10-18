@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.os.Looper
 import android.os.SystemClock
 import android.widget.Chronometer
 import android.widget.FrameLayout
@@ -865,6 +866,63 @@ class BoardSessionServiceTest {
         assertEquals(60_000L, scheduled.single().second)
         val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
         assertEquals(SystemClock.elapsedRealtime() + (restNowMs + 100_000 - nowMs), clock.base)
+    }
+
+    // Deep sleep pauses the uptime-based re-post while wall and elapsed time move
+    // on. Turning the screen on must reconcile at once, not when the leftover
+    // awake-time delay finally runs out.
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on re-renders a rest that ended while the phone slept`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 30_000, deadlineMs = nowMs + 90_000,
+                caption = "1:30 rest", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+        // The deadline re-post is armed but never ran: the phone slept through it.
+        assertEquals(1, scheduled.size)
+        nowMs += 120_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        // The stale re-post is cancelled and nothing more is armed: the rest is over.
+        assertTrue(scheduled.isEmpty())
+        assertEquals("Over your rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `turning the screen on rolls a fixed window the phone slept through to the current one`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 20_000, deadlineMs = nowMs + 40_000, periodSeconds = 60),
+            0,
+            2,
+        )
+        // Window ends at +40 s, +100 s, +160 s, +220 s; the phone wakes at +185 s.
+        nowMs += 185_000
+
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        // Re-armed from now for the window ending at +220 s.
+        assertEquals(35_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertEquals(SystemClock.elapsedRealtime() + (restNowMs + 220_000 - nowMs), clock.base)
     }
 
     @Test
