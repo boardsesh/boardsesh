@@ -13,7 +13,7 @@ vi.mock('react-native-mmkv', () => ({
   }),
 }));
 
-import { getAppEntryHref, getAppEntryTab } from '../app-entry-route';
+import { getAppEntryHref, getAppEntryTab, normaliseStartupScreen } from '../app-entry-route';
 import { setSetting } from '../../settings/hooks';
 
 describe('ordinary app entry', () => {
@@ -51,6 +51,26 @@ describe('ordinary app entry', () => {
       expect(getAppEntryHref()).toBe('/(tabs)/climbs');
     },
   );
+
+  // The Settings row reads the same value through the same function, so a
+  // launch that opens Climbs never sits under a row with nothing chosen.
+  it.each([
+    ['home', 'home'],
+    ['climbs', 'climbs'],
+    ['profile', 'climbs'],
+    ['Home', 'climbs'],
+    [true, 'climbs'],
+    [null, 'climbs'],
+    [undefined, 'climbs'],
+    [{ tab: 'home' }, 'climbs'],
+  ])('reads a stored %j as %s, for launch and Settings alike', (storedValue, expected) => {
+    expect(normaliseStartupScreen(storedValue)).toBe(expected);
+  });
+
+  it('opens the tab the Settings row shows for an unknown stored value', () => {
+    storedBytes.set('startupScreen', '"profile"');
+    expect(getAppEntryTab()).toBe(normaliseStartupScreen('profile'));
+  });
 
   it('preserves the screenshot orchestrator Home readiness contract', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');

@@ -386,7 +386,7 @@
         "contributeSubtitle": "Die Übersetzungen kommen aus der Community. Öffne die {{language}}-Dateien auf GitHub, um eine Formulierung zu korrigieren oder zu ergänzen."
       },
       "startup": {
-        "title": "Startbildschirm",
+        "title": "App öffnet mit",
         "footer": "Gilt ab dem nächsten App-Start. Links, Benachrichtigungen und die Einrichtung öffnen weiterhin ihr eigenes Ziel."
       },
       "diagnostics": {

@@ -92,12 +92,16 @@ describe('native import notification handlers', () => {
   it('opens a tapped notification where it points with Home chosen to start', async () => {
     const { setSetting } = await import('../../settings/hooks');
     setSetting('startupScreen', 'home');
-    mocks.lastResponse.mockReturnValue(response({ type: 'session_invite', sessionId: 'session' }));
-    const { setupNotificationHandlers } = await import('../handlers');
-    const router = { push: vi.fn() };
-    setupNotificationHandlers(router, { canNavigate: true });
-    expect(router.push).toHaveBeenCalledOnce();
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/(tabs)/queue', params: { sessionId: 'session' } });
+    try {
+      mocks.lastResponse.mockReturnValue(response({ type: 'session_invite', sessionId: 'session' }));
+      const { setupNotificationHandlers } = await import('../handlers');
+      const router = { push: vi.fn() };
+      setupNotificationHandlers(router, { canNavigate: true });
+      expect(router.push).toHaveBeenCalledOnce();
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/(tabs)/queue', params: { sessionId: 'session' } });
+    } finally {
+      setSetting('startupScreen', 'climbs');
+    }
   });
 
   it('refreshes import progress for a foreground completion without navigating', async () => {

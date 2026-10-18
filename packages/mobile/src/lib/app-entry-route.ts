@@ -20,8 +20,16 @@ import type { StartupScreen } from '../settings/types';
  */
 export function getAppEntryTab(): StartupScreen {
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return 'home';
-  // Compared, not cast: an unknown value from storage opens Climbs.
-  return getSetting('startupScreen') === 'home' ? 'home' : 'climbs';
+  return normaliseStartupScreen(getSetting('startupScreen'));
+}
+
+/**
+ * The start-up tab a stored value means. Compared, not cast: anything but
+ * `home` (a third option from a newer bundle after an OTA rollback, broken
+ * bytes) is Climbs, so launch and the Settings row always agree on one tab.
+ */
+export function normaliseStartupScreen(storedValue: unknown): StartupScreen {
+  return storedValue === 'home' ? 'home' : 'climbs';
 }
 
 export function getAppEntryHref(): '/(tabs)/home' | '/(tabs)/climbs' {

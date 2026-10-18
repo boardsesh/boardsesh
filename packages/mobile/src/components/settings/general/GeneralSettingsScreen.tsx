@@ -21,6 +21,7 @@ import { isOfflineEngineEnabled } from '../../../lib/offline-engine';
 import { replayOnboarding } from '../../../lib/onboarding/onboarding-storage';
 import { replayBoardLookStep } from '../../../lib/board-render/replay-board-look-step';
 import { withSettingTracking } from '../../../lib/settings-analytics';
+import { normaliseStartupScreen } from '../../../lib/app-entry-route';
 import { useOutboxSummary } from '../../../offline/outbox-store';
 import { useMissingOfflineBoards } from '../../../offline/use-keep-boards-offline';
 import { forgetDownloadAllTap, rememberDownloadAllTap, setSetting, useSetting } from '../../../settings';
@@ -52,7 +53,9 @@ export function GeneralSettingsScreen() {
   // tap is `makeAutoOfflineBoardsToggle`.
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
   // Read by `getAppEntryTab()` on the next start; writing it moves nothing now.
-  const [startupScreen, setStartupScreen] = useSetting('startupScreen');
+  // Normalised the same way, so an unknown stored value shows Climbs chosen.
+  const [storedStartupScreen, setStartupScreen] = useSetting('startupScreen');
+  const startupScreen = normaliseStartupScreen(storedStartupScreen);
   const missingOfflineBoards = useMissingOfflineBoards();
   const { effectiveOffline, offlineMode } = useConnectivity();
   // What is still sitting in the outbox. Gated on `schemaReady`: on a contended
