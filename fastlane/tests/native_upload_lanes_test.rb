@@ -180,8 +180,8 @@ class NativeUploadLanesTest < Minitest::Test
       error = assert_raises(RuntimeError, state) do
         run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION"), app_store_version("2.7.0", state)])
       end
-      assert_includes error.message, "open iOS version 2.7.0 (#{state})"
-      assert_includes error.message, "would rename that version to 2.7.1"
+      assert_includes error.message, "unreleased iOS version 2.7.0 (#{state})"
+      assert_includes error.message, "would rename an editable version to 2.7.1"
       assert_nil @dsl.app_store_uploads
     end
     assert_equal ["/v1/apps/app-1/appStoreVersions?filter[platform]=IOS&limit=200"], BoardseshASC::Client.listed_paths
@@ -191,8 +191,41 @@ class NativeUploadLanesTest < Minitest::Test
     error = assert_raises(RuntimeError) do
       run_ios_draft([app_store_version("2.7.0", "WAITING_FOR_REVIEW", state_attribute: "appStoreState")])
     end
-    assert_includes error.message, "open iOS version 2.7.0 (WAITING_FOR_REVIEW)"
+    assert_includes error.message, "unreleased iOS version 2.7.0 (WAITING_FOR_REVIEW)"
     assert_nil @dsl.app_store_uploads
+  end
+
+  # An approved version that is not released yet is not editable, so deliver
+  # would not rename it, but the next version must still wait until it is out.
+  def test_ios_draft_waits_for_an_approved_version_to_be_released
+    [
+      ["PENDING_DEVELOPER_RELEASE", "appVersionState"], ["ACCEPTED", "appVersionState"],
+      ["PENDING_APPLE_RELEASE", "appVersionState"], ["PROCESSING_FOR_DISTRIBUTION", "appVersionState"],
+      ["WAITING_FOR_EXPORT_COMPLIANCE", "appVersionState"],
+      ["PENDING_DEVELOPER_RELEASE", "appStoreState"], ["PENDING_APPLE_RELEASE", "appStoreState"],
+      ["PROCESSING_FOR_APP_STORE", "appStoreState"], ["WAITING_FOR_EXPORT_COMPLIANCE", "appStoreState"]
+    ].each do |state, state_attribute|
+      error = assert_raises(RuntimeError, "#{state_attribute} #{state}") do
+        run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION"),
+                       app_store_version("2.7.0", state, state_attribute: state_attribute)])
+      end
+      assert_includes error.message, "unreleased iOS version 2.7.0 (#{state})"
+      assert_includes error.message, "until it is out"
+      assert_nil @dsl.app_store_uploads
+    end
+  end
+
+  # The live version and replaced or removed ones never hold the next draft.
+  def test_ios_draft_ignores_live_replaced_and_removed_versions
+    [
+      ["READY_FOR_DISTRIBUTION", "appVersionState"], ["REPLACED_WITH_NEW_VERSION", "appVersionState"],
+      ["READY_FOR_SALE", "appStoreState"], ["REPLACED_WITH_NEW_VERSION", "appStoreState"],
+      ["REMOVED_FROM_SALE", "appStoreState"], ["DEVELOPER_REMOVED_FROM_SALE", "appStoreState"]
+    ].each do |state, state_attribute|
+      @dsl.app_store_uploads&.clear
+      run_ios_draft([app_store_version("2.7.0", state, state_attribute: state_attribute)])
+      assert_equal ["2.7.1"], @dsl.app_store_uploads.map { |options| options.fetch(:app_version) }, "#{state_attribute} #{state}"
+    end
   end
 
   def test_ios_draft_updates_its_own_open_version_and_attaches_the_build
