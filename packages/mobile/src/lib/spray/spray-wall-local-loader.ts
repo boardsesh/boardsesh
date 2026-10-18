@@ -1,5 +1,4 @@
 import { Image } from 'react-native';
-import { canReadPrivateCatalog, captureCatalogReadEpoch, isCatalogReadCurrent } from '../../offline/catalog-access';
 import { getDatabaseHandle } from '../../db';
 import { getSprayWallLocal } from '../../db/queries/get-spray-wall-local';
 import { readLocalUserId } from '../local-user-id';
@@ -49,14 +48,11 @@ export async function loadLocalSprayWall(
   viewerGeneration: number,
   removalGeneration: number,
 ): Promise<boolean> {
-  const catalogEpoch = captureCatalogReadEpoch();
   const stillCurrent = () =>
-    isCatalogReadCurrent(catalogEpoch) &&
-    sprayWallViewerGeneration() === viewerGeneration &&
-    sprayWallRemovalGeneration(layoutId) === removalGeneration;
+    sprayWallViewerGeneration() === viewerGeneration && sprayWallRemovalGeneration(layoutId) === removalGeneration;
   try {
     const db = getDatabaseHandle();
-    if (!db || !stillCurrent() || !(await canReadPrivateCatalog(db)) || !stillCurrent()) return false;
+    if (!db || !stillCurrent()) return false;
     const userId = await readLocalUserId();
     if (!userId || !stillCurrent()) return false;
     const wall = await getSprayWallLocal(db, layoutId, userId);
@@ -80,7 +76,6 @@ export async function loadLocalSprayWall(
     const verified = await getSprayWallLocal(db, layoutId, userId);
     if (!verified || verified.photoKey !== wall.photoKey || verified.version !== wall.version || !stillCurrent())
       return false;
-    if (!(await canReadPrivateCatalog(db)) || !stillCurrent()) return false;
     const versionId: SprayVersionIdentity = `local-${photoMatch[2]}-${wall.version}`;
     // The mirror has no archive columns: what the server last said is kept
     // beside the offline boards (`rememberSprayWallArchive`), so an archived wall

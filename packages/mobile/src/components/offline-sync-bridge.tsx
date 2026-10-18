@@ -8,13 +8,7 @@ import {
   stampLocalUserId,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
-import {
-  startSyncScheduler,
-  triggerSync,
-  drainMutationQueue,
-  startBackgroundTracking,
-} from '../offline/offline-sync-adapter';
-import { subscribePrivacyRevalidation } from '../offline/privacy-revalidation';
+import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { getSetting } from '../settings';
@@ -231,16 +225,7 @@ export function OfflineSyncBridge() {
         onScopeDownloadComplete: notifyScopeDownloadComplete,
         snapshotSource,
       };
-      const stop = startSyncScheduler(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
-      // Withdrawal clears completion markers and aborts an older pull. Wake the
-      // existing single-flight scheduler when authorized replay can start again.
-      const stopPrivacy = subscribePrivacyRevalidation(() => {
-        triggerSync(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
-      });
-      return () => {
-        stopPrivacy();
-        stop();
-      };
+      return startSyncScheduler(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, options);
     } catch (error) {
       if (__DEV__) {
         console.warn('[OfflineSyncBridge] failed to start sync scheduler:', error);

@@ -1,5 +1,3 @@
-import { canReadPrivateCatalog, captureCatalogReadEpoch, isCatalogReadCurrent } from '../../offline/catalog-access';
-import { needsPrivacyRevalidation } from '../../offline/privacy-revalidation';
 import { getPrivacyRevocationGeneration } from '../privacy/privacy-cache';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
@@ -22,7 +20,7 @@ import {
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
 import { createAbortError } from './request-timeout';
-import { canServeLocalUserData, ensureHoldIndex } from '@boardsesh/offline-sync';
+import { assertLocalUserDataOwner, canServeLocalUserData, ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
 import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
 import { parseHoldRows } from '../../offline/hold-index-parser';
@@ -171,8 +169,33 @@ async function canServeSearchLocal(db: SQLiteDatabase, { input }: SearchClimbsQu
 // Lazy, like `canReadFollowedAuthors`: the reader pulls in the secure store,
 // which a search that never asks for Liked has no reason to load.
 async function canReadLocalFavorites(db: SQLiteDatabase): Promise<boolean> {
+  return canServeLocalUserData(db, await readViewerId());
+}
+
+// The signed-in account, from the token on this phone: what the draft reads
+// compare a climb's owner with. Lazy for the same reason as above.
+async function readViewerId(): Promise<string | null> {
   const { readLocalUserId } = await import('../local-user-id');
-  return canServeLocalUserData(db, await readLocalUserId());
+  return (await readLocalUserId()) ?? null;
+}
+
+/**
+ * Whether the rows on this phone may answer for the signed-in account. They may
+ * still belong to the account that used it before: a sign-out wipe that failed, or
+ * one that never ran (a session that had expired before launch, a keychain read
+ * that failed, a reinstall, a restored backup), leaves them stamped with that
+ * owner until `OfflineSyncBridge` wipes them, and that wipe gives up silently on
+ * error. Local search binds ticks and personal grades to the stamp, so serving
+ * through a mismatch would show the previous climber's sends. Declining sends the
+ * read to the server, or to the offline fallback. An unstamped database holds no
+ * user rows to leak, so it serves. Deletes nothing.
+ */
+async function isLocalDataOwnerCurrent(db: SQLiteDatabase): Promise<boolean> {
+  try {
+    return (await assertLocalUserDataOwner(db, await readViewerId())) !== 'mismatch';
+  } catch {
+    return false;
+  }
 }
 
 // A search can come back empty offline for two very different reasons, and the
@@ -281,6 +304,7 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
       layoutId: variables.layoutId,
       angle: variables.angle,
       climbUuid: variables.climbUuid,
+      viewerId: await readViewerId(),
     }),
   }),
   offlineFallback: () => ({ climb: null }),
@@ -358,7 +382,7 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   boardNameOf: ({ boardName }) => boardName,
   canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
   resolveLocal: async (db, { boardName, climbUuid, angle }) => ({
-    boardseshGrade: await getBoardseshGradeLocal(db, { boardName, climbUuid, angle }),
+    boardseshGrade: await getBoardseshGradeLocal(db, { boardName, climbUuid, angle, viewerId: await readViewerId() }),
   }),
   offlineFallback: () => ({ boardseshGrade: null }),
   isLocalMiss: (response) => response.boardseshGrade === null,
@@ -389,7 +413,11 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
   boardNameOf: ({ boardName }) => boardName,
   canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
-    boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, { boardName, climbUuid }),
+    boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, {
+      boardName,
+      climbUuid,
+      viewerId: await readViewerId(),
+    }),
   }),
   offlineFallback: () => ({ boardseshGradesForAngles: [] }),
 });
@@ -409,7 +437,7 @@ registerOfflineOperation<ClimbStatsHistoryVariables, ClimbStatsHistoryResponse>(
   boardNameOf: ({ boardName }) => boardName,
   canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
-    climbStatsHistory: await getClimbStatsHistoryLocal(db, { boardName, climbUuid }),
+    climbStatsHistory: await getClimbStatsHistoryLocal(db, { boardName, climbUuid, viewerId: await readViewerId() }),
   }),
   offlineFallback: () => ({ climbStatsHistory: [] }),
 });
@@ -492,15 +520,12 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
+  // Moves at sign-in and sign-out (`invalidatePrivacySnapshots('credential')`).
+  // An answer, local or network, that straddles one belongs to the previous
+  // session and is dropped below.
   const privacyGeneration = getPrivacyRevocationGeneration();
-  const localAllowed = () => !needsPrivacyRevalidation() && getPrivacyRevocationGeneration() === privacyGeneration;
-  // A withdrawn catalogue cannot serve local-only reads, but it must never hold
-  // an authenticated server request behind a locked SQLite file.
-  if (operation && !localAllowed() && (!onlineManager.isOnline() || operation.networkPolicy === 'local-only')) {
-    return operation.offlineFallback() as TResponse;
-  }
+  const localAllowed = () => getPrivacyRevocationGeneration() === privacyGeneration;
   if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
-  const catalogEpoch = captureCatalogReadEpoch();
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
   // the online miss-retry path — the one path that reaches the network with a
@@ -521,7 +546,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         localAllowed() &&
         localDb &&
         variables !== undefined &&
-        (await canReadPrivateCatalog(localDb)) &&
+        (await isLocalDataOwnerCurrent(localDb)) &&
         (await operation.canServeLocal(localDb, variables as never))
       ) {
         localServiceable = true;
@@ -548,9 +573,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
               boardName: operation.boardNameOf(variables as never),
             });
           }
-          return localAllowed() && (await canReadPrivateCatalog(localDb)) && isCatalogReadCurrent(catalogEpoch)
-            ? localResponse
-            : (operation.offlineFallback() as TResponse);
+          return localAllowed() ? localResponse : (operation.offlineFallback() as TResponse);
         }
       } else if (!isOnline) {
         const input = (variables as { input?: { onlyFollowedAuthors?: boolean } } | undefined)?.input;
@@ -605,13 +628,13 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
     // unreachable" and cold-start-race cases that `onlineManager` still reports as
     // online (see the doc above). Flag-independent, like every other on-disk read.
     // Nothing local to serve → rethrow the real error unchanged.
-    if (operation && localAllowed() && isCatalogReadCurrent(catalogEpoch) && variables !== undefined) {
+    if (operation && localAllowed() && variables !== undefined) {
       // Reuse the db + canServeLocal result from the miss-retry path when we have
       // them; otherwise (flag off, or db not resolved above) probe now.
       const db = localDb ?? getDatabaseHandle();
       if (
         db &&
-        (await canReadPrivateCatalog(db)) &&
+        (await isLocalDataOwnerCurrent(db)) &&
         (localServiceable || (await operation.canServeLocal(db, variables as never)))
       ) {
         const rescued = (await operation.resolveLocal(db, variables as never)) as TResponse;
@@ -630,9 +653,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
             boardName: operation.boardNameOf(variables as never),
           });
         }
-        return localAllowed() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
-          ? rescued
-          : (operation.offlineFallback() as TResponse);
+        return localAllowed() ? rescued : (operation.offlineFallback() as TResponse);
       }
     }
     throw networkError;
@@ -666,11 +687,10 @@ async function enrichNetworkResponse<TResponse>(
   variables: Variables | undefined,
   networkResponse: TResponse,
 ): Promise<TResponse> {
-  const catalogEpoch = captureCatalogReadEpoch();
   if (!operation?.enrichNetworkResponse || variables === undefined) return networkResponse;
   if (!isOfflineEngineEnabled()) return networkResponse;
   const db = resolvedDb ?? getDatabaseHandle();
-  if (!db || needsPrivacyRevalidation() || !(await canReadPrivateCatalog(db))) return networkResponse;
+  if (!db) return networkResponse;
 
   let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const budget = new Promise<TResponse>((resolve) => {
@@ -685,10 +705,7 @@ async function enrichNetworkResponse<TResponse>(
     // A read that loses the race still settles later. Swallow its rejection so
     // it cannot surface as an unhandled one.
     enriched.catch(() => undefined);
-    const result = await Promise.race([enriched, budget]);
-    return !needsPrivacyRevalidation() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
-      ? result
-      : networkResponse;
+    return await Promise.race([enriched, budget]);
   } catch {
     return networkResponse;
   } finally {
@@ -708,19 +725,23 @@ async function enrichNetworkResponse<TResponse>(
  * disables it), and a stray online record would share the rollup's dedupe key
  * with the real offline gaps. A throwing `resolveLocal` propagates, as on the
  * local-first path.
+ *
+ * No sign-in/sign-out generation check, unlike `offlineAwareRequest`. Similar
+ * climbs read listed, published climbs only, which are the same for every
+ * account. The heatmap's personal filters bind to the owner stamp, which
+ * `isLocalDataOwnerCurrent` checks before the read, and a sign-out clears the
+ * query cache an answer would land in.
  */
 async function localOnlyRequest<TResponse>(
   operation: OfflineOperation<never, unknown>,
   variables: Variables | undefined,
 ): Promise<TResponse> {
-  const catalogEpoch = captureCatalogReadEpoch();
   const isOnline = onlineManager.isOnline();
   const db = getDatabaseHandle();
   if (
-    !needsPrivacyRevalidation() &&
     db &&
     variables !== undefined &&
-    (await canReadPrivateCatalog(db)) &&
+    (await isLocalDataOwnerCurrent(db)) &&
     (await operation.canServeLocal(db, variables as never))
   ) {
     const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
@@ -729,9 +750,7 @@ async function localOnlyRequest<TResponse>(
       surface: operation.surface,
       boardName: operation.boardNameOf(variables as never),
     });
-    return !needsPrivacyRevalidation() && (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
-      ? localResponse
-      : (operation.offlineFallback() as TResponse);
+    return localResponse;
   }
   if (!isOnline && variables !== undefined) {
     recordOfflineReadUnavailable({

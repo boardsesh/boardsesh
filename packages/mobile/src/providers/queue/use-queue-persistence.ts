@@ -54,8 +54,9 @@ type UseQueuePersistenceParams = {
 /**
  * Owns the solo-queue persistence lifecycle: cold-start restore (explicit
  * session first, then the local snapshot) and the debounced solo snapshot save.
- * Hydration completion is reactive and scoped to the viewer/privacy generation,
- * so a pending save resumes after revalidation without overwriting another owner.
+ * Hydration completion is reactive and scoped to the viewer and the sign-in
+ * generation, so a pending save resumes after a sign-in or sign-out without
+ * overwriting another owner.
  */
 export function useQueuePersistence({
   authenticatedUserId,
@@ -78,20 +79,29 @@ export function useQueuePersistence({
     let cancelled = false;
     const generation = getPrivacyRevocationGeneration();
     void (async () => {
-      // Keep native storage dependencies out of the queue's initial module graph.
-      // This is an attested catalogue marker, never a decoded token identity.
-      const [{ getDatabaseHandle }, { getAuthorizedCatalogViewerId }] = await Promise.all([
+      // The profile has not answered (an offline cold start), so the owner comes
+      // from the phone: the token's account, when the offline database is
+      // stamped for that same account, the check every user-scoped local read
+      // makes. That pins the read to one account; it attests nothing further.
+      // What keeps another account's queue out is the snapshot's own
+      // `ownerUserId` (getStoredQueueSnapshot) and the snapshot clear at sign-out.
+      // Native storage stays out of the queue's initial module graph.
+      const [{ getDatabaseHandle }, { getLocalUserId }, { readLocalUserId }] = await Promise.all([
         import('../../db'),
-        import('../../offline/catalog-access'),
+        import('@boardsesh/offline-sync'),
+        import('../../lib/local-user-id'),
       ]);
       if (cancelled || generation !== getPrivacyRevocationGeneration()) return;
       const database = getDatabaseHandle();
-      const userId = database ? await getAuthorizedCatalogViewerId(database) : null;
+      const [stampedUserId, tokenUserId] = database
+        ? await Promise.all([getLocalUserId(database), readLocalUserId()])
+        : [null, undefined];
+      const userId = stampedUserId && stampedUserId === tokenUserId ? stampedUserId : null;
       if (!cancelled && generation === getPrivacyRevocationGeneration()) {
         setVerifiedOwner(userId ? { userId, generation } : null);
       }
     })().catch(() => {
-      /* An unavailable marker leaves the saved queue untouched. */
+      /* An unreadable stamp or token leaves the saved queue untouched. */
     });
     return () => {
       cancelled = true;

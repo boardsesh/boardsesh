@@ -975,6 +975,19 @@ export function resetDatabaseInitializationForTests(): void {
  * The photographs are the caller's half: `clearStoredSprayPhotos` wipes the whole
  * store next to this call, which is strictly more than these rows name and so
  * also reclaims a file some earlier failed wipe orphaned.
+ *
+ * First-ascent names are the other per-account part of the catalogue. The stats
+ * sync sends a first ascensionist's name only to a viewer allowed to see it
+ * (`privateSafeFirstAscentName(…, ctx.userId)` in the backend's sync queries), so
+ * `fa_username` and `fa_at` hold what THIS account was shown. They are blanked
+ * here and nothing else is: the stats rows and every board checkpoint stay, so on
+ * a board already downloaded the names stay blank until each row next changes.
+ * Nothing on the phone reads them today.
+ *
+ * This wipe (the sign-outs the climber did not choose, and the owner-stamp
+ * recovery in `OfflineSyncBridge`) and `purgeLocalDataForSignOut` are the only
+ * boundaries between accounts on this phone. A token refresh, a reconnect or a
+ * privacy change never removes downloaded data or resets a checkpoint (#6545).
  */
 export async function clearUserData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
@@ -1003,6 +1016,10 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     for (const table of SPRAY_SCOPED_BOARD_TABLES) {
       await txn.runAsync(`DELETE FROM ${table} WHERE board_type = ?`, [SPRAY_BOARD_TYPE]);
     }
+    // Per-viewer columns (see the docblock). No checkpoint moves with them.
+    await txn.runAsync(
+      'UPDATE board_climb_stats SET fa_username = NULL, fa_at = NULL WHERE fa_username IS NOT NULL OR fa_at IS NOT NULL',
+    );
     await deleteUserCheckpoints(txn);
 
     for (const { layout_id: layoutId } of sprayLayouts) {

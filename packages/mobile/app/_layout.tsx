@@ -113,7 +113,6 @@ import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTra
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { AppleAdsAttributionTracker } from '../src/components/analytics/AppleAdsAttributionTracker';
 import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
-import { PrivacySyncBridge } from '../src/components/privacy/PrivacySyncBridge';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { FirstConnectHost } from '../src/components/onboarding/FirstConnectHost';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
@@ -1042,7 +1041,6 @@ function RootLayout() {
                                                                         <ConnectivityBanner />
                                                                         <OfflineDownloadPill />
                                                                         <OnboardingGate />
-                                                                        <PrivacySyncBridge />
                                                                         {/* The connect-step test's (#5654) always-mounted half:
                                                             binds its store to the signed-in account, records this
                                                             phone's first connect and shows the one-time

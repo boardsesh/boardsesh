@@ -1,5 +1,6 @@
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
+import { NOT_SOMEONE_ELSES_DRAFT_SQL } from './get-boardsesh-grade-local';
 
 type StatsRow = {
   angle: number;
@@ -27,17 +28,19 @@ const UNKNOWN_SNAPSHOT_TIME = '1970-01-01T00:00:00.000Z';
  * the row's `updated_at` standing in for the snapshot time. That is the answer
  * the server gives once it reads current stats instead of twelve months of
  * weekly snapshots, and it is fresher than the snapshot table.
+ *
+ * A draft's stats read only for its owner (`NOT_SOMEONE_ELSES_DRAFT_SQL`).
  */
 export async function getClimbStatsHistoryLocal(
   db: OfflineDatabase,
-  input: { boardName: string; climbUuid: string },
+  input: { boardName: string; climbUuid: string; viewerId: string | null },
 ): Promise<ClimbStatsHistoryEntry[]> {
   const rows = await db.getAllAsync<StatsRow>(
     `SELECT angle, ascensionist_count, quality_average, difficulty_average, display_difficulty, updated_at
      FROM board_climb_stats
-     WHERE board_type = ? AND climb_uuid = ? AND ascensionist_count > 0
+     WHERE board_type = ? AND climb_uuid = ? AND ascensionist_count > 0 AND ${NOT_SOMEONE_ELSES_DRAFT_SQL}
      ORDER BY angle ASC`,
-    [input.boardName, input.climbUuid],
+    [input.boardName, input.climbUuid, input.climbUuid, input.viewerId],
   );
   return rows.map((row) => ({
     angle: row.angle,

@@ -272,6 +272,10 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'ascensionist_count',
       'difficulty_average',
       'quality_average',
+      // Per viewer, not catalogue data: the server sends a first ascensionist's
+      // name only to viewers allowed to see it, so these hold what the signed-in
+      // account was shown. `clearUserData` blanks them at the account boundary.
+      // Read them locally only for that same account.
       'fa_username',
       'fa_at',
       'updated_at',

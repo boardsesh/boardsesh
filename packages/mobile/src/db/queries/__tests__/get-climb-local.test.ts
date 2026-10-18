@@ -55,7 +55,13 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     await insertClimb(db, 'c1');
     await insertGrade(db, { climbUuid: 'c1', angle: 40, localGrade: 21.0, universalGrade: 19.5 });
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'c1' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'c1',
+      viewerId: null,
+    });
     expect(climb).not.toBeNull();
     expect(climb?.boardseshDifficulty).toBe(19.5);
     expect(climb?.boardseshConfidence).toBe('confirmed');
@@ -68,7 +74,13 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     await insertClimb(db, 'c2');
     await insertGrade(db, { climbUuid: 'c2', angle: 25, universalGrade: 15.0 });
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'c2' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'c2',
+      viewerId: null,
+    });
     expect(climb?.boardseshDifficulty).toBeNull();
     expect(climb?.boardseshConfidence).toBeNull();
   });
@@ -78,7 +90,13 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     // has — offline included.
     await insertClimb(db, 'hidden', 'kilter', 1);
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'hidden' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'hidden',
+      viewerId: null,
+    });
     expect(climb?.uuid).toBe('hidden');
     expect(climb?.is_hidden).toBe(true);
   });
@@ -86,7 +104,13 @@ describe('getClimbLocal — Boardsesh grade join', () => {
   it('reads null grade when no grade row exists at all', async () => {
     await insertClimb(db, 'c3');
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'c3' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'c3',
+      viewerId: null,
+    });
     expect(climb?.boardseshDifficulty).toBeNull();
     expect(climb?.boardseshConfidence).toBeNull();
   });
@@ -108,14 +132,26 @@ describe('getClimbLocal — climb version numbers', () => {
       'edited',
     ]);
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'edited' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'edited',
+      viewerId: null,
+    });
     expect(climb?.holdsRevisionNumber).toBe(3);
   });
 
   it('reads null for a row pulled before the columns existed', async () => {
     await insertClimb(db, 'pre-v11');
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'pre-v11' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'pre-v11',
+      viewerId: null,
+    });
     expect(climb?.holdsRevisionNumber).toBeNull();
   });
 });
@@ -136,7 +172,13 @@ describe('getClimbLocal — climbs that lost holds', () => {
     await insertClimb(db, 'broken');
     await db.runAsync('UPDATE board_climbs SET missing_hold_count = 2 WHERE uuid = ?', ['broken']);
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'broken' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'broken',
+      viewerId: null,
+    });
 
     expect(climb?.missingHoldCount).toBe(2);
   });
@@ -149,7 +191,13 @@ describe('getClimbLocal — climbs that lost holds', () => {
       'old-blue',
     ]);
 
-    const climb = await getClimbLocal(db, { boardName: 'spray', layoutId: 1, angle: 40, climbUuid: 'old-blue' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'spray',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'old-blue',
+      viewerId: null,
+    });
 
     expect(climb?.uuid).toBe('old-blue');
     expect(climb?.missingHoldCount).toBe(3);
@@ -161,7 +209,13 @@ describe('getClimbLocal — climbs that lost holds', () => {
     // is the statement "0 holds lost".
     await insertClimb(db, 'intact');
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'intact' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 40,
+      climbUuid: 'intact',
+      viewerId: null,
+    });
 
     expect(climb?.missingHoldCount).toBeNull();
   });
@@ -197,7 +251,13 @@ describe('getClimbLocal — cross-angle detail on an angle-bound board', () => {
   it('opens a Woods climb set at 40° with its 40° grade when read at 30°', async () => {
     await insertSetAngleClimb('woods-40', 'woods', 40);
 
-    const climb = await getClimbLocal(db, { boardName: 'woods', layoutId: 1, angle: 30, climbUuid: 'woods-40' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'woods',
+      layoutId: 1,
+      angle: 30,
+      climbUuid: 'woods-40',
+      viewerId: null,
+    });
 
     expect(climb?.angle).toBe(30);
     expect(climb?.statsAngle).toBe(40);
@@ -208,7 +268,13 @@ describe('getClimbLocal — cross-angle detail on an angle-bound board', () => {
   it('keeps a Kilter climb pinned to the browsed angle', async () => {
     await insertSetAngleClimb('kilter-40', 'kilter', 40);
 
-    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 30, climbUuid: 'kilter-40' });
+    const climb = await getClimbLocal(db, {
+      boardName: 'kilter',
+      layoutId: 1,
+      angle: 30,
+      climbUuid: 'kilter-40',
+      viewerId: null,
+    });
 
     expect(climb?.statsAngle).toBeNull();
     expect(climb?.ascensionist_count).toBe(0);

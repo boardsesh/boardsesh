@@ -46,15 +46,26 @@ function mapCommon(row: GradeRow): BoardseshGrade {
 const GRADE_COLUMNS =
   'angle, local_grade, universal_grade, grade_low, grade_high, confidence, ascensionist_count, computed_at';
 
+/**
+ * A draft's grades read only for the draft's owner, as `getClimbLocal` reads the
+ * draft itself (see its docblock): the server sends them to the owner alone, and a
+ * phone can still hold another account's. A draft with no owner, or a viewer of
+ * null, never matches. Binds the climb uuid, then the viewer.
+ */
+export const NOT_SOMEONE_ELSES_DRAFT_SQL = `NOT EXISTS (
+       SELECT 1 FROM board_climbs draft
+       WHERE draft.uuid = ? AND COALESCE(draft.is_draft, 0) = 1 AND COALESCE(draft.user_id = ?, 0) = 0
+     )`;
+
 /** The Boardsesh grade for one climb at one angle, or null when no row exists. */
 export async function getBoardseshGradeLocal(
   db: OfflineDatabase,
-  input: { boardName: string; climbUuid: string; angle: number },
+  input: { boardName: string; climbUuid: string; angle: number; viewerId: string | null },
 ): Promise<BoardseshGrade | null> {
   const row = await db.getFirstAsync<GradeRow>(
     `SELECT ${GRADE_COLUMNS} FROM board_climb_grades
-     WHERE board_type = ? AND climb_uuid = ? AND angle = ? LIMIT 1`,
-    [input.boardName, input.climbUuid, input.angle],
+     WHERE board_type = ? AND climb_uuid = ? AND angle = ? AND ${NOT_SOMEONE_ELSES_DRAFT_SQL} LIMIT 1`,
+    [input.boardName, input.climbUuid, input.angle, input.climbUuid, input.viewerId],
   );
   return row ? mapCommon(row) : null;
 }
@@ -62,12 +73,12 @@ export async function getBoardseshGradeLocal(
 /** Every computed Boardsesh grade for a climb, one row per angle (ascending). */
 export async function getBoardseshGradesForAnglesLocal(
   db: OfflineDatabase,
-  input: { boardName: string; climbUuid: string },
+  input: { boardName: string; climbUuid: string; viewerId: string | null },
 ): Promise<BoardseshGradeAtAngle[]> {
   const rows = await db.getAllAsync<GradeRow>(
     `SELECT ${GRADE_COLUMNS} FROM board_climb_grades
-     WHERE board_type = ? AND climb_uuid = ? ORDER BY angle ASC`,
-    [input.boardName, input.climbUuid],
+     WHERE board_type = ? AND climb_uuid = ? AND ${NOT_SOMEONE_ELSES_DRAFT_SQL} ORDER BY angle ASC`,
+    [input.boardName, input.climbUuid, input.climbUuid, input.viewerId],
   );
   return rows.map((row) => ({ angle: row.angle, ...mapCommon(row) }));
 }

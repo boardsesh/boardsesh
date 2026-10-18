@@ -36,7 +36,7 @@ describe('getClimbStatsHistoryLocal', () => {
     await insertStats(db, { climbUuid: 'c2', angle: 40, ascents: 5 });
     await insertStats(db, { climbUuid: 'c1', angle: 40, ascents: 9, boardType: 'tension' });
 
-    const entries = await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1' });
+    const entries = await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1', viewerId: null });
     expect(entries).toEqual([
       {
         angle: 40,
@@ -59,12 +59,12 @@ describe('getClimbStatsHistoryLocal', () => {
 
   it('is empty for a climb nobody has sent', async () => {
     await insertStats(db, { climbUuid: 'c1', angle: 40, ascents: 0 });
-    expect(await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1' })).toEqual([]);
+    expect(await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1', viewerId: null })).toEqual([]);
   });
 
   it('keeps createdAt a string when a row has no updated_at', async () => {
     await insertStats(db, { climbUuid: 'c1', angle: 40, ascents: 1, updatedAt: null });
-    const [entry] = await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1' });
+    const [entry] = await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid: 'c1', viewerId: null });
     expect(typeof entry?.createdAt).toBe('string');
   });
 });
