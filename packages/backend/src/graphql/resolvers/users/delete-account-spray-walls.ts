@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { Database } from '../../../db/client';
+import { effectiveBoardAudience } from '../../../services/privacy';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { lockWallForWrite, purgeSprayWallFeedItems } from '../board/spray-walls';
 import { lockSprayWallAccount } from '../../../services/spray-account-lock';
@@ -65,7 +66,12 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
       .where(and(eq(dbSchema.userBoards.uuid, wall.boardUuid), eq(dbSchema.userBoards.ownerId, userId)))
       .for('update');
     if (!ownedBoard) continue;
-    if (ownedBoard.deletedAt === null && (ownedBoard.isPublic || ownedBoard.isUnlisted)) {
+    const [policy] = await tx
+      .select({ audience: dbSchema.resourcePrivacy.audience })
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, wall.boardUuid)));
+    const audience = effectiveBoardAudience(policy?.audience, ownedBoard);
+    if (ownedBoard.deletedAt === null && (audience === 'public' || audience === 'unlisted')) {
       previewBoardIds.push(ownedBoard.id);
     }
     await purgeSprayWallFeedItems(tx, wall.layoutId);

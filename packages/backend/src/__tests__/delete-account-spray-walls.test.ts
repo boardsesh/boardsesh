@@ -396,6 +396,24 @@ describe('deleteAccount spray walls (real resolver, rolled-back database)', () =
     });
   });
 
+  it('tombstones the kiosks of a wall that is Unlisted by its policy row alone', async () => {
+    await rolledBack(async (tx) => {
+      const { owner, walls } = await seed(tx);
+      const { board } = walls[0];
+      await tx.update(dbSchema.userBoards).set({ isPublic: false }).where(eq(dbSchema.userBoards.id, board.id));
+      await tx
+        .insert(dbSchema.resourcePrivacy)
+        .values({ kind: 'board', resourceId: board.uuid, ownerId: owner, audience: 'unlisted' });
+      const kioskPublishes = vi.spyOn(pubsub, 'publishBoardQueuePreview');
+      try {
+        await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, ctx(owner));
+        expect(kioskPublishes.mock.calls.map(([boardId]) => boardId)).toEqual([String(board.id)]);
+      } finally {
+        kioskPublishes.mockRestore();
+      }
+    });
+  });
+
   it('keeps failed erasure eligible immediately while ordinary deleted walls retain their window', async () => {
     await rolledBack(async (tx) => {
       const { owner, walls } = await seed(tx);

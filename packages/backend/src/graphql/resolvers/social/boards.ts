@@ -3,6 +3,7 @@ import {
   canAccessBoard,
   canAccessResource,
   canAccessResourceWithoutLink,
+  effectiveBoardAudience,
   legacyResourceAudience,
   legacyLocationAudience,
   canViewActivityIdentity,
@@ -68,11 +69,6 @@ import { listableSprayWallCondition, ownedUnfinishedSprayWallCondition } from '.
 // ============================================
 // Helpers
 // ============================================
-
-/** A board's audience as the read gates see it: its policy row first, then the legacy booleans. */
-function effectiveBoardAudience(policyAudience: string | undefined, row: { isPublic: boolean; isUnlisted: boolean }) {
-  return policyAudience ?? (row.isUnlisted ? 'unlisted' : row.isPublic ? 'public' : 'only_me');
-}
 
 function throwIfBoardSerialConflict(error: unknown): void {
   if (isUniqueViolation(error, 'user_boards_unique_owner_serial')) {

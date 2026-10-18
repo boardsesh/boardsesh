@@ -37,6 +37,17 @@ export function requirePrivacyControls(): void {
     throw new GraphQLError('Privacy controls are not available yet', { extensions: { code: 'PRIVACY_UNAVAILABLE' } });
 }
 /**
+ * A board's audience as the access gates read it: its policy row first, then
+ * the legacy booleans. System-owned boards are read as Public on top of this
+ * (`getResourcePrivacy`).
+ */
+export function effectiveBoardAudience(
+  policyAudience: PrivacyResourceAudience | null | undefined,
+  board: { isPublic: boolean; isUnlisted: boolean },
+): PrivacyResourceAudience {
+  return policyAudience ?? (board.isUnlisted ? 'unlisted' : board.isPublic ? 'public' : 'only_me');
+}
+/**
  * Old full-form booleans may narrow, but cannot replace a newer restricted audience.
  * A legacy private session asks for `unlisted` (off the listings, the link still
  * joins), the same reading `resourceAccessCondition` gives an `is_public = false` row.
@@ -259,13 +270,7 @@ export async function getResourcePrivacy(
     legacy = {
       ownerId: board.ownerId,
       audience:
-        board.ownerId === '00000000-0000-0000-0000-000000000000'
-          ? 'public'
-          : board.isUnlisted
-            ? 'unlisted'
-            : board.isPublic
-              ? 'public'
-              : 'only_me',
+        board.ownerId === '00000000-0000-0000-0000-000000000000' ? 'public' : effectiveBoardAudience(null, board),
       locationAudience: board.hideLocation ? 'only_me' : 'public',
     };
   } else {
