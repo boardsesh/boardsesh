@@ -88,7 +88,6 @@ interface ApnsModule {
   __setApnsTimingForTests: (opts: { debounceMs?: number; dbRetryDelaysMs?: readonly number[] }) => void;
   isApnsConfigured: () => boolean;
   hasPendingSend: (sessionId: string) => boolean;
-  invalidateApnsPrivacy: () => void;
   sendLiveActivityUpdateToTokens: (
     sessionId: string,
     registrations: Array<{ token: string; userId: string | null }>,
@@ -252,50 +251,6 @@ describe('APNs Live Activity service', () => {
   });
 
   describe('sendLiveActivityUpdate', () => {
-    it('discards a prepared authorized projection after a privacy change', async () => {
-      const sessionId = 'apns-projection-race';
-      setApnsEnv();
-      apns.initializeApns();
-      await insertSession(sessionId);
-      const privacy = await import('../services/apns/privacy');
-      const projectContent = privacy.projectLiveActivityContent;
-      let releaseProjection = () => {};
-      const projectionHeld = new Promise<void>((resolve) => {
-        releaseProjection = resolve;
-      });
-      let prepared = false;
-      const projectionSpy = vi.spyOn(privacy, 'projectLiveActivityContent').mockImplementationOnce(async (...args) => {
-        const projection = await projectContent(...args);
-        prepared = true;
-        await projectionHeld;
-        return projection;
-      });
-      const registrations = [{ token: 'projection-race-token', userId: 'apns-private-viewer' }];
-      const staleSend = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
-      try {
-        await vi.waitFor(() => expect(prepared).toBe(true));
-        await db.insert(resourcePrivacy).values({
-          kind: 'session',
-          resourceId: sessionId,
-          ownerId: 'apns-private-owner',
-          audience: 'only_me',
-        });
-        apns.invalidateApnsPrivacy();
-        const withdrawal = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
-        releaseProjection();
-        await Promise.all([staleSend, withdrawal]);
-        expect(mockSend).toHaveBeenCalledTimes(1);
-        expect(mockSend.mock.calls[0]?.[0].aps).toMatchObject({
-          event: 'end',
-          'content-state': { climbName: '', climbUuid: '' },
-        });
-      } finally {
-        releaseProjection();
-        await staleSend;
-        projectionSpy.mockRestore();
-      }
-    });
-
     it('delivers withdrawal after an already dispatched update settles', async () => {
       const sessionId = 'apns-delivery-race';
       setApnsEnv();
@@ -319,7 +274,6 @@ describe('APNs Live Activity service', () => {
           ownerId: 'apns-private-owner',
           audience: 'only_me',
         });
-        apns.invalidateApnsPrivacy();
         const withdrawal = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
         await new Promise((resolve) => setTimeout(resolve, 25));
         expect(mockSend).toHaveBeenCalledTimes(1);

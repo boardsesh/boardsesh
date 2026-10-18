@@ -149,12 +149,6 @@ export function isApnsConfigured(): boolean {
 /** Debounce map: sessionId -> pending send state */
 const pendingSends = new Map<string, DebouncedEntry>();
 const deliveryChains = new Map<string, Promise<void>>();
-let privacyEpoch = 0;
-
-/** Called synchronously when a privacy event arrives, before asynchronous refresh. */
-export function invalidateApnsPrivacy(): void {
-  privacyEpoch++;
-}
 
 async function serializeDelivery(sessionId: string, deliver: () => Promise<void>): Promise<void> {
   const previous = deliveryChains.get(sessionId) ?? Promise.resolve();
@@ -507,7 +501,8 @@ async function sendNotification(
 /**
  * Serialize updates with withdrawals, then authorize each recipient against
  * current session, climb and identity access. Only identical projections share
- * a push. An intervening privacy event discards prepared content before dispatch.
+ * a push. Pushes for one session go out in order, so a later withdrawal never
+ * overtakes an earlier update.
  */
 async function sendGroupedNotification(
   sessionId: string,
@@ -515,9 +510,8 @@ async function sendGroupedNotification(
   baseContentState: LiveActivityContentState,
   options: SendOptions = {},
 ): Promise<void> {
-  const deliveryEpoch = privacyEpoch;
   await serializeDelivery(sessionId, () =>
-    projectAndSendNotification(sessionId, registrations, baseContentState, options, deliveryEpoch),
+    projectAndSendNotification(sessionId, registrations, baseContentState, options),
   );
 }
 
@@ -526,10 +520,8 @@ async function projectAndSendNotification(
   registrations: LiveActivityTokenRegistration[],
   baseContentState: LiveActivityContentState,
   options: SendOptions,
-  deliveryEpoch: number,
 ): Promise<void> {
   if (registrations.length === 0) return;
-  if (deliveryEpoch !== privacyEpoch) return;
 
   let holder: BoardHolder | null = null;
   if (sessionHolderResolver) {
@@ -569,7 +561,6 @@ async function projectAndSendNotification(
     group.registrations.push(registration);
   }
 
-  if (deliveryEpoch !== privacyEpoch) return;
   await Promise.all(
     [...groups.values()].map((group) =>
       sendNotification(sessionId, group.registrations, group.event, group.contentState, options),
@@ -777,7 +768,6 @@ export async function cleanupTokensForSession(sessionId: string): Promise<void> 
 
 /** Internal helper for `__resetApnsForTests`: clears pendingSends timers and resets counters. */
 function __resetApnsStateForTests(): void {
-  privacyEpoch++;
   deliveryChains.clear();
   for (const [, entry] of pendingSends) {
     clearTimeout(entry.timeout);

@@ -69,13 +69,12 @@ import { setupWebSocketServer } from './websocket/setup';
 import { warmRecentBetaLinksCache } from './graphql/resolvers/beta-videos/queries';
 import {
   initializeApns,
-  invalidateApnsPrivacy,
   shutdownApns,
   sendLiveActivityUpdate,
   setSessionHolderResolver,
   isApnsConfigured,
 } from './services/apns';
-import { refreshApnsPrivacy, startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat';
+import { startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat';
 import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './services/apns/cleanup';
 import { buildContentStateFromQueueState } from './services/apns/content-state';
 import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
@@ -202,12 +201,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   // otherwise queue mutations that land on the unconfigured node will silently
   // skip the Live Activity push.
   const instanceId = process.env.HOSTNAME || process.env.FLY_MACHINE_ID || 'local';
-  const unsubscribeApnsPrivacy = await pubsub.subscribePrivacy(() => {
-    invalidateApnsPrivacy();
-    void refreshApnsPrivacy(roomManager).catch((error: unknown) => {
-      logger.error('[Server] APNs privacy refresh failed:', error);
-    });
-  });
   if (isApnsConfigured()) {
     logger.info(`[Server] APNs configured for instance ${instanceId}`);
     // Heartbeat keeps the lock-screen Live Activity alive during long idle
@@ -850,7 +843,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
    * Called by the centralized shutdown handler in index.ts.
    */
   async function shutdownServices(): Promise<void> {
-    unsubscribeApnsPrivacy();
     eventBroker.shutdown();
     await kilterLiveSync.shutdown().catch((error: unknown) => logger.warn('[KilterLive] Shutdown failed', { error }));
 
