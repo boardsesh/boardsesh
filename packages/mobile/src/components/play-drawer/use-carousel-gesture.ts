@@ -457,6 +457,7 @@ export function useCarouselGesture({
       if (state.center !== pending.anchor || !(pending.direction > 0 ? state.hasNext : state.hasPrevious)) return;
       startFling(pending.direction, pending.velocity);
     },
+    [pendingRelease, jsState, anchorPage, uiSteps, resetGeneration, enabledSV, isZoomedSV, startFling],
   );
 
   return { gesture };

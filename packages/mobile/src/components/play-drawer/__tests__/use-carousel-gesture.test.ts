@@ -170,9 +170,17 @@ function landFling() {
   onFinished(true);
 }
 
-function pendingReaction() {
-  const reaction = reactions[reactions.length - 1];
-  return () => reaction.react(reaction.prepare() as never);
+function renderCarouselWithPendingReaction(initialOptions: Options) {
+  const reactionStart = reactions.length;
+  const carousel = renderHook((options: Options) => useCarouselGesture(options), { initialProps: initialOptions });
+  // Capture only this carousel's registrations, excluding any pager reactions.
+  // Adding a second reaction here requires choosing its role explicitly.
+  const registeredReactions = reactions.slice(reactionStart);
+  const [reaction] = registeredReactions;
+  if (registeredReactions.length !== 1 || !reaction) {
+    throw new Error(`Expected one useCarouselGesture reaction, received ${registeredReactions.length}`);
+  }
+  return { ...carousel, catchUp: () => reaction.react(reaction.prepare() as never) };
 }
 
 describe('useCarouselGesture', () => {
@@ -394,11 +402,9 @@ describe('useCarouselGesture', () => {
   describe('a release waiting for React to mount its neighbour', () => {
     function releaseWhileBehind(direction: 1 | -1 = 1, options: Partial<Options> = {}) {
       const pager = makePager();
-      const carousel = renderHook((options: Options) => useCarouselGesture(options), {
-        initialProps: makeOptions({ ...options, pager }),
-      });
+      const carousel = renderCarouselWithPendingReaction(makeOptions({ ...options, pager }));
       const handlers = latestHandlers();
-      const catchUp = pendingReaction();
+      const { catchUp } = carousel;
       swipe(handlers, -direction * (SWIPE_THRESHOLD + 1));
       landFling();
       // A second short, hard flick qualifies before its page exists.
@@ -445,9 +451,8 @@ describe('useCarouselGesture', () => {
         return { pager, currentIndex };
       });
       const { pager } = drawer.result.current;
-      renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager }));
       const handlers = latestHandlers();
-      const catchUp = pendingReaction();
 
       await act(async () => {
         swipe(handlers, -(SWIPE_THRESHOLD + 1));
@@ -814,7 +819,7 @@ describe('useCarouselGesture', () => {
 
     it('waits on the page it reached until the JS thread has mounted the one after', () => {
       const pager = makePager();
-      renderHook(() => useCarouselGesture(makeOptions({ pager })));
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager }));
       const handlers = latestHandlers();
       startFling(pager, handlers, -200);
 
@@ -828,6 +833,24 @@ describe('useCarouselGesture', () => {
       expect(pager.anchorPage.value).toBe(1);
       expect(pager.translateX.value).toBe(0);
       expect(pager.isAnimating.value).toBe(false);
+
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(2);
+      expect(pager.flingDirection.value).toBe(1);
+      expect(pager.isAnimating.value).toBe(true);
+      expect(pager.translateX.value).toBe(-FLING_TARGET);
+
+      // Re-delivery cannot start a second fling for the same retained release.
+      const flingCount = springCallbacks.length;
+      catchUp();
+      expect(springCallbacks).toHaveLength(flingCount);
+      expect(pager.uiSteps.value).toBe(2);
+      landFling();
+      catchUp();
+      expect(pager.anchorPage.value).toBe(2);
+      expect(pager.requestStep).toHaveBeenCalledTimes(2);
+      expect(pager.requestStep).toHaveBeenLastCalledWith(1, 2);
     });
   });
 
