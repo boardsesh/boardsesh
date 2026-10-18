@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { DrizzleQueryError, eq, sql } from 'drizzle-orm';
 import type { ConnectionContext, SetAnalyticsConsentInput } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
@@ -21,6 +21,7 @@ import {
 } from '../services/analytics/posthog-person-deletion';
 import { analyticsConsentMutations } from '../graphql/resolvers/users/analytics-consent';
 import { userMutations } from '../graphql/resolvers/users/mutations';
+import { logger } from '../utils/logger';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 /**
@@ -435,6 +436,35 @@ describe('the erasure worker', () => {
     expect(rows.find((row) => row.id === lateId)?.data.anonymousIds).toEqual(['sdk-anon-split']);
   });
 
+  it('counts a saved id the waiting late pass can no longer carry, and logs only the count', async () => {
+    const distinctId = randomUUID();
+    const boss = requireJobQueue();
+    // Saved before the control-character check existed; jsonb holds U+0001.
+    const lateId = await boss.send(
+      POSTHOG_PERSON_DELETION_QUEUE,
+      { distinctId, reason: 'account_deleted', pass: 'late', anonymousIds: ['sdk-anon-\u0001', 'sdk-anon-old'] },
+      { startAfter: LATE_PASS_DELAY_SECONDS },
+    );
+    if (!lateId) throw new Error('late pass not queued');
+    const warnLog = vi.spyOn(logger, 'warn');
+    replies.anonymousIds = ['sdk-anon-split'];
+
+    const first = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+
+    expect(first).toMatchObject({ state: 'completed', output: { outcome: 'discovered' } });
+    const late = (await erasureRows(distinctId)).find((row) => row.id === lateId);
+    expect(late?.data.anonymousIds).toEqual(['sdk-anon-old', 'sdk-anon-split']);
+    expect(warnLog).toHaveBeenCalledWith(expect.stringContaining('Dropped'), {
+      event: 'posthog_person_deletion_invalid_ids_dropped',
+      reason: 'account_deleted',
+      pass: 'late',
+      jobId: lateId,
+      source: 'job',
+      dropped: 1,
+    });
+    expect(JSON.stringify(warnLog.mock.calls)).not.toContain('sdk-anon-\\u0001');
+  });
+
   /** Run a first pass due now and wait until its delete step has settled. */
   async function workFirstPassThroughDelete(distinctId: string): Promise<ErasureRow[]> {
     const first = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
@@ -463,20 +493,51 @@ describe('the erasure worker', () => {
     },
   );
 
-  it('keeps the real error in the output of a retried pass when its text carries a NUL', async () => {
-    const distinctId = randomUUID();
+  /** Make the discovery of `distinctId` fail while it persists, with `error`. */
+  function failPersisting(distinctId: string, error: Error) {
     const boss = requireJobQueue();
     const findJobs = boss.findJobs.bind(boss);
     vi.spyOn(boss, 'findJobs').mockImplementation(async (name, options) => {
-      // A failed query's message lists its parameters (drizzle), whatever they hold.
-      if (JSON.stringify(options?.data ?? {}).includes(distinctId)) throw new Error('Failed query\nparams: a\u0000b');
+      if (JSON.stringify(options?.data ?? {}).includes(distinctId)) throw error;
       return findJobs(name, options);
     });
+  }
+
+  it('keeps the real error in the output of a retried pass when its text carries a NUL', async () => {
+    const distinctId = randomUUID();
+    failPersisting(distinctId, new Error('connection reset\nat byte a\u0000b'));
 
     const state = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
 
-    expect(state).toMatchObject({ state: 'retry', retry_count: 0, output: { error: 'Failed query params: a b' } });
+    expect(state).toMatchObject({ state: 'retry', retry_count: 0, output: { error: 'connection reset at byte a b' } });
     expect(deletedIds.get(distinctId)).toBeUndefined();
+  });
+
+  it('stores the database error under a failed query, never the query or its parameters', async () => {
+    const distinctId = randomUUID();
+    const otherAccount = randomUUID();
+    // What drizzle throws: the SQL and the parameters in `message`, the driver's error in `cause`.
+    const cause = Object.assign(new Error('invalid byte sequence for encoding "UTF8": 0x00'), { code: '22021' });
+    failPersisting(
+      distinctId,
+      new DrizzleQueryError(
+        'select "id" from "users" where "users"."id" in ($1, $2)',
+        [otherAccount, 'a\u0000b'],
+        cause,
+      ),
+    );
+
+    const state = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+
+    expect(state).toMatchObject({
+      state: 'retry',
+      retry_count: 0,
+      output: { error: 'DrizzleQueryError: invalid byte sequence for encoding "UTF8": 0x00 (22021)' },
+    });
+    const stored = JSON.stringify(state.output);
+    expect(stored).not.toContain('select');
+    expect(stored).not.toContain('params');
+    expect(stored).not.toContain(otherAccount);
   });
 
   it('skips an anonymous id more than 100 distinct ids signed in from, and still erases the rest', async () => {

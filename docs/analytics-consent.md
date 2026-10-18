@@ -364,6 +364,8 @@ anything is deleted.
    identified from an anonymous id: it is no account, so the account check
    never needs it. The log (`posthog_person_deletion_invalid_ids_dropped`, with
    `source` `lookup`, `identified_as` or `job`) has the count, never the id.
+   A saved id that a waiting pass can no longer carry is dropped and counted
+   (`source: 'job'`, that job's id) when this discovery writes into it.
 
    The ids found, plus any the job already carried, are then written, in one
    transaction, into `anonymousIds` on every erasure of this account still
@@ -419,13 +421,17 @@ Responses:
 
 Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
-`posthog_person_deletion_exhausted`. A retried job's output keeps the first
-1,000 characters of the error, control characters and half surrogate pairs
-replaced with spaces: a failed query's message lists its parameters, and
-pg-boss cannot store a NUL or half a pair, so it would record its own jsonb
-error in place of the real one. A queued job waits up to 14 days past its
-start for a worker (`retentionSeconds`). A finished or failed job is kept 7
-days so a failed erasure can be replayed, then pg-boss deletes it.
+`posthog_person_deletion_exhausted`. A retried job's output is the error,
+cut to 1,000 characters, control characters and half surrogate pairs replaced
+with spaces (pg-boss cannot store a NUL or half a pair, and would record its
+own jsonb error in place of the real one). A failed query is stored as
+`DrizzleQueryError: <database error> (<code>)`, for example
+`invalid byte sequence for encoding "UTF8": 0x00 (22021)`, never the SQL or its
+parameters: drizzle puts every parameter in the message, and they can be other
+accounts' ids, which `pgboss.job` would keep for 7 days. A queued job waits up
+to 14 days past its start for a worker (`retentionSeconds`). A finished or
+failed job is kept 7 days so a failed erasure can be replayed, then pg-boss
+deletes it.
 
 ### Configuration
 

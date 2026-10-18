@@ -1,5 +1,5 @@
 import type { JobResult, JobWithMetadata, PgBoss } from 'pg-boss';
-import { inArray } from 'drizzle-orm';
+import { DrizzleQueryError, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import * as dbSchema from '@boardsesh/db/schema';
 import { POSTHOG_PERSON_DELETION_QUEUE } from '@boardsesh/db/job-queue-schema';
@@ -334,15 +334,15 @@ function throwRetryable(context: RequestContext, path: string, status: number, d
 }
 
 /**
- * Counts only: an id that failed the check is never logged. An `identified_as`
- * id leaves only the shared-phone check, never a deletion.
+ * Counts only: a value that failed {@link isUsableDistinctId} is never logged.
+ * An `identified_as` id leaves only the shared-phone check, never a deletion.
  */
 function logDroppedAnonymousIds(
   { reason, pass, jobId }: Pick<RequestContext, 'reason' | 'pass' | 'jobId'>,
   dropped: number,
   source: 'lookup' | 'identified_as' | 'job',
 ): void {
-  logger.warn('[PostHogErasure] Dropped distinct ids that are too long or carry characters PostgreSQL cannot store', {
+  logger.warn('[PostHogErasure] Dropped values that are not usable distinct ids (no SDK mints them)', {
     event: 'posthog_person_deletion_invalid_ids_dropped',
     reason,
     pass,
@@ -411,9 +411,8 @@ async function findAnonymousIds(context: RequestContext, distinctId: string, dat
   let crowded = 0;
   for (const [anonId, identifiedAs] of parsed.data.results) {
     if (typeof anonId !== 'string' || anonId === '' || anonId === distinctId) continue;
-    // A job could not carry it, and no SDK mints one: someone sent it with the
-    // public key. Persisting it, or querying with it, would fail every later
-    // step of this erasure.
+    // No SDK mints one: someone sent it with the public key. An over-long id, a
+    // NUL or half a surrogate pair would fail every later step of this erasure.
     if (!isUsableDistinctId(anonId)) {
       unusable += 1;
       continue;
@@ -453,7 +452,7 @@ async function findAnonymousIds(context: RequestContext, distinctId: string, dat
     anonymousIds.push(anonId);
   }
   if (shared > 0 || crowded > 0) {
-    logger.info('[PostHogErasure] Skipped anonymous ids other accounts also signed in from', {
+    logger.info('[PostHogErasure] Skipped anonymous ids that are shared or crowded', {
       event: 'posthog_person_deletion_shared_ids_skipped',
       reason: context.reason,
       pass: context.pass,
@@ -506,7 +505,17 @@ export async function persistDiscoveredIds(
       db: queueDb,
     });
     for (const pending of waiting) {
-      const merged = mergeAnonymousIds(pending.data.anonymousIds, anonymousIds);
+      // Saved by an earlier pass, so checked again; the waiting job never sees
+      // what is dropped here, so this is the only place to count it.
+      const saved = sanitizeAnonymousIds(pending.data.anonymousIds);
+      if (saved.dropped > 0) {
+        logDroppedAnonymousIds(
+          { reason: pending.data.reason, pass: pending.data.pass, jobId: pending.id },
+          saved.dropped,
+          'job',
+        );
+      }
+      const merged = mergeAnonymousIds(saved.ids, anonymousIds);
       await boss.update(
         POSTHOG_PERSON_DELETION_QUEUE,
         { ...pending.data, anonymousIds: merged },
@@ -530,10 +539,10 @@ export async function persistDiscoveredIds(
 
 /**
  * Union, first-seen order, capped at what one `bulk_delete` takes beside the
- * account id. `persisted` comes from a stored job, so it is checked again.
+ * account id. Both lists are already checked.
  */
-function mergeAnonymousIds(persisted: unknown, discovered: string[]): string[] {
-  return sanitizeAnonymousIds([...sanitizeAnonymousIds(persisted).ids, ...discovered]).ids;
+function mergeAnonymousIds(persisted: string[], discovered: string[]): string[] {
+  return sanitizeAnonymousIds([...persisted, ...discovered]).ids;
 }
 
 /**
@@ -630,7 +639,7 @@ export async function deletePosthogPerson(
   if (job.stage !== 'delete') {
     // Step 1. Any lookup failure throws before anything is deleted.
     const discovered = await findAnonymousIds(context, distinctId, database);
-    const anonymousIds = mergeAnonymousIds(job.anonymousIds, discovered);
+    const anonymousIds = mergeAnonymousIds(job.anonymousIds ?? [], discovered);
     await persistDiscovery(job, anonymousIds);
     logger.info('[PostHogErasure] Anonymous ids discovered and persisted; delete step queued', {
       event: 'posthog_person_deletion_discovered',
@@ -713,19 +722,37 @@ export type StartPosthogPersonDeletionOptions = {
 
 type ErasureJobOutput = { outcome: PosthogPersonDeletionOutcome } | { error: string };
 
-/** Enough of an error for an operator; a failed query's message also lists every parameter. */
+/** Enough of an error for an operator. */
 const MAX_OUTPUT_ERROR_LENGTH = 1000;
 
 /**
- * Error text pg-boss can store as a job's output. A failed query's message
- * carries its parameters (drizzle), and pg-boss cannot write a NUL or half a
- * surrogate pair into the output: it records its own jsonb error instead, and
- * the real error is lost. Cut first: the cut can split a surrogate pair, and
- * the replace then removes the stray half.
+ * What a job's output says about a failure. drizzle's `DrizzleQueryError` puts
+ * the SQL and every parameter in `message` (the parameters can be other
+ * accounts' ids, kept 7 days in `pgboss.job`) and the driver's error in
+ * `cause`. So an error with a cause is stored as its class name and the cause's
+ * message and code, never its own message; a failed query without one is
+ * stored as its class name alone.
+ */
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  // DrizzleQueryError never sets `name`, so it reads "Error".
+  const name = error.name === 'Error' ? error.constructor.name : error.name;
+  const { cause } = error;
+  if (cause instanceof Error) {
+    const code = 'code' in cause && typeof cause.code === 'string' ? ` (${cause.code})` : '';
+    return `${name}: ${cause.message}${code}`;
+  }
+  return error instanceof DrizzleQueryError ? name : error.message;
+}
+
+/**
+ * {@link describeError}, as text pg-boss can store as a job's output: pg-boss
+ * cannot write a NUL or half a surrogate pair into the output, and records its
+ * own jsonb error instead, losing the real one. Cut first: the cut can split a
+ * surrogate pair, and the replace then removes the stray half.
  */
 function storableErrorText(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.slice(0, MAX_OUTPUT_ERROR_LENGTH).replace(UNSTORABLE_CHARACTERS, ' ');
+  return describeError(error).slice(0, MAX_OUTPUT_ERROR_LENGTH).replace(UNSTORABLE_CHARACTERS, ' ');
 }
 
 /** One job's pg-boss disposition: completed, failed (retried), or failed for good. */
