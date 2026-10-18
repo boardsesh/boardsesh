@@ -16,6 +16,8 @@ import {
   CONFLICT_ISSUE_LABEL,
   CONFLICT_ISSUE_TITLE,
   NATIVE_WORKFLOWS,
+  DRAFT_WAIT_MAX_MS,
+  MAX_PUSH_ATTEMPTS,
   RELEASE_BRANCH,
   STORE_DRAFT_WORKFLOW,
   SYNC_MERGE_MESSAGE,
@@ -1165,6 +1167,78 @@ describe('runReleaseTrainSync against real repositories', { timeout: 60_000 }, (
     expect(runtime.logs.some((line) => line.includes('moved while this run planned'))).toBe(true);
     expect(
       fixture.gitIn(fixture.work, ['merge-base', '--is-ancestor', lateNative, outcome.pushedSha ?? '']).trim(),
+    ).toBe('');
+  });
+
+  it('stops after MAX_PUSH_ATTEMPTS lease rejections, with no further push', async () => {
+    const fixture = createFixture();
+    landNativeChange(fixture);
+    fixture.commit('main', { 'backend.ts': 'export const backend = 2;\n' }, 'fix(backend): something');
+    const github = createFakeGitHub(fixture);
+    // Someone lands a native PR between every plan and its push.
+    let lastRacing = '';
+    github.onDraftListing = (call) => {
+      lastRacing = landNativeChange(fixture, `racing-${call}.ts`);
+      return [];
+    };
+    const runtime = createRuntime(fixture, github);
+    const realGit = runtime.git;
+    const pushResults: boolean[] = [];
+    runtime.git = {
+      ...realGit,
+      push: (input) => {
+        const result = realGit.push(input);
+        pushResults.push(result.ok);
+        return result;
+      },
+    };
+
+    await expect(runReleaseTrainSync(runtime)).rejects.toThrow(
+      new RegExp(`moved between planning and pushing on all ${MAX_PUSH_ATTEMPTS} attempts`),
+    );
+    expect(pushResults).toEqual(Array.from({ length: MAX_PUSH_ATTEMPTS }, () => false));
+    expect(runtime.logs.filter((line) => line.includes('moved while this run planned'))).toHaveLength(
+      MAX_PUSH_ATTEMPTS - 1,
+    );
+    // The branch still holds the last racing commit: the sync overwrote nothing.
+    expect(fixture.remoteSha(RELEASE_BRANCH)).toBe(lastRacing);
+  });
+
+  it('waits out a store draft that never finishes, warns, then plans again and pushes once', async () => {
+    const fixture = createFixture();
+    landNativeChange(fixture);
+    fixture.commit('main', { 'backend.ts': 'export const backend = 2;\n' }, 'fix(backend): before the run');
+    const github = createFakeGitHub(fixture);
+    let movedMain = '';
+    github.onDraftListing = (call) => {
+      // main moves on while the sync waits for the stuck draft.
+      if (call === 2) {
+        movedMain = fixture.commit('main', { 'backend.ts': 'export const backend = 9;\n' }, 'fix: during the wait');
+      }
+      return [
+        workflowRun({ databaseId: 77, status: 'in_progress', displayTitle: 'Mobile Store Draft (release/next)' }),
+      ];
+    };
+    const runtime = createRuntime(fixture, github);
+    const realGit = runtime.git;
+    const pushedAt: number[] = [];
+    runtime.git = {
+      ...realGit,
+      push: (input) => {
+        pushedAt.push(runtime.now());
+        return realGit.push(input);
+      },
+    };
+
+    const outcome = await runReleaseTrainSync(runtime);
+    expect(outcome.exitCode).toBe(0);
+    // Exactly one push, made once the wait reached its deadline and not before.
+    expect(pushedAt).toEqual([DRAFT_WAIT_MAX_MS]);
+    expect(runtime.logs.filter((line) => line.startsWith('warning: A store draft for release/next'))).toHaveLength(1);
+    expect(fixture.remoteSha(RELEASE_BRANCH)).toBe(outcome.pushedSha);
+    // The push was planned after the wait, so it carries what landed on main meanwhile.
+    expect(
+      fixture.gitIn(fixture.work, ['merge-base', '--is-ancestor', movedMain, outcome.pushedSha ?? '']).trim(),
     ).toBe('');
   });
 

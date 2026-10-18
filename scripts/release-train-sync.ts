@@ -1444,12 +1444,17 @@ export async function runReleaseTrainSync(runtime: SyncRuntime): Promise<SyncOut
 
     // The loop is bounded twice over: MAX_PUSH_ATTEMPTS caps lease-rejected pushes, and
     // a 'waited' recompute only happens while the fixed draftDeadline has not passed
-    // (each one sleeps at least one poll). After the deadline the draft check returns
-    // 'timeout' or 'clear' at once, so every later iteration reaches a push.
+    // (each one sleeps at least one poll). A 'timeout' recomputes once and switches the
+    // draft check off, and after the deadline the check returns 'timeout' or 'clear'
+    // at once, so every later iteration reaches a push.
     if (!draftWaitExpired) {
       const draftState = await storeDraftsBlockingPush(runtime, draftDeadline);
-      if (draftState === 'waited') continue; // the world moved while we waited: recompute
-      draftWaitExpired = draftState === 'timeout';
+      if (draftState !== 'clear') {
+        // We slept, so the plan is stale either way: fetch and plan again. After a
+        // timeout the next pass pushes without waiting any further.
+        draftWaitExpired = draftState === 'timeout';
+        continue;
+      }
     }
 
     pushAttempts += 1;
@@ -1463,6 +1468,14 @@ export async function runReleaseTrainSync(runtime: SyncRuntime): Promise<SyncOut
       if (pushed.leaseRejected && pushAttempts < MAX_PUSH_ATTEMPTS) {
         runtime.warn(`${RELEASE_BRANCH} moved while this run planned; recomputing.\n${pushed.output.trim()}`);
         continue;
+      }
+      if (pushed.leaseRejected) {
+        const gaveUp =
+          `${RELEASE_BRANCH} moved between planning and pushing on all ${MAX_PUSH_ATTEMPTS} attempts, ` +
+          'so this run stops without pushing. Nothing was overwritten; the next run (the next main push ' +
+          'or the hourly schedule) plans again from scratch.';
+        runtime.summary(`## Pushing ${RELEASE_BRANCH} gave up\n\n${gaveUp}\n`);
+        throw new Error(`${gaveUp}\n${pushed.output.trim()}`);
       }
       const explanation = explainPushFailure(pushed.output);
       runtime.summary(
