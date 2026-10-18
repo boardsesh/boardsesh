@@ -195,7 +195,7 @@ function LineRow({ segments, markers, chipSize, handShrinks, onLayout, testID }:
               variant="footnote"
               numeric
               numberOfLines={1}
-              color={systemColors.secondaryLabel}
+              color={systemColors.label}
               style={shrinks ? styles.lineHoldsShrinks : undefined}
             >
               {segment.text}
@@ -212,18 +212,22 @@ function LineRow({ segments, markers, chipSize, handShrinks, onLayout, testID }:
 const MEASURED_READINGS_KEPT = 24;
 
 /**
- * The collapsed line: each role's marker, then its holds (`● I4 ● G8 K10 G12
- * D14 F14 ● F18`, or `● Start 2 ● Hand 6 ● Finish 2 ● Foot 4`). It measures
- * every reading off screen and draws the richest one that fits the room the
- * header leaves at the climber's text size: only Hand is ever cut short, then
- * Hand becomes a count (or the role words go), then there is no line.
+ * The collapsed header: each role's marker, then its holds (`● I4 ● G8 K10
+ * G12 D14 F14 ● F18`, or `● Start 2 ● Hand 6 ● Finish 2 ● Foot 4`), in the
+ * title's place. It measures every reading off screen and draws the richest
+ * one that fits the row at the climber's text size: only Hand is ever cut
+ * short, then Hand becomes a count (or the role words go), and when not even
+ * that fits, the section's title stands in.
  */
 export const ActiveHoldsLine = memo(function ActiveHoldsLine({
   rows,
   hasLabels,
+  fallbackTitle,
 }: {
   rows: readonly ActiveHoldsRow[];
   hasLabels: boolean;
+  /** Drawn instead of the line when no reading fits, so the header always names the section. */
+  fallbackTitle: string;
 }) {
   const { t } = useTranslation('climbs');
   const chipSize = useChipSize();
@@ -305,7 +309,11 @@ export const ActiveHoldsLine = memo(function ActiveHoldsLine({
           handShrinks={choice.handShrinks}
           testID="active-holds-line"
         />
-      ) : null}
+      ) : (
+        <Text variant="headline" numberOfLines={1} testID="active-holds-line-title">
+          {fallbackTitle}
+        </Text>
+      )}
     </View>
   );
 });
@@ -356,11 +364,12 @@ type ActiveHoldsSectionProps = {
 };
 
 /**
- * The climb's holds by role, as a section below the climb. Collapsed (the peek
- * at the fold, by default) it is one line; expanded, a row a role. MoonBoard
- * lists wall coordinates bottom to top; boards with none on the wall show a
- * count. It reads the frames the board already has: no state, no effects, no
- * queries and no Bluetooth.
+ * The climb's holds by role, as a section below the climb. Collapsed (as the
+ * peek at the fold, say) its header is just the line of holds, with no title;
+ * expanded, it is titled and lists a row a role. MoonBoard lists wall
+ * coordinates bottom to top; boards with none on the wall show a count. It
+ * reads the frames the board already has: no state, no effects, no queries
+ * and no Bluetooth.
  */
 export const ActiveHoldsSection = memo(function ActiveHoldsSection({
   boardName,
@@ -385,8 +394,13 @@ export const ActiveHoldsSection = memo(function ActiveHoldsSection({
   return (
     <CollapsibleSection
       title={t('mobile.activeHolds.title')}
-      summary={rows.length > 0 ? <ActiveHoldsLine rows={rows} hasLabels={hasLabels} /> : null}
+      summary={
+        rows.length > 0 ? (
+          <ActiveHoldsLine rows={rows} hasLabels={hasLabels} fallbackTitle={t('mobile.activeHolds.title')} />
+        ) : null
+      }
       summaryAccessibilityLabel={spokenSummary}
+      hideTitleWhenCollapsed
       persistKey="activeHolds"
       onHeaderLayout={onHeaderLayout}
       onToggle={onToggle}
@@ -406,11 +420,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
   },
-  // Takes the whole slot so it knows the room it has, and right-aligns the line in it.
+  // Takes the whole row so it knows the room it has; the line starts where the title would.
   lineFrame: {
     alignSelf: 'stretch',
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
   // Wide enough that every reading lays out at its natural width; never seen.
   measureLayer: {

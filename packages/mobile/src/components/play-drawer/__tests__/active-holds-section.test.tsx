@@ -16,6 +16,7 @@ const harness = vi.hoisted(() => ({
   // Each View's onLayout by testID, so a case can play the layout pass.
   layouts: new Map<string, (event: { nativeEvent: { layout: { width: number } } }) => void>(),
   spokenSummary: undefined as string | undefined,
+  hidesTitle: undefined as boolean | undefined,
 }));
 
 // The English copy, so labels read as a climber hears them.
@@ -60,22 +61,25 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
-    createElement('span', { 'data-color': color }, children),
+  Text: ({ children, color, testID }: { children?: ReactNode; color?: string; testID?: string }) =>
+    createElement('span', { 'data-color': color, 'data-testid': testID }, children),
 }));
 vi.mock('../../CollapsibleSection', () => ({
   CollapsibleSection: ({
     title,
     summary,
     summaryAccessibilityLabel,
+    hideTitleWhenCollapsed,
     children,
   }: {
     title: string;
     summary?: ReactNode;
     summaryAccessibilityLabel?: string;
+    hideTitleWhenCollapsed?: boolean;
     children?: ReactNode;
   }) => {
     harness.spokenSummary = summaryAccessibilityLabel;
+    harness.hidesTitle = hideTitleWhenCollapsed;
     return createElement('section', { 'data-title': title }, createElement('header', null, summary), children);
   },
 }));
@@ -173,12 +177,13 @@ describe('ActiveHoldsSection', () => {
     expect(shrinking[0]?.getAttribute('data-style')).toContain('"overflow":"hidden"');
   });
 
-  it('counts Hand when not even its first coordinate fits, and drops the line when nothing does', () => {
+  it('counts Hand when not even its first coordinate fits, and names the section when nothing does', () => {
     const view = renderSection('moonboard', MOON_FRAMES);
     layOut(110, { labels: 240, handFirst: 120, handCount: 100 });
     expect(lineText(view)).toBe('●B5●5●J18');
     layOut(90, {});
     expect(lineText(view)).toBeNull();
+    expect(view.getByTestId('active-holds-line-title').textContent).toBe('Active holds');
   });
 
   it('keeps the role words on a count board when they fit, else bare counts', () => {
@@ -191,10 +196,12 @@ describe('ActiveHoldsSection', () => {
     expect(lineText(view)).toBe('●2●1●1●3');
     layOut(100, {});
     expect(lineText(view)).toBeNull();
+    expect(view.getByTestId('active-holds-line-title').textContent).toBe('Active holds');
   });
 
-  it('reads every hold on the collapsed header', () => {
+  it("reads every hold on the collapsed header, which shows the line in the title's place", () => {
     renderSection('moonboard', MOON_FRAMES);
+    expect(harness.hidesTitle).toBe(true);
     expect(harness.spokenSummary).toBe('Start: B5. Hand: F8, K8, F10, H13, I14. Finish: J18.');
     cleanup();
     renderSection('kilter', KILTER_FRAMES);

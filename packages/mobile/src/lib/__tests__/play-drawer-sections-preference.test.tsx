@@ -83,6 +83,51 @@ describe('play drawer section preferences', () => {
     expect(restored.result.current.sections.activeHolds).toBe(true);
   });
 
+  it.each([
+    ['a fresh install', null],
+    [
+      'a record from main before Active holds',
+      {
+        version: 1,
+        sections: { logbook: false },
+        order: ['logbook', 'climberLogs', 'setterNotes', 'betaVideos', 'boardseshGrade', 'community', 'similarClimbs'],
+      },
+    ],
+    [
+      'a record from an earlier preview that stored every switch',
+      {
+        version: 1,
+        sections: {
+          activeHolds: false,
+          logbook: true,
+          climberLogs: true,
+          setterNotes: true,
+          betaVideos: true,
+          boardseshGrade: true,
+          community: true,
+          similarClimbs: true,
+        },
+      },
+    ],
+  ])('keeps Active holds hidden after %s', async (_case, record) => {
+    if (record) storage.set('playDrawerSections', JSON.stringify(record));
+    const module = await import('../play-drawer-sections-preference');
+    const { visiblePlayDrawerSections } = await import('../../components/play-drawer/play-drawer-sections');
+    const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.sections.activeHolds).toBe(false);
+    expect(
+      visiblePlayDrawerSections({
+        sections: result.current.sections,
+        order: result.current.order,
+        isAuthenticated: true,
+        boardseshGradeEnabled: true,
+        description: 'Start left',
+        screenshotMode: false,
+      }),
+    ).not.toContain('activeHolds');
+  });
+
   it('switches Active holds with Show all and Hide all', async () => {
     const module = await import('../play-drawer-sections-preference');
     const { result } = renderHook(module.usePlayDrawerSectionsPreference);

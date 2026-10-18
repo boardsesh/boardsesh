@@ -318,18 +318,20 @@ stand-ins are described in [climb-view-options.md](climb-view-options.md).
 **Active holds** (`activeHolds`, #6290) leads the default order and starts switched off, so
 the default drawer is unchanged; a record saved before it existed has no key for it and
 reads as off, and an order saved before it slots it in first. Switched on, it is the peek at
-the fold. Collapsed, its line (`ActiveHoldsLine`, a summary node) is each role's marker
-followed by its holds; expanded (`ActiveHoldsSection`), it is a row a role. MoonBoard shows
+the fold. Collapsed, its header is just its line (`ActiveHoldsLine`, a summary node drawn in
+the title's place through `CollapsibleSection`'s `hideTitleWhenCollapsed`): each role's marker
+followed by its holds, across the row up to the chevron. Expanded (`ActiveHoldsSection`), it
+is titled and lists a row a role. MoonBoard shows
 coordinates bottom to top (`B5`); boards without coordinates on the wall show a count per
 role, with the role word ("Start 2") when it fits.
 
 The line measures each of its readings off screen and draws the richest one that fits the
-room the header leaves at the climber's text size (`chooseActiveHoldsLine` in
-`active-holds-line.ts`): every coordinate; then only Hand cut short, never below its first
-coordinate and never collapsing under its chip; then Hand as a count; then no line. Count
-boards drop the role words before the line. Start and Finish are never cut. The header's
-`summaryAccessibilityLabel` reads every hold ("Start: B5. Hand: F8, K8. Finish: J18.") on the
-collapsed header, whatever the line shows.
+row at the climber's text size (`chooseActiveHoldsLine` in `active-holds-line.ts`): every
+coordinate; then only Hand cut short, never below its first coordinate and never collapsing
+under its chip; then Hand as a count; then the section's title instead of a line. Count
+boards drop the role words first. Start and Finish are never cut. The header's
+`summaryAccessibilityLabel` reads the title and every hold ("Active holds. Start: B5. Hand:
+F8, K8. Finish: J18.") on the collapsed header, whatever the line shows.
 
 Each role's marker matches the board: its colour and the climber's override through
 `resolveHoldStateMarker` (the helper the renderer's hold-state map uses), and its glyph from
