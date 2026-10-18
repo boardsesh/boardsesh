@@ -64,7 +64,8 @@ A shared version of "ordered sections with visibility" is planned under #6229. U
 1. A stable id that never changes meaning.
 2. A default equal to today's behaviour.
 3. A versioned stored shape that ignores keys it does not know.
-4. A load that retries after a failure. It must not cache the default as if it were the saved value (`getPreference` in `packages/mobile/src/lib/preference-store.ts` does not swallow rejections).
+4. A load that retries after a failure. It must not cache the default as if it were the saved value.
+   `getPreference` in `packages/mobile/src/lib/preference-store.ts` does not swallow rejections, so a failed read reaches your code.
 5. A control that restores the defaults.
 6. No fetches for things that are hidden.
 7. Tests next to the code, in `__tests__/`.
@@ -102,7 +103,7 @@ Open it as a draft against the right branch. The description needs:
 - A Test plan of 1 to 5 steps, 12 words or fewer each: one tap, then what the tester sees.
 - A `Risk: N/5` line with the reason.
 
-Format and the tester loop: [docs/crowdsourced-qa.md](./crowdsourced-qa.md). Changes to Bluetooth code also need a maintainer review.
+Format and the tester loop: [docs/crowdsourced-qa.md](./crowdsourced-qa.md). Changes under `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/` or `packages/mobile/modules/live-activity/ios/` also need a maintainer review.
 
 ## Getting reviewed
 
