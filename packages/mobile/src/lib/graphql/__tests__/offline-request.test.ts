@@ -1665,8 +1665,11 @@ describe('a sign-in or sign-out while a request is in flight', () => {
   });
 
   it('does not rescue a request that failed after the account changed', async () => {
+    // Engine off, so the read goes straight to the network; the board IS
+    // downloaded, so only the account change keeps the rescue away.
     setOnline(true);
-    isBoardDownloadedLocally.mockResolvedValue(false);
+    setOfflineEngineEnabled(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
     request.mockImplementationOnce(async () => {
       privacy.generation += 1;
       throw new Error('old request failed');
