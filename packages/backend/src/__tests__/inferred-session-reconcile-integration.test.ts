@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vite-plus/test';
-import { sql, eq, and, asc } from 'drizzle-orm';
+import { sql, eq, and, asc, inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -425,6 +425,45 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(votes).toHaveLength(1);
     expect(votes[0].entityId).toBe(survivor.id);
     expect([morning.id, evening.id]).toContain(survivor.id);
+  });
+
+  it('limits comments on a non-public session that loses a merge to their authors', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning, evening] = await sessionsForUser();
+    for (const session of [morning, evening]) {
+      await db
+        .update(dbSchema.resourcePrivacy)
+        .set({ audience: 'followers' })
+        .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+    }
+    const commentUuids = [uuidv4(), uuidv4()];
+    await db.insert(dbSchema.comments).values(
+      [morning, evening].map((session, index) => ({
+        uuid: commentUuids[index],
+        userId: USER_ID,
+        entityType: 'session' as const,
+        entityId: session.id,
+        body: 'Strong session',
+      })),
+    );
+
+    await insertTick(BASE + 4 * HOUR);
+    await insertTick(BASE + 7 * HOUR);
+    await reconcileAt(BASE + 4 * HOUR);
+
+    // Only the merged-away session's comment is limited to its author: the
+    // survivor's audience could otherwise reach readers it never had.
+    const restricted = await db
+      .select({ audience: dbSchema.contentPrivacy.audience })
+      .from(dbSchema.contentPrivacy)
+      .where(
+        and(eq(dbSchema.contentPrivacy.entityType, 'comment'), inArray(dbSchema.contentPrivacy.entityId, commentUuids)),
+      );
+    expect(restricted).toEqual([{ audience: 'only_me' }]);
+    await db.delete(dbSchema.contentPrivacy).where(inArray(dbSchema.contentPrivacy.entityId, commentUuids));
   });
 
   it("gives the day's loose ticks to an explicit session", async () => {

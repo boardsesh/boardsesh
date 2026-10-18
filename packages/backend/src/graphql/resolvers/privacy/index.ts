@@ -1,4 +1,4 @@
-import { pubsub, type PrivacyChangeSource } from '../../../pubsub';
+import { pubsub } from '../../../pubsub';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
@@ -202,29 +202,26 @@ export async function requestPrivacyFollow(followerId: string, followingId: stri
       await deleteFollowRequestNotifications(followerId, followingId, transaction);
     }
   });
-  // No privacyChanged here: a request grants nothing, and a direct follow of a
-  // public account only widens what the follower's own client can read. That
-  // client refreshes its own caches after the mutation.
+  // The follower's own client refreshes its caches after the mutation.
   if (createdFollow) await publishFollow(followerId, followingId);
   if (createdRequest) await publishFollowRequest(followerId, followingId);
   return outcome;
 }
 /**
  * Unfollow or remove a follower, retaining a hidden request notification for
- * its day-long dedup window. Returns whether approved access was removed.
+ * its day-long dedup window.
  */
-export async function removePrivacyFollow(followerId: string, followingId: string): Promise<boolean> {
-  return db.transaction(async (transaction) => {
+export async function removePrivacyFollow(followerId: string, followingId: string): Promise<void> {
+  await db.transaction(async (transaction) => {
     // Same recipient lock as approval and account visibility, so a racing approval cannot recreate access.
     await transaction
       .select({ id: schema.users.id })
       .from(schema.users)
       .where(eq(schema.users.id, followingId))
       .for('update');
-    const removed = await transaction
+    await transaction
       .delete(schema.userFollows)
-      .where(and(eq(schema.userFollows.followerId, followerId), eq(schema.userFollows.followingId, followingId)))
-      .returning({ id: schema.userFollows.id });
+      .where(and(eq(schema.userFollows.followerId, followerId), eq(schema.userFollows.followingId, followingId)));
     await transaction
       .delete(schema.userFollowRequests)
       .where(
@@ -233,7 +230,6 @@ export async function removePrivacyFollow(followerId: string, followingId: strin
           eq(schema.userFollowRequests.recipientId, followingId),
         ),
       );
-    return removed.length > 0;
   });
 }
 async function contentOwner(
@@ -328,48 +324,26 @@ async function requireResourceOwner(kind: PrivacyResourceKind, resourceId: strin
   return resource;
 }
 /**
- * Refresh a resource's public previews. Callers publish privacyChanged BEFORE
- * this: the write has committed, and this does its own reads and can fail, which
- * must not leave other viewers holding copies they can no longer read.
+ * Refresh a resource's public kiosk previews after its write has committed.
+ * Nothing else tells a kiosk that its board or session changed, so a failure is
+ * logged at error level; the committed change still stands.
  */
 async function notifyResourceChanged(kind: PrivacyResourceKind, resourceId: string): Promise<void> {
-  const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
-  await notifyResourcePrivacyChanged(kind, resourceId);
+  try {
+    const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
+    await notifyResourcePrivacyChanged(kind, resourceId);
+  } catch (error) {
+    logger.error('[Privacy] kiosk preview refresh failed after a committed privacy change', {
+      kind,
+      resourceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
-/**
- * The grant's status before an owner writes it, read under the resource lock.
- * Null when there is no row. A repeated revoke or invite changes nobody's
- * access, so it must not publish privacyChanged.
- */
-async function lockedGrantStatus(
-  transaction: PrivacyTransaction,
-  input: { kind: PrivacyResourceKind; resourceId: string; userId: string },
-): Promise<string | null> {
-  const [grant] = await transaction
-    .select({ status: schema.resourceGrants.status })
-    .from(schema.resourceGrants)
-    .where(
-      and(
-        eq(schema.resourceGrants.kind, input.kind),
-        eq(schema.resourceGrants.resourceId, input.resourceId),
-        eq(schema.resourceGrants.userId, input.userId),
-      ),
-    )
-    .for('update');
-  return grant?.status ?? null;
-}
-/** Newly public beta must not wait behind an older empty anonymous cache. Runs before the publish. */
+/** Newly public beta must not wait behind an older empty anonymous cache. */
 async function invalidateBetaCache(): Promise<void> {
   const { invalidateRecentBetaLinksCache } = await import('../beta-videos/queries');
   await invalidateRecentBetaLinksCache();
-}
-/** Publish after the beta cache is cleared, and publish even when clearing it fails. */
-async function publishAfterBetaInvalidation(source: PrivacyChangeSource): Promise<void> {
-  try {
-    await invalidateBetaCache();
-  } finally {
-    pubsub.publishPrivacyChanged(source);
-  }
 }
 export const privacyQueries = {
   privacySettings: async (_: unknown, __: unknown, ctx: ConnectionContext) => getPrivacySettings(actor(ctx)),
@@ -475,11 +449,7 @@ export const privacyMutations = {
   updatePrivacySettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const userId = await privacyActor(ctx);
     const settings = validateInput(updateSettingsSchema, input, 'input');
-    // Only the account switch changes who can read existing content. The
-    // session default applies to sessions created later, and every settings
-    // and onboarding save resends it (NULL on pre-privacy accounts), so it
-    // must not publish.
-    const accountSwitched = await db.transaction(async (transaction) => {
+    await db.transaction(async (transaction) => {
       await transaction
         .select({ id: schema.users.id })
         .from(schema.users)
@@ -503,17 +473,14 @@ export const privacyMutations = {
           updatedAt: new Date(),
         })
         .where(eq(schema.userProfiles.userId, userId));
-      return settings.isPrivate !== undefined && settings.isPrivate !== current.isPrivate;
     });
     await invalidateBetaCache();
-    if (accountSwitched) pubsub.publishPrivacyChanged('updatePrivacySettings');
     return getPrivacySettings(userId);
   },
   /**
    * A plain preference, so it is open whatever `BOARDSESH_PRIVACY_ENABLED`
    * says. Board-facing reads apply it at query time, and live streams recheck
-   * it on their next event, so saving it publishes nothing: no app listens to
-   * `privacyChanged` any more. Saving the stored value again writes nothing.
+   * it on their next event. Saving the stored value again writes nothing.
    */
   setAnonymousOnForeignBoards: async (_: unknown, { enabled }: { enabled: unknown }, ctx: ConnectionContext) => {
     const userId = actor(ctx);
@@ -583,10 +550,7 @@ export const privacyMutations = {
         .returning();
       accepted = inserted.length > 0;
     });
-    if (accepted) {
-      await publishFollow(userId, recipientId, { fromApproval: true });
-      pubsub.publishPrivacyChanged('approveFollowRequest');
-    }
+    if (accepted) await publishFollow(userId, recipientId, { fromApproval: true });
     return true;
   },
   declineFollowRequest: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
@@ -614,7 +578,7 @@ export const privacyMutations = {
   removeFollower: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
     // Followers-only items and resources exist on public accounts too, so any
     // real removal withdraws access, whatever the account's switch says.
-    if (await removePrivacyFollow(userId, await privacyActor(ctx))) pubsub.publishPrivacyChanged('removeFollower');
+    await removePrivacyFollow(userId, await privacyActor(ctx));
     return true;
   },
   setContentAudience: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -641,7 +605,6 @@ export const privacyMutations = {
       }
     });
     await invalidateBetaCache();
-    pubsub.publishPrivacyChanged('setContentAudience');
     return true;
   },
   updateResourcePrivacy: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -665,7 +628,7 @@ export const privacyMutations = {
           },
           ctx,
         );
-        await publishAfterBetaInvalidation('updateResourcePrivacy');
+        await invalidateBetaCache();
         await notifyResourceChanged(update.kind, update.resourceId);
         return getResourcePrivacy(update.kind, update.resourceId);
       }
@@ -739,7 +702,7 @@ export const privacyMutations = {
         if (!isShareLinkAudience(update.audience)) await revokeBoardShareLinks(transaction, update.resourceId);
       }
     });
-    await publishAfterBetaInvalidation('updateResourcePrivacy');
+    await invalidateBetaCache();
     await notifyResourceChanged(update.kind, update.resourceId);
     return getResourcePrivacy(update.kind, update.resourceId);
   },
@@ -764,9 +727,9 @@ export const privacyMutations = {
   ) => {
     const ownerId = await privacyActor(ctx);
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
-    const approved = await db.transaction(async (transaction) => {
+    await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      const updated = await transaction
+      await transaction
         .update(schema.resourceGrants)
         .set({ status: 'approved', invitedBy: ownerId, updatedAt: new Date() })
         .where(
@@ -776,11 +739,8 @@ export const privacyMutations = {
             eq(schema.resourceGrants.userId, input.userId),
             eq(schema.resourceGrants.status, 'pending'),
           ),
-        )
-        .returning({ userId: schema.resourceGrants.userId });
-      return updated.length > 0;
+        );
     });
-    if (approved) pubsub.publishPrivacyChanged('approveResourceAccess');
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },
@@ -793,10 +753,9 @@ export const privacyMutations = {
     await requireResourceOwner(input.kind, input.resourceId, ownerId);
     if (ownerId === input.userId)
       throw new GraphQLError('The owner retains access', { extensions: { code: 'BAD_USER_INPUT' } });
-    const revoked = await db.transaction(async (transaction) => {
+    await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      // A new revoked row counts as a change: it overrides inherited follower access.
-      const previous = await lockedGrantStatus(transaction, input);
+      // A new revoked row overrides inherited follower access.
       await transaction
         .insert(schema.resourceGrants)
         .values({ ...input, status: 'revoked', invitedBy: ownerId })
@@ -804,9 +763,7 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'revoked', invitedBy: ownerId, updatedAt: new Date() },
         });
-      return previous !== 'revoked';
     });
-    if (revoked) pubsub.publishPrivacyChanged('revokeResourceAccess');
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },
@@ -823,9 +780,8 @@ export const privacyMutations = {
       .where(eq(schema.users.id, input.userId))
       .limit(1);
     if (!invitee) notFound();
-    const invited = await db.transaction(async (transaction) => {
+    await db.transaction(async (transaction) => {
       await lockOwnedResource(transaction, input.kind, input.resourceId, ownerId);
-      const previous = await lockedGrantStatus(transaction, input);
       await transaction
         .insert(schema.resourceGrants)
         .values({ ...input, status: 'approved', invitedBy: ownerId })
@@ -833,9 +789,7 @@ export const privacyMutations = {
           target: [schema.resourceGrants.kind, schema.resourceGrants.resourceId, schema.resourceGrants.userId],
           set: { status: 'approved', invitedBy: ownerId, updatedAt: new Date() },
         });
-      return previous !== 'approved';
     });
-    if (invited) pubsub.publishPrivacyChanged('inviteResourceMember');
     await notifyResourceChanged(input.kind, input.resourceId);
     return true;
   },

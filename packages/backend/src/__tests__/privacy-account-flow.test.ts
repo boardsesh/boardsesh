@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { and, count, eq, sql } from 'drizzle-orm';
 import type * as GraphQLModule from 'graphql';
@@ -14,6 +15,10 @@ import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
 import { socialFollowMutations } from '../graphql/resolvers/social/follows';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { canAccessResource, canViewUserActivity, getPrivacySettings, setContentPrivacy } from '../services/privacy';
+import { pubsub } from '../pubsub';
+import { logger } from '../utils/logger';
+import { ensureSessionRecordExists } from '../services/room-manager/client-lifecycle';
+import { updateSessionBoardPathIfChanged } from '../services/room-manager/session-discovery';
 
 const owner = 'privacy-flow-owner';
 const requester = 'privacy-flow-requester';
@@ -425,5 +430,73 @@ describe('privacy controls against Postgres', () => {
     expect(await canViewUserActivity(requester, owner)).toBe(false);
     await privacyMutations.revokeResourceAccess(null, { ...resource, userId: requester }, context(owner));
     expect(await canAccessResource('session', sessionId, requester)).toBe(false);
+  });
+
+  it('commits a wall move and a board revoke even when the kiosk refresh after them fails', async () => {
+    const insertBoard = async (isPublic: boolean) => {
+      const uuid = randomUUID();
+      const [board] = await db
+        .insert(schema.userBoards)
+        .values({
+          uuid,
+          slug: `privacy-flow-refresh-${uuid}`,
+          ownerId: owner,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 1,
+          setIds: '1',
+          name: 'Refresh test wall',
+          isPublic,
+        })
+        .returning();
+      return board;
+    };
+    const first = await insertBoard(true);
+    const home = await insertBoard(false);
+    const sessionId = randomUUID();
+    await ensureSessionRecordExists(sessionId, `/b/${first.slug}/40`, owner);
+    const loggedError = vi.spyOn(logger, 'error');
+
+    // The session preview refresh starts with a Redis read of the session's wall.
+    const redisDown = vi.spyOn(pubsub, 'getSessionBoard').mockRejectedValue(new Error('redis down'));
+    try {
+      await expect(updateSessionBoardPathIfChanged(sessionId, `/b/${home.slug}/40`, owner)).rejects.toThrow(
+        'redis down',
+      );
+    } finally {
+      redisDown.mockRestore();
+    }
+    const [session] = await db
+      .select({ boardId: schema.boardSessions.boardId })
+      .from(schema.boardSessions)
+      .where(eq(schema.boardSessions.id, sessionId));
+    expect(session.boardId).toBe(home.id);
+
+    // A board's preview refresh publishes a tombstone to its kiosks. The revoke
+    // has committed by then, so the mutation succeeds and the failure is logged.
+    const tombstoneFails = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {
+      throw new Error('preview publish failed');
+    });
+    try {
+      await expect(
+        privacyMutations.revokeResourceAccess(
+          null,
+          { kind: 'board', resourceId: first.uuid, userId: requester },
+          context(owner),
+        ),
+      ).resolves.toBe(true);
+    } finally {
+      tombstoneFails.mockRestore();
+    }
+    const [grant] = await db
+      .select({ status: schema.resourceGrants.status })
+      .from(schema.resourceGrants)
+      .where(and(eq(schema.resourceGrants.resourceId, first.uuid), eq(schema.resourceGrants.userId, requester)));
+    expect(grant).toEqual({ status: 'revoked' });
+    expect(loggedError).toHaveBeenCalledWith(
+      '[Privacy] kiosk preview refresh failed after a committed privacy change',
+      expect.objectContaining({ kind: 'board', resourceId: first.uuid, error: 'preview publish failed' }),
+    );
+    loggedError.mockRestore();
   });
 });

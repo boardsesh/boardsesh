@@ -15,7 +15,7 @@ const { mockDb, requestFollowMock, removeFollowMock } = vi.hoisted(() => {
   return {
     mockDb,
     requestFollowMock: vi.fn().mockResolvedValue(true),
-    removeFollowMock: vi.fn().mockResolvedValue(true),
+    removeFollowMock: vi.fn().mockResolvedValue(undefined),
   };
 });
 

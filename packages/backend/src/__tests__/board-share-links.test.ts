@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from 'uuid';
 import * as schema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { pubsub } from '../pubsub';
 import { boardShareLinkMutations, boardShareLinkQueries } from '../graphql/resolvers/privacy/board-share-links';
 import { privacyMutations, privacyQueries } from '../graphql/resolvers/privacy';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
@@ -185,12 +184,8 @@ describe('opening a share link', () => {
     ).rejects.toThrow('Board not found');
     await expect(resolveSessionBoardId(sessionPath, member)).rejects.toThrow('Board not found');
 
-    // A join only adds access: nothing for other clients to drop, so no
-    // privacyChanged (the app no longer listens for it, #6411).
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
     const redemption = await redeem(link!.token, member);
     expect(redemption).toEqual({ boardUuid: board.uuid, slug: board.slug });
-    expect(publish).not.toHaveBeenCalled();
 
     const [grant] = await grantRows(board.uuid, member);
     expect(grant).toMatchObject({ status: 'approved', invitedBy: owner });

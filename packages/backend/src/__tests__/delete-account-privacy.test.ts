@@ -9,7 +9,6 @@ import { userMutations } from '../graphql/resolvers/users/mutations';
 import { retryAccountDeletion, withdrawDeletedAccountContent } from '../graphql/resolvers/users/delete-account-privacy';
 import { betaPrivacyCondition } from '../graphql/resolvers/shared/activity-privacy';
 import { canAccessResource, canViewContent, setContentPrivacy } from '../services/privacy';
-import { pubsub } from '../pubsub';
 
 const context = (userId: string) => ({ isAuthenticated: true, userId, connectionId: userId }) as ConnectionContext;
 
@@ -114,40 +113,34 @@ describe('account deletion preserves privacy', () => {
       { uuid: unlistedUuid, userId, boardType: 'kilter', layoutId: 1, isDraft: false, isListed: false },
     ]);
     await db.insert(schema.boardClimbStats).values({ boardType: 'kilter', climbUuid, angle: 40, ascensionistCount: 7 });
-    const publish = vi.spyOn(pubsub, 'publishPrivacyChanged');
-    try {
-      await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, context(userId));
-      const rows = await db
-        .select({
-          uuid: schema.boardClimbs.uuid,
-          userId: schema.boardClimbs.userId,
-          marked: schema.boardClimbs.isBoardseshAuthored,
-        })
-        .from(schema.boardClimbs)
-        .where(inArray(schema.boardClimbs.uuid, [climbUuid, draftUuid, unlistedUuid]));
-      // The author reference is cleared; the marker stays for first-ascent names alone.
-      expect(rows.every((row) => row.userId === null && row.marked === true)).toBe(true);
-      // No climb policy is written: a published climb has no audience.
-      expect(
-        await db
-          .select()
-          .from(schema.contentPrivacy)
-          .where(inArray(schema.contentPrivacy.entityId, [climbUuid, draftUuid, unlistedUuid])),
-      ).toEqual([]);
-      expect(await publicClimbs([climbUuid, draftUuid, unlistedUuid])).toEqual([climbUuid]);
-      // By reference: the published climbs resolve, the draft goes to no one.
-      expect((await readableByReference([climbUuid, draftUuid, unlistedUuid], null)).sort()).toEqual(
-        [climbUuid, unlistedUuid].sort(),
-      );
-      const [stats] = await db
+    await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, context(userId));
+    const rows = await db
+      .select({
+        uuid: schema.boardClimbs.uuid,
+        userId: schema.boardClimbs.userId,
+        marked: schema.boardClimbs.isBoardseshAuthored,
+      })
+      .from(schema.boardClimbs)
+      .where(inArray(schema.boardClimbs.uuid, [climbUuid, draftUuid, unlistedUuid]));
+    // The author reference is cleared; the marker stays for first-ascent names alone.
+    expect(rows.every((row) => row.userId === null && row.marked === true)).toBe(true);
+    // No climb policy is written: a published climb has no audience.
+    expect(
+      await db
         .select()
-        .from(schema.boardClimbStats)
-        .where(eq(schema.boardClimbStats.climbUuid, climbUuid));
-      expect(stats.ascensionistCount).toBe(7);
-      expect(publish).toHaveBeenCalledOnce();
-    } finally {
-      publish.mockRestore();
-    }
+        .from(schema.contentPrivacy)
+        .where(inArray(schema.contentPrivacy.entityId, [climbUuid, draftUuid, unlistedUuid])),
+    ).toEqual([]);
+    expect(await publicClimbs([climbUuid, draftUuid, unlistedUuid])).toEqual([climbUuid]);
+    // By reference: the published climbs resolve, the draft goes to no one.
+    expect((await readableByReference([climbUuid, draftUuid, unlistedUuid], null)).sort()).toEqual(
+      [climbUuid, unlistedUuid].sort(),
+    );
+    const [stats] = await db
+      .select()
+      .from(schema.boardClimbStats)
+      .where(eq(schema.boardClimbStats.climbUuid, climbUuid));
+    expect(stats.ascensionistCount).toBe(7);
   });
 
   it('withdraws personal beta but retains external vendor beta on the same public climb', async () => {

@@ -38,7 +38,7 @@ vi.mock('../db/client', () => ({
 // These existing tests isolate draft cleanup; the real spray/FK contract is in
 // delete-account-spray-walls.test.ts against rolled-back synthetic rows.
 vi.mock('../graphql/resolvers/users/delete-account-spray-walls', () => ({
-  deleteAccountSprayWalls: vi.fn(async () => []),
+  deleteAccountSprayWalls: vi.fn(async () => ({ wallIds: [], previewBoardIds: [] })),
 }));
 // Withdrawal and its durable FK behavior are exercised against real PostgreSQL.
 vi.mock('../graphql/resolvers/users/delete-account-privacy', () => ({
@@ -46,7 +46,7 @@ vi.mock('../graphql/resolvers/users/delete-account-privacy', () => ({
   retryAccountDeletion: (transaction: () => Promise<unknown>) => transaction(),
 }));
 vi.mock('../graphql/resolvers/users/delete-account-boards', () => ({
-  deleteAccountBoards: vi.fn(async () => undefined),
+  deleteAccountBoards: vi.fn(async () => []),
 }));
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {

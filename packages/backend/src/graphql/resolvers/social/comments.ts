@@ -643,8 +643,6 @@ export const socialCommentMutations = {
       return updatedComments;
     });
 
-    if (validated.privacy) pubsub.publishPrivacyChanged('updateComment');
-
     // Fetch enriched data for the response
     const [user] = await db
       .select({

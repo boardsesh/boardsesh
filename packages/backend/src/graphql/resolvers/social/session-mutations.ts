@@ -145,8 +145,6 @@ export const sessionEditMutations = {
     const nextName = hasName ? normalizeSessionText(validated.name) : session.name;
     const nextNotes = hasNotes ? normalizeSessionText(validated.notes) : session.notes;
     let nextIsPublic = typeof validated.isPublic === 'boolean' ? validated.isPublic : session.isPublic;
-    // Edit screens resend isPublic with a notes or name edit; only a real flip publishes.
-    let visibilityChanged = false;
 
     if (hasName || hasNotes || hasIsPublic) {
       const updates: Partial<typeof dbSchema.boardSessions.$inferInsert> = {};
@@ -176,7 +174,6 @@ export const sessionEditMutations = {
               .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
               .where(policyCondition);
           }
-          visibilityChanged = nextIsPublic !== locked.isPublic || (!!policy && audience !== policy.audience);
         }
         await transaction
           .update(dbSchema.boardSessions)
@@ -191,7 +188,6 @@ export const sessionEditMutations = {
     // binding AND the durable board_id fallback — so each kiosk ends up on
     // whatever the preview gates now allow. Best-effort: a failed kiosk update
     // must not fail the edit the creator asked for.
-    if (visibilityChanged) pubsub.publishPrivacyChanged('updateSession');
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
       await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
         // error, not warn: after a flip to private, a failed republish leaves

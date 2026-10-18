@@ -33,6 +33,7 @@ import { boardPresenceMutations } from '../graphql/resolvers/board-presence/muta
 import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
 import { roomManager } from '../services/room-manager';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { userMutations } from '../graphql/resolvers/users/mutations';
 import * as boardQueuePreviewService from '../services/board-queue-preview';
 import { createBarrier } from './helpers/concurrency';
 
@@ -1211,6 +1212,81 @@ describe('board-queue-preview tombstone', () => {
       expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
     } finally {
       unsubscribe();
+    }
+  });
+
+  it('moving a policy-backed public board to Unlisted ends the streams of kiosks that hold only its id', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    await db.insert(dbSchema.resourcePrivacy).values({
+      kind: 'board',
+      resourceId: boardUuid,
+      ownerId: TEST_USER_ID,
+      audience: 'public',
+      locationAudience: 'public',
+    });
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+    const kiosk = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
+
+    try {
+      expect((await kiosk.next()).value?.boardQueuePreview.queueLength).toBe(2);
+      // Old edit screens resend every visibility boolean with a rename.
+      await socialBoardMutations.updateBoard(
+        null,
+        { input: { boardUuid, name: 'Policy wall', isPublic: true, isUnlisted: false, hideLocation: false } },
+        authCtx(),
+      );
+      expect(received).toHaveLength(0);
+
+      // `isUnlisted` alone, without `isPublic: false`: the id-only kiosk loses the wall.
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isUnlisted: true } }, authCtx());
+      expect(received).toEqual([expect.objectContaining({ boardId, ...EMPTY_PREVIEW_SHAPE })]);
+      const cleared = await kiosk.next();
+      expect(cleared.value?.boardQueuePreview).toMatchObject(EMPTY_PREVIEW_SHAPE);
+      expect((await kiosk.next()).done).toBe(true);
+    } finally {
+      await kiosk.return?.(undefined);
+      unsubscribe();
+      await db.delete(dbSchema.resourcePrivacy).where(eq(dbSchema.resourcePrivacy.resourceId, boardUuid));
+    }
+  });
+
+  it('deleting an account tombstones the kiosks of its Public and Unlisted boards, not its private ones', async () => {
+    await seedSystemBoardOwner();
+    const leaver = 'board-queue-preview-leaver';
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${leaver}, 'leaver@board-queue-preview.test', 'Leaver', now(), now())
+      ON CONFLICT DO NOTHING
+    `);
+    const publicBoard = await makeBoard({ isPublic: true, ownerId: leaver });
+    const unlistedBoard = await makeBoard({ isPublic: false, isUnlisted: true, ownerId: leaver });
+    const privateBoard = await makeBoard({ isPublic: false, ownerId: leaver });
+    const boardIds = [publicBoard, unlistedBoard, privateBoard];
+    const received = new Map<number, BoardQueuePreview[]>(boardIds.map((boardId) => [boardId, []]));
+    const unsubscribes = await Promise.all(
+      boardIds.map((boardId) =>
+        pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.get(boardId)!.push(preview)),
+      ),
+    );
+
+    try {
+      await userMutations.deleteAccount(null, { input: { removeSetterName: false } }, authCtx({ userId: leaver }));
+      expect(received.get(publicBoard)).toEqual([
+        expect.objectContaining({ boardId: publicBoard, ...EMPTY_PREVIEW_SHAPE }),
+      ]);
+      expect(received.get(unlistedBoard)).toEqual([
+        expect.objectContaining({ boardId: unlistedBoard, ...EMPTY_PREVIEW_SHAPE }),
+      ]);
+      // A private board's channel never carried a snapshot.
+      expect(received.get(privateBoard)).toEqual([]);
+    } finally {
+      for (const unsubscribe of unsubscribes) unsubscribe();
+      // Account deletion hands the scrubbed boards to the system owner.
+      for (const boardId of boardIds) {
+        await db.delete(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, boardId));
+      }
+      await db.execute(sql`DELETE FROM users WHERE id = ${leaver}`);
     }
   });
 

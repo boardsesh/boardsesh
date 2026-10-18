@@ -84,6 +84,7 @@ const { sprayWallMutations, refreshPublicWallPhoto } = await import('../graphql/
 const { socialBoardMutations } = await import('../graphql/resolvers/social/boards');
 const { syncLocationGeography } = await import('../graphql/resolvers/social/location-geography');
 const { lockSprayWallAccount } = await import('../services/spray-account-lock');
+const { pubsub } = await import('../pubsub');
 
 const ROLLBACK = new Error('rollback synthetic account fixture');
 async function rolledBack(run: (tx: Transaction) => Promise<void>) {
@@ -330,7 +331,16 @@ describe('deleteAccount spray walls (real resolver, rolled-back database)', () =
   it('deletes an owner with live and deleted walls, erases photos, preserves others’ logs and hides tombstones', async () => {
     await rolledBack(async (tx) => {
       const { owner, walls } = await seed(tx);
-      expect(await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, ctx(owner))).toBe(true);
+      const kioskPublishes = vi.spyOn(pubsub, 'publishBoardQueuePreview');
+      try {
+        expect(await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, ctx(owner))).toBe(true);
+        // Only the live public wall gets a kiosk tombstone: the already-deleted
+        // wall's kiosks were cleared when it was deleted, and the third wall is
+        // someone else's.
+        expect(kioskPublishes.mock.calls.map(([boardId]) => boardId)).toEqual([String(walls[0].board.id)]);
+      } finally {
+        kioskPublishes.mockRestore();
+      }
       expect(await tx.select().from(dbSchema.users).where(eq(dbSchema.users.id, owner))).toEqual([]);
       for (const { wall, board, climbUuid, tickUuid } of walls.slice(0, 2)) {
         const [retained] = await tx.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));

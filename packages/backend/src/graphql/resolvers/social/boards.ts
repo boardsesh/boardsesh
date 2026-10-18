@@ -59,7 +59,6 @@ import {
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
-import { pubsub } from '../../../pubsub';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { getPopularConfigs } from '../../../services/popular-board-configs';
@@ -2422,9 +2421,8 @@ export const socialBoardMutations = {
     }
 
     let updated: typeof dbSchema.userBoards.$inferSelect;
-    // Only an audience/location change publishes privacyChanged; a rename,
-    // description or config edit does not make every connected app reload.
-    let boardPrivacyChanged = false;
+    // The locked row's visibility before this edit, for the kiosk tombstone below.
+    let previousVisibility = null as { isPublic: boolean; isUnlisted: boolean; anonReadable: boolean } | null;
     try {
       const updatedRows = await db.transaction(async (tx) => {
         // Serialize partial edits to the same board before deriving the final
@@ -2474,6 +2472,15 @@ export const socialBoardMutations = {
         if (lockedBoard.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
           throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
         }
+        // System-owned boards stay anon-readable whatever their flags say.
+        previousVisibility = {
+          isPublic: lockedBoard.isPublic,
+          isUnlisted: lockedBoard.isUnlisted,
+          anonReadable:
+            (lockedBoard.isPublic || lockedBoard.isUnlisted) &&
+            lockedBoard.deletedAt === null &&
+            lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID,
+        };
 
         const lockedLayoutId = Number(lockedBoard.layoutId);
         const lockedSizeId = Number(lockedBoard.sizeId);
@@ -2548,7 +2555,6 @@ export const socialBoardMutations = {
             Object.keys(privacyUpdates).length > 0;
           if (changesPrivacy && lockedBoard.ownerId !== userId)
             throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
-          boardPrivacyChanged = changesPrivacy;
           if (Object.keys(privacyUpdates).length > 0) {
             await tx
               .update(dbSchema.resourcePrivacy)
@@ -2568,34 +2574,31 @@ export const socialBoardMutations = {
       throw error;
     }
 
-    // A public→private flip takes the board out of the anon-readable set, so
-    // the board-queue-preview producer goes quiet — public kiosks would keep
-    // rendering the last snapshot forever. Clear them with a tombstone.
-    // The "was previously anon-readable" gate lives HERE, on the pre-update
-    // row we already hold: a board that was never anon-readable must not get a
-    // publish on its channel at all (that alone would leak "something changed
-    // here" to anyone who guessed the board id). System-owned boards stay
-    // anon-readable regardless of isPublic, so a flip there is not a
-    // transition and must not blank their kiosks.
+    // A Public or Unlisted board whose visibility changes may drop out of a
+    // kiosk's reach: going private takes it out of the anon-readable set, and
+    // going Unlisted takes it away from kiosks that hold only its numeric id.
+    // Either way the preview producer goes quiet and kiosks would keep the last
+    // snapshot, so publish a tombstone. Each kiosk stream treats it as a wake,
+    // rechecks access and re-derives its snapshot. The "was anon-readable" gate
+    // uses the locked pre-update row: a board that was never anon-readable must
+    // not get a publish on its channel at all (that alone would leak "something
+    // changed here" to anyone who guessed the board id).
     if (
-      board.isPublic &&
-      validatedInput.isPublic === false &&
-      !board.deletedAt &&
-      board.ownerId !== SYSTEM_BOARD_OWNER_ID
+      previousVisibility?.anonReadable &&
+      (updated.isPublic !== previousVisibility.isPublic || updated.isUnlisted !== previousVisibility.isUnlisted)
     ) {
       try {
         await publishBoardQueuePreviewTombstoneForBoard(board.id);
       } catch (error) {
-        // A pubsub hiccup must never fail the edit itself — the kiosk clears
-        // on its next reconnect/seed instead.
-        logger.warn('Failed to publish board queue preview tombstone on private flip', {
+        // A pubsub hiccup must never fail the edit itself. Nothing else wakes
+        // the kiosk, so it keeps its last snapshot until it reconnects.
+        logger.error('Failed to publish board queue preview tombstone after a visibility change', {
           boardId: board.id,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
 
-    if (boardPrivacyChanged) pubsub.publishPrivacyChanged('updateBoard');
     // Update PostGIS location column (guarded — see syncLocationGeography)
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
       await syncLocationGeography({

@@ -7,8 +7,15 @@ import { lockSprayWallAccount } from '../../../services/spray-account-lock';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
+export type DeletedAccountSprayWalls = {
+  /** Spray wall ids detached from the account, for the photo purge after commit. */
+  wallIds: number[];
+  /** Board ids a signed-out viewer could read before deletion, for the kiosk tombstone after commit. */
+  previewBoardIds: number[];
+};
+
 /** Retain inaccessible wall identities for other climbers' logs, never a live transferred wall. */
-export async function deleteAccountSprayWalls(tx: Transaction, userId: string): Promise<number[]> {
+export async function deleteAccountSprayWalls(tx: Transaction, userId: string): Promise<DeletedAccountSprayWalls> {
   // No users-row UPDATE lock: a version writer already holding a wall lock
   // needs FK KEY SHARE on its creator, which would reverse the lock order.
   await lockSprayWallAccount(tx, userId);
@@ -17,7 +24,7 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
     .from(dbSchema.users)
     .where(eq(dbSchema.users.id, userId))
     .limit(1);
-  if (!account) return [];
+  if (!account) return { wallIds: [], previewBoardIds: [] };
   const walls = await tx
     .select({
       id: dbSchema.sprayWalls.id,
@@ -32,7 +39,7 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
     // clone's first publish holds the clone (always the higher id) and then takes
     // the wall it replaces. Ascending here would deadlock against that publish.
     .orderBy(desc(dbSchema.sprayWalls.id));
-  if (walls.length === 0) return [];
+  if (walls.length === 0) return { wallIds: [], previewBoardIds: [] };
 
   const [systemOwner] = await tx
     .select({ id: dbSchema.users.id })
@@ -43,15 +50,24 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
     throw new Error('Spray wall deletion requires the existing system owner');
 
   const deletedAt = new Date();
+  const previewBoardIds: number[] = [];
   for (const wall of walls) {
     await lockWallForWrite(tx, wall.id);
     // A concurrent owner change must not make us delete someone else's wall.
     const [ownedBoard] = await tx
-      .select({ uuid: dbSchema.userBoards.uuid })
+      .select({
+        id: dbSchema.userBoards.id,
+        isPublic: dbSchema.userBoards.isPublic,
+        isUnlisted: dbSchema.userBoards.isUnlisted,
+        deletedAt: dbSchema.userBoards.deletedAt,
+      })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, wall.boardUuid), eq(dbSchema.userBoards.ownerId, userId)))
       .for('update');
     if (!ownedBoard) continue;
+    if (ownedBoard.deletedAt === null && (ownedBoard.isPublic || ownedBoard.isUnlisted)) {
+      previewBoardIds.push(ownedBoard.id);
+    }
     await purgeSprayWallFeedItems(tx, wall.layoutId);
     // Tombstone BEFORE rebinding: the deletion trigger must still find the real owner.
     await tx
@@ -114,5 +130,5 @@ export async function deleteAccountSprayWalls(tx: Transaction, userId: string): 
         eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
       ),
     );
-  return detached.map((wall) => wall.id);
+  return { wallIds: detached.map((wall) => wall.id), previewBoardIds };
 }

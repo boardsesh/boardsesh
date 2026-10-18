@@ -262,13 +262,11 @@ afterEach(async () => {
 });
 
 describe('privacy settings round trip', () => {
-  it('saves without account privacy controls and reads back, without a fleet-wide privacyChanged', async () => {
+  it('saves without account privacy controls and reads back', async () => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '');
-    const published = vi.spyOn(pubsub, 'publishPrivacyChanged');
     const save = (enabled: boolean) => privacyMutations.setAnonymousOnForeignBoards(null, { enabled }, viewer(CLIMBER));
     try {
       expect((await privacyQueries.privacySettings(null, null, viewer(CLIMBER))).anonymousOnForeignBoards).toBe(false);
-      // Reads apply the preference, so no save tells every app to refetch.
       await save(false);
       const saved = await save(true);
       expect(saved).toMatchObject({ anonymousOnForeignBoards: true, enabled: false });
@@ -276,7 +274,6 @@ describe('privacy settings round trip', () => {
       expect((await privacyQueries.privacySettings(null, null, viewer(CLIMBER))).anonymousOnForeignBoards).toBe(true);
       await save(false);
       expect((await privacyQueries.privacySettings(null, null, viewer(CLIMBER))).anonymousOnForeignBoards).toBe(false);
-      expect(published).not.toHaveBeenCalled();
       // The account Public/Private switch is still behind the flag.
       await expect(
         privacyMutations.updatePrivacySettings(null, { input: { isPrivate: true } }, viewer(CLIMBER)),
@@ -304,10 +301,8 @@ describe('privacy settings round trip', () => {
   });
 
   it('creates the profile row for a climber who never had one, and rejects a non-boolean', async () => {
-    const published = vi.spyOn(pubsub, 'publishPrivacyChanged');
     await privacyMutations.setAnonymousOnForeignBoards(null, { enabled: false }, viewer(GYM_OWNER));
     await privacyMutations.setAnonymousOnForeignBoards(null, { enabled: true }, viewer(STRANGER));
-    expect(published).not.toHaveBeenCalled();
     const [profile] = await db
       .select({ value: dbSchema.userProfiles.anonymousOnForeignBoards })
       .from(dbSchema.userProfiles)

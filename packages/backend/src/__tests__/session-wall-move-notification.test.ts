@@ -38,13 +38,12 @@ async function publicWall(ownerId: string) {
 }
 
 describe('committed public wall move notification', () => {
-  it('notifies this session with the original participant, without global refresh or duplicate no-op events', async () => {
+  it('notifies this session with the original participant, without duplicate no-op events', async () => {
     const own = await publicWall(OWNER);
     const foreign = await publicWall(OTHER);
     const sessionId = randomUUID();
     await ensureSessionRecordExists(sessionId, own.path, OWNER);
     const sessionEvent = vi.spyOn(pubsub, 'publishSessionEvent').mockImplementation(() => {});
-    const globalEvent = vi.spyOn(pubsub, 'publishPrivacyChanged').mockImplementation(() => {});
     expect(await updateSessionBoardPathIfChanged(sessionId, foreign.path, OWNER, 'origin-participant')).toBe(own.path);
     expect(sessionEvent).toHaveBeenCalledExactlyOnceWith(sessionId, {
       __typename: 'SessionBoardPathChanged',
@@ -52,7 +51,6 @@ describe('committed public wall move notification', () => {
       changedByParticipantId: 'origin-participant',
       wallChanged: true,
     });
-    expect(globalEvent).not.toHaveBeenCalled();
     expect(await updateSessionBoardPathIfChanged(sessionId, foreign.path, OWNER, 'origin-participant')).toBeNull();
     expect(sessionEvent).toHaveBeenCalledOnce();
   });
@@ -78,7 +76,6 @@ describe('committed public wall move notification', () => {
     const sessionId = randomUUID();
     await ensureSessionRecordExists(sessionId, own.path, OWNER);
     const sessionEvent = vi.spyOn(pubsub, 'publishSessionEvent').mockImplementation(() => {});
-    const globalEvent = vi.spyOn(pubsub, 'publishPrivacyChanged').mockImplementation(() => {});
     vi.spyOn(pubsub, 'getSessionBoard').mockRejectedValue(new Error('preview unavailable'));
     await expect(updateSessionBoardPathIfChanged(sessionId, foreign.path, OWNER)).rejects.toThrow(
       'preview unavailable',
@@ -89,7 +86,6 @@ describe('committed public wall move notification', () => {
       changedByParticipantId: null,
       wallChanged: true,
     });
-    expect(globalEvent).not.toHaveBeenCalled();
     const [session] = await db
       .select({ boardId: schema.boardSessions.boardId, boardPath: schema.boardSessions.boardPath })
       .from(schema.boardSessions)
