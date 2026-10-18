@@ -626,6 +626,25 @@ a newer denial and pretend that the old grant was based on it. Reads append
 nothing when device and account already agree. Pending records are validated
 before storage can restore an analytics grant.
 
+## Mobile capture readiness and screen tracking
+
+`useAnalyticsConsent` subscribes directly to the boolean returned by
+`isProductAnalyticsGranted` with `useSyncExternalStore`. The returned snapshot
+must drive React consumers: subscribing to the full consent record and then
+calling a separate zero-argument getter lets React Compiler memoize the first
+answer. That answer is usually false while startup resolves consent and the
+SDK, so compiled screen tracking would never start even though later manual
+events could capture.
+
+The boolean getter keeps every existing account, flags, SDK, region and cookie
+check. `AnalyticsScreenTracker` reports the current route when capture becomes
+ready and clears its route deduplication while capture is blocked. This retries
+the same route after account replacement or a new Allow; the SDK session gate
+still suppresses repeats within the same session. Routes visited while capture
+was blocked are not replayed. The production-compiled regression tests execute
+the actual hook and tracker, covering startup, withdrawal, regional defaults
+and shared-cookie changes.
+
 ## Website and browser app
 
 The website renders the same analytics components for every request; the banner

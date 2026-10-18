@@ -7,8 +7,9 @@ export function useConsentSettled(): boolean {
   return useContext(ConsentSettledContext);
 }
 export function useAnalyticsConsent(): boolean {
-  useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot);
-  return isProductAnalyticsGranted();
+  // Return the subscribed snapshot itself. A separate zero-argument getter is
+  // memoized by React Compiler and freezes the initial (usually false) answer.
+  return useSyncExternalStore(subscribeConsent, isProductAnalyticsGranted, isProductAnalyticsGranted);
 }
 export function useAnalyticsPreference(): boolean {
   return isAnalyticsGranted(useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot).record);

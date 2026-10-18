@@ -18,7 +18,11 @@ export function AnalyticsScreenTracker(): null {
 
   useEffect(() => {
     const path = normalizeScreenPath(segments);
-    if (granted && path !== lastPath.current) {
+    if (!granted) {
+      // A new consent/account epoch must retry even if the route did not change.
+      // trackScreen's session gate still suppresses repeats in the same session.
+      lastPath.current = null;
+    } else if (path !== lastPath.current) {
       lastPath.current = path;
       trackScreen(path);
     }
