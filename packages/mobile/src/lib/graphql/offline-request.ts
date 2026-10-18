@@ -523,8 +523,8 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
   // Moves at sign-in and sign-out (`invalidateCredentialSnapshots()`).
   // An answer, local or network, that straddles one belongs to the previous
   // session and is dropped below.
-  const privacyGeneration = getCredentialGeneration();
-  const localAllowed = () => getCredentialGeneration() === privacyGeneration;
+  const credentialGeneration = getCredentialGeneration();
+  const localAllowed = () => getCredentialGeneration() === credentialGeneration;
   if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
@@ -612,13 +612,13 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         ? operation.networkVariables(variables as never)
         : variables;
     const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
-    if (operation && getCredentialGeneration() !== privacyGeneration) {
+    if (operation && getCredentialGeneration() !== credentialGeneration) {
       throw createAbortError('Privacy changed during climb request');
     }
     const response = localAllowed()
       ? await enrichNetworkResponse(operation, localDb, variables, networkResponse)
       : networkResponse;
-    if (operation && getCredentialGeneration() !== privacyGeneration) {
+    if (operation && getCredentialGeneration() !== credentialGeneration) {
       throw createAbortError('Privacy changed during climb request');
     }
     return response;

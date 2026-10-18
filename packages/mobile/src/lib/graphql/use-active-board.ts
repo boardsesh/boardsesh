@@ -53,9 +53,9 @@ function enqueueActiveBoardWrite(
   retireOnPrivacyChange = true,
   isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
-  const privacyGeneration = getCredentialGeneration();
+  const credentialGeneration = getCredentialGeneration();
   const operation = activeBoardWriteQueue.then(async () => {
-    if (retireOnPrivacyChange && privacyGeneration !== getCredentialGeneration()) return false;
+    if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
     // Always execute queued storage operations in intent order. In particular,
     // auth cleanup may target the previous user's scoped key and must not be
     // skipped merely because the next user already selected a board.
@@ -65,7 +65,7 @@ function enqueueActiveBoardWrite(
     // write is queued next, so do not briefly roll the React Query cache back.
     if (
       generation !== activeBoardWriteGeneration ||
-      privacyGeneration !== getCredentialGeneration() ||
+      credentialGeneration !== getCredentialGeneration() ||
       !isStillCurrent()
     )
       return false;
@@ -145,14 +145,14 @@ export function useActiveBoard() {
  */
 export function useSetActiveBoard() {
   const queryClient = useQueryClient();
-  const privacyGeneration = useSyncExternalStore(
+  const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
     getCredentialGeneration,
     getCredentialGeneration,
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      if (privacyGeneration !== getCredentialGeneration() || (isOperationCurrent && !isOperationCurrent()))
+      if (credentialGeneration !== getCredentialGeneration() || (isOperationCurrent && !isOperationCurrent()))
         return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
@@ -170,7 +170,7 @@ export function useSetActiveBoard() {
         isOperationCurrent,
       );
     },
-    [queryClient, privacyGeneration],
+    [queryClient, credentialGeneration],
   );
 }
 

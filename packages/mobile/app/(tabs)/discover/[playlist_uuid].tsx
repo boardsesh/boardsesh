@@ -61,7 +61,7 @@ type DetailParams = {
 const EMPTY_CLIMBS: Climb[] = [];
 
 export default function PlaylistDetail() {
-  const privacyGeneration = useSyncExternalStore(
+  const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
     getCredentialGeneration,
     getCredentialGeneration,
@@ -241,10 +241,10 @@ export default function PlaylistDetail() {
   const visibleAllClimbs = useMemo(
     () =>
       allClimbs.filter((climb) => {
-        if (!climbGenerations.current.has(climb)) climbGenerations.current.set(climb, privacyGeneration);
-        return climbGenerations.current.get(climb) === privacyGeneration;
+        if (!climbGenerations.current.has(climb)) climbGenerations.current.set(climb, credentialGeneration);
+        return climbGenerations.current.get(climb) === credentialGeneration;
       }),
-    [allClimbs, privacyGeneration],
+    [allClimbs, credentialGeneration],
   );
   // Always-current view of the loaded climbs so enterEditMode seeds from the
   // latest data, not the snapshot captured when the actions menu opened.
@@ -263,18 +263,18 @@ export default function PlaylistDetail() {
 
   const setEditList = useCallback(
     (list: Climb[]) => {
-      if (privacyGeneration !== getCredentialGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       editClimbsRef.current = list;
       setEditClimbs(list);
     },
-    [privacyGeneration, setEditClimbs],
+    [credentialGeneration, setEditClimbs],
   );
 
   const enterEditMode = useCallback(() => {
-    if (privacyGeneration !== getCredentialGeneration()) return;
+    if (credentialGeneration !== getCredentialGeneration()) return;
     setEditList(allClimbsRef.current);
     setEditMode(true);
-  }, [setEditList, privacyGeneration]);
+  }, [setEditList, credentialGeneration]);
 
   const exitEditMode = useCallback(() => {
     setEditMode(false);
@@ -285,7 +285,7 @@ export default function PlaylistDetail() {
 
   const handleReorderClimb = useCallback(
     async (climbUuid: string, newIndex: number) => {
-      if (privacyGeneration !== getCredentialGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       const current = editClimbsRef.current;
       const oldIndex = current.findIndex((climb) => climb.uuid === climbUuid);
       if (oldIndex === -1) return;
@@ -299,7 +299,7 @@ export default function PlaylistDetail() {
       try {
         await reorderPlaylistClimb({ playlistId: playlistUuid, climbUuid, newIndex: target });
       } catch (err) {
-        if (privacyGeneration !== getCredentialGeneration()) return;
+        if (credentialGeneration !== getCredentialGeneration()) return;
         console.error('Failed to reorder playlist climb:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'reorder-climb' } });
         // Only wholesale-restore the pre-move snapshot if no other edit landed in
@@ -313,12 +313,12 @@ export default function PlaylistDetail() {
         showToast(t('editClimbs.reorderFailed'), 'error');
       }
     },
-    [reorderPlaylistClimb, playlistUuid, setEditList, queryClient, showToast, t, privacyGeneration],
+    [reorderPlaylistClimb, playlistUuid, setEditList, queryClient, showToast, t, credentialGeneration],
   );
 
   const handleRemoveClimb = useCallback(
     (climbUuid: string) => {
-      if (privacyGeneration !== getCredentialGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       const target = editClimbsRef.current.find((climb) => climb.uuid === climbUuid);
       Alert.alert(
         t('editClimbs.removeConfirm.title'),
@@ -329,7 +329,7 @@ export default function PlaylistDetail() {
             text: t('editClimbs.removeConfirm.confirm'),
             style: 'destructive',
             onPress: async () => {
-              if (privacyGeneration !== getCredentialGeneration()) return;
+              if (credentialGeneration !== getCredentialGeneration()) return;
               const current = editClimbsRef.current;
               const next = current.filter((climb) => climb.uuid !== climbUuid);
               if (next.length === current.length) return;
@@ -341,7 +341,7 @@ export default function PlaylistDetail() {
               try {
                 await removeClimbFromPlaylist({ playlistId: playlistUuid, climbUuid });
               } catch (err) {
-                if (privacyGeneration !== getCredentialGeneration()) return;
+                if (credentialGeneration !== getCredentialGeneration()) return;
                 console.error('Failed to remove playlist climb:', err);
                 reportHandledError(err, { tags: { source: 'playlist', op: 'remove-climb' } });
                 // Restore only if no concurrent edit landed since; otherwise
@@ -362,7 +362,7 @@ export default function PlaylistDetail() {
         ],
       );
     },
-    [removeClimbFromPlaylist, playlistUuid, setEditList, queryClient, showToast, t, privacyGeneration],
+    [removeClimbFromPlaylist, playlistUuid, setEditList, queryClient, showToast, t, credentialGeneration],
   );
 
   // Re-seed interactive state whenever the cached playlist changes — including

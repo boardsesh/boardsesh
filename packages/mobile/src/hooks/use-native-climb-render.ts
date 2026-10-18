@@ -1869,14 +1869,14 @@ function isNativeRendererUnavailable(): boolean {
  * and the component shows backgrounds alone.
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
-  const privacyGeneration = useSyncExternalStore(
+  const credentialGeneration = useSyncExternalStore(
     subscribeToCredentialChanges,
     getCredentialGeneration,
     getCredentialGeneration,
   );
   // A later render does not authorize the old row projection again.
   // Conservatively retire its handoff source for the rest of this hook's life.
-  const artworkPrivacyGeneration = useRef(privacyGeneration).current;
+  const artworkPrivacyGeneration = useRef(credentialGeneration).current;
   const {
     frames,
     boardName,
