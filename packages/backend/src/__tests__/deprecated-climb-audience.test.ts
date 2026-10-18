@@ -126,7 +126,7 @@ describeWithDatabase('the deprecated climb audience (real DB)', () => {
     expect(await stored(draft.uuid)).toEqual({ isDraft: true, isListed: false, policies: 0, announced: false });
   });
 
-  it('rejects a climb policy row: the CHECK no longer allows climb (0280)', async () => {
+  it('rejects a climb policy row: the CHECK no longer allows climb (0281)', async () => {
     await expect(
       db.execute(
         sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
