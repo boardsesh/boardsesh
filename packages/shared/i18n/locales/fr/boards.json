@@ -214,6 +214,7 @@
       "resolving": "Chargement des boards…",
       "noResults": "Aucune board à portée",
       "unavailable": "Active le Bluetooth pour rechercher",
+      "notAsked": "Autorise le Bluetooth pour chercher les boards autour de toi.",
       "unknownSetupTitle": "On a trouvé une board {{board}}",
       "unknownSetupBody": "On ne connaît pas encore sa configuration.",
       "moonboardTitle": "Une MoonBoard à proximité",

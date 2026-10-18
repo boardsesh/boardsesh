@@ -20,7 +20,14 @@ import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-devi
 
 const scan = vi.hoisted(() => ({
   status: 'done' as 'idle' | 'scanning' | 'done' | 'unavailable',
-  unavailableReason: null as 'permission_denied' | 'unauthorized' | 'powered_off' | 'unsupported' | 'unknown' | null,
+  unavailableReason: null as
+    | 'permission_denied'
+    | 'unauthorized'
+    | 'powered_off'
+    | 'unsupported'
+    | 'unknown'
+    | 'not_asked'
+    | null,
   serials: [] as string[],
   advertisedTypes: new Map<string, string>(),
   devices: [] as QuickstartScanDevice[],
@@ -588,6 +595,17 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
 
     expect(hasText(container, 'ble.errorPermissionDenied')).toBe(true);
     expect(button(container, 'ble.openSettings')).toBeNull();
+  });
+
+  // An alert left unanswered is not a refusal: say what Bluetooth is for, not
+  // that it was denied, and keep Scan again, which asks again.
+  it('asks without blaming the climber when the Bluetooth question went unanswered', () => {
+    scan.unavailableReason = 'not_asked';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.notAsked')).toBe(true);
+    expect(hasText(container, 'ble.errorPermissionDenied')).toBe(false);
+    expect(button(container, 'ble.scanAgain')).not.toBeNull();
   });
 
   it.each(['powered_off', 'unsupported', 'unknown'] as const)('keeps "Turn on Bluetooth to scan" for %s', (reason) => {

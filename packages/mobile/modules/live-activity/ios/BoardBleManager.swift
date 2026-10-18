@@ -1683,6 +1683,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // state (.poweredOn or .poweredOff on Allow, .unauthorized on Don't
         // Allow). Settle any requestAuthorization waiter after this update's
         // own work, so the scan an Allow restarts below is already running.
+        // Ordering contract: on Allow, the powered-on branch below restarts a
+        // parked scan first, then this settles the startScan waiter, whose
+        // settleScanRequestOnBleQueue issues scanForPeripherals once more with
+        // the same services and options. CoreBluetooth treats that as the same
+        // scan with the same parameters, so the repeat is harmless.
         defer { settleAuthorizationAnswerWaitersOnBleQueue() }
         if state == .poweredOn {
             // Defensive: during state restoration after an intent-driven

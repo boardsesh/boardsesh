@@ -214,6 +214,7 @@
       "resolving": "Cargando plafones…",
       "noResults": "Ningún plafón al alcance",
       "unavailable": "Activa el Bluetooth para buscar",
+      "notAsked": "Permite el Bluetooth para buscar plafones cerca de ti.",
       "unknownSetupTitle": "Encontramos un plafón {{board}}",
       "unknownSetupBody": "Aún no sabemos cómo está configurado.",
       "moonboardTitle": "Hay un MoonBoard cerca",

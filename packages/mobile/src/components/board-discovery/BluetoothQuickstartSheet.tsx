@@ -218,9 +218,11 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
           <View style={styles.state}>
             <Icon name="warning" size={40} color={systemColors.tertiaryLabel} />
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
-              {unavailableReason === 'permission_denied' || unavailableReason === 'not_asked'
-                ? tSettings('ble.errorPermissionDenied')
-                : t('mobile.bluetooth.unavailable')}
+              {unavailableReason === 'not_asked'
+                ? t('mobile.bluetooth.notAsked')
+                : unavailableReason === 'permission_denied'
+                  ? tSettings('ble.errorPermissionDenied')
+                  : t('mobile.bluetooth.unavailable')}
             </Text>
             {scanAgainCanHelp && scanAgainButton}
           </View>
