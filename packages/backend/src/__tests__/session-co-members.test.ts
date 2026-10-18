@@ -537,8 +537,14 @@ describe('who counts as a member', () => {
     expect(await fields.SessionUser.userId(preview.users[0], undefined, onShared)).toBeNull();
     expect(await fields.SessionUser.username(preview.users[0], undefined, onShared)).toBe('');
     expect(await fields.ClimbQueueItem.addedBy(preview.queueState!.queue[0], undefined, onShared)).toBeUndefined();
-    const projectedItem = await redactQueueItem(queueItem, MEMBER, elsewhere);
-    expect(await fields.ClimbQueueItem.addedBy(projectedItem, undefined, onShared)).toBeUndefined();
+    // Objects projected for someone who may name the climber there (the climber
+    // themselves) are rechecked for this reader against that same session.
+    const [retainedRow] = await redactSessionUsers([rosterRow(CLIMBER, CLIMBER_NAME)], CLIMBER, elsewhere);
+    expect(retainedRow.userId).toBe(CLIMBER);
+    expect(await fields.SessionUser.userId(retainedRow, undefined, onShared)).toBeNull();
+    const retainedItem = await redactQueueItem(queueItem, CLIMBER, elsewhere);
+    expect(retainedItem.addedBy).toBe(CLIMBER);
+    expect(await fields.ClimbQueueItem.addedBy(retainedItem, undefined, onShared)).toBeUndefined();
     const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: elsewhere }, viewer(MEMBER));
     expect(JSON.stringify(detail)).not.toContain(CLIMBER);
   });
