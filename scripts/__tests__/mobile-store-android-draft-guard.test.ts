@@ -34,6 +34,24 @@ describe('production draft guard', () => {
     });
   });
 
+  // 2026-10-18: 2.6.0 (2001310) was in production review when the train uploaded
+  // 2001360 and a store-draft run picked it.
+  it.each(['NOT_SENT_FOR_REVIEW', 'IN_REVIEW', 'APPROVED_NOT_PUBLISHED'])(
+    'refuses to draft a newer build while an older one is %s',
+    (state) => {
+      expect(
+        productionDraftDecision(
+          [release(VERSION, 'DRAFT'), release(VERSION, state), release(2001108, 'PUBLISHED')],
+          VERSION + 50,
+        ),
+      ).toMatchObject({ skip: true, reason: expect.stringContaining(`versionCode ${VERSION} pending (`) });
+    },
+  );
+
+  it.each(['PUBLISHED', 'NOT_APPROVED', 'DRAFT'])('still drafts a newer build beside an older %s release', (state) => {
+    expect(productionDraftDecision([release(VERSION, state)], VERSION + 50).skip).toBe(false);
+  });
+
   it('reads only the non-edit production summary', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
