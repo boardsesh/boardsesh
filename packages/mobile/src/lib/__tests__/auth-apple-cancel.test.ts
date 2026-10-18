@@ -14,6 +14,7 @@ vi.mock('react-native', () => ({
   AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
   Linking: { addEventListener: () => ({ remove: () => {} }) },
 }));
+vi.mock('expo-application', () => ({ nativeApplicationVersion: '1.0.0', nativeBuildVersion: '1' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(), dismissBrowser: vi.fn() }));
 vi.mock('expo-crypto', () => ({
   getRandomBytes: () => new Uint8Array(16),
