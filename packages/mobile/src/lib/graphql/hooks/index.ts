@@ -1423,7 +1423,12 @@ export { useClimbLogs, useClimbLogsPreview, flattenClimbLogPages } from './use-c
  * layout is downloaded (offline, and local-first while online), with the server
  * as the fallback; a completed stats sync invalidates ['climbStatsHistory'].
  */
-export function useClimbStatsHistory(boardName: string, climbUuid: string | null) {
+export function useClimbStatsHistory(
+  boardName: string,
+  climbUuid: string | null,
+  // `enabled: false` still hands back a cached answer, without asking for one.
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ['climbStatsHistory', boardName, climbUuid],
     queryFn: () =>
@@ -1432,7 +1437,7 @@ export function useClimbStatsHistory(boardName: string, climbUuid: string | null
         climbUuid: climbUuid!,
       }),
     select: (data) => data.climbStatsHistory,
-    enabled: !!climbUuid,
+    enabled: !!climbUuid && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
   });
 }

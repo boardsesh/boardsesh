@@ -316,7 +316,8 @@
       "retry": "Try again",
       "preparing": "Preparing similar climbs…",
       "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading.",
-      "downloadToSee": "Download this board to see similar climbs"
+      "downloadToSee": "Download this board to see similar climbs",
+      "collapsedSummary": "Closest: {{name}}"
     },
     "community": {
       "moderation": {
@@ -336,7 +337,8 @@
       "ascensionists_other": "{{count}} ascensionists",
       "avgQuality": "Average quality",
       "ascentsByAngle": "Ascents by angle",
-      "logScale": "Log scale"
+      "logScale": "Log scale",
+      "collapsedSummary": "Most sends at {{angle}}°"
     },
     "betaVideos": {
       "title": "Beta Videos",
@@ -378,7 +380,8 @@
       "instagramNotInstalled": "Instagram isn't installed — opened the website instead",
       "instagramOpenFailed": "Couldn't open Instagram",
       "shareBackInstructions": "Two ways back: on your reel tap Share and pick Boardsesh (it may be hiding under More), or copy the reel's link and paste it below. Either way, we'll match it to this climb.",
-      "pasteSectionLabel": "Already have a link?"
+      "pasteSectionLabel": "Already have a link?",
+      "collapsedEmpty": "None yet"
     },
     "angleSelector": {
       "title": "Choose Angle",

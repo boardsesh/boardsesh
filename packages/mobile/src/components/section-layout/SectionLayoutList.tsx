@@ -19,6 +19,9 @@ export type SectionLayoutRowModel<Id extends string> = {
   movable: boolean;
 };
 
+/** Returns `false` when it refuses the move, so the row stays quiet: no haptic, nothing said. */
+export type SectionMoveHandler<Id extends string> = (sectionId: Id, direction: SectionMoveDirection) => boolean | void;
+
 export type PlacedSectionLayoutRow<Id extends string> = SectionLayoutRowModel<Id> & {
   /** Ends of the row's group. Rows with arrows form one group, switch-only rows another. */
   first: boolean;
@@ -65,7 +68,7 @@ const MOVABLE_SEPARATOR_INSET = ARROWS_INSET + ARROW_SIZE * 2 + spacing[4];
 type RowProps<Id extends string> = PlacedSectionLayoutRow<Id> & {
   disabled: boolean;
   onVisibleChange: (sectionId: Id, visible: boolean) => void;
-  onMove: (sectionId: Id, direction: SectionMoveDirection) => void;
+  onMove: SectionMoveHandler<Id>;
 };
 
 function SectionLayoutRowBase<Id extends string>({
@@ -91,8 +94,8 @@ function SectionLayoutRowBase<Id extends string>({
   const move = useCallback(
     (direction: SectionMoveDirection) => {
       if (disabled || !(direction < 0 ? canMoveUp : canMoveDown)) return;
+      if (onMove(id, direction) === false) return;
       hapticSelection();
-      onMove(id, direction);
       // The row moves under the screen reader's focus; say where it landed.
       announceQueued(
         t('mobile.settings.sectionLayout.moved', {
@@ -183,7 +186,7 @@ type SectionLayoutListProps<Id extends string> = Omit<
   /** Greys every switch and arrow out, such as while a stored layout still loads. */
   disabled?: boolean;
   onVisibleChange: (sectionId: Id, visible: boolean) => void;
-  onMove: (sectionId: Id, direction: SectionMoveDirection) => void;
+  onMove: SectionMoveHandler<Id>;
   /** The list to render into: `BottomSheetFlatList` inside a sheet, React Native's `FlatList` elsewhere. */
   ListComponent?: ComponentType<FlatListProps<PlacedSectionLayoutRow<Id>>>;
 };

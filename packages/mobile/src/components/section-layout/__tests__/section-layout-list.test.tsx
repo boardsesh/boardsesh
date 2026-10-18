@@ -29,7 +29,8 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+const haptics = vi.hoisted(() => ({ selection: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: haptics.selection }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: 'brand' },
@@ -91,6 +92,7 @@ const ROWS: SectionLayoutRowModel<Id>[] = [
 afterEach(() => {
   cleanup();
   listProps.announce.mockClear();
+  haptics.selection.mockClear();
 });
 
 describe('placeSectionLayoutRows', () => {
@@ -161,6 +163,15 @@ describe('SectionLayoutList', () => {
     fireEvent.click(disabled.getByTestId('section-layout-move-down-logbook'));
     expect(onMove).not.toHaveBeenCalled();
     expect(listProps.announce).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the handler refuses the move', () => {
+    const onMove = vi.fn(() => false);
+    const screen = render(createElement(SectionLayoutList<Id>, { rows: ROWS, onVisibleChange: vi.fn(), onMove }));
+    fireEvent.click(screen.getByTestId('section-layout-move-down-logbook'));
+    expect(onMove).toHaveBeenCalledWith('logbook', 1);
+    expect(listProps.announce).not.toHaveBeenCalled();
+    expect(haptics.selection).not.toHaveBeenCalled();
   });
 
   it('says where a moved section landed', () => {

@@ -234,7 +234,10 @@ describe('play drawer section preferences', () => {
       const { result } = renderHook(module.usePlayDrawerSectionsPreference);
       await waitFor(() => expect(result.current.ready).toBe(true));
       act(() => result.current.setSection('similarClimbs', false));
-      for (let step = 0; step < 6; step += 1) act(() => result.current.move('similarClimbs', -1));
+      for (let step = 0; step < 6; step += 1)
+        act(() => {
+          result.current.move('similarClimbs', -1);
+        });
       expect(result.current.order).toEqual(MOVED_ORDER);
       expect(result.current.sections.similarClimbs).toBe(false);
       await waitFor(() => expect(storedRecord().order).toEqual(MOVED_ORDER));
@@ -259,7 +262,9 @@ describe('play drawer section preferences', () => {
       read.mockImplementationOnce(() => gate.promise);
       const module = await import('../play-drawer-sections-preference');
       const { result } = renderHook(module.usePlayDrawerSectionsPreference);
-      act(() => result.current.move('logbook', 1));
+      act(() => {
+        result.current.move('logbook', 1);
+      });
       await act(async () =>
         gate.resolve(
           JSON.stringify({
@@ -281,7 +286,9 @@ describe('play drawer section preferences', () => {
       const module = await import('../play-drawer-sections-preference');
       const { result } = renderHook(module.usePlayDrawerSectionsPreference);
       await waitFor(() => expect(result.current.ready).toBe(true));
-      act(() => result.current.move('community', -1));
+      act(() => {
+        result.current.move('community', -1);
+      });
       await waitFor(() => expect(write).toHaveBeenCalled());
       expect(storedRecord()).toMatchObject({
         version: 1,
@@ -339,7 +346,9 @@ describe('play drawer section preferences', () => {
       const { result } = renderHook(module.usePlayDrawerSectionsPreference);
       await waitFor(() => expect(result.current.ready).toBe(true));
       expect(result.current.order).not.toContain('crewNotes');
-      act(() => result.current.move('community', -1));
+      act(() => {
+        result.current.move('community', -1);
+      });
       await waitFor(() => expect(write).toHaveBeenCalled());
       expect(storedRecord()).toMatchObject({
         sections: { activeHolds: true, community: false },
@@ -420,10 +429,14 @@ describe('play drawer section preferences', () => {
       const { usePlayDrawerSectionControls } =
         await import('../../components/settings/use-play-drawer-section-controls');
       const { result } = renderHook(usePlayDrawerSectionControls);
-      act(() => result.current.onMove('similarClimbs', -1));
+      act(() => {
+        result.current.onMove('similarClimbs', -1);
+      });
       expect(result.current.controls.at(-1)?.id).toBe('similarClimbs');
       await act(async () => gate.resolve(null));
-      act(() => result.current.onMove('similarClimbs', -1));
+      act(() => {
+        result.current.onMove('similarClimbs', -1);
+      });
       expect(result.current.controls.at(-2)?.id).toBe('similarClimbs');
     });
   });
