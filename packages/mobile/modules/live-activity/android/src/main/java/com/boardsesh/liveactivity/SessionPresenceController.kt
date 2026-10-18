@@ -49,6 +49,18 @@ internal class SessionPresenceController(
     var sessionActive = false
         private set
 
+    // The session the notification belongs to; a rest-timer payload for any other
+    // session is dropped (a late update from the previous session must not paint
+    // its countdown over the new one).
+    @Volatile
+    private var activeSessionId: String = ""
+
+    // Last rest timer forwarded to the service; null = none shown. Reset on every
+    // start/end so a new session window never inherits the previous countdown.
+    @Volatile
+    var restTimer: RestTimerOptions? = null
+        private set
+
     fun startSession(options: StartSessionOptions?) {
         // On API 34+ a connectedDevice FGS can't promote without
         // BLUETOOTH_CONNECT, so skip the start rather than create a
@@ -56,6 +68,8 @@ internal class SessionPresenceController(
         // BLE link alive, so without the permission there's nothing to keep.
         if (!canRunConnectedDeviceService(context)) throw MissingBluetoothPermissionException()
         sessionActive = true
+        activeSessionId = options?.sessionId ?: ""
+        restTimer = null
         val strings = options?.androidNotification
         val intent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_START
@@ -128,9 +142,45 @@ internal class SessionPresenceController(
         launchService(intent, clearSessionOnFailure = false)
     }
 
+    /**
+     * Shows (or, with `null`, clears) the rest countdown in the ongoing
+     * notification. Dropped outside a session window and for a payload whose
+     * sessionId isn't the active session's. The service owns the rendering and
+     * the epoch → elapsedRealtime conversion; this only forwards the snapshot.
+     */
+    fun updateRestTimer(options: RestTimerOptions?) {
+        if (!sessionActive) return
+        if (options != null && options.sessionId != activeSessionId) {
+            Log.w(TAG, "updateRestTimer: ignoring a rest timer for another session")
+            return
+        }
+        restTimer = options
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_REST_TIMER
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, activeSessionId)
+            if (options == null) {
+                putExtra(BoardSessionService.EXTRA_REST_CLEAR, true)
+            } else {
+                putExtra(BoardSessionService.EXTRA_REST_STATUS, options.status)
+                options.startMs.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_START_MS, it) }
+                options.deadlineMs.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS, it) }
+                options.periodSeconds.finiteLong()?.let { putExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS, it) }
+                options.frozenSignedSeconds.finiteLong()?.let {
+                    putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it)
+                }
+                options.androidCaption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+            }
+        }
+        // Same transient-failure contract as updateActivity: the service is
+        // already running, so a backgrounded re-delivery failure keeps the session.
+        launchService(intent, clearSessionOnFailure = false)
+    }
+
     fun endSession() {
         val hadActiveSession = sessionActive
         sessionActive = false
+        activeSessionId = ""
+        restTimer = null
         val stopIntent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_STOP
         }
@@ -183,6 +233,10 @@ internal class SessionPresenceController(
         return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
     }
+
+    // JS numbers arrive as Doubles; NaN/Infinity would silently become 0 / Long.MAX
+    // through toLong(), so they're dropped instead (the extra stays absent).
+    private fun Double?.finiteLong(): Long? = this?.takeIf { it.isFinite() }?.toLong()
 
     companion object {
         private const val TAG = "BoardSession"

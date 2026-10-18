@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   restTimerTargetSeconds: null,
   restTimerAutoAdvance: false,
   restTimerMode: 'afterTick',
+  restTimerShowOnLockScreen: true,
   theme: 'system',
   hapticFeedbackEnabled: true,
   notifySessionInvites: true,

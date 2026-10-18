@@ -283,6 +283,188 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(ClimbNavigationDirection.previous.newIndex(from: 3, count: 2))
     }
 
+    // MARK: Rest timer (#6513)
+
+    private let restNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func restState(
+        status: String,
+        sessionId: String = "session",
+        startOffset: Double? = nil,
+        deadlineOffset: Double? = nil,
+        periodSeconds: Double? = nil,
+        targetSeconds: Double? = 120,
+        frozenSignedSeconds: Double? = nil
+    ) -> SharedRestTimerState {
+        let nowMs = restNow.timeIntervalSince1970 * 1000
+        return SharedRestTimerState(
+            v: SharedRestTimerState.currentVersion,
+            sessionId: sessionId,
+            status: status,
+            startMs: startOffset.map { nowMs + $0 * 1000 },
+            deadlineMs: deadlineOffset.map { nowMs + $0 * 1000 },
+            periodSeconds: periodSeconds,
+            targetSeconds: targetSeconds,
+            frozenSignedSeconds: frozenSignedSeconds
+        )
+    }
+
+    private func resolveRest(_ state: SharedRestTimerState?, sessionId: String = "session") -> ResolvedRestTimer? {
+        ResolvedRestTimer.resolve(state: state, sessionId: sessionId, now: restNow)
+    }
+
+    func testRestTimerStateRoundTripsThroughTheAppGroup() {
+        let state = restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90)
+        SharedRestTimerStore.save(state, to: defaults)
+        XCTAssertEqual(SharedRestTimerStore.load(from: defaults), state)
+
+        SharedRestTimerStore.clear(in: defaults)
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+    }
+
+    func testRestTimerStoreRejectsGarbageAndUnknownVersions() throws {
+        defaults.set(Data("not json".utf8), forKey: SharedConstants.restTimerKey)
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+
+        let future = """
+        {"v": 2, "sessionId": "session", "status": "running", "deadlineMs": 1}
+        """
+        defaults.set(Data(future.utf8), forKey: SharedConstants.restTimerKey)
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+    }
+
+    func testRestTimerStoreDecodesTheJsonJsWritesWithNulls() throws {
+        let json = """
+        {"v": 1, "sessionId": "session", "status": "waiting", "startMs": null, "deadlineMs": null,
+         "periodSeconds": null, "targetSeconds": 90, "frozenSignedSeconds": 90}
+        """
+        defaults.set(Data(json.utf8), forKey: SharedConstants.restTimerKey)
+        let state = try XCTUnwrap(SharedRestTimerStore.load(from: defaults))
+        XCTAssertEqual(resolveRest(state)?.phase, .waiting(signedSeconds: 90))
+    }
+
+    func testRunningRestCountsDownToItsDeadline() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+        XCTAssertNil(resolved?.periodSeconds)
+        XCTAssertEqual(resolved?.targetSeconds, 120)
+    }
+
+    func testRunningRestRenderedAfterItsDeadlineIsOver() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: -150, deadlineOffset: -30))
+        XCTAssertEqual(resolved?.phase, .over(deadline: restNow.addingTimeInterval(-30)))
+    }
+
+    func testFixedWindowRollsOnToTheCurrentWindowInsteadOfGoingOver() {
+        // The 60 s window ended 130 s ago: two more windows have started since.
+        let resolved = resolveRest(restState(
+            status: SharedRestTimerState.statusRunning,
+            startOffset: -190,
+            deadlineOffset: -130,
+            periodSeconds: 60,
+            targetSeconds: 60
+        ))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-10), deadline: restNow.addingTimeInterval(50))
+        )
+        XCTAssertEqual(resolved?.periodSeconds, 60)
+    }
+
+    func testRunningRangeIsNeverInverted() {
+        // `Text(timerInterval:)` traps on lower > upper.
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: 200, deadlineOffset: 90))
+        guard case let .running(start, deadline)? = resolved?.phase else {
+            return XCTFail("expected a running rest, got \(String(describing: resolved?.phase))")
+        }
+        XCTAssertLessThanOrEqual(start, deadline)
+    }
+
+    func testRunningRestWithoutAStartFallsBackToOneRestLength() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, deadlineOffset: 90))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+    }
+
+    func testFrozenRestPhasesKeepTheirSign() {
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -12))?.phase,
+            .paused(signedSeconds: -12)
+        )
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, frozenSignedSeconds: 40))?.phase,
+            .queueEnded(signedSeconds: 40)
+        )
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusWaiting, frozenSignedSeconds: nil))?.phase,
+            .waiting(signedSeconds: 120)
+        )
+    }
+
+    func testCountUpRestNeverStartsInTheFuture() {
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusCountUp, startOffset: -42, targetSeconds: nil))?.phase,
+            .countUp(start: restNow.addingTimeInterval(-42))
+        )
+        XCTAssertEqual(
+            resolveRest(restState(status: SharedRestTimerState.statusCountUp, startOffset: 5, targetSeconds: nil))?.phase,
+            .countUp(start: restNow)
+        )
+    }
+
+    func testRestTimerHiddenForAnotherSessionAnUnknownStatusOrNothingToCount() {
+        XCTAssertNil(resolveRest(nil))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusRunning, deadlineOffset: 90), sessionId: "other"))
+        XCTAssertNil(resolveRest(restState(status: "sprinting", deadlineOffset: 90)))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusRunning)))
+        XCTAssertNil(resolveRest(restState(status: SharedRestTimerState.statusCountUp, targetSeconds: nil)))
+    }
+
+    func testRestClockFormatsLikeTheApp() {
+        XCTAssertEqual(RestTimerFormat.signedClock(90), "1:30")
+        XCTAssertEqual(RestTimerFormat.signedClock(0), "0:00")
+        XCTAssertEqual(RestTimerFormat.signedClock(-12), "\u{2212}0:12")
+        XCTAssertEqual(RestTimerFormat.clock(3_725), "1:02:05")
+    }
+
+    func testDisplayGradeAgreesWhicheverPathDeliveredIt() {
+        // The backend push carries the raw difficulty; the native paths format it.
+        XCTAssertEqual(VGradeFormatter.displayGrade("6a/V3"), "V3")
+        XCTAssertEqual(VGradeFormatter.displayGrade("6c+/V5"), "V5+")
+        XCTAssertEqual(VGradeFormatter.displayGrade("V5+"), "V5+")
+        XCTAssertEqual(VGradeFormatter.displayGrade("v4"), "V4")
+        XCTAssertEqual(VGradeFormatter.displayGrade("7A"), "7A")
+        XCTAssertEqual(VGradeFormatter.displayGrade(""), "")
+        for raw in ["6a/V3", "6c+/V5", "V5+", "7A", "8A+/V11"] {
+            let once = VGradeFormatter.displayGrade(raw)
+            XCTAssertEqual(VGradeFormatter.displayGrade(once), once, "displayGrade must be idempotent for \(raw)")
+        }
+    }
+
+    func testContentStateDecodesAPushWithoutTheRestRevision() throws {
+        // What the backend sends today: no restRevision (and no device-only fields).
+        let json = """
+        {
+          "climbName": "Masquerade",
+          "climbDifficulty": "6a/V3",
+          "angle": 40,
+          "currentIndex": 0,
+          "totalClimbs": 2,
+          "hasNext": true,
+          "hasPrevious": false,
+          "climbUuid": "climb-1"
+        }
+        """
+        let state = try JSONDecoder().decode(ClimbSessionAttributes.ContentState.self, from: Data(json.utf8))
+        XCTAssertNil(state.restRevision)
+        XCTAssertEqual(state.climbName, "Masquerade")
+    }
+
     func testSharedQueueItemDecodesOldPayloadWithoutMirroredField() throws {
         let json = """
         {

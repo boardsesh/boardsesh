@@ -105,6 +105,13 @@ enum SharedConstants {
     /// Display name of the peer holding the board when `boardConnectionKey` is
     /// "heldByPeer" (absent otherwise). Companion to `boardConnectionKey`.
     static let holderDisplayNameKey = "bs_holder_display_name"
+    /// The climber's rest timer (#6513) as a `SharedRestTimerState` JSON blob,
+    /// written by JS through `updateRestTimer`. Lives ONLY here, never in the
+    /// pushed `ContentState`: the backend re-sends the whole content state on
+    /// every queue change and every 90 s without it, and the native builders
+    /// and intents construct fresh states, so a pushed field would be wiped on
+    /// every one of those paths. The widget reads it at render time.
+    static let restTimerKey = "bs_rest_timer"
 
     // MARK: Darwin Notification
 
@@ -427,5 +434,170 @@ enum VGradeFormatter {
         }
 
         return vGrade
+    }
+
+    private static let displayedVGradeRegex = try! NSRegularExpression(pattern: "^V\\d+\\+?$", options: .caseInsensitive)
+
+    /// The grade the widget shows, whatever path delivered it.
+    ///
+    /// The native update paths already run `formatVGrade`, but the backend's
+    /// APNs push sends the raw difficulty ("6a/V3"), so without this the card
+    /// flipped between a coloured "V3" and an uncoloured "6a/V3" depending on
+    /// which source updated it last. Idempotent: a value that is already a
+    /// display V-grade ("V5+") passes through untouched, where `formatVGrade`
+    /// alone would drop the "+".
+    static func displayGrade(_ difficulty: String) -> String {
+        let trimmed = difficulty.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nsRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        if displayedVGradeRegex.firstMatch(in: trimmed, range: nsRange) != nil {
+            return trimmed.uppercased()
+        }
+        return formatVGrade(trimmed)
+    }
+}
+
+// MARK: - Shared Rest Timer (#6513)
+
+/// The rest timer snapshot JS hands the widget through the App Group. Epoch
+/// milliseconds as Doubles, never `Date`: synthesized Codable would encode a
+/// `Date` as seconds since 2001, which no other writer of this key speaks.
+///
+/// JS works out the status (it owns the rest-timer state machine); the widget
+/// only decides, at render time, whether a running rest has passed its
+/// deadline, and rolls a fixed-window cadence on to its current window.
+struct SharedRestTimerState: Codable, Equatable {
+    static let currentVersion = 1
+
+    static let statusRunning = "running"
+    static let statusPaused = "paused"
+    static let statusWaiting = "waiting"
+    static let statusQueueEnded = "queueEnded"
+    static let statusCountUp = "countUp"
+
+    let v: Int
+    let sessionId: String
+    let status: String
+    /// When the current countdown or count-up started. Nil while waiting.
+    let startMs: Double?
+    /// When the current rest or fixed window ends. Nil for count-up / waiting.
+    let deadlineMs: Double?
+    /// Fixed-window length in seconds (`onTheMinute`); nil for `afterTick`.
+    let periodSeconds: Double?
+    /// The rest-length setting; nil when the length is Off.
+    let targetSeconds: Double?
+    /// Frozen value for paused / queue ended / waiting: seconds left (+) or
+    /// over (−).
+    let frozenSignedSeconds: Double?
+}
+
+enum SharedRestTimerStore {
+    /// Nil for an absent key, unreadable bytes, or a version this build does
+    /// not know — an unknown shape renders as "no timer", never as a guess.
+    static func load(from defaults: UserDefaults) -> SharedRestTimerState? {
+        guard let data = defaults.data(forKey: SharedConstants.restTimerKey),
+              let state = try? JSONDecoder().decode(SharedRestTimerState.self, from: data),
+              state.v == SharedRestTimerState.currentVersion
+        else { return nil }
+        return state
+    }
+
+    static func save(_ state: SharedRestTimerState, to defaults: UserDefaults) {
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        defaults.set(data, forKey: SharedConstants.restTimerKey)
+    }
+
+    static func clear(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: SharedConstants.restTimerKey)
+    }
+}
+
+/// What the widget draws for the rest timer at one render instant.
+enum RestTimerRenderPhase: Equatable {
+    /// Armed, nothing to count from yet. Carries the frozen value to show.
+    case waiting(signedSeconds: Int)
+    /// Counting down inside the rest or window. `start <= deadline` always:
+    /// `Text(timerInterval:)` traps on an inverted range.
+    case running(start: Date, deadline: Date)
+    /// Past the deadline of a rest that does not roll over.
+    case over(deadline: Date)
+    case paused(signedSeconds: Int)
+    case queueEnded(signedSeconds: Int)
+    /// No rest length: counts up from `start`.
+    case countUp(start: Date)
+}
+
+struct ResolvedRestTimer: Equatable {
+    let phase: RestTimerRenderPhase
+    /// Fixed-window length when the cadence is `onTheMinute`.
+    let periodSeconds: Int?
+    let targetSeconds: Int?
+
+    /// Nil hides the timer: no snapshot, another session's snapshot, an
+    /// unknown status, or a running snapshot with nothing to count against.
+    static func resolve(state: SharedRestTimerState?, sessionId: String, now: Date) -> ResolvedRestTimer? {
+        guard let state, state.sessionId == sessionId else { return nil }
+        let period = state.periodSeconds.flatMap { $0 > 0 ? $0 : nil }
+        let target = state.targetSeconds.flatMap { $0 > 0 ? $0 : nil }
+        let frozen = Int((state.frozenSignedSeconds ?? target ?? 0).rounded(.towardZero))
+
+        let phase: RestTimerRenderPhase
+        switch state.status {
+        case SharedRestTimerState.statusWaiting:
+            phase = .waiting(signedSeconds: frozen)
+        case SharedRestTimerState.statusPaused:
+            phase = .paused(signedSeconds: frozen)
+        case SharedRestTimerState.statusQueueEnded:
+            phase = .queueEnded(signedSeconds: frozen)
+        case SharedRestTimerState.statusCountUp:
+            guard let startMs = state.startMs else { return nil }
+            phase = .countUp(start: min(Date(timeIntervalSince1970: startMs / 1000), now))
+        case SharedRestTimerState.statusRunning:
+            guard let deadlineMs = state.deadlineMs else { return nil }
+            var deadline = Date(timeIntervalSince1970: deadlineMs / 1000)
+            var start = state.startMs.map { Date(timeIntervalSince1970: $0 / 1000) }
+            if let period, now >= deadline {
+                // A fixed window that ended while nobody could re-render: roll
+                // forward in whole windows so the cadence keeps its phase.
+                let windowsBehind = floor(now.timeIntervalSince(deadline) / period) + 1
+                deadline = deadline.addingTimeInterval(windowsBehind * period)
+                start = deadline.addingTimeInterval(-period)
+            }
+            if now >= deadline {
+                phase = .over(deadline: deadline)
+            } else {
+                let fallbackStart = deadline.addingTimeInterval(-(period ?? target ?? 0))
+                let resolvedStart = min(start ?? fallbackStart, deadline)
+                phase = .running(start: resolvedStart, deadline: deadline)
+            }
+        default:
+            return nil
+        }
+
+        return ResolvedRestTimer(
+            phase: phase,
+            periodSeconds: period.map { Int($0) },
+            targetSeconds: target.map { Int($0) }
+        )
+    }
+}
+
+enum RestTimerFormat {
+    /// `m:ss`, widening to `h:mm:ss` past an hour — the app's
+    /// `formatRestTimerElapsed`. Negative input formats its magnitude.
+    static func clock(_ seconds: Int) -> String {
+        let total = abs(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        if hours == 0 {
+            return String(format: "%d:%02d", minutes, secs)
+        }
+        return String(format: "%d:%02d:%02d", hours, minutes, secs)
+    }
+
+    /// Signed clock for a countdown allowed to run past zero, with a true
+    /// minus sign (U+2212) so it lines up with the widget's live overrun.
+    static func signedClock(_ seconds: Int) -> String {
+        seconds < 0 ? "\u{2212}\(clock(seconds))" : clock(seconds)
     }
 }

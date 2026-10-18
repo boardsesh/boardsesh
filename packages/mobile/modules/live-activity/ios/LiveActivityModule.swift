@@ -78,7 +78,7 @@ public class LiveActivityModule: Module {
         Name("LiveActivity")
 
         Events("queueNavigate", "queueMirror")
-        Constants(["supportsMirrorControl": true])
+        Constants(["supportsMirrorControl": true, "supportsRestTimer": true])
 
         OnDestroy {
             self.stopDarwinObservation()
@@ -152,6 +152,13 @@ public class LiveActivityModule: Module {
 
         AsyncFunction("updateActivityClimb") { (options: UpdateActivityClimbOptions) -> Void in
             self.updateActivityClimb(options: options)
+        }
+
+        // Rest timer (#6513). Nil clears it. Kept out of updateActivity on
+        // purpose: acceptQueueUpdate can reject a stale queue sequence, which
+        // would silently drop a rest change riding along with it.
+        AsyncFunction("updateRestTimer") { (options: UpdateRestTimerOptions?) -> Void in
+            self.updateRestTimer(options: options)
         }
     }
 
@@ -720,6 +727,12 @@ public class LiveActivityModule: Module {
                 defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
                 defaults.removeObject(forKey: SharedConstants.queueSequenceKey)
             }
+            // A rest snapshot JS staged for THIS session just before the start
+            // survives; another session's (a killed app's leftover) goes. JS
+            // also re-sends its snapshot after every successful start.
+            if let rest = SharedRestTimerStore.load(from: defaults), rest.sessionId != sessionId {
+                SharedRestTimerStore.clear(in: defaults)
+            }
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
             defaults.set(widgetMirrorUrl, forKey: SharedConstants.widgetMirrorUrlKey)
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
@@ -891,6 +904,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.livePushTokenKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
             defaults.removeObject(forKey: SharedConstants.partySessionKey)
+            SharedRestTimerStore.clear(in: defaults)
         }
         SharedKeychain.remove(SharedKeychain.authTokenKey)
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
@@ -1115,7 +1129,52 @@ public class LiveActivityModule: Module {
     }
 }
 
+// MARK: - Rest Timer
+
+extension LiveActivityModule {
+    /// Stage (or clear) the rest-timer snapshot in the App Group, then ask
+    /// the activity to re-render so the widget reads it. Ordered on the
+    /// lifecycle queue behind any start/update JS issued first.
+    fileprivate func updateRestTimer(options: UpdateRestTimerOptions?) {
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        if let options, !options.sessionId.isEmpty {
+            SharedRestTimerStore.save(
+                SharedRestTimerState(
+                    v: SharedRestTimerState.currentVersion,
+                    sessionId: options.sessionId,
+                    status: options.status,
+                    startMs: options.startMs,
+                    deadlineMs: options.deadlineMs,
+                    periodSeconds: options.periodSeconds,
+                    targetSeconds: options.targetSeconds,
+                    frozenSignedSeconds: options.frozenSignedSeconds
+                ),
+                to: defaults
+            )
+        } else {
+            SharedRestTimerStore.clear(in: defaults)
+        }
+
+        guard #available(iOS 17.0, *) else { return }
+        enqueueLifecycleWork {
+            await LiveActivityManager.shared.rerenderForRestTimer()
+        }
+    }
+}
+
 // MARK: - Argument Records
+
+/// Mirrors `LiveActivityRestTimerOptions` in modules/live-activity/src/index.ts.
+/// The Android-only `androidCaption` is simply not declared, so Expo drops it.
+struct UpdateRestTimerOptions: Record {
+    @Field var sessionId: String = ""
+    @Field var status: String = ""
+    @Field var startMs: Double?
+    @Field var deadlineMs: Double?
+    @Field var periodSeconds: Double?
+    @Field var targetSeconds: Double?
+    @Field var frozenSignedSeconds: Double?
+}
 
 struct StartSessionOptions: Record {
     @Field var sessionId: String = ""

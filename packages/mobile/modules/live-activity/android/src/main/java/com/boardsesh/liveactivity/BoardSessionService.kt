@@ -20,8 +20,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import android.text.format.DateUtils
 import android.util.Log
 import android.util.LruCache
+import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
@@ -47,7 +50,8 @@ import java.util.concurrent.Executors
  * lightbulb + control visibility follow the tri-state [boardConnection] —
  * connectedByMe shows the lit bulb + Previous/Next; heldByPeer/disconnected show
  * only the outline bulb (tap to reconnect) and, for heldByPeer, "<name> is on
- * the wall".
+ * the wall". While the climber rests, a Chronometer beside the climb info counts
+ * the rest down (or up, with no rest length) without any further updates.
  */
 class BoardSessionService : Service() {
 
@@ -86,6 +90,10 @@ class BoardSessionService : Service() {
     private var overlayPath: String? = null
     private var backgroundPaths: List<String> = emptyList()
 
+    // The rest countdown (null = hidden). Epoch-ms from JS; converted to the
+    // Chronometer's elapsedRealtime timebase at build time.
+    private var restTimer: RestTimerSnapshot? = null
+
     // The overlay path whose composited bitmap is currently displayed; the async
     // compose only applies its result if this still matches (stale guard).
     @Volatile
@@ -109,7 +117,26 @@ class BoardSessionService : Service() {
         composeThumbnail(overlay, backgrounds)
     }
 
+    // Clock + scheduling seams for the rest countdown, so a test can pin "now" and
+    // capture the deadline re-post instead of waiting on the main looper.
+    internal var wallClockMs: () -> Long = { System.currentTimeMillis() }
+    internal var elapsedRealtimeMs: () -> Long = { SystemClock.elapsedRealtime() }
+    internal var scheduleOnMain: (Runnable, Long) -> Unit = { task, delayMs -> mainHandler.postDelayed(task, delayMs) }
+    internal var cancelOnMain: (Runnable) -> Unit = { mainHandler.removeCallbacks(it) }
+
+    // Re-posts the notification when the rest crosses its deadline: an after-tick
+    // rest turns "over" (red), an on-the-minute beat rolls to the next one. The
+    // Chronometer itself keeps ticking between re-posts; this only refreshes what
+    // a Chronometer can't change on its own (colour, the next beat's base).
+    private val restTransition = Runnable { onRestTransition() }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        cancelOnMain(restTransition)
+        foregrounded = false
+        super.onDestroy()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Apply intent state first (cheap, can't throw) so it never eats into the
@@ -132,6 +159,19 @@ class BoardSessionService : Service() {
                 onWallTemplate = intent.getStringExtra(EXTRA_ON_WALL_TEMPLATE) ?: onWallTemplate
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
+                // A new session window starts without a countdown; JS sends the
+                // current rest state right after every start.
+                restTimer = null
+            }
+            ACTION_REST_TIMER -> {
+                val restSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
+                if (sessionId.isEmpty() || restSessionId == sessionId) {
+                    restTimer = if (intent.getBooleanExtra(EXTRA_REST_CLEAR, false)) {
+                        null
+                    } else {
+                        restTimerFrom(intent)
+                    }
+                }
             }
             ACTION_UPDATE -> {
                 val updateSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
@@ -166,12 +206,14 @@ class BoardSessionService : Service() {
 
         if (intent?.action == ACTION_STOP || !promoted) {
             foregrounded = false
+            cancelOnMain(restTransition)
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
         foregrounded = true
+        scheduleRestTransition()
         // Image compositing never runs before promotion: the notification was
         // already built (with the cached bitmap or a placeholder) and posted above.
         maybeComposeImage()
@@ -340,7 +382,103 @@ class BoardSessionService : Service() {
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.session_image, bitmap)
         }
+        bindRestTimer(views)
         return views
+    }
+
+    // --- Rest countdown ---
+
+    private fun restTimerFrom(intent: Intent): RestTimerSnapshot? {
+        fun longExtra(key: String): Long? = if (intent.hasExtra(key)) intent.getLongExtra(key, 0L) else null
+        val status = intent.getStringExtra(EXTRA_REST_STATUS) ?: return null
+        if (status !in REST_STATUSES) return null
+        return RestTimerSnapshot(
+            status = status,
+            startMs = longExtra(EXTRA_REST_START_MS),
+            deadlineMs = longExtra(EXTRA_REST_DEADLINE_MS),
+            periodSeconds = longExtra(EXTRA_REST_PERIOD_SECONDS),
+            frozenSignedSeconds = longExtra(EXTRA_REST_FROZEN_SECONDS),
+            caption = intent.getStringExtra(EXTRA_REST_CAPTION),
+        )
+    }
+
+    // The custom view's rest block: a ticking Chronometer for a running or
+    // counting-up rest, a static clock for paused / waiting / queue ended, and the
+    // localized caption under it. GONE when there is no rest timer. "Over" uses
+    // the red twin views (session_rest_*_over) rather than setTextColor: every
+    // build sets every value view's visibility, so a reapplied RemoteViews can
+    // never leave a stale colour behind.
+    private fun bindRestTimer(views: RemoteViews) {
+        val display = restTimer?.let { resolveRestDisplay(it, wallClockMs()) }
+        val shownValueId: Int? = when (display) {
+            null -> null
+            is RestDisplay.Countdown -> if (display.over) R.id.session_rest_clock_over else R.id.session_rest_clock
+            is RestDisplay.CountUp -> R.id.session_rest_clock
+            is RestDisplay.Frozen -> when {
+                display.text == null -> null
+                display.over -> R.id.session_rest_static_over
+                else -> R.id.session_rest_static
+            }
+        }
+        for (valueId in REST_VALUE_VIEW_IDS) {
+            views.setViewVisibility(valueId, if (valueId == shownValueId) View.VISIBLE else View.GONE)
+        }
+        // Stop every Chronometer that isn't the one shown, so nothing ticks off-screen.
+        for (clockId in REST_CLOCK_VIEW_IDS) {
+            if (clockId != shownValueId) views.setChronometer(clockId, elapsedRealtimeMs(), null, false)
+        }
+
+        if (display == null) {
+            views.setViewVisibility(R.id.session_rest, View.GONE)
+            return
+        }
+        views.setViewVisibility(R.id.session_rest, View.VISIBLE)
+        val caption = restTimer?.caption?.takeIf { it.isNotBlank() }
+        views.setViewVisibility(R.id.session_rest_caption, if (caption != null) View.VISIBLE else View.GONE)
+        views.setTextViewText(R.id.session_rest_caption, caption ?: "")
+
+        // Chronometer counts against SystemClock.elapsedRealtime(), not the wall
+        // clock, so shift the epoch anchors into that timebase.
+        val toElapsedRealtimeMs = elapsedRealtimeMs() - wallClockMs()
+        when (display) {
+            is RestDisplay.Countdown -> {
+                // Counts down to the deadline, then on into negative ("−00:12"),
+                // the same "over your rest" reading as the app's red digits.
+                val clockId = shownValueId ?: return
+                views.setChronometerCountDown(clockId, true)
+                views.setChronometer(clockId, display.deadlineMs + toElapsedRealtimeMs, null, true)
+            }
+            is RestDisplay.CountUp -> {
+                views.setChronometerCountDown(R.id.session_rest_clock, false)
+                views.setChronometer(R.id.session_rest_clock, display.startMs + toElapsedRealtimeMs, null, true)
+            }
+            is RestDisplay.Frozen -> {
+                val textId = shownValueId ?: return
+                views.setTextViewText(textId, display.text ?: "")
+            }
+        }
+    }
+
+    // Arms one main-thread re-post at the rest's next transition (its deadline or
+    // the next on-the-minute beat). Re-armed after every promotion and every
+    // transition; cancelled on stop. Nothing is armed for a static display or an
+    // after-tick rest that is already over.
+    private fun scheduleRestTransition() {
+        cancelOnMain(restTransition)
+        val display = restTimer?.let { resolveRestDisplay(it, wallClockMs()) } as? RestDisplay.Countdown ?: return
+        val transitionMs = display.nextTransitionMs ?: return
+        val delayMs = (transitionMs - wallClockMs()).coerceAtLeast(0L) + REST_TRANSITION_SLACK_MS
+        scheduleOnMain(restTransition, delayMs)
+    }
+
+    private fun onRestTransition() {
+        if (!foregrounded) return
+        try {
+            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (error: Exception) {
+            Log.w(TAG, "rest transition re-post failed: ${error.message}")
+        }
+        scheduleRestTransition()
     }
 
     // Minimal notification for when buildNotification() throws: no RemoteViews,
@@ -572,6 +710,92 @@ class BoardSessionService : Service() {
         const val ACTION_NAV_NEXT = "com.boardsesh.liveactivity.action.NAV_NEXT"
         const val ACTION_MIRROR = "com.boardsesh.liveactivity.action.MIRROR"
         const val ACTION_BULB = "com.boardsesh.liveactivity.action.BULB"
+        const val ACTION_REST_TIMER = "com.boardsesh.liveactivity.action.REST_TIMER"
+
+        const val EXTRA_REST_CLEAR = "restClear"
+        const val EXTRA_REST_STATUS = "restStatus"
+        const val EXTRA_REST_START_MS = "restStartMs"
+        const val EXTRA_REST_DEADLINE_MS = "restDeadlineMs"
+        const val EXTRA_REST_PERIOD_SECONDS = "restPeriodSeconds"
+        const val EXTRA_REST_FROZEN_SECONDS = "restFrozenSignedSeconds"
+        const val EXTRA_REST_CAPTION = "restCaption"
+
+        // LiveActivityRestTimerOptions.status values (modules/live-activity/src/index.ts).
+        const val REST_STATUS_RUNNING = "running"
+        const val REST_STATUS_PAUSED = "paused"
+        const val REST_STATUS_WAITING = "waiting"
+        const val REST_STATUS_QUEUE_ENDED = "queueEnded"
+        const val REST_STATUS_COUNT_UP = "countUp"
+        private val REST_STATUSES = setOf(
+            REST_STATUS_RUNNING,
+            REST_STATUS_PAUSED,
+            REST_STATUS_WAITING,
+            REST_STATUS_QUEUE_ENDED,
+            REST_STATUS_COUNT_UP,
+        )
+
+        // Re-post a beat just after it rolls, not on the boundary itself, so the
+        // resolver sees "now" past the deadline and picks the next beat.
+        internal const val REST_TRANSITION_SLACK_MS = 250L
+
+        private val REST_CLOCK_VIEW_IDS = intArrayOf(R.id.session_rest_clock, R.id.session_rest_clock_over)
+        private val REST_VALUE_VIEW_IDS = REST_CLOCK_VIEW_IDS +
+            intArrayOf(R.id.session_rest_static, R.id.session_rest_static_over)
+
+        /**
+         * What the rest block shows at [nowMs]. Pure, so the beat roll and the
+         * over/under split are testable without RemoteViews.
+         *
+         * - running, after a tick: count down to the deadline; once past it the
+         *   Chronometer runs negative and the digits turn red ([RestDisplay.Countdown.over]).
+         * - running, on the minute ([RestTimerSnapshot.periodSeconds]): count down
+         *   to the next beat at or after [nowMs]; a beat is never "over".
+         * - countUp: count up from the start.
+         * - paused / waiting / queue ended: a static clock from the frozen value.
+         *
+         * Returns null when the snapshot lacks what its status needs.
+         */
+        @VisibleForTesting
+        internal fun resolveRestDisplay(rest: RestTimerSnapshot, nowMs: Long): RestDisplay? {
+            return when (rest.status) {
+                REST_STATUS_RUNNING -> {
+                    val deadlineMs = rest.deadlineMs ?: return null
+                    val periodMs = rest.periodSeconds?.takeIf { it > 0 }?.times(1000L)
+                    if (periodMs != null) {
+                        val beatMs = if (nowMs < deadlineMs) {
+                            deadlineMs
+                        } else {
+                            deadlineMs + ((nowMs - deadlineMs) / periodMs + 1) * periodMs
+                        }
+                        RestDisplay.Countdown(deadlineMs = beatMs, over = false, nextTransitionMs = beatMs)
+                    } else {
+                        val over = nowMs >= deadlineMs
+                        RestDisplay.Countdown(
+                            deadlineMs = deadlineMs,
+                            over = over,
+                            nextTransitionMs = if (over) null else deadlineMs,
+                        )
+                    }
+                }
+                REST_STATUS_COUNT_UP -> rest.startMs?.let { RestDisplay.CountUp(startMs = it) }
+                REST_STATUS_PAUSED, REST_STATUS_WAITING, REST_STATUS_QUEUE_ENDED -> {
+                    val frozen = rest.frozenSignedSeconds
+                    RestDisplay.Frozen(text = frozen?.let { formatSignedSeconds(it) }, over = frozen != null && frozen < 0)
+                }
+                else -> null
+            }
+        }
+
+        /**
+         * The frozen clock in the Chronometer's own format (DateUtils "MM:SS", and
+         * the same U+2212 minus Chronometer uses past zero), so pausing a running
+         * rest doesn't change how the digits look.
+         */
+        @VisibleForTesting
+        internal fun formatSignedSeconds(signedSeconds: Long): String {
+            val label = DateUtils.formatElapsedTime(kotlin.math.abs(signedSeconds))
+            return if (signedSeconds < 0) "−$label" else label
+        }
 
         const val EXTRA_SESSION_ID = "sessionId"
         const val EXTRA_QUEUE_ITEM_UUID = "queueItemUuid"
@@ -627,4 +851,26 @@ class BoardSessionService : Service() {
             inFlight.clear()
         }
     }
+}
+
+/** The rest timer as the service holds it: LiveActivityRestTimerOptions, in Longs. */
+internal data class RestTimerSnapshot(
+    val status: String,
+    val startMs: Long?,
+    val deadlineMs: Long?,
+    val periodSeconds: Long?,
+    val frozenSignedSeconds: Long?,
+    val caption: String?,
+)
+
+/** What the notification's rest block renders; see [BoardSessionService.resolveRestDisplay]. */
+internal sealed class RestDisplay {
+    /** A ticking countdown to [deadlineMs]; [nextTransitionMs] is when to re-post. */
+    data class Countdown(val deadlineMs: Long, val over: Boolean, val nextTransitionMs: Long?) : RestDisplay()
+
+    /** A ticking count-up from [startMs] (no rest length set). */
+    data class CountUp(val startMs: Long) : RestDisplay()
+
+    /** A static clock (paused / waiting / queue ended); [text] null shows only the caption. */
+    data class Frozen(val text: String?, val over: Boolean) : RestDisplay()
 }

@@ -222,6 +222,26 @@ actor LiveActivityManager {
         await activity.update(content)
     }
 
+    // MARK: - Rest Timer Re-render
+
+    /// Re-renders the activity so the widget re-reads the rest timer from the
+    /// App Group (`SharedConstants.restTimerKey`). Keeps the displayed climb
+    /// and bumps `restRevision`, so ActivityKit sees a changed state even when
+    /// nothing else moved. Deliberately not dedup-gated: a rest change is never
+    /// redundant from the widget's point of view.
+    func rerenderForRestTimer() async {
+        guard let activity = currentActivity else { return }
+        if let defaults = SharedConstants.sharedDefaults,
+           activity.attributes.sessionId != defaults.string(forKey: SharedConstants.sessionIdKey) {
+            return
+        }
+        var state = activity.content.state
+        state.restRevision = (state.restRevision ?? 0) &+ 1
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(staleInterval))
+        await activity.update(content)
+        lastUpdateTime = Date()
+    }
+
     // MARK: - End
 
     /// Ends all Live Activities, including the tracked one and any stale

@@ -115,6 +115,22 @@ Three update paths set `boardConnection`:
 
 The widget resolves the effective state per render with `resolveBoardState(...)`: pushed `context.state.boardConnection` → App Group mirror → derive from `navigationAllowed` (true ⇒ connectedByMe).
 
+## Rest timer on the Lock Screen and in the Dynamic Island (#6513)
+
+The rest timer counts down on the Lock Screen card, in the Dynamic Island (compact, minimal and expanded) and in the Android session notification. JS owns the state machine (`src/lib/rest-timer-store.ts` plus the `restTimer*` settings); the native side only draws it.
+
+**Where the state lives.** `buildRestTimerLiveActivityPayload` (`src/lib/live-activity/rest-timer-payload.ts`) reduces the store and settings to a status (`running`, `paused`, `waiting`, `queueEnded`, `countUp`), the current window's start and end in epoch ms, the fixed-window length, and a frozen value for the states that do not move. `LiveActivityRestTimerSync` (mounted by `LiveActivityBridge`) sends it through the optional `updateRestTimer` native method, and `null` takes it off. On iOS that writes the App Group key `bs_rest_timer` (`SharedConstants.restTimerKey`, `SharedRestTimerState`), then re-renders the activity by bumping `ContentState.restRevision`.
+
+**Why not in `ContentState`.** The backend re-sends the whole content state on every queue change and every 90 s, and `LiveActivityManager.buildContentState`, `ClimbNavigationIntent` and `MirrorClimbIntent` all build fresh states. None of them know about the rest timer, so a pushed field would be wiped within 90 s of backgrounding. `restRevision` is only a change trigger, so `nil` from those paths is harmless. The backend is untouched.
+
+**When JS speaks.** Only on a change: a rest-timer store event, a rest setting, the climber's "Show on Lock Screen" switch (`restTimerShowOnLockScreen`, default on), each successful Live Activity start (native clears the key in `endSession`, and in `startSession` when it belongs to another session), an app-state change, and one timeout at each deadline. Never once a second: the countdown itself is `Text(timerInterval:)`, `Text(date, style: .timer)` and `ProgressView(timerInterval:)` on iOS, and a chronometer on Android.
+
+**What the widget cannot do.** It runs no code at a deadline; it only re-renders on an update. `ResolvedRestTimer.resolve` decides at render time whether a running rest is over and rolls a fixed window on to the current one, but between renders only the timer views move. So, while the app is in the background:
+
+- an after-tick rest holds at 0:00 until the next update (at most 90 s, the server heartbeat) turns it into the red overrun;
+- a fixed window holds at 0:00 until the next update rolls it on. With a 60 s window and a 90 s heartbeat, a whole window can pass without a redraw;
+- auto-advance never fires (JS timers are suspended), which is why the widget never shows it.
+
 ## Architecture Decision: Where Does BLE Live?
 
 The widget extension **cannot** hold a CoreBluetooth connection (extensions have strict memory/runtime limits and Apple kills them after ~30s). The main app process must own the BLE connection.
@@ -277,7 +293,7 @@ The web client now drives multi-frame Aurora climbs through a JS-side playback e
 When workouts land in Boardsesh, the Live Activity becomes the primary workout interface on the wall. The widget will need to display and control:
 
 - Current set and rep within the workout (e.g., "Set 2/4, Rep 3/6")
-- Rest timer countdown between sets (Live Activities support timer rendering natively via `Text.DateStyle.timer`)
+- Rest timer countdown between sets (the session rest timer already reaches the Live Activity; see "Rest timer on the Lock Screen and in the Dynamic Island" above for how a workout's rest could reuse it)
 - Start/complete rep buttons
 - Skip set or end workout early
 

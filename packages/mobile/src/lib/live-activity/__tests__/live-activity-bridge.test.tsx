@@ -44,7 +44,8 @@ const widget = vi.hoisted(() => ({
   acknowledgeMirrorRequest: vi.fn(async () => {}),
   listener: null as null | ((event: QueueNavigateEvent) => void),
   boardControlListener: null as null | ((event: BoardControlEvent) => void),
-  useLiveActivity: vi.fn(),
+  useLiveActivity: vi.fn((_args: unknown) => ({ activityStartCount: 0 })),
+  updateRestTimer: vi.fn(async (_options: unknown) => {}),
 }));
 
 // Stand-in for the bluetooth context the lightbulb tap drives.
@@ -155,6 +156,7 @@ vi.mock('../use-live-activity', () => ({
 }));
 
 vi.mock('../live-activity-plugin', () => ({
+  updateLiveActivityRestTimer: widget.updateRestTimer,
   getPendingWidgetMirror: widget.pendingMirror,
   acknowledgeWidgetMirror: widget.acknowledgeMirror,
   acknowledgeWidgetMirrorRequest: widget.acknowledgeMirrorRequest,

@@ -36,6 +36,15 @@ type AndroidNotificationStrings = {
   onWallTemplate: string;
 };
 
+export type UseLiveActivityResult = {
+  /**
+   * How many times the Live Activity / session notification has started in
+   * this mount. Rest-timer sync keys off it: native clears the rest snapshot
+   * when a session ends, so every start must re-send it.
+   */
+  activityStartCount: number;
+};
+
 type UseLiveActivityOptions = {
   queueSequence?: number;
   queue: ClimbQueueItem[];
@@ -165,8 +174,11 @@ export function useLiveActivity({
   androidThumbnailOverlayLoadKey,
   validateAndroidThumbnailOverlay,
   androidThumbnailBackgroundPaths,
-}: UseLiveActivityOptions): void {
+}: UseLiveActivityOptions): UseLiveActivityResult {
   const isActiveRef = useRef(false);
+  // Bumped after every successful start, so state that native drops between
+  // sessions (the rest timer, #6513) knows to send itself again.
+  const [activityStartCount, setActivityStartCount] = useState(0);
   const generationRef = useRef(0);
   const [available, setAvailable] = useState<boolean | null>(null);
   // The token is stored WITH the sessionId it was loaded for. Deriving
@@ -358,6 +370,7 @@ export function useLiveActivity({
         .then(() => {
           if (!isActiveRef.current || generationRef.current !== startGeneration) return;
           startFailureCountRef.current = 0;
+          setActivityStartCount((count) => count + 1);
           // Send an initial update so the widget doesn't stay on "Loading...".
           const q = queueRef.current;
           const displayItem = currentClimbRef.current ?? (q.length > 0 ? q[0] : null);
@@ -559,4 +572,6 @@ export function useLiveActivity({
     stableBoard,
     widgetNavigationAllowed,
   ]);
+
+  return { activityStartCount };
 }

@@ -5,6 +5,7 @@ import {
   type LiveActivityStartSessionOptions,
   type LiveActivityUpdateOptions,
   type LiveActivityClimbUpdateOptions,
+  type LiveActivityRestTimerOptions,
   type WidgetQueueNavigateEvent,
   type WidgetMirrorEvent,
   type BoardControlEvent,
@@ -58,6 +59,27 @@ export async function updateLiveActivityClimb(options: LiveActivityClimbUpdateOp
 }
 
 /**
+ * Whether this binary draws the rest timer outside the app (#6513). False on
+ * an older binary running this JS over the air, where the switch for it would
+ * do nothing.
+ */
+export const sessionPresenceSupportsRestTimer = sessionModule?.supportsRestTimer === true;
+
+/**
+ * Hands the rest timer (#6513) to the Lock Screen, the Dynamic Island and the
+ * Android session notification; `null` takes it off. Optional on both modules,
+ * so an OTA bundle on a binary that predates it is a silent no-op, and a
+ * native failure never reaches the timer itself.
+ */
+export async function updateLiveActivityRestTimer(options: LiveActivityRestTimerOptions | null): Promise<void> {
+  try {
+    await sessionModule?.updateRestTimer?.(options);
+  } catch (error) {
+    console.warn('[LiveActivity] updateRestTimer failed:', error);
+  }
+}
+
+/**
  * Explicitly marks that the actual React root committed in this process. This
  * is iOS-only and optional so an OTA bundle stays safe on an older binary.
  * Diagnostics must never affect app startup, so native bridge failures no-op.
@@ -104,7 +126,12 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
   return () => subscription.remove();
 }
 
-export type { WidgetQueueNavigateEvent, BoardControlEvent, InterruptedLiveActivityIntentDiagnostic };
+export type {
+  WidgetQueueNavigateEvent,
+  BoardControlEvent,
+  InterruptedLiveActivityIntentDiagnostic,
+  LiveActivityRestTimerOptions,
+};
 
 /** New native binaries only; older OTA hosts do not declare this event. */
 export function addWidgetMirrorListener(callback: (event: WidgetMirrorEvent) => void): () => void {

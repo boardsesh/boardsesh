@@ -7,9 +7,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.widget.Chronometer
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.every
 import io.mockk.just
@@ -516,5 +519,288 @@ class BoardSessionServiceTest {
         // sound or vibration on session start (the regression this guards).
         assertNull(migrated.sound)
         assertFalse(migrated.shouldVibrate())
+    }
+
+    // --- Rest countdown ---
+
+    private val restNowMs = 1_700_000_000_000L
+
+    private fun restIntent(
+        status: String,
+        sessionId: String? = null,
+        startMs: Long? = null,
+        deadlineMs: Long? = null,
+        periodSeconds: Long? = null,
+        frozenSignedSeconds: Long? = null,
+        caption: String? = null,
+        clear: Boolean = false,
+    ): Intent = Intent(context, BoardSessionService::class.java).apply {
+        action = BoardSessionService.ACTION_REST_TIMER
+        sessionId?.let { putExtra(BoardSessionService.EXTRA_SESSION_ID, it) }
+        if (clear) {
+            putExtra(BoardSessionService.EXTRA_REST_CLEAR, true)
+        } else {
+            putExtra(BoardSessionService.EXTRA_REST_STATUS, status)
+        }
+        startMs?.let { putExtra(BoardSessionService.EXTRA_REST_START_MS, it) }
+        deadlineMs?.let { putExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS, it) }
+        periodSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS, it) }
+        frozenSignedSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it) }
+        caption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+    }
+
+    // A started service with "now" pinned to restNowMs and the Chronometer's
+    // elapsedRealtime timebase left on Robolectric's (frozen) shadow clock, so a
+    // rendered Chronometer's text is exactly deadline - now.
+    private fun startRestService(
+        scheduled: MutableList<Pair<Runnable, Long>> = mutableListOf(),
+    ): BoardSessionService {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startService()
+        service.wallClockMs = { restNowMs }
+        service.elapsedRealtimeMs = { SystemClock.elapsedRealtime() }
+        service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
+        service.cancelOnMain = { task -> scheduled.removeAll { it.first === task } }
+        return service
+    }
+
+    private fun renderRest(service: BoardSessionService, layout: Int): android.view.View =
+        service.buildContentView(layout).apply(context, FrameLayout(context))
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay counts an after-tick rest down, then marks it over`() {
+        val rest = RestTimerSnapshot("running", startMs = 0, deadlineMs = 90_000, periodSeconds = null,
+            frozenSignedSeconds = null, caption = null)
+
+        assertEquals(RestDisplay.Countdown(90_000, over = false, nextTransitionMs = 90_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 30_000))
+        assertEquals(RestDisplay.Countdown(90_000, over = true, nextTransitionMs = null),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 90_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay rolls an on-the-minute beat forward instead of going over`() {
+        val rest = RestTimerSnapshot("running", startMs = 0, deadlineMs = 60_000, periodSeconds = 60,
+            frozenSignedSeconds = null, caption = null)
+
+        assertEquals(RestDisplay.Countdown(60_000, over = false, nextTransitionMs = 60_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 10_000))
+        // On the boundary itself the next beat starts.
+        assertEquals(RestDisplay.Countdown(120_000, over = false, nextTransitionMs = 120_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 60_000))
+        // Several beats missed (the phone slept): lands on the next one, never behind now.
+        assertEquals(RestDisplay.Countdown(240_000, over = false, nextTransitionMs = 240_000),
+            BoardSessionService.resolveRestDisplay(rest, nowMs = 185_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `resolveRestDisplay covers count-up, the frozen states and incomplete snapshots`() {
+        fun snapshot(status: String, startMs: Long? = null, deadlineMs: Long? = null, frozen: Long? = null) =
+            RestTimerSnapshot(status, startMs, deadlineMs, null, frozen, null)
+
+        assertEquals(RestDisplay.CountUp(5_000), BoardSessionService.resolveRestDisplay(snapshot("countUp", startMs = 5_000), 9_000))
+        assertEquals(RestDisplay.Frozen("−00:12", over = true),
+            BoardSessionService.resolveRestDisplay(snapshot("paused", frozen = -12), 0))
+        assertEquals(RestDisplay.Frozen("01:30", over = false),
+            BoardSessionService.resolveRestDisplay(snapshot("waiting", frozen = 90), 0))
+        assertEquals(RestDisplay.Frozen(null, over = false),
+            BoardSessionService.resolveRestDisplay(snapshot("queueEnded"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("running"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("countUp"), 0))
+        assertNull(BoardSessionService.resolveRestDisplay(snapshot("someFutureStatus", startMs = 1), 0))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `no rest timer keeps the rest block hidden in both layouts`() {
+        val service = startRestService()
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            assertEquals(android.view.View.GONE, renderRest(service, layout).findViewById<android.view.View>(R.id.session_rest).visibility)
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a running rest renders a ticking countdown to the deadline with its caption`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("running", startMs = restNowMs - 30_000, deadlineMs = restNowMs + 90_000, caption = "Rest"),
+            0,
+            2,
+        )
+
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            val content = renderRest(service, layout)
+            assertEquals(android.view.View.VISIBLE, content.findViewById<android.view.View>(R.id.session_rest).visibility)
+            val clock = content.findViewById<Chronometer>(R.id.session_rest_clock)
+            assertEquals(android.view.View.VISIBLE, clock.visibility)
+            assertTrue(clock.isCountDown)
+            assertEquals(SystemClock.elapsedRealtime() + 90_000, clock.base)
+            assertEquals("01:30", clock.text.toString())
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+            assertEquals("Rest", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest past its deadline runs negative in the over colour`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000), 0, 2)
+
+        val content = renderRest(service, R.layout.notification_session_expanded)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        val clock = content.findViewById<Chronometer>(R.id.session_rest_clock_over)
+        assertEquals(android.view.View.VISIBLE, clock.visibility)
+        assertTrue(clock.isCountDown)
+        assertEquals("−00:12", clock.text.toString())
+        assertEquals(ContextCompat.getColor(context, R.color.session_rest_over), clock.currentTextColor)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a new rest after an over one shows the normal clock again when SystemUI reapplies the views`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000), 0, 2)
+        val shown = renderRest(service, R.layout.notification_session_collapsed)
+
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
+        service.buildContentView(R.layout.notification_session_collapsed).reapply(context, shown)
+
+        assertEquals(android.view.View.VISIBLE, shown.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        assertEquals(android.view.View.GONE, shown.findViewById<android.view.View>(R.id.session_rest_clock_over).visibility)
+        assertEquals("01:00", shown.findViewById<Chronometer>(R.id.session_rest_clock).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest with no length counts up from the last climb`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("countUp", startMs = restNowMs - 75_000), 0, 2)
+
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertFalse(clock.isCountDown)
+        assertEquals("01:15", clock.text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a paused rest shows the frozen value instead of a ticking clock`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("paused", frozenSignedSeconds = -12, caption = "Paused"), 0, 2)
+
+        val content = renderRest(service, R.layout.notification_session_expanded)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+        assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+        val frozen = content.findViewById<TextView>(R.id.session_rest_static_over)
+        assertEquals(android.view.View.VISIBLE, frozen.visibility)
+        assertEquals("−00:12", frozen.text.toString())
+        assertEquals(ContextCompat.getColor(context, R.color.session_rest_over), frozen.currentTextColor)
+        assertEquals("Paused", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `clearing the rest timer hides the block again`() {
+        val service = startRestService()
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+
+        service.onStartCommand(restIntent("running", clear = true), 0, 3)
+
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a rest timer for another session is ignored and a new session starts without one`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val start = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, "session-1")
+        }
+        val service = Robolectric.buildService(BoardSessionService::class.java, start).create().startCommand(0, 1).get()
+        service.wallClockMs = { restNowMs }
+
+        service.onStartCommand(restIntent("running", sessionId = "session-0", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+
+        service.onStartCommand(restIntent("running", sessionId = "session-1", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
+        assertEquals(android.view.View.VISIBLE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+
+        service.onStartCommand(start, 0, 4)
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the deadline re-post turns an after-tick rest over and arms nothing further`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(restIntent("running", startMs = nowMs - 30_000, deadlineMs = nowMs + 90_000), 0, 2)
+
+        val (transition, delayMs) = scheduled.single()
+        assertEquals(90_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, delayMs)
+
+        nowMs += delayMs
+        transition.run()
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an on-the-minute beat re-posts at every boundary with the next beat`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        var nowMs = restNowMs
+        val service = startRestService(scheduled)
+        service.wallClockMs = { nowMs }
+        service.onStartCommand(
+            restIntent("running", startMs = nowMs - 20_000, deadlineMs = nowMs + 40_000, periodSeconds = 60),
+            0,
+            2,
+        )
+        assertEquals(40_000 + BoardSessionService.REST_TRANSITION_SLACK_MS, scheduled.single().second)
+
+        nowMs += scheduled.single().second
+        scheduled.single().first.run()
+
+        // Re-armed for the beat after: 60 s after the old deadline, minus the slack already spent.
+        assertEquals(60_000L, scheduled.single().second)
+        val clock = renderRest(service, R.layout.notification_session_collapsed).findViewById<Chronometer>(R.id.session_rest_clock)
+        assertEquals(SystemClock.elapsedRealtime() + (restNowMs + 100_000 - nowMs), clock.base)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `ACTION_STOP cancels a pending rest re-post`() {
+        val scheduled = mutableListOf<Pair<Runnable, Long>>()
+        val service = startRestService(scheduled)
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        assertEquals(1, scheduled.size)
+
+        service.onStartCommand(Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_STOP
+        }, 0, 3)
+
+        assertTrue(scheduled.isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `formatSignedSeconds matches the Chronometer's own format`() {
+        assertEquals("01:30", BoardSessionService.formatSignedSeconds(90))
+        assertEquals("00:00", BoardSessionService.formatSignedSeconds(0))
+        assertEquals("−00:12", BoardSessionService.formatSignedSeconds(-12))
     }
 }

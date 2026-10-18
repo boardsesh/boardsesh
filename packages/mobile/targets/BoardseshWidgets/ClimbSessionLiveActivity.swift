@@ -26,7 +26,8 @@ func loadThumbnail(climbUuid: String) -> UIImage? {
 /// screen and Dynamic Island chrome on these tokens — no ad-hoc Color literals.
 ///
 /// Colour discipline (set by the design panel): amber is sacred to the lit bulb
-/// (the one thing that glows); violet (tint) carries identity + the grade; gray
+/// (the one thing that glows); violet (tint) carries identity, the grade's
+/// fallback and a running rest; red only ever means "over your rest"; gray
 /// carries plain metadata. Nothing else competes.
 enum VelvetSend {
     /// 8-bit hex helper, e.g. `VelvetSend.hex(0xFF, 0x8A, 0x3D)`.
@@ -48,6 +49,8 @@ enum VelvetSend {
         let onAccent: Color
         /// Drives the lit-bulb glyph + glow — the only amber on the card.
         let warning: Color
+        /// A rest that has run past its length — the app's red overrun digits.
+        let error: Color
         let background: Color
         let elevatedSurface: Color
         let label: Color
@@ -66,6 +69,9 @@ enum VelvetSend {
                 accent: VelvetSend.hex(0xFF, 0x8A, 0x3D),
                 onAccent: VelvetSend.hex(0x16, 0x11, 0x1F),
                 warning: dark ? VelvetSend.hex(0xFB, 0xBF, 0x24) : VelvetSend.hex(0xB4, 0x53, 0x09),
+                // #F87171 on the dark surface; #B91C1C keeps AA contrast on the
+                // light one.
+                error: dark ? VelvetSend.hex(0xF8, 0x71, 0x71) : VelvetSend.hex(0xB9, 0x1C, 0x1C),
                 background: dark ? VelvetSend.hex(0x0F, 0x0B, 0x16) : VelvetSend.hex(0xF4, 0xF1, 0xFB),
                 elevatedSurface: dark ? VelvetSend.hex(0x22, 0x1A, 0x32) : VelvetSend.hex(0xFF, 0xFF, 0xFF),
                 label: dark ? VelvetSend.hex(0xF5, 0xF2, 0xFB) : VelvetSend.hex(0x16, 0x11, 0x1F),
@@ -85,6 +91,10 @@ enum VelvetSend {
         static let lg: CGFloat = 16
         static let xl: CGFloat = 20
         static let xxl: CGFloat = 24
+        /// The HIG's standard Lock Screen Live Activity margin ("The standard
+        /// layout margin for Live Activities on the Lock Screen is 14 points"),
+        /// which lines the card up with notifications.
+        static let lockScreenMargin: CGFloat = 14
     }
 
     enum Radius {
@@ -98,6 +108,8 @@ enum VelvetSend {
         static let disabled: Double = 0.5
         /// Soft amber glow under the lit bulb — a whisper, not a neon.
         static let litGlowShadow: Double = 0.24
+        /// Tinted circle behind the mirror button while the climb is mirrored.
+        static let selectedFill: Double = 0.18
     }
 }
 
@@ -236,6 +248,24 @@ private func resolveBoardState(
     return ResolvedBoardState(connection: connection, holderDisplayName: holderDisplayName)
 }
 
+/// The rest timer at this render, or nil when there is none to show. Read from
+/// the App Group only — never from the pushed state, which the backend and the
+/// native builders rebuild without it (see `SharedConstants.restTimerKey`).
+/// Evaluated when ActivityKit renders, so "past the deadline" is decided here;
+/// between renders only the self-updating timer views move.
+@available(iOS 17.0, *)
+private func resolveRestTimer(
+    context: ActivityViewContext<ClimbSessionAttributes>,
+    now: Date = Date()
+) -> ResolvedRestTimer? {
+    guard let defaults = SharedConstants.sharedDefaults else { return nil }
+    return ResolvedRestTimer.resolve(
+        state: SharedRestTimerStore.load(from: defaults),
+        sessionId: context.attributes.sessionId,
+        now: now
+    )
+}
+
 // MARK: - Shared Subviews
 
 @available(iOS 17.0, *)
@@ -275,8 +305,8 @@ private struct ThumbnailView: View {
     }
 }
 
-/// The grade as a bold violet numeral — never a chip/pill (no fill). The
-/// heaviest type on the card; weight carries primacy, tint carries identity.
+/// The grade as a bold numeral in its grade-band colour — never a chip/pill
+/// (no fill). The heaviest type on the card; weight carries primacy.
 @available(iOS 17.0, *)
 private struct GradeText: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -285,36 +315,48 @@ private struct GradeText: View {
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
+        // Normalise first: the backend push carries the raw "6a/V3" while the
+        // native paths send "V3", and only the latter has a band colour.
+        let grade = VGradeFormatter.displayGrade(text)
         // Real grade-band colour (yellow->red->purple); violet tint as a fallback
         // for any unmapped grade string.
-        let gradeColor = GradeColors.color(forVGrade: text) ?? palette.tint
-        Text(text)
+        let gradeColor = GradeColors.color(forVGrade: grade) ?? palette.tint
+        Text(verbatim: grade)
             .font(font)
             .foregroundColor(gradeColor)
             .monospacedDigit()
             .fixedSize()
-            .accessibilityLabel("Grade \(text)")
+            .accessibilityLabel("Grade \(grade)")
     }
 }
 
-/// One inline metadata line: `3 of 12 · 40°`. Replaces the two tonal-gray chips
-/// and the dead Spacer gap with plain hairline-separated text. The grade lives in
-/// the card's top-right corner now, not here.
+/// One inline metadata line: `3 of 12 · 40°`. While a rest timer takes the
+/// grade's top-right slot, the grade leads this line instead, in its band
+/// colour: `V4 · 3 of 12 · 40°`.
 @available(iOS 17.0, *)
 private struct MetadataLine: View {
     @Environment(\.colorScheme) private var colorScheme
     let currentIndex: Int
     let totalClimbs: Int
     let angle: Int
+    var grade: String? = nil
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
         // A quiet middot between facts — calmer than a hairline bar, the system
         // idiom for inline metadata. "17 of 17 · 40°".
         HStack(spacing: VelvetSend.Spacing.sm) {
+            if let grade {
+                let shown = VGradeFormatter.displayGrade(grade)
+                Text(verbatim: shown)
+                    .fontWeight(.semibold)
+                    .foregroundColor(GradeColors.color(forVGrade: shown) ?? palette.tint)
+                    .accessibilityLabel("Grade \(shown)")
+                Text(verbatim: "\u{00B7}").foregroundColor(palette.tertiaryLabel)
+            }
             Text("\(currentIndex + 1) of \(totalClimbs)")
-            Text("\u{00B7}").foregroundColor(palette.tertiaryLabel)
-            Text("\(angle)°")
+            Text(verbatim: "\u{00B7}").foregroundColor(palette.tertiaryLabel)
+            Text(verbatim: "\(angle)°")
             Spacer(minLength: 0)
         }
         .font(.subheadline)
@@ -346,7 +388,9 @@ private struct WallControlViewState {
 @available(iOS 17.0, *)
 private struct NavigationButtonLabel: View {
     @Environment(\.colorScheme) private var colorScheme
-    let title: String
+    /// A localization key ("Prev" / "Next"), so the label follows the
+    /// climber's language; a plain `String` would render verbatim.
+    let title: LocalizedStringKey
     let systemImage: String
     let imagePlacement: ImagePlacement
     let enabled: Bool
@@ -373,6 +417,8 @@ private struct NavigationButtonLabel: View {
         // the foreground colour. The lit bulb is the only accented control.
         .font(.subheadline.weight(.semibold))
         .foregroundColor(enabled ? palette.tint : palette.tertiaryLabel.opacity(0.8))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())
     }
@@ -425,6 +471,7 @@ private struct WallControlButton: View {
 
 @available(iOS 17.0, *)
 private struct NavigationControlsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let sessionId: String
     let queueItemUuid: String?
     let mirrored: Bool
@@ -433,6 +480,7 @@ private struct NavigationControlsView: View {
     let hasNext: Bool
 
     var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
         // This row is only rendered for connectedByMe (see SessionFooter), so the
         // device holds the board — enablement is purely queue-position based.
         let previousEnabled = hasPrevious
@@ -456,11 +504,16 @@ private struct NavigationControlsView: View {
             WallControlButton(lit: true)
             if supportsMirroring, let queueItemUuid {
                 Button(intent: MirrorClimbIntent(sessionId: sessionId, queueItemUuid: queueItemUuid, mirrored: !mirrored)) {
+                    // Velvet tokens, not the system accent: with no asset
+                    // catalog accent colour, `Color.accentColor` drew system blue.
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(mirrored ? Color.accentColor : Color.primary)
+                        .foregroundStyle(mirrored ? palette.tint : palette.label)
                         .frame(width: 40, height: 40)
-                        .background(mirrored ? Color.accentColor.opacity(0.18) : Color.clear, in: Circle())
+                        .background(
+                            mirrored ? palette.tint.opacity(VelvetSend.Opacity.selectedFill) : Color.clear,
+                            in: Circle()
+                        )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(mirrored ? String(localized: "Unmirror climb") : String(localized: "Mirror climb"))
@@ -483,6 +536,165 @@ private struct NavigationControlsView: View {
     }
 }
 
+// MARK: - Rest Timer Subviews (#6513)
+
+/// One colour per rest phase, matching the app's pill: violet while it runs,
+/// red once over, gray when frozen, faint gray while waiting for a first tick.
+@available(iOS 17.0, *)
+private func restTimerColor(_ phase: RestTimerRenderPhase, palette: VelvetSend.Palette) -> Color {
+    switch phase {
+    case .running, .countUp:
+        return palette.tint
+    case .over:
+        return palette.error
+    case .paused, .queueEnded:
+        return palette.secondaryLabel
+    case .waiting:
+        return palette.tertiaryLabel
+    }
+}
+
+/// The rest clock's digits. Only the system timer views move between renders,
+/// so a running rest counts down with `Text(timerInterval:)` (it holds at 0:00
+/// until the next render flips it to the red overrun), an overrun counts up from
+/// the deadline behind a minus sign, and frozen phases print a fixed value.
+@available(iOS 17.0, *)
+private struct RestTimerDigits: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let rest: ResolvedRestTimer
+    let font: Font
+    let width: CGFloat
+    var textAlignment: TextAlignment = .trailing
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        digits
+            .font(font)
+            .monospacedDigit()
+            .foregroundColor(restTimerColor(rest.phase, palette: palette))
+            .lineLimit(1)
+            .multilineTextAlignment(textAlignment)
+            // Timer text claims every point it is offered; a fixed frame keeps
+            // it from pushing the climb name or the camera cut-out around.
+            .frame(width: width, alignment: frameAlignment)
+    }
+
+    private var frameAlignment: Alignment {
+        switch textAlignment {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
+    private var digits: Text {
+        switch rest.phase {
+        case let .running(start, deadline):
+            return Text(timerInterval: start...deadline, countsDown: true)
+        case let .over(deadline):
+            return Text(verbatim: "\u{2212}") + Text(deadline, style: .timer)
+        case let .countUp(start):
+            return Text(start, style: .timer)
+        case let .paused(seconds), let .queueEnded(seconds), let .waiting(seconds):
+            return Text(verbatim: RestTimerFormat.signedClock(seconds))
+        }
+    }
+}
+
+/// The word under the rest clock: what the number cannot say on its own.
+@available(iOS 17.0, *)
+private struct RestTimerCaption: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let rest: ResolvedRestTimer
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        caption
+            .font(.caption2.weight(.semibold))
+            .foregroundColor(palette.secondaryLabel)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
+    private var caption: Text {
+        switch rest.phase {
+        case .running:
+            if let period = rest.periodSeconds {
+                return Text("Every \(RestTimerFormat.clock(period))")
+            }
+            return Text("Rest")
+        case .over:
+            return Text("Over your rest")
+        case .paused:
+            return Text("Paused")
+        case .queueEnded:
+            return Text("Queue's empty")
+        case .countUp:
+            return Text("Since your last climb")
+        case .waiting:
+            return Text("Log a climb to start")
+        }
+    }
+}
+
+/// Digits over caption, right-aligned: the top-right slot the grade gives up
+/// while a rest is on.
+@available(iOS 17.0, *)
+private struct RestTimerBlock: View {
+    let rest: ResolvedRestTimer
+    var font: Font = .title2.weight(.semibold)
+    var width: CGFloat = 92
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            RestTimerDigits(rest: rest, font: font, width: width)
+            RestTimerCaption(rest: rest)
+                .frame(maxWidth: width, alignment: .trailing)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Rest timer")
+    }
+}
+
+/// The connection glyph, wrapped in a draining ring while a rest counts down
+/// (red and full once it is over). The Timer app's minimal presentation shows
+/// the time left rather than a static icon; the ring keeps the bulb inside so
+/// the wall's state is never lost.
+@available(iOS 17.0, *)
+private struct RestRingGlyph<Glyph: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let rest: ResolvedRestTimer?
+    let size: CGFloat
+    @ViewBuilder let glyph: () -> Glyph
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        switch rest?.phase {
+        case let .running(start, deadline)?:
+            ZStack {
+                ProgressView(timerInterval: start...deadline, countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.circular)
+                .tint(palette.tint)
+                glyph()
+            }
+            .frame(width: size, height: size)
+        case .over?:
+            ZStack {
+                Circle()
+                    .stroke(palette.error, lineWidth: 2)
+                glyph()
+            }
+            .frame(width: size, height: size)
+        default:
+            glyph()
+        }
+    }
+}
+
 // MARK: - State-specific footers
 
 /// "<name> is on the wall" line for the heldByPeer state — bulb is out, no
@@ -492,11 +704,13 @@ private struct HeldByPeerFooter: View {
     @Environment(\.colorScheme) private var colorScheme
     let holderDisplayName: String?
 
-    private var message: String {
+    /// Interpolated literals, so both lines are localization keys
+    /// ("%@ is on the wall", "On the wall") rather than verbatim strings.
+    private var message: Text {
         if let name = holderDisplayName, !name.isEmpty {
-            return "\(name) is on the wall"
+            return Text("\(name) is on the wall")
         }
-        return "On the wall"
+        return Text("On the wall")
     }
 
     var body: some View {
@@ -506,7 +720,7 @@ private struct HeldByPeerFooter: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(palette.tint)
 
-            Text(message)
+            message
                 .font(.subheadline.weight(.medium))
                 .foregroundColor(palette.secondaryLabel)
                 .lineLimit(1)
@@ -587,13 +801,23 @@ private struct SessionFooter: View {
 struct ClimbSessionLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ClimbSessionAttributes.self) { context in
-            // Lock Screen / Banner presentation
+            // Lock Screen / Banner presentation. The background is pinned to the
+            // dark surface, so the text palette is pinned to dark with it — in
+            // light mode the label colour would otherwise resolve to near-black
+            // on that same near-black card.
             LockScreenView(context: context)
+                .environment(\.colorScheme, .dark)
                 .activityBackgroundTint(VelvetSend.Palette.resolve(.dark).background)
                 .activitySystemActionForegroundColor(VelvetSend.Palette.resolve(.dark).label)
         } dynamicIsland: { context in
             let state = resolveBoardState(context: context)
             let mirrorState = resolveMirrorState(context: context)
+            // The island shows the rest only once there is something to count:
+            // a "waiting for your first tick" target would read as a stuck timer.
+            let rest = resolveRestTimer(context: context).flatMap { resolved -> ResolvedRestTimer? in
+                if case .waiting = resolved.phase { return nil }
+                return resolved
+            }
             return DynamicIsland {
                 // Expanded Dynamic Island
                 DynamicIslandExpandedRegion(.leading) {
@@ -607,11 +831,11 @@ struct ClimbSessionLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.center) {
-                    ExpandedCenterView(context: context)
+                    ExpandedCenterView(context: context, showsGrade: rest != nil)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    ExpandedTrailingView(grade: context.state.climbDifficulty)
+                    ExpandedTrailingView(grade: context.state.climbDifficulty, rest: rest)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
@@ -627,11 +851,11 @@ struct ClimbSessionLiveActivity: Widget {
                     .padding(.horizontal, VelvetSend.Spacing.xs)
                 }
             } compactLeading: {
-                CompactLeadingView(connection: state.connection)
+                CompactLeadingView(connection: state.connection, rest: rest)
             } compactTrailing: {
-                CompactTrailingView(text: context.state.climbDifficulty)
+                CompactTrailingView(text: context.state.climbDifficulty, rest: rest)
             } minimal: {
-                MinimalView(connection: state.connection)
+                MinimalView(connection: state.connection, rest: rest)
             }
         }
     }
@@ -643,22 +867,26 @@ struct ClimbSessionLiveActivity: Widget {
 private struct ExpandedCenterView: View {
     @Environment(\.colorScheme) private var colorScheme
     let context: ActivityViewContext<ClimbSessionAttributes>
+    /// True while the rest timer holds the trailing slot, so the grade moves
+    /// to the front of the metadata line instead of disappearing.
+    let showsGrade: Bool
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
         VStack(alignment: .leading, spacing: VelvetSend.Spacing.xs) {
-            Text(context.state.climbName)
+            Text(verbatim: context.state.climbName)
                 .font(.headline)
                 .foregroundColor(palette.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.9)
 
-            // Mirror the lock-screen card exactly: grade is NOT here (it's in the
-            // trailing region, top-right); this line is just "N of M · 40°".
+            // Mirror the lock-screen card exactly: the grade is in the trailing
+            // region (top-right) unless a rest timer has taken it.
             MetadataLine(
                 currentIndex: context.state.currentIndex,
                 totalClimbs: context.state.totalClimbs,
-                angle: context.state.angle
+                angle: context.state.angle,
+                grade: showsGrade ? context.state.climbDifficulty : nil
             )
         }
     }
@@ -667,36 +895,39 @@ private struct ExpandedCenterView: View {
 @available(iOS 17.0, *)
 private struct ExpandedTrailingView: View {
     let grade: String
+    let rest: ResolvedRestTimer?
 
     var body: some View {
-        // Grade-band-coloured numeral, top-right — identical to the lock-screen
-        // card's top-right grade (GradeText resolves its own scheme + colour).
-        GradeText(text: grade)
-            .padding(.trailing, VelvetSend.Spacing.xs)
+        Group {
+            if let rest {
+                RestTimerBlock(rest: rest, font: .title3.weight(.semibold), width: 76)
+            } else {
+                // Grade-band-coloured numeral, top-right — identical to the
+                // lock-screen card's top-right grade.
+                GradeText(text: grade)
+            }
+        }
+        .padding(.trailing, VelvetSend.Spacing.xs)
     }
 }
 
 @available(iOS 17.0, *)
 private struct CompactLeadingView: View {
-    @Environment(\.colorScheme) private var colorScheme
     let connection: BoardConnection
+    let rest: ResolvedRestTimer?
 
     var body: some View {
-        let palette = VelvetSend.Palette.resolve(colorScheme)
-        // Encode the state by glyph + tint. Amber only when lit; violet for peer.
-        switch connection {
-        case .connectedByMe:
-            Image(systemName: "lightbulb.fill")
-                .font(.system(size: 14))
-                .foregroundColor(palette.warning)
-        case .heldByPeer:
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 14))
-                .foregroundColor(palette.tint)
-        case .disconnected:
-            Image(systemName: "lightbulb.slash")
-                .font(.system(size: 14))
-                .foregroundColor(palette.secondaryLabel)
+        // Leading and trailing read as one piece: the ring here, the digits
+        // across the camera. Without a counting rest, just the bulb.
+        RestRingGlyph(rest: rest, size: 22) {
+            ConnectionGlyph(connection: connection, size: isRinged ? 9 : 14)
+        }
+    }
+
+    private var isRinged: Bool {
+        switch rest?.phase {
+        case .running?, .over?: return true
+        default: return false
         }
     }
 }
@@ -705,35 +936,68 @@ private struct CompactLeadingView: View {
 private struct CompactTrailingView: View {
     @Environment(\.colorScheme) private var colorScheme
     let text: String
+    let rest: ResolvedRestTimer?
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        Text(text)
-            .font(.caption.bold())
-            .foregroundColor(palette.label)
-            .offset(y: -1)
+        if let rest {
+            // The countdown takes the grade's place while a rest is on.
+            RestTimerDigits(
+                rest: rest,
+                font: .system(size: 15, weight: .semibold),
+                width: 46,
+                textAlignment: .center
+            )
+        } else {
+            let grade = VGradeFormatter.displayGrade(text)
+            Text(verbatim: grade)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(GradeColors.color(forVGrade: grade) ?? palette.label)
+                .offset(y: -1)
+        }
     }
 }
 
 @available(iOS 17.0, *)
 private struct MinimalView: View {
+    let connection: BoardConnection
+    let rest: ResolvedRestTimer?
+
+    var body: some View {
+        RestRingGlyph(rest: rest, size: 22) {
+            ConnectionGlyph(connection: connection, size: isRinged ? 9 : 12)
+        }
+    }
+
+    private var isRinged: Bool {
+        switch rest?.phase {
+        case .running?, .over?: return true
+        default: return false
+        }
+    }
+}
+
+/// The wall's state as one glyph. Amber only when lit; violet for a peer.
+@available(iOS 17.0, *)
+private struct ConnectionGlyph: View {
     @Environment(\.colorScheme) private var colorScheme
     let connection: BoardConnection
+    let size: CGFloat
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
         switch connection {
         case .connectedByMe:
             Image(systemName: "lightbulb.fill")
-                .font(.system(size: 12))
+                .font(.system(size: size))
                 .foregroundColor(palette.warning)
         case .heldByPeer:
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 12))
+                .font(.system(size: size))
                 .foregroundColor(palette.tint)
         case .disconnected:
             Image(systemName: "lightbulb.slash")
-                .font(.system(size: 12))
+                .font(.system(size: size))
                 .foregroundColor(palette.secondaryLabel)
         }
     }
@@ -758,6 +1022,7 @@ private struct LockScreenView: View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
         let state = resolveBoardState(context: context)
         let mirrorState = resolveMirrorState(context: context)
+        let rest = resolveRestTimer(context: context)
         return HStack(alignment: .top, spacing: VelvetSend.Spacing.md) {
             // Thumbnail
             ThumbnailView(
@@ -767,16 +1032,18 @@ private struct LockScreenView: View {
                 height: 96
             )
 
-            // Content: a title block (name + top-right grade + metadata) and a
-            // control strip, separated by deliberate vertical rhythm. One leading
-            // edge; extra air below now that the controls are text-only.
-            VStack(alignment: .leading, spacing: VelvetSend.Spacing.xl) {
+            // Content: a title block (name + top-right grade or rest clock +
+            // metadata) and a control strip. One leading edge. The gap between
+            // them is `.md`, not `.xl`: the card must stay under the Lock
+            // Screen's 160 pt cap even with a two-line name.
+            VStack(alignment: .leading, spacing: VelvetSend.Spacing.md) {
                 VStack(alignment: .leading, spacing: VelvetSend.Spacing.xs) {
-                    // Top row: name (left) + the grade-band-coloured grade pinned
-                    // to the top-right corner. firstTextBaseline keeps the grade on
-                    // the title's first line even when the name wraps to two.
+                    // Top row: name (left) + the grade-band-coloured grade, or
+                    // the rest clock while a rest is on, pinned top-right.
+                    // firstTextBaseline keeps it on the title's first line even
+                    // when the name wraps to two.
                     HStack(alignment: .firstTextBaseline, spacing: VelvetSend.Spacing.sm) {
-                        Text(context.state.climbName)
+                        Text(verbatim: context.state.climbName)
                             .font(.headline)
                             .foregroundColor(palette.label)
                             .lineLimit(2)
@@ -784,13 +1051,18 @@ private struct LockScreenView: View {
 
                         Spacer(minLength: VelvetSend.Spacing.sm)
 
-                        GradeText(text: context.state.climbDifficulty)
+                        if let rest {
+                            RestTimerBlock(rest: rest)
+                        } else {
+                            GradeText(text: context.state.climbDifficulty)
+                        }
                     }
 
                     MetadataLine(
                         currentIndex: context.state.currentIndex,
                         totalClimbs: context.state.totalClimbs,
-                        angle: context.state.angle
+                        angle: context.state.angle,
+                        grade: rest == nil ? nil : context.state.climbDifficulty
                     )
                 }
 
@@ -809,7 +1081,7 @@ private struct LockScreenView: View {
             }
         }
         .padding(.vertical, VelvetSend.Spacing.lg)
-        .padding(.horizontal, VelvetSend.Spacing.md)
+        .padding(.horizontal, VelvetSend.Spacing.lockScreenMargin)
     }
 
     private var staleView: some View {
@@ -823,7 +1095,7 @@ private struct LockScreenView: View {
                 .font(.headline)
                 .foregroundColor(palette.label)
 
-            Text(context.attributes.boardName)
+            Text(verbatim: context.attributes.boardName)
                 .font(.subheadline)
                 .foregroundColor(palette.secondaryLabel)
         }

@@ -334,6 +334,32 @@ export type LiveActivityUpdateOptions = {
 
 export type LiveActivityClimbUpdateOptions = Omit<LiveActivityUpdateOptions, 'queue'>;
 
+/**
+ * What the rest timer is doing, as the Lock Screen / Dynamic Island / Android
+ * notification draws it (#6513). JS owns the state machine and reduces it to
+ * one of these; the native side only decides whether a `running` rest has
+ * passed its deadline, and rolls a fixed-window cadence on to its current
+ * window.
+ */
+export type LiveActivityRestTimerStatus = 'running' | 'paused' | 'waiting' | 'queueEnded' | 'countUp';
+
+export type LiveActivityRestTimerOptions = {
+  sessionId: string;
+  status: LiveActivityRestTimerStatus;
+  /** Epoch ms the current countdown / count-up started from (cycle anchor; beat start for onTheMinute). null while waiting. */
+  startMs: number | null;
+  /** Epoch ms the current rest or beat ends. null for countUp and waiting. */
+  deadlineMs: number | null;
+  /** onTheMinute beat length in seconds; the widget rolls to the next beat at render. null for afterTick. */
+  periodSeconds: number | null;
+  /** The rest-length setting in seconds; null when the length is Off (count-up). */
+  targetSeconds: number | null;
+  /** Frozen display value for paused / queueEnded / waiting: seconds remaining (+) or over (−). null otherwise. */
+  frozenSignedSeconds: number | null;
+  /** Android only: localized one-line caption for the current status (Rest, Paused, Log a climb to start, Queue's empty, Since your last climb, Every 1:00). iOS ignores it. */
+  androidCaption?: string | null;
+};
+
 export type WidgetMirrorEvent = {
   sessionId: string;
   queueItemUuid: string;
@@ -419,6 +445,10 @@ type LiveActivityNativeModule = {
   markIntentReactRootMounted?(): Promise<void>;
   /** Optional for OTA compatibility with binaries predating #4077. */
   consumeInterruptedIntentRuns?(): Promise<InterruptedLiveActivityIntentDiagnostic[]>;
+  /** True on binaries that draw the rest timer (#6513). */
+  supportsRestTimer?: boolean;
+  /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
+  updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
@@ -441,6 +471,10 @@ type SessionPresenceNativeModule = {
   endSession(): Promise<void>;
   updateActivity(options: LiveActivityUpdateOptions): Promise<void>;
   updateActivityClimb(options: LiveActivityClimbUpdateOptions): Promise<void>;
+  /** True on binaries whose notification shows the rest timer (#6513). */
+  supportsRestTimer?: boolean;
+  /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
+  updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
   // Android-only: lightbulb taps on the ongoing notification (reconnect/reassert).

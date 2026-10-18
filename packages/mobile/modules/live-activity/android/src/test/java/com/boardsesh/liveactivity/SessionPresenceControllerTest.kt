@@ -266,4 +266,106 @@ class SessionPresenceControllerTest {
         assertFalse(controller.sessionActive)
         assertTrue(launchedIntents.isEmpty())
     }
+
+    private fun restOptions(sessionId: String = "session-1"): RestTimerOptions = RestTimerOptions().apply {
+        this.sessionId = sessionId
+        status = BoardSessionService.REST_STATUS_RUNNING
+        startMs = 1_000_000.0
+        deadlineMs = 1_090_000.0
+        targetSeconds = 90.0
+        androidCaption = "Rest"
+    }
+
+    private fun startedController(sessionId: String = "session-1"): Pair<SessionPresenceController, MutableList<Intent>> {
+        val (controller, launchedIntents) = recordingController()
+        controller.startSession(StartSessionOptions().apply { this.sessionId = sessionId })
+        launchedIntents.clear()
+        return controller to launchedIntents
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateRestTimer forwards the countdown to the service as a REST_TIMER intent`() {
+        val (controller, launchedIntents) = startedController()
+
+        controller.updateRestTimer(restOptions())
+
+        val intent = launchedIntents.single()
+        assertEquals(BoardSessionService.ACTION_REST_TIMER, intent.action)
+        assertEquals("session-1", intent.getStringExtra(BoardSessionService.EXTRA_SESSION_ID))
+        assertEquals("running", intent.getStringExtra(BoardSessionService.EXTRA_REST_STATUS))
+        assertEquals(1_000_000L, intent.getLongExtra(BoardSessionService.EXTRA_REST_START_MS, -1))
+        assertEquals(1_090_000L, intent.getLongExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS, -1))
+        assertFalse(intent.hasExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS))
+        assertFalse(intent.hasExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS))
+        assertEquals("Rest", intent.getStringExtra(BoardSessionService.EXTRA_REST_CAPTION))
+        assertFalse(intent.getBooleanExtra(BoardSessionService.EXTRA_REST_CLEAR, false))
+        assertEquals("session-1", controller.restTimer?.sessionId)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateRestTimer with null clears the countdown`() {
+        val (controller, launchedIntents) = startedController()
+        controller.updateRestTimer(restOptions())
+
+        controller.updateRestTimer(null)
+
+        val clear = launchedIntents.last()
+        assertEquals(BoardSessionService.ACTION_REST_TIMER, clear.action)
+        assertTrue(clear.getBooleanExtra(BoardSessionService.EXTRA_REST_CLEAR, false))
+        assertEquals(null, controller.restTimer)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateRestTimer ignores a countdown for another session`() {
+        val (controller, launchedIntents) = startedController(sessionId = "session-1")
+
+        controller.updateRestTimer(restOptions(sessionId = "session-0"))
+
+        assertTrue(launchedIntents.isEmpty())
+        assertEquals(null, controller.restTimer)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateRestTimer before a session starts is a no-op`() {
+        val (controller, launchedIntents) = recordingController()
+
+        controller.updateRestTimer(restOptions())
+
+        assertTrue(launchedIntents.isEmpty())
+        assertEquals(null, controller.restTimer)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `updateRestTimer drops non-finite numbers instead of sending zero`() {
+        val (controller, launchedIntents) = startedController()
+
+        controller.updateRestTimer(restOptions().apply {
+            deadlineMs = Double.NaN
+            frozenSignedSeconds = -12.6
+        })
+
+        val intent = launchedIntents.single()
+        assertFalse(intent.hasExtra(BoardSessionService.EXTRA_REST_DEADLINE_MS))
+        // Truncates toward zero, matching the app's formatRestTimerSigned.
+        assertEquals(-12L, intent.getLongExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, 0))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `ending or restarting a session forgets the countdown`() {
+        val (controller, _) = startedController(sessionId = "session-1")
+        controller.updateRestTimer(restOptions())
+
+        controller.endSession()
+        assertEquals(null, controller.restTimer)
+
+        controller.startSession(StartSessionOptions().apply { sessionId = "session-2" })
+        controller.updateRestTimer(restOptions(sessionId = "session-1"))
+        assertEquals(null, controller.restTimer)
+    }
 }

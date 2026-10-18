@@ -141,6 +141,38 @@ describe('useLiveActivity start-failure contract', () => {
     );
   });
 
+  it('counts each successful start so the rest timer can re-send after one (#6513)', async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const seen: number[] = [];
+    function CountingHarness(props: HookProps) {
+      seen.push(useLiveActivity(props).activityStartCount);
+      return null;
+    }
+
+    const props = activeProps();
+    const { rerender } = render(<CountingHarness {...props} />);
+    expect(seen[0]).toBe(0);
+    await waitFor(() => expect(seen.at(-1)).toBe(1));
+
+    // End, then start again (a board switch): a second count.
+    rerender(<CountingHarness {...props} isSessionActive={false} />);
+    rerender(<CountingHarness {...props} />);
+    await waitFor(() => expect(seen.at(-1)).toBe(2));
+  });
+
+  it('does not count a start that failed', async () => {
+    plugin.startLiveActivitySession.mockRejectedValue(new Error('ActivityKit said no'));
+    const seen: number[] = [];
+    function CountingHarness(props: HookProps) {
+      seen.push(useLiveActivity(props).activityStartCount);
+      return null;
+    }
+
+    render(<CountingHarness {...activeProps()} />);
+    await waitFor(() => expect(plugin.endLiveActivitySession).toHaveBeenCalled());
+    expect(seen.every((count) => count === 0)).toBe(true);
+  });
+
   it("threads the climber's saved board look through start and updates, and pushes on a toggle", async () => {
     plugin.startLiveActivitySession.mockResolvedValue(undefined);
     const props = activeProps(); // renderMode: 'aura'

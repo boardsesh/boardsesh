@@ -453,7 +453,9 @@
       "autoAdvanceFootnote": "Only while Boardsesh is open.",
       "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
       "lengthPillAria": "Rest length, {{value}}",
-      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length."
+      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length.",
+      "showOnLockScreen": "Show on Lock Screen",
+      "showOnLockScreenHint": "See your rest count down without opening the app."
     },
     "sessionVisibility": {
       "title": "Show this session live",

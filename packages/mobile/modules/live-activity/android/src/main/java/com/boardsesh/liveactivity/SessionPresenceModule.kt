@@ -59,6 +59,21 @@ class SessionUpdateOptions : Record {
     @Field var androidThumbnailBackgroundPaths: List<String> = emptyList()
 }
 
+// Mirrors LiveActivityRestTimerOptions (modules/live-activity/src/index.ts). JS
+// numbers arrive as Doubles; every value is nullable so a partial payload can't
+// fail deserialization. `targetSeconds` is accepted but unused here: the
+// notification only needs the deadline / start and the frozen display value.
+class RestTimerOptions : Record {
+    @Field var sessionId: String = ""
+    @Field var status: String = ""
+    @Field var startMs: Double? = null
+    @Field var deadlineMs: Double? = null
+    @Field var periodSeconds: Double? = null
+    @Field var targetSeconds: Double? = null
+    @Field var frozenSignedSeconds: Double? = null
+    @Field var androidCaption: String? = null
+}
+
 /**
  * Android counterpart to the iOS LiveActivity module. Thin Expo adapter over
  * [SessionPresenceController] (which owns the BoardSessionService lifecycle and
@@ -95,7 +110,7 @@ class SessionPresenceModule : Module() {
         Name("SessionPresence")
 
         Events("queueNavigate", "boardControl", "queueMirror")
-        Constants("supportsMirrorControl" to true)
+        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true)
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -129,6 +144,10 @@ class SessionPresenceModule : Module() {
         // through the controller's sessionActive guard once it exists.
         AsyncFunction("updateActivity") { options: SessionUpdateOptions -> controller?.updateActivity(options) }
         AsyncFunction("updateActivityClimb") { options: SessionUpdateOptions -> controller?.updateActivity(options) }
+
+        // The rest countdown in the ongoing notification. `null` clears it. Like the
+        // climb updates, a no-op until a session has started.
+        AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
 
         // No-op (not a throw) when no session was ever started: there's nothing to
         // tear down, and the JS hook has already cleared its own state. Kept

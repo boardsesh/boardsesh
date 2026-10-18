@@ -1,2 +1,29 @@
+/* Lock Screen and Dynamic Island controls */
+"Prev" = "Prev";
+"Next" = "Next";
+"Previous climb" = "Previous climb";
+"Next climb" = "Next climb";
 "Mirror climb" = "Mirror climb";
 "Unmirror climb" = "Unmirror climb";
+"Wall lit, you are driving" = "Wall lit, you are driving";
+"Wall control" = "Wall control";
+"Tap to reconnect" = "Tap to reconnect";
+"Board disconnected. Tap to reconnect" = "Board disconnected. Tap to reconnect";
+"On the wall" = "On the wall";
+"%@ is on the wall" = "%@ is on the wall";
+"Wall held by another climber" = "Wall held by another climber";
+
+/* Climb details: "3 of 12" is the queue position */
+"%lld of %lld" = "%lld of %lld";
+"Grade %@" = "Grade %@";
+"Session ended" = "Session ended";
+
+/* Rest timer (#6513) */
+"Rest timer" = "Rest timer";
+"Rest" = "Rest";
+"Over your rest" = "Over your rest";
+"Paused" = "Paused";
+"Every %@" = "Every %@";
+"Queue's empty" = "Queue's empty";
+"Since your last climb" = "Since your last climb";
+"Log a climb to start" = "Log a climb to start";

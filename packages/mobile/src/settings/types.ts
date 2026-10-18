@@ -113,6 +113,12 @@ export type AppSettings = {
   restTimerAutoAdvance: boolean;
   /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
   restTimerMode: RestTimerMode;
+  /**
+   * Count the rest down on the Lock Screen, in the Dynamic Island and in the
+   * Android session notification (#6513). On by default: arming the timer is
+   * already the opt-in, and arming never survives a cold start.
+   */
+  restTimerShowOnLockScreen: boolean;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;
   notifySessionInvites: boolean;

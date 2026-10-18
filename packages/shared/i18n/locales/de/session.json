@@ -453,7 +453,9 @@
       "autoAdvanceFootnote": "Nur solange Boardsesh offen ist.",
       "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
       "lengthPillAria": "Länge der Pause, {{value}}",
-      "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen."
+      "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen.",
+      "showOnLockScreen": "Show on Lock Screen",
+      "showOnLockScreenHint": "See your rest count down without opening the app."
     },
     "sessionVisibility": {
       "title": "Diese Session live zeigen",

@@ -10,6 +10,7 @@ import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
+import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
 import {
   addWidgetMirrorListener,
   getPendingWidgetMirror,
@@ -116,7 +117,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     [t],
   );
 
-  useLiveActivity({
+  const { activityStartCount } = useLiveActivity({
     queueSequence: state.serverSequence,
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
@@ -287,5 +288,6 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       .catch((error: unknown) => console.warn('[LiveActivity] Mirror replay failed:', error));
   }, [state.queue]);
 
-  return null;
+  // The rest timer rides its own leaf: its store events re-render that, not this.
+  return <LiveActivityRestTimerSync sessionId={sessionId} activityStartCount={activityStartCount} />;
 }

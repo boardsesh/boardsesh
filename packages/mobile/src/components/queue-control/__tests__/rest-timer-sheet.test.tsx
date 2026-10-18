@@ -67,6 +67,9 @@ const harness = vi.hoisted(() => ({
 
 const haptics = vi.hoisted(() => ({ medium: vi.fn(), selection: vi.fn(), light: vi.fn() }));
 
+// Whether the installed binary draws the rest timer outside the app (#6513).
+const sessionPresence = vi.hoisted(() => ({ supportsRestTimer: true }));
+
 const settingsStore = vi.hoisted(() => ({
   values: {} as Record<string, unknown>,
   listeners: new Set<() => void>(),
@@ -344,6 +347,12 @@ vi.mock('../../tick/TickDestructiveRow', () => ({
     createElement('button', { 'data-destructive': label, 'data-icon': icon ?? 'delete', onClick: onPress }, label),
 }));
 
+vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
+  get sessionPresenceSupportsRestTimer() {
+    return sessionPresence.supportsRestTimer;
+  },
+}));
+
 import {
   armRestTimer,
   getRestTimerState,
@@ -356,6 +365,7 @@ const NOW_MS = Date.parse('2026-09-11T10:00:00.000Z');
 const PAUSE_BUTTON = '[data-button="mobile.restTimer.pause"]';
 const RESET_BUTTON = '[data-button="mobile.restTimer.reset"]';
 const AUTO_ADVANCE_ROW = '[data-switch="mobile.restTimer.autoAdvance"]';
+const LOCK_SCREEN_ROW = '[data-switch="mobile.restTimer.showOnLockScreen"]';
 const LENGTH_PILL = '[data-testid="rest-length-pill"]';
 const LENGTH_SLIDER = '[data-testid="rest-length-slider"]';
 
@@ -391,14 +401,38 @@ describe('RestTimerSheet', () => {
       restTimerTargetSeconds: 120,
       restTimerMode: 'afterTick',
       restTimerAutoAdvance: false,
+      restTimerShowOnLockScreen: true,
     };
     settingsStore.listeners.clear();
+    sessionPresence.supportsRestTimer = true;
     armRestTimer('afterTick', NOW_MS, 'session-1');
   });
 
   afterEach(() => {
     cleanup();
     resetRestTimerStoreForTests();
+  });
+
+  it('turns the Lock Screen countdown off and back on through the persisted setting', () => {
+    const { container } = renderSheet();
+    const row = () => container.querySelector(LOCK_SCREEN_ROW) as HTMLElement;
+    expect(row().getAttribute('data-value')).toBe('true');
+    expect(row().getAttribute('data-description')).toBe('mobile.restTimer.showOnLockScreenHint');
+
+    fireEvent.click(row());
+    expect(settingsStore.values.restTimerShowOnLockScreen).toBe(false);
+    expect(row().getAttribute('data-value')).toBe('false');
+
+    fireEvent.click(row());
+    expect(settingsStore.values.restTimerShowOnLockScreen).toBe(true);
+  });
+
+  it('hides the Lock Screen switch on a binary that cannot draw the timer there', () => {
+    sessionPresence.supportsRestTimer = false;
+    const { container } = renderSheet();
+    expect(container.querySelector(LOCK_SCREEN_ROW)).toBeNull();
+    // The rest of the sheet is untouched.
+    expect(container.querySelector(AUTO_ADVANCE_ROW)).not.toBeNull();
   });
 
   it('shows the live hero clock so the sheet is not a dead settings page', () => {
