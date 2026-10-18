@@ -14,6 +14,7 @@ import {
  * Sections that describe the board and sit directly under it: a switch each,
  * never reordered and never counted for scrolling. None yet.
  */
+// The first board section, #6290's `activeHolds`, goes here.
 export const BOARD_SECTION_IDS = [] as const;
 /** The sections below the fold. Only these take part in the climber's order. */
 export const BELOW_FOLD_SECTION_IDS = [

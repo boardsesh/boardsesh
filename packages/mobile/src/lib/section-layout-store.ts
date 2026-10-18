@@ -127,13 +127,15 @@ export function createSectionLayoutStore<Id extends string>({
     if (isSameSectionLayout(next, layout)) return;
     adopt(next);
     try {
+      // The settings store signals this write synchronously, and the
+      // subscription below records what stuck. A write that did not stick (or
+      // came without a signal) is caught by the look at the start of the next
+      // change.
       write(recordFor(next));
     } catch {
       // The settings store throws when its file cannot be written. The choice
       // stands in memory for this launch.
     }
-    // Look at what stuck; the write's own change signal may have done so already.
-    syncWithStorage();
   }
 
   // Our own writes come back here too; `adopt` compares by value, so they are no-ops.
