@@ -743,7 +743,8 @@
       "addFavoriteAria": "Añadir favorito",
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
-      "queueCountAria": "Cola, {{count}} bloques"
+      "queueCountAria": "Cola, {{count}} bloques",
+      "changeAngle": "Cambiar ángulo"
     },
     "tickFab": {
       "logAscentAria": "Registrar ascenso"

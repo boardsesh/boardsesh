@@ -91,7 +91,7 @@ import { PlayDrawerActionsMenu, type PlayDrawerActionsMenuProps } from '../PlayD
 const CLIMB = { uuid: 'climb-1', name: 'Crimp Line', frames: 'p1r12', userId: 'setter-9' } as unknown as Climb;
 // The board the climb is DRAWN on, which here is not the selected one.
 const TENSION = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 35 };
-const EVERYTHING_HIDDEN = { favorite: true, share: true, queue: true };
+const EVERYTHING_HIDDEN = { favorite: true, share: true, queue: true, mirror: true, angle: true };
 
 function makeProps(overrides: Partial<PlayDrawerActionsMenuProps> = {}): PlayDrawerActionsMenuProps {
   return {
@@ -101,7 +101,10 @@ function makeProps(overrides: Partial<PlayDrawerActionsMenuProps> = {}): PlayDra
     hidden: EVERYTHING_HIDDEN,
     boardMismatch: false,
     isFavorited: false,
+    isMirrored: false,
     onToggleFavorite: vi.fn(),
+    onToggleMirror: vi.fn(),
+    onOpenAngle: vi.fn(),
     onTick: vi.fn(),
     onAddBetaVideo: vi.fn(),
     onReportClimb: vi.fn(),
@@ -182,6 +185,42 @@ describe('PlayDrawerActionsMenu', () => {
 
     rerender(createElement(PlayDrawerActionsMenu, makeProps({ onToggleFavorite, isFavorited: true })));
     expect(container.textContent).toContain('session:playView.actionBar.removeFavoriteAria');
+  });
+
+  // Switched off in View options, Mirror and the angle pill live on in ⋯ and
+  // run exactly what their bar buttons run.
+  it("mirrors through the bar's own toggle and opens the player's angle sheet", () => {
+    const props = makeProps();
+    const { container, rerender } = render(createElement(PlayDrawerActionsMenu, props));
+
+    tap(container, 'session:playView.actionBar.mirrorAria');
+    expect(props.onToggleMirror).toHaveBeenCalledTimes(1);
+    tap(container, 'session:playView.actionBar.changeAngle');
+    expect(props.onOpenAngle).toHaveBeenCalledTimes(1);
+    expectNoRootOpener();
+
+    rerender(createElement(PlayDrawerActionsMenu, { ...props, isMirrored: true }));
+    expect(container.textContent).toContain('session:playView.actionBar.unmirrorAria');
+  });
+
+  it('leaves Mirror and Change angle out while their buttons are in the bar', () => {
+    const { container } = render(
+      createElement(
+        PlayDrawerActionsMenu,
+        makeProps({ hidden: { ...EVERYTHING_HIDDEN, mirror: false, angle: false } }),
+      ),
+    );
+    expect(container.textContent).not.toContain('session:playView.actionBar.mirrorAria');
+    expect(container.textContent).not.toContain('session:playView.actionBar.changeAngle');
+  });
+
+  it('refuses Mirror and Change angle on another board', () => {
+    const props = makeProps({ boardMismatch: true });
+    const { container } = render(createElement(PlayDrawerActionsMenu, props));
+    tap(container, 'session:playView.actionBar.mirrorAria');
+    tap(container, 'session:playView.actionBar.changeAngle');
+    expect(props.onToggleMirror).not.toHaveBeenCalled();
+    expect(props.onOpenAngle).not.toHaveBeenCalled();
   });
 
   it('offers no tick row: the hero button is always there', () => {

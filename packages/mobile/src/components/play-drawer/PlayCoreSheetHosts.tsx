@@ -11,6 +11,7 @@ import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
+import type { PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
 
 type ComposerTarget = { climb: Climb; boardConfig: BoardConfig } | null;
 
@@ -25,6 +26,8 @@ export type PlayCoreSheetHostsProps = {
   activeAngle: number;
   climbBoardMismatch: boolean;
   sectionsSettingsOpen: boolean;
+  /** The board on screen, for View options' buttons preview. */
+  buttonsPreviewBoard: PlayerButtonsPreviewBoard;
   addBetaVideoOpen: boolean;
   addToPlaylistOpen: boolean;
   fullLogbookClimbUuid: string | null;
@@ -70,6 +73,7 @@ export function PlayCoreSheetHosts({
   activeAngle,
   climbBoardMismatch,
   sectionsSettingsOpen,
+  buttonsPreviewBoard,
   addBetaVideoOpen,
   addToPlaylistOpen,
   fullLogbookClimbUuid,
@@ -114,7 +118,11 @@ export function PlayCoreSheetHosts({
   return (
     <>
       {mountSectionsSettings && (
-        <PlayDrawerSectionsSheet visible={sectionsSettingsOpen} onClose={handleCloseSectionsSettings} />
+        <PlayDrawerSectionsSheet
+          visible={sectionsSettingsOpen}
+          onClose={handleCloseSectionsSettings}
+          previewBoard={buttonsPreviewBoard}
+        />
       )}
       {/* Sub-drawers: @expo/ui native .sheet()s presented from within the player
           route's view controller, so they stack ABOVE it. Every one of them is

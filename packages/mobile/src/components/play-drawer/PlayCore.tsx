@@ -18,6 +18,7 @@ import {
   View,
   StyleSheet,
   useWindowDimensions,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -85,6 +86,8 @@ import {
   usePlayDrawerSectionsPreference,
 } from '../../lib/play-drawer-sections-preference';
 import { visiblePlayDrawerSections } from './play-drawer-sections';
+import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
+import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
@@ -160,6 +163,11 @@ const DEFAULT_SECTION_HEADER_HEIGHT = 52;
  * gets their board back without having to find a button.
  */
 export const SHARED_BROWSE_LATCH_RELEASE_MS = 10_000;
+
+/** A typical switch-board card at the default text size, until the real one is measured. */
+const SWITCH_BOARD_CARD_HEIGHT_ESTIMATE = 184;
+/** Room kept above and below the card inside the controls region. */
+const SWITCH_BOARD_CARD_MARGIN = spacing[2];
 
 /**
  * Full-screen "now playing" player (Spotify-style track view). Rendered as the
@@ -383,10 +391,32 @@ export function PlayCore({
   // strand them with nothing below the board and no way back. The defaults need
   // no read, so they are ready at once. Every other viewer, a guest without an
   // account included, keeps their stored choices: they can reach both ⋯ → View
-  // options and Settings → Below the climb, and those write exactly that store.
+  // options and Settings → Climb view, and those write exactly that store.
   const sections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
   const sectionOrder = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTION_ORDER : storedSectionsPreference.order;
   const sectionsReady = isAnonymous || storedSectionsPreference.ready;
+  // The climber's buttons and where the controls sit (#6229), read synchronously
+  // so the first frame already has them. The anonymous reader gets today's bar
+  // under the board for the same reason as the sections: `resolveActionBarLayout`
+  // ignores the stored buttons for them, and the position is pinned here.
+  const playerButtons = usePlayerButtonsPreference();
+  const controlsPosition = isAnonymous ? DEFAULT_PLAYER_BUTTONS_POSITION : playerButtons.position;
+  const controlsAbove = controlsPosition === 'above';
+  // Where the controls block ends, measured only while it sits above the board:
+  // the wall-state callout then hangs below it rather than over Log.
+  const [controlsBottomY, setControlsBottomY] = useState(0);
+  const handleControlsLayout = useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    const measured = Math.round(y + height);
+    setControlsBottomY((previous) => (Math.abs(previous - measured) > 2 ? measured : previous));
+  }, []);
+  // The switch-board card's height, so the controls region can hold all of it
+  // (see `controlsRegion`). Starts from a typical card and follows the measured one.
+  const [switchBoardCardHeight, setSwitchBoardCardHeight] = useState(SWITCH_BOARD_CARD_HEIGHT_ESTIMATE);
+  const handleSwitchBoardCardHeight = useCallback((height: number) => {
+    const measured = Math.ceil(height);
+    setSwitchBoardCardHeight((previous) => (Math.abs(previous - measured) > 1 ? measured : previous));
+  }, []);
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
@@ -1346,6 +1376,42 @@ export function PlayCore({
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
   });
+  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
+  // The same layout the action bar resolves from the same inputs, read here for
+  // the buttons it has put away (⋯ carries a row for each) and for the opening
+  // layout's key (a second row that comes or goes moves the board).
+  const hasBluetooth = bluetooth !== null;
+  const angleAvailable = isAngleAdjustable && activeAngle != null;
+  const actionBarLayout = useMemo(
+    () =>
+      resolveActionBarLayout({
+        supportsMirroring,
+        isAnonymous,
+        connectPill: showConnectPill,
+        inCommitMode: commitBarModel.mode === 'commit',
+        showLightbulb: hasBluetooth,
+        hasShare: !displayedClimbIsDraft,
+        angleAvailable,
+        buttons: playerButtons.buttons,
+        previousNext: playerButtons.previousNext,
+      }),
+    [
+      supportsMirroring,
+      isAnonymous,
+      showConnectPill,
+      commitBarModel.mode,
+      hasBluetooth,
+      displayedClimbIsDraft,
+      angleAvailable,
+      playerButtons.buttons,
+      playerButtons.previousNext,
+    ],
+  );
+  // View options draws its buttons preview for the board on screen.
+  const buttonsPreviewBoard = useMemo(
+    () => ({ supportsMirroring, angleAvailable, angle: activeAngle, showLightbulb: hasBluetooth }),
+    [supportsMirroring, angleAvailable, activeAngle, hasBluetooth],
+  );
   const openingLayoutKey =
     sectionsReady && boardRenderData && displayedClimb && currentHeaderModel
       ? buildOpeningLayoutKey({
@@ -1381,6 +1447,8 @@ export function PlayCore({
             showConnectPill,
             bluetooth !== null,
             boardSupportsMirroring(boardName, layoutId),
+            actionBarLayout.secondaryRow,
+            controlsPosition,
           ]),
           lostBanner: lostHoldCount > 0,
           playbackFingerprint: JSON.stringify([playback.isAnimatable]),
@@ -1446,26 +1514,141 @@ export function PlayCore({
   );
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
-  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
-  // The same layout the action bar resolves from the same inputs, read here for
-  // the buttons it has put away: ⋯ carries a row for each.
-  const hasBluetooth = bluetooth !== null;
-  const actionBarLayout = useMemo(
-    () =>
-      resolveActionBarLayout({
-        supportsMirroring,
-        isAnonymous,
-        connectPill: showConnectPill,
-        inCommitMode: commitBarModel.mode === 'commit',
-        showLightbulb: hasBluetooth,
-        hasShare: !displayedClimbIsDraft,
-      }),
-    [supportsMirroring, isAnonymous, showConnectPill, commitBarModel.mode, hasBluetooth, displayedClimbIsDraft],
-  );
 
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
+
+  // Controls region — gated by the switch-board overlay when the displayed
+  // climb is on a board the user isn't currently on. Board art + swipe stay
+  // interactive for viewing. The controls are wrapped so assistive tech can't
+  // reach them while gated (on BOTH platforms — the scrim's
+  // accessibilityViewIsModal is iOS-only); the overlay itself stays a sibling so
+  // its "Switch board" action remains focusable.
+  //
+  // It sits under the board, or between the header and the board when the
+  // climber chose Above the board (#6229). The block moves whole, so the scrim
+  // and its card still cover every control. Above the board the bar leads and
+  // the playback slider follows, so the slider stays next to the board.
+  //
+  // The card is taller than the controls (more so with the small row switched
+  // off), and a card that spilled out of the region would sit under whichever
+  // sibling comes next (the board above the fold, the first section below it),
+  // which then takes the taps meant for Switch board. So while the card is up
+  // the region is at least as tall as the card. Above the board the region also
+  // sits over its later siblings, in case a font change outgrows the last
+  // measurement for a frame.
+  const showSwitchBoardCard = showBoardMismatch && onSwitchBoard != null;
+  const playbackControls = playback.isAnimatable ? (
+    <PlaybackControls
+      frameIndex={playback.frameIndex}
+      frameCount={playback.frameCount}
+      isPlaying={playback.isPlaying}
+      paceSeconds={playback.paceSeconds}
+      // Releasing near the pace this route's setter chose
+      // snaps back to it exactly, so "as intended" stays
+      // one easy landing on the track.
+      magnetSeconds={playback.paceMs / 1000}
+      peerFrameMismatch={playback.peerFrameMismatch}
+      onPlay={playback.play}
+      onPause={playback.pause}
+      onSeek={playback.seek}
+      onPaceSecondsChange={playback.setPaceSeconds}
+    />
+  ) : null;
+  const actionBar = (
+    <PlayDrawerActionBar
+      canSwipePrevious={navigationState.canPrevious}
+      canSwipeNext={navigationState.canNext}
+      isMirrored={isMirrored}
+      supportsMirroring={supportsMirroring}
+      isFavorited={isFavorited}
+      remainingQueueCount={navigationState.remainingCount}
+      lightbulbActive={lightbulbActive}
+      lightbulbConnected={bluetoothConnected || wallHeldLocally}
+      lightbulbPending={lightbulbPending}
+      autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
+      lightbulbLongPressEnabled={bluetoothConnected}
+      // Whether a Bluetooth transport exists at all, and only
+      // that. The anonymous suppression lives in the bar, with
+      // the rest of the `viewer` rules and the test that pins
+      // them — Web Bluetooth IS mounted on the browser export,
+      // so without it the bulb would render for a signed-out
+      // visitor, whose board presence binds on an active board
+      // uuid they do not have and whose first-ever visit would
+      // open with a pairing prompt. Anonymous wall lighting is
+      // its own feature (#4606), not a v1 side effect.
+      showLightbulb={bluetooth !== null}
+      connectPill={showConnectPill}
+      onConnectPill={handleConnectPillPress}
+      // The pill owns the driver's face whenever it renders the
+      // avatar; suppress the lightbulb pip so the same face never
+      // shows twice in the drawer.
+      showHolderBadge={shouldShowHolderBadge(wallPillState)}
+      // While the browse latch is up the second row carries the
+      // latch's own controls instead of the utilities — same 64pt
+      // row, no added height.
+      secondaryMode={commitBarModel.mode}
+      showBackToLive={commitBarModel.showBackToLive}
+      showPutOnWall={commitBarModel.showPutOnWall}
+      // Someone moved the wall mid-browse: the same two
+      // controls become Keep theirs / Put mine up, so the
+      // second tap on the filled button is the commit and
+      // the text button is still the way out.
+      showConfirm={commitBarModel.showConfirm}
+      wallClimbName={wallClimb.name}
+      commitLabel={commitBarModel.commitLabel}
+      onBackToLive={handleBackToLive}
+      onCommit={handleSetActive}
+      ascentCount={ascentCount}
+      onPrevClick={handlePrev}
+      onNextClick={handleNext}
+      onMirror={handleMirror}
+      onToggleFavorite={handleToggleFavorite}
+      lightbulbLabelKind={lightbulbLabelKind}
+      onLightbulb={handleLightbulb}
+      onLightbulbLongPress={handleLightbulbLongPress}
+      onOpenQueue={onOpenQueue}
+      onShare={displayedClimbIsDraft ? undefined : handleShare}
+      onTickPress={handleTickFabPress}
+      onTickLongPress={handleTickFabLongPress}
+      viewer={viewer}
+      onSignInPress={onSignIn}
+      currentAngle={activeAngle}
+      onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
+      buttons={playerButtons.buttons}
+      previousNext={playerButtons.previousNext}
+      // Above the board the hairline faces the board, under it.
+      edge={controlsAbove ? 'bottom' : 'top'}
+    />
+  );
+  const controlsRegion = (
+    <View
+      testID="play-drawer-controls-region"
+      style={[
+        styles.controlsRegion,
+        controlsAbove && styles.controlsRegionAbove,
+        showSwitchBoardCard && { minHeight: switchBoardCardHeight + SWITCH_BOARD_CARD_MARGIN * 2 },
+      ]}
+      onLayout={controlsAbove ? handleControlsLayout : undefined}
+    >
+      <View
+        accessibilityElementsHidden={showBoardMismatch}
+        importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
+      >
+        {controlsAbove ? actionBar : playbackControls}
+        {controlsAbove ? playbackControls : actionBar}
+      </View>
+
+      {showSwitchBoardCard ? (
+        <SwitchBoardOverlay
+          boardLabel={switchBoardLabel ?? ''}
+          onSwitchBoard={handleSwitchBoard}
+          onCardHeight={handleSwitchBoardCardHeight}
+        />
+      ) : null}
+    </View>
+  );
 
   return (
     // The play route paints its background and this interactive core together.
@@ -1568,7 +1751,10 @@ export function PlayCore({
                                   hidden={actionBarLayout.hidden}
                                   boardMismatch={showBoardMismatch}
                                   isFavorited={isFavorited}
+                                  isMirrored={isMirrored}
                                   onToggleFavorite={handleToggleFavoriteFromMenu}
+                                  onToggleMirror={handleMirror}
+                                  onOpenAngle={handleOpenAngleSelector}
                                   onTick={handleOpenTickForClimb}
                                   onAddBetaVideo={handleOpenAddBetaVideoForClimb}
                                   onReportClimb={handleOpenReportClimbForClimb}
@@ -1646,6 +1832,8 @@ export function PlayCore({
                         />
                       </View>
 
+                      {controlsAbove ? controlsRegion : null}
+
                       {/* A climb that lost a hold. Still listed, playable and
                           loggable, but nothing else on this screen would say why
                           the board draws fewer holds than the setter painted.
@@ -1722,102 +1910,7 @@ export function PlayCore({
                         )}
                       </View>
 
-                      {/* Controls region — gated by the switch-board overlay when the
-                    displayed climb is on a board the user isn't currently on.
-                    Board art + swipe above stay interactive for viewing. The
-                    controls are wrapped so assistive tech can't reach them while
-                    gated (on BOTH platforms — the scrim's accessibilityViewIsModal
-                    is iOS-only); the overlay itself stays a sibling so its
-                    "Switch board" action remains focusable. */}
-                      <View style={styles.controlsRegion}>
-                        <View
-                          accessibilityElementsHidden={showBoardMismatch}
-                          importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
-                        >
-                          {playback.isAnimatable && (
-                            <PlaybackControls
-                              frameIndex={playback.frameIndex}
-                              frameCount={playback.frameCount}
-                              isPlaying={playback.isPlaying}
-                              paceSeconds={playback.paceSeconds}
-                              // Releasing near the pace this route's setter chose
-                              // snaps back to it exactly, so "as intended" stays
-                              // one easy landing on the track.
-                              magnetSeconds={playback.paceMs / 1000}
-                              peerFrameMismatch={playback.peerFrameMismatch}
-                              onPlay={playback.play}
-                              onPause={playback.pause}
-                              onSeek={playback.seek}
-                              onPaceSecondsChange={playback.setPaceSeconds}
-                            />
-                          )}
-
-                          <PlayDrawerActionBar
-                            canSwipePrevious={navigationState.canPrevious}
-                            canSwipeNext={navigationState.canNext}
-                            isMirrored={isMirrored}
-                            supportsMirroring={supportsMirroring}
-                            isFavorited={isFavorited}
-                            remainingQueueCount={navigationState.remainingCount}
-                            lightbulbActive={lightbulbActive}
-                            lightbulbConnected={bluetoothConnected || wallHeldLocally}
-                            lightbulbPending={lightbulbPending}
-                            autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
-                            lightbulbLongPressEnabled={bluetoothConnected}
-                            // Whether a Bluetooth transport exists at all, and only
-                            // that. The anonymous suppression lives in the bar, with
-                            // the rest of the `viewer` rules and the test that pins
-                            // them — Web Bluetooth IS mounted on the browser export,
-                            // so without it the bulb would render for a signed-out
-                            // visitor, whose board presence binds on an active board
-                            // uuid they do not have and whose first-ever visit would
-                            // open with a pairing prompt. Anonymous wall lighting is
-                            // its own feature (#4606), not a v1 side effect.
-                            showLightbulb={bluetooth !== null}
-                            connectPill={showConnectPill}
-                            onConnectPill={handleConnectPillPress}
-                            // The pill owns the driver's face whenever it renders the
-                            // avatar; suppress the lightbulb pip so the same face never
-                            // shows twice in the drawer.
-                            showHolderBadge={shouldShowHolderBadge(wallPillState)}
-                            // While the browse latch is up the second row carries the
-                            // latch's own controls instead of the utilities — same 64pt
-                            // row, no added height.
-                            secondaryMode={commitBarModel.mode}
-                            showBackToLive={commitBarModel.showBackToLive}
-                            showPutOnWall={commitBarModel.showPutOnWall}
-                            // Someone moved the wall mid-browse: the same two
-                            // controls become Keep theirs / Put mine up, so the
-                            // second tap on the filled button is the commit and
-                            // the text button is still the way out.
-                            showConfirm={commitBarModel.showConfirm}
-                            wallClimbName={wallClimb.name}
-                            commitLabel={commitBarModel.commitLabel}
-                            onBackToLive={handleBackToLive}
-                            onCommit={handleSetActive}
-                            ascentCount={ascentCount}
-                            onPrevClick={handlePrev}
-                            onNextClick={handleNext}
-                            onMirror={handleMirror}
-                            onToggleFavorite={handleToggleFavorite}
-                            lightbulbLabelKind={lightbulbLabelKind}
-                            onLightbulb={handleLightbulb}
-                            onLightbulbLongPress={handleLightbulbLongPress}
-                            onOpenQueue={onOpenQueue}
-                            onShare={displayedClimbIsDraft ? undefined : handleShare}
-                            onTickPress={handleTickFabPress}
-                            onTickLongPress={handleTickFabLongPress}
-                            viewer={viewer}
-                            onSignInPress={onSignIn}
-                            currentAngle={activeAngle}
-                            onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
-                          />
-                        </View>
-
-                        {showBoardMismatch && onSwitchBoard ? (
-                          <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
-                        ) : null}
-                      </View>
+                      {controlsAbove ? null : controlsRegion}
                     </View>
 
                     {/* The pill's explainer. A sibling of the a11y-trap wrapper (so
@@ -1825,12 +1918,19 @@ export function PlayCore({
                         header (so it doesn't ride the swipe translate), overlaying
                         board art — zero layout cost, which is why it isn't a sheet.
                         `headerBottomY` is measured inside the wrapper, so the first
-                        screen's own top padding is added back here. */}
+                        screen's own top padding is added back here. With the
+                        controls above the board it hangs from their bottom edge
+                        instead (measured in the same wrapper), so it never covers
+                        Log. */}
                     {wallCallout !== 'none' && wallPillState ? (
                       <WallStateCallout
                         state={wallPillState}
                         presentation={wallCallout}
-                        top={firstScreenPaddingTop + headerBottomY + spacing[1]}
+                        top={
+                          firstScreenPaddingTop +
+                          (controlsAbove ? Math.max(headerBottomY, controlsBottomY) : headerBottomY) +
+                          spacing[1]
+                        }
                         // Offered whenever a preview is pinned, NOT only under the
                         // browse latch: on the wrong board the commit row stands down
                         // (its controls would be dead under the switch-board scrim),
@@ -1908,6 +2008,7 @@ export function PlayCore({
         activeAngle={activeAngle}
         climbBoardMismatch={climbBoardMismatch}
         sectionsSettingsOpen={sectionsSettingsOpen}
+        buttonsPreviewBoard={buttonsPreviewBoard}
         addBetaVideoOpen={addBetaVideoOpen}
         addToPlaylistOpen={addToPlaylistOpen}
         fullLogbookClimbUuid={fullLogbookClimbUuid}
@@ -2007,5 +2108,9 @@ const styles = StyleSheet.create({
   // action controls, leaving the board art and header above it interactive.
   controlsRegion: {
     position: 'relative',
+  },
+  // Over the lost-holds banner and the board, its later siblings.
+  controlsRegionAbove: {
+    zIndex: 1,
   },
 });

@@ -12,6 +12,8 @@ const ICONS: Record<ClimbActionId, IconName> = {
   queue: 'add',
   openQueue: 'queue',
   playNext: 'queue.next',
+  mirror: 'mirror',
+  angle: 'angle',
   playlist: 'playlist',
   favorite: 'favorite',
   tick: 'tick',
@@ -32,6 +34,8 @@ const HOOK_ORDER: ClimbActionId[] = [
   'queue',
   'openQueue',
   'playNext',
+  'mirror',
+  'angle',
   'playlist',
   'favorite',
   'tick',
@@ -53,26 +57,32 @@ function item(id: ClimbActionId): ClimbActionItem {
 const EVERY_ITEM = HOOK_ORDER.map(item);
 
 const NOTHING_HIDDEN: PlayDrawerMenuRowOptions = {
-  hidden: { favorite: false, share: false, queue: false },
+  hidden: { favorite: false, share: false, queue: false, mirror: false, angle: false },
   boardMismatch: false,
   isActiveClimb: false,
 };
 const EVERYTHING_HIDDEN: PlayDrawerMenuRowOptions = {
   ...NOTHING_HIDDEN,
-  hidden: { favorite: true, share: true, queue: true },
+  hidden: { favorite: true, share: true, queue: true, mirror: true, angle: true },
 };
+const hiding = (button: keyof PlayDrawerMenuRowOptions['hidden']): PlayDrawerMenuRowOptions => ({
+  ...NOTHING_HIDDEN,
+  hidden: { ...NOTHING_HIDDEN.hidden, [button]: true },
+});
 
 const rowIds = (options: PlayDrawerMenuRowOptions, items = EVERY_ITEM) =>
   buildPlayDrawerMenuRows(items, options).map((row) => row.id);
 
 describe('buildPlayDrawerMenuRows', () => {
-  it('orders the rows in five groups and opens each group after the first with a divider', () => {
+  it('orders the rows in six groups and opens each group after the first with a divider', () => {
     const rows = buildPlayDrawerMenuRows(EVERY_ITEM, EVERYTHING_HIDDEN);
 
     expect(rows.map((row) => row.id)).toEqual([
       'playNext',
       'queue',
       'openQueue',
+      'mirror',
+      'angle',
       'playlist',
       'favorite',
       'share',
@@ -85,6 +95,7 @@ describe('buildPlayDrawerMenuRows', () => {
       'delete',
     ]);
     expect(rows.filter((row) => row.dividerBefore).map((row) => row.id)).toEqual([
+      'mirror',
       'playlist',
       'betaVideo',
       'viewOptions',
@@ -101,17 +112,30 @@ describe('buildPlayDrawerMenuRows', () => {
     expect(ids).not.toContain('editEntry');
   });
 
-  it('offers the queue, favourite and share only while the bar has put their button away', () => {
+  it('offers each bar button only while the bar has put it away', () => {
     const shown = rowIds(NOTHING_HIDDEN);
     expect(shown).not.toContain('openQueue');
     expect(shown).not.toContain('favorite');
     expect(shown).not.toContain('share');
+    expect(shown).not.toContain('mirror');
+    expect(shown).not.toContain('angle');
 
-    expect(rowIds({ ...NOTHING_HIDDEN, hidden: { favorite: true, share: false, queue: false } })).toContain('favorite');
-    expect(rowIds({ ...NOTHING_HIDDEN, hidden: { favorite: false, share: true, queue: false } })).toContain('share');
-    expect(rowIds({ ...NOTHING_HIDDEN, hidden: { favorite: false, share: false, queue: true } })).toContain(
-      'openQueue',
-    );
+    expect(rowIds(hiding('favorite'))).toContain('favorite');
+    expect(rowIds(hiding('share'))).toContain('share');
+    expect(rowIds(hiding('queue'))).toContain('openQueue');
+    expect(rowIds(hiding('mirror'))).toContain('mirror');
+    expect(rowIds(hiding('mirror'))).not.toContain('angle');
+    expect(rowIds(hiding('angle'))).toContain('angle');
+  });
+
+  // Mirror changes what the wall lights and the angle belongs to the board in
+  // front of the climber; neither means anything on another board's climb.
+  it('puts Mirror and Change angle in a group of their own after the queue rows', () => {
+    const rows = buildPlayDrawerMenuRows(EVERY_ITEM, { ...NOTHING_HIDDEN, hidden: { ...EVERYTHING_HIDDEN.hidden } });
+    const mirrorIndex = rows.findIndex((row) => row.id === 'mirror');
+    expect(rows[mirrorIndex - 1]?.id).toBe('openQueue');
+    expect(rows[mirrorIndex]?.dividerBefore).toBe(true);
+    expect(rows[mirrorIndex + 1]).toMatchObject({ id: 'angle', dividerBefore: false });
   });
 
   it('drops Play next on the climb that is already on the wall', () => {
@@ -150,8 +174,10 @@ describe('buildPlayDrawerMenuRows', () => {
     const rows = buildPlayDrawerMenuRows(EVERY_ITEM, { ...EVERYTHING_HIDDEN, boardMismatch: true });
 
     expect(rows.filter((row) => !row.disabled).map((row) => row.id)).toEqual(['share', 'viewOptions', 'openInApp']);
+    expect(rows.find((row) => row.id === 'mirror')?.disabled).toBe(true);
+    expect(rows.find((row) => row.id === 'angle')?.disabled).toBe(true);
     // Disabled, not removed: the indices after a disabled row must not shift.
-    expect(rows).toHaveLength(13);
+    expect(rows).toHaveLength(15);
   });
 
   it('enables every row on the climber own board', () => {

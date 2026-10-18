@@ -158,6 +158,7 @@ const SETTINGS_PAGES = [
   'early-access',
   'developer',
   'climb-list',
+  'climb-view',
   'storage',
   'privacy-access',
   'edit',

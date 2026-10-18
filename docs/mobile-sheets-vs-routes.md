@@ -255,7 +255,7 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climbs & grades → Below the climb and the player's ⋯ → View options use the same seven visibility
+Settings → Climbs & grades → Climb view and the player's ⋯ → View options use the same seven visibility
 switches, listed in the climber's order. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
@@ -276,7 +276,7 @@ has no ⋯ and no Settings, ignores the stored choices and gets the default sect
 ready at once (no read to wait for), so a member's Hide all left in the same browser
 can't strand them with nothing below the board. Every other viewer, a guest without an
 account included, keeps the stored choices, because ⋯ → View options and Settings →
-Climbs & grades → Below the climb both write them. These device-local choices use AsyncStorage (IndexedDB in
+Climbs & grades → Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
 the browser) and keep each section's existing expansion preference.
 
 The climber also orders the seven sections below the fold. Each sheet row carries ↑/↓
@@ -309,6 +309,10 @@ node for a line that draws itself. Only the on-screen peek may ask for what its 
 once the climb has settled; a section further down shows a line only from what is cached
 and asks for nothing until the climber scrolls to it. The Climber logs card straight under
 a Logbook peek keeps its head start.
+
+The sheet has two tabs, **Below the climb** (these sections) and **Buttons** (the player's buttons, Previous and
+next, and whether the controls sit below or above the board). The buttons, their layout rule, storage and the ⋯
+stand-ins are described in [climb-view-options.md](climb-view-options.md).
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.

@@ -743,7 +743,8 @@
       "addFavoriteAria": "Ajouter aux favoris",
       "removeFavoriteAria": "Retirer des favoris",
       "climbActionsAria": "Actions du bloc",
-      "queueCountAria": "File, {{count}} blocs"
+      "queueCountAria": "File, {{count}} blocs",
+      "changeAngle": "Changer l’inclinaison"
     },
     "tickFab": {
       "logAscentAria": "Enregistrer une ascension"

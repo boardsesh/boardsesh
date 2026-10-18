@@ -6,10 +6,19 @@ import { createElement, type ReactNode } from 'react';
 // Minimal RN surface. View forwards accessibilityViewIsModal onto a data
 // attribute so the scrim's modal-focus trap (keeps the blocked queue/tick/BLE
 // controls out of the a11y tree) is inspectable.
-type ViewMockProps = { children?: ReactNode; accessibilityViewIsModal?: boolean; testID?: string; style?: unknown };
+type LayoutHandler = (event: { nativeEvent: { layout: { height: number } } }) => void;
+type ViewMockProps = {
+  children?: ReactNode;
+  accessibilityViewIsModal?: boolean;
+  testID?: string;
+  style?: unknown;
+  onLayout?: LayoutHandler;
+};
+const layouts = vi.hoisted(() => ({ byTestId: new Map<string, (event: unknown) => void>() }));
 vi.mock('react-native', () => ({
-  View: ({ children, accessibilityViewIsModal, testID, style }: ViewMockProps) =>
-    createElement(
+  View: ({ children, accessibilityViewIsModal, testID, style, onLayout }: ViewMockProps) => {
+    if (testID && onLayout) layouts.byTestId.set(testID, onLayout as (event: unknown) => void);
+    return createElement(
       'div',
       {
         'data-modal': accessibilityViewIsModal == null ? undefined : String(accessibilityViewIsModal),
@@ -17,7 +26,8 @@ vi.mock('react-native', () => ({
         'data-bg': (Array.isArray(style) ? Object.assign({}, ...style) : (style ?? {})).backgroundColor,
       },
       children,
-    ),
+    );
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -117,5 +127,14 @@ describe('SwitchBoardOverlay presentation', () => {
     // through words laid directly on it. The card is what makes them recede.
     expect(getByTestId('switch-board-card').textContent).toContain('boardMismatch.title:Woods');
     expect(container.querySelector('[data-modal="true"]')).toBeTruthy();
+  });
+
+  // PlayCore keeps the controls region at least this tall, so the card never
+  // spills under the board or the first section.
+  it('reports the card height to the host', () => {
+    const onCardHeight = vi.fn();
+    render(createElement(SwitchBoardOverlay, { boardLabel: 'Kilter', onSwitchBoard: vi.fn(), onCardHeight }));
+    layouts.byTestId.get('switch-board-card')?.({ nativeEvent: { layout: { height: 190 } } });
+    expect(onCardHeight).toHaveBeenCalledWith(190);
   });
 });

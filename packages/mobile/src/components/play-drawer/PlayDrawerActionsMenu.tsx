@@ -2,7 +2,11 @@ import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import { AppMenu } from '../AppMenu';
-import { useClimbActions, type ClimbActionsFavoriteControl } from '../climb-actions/use-climb-actions';
+import {
+  useClimbActions,
+  type ClimbActionsFavoriteControl,
+  type ClimbActionsMirrorControl,
+} from '../climb-actions/use-climb-actions';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { useProfile } from '../../lib/graphql/hooks';
@@ -34,6 +38,8 @@ export type PlayDrawerActionsMenuProps = {
   boardMismatch: boolean;
   /** The bar heart's state, optimistic override included. */
   isFavorited: boolean;
+  /** The displayed climb is mirrored, for the Mirror row's label. */
+  isMirrored: boolean;
   // Every row that opens a sheet takes the player's OWN opener. A root opener
   // (`useDrawerHost().openLogAscent` and friends) presents its sheet under the
   // `/play` modal, where it flashes open and vanishes (#3505, #3294 for the
@@ -49,6 +55,10 @@ export type PlayDrawerActionsMenuProps = {
   onSelectPlaylist: PinnedSheetOpener;
   onOpenQueue: () => void;
   onOpenViewOptions: () => void;
+  /** The bar's mirror toggle, so the button and the row run the same thing. */
+  onToggleMirror: () => void;
+  /** The player's own angle sheet, presented above `/play`. */
+  onOpenAngle: () => void;
   /** Supplied only by the `/play` route; the persistent iPad pane has nothing to dismiss. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
 };
@@ -71,7 +81,10 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   hidden,
   boardMismatch,
   isFavorited,
+  isMirrored,
   onToggleFavorite,
+  onToggleMirror,
+  onOpenAngle,
   onTick,
   onAddBetaVideo,
   onReportClimb,
@@ -94,6 +107,10 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     () => ({ isFavorited, onToggle: onToggleFavorite }),
     [isFavorited, onToggleFavorite],
   );
+  const mirrorControl = useMemo<ClimbActionsMirrorControl>(
+    () => ({ isMirrored, onToggle: onToggleMirror }),
+    [isMirrored, onToggleMirror],
+  );
   const handleSelectPlaylist = useCallback(
     () => onSelectPlaylist(climb, boardConfig),
     [onSelectPlaylist, climb, boardConfig],
@@ -111,6 +128,8 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     onReportClimb,
     onOpenQueue,
     onOpenViewOptions,
+    mirrorControl,
+    onOpenAngle,
     dismissPlayerAndWait,
     favoriteControl,
     analyticsSource: 'play_drawer_menu',

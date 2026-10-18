@@ -30,13 +30,18 @@ type PressMockProps = {
   hitSlop?: number;
 };
 vi.mock('react-native', () => ({
-  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) => {
     const flattenedStyle = Object.assign({}, ...[style].flat(10).filter(Boolean));
     return createElement(
       'div',
       {
+        'data-testid': testID,
         'data-row-gap': flattenedStyle.gap,
         'data-horizontal-padding': flattenedStyle.paddingHorizontal,
+        'data-padding-bottom': flattenedStyle.paddingBottom,
+        'data-border-top': flattenedStyle.borderTopWidth,
+        'data-border-bottom': flattenedStyle.borderBottomWidth,
+        'data-min-height': flattenedStyle.minHeight,
       },
       children,
     );
@@ -124,10 +129,11 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
       'data-value': accessibilityValueText,
     }),
   drawerActionBarStyles: {
-    container: {},
+    container: { borderTopWidth: 1 },
     rowPrimary: {},
     primarySlot: {},
-    rowSecondary: {},
+    // A gap only the second row has, so a test can tell whether it is drawn.
+    rowSecondary: { gap: 8 },
     spacer: {},
     actionButton: {},
     actionButtonPressed: {},
@@ -218,7 +224,7 @@ const SHARE_LABEL = 'mobile.climbRow.share';
 
 describe('PlayDrawerActionBar', () => {
   // ⋯ moved to the drawer's top row, and section choices live there and in
-  // Settings → Below the climb, so neither ⋯ nor the eye belongs to the bar any more.
+  // Settings → Climb view, so neither ⋯ nor the eye belongs to the bar any more.
   it('draws neither ⋯ nor the section eye', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
 
@@ -382,6 +388,102 @@ describe('PlayDrawerActionBar', () => {
 // both, and never a new band. Every assertion below is about the SWAP, because
 // the drawer's height budget is the whole reason the commit controls live in a
 // row that already exists.
+describe("PlayDrawerActionBar (the climber's buttons)", () => {
+  const order = ['mirror', 'favorite', 'angle', 'share', 'queue'] as const;
+  const visibleAll = { mirror: true, favorite: true, angle: true, share: true, queue: true };
+  const secondRows = (container: HTMLElement) => container.querySelectorAll('[data-row-gap="8"]');
+
+  it('leaves both ⏮ ⏭ slots empty with Previous and next off, keeping the tick in the middle slot', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, previousNext: false }));
+    expect(actions(container)).not.toContain(ACTION_ICONS.previous);
+    expect(actions(container)).not.toContain(ACTION_ICONS.next);
+    // Five slots either way: mirror, empty, tick, empty, bulb.
+    const firstRow = container.querySelector('[data-icon="tick.outline"]')?.closest('div')?.parentElement;
+    expect(firstRow?.children).toHaveLength(5);
+  });
+
+  it('drops the second row when every small button is off, and the first row takes its bottom padding', () => {
+    const allOff = { order, visible: { mirror: false, favorite: false, angle: false, share: false, queue: false } };
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, buttons: allOff }));
+    expect(secondRows(container)).toHaveLength(0);
+    expect(container.querySelector('[data-padding-bottom="12"]')).not.toBeNull();
+    expect(labels(container)).not.toContain(FAVORITE_LABEL);
+    expect(labels(container)).not.toContain(SHARE_LABEL);
+  });
+
+  it('holds an empty 64pt second row for a draft when Share is the only small button on', () => {
+    const shareOnly = { order, visible: { mirror: false, favorite: false, angle: false, share: true, queue: true } };
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        supportsMirroring: false,
+        buttons: shareOnly,
+        onShare: undefined,
+      }),
+    );
+    const secondRow = secondRows(container)[0];
+    expect(secondRow).toBeDefined();
+    expect(secondRow?.getAttribute('data-min-height')).toBe('64');
+    expect(labels(container)).not.toContain(SHARE_LABEL);
+  });
+
+  it('brings the second row back for the commit controls', () => {
+    const allOff = { order, visible: { mirror: false, favorite: false, angle: false, share: false, queue: false } };
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        buttons: allOff,
+        secondaryMode: 'commit',
+        onBackToLive: vi.fn(),
+        onCommit: vi.fn(),
+      }),
+    );
+    expect(secondRows(container)).toHaveLength(1);
+    expect(container.querySelector('[data-commit-bar]')).not.toBeNull();
+  });
+
+  it('draws a small mirror toggle when the queue comes first on a mirror board', () => {
+    const onMirror = vi.fn();
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        onMirror,
+        buttons: { order: ['queue', 'mirror', 'favorite', 'angle', 'share'], visible: visibleAll },
+      }),
+    );
+    expect(container.querySelector(`[data-label="${QUEUE_LABEL}"]`)?.getAttribute('data-size')).toBe('lg');
+    const mirror = container.querySelector('[data-label="playView.actionBar.mirrorAria"]') as HTMLElement;
+    expect(mirror.getAttribute('data-size')).toBe('sm');
+    fireEvent.click(mirror);
+    expect(onMirror).toHaveBeenCalledTimes(1);
+    expect(haptics.hapticSelection).toHaveBeenCalled();
+  });
+
+  it('moves the hairline to the bottom edge above the board', () => {
+    const below = render(createElement(PlayDrawerActionBar, baseProps));
+    const belowBar = below.getByTestId('play-drawer-action-bar');
+    expect(belowBar.getAttribute('data-border-top')).toBe('1');
+    expect(belowBar.getAttribute('data-border-bottom')).toBeNull();
+    below.unmount();
+
+    const above = render(createElement(PlayDrawerActionBar, { ...baseProps, edge: 'bottom' }));
+    const aboveBar = above.getByTestId('play-drawer-action-bar');
+    expect(aboveBar.getAttribute('data-border-top')).toBeNull();
+    expect(aboveBar.getAttribute('data-border-bottom')).toBe(String(1));
+  });
+
+  it("ignores the climber's buttons for a signed-out reader", () => {
+    const allOff = { order, visible: { mirror: false, favorite: false, angle: false, share: false, queue: false } };
+    const { container } = render(
+      createElement(PlayDrawerActionBar, { ...baseProps, viewer: 'anonymous', buttons: allOff, previousNext: false }),
+    );
+    expect(actions(container)).toEqual(
+      expect.arrayContaining([ACTION_ICONS.mirror, ACTION_ICONS.previous, ACTION_ICONS.next]),
+    );
+    expect(labels(container)).toContain(SHARE_LABEL);
+  });
+});
+
 describe('PlayDrawerActionBar (secondary row swap)', () => {
   const commitProps = {
     ...baseProps,

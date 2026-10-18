@@ -450,7 +450,11 @@
         },
         "sheetTitle": "Ansichtsoptionen",
         "groupTitle": "Unter dem Boulder",
-        "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen."
+        "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen.",
+        "tabs": {
+          "sections": "Unter dem Boulder",
+          "buttons": "Buttons"
+        }
       },
       "sectionLayout": {
         "moveUp": "{{section}} nach oben verschieben",
@@ -492,6 +496,41 @@
         "samplePlaylistTwo": "Aufwärmen",
         "playlistTagsDescription": "Sieh direkt in der Liste, in welchen Playlists ein Boulder steckt.",
         "quickActionsDescription": "Gibt jedem Boulder einen ⋮-Button für Warteschlange, Eintrag, Playlists und mehr. Langes Drücken geht weiterhin."
+      },
+      "playerButtons": {
+        "title": "Buttons",
+        "description": "Wähle die Buttons rund um Eintragen, ihre Reihenfolge und ihren Platz.",
+        "position": {
+          "label": "Position",
+          "below": "Unter dem Board",
+          "above": "Über dem Board",
+          "footer": "Eintragen und Board beleuchten behalten immer ihren Platz."
+        },
+        "previousNext": "Zurück und Weiter",
+        "previousNextDescription": "Das Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
+        "buttons": {
+          "mirror": "Spiegeln",
+          "favorite": "Favorit",
+          "angle": "Winkel",
+          "share": "Teilen",
+          "queue": "Warteschlange"
+        },
+        "mirrorDescription": "Nur bei Boards, die sich spiegeln lassen",
+        "angleDescription": "Nur bei Boards mit verstellbarem Winkel",
+        "fixed": {
+          "previous": "Zurück",
+          "next": "Weiter",
+          "log": "Eintragen",
+          "boardLight": "Board beleuchten"
+        },
+        "footer": "Was von Warteschlange und Spiegeln zuerst kommt, bekommt den großen Button. Ein ausgeblendeter Button bleibt im ⋯-Menü. Ohne kleine Buttons nimmt das Board ihre Reihe ein.",
+        "settingsFooter": "Die Reihenfolge änderst du im Menü ⋯ eines Boulders unter Ansichtsoptionen.",
+        "previewLabel": "Vorschau, {{position}}: {{buttons}}"
+      },
+      "climbView": {
+        "title": "Boulder-Ansicht",
+        "valueDefault": "Standard",
+        "valueCustom": "Benutzerdefiniert"
       }
     },
     "sendRecovery": {

@@ -722,7 +722,11 @@
         },
         "sheetTitle": "Opciones de vista",
         "groupTitle": "Debajo del bloque",
-        "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical."
+        "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical.",
+        "tabs": {
+          "sections": "Debajo del bloque",
+          "buttons": "Botones"
+        }
       },
       "sectionLayout": {
         "moveUp": "Subir {{section}}",
@@ -764,6 +768,41 @@
         "samplePlaylistTwo": "Calentamiento",
         "playlistTagsDescription": "Mira en qué playlists está cada bloque, directamente en la lista.",
         "quickActionsDescription": "Añade un botón ⋮ a cada bloque que abre cola, encadene, listas y más. Siempre puedes mantener pulsado en su lugar."
+      },
+      "playerButtons": {
+        "title": "Botones",
+        "description": "Elige los botones alrededor de Registrar, su orden y dónde van.",
+        "position": {
+          "label": "Posición",
+          "below": "Debajo del plafón",
+          "above": "Encima del plafón",
+          "footer": "Registrar y Luz del plafón siempre mantienen su sitio."
+        },
+        "previousNext": "Anterior y siguiente",
+        "previousNextDescription": "Deslizar el plafón sigue cambiando de bloque.",
+        "buttons": {
+          "mirror": "Espejo",
+          "favorite": "Favorito",
+          "angle": "Ángulo",
+          "share": "Compartir",
+          "queue": "Cola"
+        },
+        "mirrorDescription": "Solo en plafones que se espejean",
+        "angleDescription": "Solo en plafones con ángulo ajustable",
+        "fixed": {
+          "previous": "Anterior",
+          "next": "Siguiente",
+          "log": "Registrar",
+          "boardLight": "Luz del plafón"
+        },
+        "footer": "El primero entre Cola y Espejo se queda con el botón grande. Un botón oculto sigue en el menú ⋯. Sin botones pequeños, el plafón ocupa su fila.",
+        "settingsFooter": "Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
+        "previewLabel": "Vista previa, {{position}}: {{buttons}}"
+      },
+      "climbView": {
+        "title": "Vista del bloque",
+        "valueDefault": "Predeterminada",
+        "valueCustom": "Personalizada"
       }
     },
     "sendRecovery": {

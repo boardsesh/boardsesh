@@ -11,6 +11,7 @@ import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
 import { resolveActionBarLayout, type ActionBarSecondaryItem } from './action-bar-layout';
+import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonsLayout } from '../../lib/player-buttons';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
@@ -19,6 +20,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
@@ -130,6 +132,19 @@ type PlayDrawerActionBarProps = {
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
+  /**
+   * The climber's buttons from View options (#6229): order and switches.
+   * `resolveActionBarLayout` decides what that means here, and ignores it for an
+   * anonymous reader. Defaults to today's bar.
+   */
+  buttons?: PlayerButtonsLayout;
+  /** The Previous and next switch. Off leaves both slots empty, so Log stays centred. */
+  previousNext?: boolean;
+  /**
+   * The edge that faces the board, where the hairline goes: `top` under the
+   * board (where the bar has always been), `bottom` when the controls sit above it.
+   */
+  edge?: 'top' | 'bottom';
 };
 
 export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
@@ -174,6 +189,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onTickPress,
   onTickLongPress,
   onOpenAngleSelector,
+  buttons = DEFAULT_PLAYER_BUTTONS,
+  previousNext = true,
+  edge = 'top',
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -209,7 +227,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     inCommitMode,
     showLightbulb,
     hasShare: onShare != null,
+    angleAvailable: onOpenAngleSelector != null && currentAngle != null,
+    buttons,
+    previousNext,
   });
+  // No second row at all: the climber switched every small button off, and
+  // neither the commit bar nor the connect pill wants the row.
+  const hasSecondaryRow = layout.secondaryRow === 'commit' || layout.secondaryRow.length > 0;
 
   // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
   // sign in / angle) get none — the press itself is the feedback. The two
@@ -228,8 +252,15 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   }, [onToggleFavorite]);
 
   return (
-    <View style={[drawerActionBarStyles.container, { borderTopColor: theme.systemColors.separator }]}>
-      <View style={drawerActionBarStyles.rowPrimary}>
+    <View
+      testID="play-drawer-action-bar"
+      style={
+        edge === 'top'
+          ? [drawerActionBarStyles.container, { borderTopColor: theme.systemColors.separator }]
+          : [styles.containerAbove, { borderBottomColor: theme.systemColors.separator }]
+      }
+    >
+      <View style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}>
         {/* Mirror, or the queue where a board can't mirror: the list ⏮ and ⏭
             walk, and up here it survives commit mode and the connect pill. An
             anonymous reader has no queue, so on a board without mirror the slot
@@ -250,14 +281,18 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             <QueueButton size="lg" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
           ) : null}
         </View>
+        {/* Previous and next switched off leaves both slots standing empty,
+            so Log keeps the middle. Swiping the board still moves. */}
         <View style={drawerActionBarStyles.primarySlot}>
-          <ActionButton
-            size="lg"
-            iconName="skip.previous"
-            onPress={onPrevClick}
-            disabled={!canSwipePrevious}
-            accessibilityLabel={t('playView.actionBar.previousAria')}
-          />
+          {layout.showPreviousNext ? (
+            <ActionButton
+              size="lg"
+              iconName="skip.previous"
+              onPress={onPrevClick}
+              disabled={!canSwipePrevious}
+              accessibilityLabel={t('playView.actionBar.previousAria')}
+            />
+          ) : null}
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
           {/* The one prompt in the anonymous bar. It stays the hero slot and
@@ -274,13 +309,15 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
-          <ActionButton
-            size="lg"
-            iconName="skip.next"
-            onPress={onNextClick}
-            disabled={!canSwipeNext}
-            accessibilityLabel={t('playView.actionBar.nextAria')}
-          />
+          {layout.showPreviousNext ? (
+            <ActionButton
+              size="lg"
+              iconName="skip.next"
+              onPress={onNextClick}
+              disabled={!canSwipeNext}
+              accessibilityLabel={t('playView.actionBar.nextAria')}
+            />
+          ) : null}
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
           {/* With the connect pill up, this slot stays empty: the bulb is the
@@ -323,68 +360,94 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
       {/* Commit mode paints the row's own faint violet track edge-to-edge — a
           bottom "mode strip" that pairs with the header pill up top, and still
-          0pt: it's a background on a row that already exists. */}
-      <View style={[drawerActionBarStyles.rowSecondary, inCommitMode && { backgroundColor: theme.systemColors.fill }]}>
-        {/* `inCommitMode` already needs both handlers; restated so TS sees them. */}
-        {layout.secondaryRow === 'commit' && onBackToLive && onCommit ? (
-          <PlayDrawerCommitBar
-            showBackToLive={showBackToLive}
-            showPutOnWall={showPutOnWall}
-            showConfirm={showConfirm}
-            wallClimbName={wallClimbName}
-            commitLabel={commitLabel}
-            onBackToLive={onBackToLive}
-            onCommit={onCommit}
-          />
-        ) : layout.secondaryRow === 'commit' ? null : (
-          layout.secondaryRow.map((item: ActionBarSecondaryItem) => {
-            switch (item) {
-              case 'favorite':
-                return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
-              case 'angle':
-                return onOpenAngleSelector && currentAngle != null ? (
-                  <PressableSurface
-                    key={item}
-                    onPress={onOpenAngleSelector}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('mobile.angleSelector.title')}
-                    // A label-only mini pill (32pt); hit-slop lifts the tap target back to
-                    // the 44pt floor without growing the visual chip.
-                    hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.anglePill,
-                      { borderColor: theme.systemColors.separator },
-                      pressed && drawerActionBarStyles.actionButtonPressed,
-                    ]}
-                  >
-                    <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
-                      {currentAngle}°
-                    </Text>
-                  </PressableSurface>
-                ) : null;
-              case 'spacer':
-                return <View key={item} style={drawerActionBarStyles.spacer} />;
-              case 'connectPill':
-                return (
-                  <FirstConnectPill key={item} pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
-                );
-              // Share is a pure client action and the whole point of a read-only
-              // climb page, so an anonymous reader keeps it.
-              case 'share':
-                return onShare ? (
-                  <ShareButton
-                    key={item}
-                    size="sm"
-                    onPress={onShare}
-                    accessibilityLabel={tClimbs('mobile.climbRow.share')}
-                  />
-                ) : null;
-              case 'queue':
-                return <QueueButton key={item} size="sm" remainingCount={remainingQueueCount} onPress={onOpenQueue} />;
-            }
-          })
-        )}
-      </View>
+          0pt: it's a background on a row that already exists. With every small
+          button switched off the row goes, and commit mode or the connect pill
+          brings it back. */}
+      {hasSecondaryRow ? (
+        <View
+          style={[
+            drawerActionBarStyles.rowSecondary,
+            styles.rowSecondaryHeight,
+            inCommitMode && { backgroundColor: theme.systemColors.fill },
+          ]}
+        >
+          {/* `inCommitMode` already needs both handlers; restated so TS sees them. */}
+          {layout.secondaryRow === 'commit' && onBackToLive && onCommit ? (
+            <PlayDrawerCommitBar
+              showBackToLive={showBackToLive}
+              showPutOnWall={showPutOnWall}
+              showConfirm={showConfirm}
+              wallClimbName={wallClimbName}
+              commitLabel={commitLabel}
+              onBackToLive={onBackToLive}
+              onCommit={onCommit}
+            />
+          ) : layout.secondaryRow === 'commit' ? null : (
+            layout.secondaryRow.map((item: ActionBarSecondaryItem) => {
+              switch (item) {
+                case 'mirror':
+                  return (
+                    <ActionButton
+                      key={item}
+                      size="sm"
+                      iconName="mirror"
+                      onPress={handleMirror}
+                      active={isMirrored}
+                      activeColor={theme.brandColors.primary}
+                      accessibilityLabel={
+                        isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')
+                      }
+                    />
+                  );
+                case 'favorite':
+                  return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
+                case 'angle':
+                  return onOpenAngleSelector && currentAngle != null ? (
+                    <PressableSurface
+                      key={item}
+                      onPress={onOpenAngleSelector}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('mobile.angleSelector.title')}
+                      // A label-only mini pill (32pt); hit-slop lifts the tap target back to
+                      // the 44pt floor without growing the visual chip.
+                      hitSlop={8}
+                      style={({ pressed }) => [
+                        styles.anglePill,
+                        { borderColor: theme.systemColors.separator },
+                        pressed && drawerActionBarStyles.actionButtonPressed,
+                      ]}
+                    >
+                      <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
+                        {currentAngle}°
+                      </Text>
+                    </PressableSurface>
+                  ) : null;
+                case 'spacer':
+                  return <View key={item} style={drawerActionBarStyles.spacer} />;
+                case 'connectPill':
+                  return (
+                    <FirstConnectPill key={item} pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
+                  );
+                // Share is a pure client action and the whole point of a read-only
+                // climb page, so an anonymous reader keeps it.
+                case 'share':
+                  return onShare ? (
+                    <ShareButton
+                      key={item}
+                      size="sm"
+                      onPress={onShare}
+                      accessibilityLabel={tClimbs('mobile.climbRow.share')}
+                    />
+                  ) : null;
+                case 'queue':
+                  return (
+                    <QueueButton key={item} size="sm" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+                  );
+              }
+            })
+          )}
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -511,6 +574,19 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 }
 
 const styles = StyleSheet.create({
+  // Above the board the hairline moves to the edge that faces it.
+  containerAbove: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  // The first row closes the bar on its own, so it takes the second row's bottom padding.
+  rowPrimaryAlone: {
+    paddingBottom: spacing[3],
+  },
+  // The second row's usual 64pt (its padding plus one small button), held even
+  // when a draft leaves it nothing to draw, so the board doesn't move.
+  rowSecondaryHeight: {
+    minHeight: spacing[2] + SIZES.sm.dim + spacing[3],
+  },
   // Holder avatar overlaid on the lightbulb's top-right corner.
   connectionBadge: {
     position: 'absolute',

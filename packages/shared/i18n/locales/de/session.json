@@ -743,7 +743,8 @@
       "addFavoriteAria": "Zu Favoriten hinzufügen",
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
-      "queueCountAria": "Warteschlange, {{count}} Boulder"
+      "queueCountAria": "Warteschlange, {{count}} Boulder",
+      "changeAngle": "Winkel ändern"
     },
     "tickFab": {
       "logAscentAria": "Begehung eintragen"

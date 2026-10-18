@@ -1,10 +1,12 @@
+import { visibleSectionIds } from '../../lib/section-layout';
+import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout } from '../../lib/player-buttons';
 import type { PlayDrawerHiddenButtons } from './play-drawer-menu-rows';
 
 /** What the first row's leftmost slot holds. Slot 5 (the bulb) is `trailingSlot`. */
 export type ActionBarLeadingSlot = 'mirror' | 'queue' | null;
 
 /** One entry in the second row, left to right. `spacer` is the flex gap. */
-export type ActionBarSecondaryItem = 'favorite' | 'angle' | 'spacer' | 'share' | 'queue' | 'connectPill';
+export type ActionBarSecondaryItem = PlayerButtonId | 'spacer' | 'connectPill';
 
 export type ActionBarLayoutInput = {
   supportsMirroring: boolean;
@@ -21,19 +23,40 @@ export type ActionBarLayoutInput = {
   showLightbulb: boolean;
   /** The climb can be shared. A draft can't: a link to it opens for nobody else (#5960). */
   hasShare: boolean;
+  /** The angle pill has an angle to show and a sheet to open: a board whose angle can change. */
+  angleAvailable: boolean;
+  /** The climber's buttons: their order and switches. An anonymous reader's are ignored. */
+  buttons: PlayerButtonsLayout;
+  /** The Previous and next switch. Ignored for an anonymous reader. */
+  previousNext: boolean;
 };
 
 export type ActionBarLayout = {
   leadingSlot: ActionBarLeadingSlot;
   trailingSlot: 'lightbulb' | null;
-  /** The commit bar, or the utilities left to right. */
+  /** ⏮ and ⏭. Off leaves both slots empty, so Log stays in the middle. */
+  showPreviousNext: boolean;
+  /**
+   * The commit bar, or the utilities left to right. Empty means there is no
+   * second row at all, and the board gets its height.
+   */
   secondaryRow: 'commit' | readonly ActionBarSecondaryItem[];
   showConnectPill: boolean;
   /** Buttons this viewer may use that the bar has put away. ⋯ carries a row for each. */
   hidden: PlayDrawerHiddenButtons;
 };
 
-const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({ favorite: false, share: false, queue: false });
+const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
+  favorite: false,
+  share: false,
+  queue: false,
+  mirror: false,
+  angle: false,
+});
+
+function isLeadingButton(buttonId: PlayerButtonId): buttonId is 'mirror' | 'queue' {
+  return buttonId === 'mirror' || buttonId === 'queue';
+}
 
 /**
  * Where each action-bar button sits, for one bar state.
@@ -47,17 +70,30 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({ favorite: false,
  *                                  [40°] ················ [⬆]
  * ```
  *
- * - The queue takes the first slot where a board can't mirror: it is the list
- *   ⏮ and ⏭ walk, and up there it survives commit mode and the connect pill.
- *   Mirror keeps the slot where it exists because it changes what is lit, and
- *   the queue stays at the right of the second row, where it has always been.
- * - The heart is always leftmost in the second row and share always rightmost
- *   before the queue.
- * - The connect pill replaces share (and the queue, on mirror boards); commit
- *   mode replaces the whole second row. Whatever goes is flagged in `hidden`,
- *   and the player's ⋯ menu picks it up.
- * - An anonymous reader has no account to favourite with and no queue that
- *   means anything, and no ⋯ either, so nothing is flagged for them.
+ * Those are the defaults; the climber's buttons (#6229) move things around
+ * inside the same frame:
+ *
+ * - The first of Mirror and Queue in their order that is on and can show here
+ *   takes the big leading slot. Mirror can show only on a board that mirrors.
+ *   With both off, the slot stays empty and the row keeps its five-slot spacing.
+ * - Every other button that is on fills the small row in order, the last half
+ *   at the right end (the odd one out goes left). Mirror counts only on a board
+ *   that mirrors, and Favorite and Queue only for a member. Angle and Share
+ *   count even where this board or climb can't draw them (a fixed-angle board,
+ *   a draft): they leave their place empty instead, so nothing jumps sides
+ *   between climbs and today's bars come out exactly as they were.
+ * - Log, Board light and the ⏮ ⏭ slots never move. Previous and next off
+ *   leaves both slots empty, so Log stays centred.
+ * - The connect pill replaces the right-hand group, and commit mode the whole
+ *   second row. Whatever goes is flagged in `hidden`, as is every button the
+ *   climber switched off, and the player's ⋯ menu picks it up.
+ * - With nothing left to draw, no pill and no commit bar, there is no second
+ *   row: the board gets its height back. Share switched on keeps the row even
+ *   on a draft, where it can't draw: it is the one button that comes and goes
+ *   climb to climb, and the board must not jump 52 pt mid-swipe.
+ * - An anonymous reader gets today's bar whatever is stored on the device: no
+ *   account to favourite with, no queue that means anything, and no ⋯ to bring
+ *   a hidden button back, so nothing is flagged for them either.
  */
 export function resolveActionBarLayout({
   supportsMirroring,
@@ -66,40 +102,72 @@ export function resolveActionBarLayout({
   inCommitMode,
   showLightbulb,
   hasShare,
+  angleAvailable,
+  buttons,
+  previousNext,
 }: ActionBarLayoutInput): ActionBarLayout {
   const commit = inCommitMode && !isAnonymous;
   const showConnectPill = connectPill && showLightbulb && !isAnonymous && !commit;
-  const leadingSlot: ActionBarLeadingSlot = supportsMirroring ? 'mirror' : isAnonymous ? null : 'queue';
   const trailingSlot = showLightbulb && !isAnonymous && !showConnectPill ? 'lightbulb' : null;
+  const layout = isAnonymous ? DEFAULT_PLAYER_BUTTONS : buttons;
+  const showPreviousNext = isAnonymous || previousNext;
+
+  // Whether a button takes a place in the bar for this board and viewer.
+  const takesPlace = (buttonId: PlayerButtonId): boolean => {
+    switch (buttonId) {
+      case 'mirror':
+        return supportsMirroring;
+      case 'favorite':
+      case 'queue':
+        return !isAnonymous;
+      case 'angle':
+      case 'share':
+        return true;
+    }
+  };
+  // Whether it can be drawn in that place right now.
+  const canDraw = (buttonId: PlayerButtonId): boolean => {
+    if (buttonId === 'angle') return angleAvailable;
+    if (buttonId === 'share') return hasShare;
+    return true;
+  };
+
+  const placed = visibleSectionIds(layout, takesPlace);
+  const leadingSlot: ActionBarLeadingSlot = placed.find(isLeadingButton) ?? null;
+  const utilities = placed.filter((buttonId) => buttonId !== leadingSlot);
+  const startCount = utilities.length - Math.floor(utilities.length / 2);
+  const startGroup = utilities.slice(0, startCount).filter(canDraw);
+  const endGroup = utilities.slice(startCount).filter(canDraw);
 
   let secondaryRow: ActionBarLayout['secondaryRow'];
   if (commit) {
     secondaryRow = 'commit';
+  } else if (showConnectPill) {
+    secondaryRow = [...startGroup, 'spacer', 'connectPill'];
+  } else if (startGroup.length + endGroup.length === 0 && !utilities.includes('share')) {
+    secondaryRow = [];
   } else {
-    const items: ActionBarSecondaryItem[] = [];
-    if (!isAnonymous) items.push('favorite');
-    items.push('angle', 'spacer');
-    if (showConnectPill) {
-      items.push('connectPill');
-    } else {
-      if (hasShare) items.push('share');
-      if (leadingSlot !== 'queue' && !isAnonymous) items.push('queue');
-    }
-    secondaryRow = items;
+    secondaryRow = [...startGroup, 'spacer', ...endGroup];
   }
 
-  if (isAnonymous) return { leadingSlot, trailingSlot, secondaryRow, showConnectPill, hidden: NOTHING_HIDDEN };
+  if (isAnonymous) {
+    return { leadingSlot, trailingSlot, showPreviousNext, secondaryRow, showConnectPill, hidden: NOTHING_HIDDEN };
+  }
 
-  const shownInSecondRow = (item: ActionBarSecondaryItem) => secondaryRow !== 'commit' && secondaryRow.includes(item);
+  const shown = (buttonId: PlayerButtonId) =>
+    leadingSlot === buttonId || (secondaryRow !== 'commit' && secondaryRow.includes(buttonId));
   return {
     leadingSlot,
     trailingSlot,
+    showPreviousNext,
     secondaryRow,
     showConnectPill,
     hidden: {
-      favorite: !shownInSecondRow('favorite'),
-      share: hasShare && !shownInSecondRow('share'),
-      queue: leadingSlot !== 'queue' && !shownInSecondRow('queue'),
+      favorite: !shown('favorite'),
+      share: hasShare && !shown('share'),
+      queue: !shown('queue'),
+      mirror: supportsMirroring && !shown('mirror'),
+      angle: angleAvailable && !shown('angle'),
     },
   };
 }

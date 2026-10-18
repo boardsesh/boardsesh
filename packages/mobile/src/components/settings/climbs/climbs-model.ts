@@ -1,5 +1,5 @@
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
-import type { MoreFormModel, MoreOption, MoreRow, MoreSection } from '../../MoreForm.types';
+import type { MoreFormModel, MoreOption, MoreRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
 
 /** The grade formats, labelled. Also the Settings root's value for the Climbs & grades row. */
@@ -23,14 +23,15 @@ export type ClimbsModelInput = {
   /** The climb-list preset the climber is on ("Default", "Custom"…). */
   climbListPresetLabel: string;
   onOpenClimbList: () => void;
-  /** The "Below the climb" section, shared with the play drawer's own sheet. */
-  climbDrawerSection: MoreSection;
+  /** "Default", or "Custom" once the player's buttons or the sections below the climb changed. */
+  climbViewLabel: string;
+  onOpenClimbView: () => void;
 };
 
 /**
- * "Climbs & grades": how grades read, what the climb list shows, and what sits
- * below a climb. Everything here changes how a climb looks, so it lives
- * together.
+ * "Climbs & grades": how grades read, what the climb list shows, and how the
+ * climb view is laid out. Everything here changes how a climb looks, so it
+ * lives together.
  */
 export function buildClimbsModel(input: ClimbsModelInput): MoreFormModel {
   const { t } = input;
@@ -87,9 +88,15 @@ export function buildClimbsModel(input: ClimbsModelInput): MoreFormModel {
             badge: t('userDrawer.newBadge'),
             onPress: input.onOpenClimbList,
           },
+          {
+            kind: 'nav',
+            key: 'climbView',
+            label: t('mobile.settings.climbView.title'),
+            value: input.climbViewLabel,
+            onPress: input.onOpenClimbView,
+          },
         ],
       },
-      input.climbDrawerSection,
     ],
   };
 }
