@@ -540,7 +540,9 @@ enum SharedRestTimerStore {
     /// Returns whether the new snapshot was stored.
     @discardableResult
     static func save(_ state: SharedRestTimerState, to defaults: UserDefaults) -> Bool {
-        guard let data = try? JSONEncoder().encode(state) else {
+        // A snapshot `load` would reject is never written: clearing instead
+        // keeps the App Group free of a value the widget can't draw.
+        guard state.isWithinBounds, let data = try? JSONEncoder().encode(state) else {
             defaults.removeObject(forKey: SharedConstants.restTimerKey)
             return false
         }

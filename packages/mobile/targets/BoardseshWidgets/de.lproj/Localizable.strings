@@ -20,6 +20,7 @@
 
 /* Rest timer (#6513) */
 "Rest timer" = "Pausen-Timer";
+/* "Rest" is the rest period between attempts (noun); "Paused" is the stopped timer. Keep them distinct. */
 "Rest" = "Pause";
 "Over your rest" = "Pause überzogen";
 "Paused" = "Angehalten";

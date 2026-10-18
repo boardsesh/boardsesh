@@ -376,7 +376,9 @@ final class LiveActivityWidgetTests: XCTestCase {
         ]
         for state in outOfBounds {
             XCTAssertFalse(state.isWithinBounds)
-            XCTAssertTrue(SharedRestTimerStore.save(state, to: defaults))
+            // Never written: save clears the key and reports the refusal.
+            XCTAssertFalse(SharedRestTimerStore.save(state, to: defaults))
+            XCTAssertNil(defaults.data(forKey: SharedConstants.restTimerKey))
             XCTAssertNil(SharedRestTimerStore.load(from: defaults))
             XCTAssertNil(resolveRest(state))
         }
