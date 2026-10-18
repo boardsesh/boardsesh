@@ -3,23 +3,27 @@ import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 
+const listProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null, announce: vi.fn() }));
 vi.mock('react-native', () => ({
-  AccessibilityInfo: { announceForAccessibility: vi.fn() },
+  AccessibilityInfo: { announceForAccessibility: listProps.announce },
   Platform: { OS: 'web' },
   FlatList: ({
     data,
     renderItem,
     keyExtractor,
+    ...rest
   }: {
     data: Array<{ id: string }>;
     renderItem: (entry: { item: { id: string }; index: number }) => ReactNode;
     keyExtractor: (item: { id: string }) => string;
-  }) =>
-    createElement(
+  }) => {
+    listProps.last = rest;
+    return createElement(
       'ul',
       null,
       ...data.map((item, index) => createElement('li', { key: keyExtractor(item) }, renderItem({ item, index }))),
-    ),
+    );
+  },
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-style': JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -44,7 +48,13 @@ vi.mock('../../PressableSurface', () => ({
     onPress: () => void;
     disabled?: boolean;
     testID?: string;
-  }) => createElement('button', { onClick: onPress, disabled, 'data-testid': testID }, children),
+  }) =>
+    // Fires even when disabled, so the row's own refusal is what these tests see.
+    createElement(
+      'button',
+      { onClick: onPress, 'data-disabled': String(Boolean(disabled)), 'data-testid': testID },
+      children,
+    ),
 }));
 vi.mock('../../SwitchRow', () => ({
   SwitchRow: ({
@@ -78,7 +88,10 @@ const ROWS: SectionLayoutRowModel<Id>[] = [
   { id: 'feed', label: 'Feed', visible: true, movable: false },
 ];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  listProps.announce.mockClear();
+});
 
 describe('placeSectionLayoutRows', () => {
   it('groups switch-only rows apart from the rows with arrows', () => {
@@ -129,10 +142,50 @@ describe('SectionLayoutList', () => {
     const screen = render(
       createElement(SectionLayoutList<Id>, { rows: ROWS, disabled: true, onVisibleChange: vi.fn(), onMove: vi.fn() }),
     );
-    const controls = [...screen.container.querySelectorAll('input, button')] as Array<
-      HTMLInputElement | HTMLButtonElement
-    >;
-    expect(controls.length).toBeGreaterThan(0);
-    expect(controls.every((control) => control.disabled)).toBe(true);
+    const switches = [...screen.container.querySelectorAll('input')] as HTMLInputElement[];
+    const arrows = [...screen.container.querySelectorAll('button')];
+    expect(switches.every((control) => control.disabled)).toBe(true);
+    expect(arrows.length).toBe(4);
+    expect(arrows.every((arrow) => arrow.getAttribute('data-disabled') === 'true')).toBe(true);
+  });
+
+  it('refuses a move past the end or while disabled: no move, nothing said', () => {
+    const onMove = vi.fn();
+    const enabled = render(createElement(SectionLayoutList<Id>, { rows: ROWS, onVisibleChange: vi.fn(), onMove }));
+    fireEvent.click(enabled.getByTestId('section-layout-move-up-logbook'));
+    fireEvent.click(enabled.getByTestId('section-layout-move-down-community'));
+    cleanup();
+    const disabled = render(
+      createElement(SectionLayoutList<Id>, { rows: ROWS, disabled: true, onVisibleChange: vi.fn(), onMove }),
+    );
+    fireEvent.click(disabled.getByTestId('section-layout-move-down-logbook'));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(listProps.announce).not.toHaveBeenCalled();
+  });
+
+  it('says where a moved section landed', () => {
+    const onMove = vi.fn();
+    const screen = render(createElement(SectionLayoutList<Id>, { rows: ROWS, onVisibleChange: vi.fn(), onMove }));
+    fireEvent.click(screen.getByTestId('section-layout-move-down-logbook'));
+    expect(onMove).toHaveBeenCalledWith('logbook', 1);
+    expect(listProps.announce).toHaveBeenCalledWith('mobile.settings.sectionLayout.moved');
+  });
+
+  it('hands every other list prop to the list, so callers never edit this component', () => {
+    render(
+      createElement(SectionLayoutList<Id>, {
+        rows: ROWS,
+        onVisibleChange: vi.fn(),
+        onMove: vi.fn(),
+        testID: 'customize-home-list',
+        contentInsetAdjustmentBehavior: 'automatic',
+        showsVerticalScrollIndicator: true,
+      }),
+    );
+    expect(listProps.last).toMatchObject({
+      testID: 'customize-home-list',
+      contentInsetAdjustmentBehavior: 'automatic',
+      showsVerticalScrollIndicator: true,
+    });
   });
 });

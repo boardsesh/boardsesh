@@ -47,18 +47,59 @@ export function sanitiseSectionOrder<Id extends string>(spec: SectionLayoutSpec<
       if (isKnownSection(spec, candidate) && !order.includes(candidate)) order.push(candidate);
     }
   }
-  const defaultOrder = [...spec.defaults.order, ...spec.ids.filter((id) => !spec.defaults.order.includes(id))];
+  const listedDefaults = spec.defaults.order.filter((sectionId) => isKnownSection(spec, sectionId));
+  const defaultOrder = [...listedDefaults, ...spec.ids.filter((sectionId) => !listedDefaults.includes(sectionId))];
   defaultOrder.forEach((sectionId, defaultIndex) => {
     if (order.includes(sectionId)) return;
     // Walking the defaults in order, the section before this one is always placed by now.
     const insertAt = defaultIndex === 0 ? 0 : order.indexOf(defaultOrder[defaultIndex - 1]) + 1;
     order.splice(insertAt, 0, sectionId);
   });
-  if (spec.lockedLast !== undefined) {
-    order.splice(order.indexOf(spec.lockedLast), 1);
-    order.push(spec.lockedLast);
-  }
+  // A locked id the spec does not list is ignored rather than allowed to push a real section out.
+  const lockedIndex = spec.lockedLast === undefined ? -1 : order.indexOf(spec.lockedLast);
+  if (lockedIndex >= 0) order.push(...order.splice(lockedIndex, 1));
   return order;
+}
+
+/**
+ * Puts back the ids a stored order holds that this build does not know, each
+ * straight after the id it followed there (or first when nothing before it is
+ * placed). A later release's section then keeps its place and its switch
+ * through this release's writes, such as after an OTA rollback.
+ */
+export function withUnknownSectionsKept<Id extends string>(
+  spec: SectionLayoutSpec<Id>,
+  order: readonly Id[],
+  storedOrder: unknown,
+): string[] {
+  const kept: string[] = [...order];
+  if (!Array.isArray(storedOrder)) return kept;
+  storedOrder.forEach((candidate: unknown, storedIndex) => {
+    if (typeof candidate !== 'string' || isKnownSection(spec, candidate) || kept.includes(candidate)) return;
+    let insertAt = 0;
+    for (let earlier = storedIndex - 1; earlier >= 0; earlier -= 1) {
+      const placedAt = kept.indexOf(storedOrder[earlier]);
+      if (placedAt >= 0) {
+        insertAt = placedAt + 1;
+        break;
+      }
+    }
+    kept.splice(insertAt, 0, candidate);
+  });
+  return kept;
+}
+
+/** The switches a stored record holds for ids this build does not know, to write back as they were. */
+export function unknownSectionVisibility<Id extends string>(
+  spec: SectionLayoutSpec<Id>,
+  storedVisible: unknown,
+): Record<string, boolean> {
+  const unknown: Record<string, boolean> = {};
+  if (typeof storedVisible !== 'object' || storedVisible === null) return unknown;
+  for (const [sectionId, visible] of Object.entries(storedVisible)) {
+    if (!isKnownSection(spec, sectionId) && typeof visible === 'boolean') unknown[sectionId] = visible;
+  }
+  return unknown;
 }
 
 /** Reads a stored `{ order, visible }`; anything missing or malformed falls back to the defaults. */
@@ -73,7 +114,8 @@ export function sanitiseSectionLayout<Id extends string>(
   const visible = {} as Record<Id, boolean>;
   for (const sectionId of spec.ids) {
     const choice = storedVisible[sectionId];
-    visible[sectionId] = typeof choice === 'boolean' ? choice : spec.defaults.visible[sectionId];
+    // A spec that leaves a section's default out shows it.
+    visible[sectionId] = typeof choice === 'boolean' ? choice : spec.defaults.visible[sectionId] !== false;
   }
   return { order: sanitiseSectionOrder(spec, record.order), visible };
 }
