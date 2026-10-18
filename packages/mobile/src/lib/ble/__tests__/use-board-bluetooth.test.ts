@@ -189,6 +189,8 @@ import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { AURORA_ADVERTISED_SERVICE_UUID } from '@boardsesh/ble-protocol';
+import { RECORD_BOARD_SERIAL } from '@boardsesh/graphql/operations';
+import { getHttpClient } from '../../graphql/client';
 
 // The #3314 binary-capability probe defaults to "new binary" (drives every
 // board) for the whole file; old-binary tests flip it per test and this
@@ -4828,5 +4830,62 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+});
+
+// #6392: a hidden board picked from a signed-out scan is geometry with uuid ''.
+// The backend validates `boardUuid` as a UUID, so sending '' failed the whole
+// mutation and a signed-in climber's serial mapping was never saved.
+describe('useBoardBluetooth serial recording', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+  });
+
+  async function connectAndCaptureRecording(boardUuid: string | undefined) {
+    const request = vi.fn().mockResolvedValue({ recordBoardSerial: null });
+    vi.mocked(getHttpClient).mockReturnValue({ request } as unknown as ReturnType<typeof getHttpClient>);
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'dev-1', deviceName: 'Kilter Board#751945@3' }),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockParseApiLevel.mockReturnValue(3);
+    mockParseSerialNumber.mockReturnValue('751945');
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 7, setIds: '1,20', boardUuid }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(RECORD_BOARD_SERIAL, expect.anything()));
+    const recordCall = request.mock.calls.find(([document]) => document === RECORD_BOARD_SERIAL);
+    return recordCall?.[1] as { input: Record<string, unknown> };
+  }
+
+  it('records a hidden board by its geometry and sends no uuid', async () => {
+    const variables = await connectAndCaptureRecording('');
+
+    // What goes over the wire: JSON drops an undefined field, never an empty one.
+    expect(JSON.parse(JSON.stringify(variables))).toEqual({
+      input: { serialNumber: '751945', boardName: 'kilter', layoutId: 1, sizeId: 7, setIds: '1,20', apiLevel: 3 },
+    });
+    // The remembered board keeps the key it always had for a board with no uuid.
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ configKey: 'kilter::1::7::', serial: '751945' }),
+    );
+  });
+
+  it("still sends a real board's uuid with the recording", async () => {
+    const variables = await connectAndCaptureRecording('11111111-1111-4111-8111-111111111111');
+
+    expect(variables.input).toMatchObject({
+      serialNumber: '751945',
+      boardUuid: '11111111-1111-4111-8111-111111111111',
+    });
   });
 });
