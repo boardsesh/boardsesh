@@ -9,15 +9,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as consentModel from '@boardsesh/consent';
 import * as consentState from '../consent-state';
 import { normalizeScreenPath } from '../analytics-screen-path';
+import { trackScreen as trackProductScreen } from '../analytics';
+import { resetScreenSessionGate } from '../analytics-screen-session-gate';
 import { grantedConsent } from '../../../test/consent-fixture';
 
+const sdk = vi.hoisted(() => ({
+  sessionId: 'session-a',
+  screen: vi.fn(),
+  registerForSession: vi.fn(),
+}));
+vi.mock('../posthog-client', () => ({
+  getPostHogClient: () => ({
+    screen: sdk.screen,
+    registerForSession: sdk.registerForSession,
+    getSessionId: () => sdk.sessionId,
+  }),
+  registerAppSuperProperties: vi.fn(),
+  clearPosthogQueues: vi.fn(),
+  applyPosthogConsent: async () => {},
+}));
+
 const require = createRequire(import.meta.url);
+const { renderToString } = require('react-dom/server') as {
+  renderToString: (element: React.ReactElement) => string;
+};
 const expoRequire = createRequire(require.resolve('@expo/cli/package.json'));
 const babel = expoRequire('@babel/core') as {
   transformSync: (source: string, options: Record<string, unknown>) => { code?: string | null } | null;
 };
 let segments: string[] = ['(tabs)', 'home'];
-const trackScreen = vi.fn();
+const trackScreen = vi.fn(trackProductScreen);
 
 // Vitest does not run Expo's production React Compiler. Execute the compiled
 // source too: the old hook passed all uncompiled tests but cached its initial
@@ -78,6 +99,10 @@ function grantReadyAnalytics(): void {
 beforeEach(() => {
   segments = ['(tabs)', 'home'];
   trackScreen.mockClear();
+  sdk.sessionId = 'session-a';
+  sdk.screen.mockClear();
+  sdk.registerForSession.mockClear();
+  resetScreenSessionGate();
   consentState.setBrowserConsentReader(() => null);
   consentState.updateConsentState({
     record: null,
@@ -131,6 +156,56 @@ describe('production-compiled analytics consent', () => {
     expect(trackScreen.mock.calls).toEqual([['/home'], ['/home']]);
   });
 
+  it('deduplicates same-route consent toggles within a session and emits again after rotation', () => {
+    grantReadyAnalytics();
+    render(React.createElement(AnalyticsScreenTracker));
+    expect(sdk.screen).toHaveBeenCalledExactlyOnceWith('/home');
+
+    act(() => consentState.updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } }));
+    expect(sdk.screen).toHaveBeenCalledTimes(1);
+    act(() => grantReadyAnalytics());
+    expect(trackScreen).toHaveBeenCalledTimes(2);
+    expect(sdk.screen).toHaveBeenCalledTimes(1);
+    expect(sdk.registerForSession).toHaveBeenLastCalledWith({ $screen_name: '/home' });
+
+    // React may coalesce a rapid toggle into one commit with eligibility true.
+    act(() => {
+      consentState.updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } });
+      grantReadyAnalytics();
+    });
+    expect(sdk.screen).toHaveBeenCalledTimes(1);
+
+    act(() => consentState.updateConsentState({ record: { ...grantedConsent, analytics: 'denied' } }));
+    sdk.sessionId = 'session-b';
+    act(() => grantReadyAnalytics());
+    expect(trackScreen).toHaveBeenCalledTimes(3);
+    expect(sdk.screen.mock.calls).toEqual([['/home'], ['/home']]);
+  });
+
+  it('hydrates the server eligibility snapshot and then follows client SDK readiness', () => {
+    function ConsentProbe() {
+      return React.createElement('output', null, useCompiledAnalyticsConsent() ? 'granted' : 'blocked');
+    }
+
+    const container = document.createElement('div');
+    const onRecoverableError = vi.fn();
+    const serverMarkup = renderToString(React.createElement(ConsentProbe));
+    expect(serverMarkup).toBe('<output>blocked</output>');
+    container.innerHTML = serverMarkup;
+    document.body.appendChild(container);
+    const view = render(React.createElement(ConsentProbe), { container, hydrate: true, onRecoverableError });
+    expect(view.container.textContent).toBe('blocked');
+    expect(onRecoverableError).not.toHaveBeenCalled();
+
+    act(() => grantReadyAnalytics());
+    expect(view.container.textContent).toBe('granted');
+    expect(renderToString(React.createElement(ConsentProbe))).toBe('<output>granted</output>');
+
+    act(() => consentState.updateConsentState({ sdkReady: false }));
+    expect(view.container.textContent).toBe('blocked');
+    expect(renderToString(React.createElement(ConsentProbe))).toBe('<output>blocked</output>');
+  });
+
   it('waits for the replacement account before retrying the unchanged route', () => {
     grantReadyAnalytics();
     consentState.updateConsentState({ accountId: 'account-a', sdkReady: true });
@@ -140,8 +215,11 @@ describe('production-compiled analytics consent', () => {
     expect(trackScreen).toHaveBeenCalledTimes(1);
     act(() => consentState.updateConsentState({ accountId: 'account-b', authSettled: true }));
     expect(trackScreen).toHaveBeenCalledTimes(1);
+    // The SDK resets its session when the resolved account changes.
+    sdk.sessionId = 'session-b';
     act(() => consentState.updateConsentState({ accountResolved: true, sdkReady: true }));
     expect(trackScreen.mock.calls).toEqual([['/home'], ['/home']]);
+    expect(sdk.screen.mock.calls).toEqual([['/home'], ['/home']]);
   });
 
   it('captures only the current route after navigating while analytics was denied', () => {
