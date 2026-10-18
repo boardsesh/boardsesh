@@ -5,7 +5,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import { reanchorPlaylistSuggestionSource, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ActiveSubDrawer, NavigationState } from '@boardsesh/play-view';
 import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
@@ -310,7 +310,7 @@ export function usePlaySelectionController({
 
   const handleSimilarClimbPress = useCallback(
     async (similarClimb: Climb) => {
-      const privacyGeneration = getPrivacyRevocationGeneration();
+      const privacyGeneration = getCredentialGeneration();
       const queueItem = climbToQueueItem(similarClimb);
       // A signed-out reader swaps what the drawer is showing and writes nothing:
       // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
@@ -336,7 +336,7 @@ export function usePlaySelectionController({
       // the climb they were already looking at, not activate the one they just
       // declined to queue.
       if ((await addToQueue(queueItem)) === 'cancelled') return;
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (privacyGeneration !== getCredentialGeneration()) return;
       // Tapping a similar climb activates it (commit), so it's never a preview —
       // clear any preview that was showing.
       setDrawerPreviewItem(null);

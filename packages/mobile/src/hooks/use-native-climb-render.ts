@@ -112,7 +112,7 @@ import {
   type ReadyBoardArtIdentity,
   type ReadyBoardArtSnapshot,
 } from '../lib/board-render/ready-board-art';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
@@ -1870,11 +1870,11 @@ function isNativeRendererUnavailable(): boolean {
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
   const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
-  // A privacy-only render does not authorize the old row projection again.
+  // A later render does not authorize the old row projection again.
   // Conservatively retire its handoff source for the rest of this hook's life.
   const artworkPrivacyGeneration = useRef(privacyGeneration).current;
   const {
@@ -3197,7 +3197,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     (climbUuid: string, mirrored: boolean, displayedOverlayLoadKey: string | null) => {
       // Credential/privacy invalidation is synchronous, before React gets to
       // replace this recycled row's closure. Never bless its old pixels anew.
-      if (artworkPrivacyGeneration !== getPrivacyRevocationGeneration()) return undefined;
+      if (artworkPrivacyGeneration !== getCredentialGeneration()) return undefined;
       const width = getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds });
       if (width !== undefined) {
         // This is the renderer's own key builder and resolved signature, not a

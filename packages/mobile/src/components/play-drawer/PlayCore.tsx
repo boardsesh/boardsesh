@@ -9,8 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
-import { sanitizeClimbTarget } from '../../lib/queue-privacy';
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import {
   AccessibilityInfo,
   Platform,
@@ -275,23 +274,14 @@ export function PlayCore({
   const [betaVideoTarget, setBetaVideoTarget] = usePrivacyScopedState<{
     climb: Climb;
     boardConfig: BoardConfig;
-  }>(null, sanitizeClimbTarget);
+  }>(null);
   // Keep the same target for a tick opened from the menu or FAB.
-  const [tickTarget, setTickTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
-    null,
-    sanitizeClimbTarget,
-  );
+  const [tickTarget, setTickTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(null);
   // Reports preserve the typed reason while their target metadata is withdrawn.
-  const [reportTarget, setReportTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
-    null,
-    sanitizeClimbTarget,
-  );
+  const [reportTarget, setReportTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(null);
   const [reportClimbOpen, setReportClimbOpen] = useState(false);
   // The playlist picker stays on the climb ⋯ was opened for, like the report.
-  const [playlistTarget, setPlaylistTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
-    null,
-    sanitizeClimbTarget,
-  );
+  const [playlistTarget, setPlaylistTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(null);
   const [addToPlaylistOpen, setAddToPlaylistOpen] = useState(false);
   const {
     requested: belowFoldContentRequested,
@@ -617,7 +607,7 @@ export function PlayCore({
     enhancementSnapshot?.targetKey ===
       getPlayCoreEnhancementTargetKey(boardName, displayedClimb?.uuid ?? null, angle) &&
     enhancementSnapshot.credentialGeneration === composerCredentialScope &&
-    enhancementSnapshot.privacyGeneration === getPrivacyRevocationGeneration()
+    enhancementSnapshot.credentialGeneration === getCredentialGeneration()
       ? enhancementSnapshot
       : null;
   const serverFavorited = matchingEnhancement?.serverFavorited;

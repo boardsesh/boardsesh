@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getQueueBoardKey, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 // The preview-first gate is flagged. Default it ON here so these tests exercise
 // the roster logic rather than the rollout switch; one test below flips it off
@@ -3678,7 +3678,7 @@ describe('QueueProvider mutation-failure resync', () => {
       );
     });
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       finishRemoval();
       await removal;
     });

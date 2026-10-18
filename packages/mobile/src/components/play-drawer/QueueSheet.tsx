@@ -20,7 +20,7 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
 import { sanitizeQueueSnapshot } from '../../lib/queue-privacy';
 import { UndoSnackbar } from '../UndoSnackbar';
@@ -131,7 +131,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // buildQueueListModel on every queue nav elsewhere; the visible sheet tracks live.
   // Derive-during-render (compiler-safe) — no ref writes, no effect lag.
   const activeOrPresented = isActive || isPresented;
-  const [snapshot, setSnapshot] = usePrivacyScopedState(liveQueueData, sanitizeQueueSnapshot);
+  const [snapshot, setSnapshot] = usePrivacyScopedState(liveQueueData);
   if (activeOrPresented && snapshot !== liveQueueData) setSnapshot(liveQueueData);
   const { queue, currentClimbQueueItem } = snapshot ?? sanitizeQueueSnapshot(liveQueueData);
 
@@ -223,7 +223,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
         nonce: undoNonceRef.current,
         kind,
         scope: undoScope,
-        privacyGeneration: getPrivacyRevocationGeneration(),
+        privacyGeneration: getCredentialGeneration(),
         before,
         playlistSuggestionSource,
         removedUuids,
@@ -255,11 +255,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // The provider composes the restore when the removal lane finishes. Crew
   // additions, removals and reorders made during that wait stay in the payload.
   const handleUndo = useCallback(() => {
-    if (
-      !pendingUndo ||
-      pendingUndo.scope !== undoScope ||
-      pendingUndo.privacyGeneration !== getPrivacyRevocationGeneration()
-    )
+    if (!pendingUndo || pendingUndo.scope !== undoScope || pendingUndo.privacyGeneration !== getCredentialGeneration())
       return;
     // Merge at wire-send time, after the removal lane finishes. A peer may
     // change the queue between this tap and then.

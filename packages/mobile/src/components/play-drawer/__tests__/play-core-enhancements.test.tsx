@@ -6,7 +6,7 @@ import {
   getPlayCoreEnhancementTargetKey,
   type PlayCoreEnhancementSnapshot,
 } from '../PlayCoreEnhancements';
-import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 import type { useToggleFavorite } from '../../../lib/graphql/hooks';
 
 type Mutate = ReturnType<typeof useToggleFavorite>['mutate'];
@@ -77,16 +77,16 @@ describe('PlayCoreEnhancements', () => {
     expect(onSnapshot).toHaveBeenLastCalledWith(null);
   });
 
-  it.each(['privacy', 'credential'] as const)('rejects captured delegates immediately at %s boundaries', (reason) => {
+  it('rejects captured delegates immediately at a credential boundary', () => {
     const onSnapshot = vi.fn<(snapshot: PlayCoreEnhancementSnapshot | null) => void>();
     const { unmount } = render(<PlayCoreEnhancements {...target} enabled onSnapshot={onSnapshot} />);
     const snapshot = latestSnapshot(onSnapshot);
     act(() => {
-      invalidatePrivacySnapshots(reason);
+      invalidateCredentialSnapshots();
       snapshot.toggleFavoriteMutate(variables);
     });
     expect(hooks.mutate).not.toHaveBeenCalled();
-    expect(latestSnapshot(onSnapshot).privacyGeneration).toBeGreaterThan(snapshot.privacyGeneration);
+    expect(latestSnapshot(onSnapshot).credentialGeneration).toBeGreaterThan(snapshot.credentialGeneration);
     unmount();
   });
 });

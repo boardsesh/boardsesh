@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useLayoutEffect } from 'react';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { noteBoardArtInMemory } from '../../lib/board-render/board-art-memory-index';
 import { rememberPlayOverlayWidth, _resetPlayBoardPrewarmForTests } from '../../lib/board-render/play-board-prewarm';
 
@@ -154,14 +154,14 @@ describe('useNativeClimbRender in-flight race', () => {
     _setNativeModuleForTests(fakeNativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
   });
 
-  it('retires row artwork authority across synchronous withdrawal and privacy-only rerenders', () => {
+  it('retires row artwork authority across synchronous withdrawal and later rerenders', () => {
     const entry = _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
     noteBoardArtInMemory(entry.uri, String(entry.generation));
     const { result, rerender } = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES_CACHED }));
     const readBeforeRevocation = result.current.getReadyBoardArtSnapshot;
     const loadKey = result.current.overlayLoadKey;
     expect(readBeforeRevocation('climb-1', false, loadKey)?.overlayGeneration).toBe(entry.generation);
-    act(() => invalidatePrivacySnapshots('credential'));
+    act(() => invalidateCredentialSnapshots());
     expect(readBeforeRevocation('climb-1', false, loadKey)).toBeUndefined();
     rerender();
     expect(result.current.getReadyBoardArtSnapshot('climb-1', false, loadKey)).toBeUndefined();

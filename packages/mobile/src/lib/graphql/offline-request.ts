@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration } from '../privacy/privacy-cache';
+import { getCredentialGeneration } from '../privacy/privacy-cache';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -520,11 +520,11 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
-  // Moves at sign-in and sign-out (`invalidatePrivacySnapshots('credential')`).
+  // Moves at sign-in and sign-out (`invalidateCredentialSnapshots()`).
   // An answer, local or network, that straddles one belongs to the previous
   // session and is dropped below.
-  const privacyGeneration = getPrivacyRevocationGeneration();
-  const localAllowed = () => getPrivacyRevocationGeneration() === privacyGeneration;
+  const privacyGeneration = getCredentialGeneration();
+  const localAllowed = () => getCredentialGeneration() === privacyGeneration;
   if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
@@ -612,13 +612,13 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
         ? operation.networkVariables(variables as never)
         : variables;
     const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
-    if (operation && getPrivacyRevocationGeneration() !== privacyGeneration) {
+    if (operation && getCredentialGeneration() !== privacyGeneration) {
       throw createAbortError('Privacy changed during climb request');
     }
     const response = localAllowed()
       ? await enrichNetworkResponse(operation, localDb, variables, networkResponse)
       : networkResponse;
-    if (operation && getPrivacyRevocationGeneration() !== privacyGeneration) {
+    if (operation && getCredentialGeneration() !== privacyGeneration) {
       throw createAbortError('Privacy changed during climb request');
     }
     return response;

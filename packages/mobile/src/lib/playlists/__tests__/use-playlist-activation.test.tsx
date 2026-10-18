@@ -10,7 +10,7 @@ import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
-import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
 import type { SearchClimbsQueryResponse } from '../../graphql/operations';
@@ -249,7 +249,6 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       overlayGeneration: 1,
       overlayLoadKey: 'generation:full-key',
       backgroundPaths: ['board.png'],
-      privacyGeneration: 0,
       credentialGeneration: 0,
       sprayGeneration: '',
       sprayVersion: '',
@@ -1785,7 +1784,7 @@ describe('account change during playlist activation', () => {
     };
 
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       expect(await oldQueueApi.setCurrentClimb(climb, { playlistSuggestionSource: source })).toBeNull();
       oldQueueApi.refreshPlaylistSuggestionSource(source);
       await oldActivate(climb);
@@ -1814,7 +1813,7 @@ describe('account change during playlist activation', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
     });
 
@@ -1840,7 +1839,7 @@ describe('account change during playlist activation', () => {
     expect(mocks.setQueue).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       mocks.setQueue.mockClear();
       mocks.setPlaylistSuggestionSource.mockClear();
       releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
@@ -1870,7 +1869,7 @@ describe('account change during playlist activation', () => {
     expect(mocks.choose).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       answerPrompt('replace');
       await activation;
     });
@@ -1957,7 +1956,7 @@ describe('climb-list rows from the search hook', () => {
     try {
       const shownRow = result.current.allClimbs[0];
       const previousActivation = result.current.activation.activate;
-      act(() => invalidatePrivacySnapshots('credential'));
+      act(() => invalidateCredentialSnapshots());
       await act(() => previousActivation(shownRow));
       expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
       // No refetch: the same row objects stay tappable.
