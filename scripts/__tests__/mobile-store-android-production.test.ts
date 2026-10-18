@@ -284,9 +284,34 @@ describe('Android production release', () => {
     const responses = applyResponses();
     responses[AT.commit] = new Response('private service-account diagnostic', { status: 409 });
     const fetchMock = mockResponses(responses);
+    const error = await promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, apply: true }).catch(
+      (caught: unknown) => caught,
+    );
+    expect((error as Error).message).toMatch(/^Google Play production request returned HTTP 409 \(POST [^)]+:commit\?/);
+    expect((error as Error).message).not.toContain('private service-account diagnostic');
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+  });
+
+  it("names the rejected request and Google's reason when Play refuses the commit", async () => {
+    const responses = applyResponses();
+    responses[AT.commit] = new Response(
+      JSON.stringify({
+        error: {
+          code: 400,
+          message:
+            'Changes cannot be sent for review automatically. Please set the query parameter changesNotSentForReview to true.',
+          status: 'FAILED_PRECONDITION',
+        },
+      }),
+      { status: 400 },
+    );
+    const fetchMock = mockResponses(responses);
     await expect(
       promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, apply: true }),
-    ).rejects.toThrow('Google Play production request returned HTTP 409');
+    ).rejects.toThrow(
+      'HTTP 400 (POST /edits/edit-123:commit?changesNotSentForReview=false&changesInReviewBehavior=ERROR_IF_IN_REVIEW): ' +
+        'FAILED_PRECONDITION: Changes cannot be sent for review automatically.',
+    );
     expect(fetchMock).toHaveBeenCalledTimes(8);
   });
 

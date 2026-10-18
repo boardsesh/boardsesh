@@ -11,6 +11,7 @@ on:
       - '.github/workflows/mobile-store-draft.yml'
       - 'scripts/mobile-store-android-*.ts'
       - 'scripts/lib/google-play-tracks.ts'
+      - 'scripts/lib/google-play-tracks.test.ts'
       - 'scripts/__tests__/mobile-store-android-*.test.ts'
       - 'scripts/native-release-workflows.test.ts'
   push:
@@ -49,4 +50,4 @@ jobs:
         run: |
           bundle exec ruby -e 'require "supply"; require "supply/client"; abort "Missing review guard" unless Google::Apis::AndroidpublisherV3::AndroidPublisherService.instance_method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])'
       - name: Verify native triggers and exact beta and production promotion
-        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts --reporter=agent
+        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/lib/google-play-tracks.test.ts --reporter=agent

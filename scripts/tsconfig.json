@@ -19,6 +19,7 @@
     "mobile-store-android-production.ts",
     "mobile-store-android-draft-guard.ts",
     "lib/google-play-tracks.ts",
+    "lib/google-play-tracks.test.ts",
     "__tests__/mobile-store-android-audit.test.ts",
     "__tests__/mobile-store-android-beta.test.ts",
     "__tests__/mobile-store-android-production.test.ts",

@@ -108,9 +108,43 @@ export function releaseFromInternalEdit(internalEdit: unknown, versionCode: numb
   return { versionCodes: [String(versionCode)], status: 'completed', ...releaseIdentity(source[0]!) };
 }
 
+const PLAY_ERROR_MESSAGE_LIMIT = 300;
+
 /**
- * A Play Developer API client bound to one access token. Errors name only the
- * label, method and status: never a response body, which can quote credentials.
+ * Google's own error envelope (`{"error":{"status","message"}}`), scrubbed of
+ * anything credential-shaped: the access token, OAuth tokens, PEM keys and
+ * email addresses. Any other body text is never returned, so a non-JSON body
+ * or an envelope without a message gives null.
+ */
+export function playErrorDetail(body: string, accessToken: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const envelope = (parsed as JsonRecord)['error'];
+  if (typeof envelope !== 'object' || envelope === null) return null;
+  const { status, message } = envelope as JsonRecord;
+  if (typeof message !== 'string' || message.trim() === '') return null;
+  let scrubbed = accessToken.length >= 8 ? message.split(accessToken).join('[redacted token]') : message;
+  scrubbed = scrubbed
+    .replace(/-----BEGIN[\s\S]*?(-----END[^-]*-----|$)/g, '[redacted key]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\bya29\.[\w.-]+/g, '[redacted token]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (scrubbed.length > PLAY_ERROR_MESSAGE_LIMIT) scrubbed = `${scrubbed.slice(0, PLAY_ERROR_MESSAGE_LIMIT)}…`;
+  const prefix = typeof status === 'string' && /^[A-Z_]{1,64}$/.test(status) ? `${status}: ` : '';
+  return `${prefix}${scrubbed}`;
+}
+
+/**
+ * A Play Developer API client bound to one access token. Errors name the label,
+ * method, path and HTTP status, plus Google's own error status and message
+ * after `playErrorDetail` scrubs them; never any other response body text.
  */
 export function createPlayRequest(accessToken: string, label: string): PlayRequest {
   return async (path, method = 'GET', body) => {
@@ -126,7 +160,17 @@ export function createPlayRequest(accessToken: string, label: string): PlayReque
     } catch {
       throw new Error(`Google Play ${label} request failed`);
     }
-    if (!response.ok) throw new Error(`Google Play ${label} request returned HTTP ${response.status}`);
+    if (!response.ok) {
+      let detail: string | null = null;
+      try {
+        detail = playErrorDetail(await response.text(), accessToken);
+      } catch {
+        detail = null;
+      }
+      throw new Error(
+        `Google Play ${label} request returned HTTP ${response.status} (${method} ${path})${detail ? `: ${detail}` : ''}`,
+      );
+    }
     if (response.status === 204 && method === 'GET' && /^\/tracks\/(internal|beta|production)\/releases$/.test(path)) {
       return { releases: [] };
     }
