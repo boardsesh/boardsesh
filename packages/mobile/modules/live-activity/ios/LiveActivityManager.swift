@@ -249,6 +249,7 @@ actor LiveActivityManager {
         let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(staleInterval))
         await activity.update(content)
         lastUpdateTime = Date()
+        logger.info("Re-rendered Live Activity for the rest timer (revision \(state.restRevision ?? 0, privacy: .public))")
     }
 
     // MARK: - End
