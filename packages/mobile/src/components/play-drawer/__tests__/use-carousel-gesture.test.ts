@@ -453,16 +453,18 @@ describe('useCarouselGesture', () => {
       const { pager } = drawer.result.current;
       const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager }));
       const handlers = latestHandlers();
+      let beforeReactCommit: { uiSteps: number; processedStep: number } | undefined;
 
       await act(async () => {
         swipe(handlers, -(SWIPE_THRESHOLD + 1));
         landFling();
         swipe(handlers, -(SWIPE_THRESHOLD + 1));
         catchUp();
-        expect(pager.uiSteps.value).toBe(1);
-        expect(pager.jsState.value.processedStep).toBe(0);
+        // Preserve the state before act flushes React, then assert outside it.
+        beforeReactCommit = { uiSteps: pager.uiSteps.value, processedStep: pager.jsState.value.processedStep };
       });
 
+      expect(beforeReactCommit).toEqual({ uiSteps: 1, processedStep: 0 });
       expect(drawer.result.current.currentIndex).toBe(2);
       expect(pager.jsState.value.processedStep).toBe(1);
       act(() => catchUp());
