@@ -130,6 +130,8 @@ export function createPlayRequest(accessToken: string, label: string): PlayReque
     if (response.status === 204 && method === 'GET' && /^\/tracks\/(internal|beta|production)\/releases$/.test(path)) {
       return { releases: [] };
     }
+    // edits.delete answers 204 with no body.
+    if (response.status === 204 && method === 'DELETE') return {};
     try {
       return await response.json();
     } catch {
@@ -146,6 +148,11 @@ export async function openEdit(request: PlayRequest): Promise<string> {
     throw new Error('Google Play returned invalid edit identity');
   }
   return `/edits/${created['id']}`;
+}
+
+/** Discard an edit this run opened and did not need. Only ever our own edit: never console work. */
+export async function discardEdit(request: PlayRequest, editPath: string): Promise<void> {
+  await request(editPath, 'DELETE');
 }
 
 /**

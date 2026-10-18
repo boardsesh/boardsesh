@@ -12,6 +12,7 @@ import {
   PUBLISHED,
   type JsonRecord,
   createPlayRequest,
+  discardEdit,
   editReleases,
   hasNewerVersionCode,
   openEdit,
@@ -128,6 +129,8 @@ export async function promoteAndroidProduction(options: {
       entry.activeArtifacts.some((artifact) => artifact.versionCode === versionCode),
   );
   if (alreadyApplied && alreadyPublished) {
+    // Nothing to write: drop the edit opened above rather than leave it pending until it expires.
+    await discardEdit(request, editPath);
     return {
       action: 'already-released',
       versionCode,
