@@ -1,5 +1,10 @@
 import Foundation
 
+// Two byte-identical copies of this file ship: one in
+// modules/live-activity/ios/ (the app) and one in targets/BoardseshWidgets/
+// (the widget extension). Edit both together; widget-target-drift.test.ts
+// fails CI when they differ.
+
 // MARK: - App Group & Shared Defaults
 
 enum SharedConstants {
