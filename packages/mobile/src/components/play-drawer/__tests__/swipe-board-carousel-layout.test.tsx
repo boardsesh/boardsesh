@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { LayoutChangeEvent, ViewStyle } from 'react-native';
+import type { SharedValue } from 'react-native-reanimated';
+import type { BoardArtReadiness } from '../../../lib/board-render/ready-board-art';
 
 type ViewProps = {
   children?: ReactNode;
@@ -54,9 +56,14 @@ vi.mock('react-native', () => {
 });
 vi.mock('react-native-reanimated', async () => {
   const { View } = await import('react-native');
+  const { useRef } = await import('react');
   return {
     default: { View },
     useAnimatedStyle: (factory: () => unknown) => factory(),
+    useSharedValue: (initial: unknown) => {
+      const shared = useRef({ value: initial });
+      return shared.current;
+    },
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
@@ -178,6 +185,46 @@ beforeEach(() => {
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
 });
 afterEach(() => vi.unstubAllEnvs());
+
+it('keeps readiness on retained pages and prunes removed slots without accepting their late callbacks', async () => {
+  const props = { ...baseProps, containerSize: { width: 350, height: 500 }, prevFrames: 'previous' };
+  const { rerender, unmount } = render(createElement(SwipeBoardCarousel, props));
+  await nextFrame();
+  const { pageArt } = recorded.swipeOptions.mock.calls.at(-1)![0] as {
+    pageArt: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
+  };
+  const callbackFor = (frames: string) => {
+    const props = recorded.boardProps.mock.calls
+      .map(([props]) => props)
+      .findLast((props) => props.frames === frames) as {
+      onArtReadinessChange: (readiness: BoardArtReadiness) => void;
+    };
+    return props.onArtReadinessChange;
+  };
+  const removed = callbackFor('previous');
+  act(() => {
+    removed('ready');
+    callbackFor('current')('ready');
+    callbackFor('next')('ready');
+  });
+  expect(pageArt.value).toEqual({ '-1': 'ready', 0: 'ready', 1: 'ready' });
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: 1,
+      prevFrames: 'current',
+      currentFrames: 'next',
+      nextFrames: 'new-next',
+    }),
+  );
+  expect(pageArt.value).toEqual({ 0: 'ready', 1: 'ready' });
+  act(() => removed('ready'));
+  expect(pageArt.value).toEqual({ 0: 'ready', 1: 'ready' });
+  const retained = callbackFor('next');
+  unmount();
+  act(() => retained('ready'));
+  expect(pageArt.value).toEqual({});
+});
 
 describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (screenshotMode) => {
   it('exposes the painted-overlay descendant only in screenshot mode and preserves the normal board group', () => {

@@ -317,6 +317,8 @@ type NativeClimbRenderResult = {
    * its photo back for the holds (`revealWithOverlay`) must not wait on these.
    */
   overlayUnavailable: boolean;
+  /** This exact key exhausted its render/image retry; retain the last complete climb. */
+  overlayFailed: boolean;
   /** Exact-attempt callbacks consumed by LayeredClimbImage's overlay Image. */
   onOverlayLoad: (loadKey: string | null) => void;
   onOverlayError: (event: { error: string }, loadKey: string | null) => void;
@@ -2121,6 +2123,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // The cache key the overlay effect last gave up on; see `overlayUnavailable`
   // on the result. Keyed, so a recycled row's next climb starts clean.
   const [unavailableOverlayKey, setUnavailableOverlayKey] = useState<string | null>(null);
+  const [failedOverlayKey, setFailedOverlayKey] = useState<string | null>(null);
   // Mirrors the module-level give-up so it can drive a re-render; see the
   // `!nativeModule` branch in the overlay effect.
   const [rendererGaveUp, setRendererGaveUp] = useState(isNativeRendererUnavailable);
@@ -2302,6 +2305,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effectiveOverrideSignature has already stepped away from anything the
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
+    setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
     if (!flatFrames || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
 
     // The lit placement ids the renderer will actually draw, parsed ONCE: the
@@ -2679,6 +2683,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
             renderRetryTimerRef.current = null;
             if (mountedRef.current) setRecoveryRequest((request) => request + 1);
           }, RENDER_RETRY_DELAY_MS);
+        } else if (kind === 'render_failed' && mountedRef.current && latestCacheKeyRef.current === currentCacheKey) {
+          setFailedOverlayKey(currentCacheKey);
         }
       });
 
@@ -2895,6 +2901,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // existing file as a terminal decode failure.
         if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
           reportOverlayLoadFailure({ kind: 'retry_exhausted', errorCode, context: failureTelemetryContext });
+          setFailedOverlayKey(expected.key);
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
@@ -2916,6 +2923,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         entryExists = overlayCacheEntryExists(expectedEntry.uri);
       } catch {
         reportOverlayLoadFailure({ kind: 'validation_failed', errorCode, context: failureTelemetryContext });
+        setFailedOverlayKey(expected.key);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -2933,6 +2941,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
             errorCode,
             context: failureTelemetryContext,
           });
+          setFailedOverlayKey(expected.key);
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
@@ -2954,6 +2963,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // every unsupported image into a render loop.
       if (entryExists === null) {
         reportOverlayLoadFailure({ kind: 'validation_unsupported', errorCode, context: failureTelemetryContext });
+        setFailedOverlayKey(expected.key);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -2965,6 +2975,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           errorCode,
           context: failureTelemetryContext,
         });
+        setFailedOverlayKey(expected.key);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -3196,6 +3207,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getReadyBoardArtSnapshot,
     overlayUri,
     overlayLoadKey,
+    overlayFailed: failedOverlayKey === currentCacheKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,
     overlayUnavailable:
       rendererGaveUp ||

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -11,15 +11,18 @@ import { MoonBoardGridLabels } from './board/MoonBoardGridLabels';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
+import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtIdentity,
   type ReadyBoardArtSnapshot,
+  type BoardArtReadiness,
 } from '../lib/board-render/ready-board-art';
 
 type BoardImageNativeProps = {
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
+  onArtReadinessChange?: (readiness: BoardArtReadiness) => void;
   accessible?: boolean;
   frames: string;
   boardName: BoardName;
@@ -103,6 +106,8 @@ type BoardImageNativeProps = {
    * scoped to is derived here. See `LayeredClimbImage`.
    */
   retainPreviousOverlay?: boolean;
+  /** Preserve this climb's displayed holds during a same-climb size refinement. */
+  retainDisplayedOverlay?: boolean;
   /**
    * Drawn above the board photo and below the holds overlay — for marks that
    * belong on the wall rather than on the climb. See `LayeredClimbImage`.
@@ -157,6 +162,7 @@ type BoardImageNativeProps = {
 const BoardImageNative = React.memo(function BoardImageNative({
   readyBoardArt,
   onReadyArtDisplayed,
+  onArtReadinessChange,
   accessible = true,
   frames,
   boardName,
@@ -181,6 +187,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   holdColorOverride,
   maxVeilOpacity,
   retainPreviousOverlay,
+  retainDisplayedOverlay,
   underOverlay,
   emptyOverlayFallback,
   showGridLabels = false,
@@ -190,6 +197,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     overlayLoadKey,
     overlayImmediate,
     overlayUnavailable,
+    overlayFailed,
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,
@@ -235,6 +243,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
     !openingArtIsCurrent &&
     !overlayUnavailable &&
     displayedArtIdentity !== currentArtIdentity;
+  const handleArtReadinessChange = useCallback(
+    (ready: boolean) => onArtReadinessChange?.(overlayFailed ? 'failed' : ready && !bridging ? 'ready' : 'loading'),
+    [onArtReadinessChange, overlayFailed, bridging],
+  );
   const liveArtRef = useRef({ identity: currentArtIdentity, bridging, onReadyArtDisplayed });
   liveArtRef.current = { identity: currentArtIdentity, bridging, onReadyArtDisplayed };
   const pendingVisibleArtRef = useRef<{
@@ -301,6 +313,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
           onOverlayError={onOverlayError}
           onOverlayMounted={onOverlayMounted}
           displayIdentity={currentArtIdentity}
+          onArtReadinessChange={handleArtReadinessChange}
+          overlayRequired={!!frames && !overlayUnavailable}
           onArtDisplayed={(loadKey) => {
             if (!overlayUri || loadKey !== overlayLoadKey) return;
             const displayedArt = { ...artworkIdentity, overlayUri, overlayLoadKey: loadKey };
@@ -332,6 +346,16 @@ const BoardImageNative = React.memo(function BoardImageNative({
           // different board as far as bridging goes.
           retainPreviousOverlayFor={
             retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
+          }
+          retainDisplayedOverlayFor={
+            retainDisplayedOverlay && frames
+              ? JSON.stringify([
+                  overlayRetainIdentity(boardName, layoutId, sizeId, setIds),
+                  frames,
+                  getPrivacyRevocationGeneration(),
+                  getPrivacyCredentialGeneration(),
+                ])
+              : undefined
           }
           underOverlay={underOverlay}
           aboveOverlay={gridLabels}

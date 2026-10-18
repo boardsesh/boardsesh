@@ -4,6 +4,8 @@ import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '
 import { sprayPrivacyGeneration } from '../spray/spray-privacy-generation';
 import { sprayCacheToken } from '../spray/spray-wall-registry';
 
+export type BoardArtReadiness = 'loading' | 'ready' | 'failed';
+
 export type ReadyBoardArtIdentity = Readonly<{
   boardName: BoardName;
   layoutId: number;

@@ -367,9 +367,11 @@ describe('Board Render Failed — the image-load stage', () => {
     act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
     await waitFor(() => expect(imageLoadEvents()).toHaveLength(1));
     expect(imageLoadEvents()[0].failure_kind).toBe('cache_entry_present');
+    expect(result.current.overlayFailed).toBe(false);
 
     act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
     await waitFor(() => expect(imageLoadEvents()).toHaveLength(2));
+    expect(result.current.overlayFailed).toBe(true);
 
     // Two errors, two failures — never three.
     expect(imageLoadEvents()[1].failure_kind).toBe('retry_exhausted');
@@ -404,17 +406,19 @@ describe('Board Render Failed — the image-load stage', () => {
 describe('one bounded self-retry after a native render failure', () => {
   it('retries a failed key exactly once, then leaves it alone', async () => {
     vi.useFakeTimers();
-    renderRow();
+    const { result } = renderRow();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(result.current.overlayFailed).toBe(false);
 
     // The retry lands, re-enters the render path, and fails again.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1600);
     });
     expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
+    expect(result.current.overlayFailed).toBe(true);
 
     // …and that is the end of it. A second retry for the same key is the storm
     // the keyed guard exists to prevent.

@@ -37,7 +37,11 @@ vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => false }
 // The renderer is driven by the test: what matters here is which layers
 // BoardImageNative asks LayeredClimbImage to draw, not how a PNG is produced.
 const renderResult = vi.hoisted(() => ({
-  current: { overlayUri: null as string | null, rendererUnavailable: false },
+  current: { overlayUri: null, rendererUnavailable: false } as {
+    overlayUri: string | null;
+    rendererUnavailable: boolean;
+    overlayFailed?: boolean;
+  },
 }));
 vi.mock('../../hooks/use-native-climb-render', () => ({
   useNativeClimbRender: () => ({
@@ -49,6 +53,7 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
     backgroundPaths: ['/bundled/kilter.webp'],
     missingBackgroundCount: 0,
     rendererUnavailable: renderResult.current.rendererUnavailable,
+    overlayFailed: renderResult.current.overlayFailed,
     artworkIdentity: {
       boardName: 'kilter',
       layoutId: 1,
@@ -81,6 +86,50 @@ function overlaySources(container: HTMLElement): string[] {
 }
 
 describe('BoardImageNative overlay layers', () => {
+  it('publishes a terminal failure without declaring missing holds ready', () => {
+    imageEvents.displays.length = 0;
+    renderResult.current = { overlayUri: 'file:///overlay-ready.png', rendererUnavailable: false };
+    const readiness = vi.fn();
+    const props = { ...BOARD, frames: 'p1r12', onArtReadinessChange: readiness };
+    const { rerender } = render(createElement(BoardImageNative, props));
+    expect(readiness).toHaveBeenLastCalledWith('loading');
+    act(() => {
+      for (const event of imageEvents.displays) event.display?.();
+    });
+    expect(readiness).toHaveBeenLastCalledWith('ready');
+    renderResult.current = { overlayUri: null, rendererUnavailable: false, overlayFailed: true };
+    rerender(createElement(BoardImageNative, { ...props, renderWidth: 601 }));
+    expect(readiness).toHaveBeenLastCalledWith('failed');
+  });
+
+  it('preserves this climb’s displayed holds through measured-width regeneration, then drops them on climb change', () => {
+    imageEvents.displays.length = 0;
+    renderResult.current = { overlayUri: 'file:///overlay-old-width.png', rendererUnavailable: false };
+    const props = { ...BOARD, frames: 'p1r12', retainDisplayedOverlay: true, renderWidth: 600 };
+    const { container, rerender } = render(createElement(BoardImageNative, props));
+    act(() => {
+      for (const event of imageEvents.displays) event.display?.();
+    });
+    renderResult.current = { overlayUri: null, rendererUnavailable: false };
+    rerender(createElement(BoardImageNative, { ...props, renderWidth: 700 }));
+    expect(overlaySources(container)).toContain('file:///overlay-old-width.png');
+    renderResult.current = { overlayUri: 'file:///overlay-new-width.png', rendererUnavailable: false };
+    // A real renderer completion updates the hook's state; a changed style
+    // prop asks this memoized component to read the test renderer's new result.
+    rerender(createElement(BoardImageNative, { ...props, renderWidth: 700, style: {} }));
+    expect(overlaySources(container)).toContain('file:///overlay-old-width.png');
+    act(() =>
+      imageEvents.displays
+        .filter((event) => event.uri === 'file:///overlay-new-width.png')
+        .at(-1)
+        ?.display?.(),
+    );
+    expect(overlaySources(container)).toEqual(['file:///overlay-new-width.png']);
+    renderResult.current = { overlayUri: null, rendererUnavailable: false };
+    rerender(createElement(BoardImageNative, { ...props, frames: 'p2r13', renderWidth: 700 }));
+    expect(overlaySources(container)).toEqual([]);
+  });
+
   it('does not report ordinary unchanged board art again when mirroring its retained native images', () => {
     imageEvents.displays.length = 0;
     renderResult.current = { overlayUri: 'file:///overlay-normal.png', rendererUnavailable: false };
@@ -118,16 +167,19 @@ describe('BoardImageNative overlay layers', () => {
       backgroundPaths: ['/bundled/kilter.webp'],
     });
     const marker = 'cpp-climb-painted-owned-real-climb';
+    const readiness = vi.fn();
     const { container, queryByTestId } = render(
       createElement(BoardImageNative, {
         ...BOARD,
         frames: 'p1r12',
         readyBoardArt: opening,
         paintedTestID: marker,
+        onArtReadinessChange: readiness,
       }),
     );
     expect(container.querySelector('[data-opacity="0"]')).not.toBeNull();
     expect(queryByTestId(marker)).toBeNull();
+    expect(readiness).not.toHaveBeenCalledWith('ready');
     act(() =>
       imageEvents.displays
         .filter((event) => event.uri === 'file:///overlay-full.png')
@@ -136,6 +188,7 @@ describe('BoardImageNative overlay layers', () => {
     );
     expect(container.querySelector('[data-opacity="0"]')).not.toBeNull();
     expect(queryByTestId(marker)).toBeNull();
+    expect(readiness).not.toHaveBeenCalledWith('ready');
     act(() =>
       imageEvents.displays
         .filter((event) => event.uri === 'file:///bundled/kilter.webp')
@@ -144,6 +197,7 @@ describe('BoardImageNative overlay layers', () => {
     );
     expect(container.querySelector('[data-opacity="0"]')).toBeNull();
     expect(queryByTestId(marker)).not.toBeNull();
+    expect(readiness).toHaveBeenLastCalledWith('ready');
   });
   it('drops the retained frame when the frames go empty, because no replacement is coming', () => {
     imageEvents.loadCallbacks.length = 0;

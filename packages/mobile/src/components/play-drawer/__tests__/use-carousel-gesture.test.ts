@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useState } from 'react';
 import type { SharedValue } from 'react-native-reanimated';
 import { SWIPE_OFFSCREEN_PAD, SWIPE_THRESHOLD } from '@boardsesh/play-view';
+import type { BoardArtReadiness } from '../../../lib/board-render/ready-board-art';
 
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
 vi.mock('react-native', () => ({ Platform: platform }));
@@ -583,6 +584,82 @@ describe('useCarouselGesture', () => {
       pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
       catchUp();
       expect(pager.uiSteps.value).toBe(1);
+    });
+  });
+
+  describe('a mounted neighbour still waiting for its holds', () => {
+    it.each([1, -1] as const)('retains a release toward %s without exposing a bare board', (direction) => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', [direction]: 'loading' });
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      swipe(latestHandlers(), -direction * (SWIPE_THRESHOLD + 1));
+      expect(pager.translateX.value).toBe(0);
+      expect(pager.uiSteps.value).toBe(0);
+      catchUp();
+      expect(pager.isAnimating.value).toBe(false);
+      pageArt.value = { ...pageArt.value, [direction]: 'ready' };
+      catchUp();
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.flingDirection.value).toBe(direction);
+      landFling();
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(direction, 1);
+    });
+
+    it.each(['React', 'artwork'] as const)('waits for both threads when %s catches up first', (first) => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'ready', 2: 'loading' });
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+      landFling();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+      const reactCatchesUp = () => {
+        pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      };
+      const artCatchesUp = () => {
+        pageArt.value = { ...pageArt.value, 2: 'ready' };
+      };
+      if (first === 'React') reactCatchesUp();
+      else artCatchesUp();
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.translateX.value).toBe(0);
+      if (first === 'React') artCatchesUp();
+      else reactCatchesUp();
+      catchUp();
+      expect(pager.uiSteps.value).toBe(2);
+      expect(pager.isAnimating.value).toBe(true);
+      landFling();
+      expect(pager.requestStep).toHaveBeenLastCalledWith(1, 2);
+    });
+
+    it.each(['touch', 'failure'] as const)('discards artwork-waiting intent after %s', (cancellation) => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'loading' });
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+      if (cancellation === 'touch')
+        latestHandlers().onTouchesDown({ allTouches: [{ absoluteX: 100, absoluteY: 100 }] });
+      else pageArt.value = { ...pageArt.value, 1: 'failed' };
+      catchUp();
+      pageArt.value = { ...pageArt.value, 1: 'ready' };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(0);
+      expect(pager.isAnimating.value).toBe(false);
+    });
+
+    it('revokes drag access when a displayed neighbour starts a new artwork attempt', () => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'ready' });
+      renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -30 });
+      expect(pager.translateX.value).toBe(-30);
+      pageArt.value = { 0: 'ready', 1: 'loading' };
+      handlers.onUpdate({ translationX: -40 });
+      expect(pager.translateX.value).toBe(0);
     });
   });
 

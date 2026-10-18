@@ -14,6 +14,7 @@ import { carouselCommitDirection } from './carousel-commit';
 import type { SwipePager } from './use-swipe-pager';
 import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
+import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
 
 /**
  * How much of the finger's travel the board follows past the list's last climb
@@ -35,6 +36,8 @@ type UseCarouselGestureOptions = {
   screenWidth: number;
   enabled?: boolean;
   isZoomedSV?: SharedValue<boolean>;
+  /** Mounted pages whose backgrounds and holds have actually displayed. */
+  pageArt?: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
   /** RNGH ref to the surrounding scroll. Simultaneous recognition lets native
    *  vertical scrolling start immediately while horizontal swipes still drive
    *  the carousel. */
@@ -75,6 +78,7 @@ export function useCarouselGesture({
   screenWidth,
   enabled = true,
   isZoomedSV,
+  pageArt,
   scrollRef,
 }: UseCarouselGestureOptions): UseCarouselGestureReturn {
   const {
@@ -167,11 +171,17 @@ export function useCarouselGesture({
 
   const { gesture, startFling } = useMemo(() => {
     /** Whether the page one step that way is mounted. The JS thread mounts one each side of ITS middle page. */
-    const canStep = (direction: 1 | -1) => {
+    const hasMountedPage = (direction: 1 | -1) => {
       'worklet';
       const state = jsState.value;
       const target = anchorPage.value + direction;
       return target >= state.center - (state.hasPrevious ? 1 : 0) && target <= state.center + (state.hasNext ? 1 : 0);
+    };
+    const canStep = (direction: 1 | -1) => {
+      'worklet';
+      return (
+        hasMountedPage(direction) && (pageArt === undefined || pageArt.value[anchorPage.value + direction] === 'ready')
+      );
     };
 
     /**
@@ -359,7 +369,7 @@ export function useCarouselGesture({
           !touchCancelled.value &&
           enabledSV.value &&
           !isZoomedSV?.value &&
-          jsState.value.processedStep !== uiSteps.value
+          (jsState.value.processedStep !== uiSteps.value || hasMountedPage(direction))
         ) {
           pendingRelease.value = {
             direction,
@@ -407,6 +417,7 @@ export function useCarouselGesture({
     resetGeneration,
     hasTriggeredHaptic,
     isZoomedSV,
+    pageArt,
     enabledSV,
     directionLock,
     startTouchX,
@@ -435,6 +446,7 @@ export function useCarouselGesture({
         generation: resetGeneration.value,
         enabled: enabledSV.value,
         zoomed: isZoomedSV?.value ?? false,
+        pageArt: pageArt?.value,
       };
     },
     (snapshot) => {
@@ -453,11 +465,20 @@ export function useCarouselGesture({
       if (state.processedStep !== pending.step) return;
       // A queue change or refused step may have put a different page in the
       // middle. A real queue boundary must still reject the retained release.
+      if (state.center !== pending.anchor || !(pending.direction > 0 ? state.hasNext : state.hasPrevious)) {
+        pendingRelease.value = null;
+        return;
+      }
+      const targetArt = snapshot.pageArt?.[pending.anchor + pending.direction];
+      if (targetArt === 'failed') {
+        pendingRelease.value = null;
+        return;
+      }
+      if (snapshot.pageArt && targetArt !== 'ready') return;
       pendingRelease.value = null;
-      if (state.center !== pending.anchor || !(pending.direction > 0 ? state.hasNext : state.hasPrevious)) return;
       startFling(pending.direction, pending.velocity);
     },
-    [pendingRelease, jsState, anchorPage, uiSteps, resetGeneration, enabledSV, isZoomedSV, startFling],
+    [pendingRelease, jsState, anchorPage, uiSteps, resetGeneration, enabledSV, isZoomedSV, pageArt, startFling],
   );
 
   return { gesture };
