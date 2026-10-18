@@ -116,6 +116,8 @@ import {
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useShareClimb } from '../../hooks/use-share-climb';
+import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
 import { useLostHoldRemix } from './use-lost-hold-remix';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -454,7 +456,7 @@ export function PlayCore({
         isAuthenticated,
         boardseshGradeEnabled: drawerGradeSectionEnabled,
         description: displayedClimb?.description,
-        boardName: renderBoardConfig.boardName,
+        boardName: renderBoardConfig.boardName as BoardName,
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
     [
@@ -684,6 +686,10 @@ export function PlayCore({
   });
   const lightbulbLabelKind = getBleLightbulbLabelKind(lightbulbPressAction, lightbulbHolderIsAuthoritative);
   const { data: activeBoardForNavigation } = useActiveBoard();
+  // View options lists the MoonBoard-only Active holds switch on a MoonBoard
+  // climb even when the active board is another (a reachable gym board), so
+  // the climber can always turn off a section they can see.
+  const sectionsListActiveHolds = isMoonboardBoardName(boardName) || activeBoardIsMoonboard(activeBoardForNavigation);
   const {
     navigationState,
     nextHeaderClimb,
@@ -2044,6 +2050,7 @@ export function PlayCore({
         activeAngle={activeAngle}
         climbBoardMismatch={climbBoardMismatch}
         sectionsSettingsOpen={sectionsSettingsOpen}
+        sectionsListActiveHolds={sectionsListActiveHolds}
         buttonsPreviewBoard={buttonsPreviewBoard}
         addBetaVideoOpen={addBetaVideoOpen}
         addToPlaylistOpen={addToPlaylistOpen}

@@ -31,6 +31,8 @@ type PlayDrawerSectionsSheetProps = {
   onClose: () => void;
   /** The board on screen, so the buttons preview draws the bar this climber will see. */
   previewBoard: PlayerButtonsPreviewBoard;
+  /** List the MoonBoard-only Active holds switch: the climb on screen or the active board is a MoonBoard. */
+  listsActiveHolds?: boolean;
 };
 
 /**
@@ -38,10 +40,15 @@ type PlayDrawerSectionsSheetProps = {
  * buttons (#6229). Choices apply at once; there is no save step. Keep mounted
  * inside PlayDrawer so its managed presenter sits above /play.
  */
-export function PlayDrawerSectionsSheet({ visible, onClose, previewBoard }: PlayDrawerSectionsSheetProps) {
+export function PlayDrawerSectionsSheet({
+  visible,
+  onClose,
+  previewBoard,
+  listsActiveHolds,
+}: PlayDrawerSectionsSheetProps) {
   const { t } = useTranslation('common');
   const [tab, setTab] = useState<ViewOptionsTab>('sections');
-  const sections = usePlayDrawerSectionControls();
+  const sections = usePlayDrawerSectionControls({ listsActiveHolds });
   const playerButtons = usePlayerButtonControls();
   const { systemColors } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();

@@ -79,6 +79,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     activeAngle: 40,
     climbBoardMismatch: false,
     sectionsSettingsOpen: open,
+    sectionsListActiveHolds: false,
     buttonsPreviewBoard: { supportsMirroring: false, angleAvailable: true, angle: 40, showLightbulb: true },
     addBetaVideoOpen: open,
     addToPlaylistOpen: open,

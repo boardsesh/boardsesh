@@ -596,6 +596,22 @@ describe('PlayDrawerSectionsSheet', () => {
       );
     });
 
+    it('lists Active holds on a MoonBoard climb shown on another active board, and Hide all turns it off', () => {
+      activeBoard.isMoonboard = false;
+      preferences.sections = { ...preferences.sections, activeHolds: true };
+      const screen = render(
+        createElement(PlayDrawerSectionsSheet, {
+          visible: true,
+          onClose: vi.fn(),
+          previewBoard: TENSION_PREVIEW,
+          listsActiveHolds: true,
+        }),
+      );
+      expect(screen.getByRole('switch', { name: 'mobile.settings.climbDrawer.sections.activeHolds' })).toBeTruthy();
+      fireEvent.click(screen.getByTestId('play-drawer-sections-hide-all'));
+      expect(preferences.setAll).toHaveBeenCalledWith(false, DEFAULT_ORDER);
+    });
+
     it('moves a row past the unlisted Active holds, so each arrow moves it one place on screen', () => {
       activeBoard.isMoonboard = false;
       preferences.order = [

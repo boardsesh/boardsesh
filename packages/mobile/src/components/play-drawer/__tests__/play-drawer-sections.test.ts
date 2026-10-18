@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { BoardName } from '@boardsesh/shared-schema';
 import {
   DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   DEFAULT_PLAY_DRAWER_SECTIONS,
@@ -26,7 +27,7 @@ const ELIGIBLE_INPUT = {
   isAuthenticated: true,
   boardseshGradeEnabled: true,
   description: 'Start with your left hand on the sidepull.',
-  boardName: 'moonboard',
+  boardName: 'moonboard' as BoardName,
   screenshotMode: false,
 };
 
@@ -174,7 +175,7 @@ describe('visiblePlayDrawerSections', () => {
     ).toBe('activeHolds');
   });
 
-  it.each(['kilter', 'tension', 'woods', 'spray'])(
+  it.each<BoardName>(['kilter', 'tension', 'woods', 'spray'])(
     'never shows Active holds on a %s climb, switched on or not, so the next section is the peek',
     (boardName) => {
       const sections = { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true };

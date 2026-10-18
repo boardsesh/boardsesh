@@ -1,5 +1,5 @@
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { getDisplayDescription } from '@boardsesh/shared-schema';
+import { getDisplayDescription, type BoardName } from '@boardsesh/shared-schema';
 import type { BelowFoldSectionId, PlayDrawerSectionsVisibility } from '../../lib/play-drawer-sections-preference';
 import { visibleSectionIds } from '../../lib/section-layout';
 
@@ -22,7 +22,7 @@ export function visiblePlayDrawerSections({
   boardseshGradeEnabled: boolean;
   description: string | null | undefined;
   /** The board the displayed climb is drawn on. */
-  boardName: string;
+  boardName: BoardName;
   screenshotMode: boolean;
 }): BelowFoldSectionId[] {
   return visibleSectionIds({ order, visible: sections }, (sectionId) => {

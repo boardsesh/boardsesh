@@ -76,9 +76,10 @@ export function markerGlyph(
 
 /**
  * The chip a marker sits on, so it reads on a light or a dark sheet alike: the
- * dark field the Aura board art sits on, where every default role colour
- * reaches 3:1, or the light field for a colour that does not (a classic dark
- * blue, a dark colour the climber picked). One of the two always clears 4:1.
+ * dark field the Aura board art sits on when the colour reaches 3:1 there
+ * (every default MoonBoard role colour does), else the light field. A colour
+ * under 3:1 on the dark field is dark enough to clear 6:1 on the light one, so
+ * the chosen chip always gives at least 3:1 (WCAG 1.4.11).
  */
 export function markerChipColor(markerColor: string): string {
   const onDarkField = contrastRatio(markerColor, BOARD_FIELD_COLORS.dark);

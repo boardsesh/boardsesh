@@ -13,13 +13,19 @@ import type { SectionLayoutRowModel } from '../section-layout/SectionLayoutList'
 
 export type PlayDrawerSectionControl = SectionLayoutRowModel<PlayDrawerSectionId>;
 
-/** Shared order, labels and actions for Settings and the drawer's sheet. */
-export function usePlayDrawerSectionControls() {
+/**
+ * Shared order, labels and actions for Settings and the drawer's sheet.
+ * `listsActiveHolds` overrides when the MoonBoard-only Active holds switch is
+ * listed; by default it is listed while the active board is a MoonBoard.
+ */
+export function usePlayDrawerSectionControls({ listsActiveHolds }: { listsActiveHolds?: boolean } = {}) {
   const { t } = useTranslation('common');
   const { sections, order, ready, setSection, setAll, move, restoreDefaults } = usePlayDrawerSectionsPreference();
   // Active holds is MoonBoard only: its switch is listed only while the active
-  // board is one, the same gate as the MoonBoard grid labels in Board look.
-  const listsActiveHolds = useActiveBoardIsMoonboard();
+  // board is one, the same gate as the MoonBoard grid labels in Board look,
+  // unless the caller knows better (View options on a MoonBoard climb).
+  const activeIsMoonboard = useActiveBoardIsMoonboard();
+  const showsActiveHolds = listsActiveHolds ?? activeIsMoonboard;
   const sheetTitle = t('mobile.settings.climbDrawer.sheetTitle');
   const description = t('mobile.settings.climbDrawer.description');
   // "Below the climb": the sheet's group heading and the Settings section's
@@ -53,12 +59,12 @@ export function usePlayDrawerSectionControls() {
       similarClimbs: similarClimbsLabel,
     };
     return order
-      .filter((id) => listsActiveHolds || id !== 'activeHolds')
+      .filter((id) => showsActiveHolds || id !== 'activeHolds')
       .map((id) => ({ id, label: labels[id], visible: sections[id], movable: true }));
   }, [
     sections,
     order,
-    listsActiveHolds,
+    showsActiveHolds,
     activeHoldsLabel,
     logbookLabel,
     climberLogsLabel,

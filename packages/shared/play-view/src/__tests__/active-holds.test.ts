@@ -20,7 +20,6 @@ describe('summarizeActiveHolds', () => {
       moonHold('J18', 44),
     ].join('');
     expect(summarizeActiveHolds('moonboard', frames)).toEqual({
-      hasLabels: true,
       groups: [
         { role: 'STARTING', count: 1, labels: ['B5'] },
         { role: 'HAND', count: 5, labels: ['F8', 'K8', 'F10', 'H13', 'I14'] },
@@ -44,10 +43,9 @@ describe('summarizeActiveHolds', () => {
     ]);
   });
 
-  it('returns no groups for an AUX-only MoonBoard frame, still with labels', () => {
+  it('returns no groups for an AUX-only MoonBoard frame', () => {
     expect(summarizeActiveHolds('moonboard', [moonHold('D6', 46), moonHold('E7', 46)].join(''))).toEqual({
       groups: [],
-      hasLabels: true,
     });
   });
 
@@ -65,7 +63,6 @@ describe('summarizeActiveHolds', () => {
     // Kilter Original (12-15) and Homewall (42-45) codes together.
     const kilter = 'p1r15p2r13p3r12p4r44p5r43p6r42p7r13p8r45';
     expect(summarizeActiveHolds('kilter', kilter)).toEqual({
-      hasLabels: false,
       groups: [
         { role: 'STARTING', count: 2, labels: null },
         { role: 'HAND', count: 3, labels: null },
@@ -113,8 +110,8 @@ describe('summarizeActiveHolds', () => {
 
   it('skips unknown role codes and returns no groups for an empty climb', () => {
     expect(summarizeActiveHolds('kilter', 'p10r99p20r13').groups).toEqual([{ role: 'HAND', count: 1, labels: null }]);
-    expect(summarizeActiveHolds('kilter', '')).toEqual({ groups: [], hasLabels: false });
-    expect(summarizeActiveHolds('moonboard', '')).toEqual({ groups: [], hasLabels: true });
+    expect(summarizeActiveHolds('kilter', '')).toEqual({ groups: [] });
+    expect(summarizeActiveHolds('moonboard', '')).toEqual({ groups: [] });
   });
 
   it('never needs a mirrored MoonBoard label, because no MoonBoard layout mirrors', () => {

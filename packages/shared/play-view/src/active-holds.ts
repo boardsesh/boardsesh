@@ -16,8 +16,6 @@ export type ActiveHoldsGroup = {
 export type ActiveHoldsSummary = {
   /** One group per role that has holds, in `ACTIVE_HOLD_ROLES` order. */
   groups: readonly ActiveHoldsGroup[];
-  /** True when the board has coordinates printed on the wall, so every group carries labels. */
-  hasLabels: boolean;
 };
 
 function isActiveHoldRole(state: HoldState): state is ActiveHoldRole {
@@ -91,5 +89,5 @@ export function summarizeActiveHolds(boardName: BoardName, frames: string): Acti
     count: countsByRole[role],
     labels: labelsByRole ? labelsByRole[role] : null,
   }));
-  return { groups, hasLabels };
+  return { groups };
 }

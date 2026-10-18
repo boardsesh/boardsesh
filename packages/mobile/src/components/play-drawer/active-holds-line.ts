@@ -87,6 +87,8 @@ export function activeHoldsLineWidthKey(
 // What the line has learnt, kept across climbs and across the section folding
 // open and shut (which unmounts the line): widths by reading, the room it last
 // had, and the reading it last drew (`undefined` before it has drawn one).
+// One set for the app: fine while one player shows the line at a time; two
+// surfaces of different widths at once would share the room and last reading.
 const LINE_WIDTHS_KEPT = 64;
 const lineWidths = new Map<string, number>();
 let lastLineRoom: number | null = null;

@@ -26,6 +26,8 @@ export type PlayCoreSheetHostsProps = {
   activeAngle: number;
   climbBoardMismatch: boolean;
   sectionsSettingsOpen: boolean;
+  /** View options lists the Active holds switch: the climb on screen or the active board is a MoonBoard. */
+  sectionsListActiveHolds: boolean;
   /** The board on screen, for View options' buttons preview. */
   buttonsPreviewBoard: PlayerButtonsPreviewBoard;
   addBetaVideoOpen: boolean;
@@ -73,6 +75,7 @@ export function PlayCoreSheetHosts({
   activeAngle,
   climbBoardMismatch,
   sectionsSettingsOpen,
+  sectionsListActiveHolds,
   buttonsPreviewBoard,
   addBetaVideoOpen,
   addToPlaylistOpen,
@@ -122,6 +125,7 @@ export function PlayCoreSheetHosts({
           visible={sectionsSettingsOpen}
           onClose={handleCloseSectionsSettings}
           previewBoard={buttonsPreviewBoard}
+          listsActiveHolds={sectionsListActiveHolds}
         />
       )}
       {/* Sub-drawers: @expo/ui native .sheet()s presented from within the player

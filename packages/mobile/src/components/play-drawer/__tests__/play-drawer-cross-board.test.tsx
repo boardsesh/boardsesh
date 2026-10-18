@@ -1105,6 +1105,22 @@ describe('PlayDrawer active holds section', () => {
     expect(recorded.playbackFrames.at(-1)).toBeNull();
   });
 
+  it('lists its switch in View options on a MoonBoard climb, even with another board active', () => {
+    queueState.currentClimbQueueItem = queueItem(MOON_CLIMB, 'queue-moon');
+    renderDrawer();
+    const openViewOptions = recorded.actionsMenu.at(-1)?.onOpenViewOptions as () => void;
+    act(openViewOptions);
+    expect(recorded.sectionsSheet.at(-1)).toMatchObject({ visible: true, listsActiveHolds: true });
+  });
+
+  it('leaves its switch out of View options on another board', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    const openViewOptions = recorded.actionsMenu.at(-1)?.onOpenViewOptions as () => void;
+    act(openViewOptions);
+    expect(recorded.sectionsSheet.at(-1)).toMatchObject({ visible: true, listsActiveHolds: false });
+  });
+
   it('never shows on another board, switched on or not: the drawer has nothing to scroll to', () => {
     showOnlyActiveHolds();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
