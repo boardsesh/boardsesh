@@ -35,27 +35,6 @@ type BoardPresenceSubscriber = ChannelSubscriber<BoardPresenceEvent>;
 type BoardQueuePreviewSubscriber = ChannelSubscriber<BoardQueuePreview>;
 type ClimbStatsSubscriber = ChannelSubscriber<ClimbStatsEvent>;
 
-/** Call sites allowed to publish `privacyChanged`; each one names a real access change. */
-export type PrivacyChangeSource =
-  | 'updatePrivacySettings'
-  | 'setContentAudience'
-  | 'updateResourcePrivacy'
-  | 'approveFollowRequest'
-  | 'removeFollower'
-  | 'approveResourceAccess'
-  | 'revokeResourceAccess'
-  | 'inviteResourceMember'
-  | 'deleteAccount'
-  | 'updateComment'
-  | 'saveTick'
-  | 'updateTick'
-  | 'deleteTick'
-  | 'switchSessionWall'
-  | 'updatePlaylist'
-  | 'updateSession'
-  | 'updateBoard'
-  | 'unattributed';
-
 /** External hook called after every queue event publish. Fire-and-forget. */
 export type QueueEventHook = (sessionId: string, event: QueueEvent) => void;
 
@@ -87,37 +66,6 @@ const EVENT_BUFFER_TTL = 300; // 5 minutes
  * top in this class, documented at their call sites below.
  */
 class PubSub {
-  private readonly privacyChannel = new PubSubChannel<{ invalidated: true }>({
-    label: 'privacy',
-    redisSubscribe: () => this.redisAdapter?.subscribePrivacyChannel() ?? Promise.resolve(),
-    redisUnsubscribe: () => this.redisAdapter?.unsubscribePrivacyChannel() ?? Promise.resolve(),
-    redisPublish: () => this.redisAdapter?.publishPrivacyChanged() ?? Promise.resolve(),
-    isRedisRequired: () => this.redisRequired,
-    logger,
-  });
-  private readonly privacyPublishCounts = new Map<string, number>();
-  async subscribePrivacy(callback: () => void): Promise<() => void> {
-    this.ensureRedisIfRequired();
-    return this.privacyChannel.subscribe('global', callback);
-  }
-  /**
-   * Tell every connected client to withdraw and refetch privacy-protected data.
-   * Every connected app reacts to every event, so publish only after a change
-   * that withdraws or grants access to someone else (see docs/privacy.md).
-   * `source` names the call site; the log line carries a per-source running
-   * count so the publish rate can be read from production logs.
-   */
-  publishPrivacyChanged(source: PrivacyChangeSource = 'unattributed'): void {
-    const count = (this.privacyPublishCounts.get(source) ?? 0) + 1;
-    this.privacyPublishCounts.set(source, count);
-    logger.info('[Privacy] privacyChanged published', {
-      source,
-      count,
-      localSubscribers: this.privacyChannel.count('global'),
-    });
-    this.privacyChannel.publish('global', { invalidated: true });
-  }
-
   // No `redisPublish` here: queue publishes don't go through `channel.publish()`.
   // `publishQueueEvent` issues the Redis publish explicitly so the replay-buffer
   // LPUSH can be ordered before the fan-out PUBLISH on the wire (see its docstring).
@@ -306,8 +254,6 @@ class PubSub {
 
   private setupRedisMessageHandlers(): void {
     if (!this.redisAdapter) return;
-
-    this.redisAdapter.onPrivacyMessage(() => this.privacyChannel.dispatchLocal('global', { invalidated: true }));
 
     this.redisAdapter.onQueueMessage((sessionId, event) => {
       this.queueChannel.dispatchLocal(sessionId, event);

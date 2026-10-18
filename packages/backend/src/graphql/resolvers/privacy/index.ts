@@ -1,4 +1,3 @@
-import { pubsub } from '../../../pubsub';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
@@ -814,16 +813,15 @@ export const privacySubscriptions = {
   privacyChanged: {
     subscribe: withSubscriptionCleanup(async function* (lifetime, _: unknown, __: unknown, ctx: ConnectionContext) {
       actor(ctx);
-      const iterator = await lifetime.own(
-        createAsyncIterator<boolean>((push) => pubsub.subscribePrivacy(() => push(true)), 'privacyChanged'),
-      );
-      // Reconnection is an invalidation too: Redis pub/sub has no replay window.
-      // Keep this first event even though it costs every client a refresh on
-      // connect: every shipped app bundle stamps its offline catalogue viewer
-      // marker from it. Dropping it needs a client release that no longer waits
-      // for it first.
+      // Nothing is ever pushed to this source. It exists so cancellation can
+      // end the wait below: closing it resolves the pending read.
+      const heldOpen = await lifetime.own(createAsyncIterator<never>(async () => () => {}, 'privacyChanged'));
+      // Privacy changes are no longer broadcast (#6406). App bundles from
+      // before 2026-10-12 stamp their offline catalogue viewer marker from this
+      // first event, so it is still sent once on every subscribe, and the
+      // subscription then stays open without completing.
       yield { privacyChanged: true };
-      for await (const changed of iterator) yield { privacyChanged: changed };
+      await heldOpen.next();
     }),
   },
 };
