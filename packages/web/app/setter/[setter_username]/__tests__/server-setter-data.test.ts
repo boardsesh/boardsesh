@@ -213,16 +213,27 @@ describe('the setter page queries', () => {
 });
 
 describe('the setter hero identity', () => {
-  it('names the account behind the setter name whatever its privacy: no account privacy is read', async () => {
-    // Who set a published, listed climb is public with it (#6418), and the
-    // page only exists for such climbs. So the lookup reads the linked account
-    // and nothing that decides whether its activity is visible.
+  async function identitySql(): Promise<string> {
     executedStatements.length = 0;
     await fetchSetterIdentity('marco');
     expect(executedStatements).toHaveLength(1);
-    const sql = normalise(new PgDialect().sqlToQuery(executedStatements[0] as SQL).sql);
+    return normalise(new PgDialect().sqlToQuery(executedStatements[0] as SQL).sql);
+  }
+
+  it("names a private account only when it is the user_id on one of this page's climbs", async () => {
+    // Who set a published, listed climb is public with it (#6418). A Kilter or
+    // Tension login linked to a private account is on no climb, so the account
+    // rule still applies to it: anonymous here, so public accounts only.
+    const sql = await identitySql();
     expect(sql).toContain('from user_board_mappings ubm');
-    expect(sql).not.toContain('is_private');
-    expect(sql).not.toContain('user_follows');
+    expect(sql).toContain('is_private');
+    expect(sql).toMatch(/or exists \( select 1 from board_climbs where .* and board_climbs\.user_id = ubm\.user_id \)/);
+  });
+
+  it('only links a login on a board type this page lists climbs for, through the page predicate', async () => {
+    const sql = await identitySql();
+    expect(sql).toContain('board_climbs.board_type = ubm.board_type');
+    // Both EXISTS read the page's visible-climb predicate, hidden climbs out.
+    expect(sql.match(/"board_climbs"\."is_hidden" = /g)?.length).toBe(2);
   });
 });

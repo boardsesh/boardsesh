@@ -468,12 +468,13 @@ export class NotificationWorker {
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.
       // On a published, listed climb its author is public with it, so a new
-      // climb names its setter's account to every recipient; anyone else acting
-      // on a climb keeps their own account privacy.
+      // climb names its setter's account to every recipient. Any other row about
+      // a climb is activity and keeps its actor's account privacy, the author's
+      // own included.
       const canSeeActor = commentUuid
         ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
         : entityType
-          ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId)
+          ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId, type)
           : await canViewUserActivity(recipientId, actorId);
       // An inbox is a list: nothing about an unlisted climb reaches anyone but
       // its owner, the same test notificationPrivacyCondition reads with.

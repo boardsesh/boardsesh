@@ -26,6 +26,7 @@ import { climbLogsQueries } from '../graphql/resolvers/social/climb-logs';
 import { socialProposalQueries } from '../graphql/resolvers/social/proposals';
 import { batchEnrichProposals } from '../graphql/resolvers/social/proposals/enrichment';
 import { socialCommentQueries } from '../graphql/resolvers/social/comments';
+import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,9 @@ const STRANGER = 'matrix-stranger';
 const PRIVATE_SENDER = 'matrix-private-sender';
 const PUBLIC_SENDER = 'matrix-public-sender';
 const DELETED_AUTHOR = 'matrix-deleted-author';
-const USERS = [PRIVATE_AUTHOR, FOLLOWER, STRANGER, PRIVATE_SENDER, PUBLIC_SENDER, DELETED_AUTHOR];
+/** A private account linked to a Kilter login only, with no Boardsesh-authored climb under it. */
+const MAPPED_PRIVATE = 'matrix-mapped-private';
+const USERS = [PRIVATE_AUTHOR, FOLLOWER, STRANGER, PRIVATE_SENDER, PUBLIC_SENDER, DELETED_AUTHOR, MAPPED_PRIVATE];
 
 const PRIVATE_PUBLISHED = 'matrix-private-published';
 const TICKED_PUBLISHED = 'matrix-ticked-published';
@@ -76,6 +79,12 @@ const HIDDEN = 'matrix-hidden';
 /** A public account's climbs, one of them hidden by the community. */
 const PUBLIC_SHOWN = 'matrix-public-shown';
 const PUBLIC_HIDDEN = 'matrix-public-hidden';
+/** Imported under the mapped private account's Kilter login: no `user_id`. */
+const MAPPED_SETTER_NAME = 'matrix-mapped-setter';
+const MAPPED_ONLY = 'matrix-mapped-only';
+/** A Kilter setter name that a public account linked on Tension, not on Kilter. */
+const CROSS_BOARD_SETTER_NAME = 'matrix-cross-board-setter';
+const CROSS_BOARD = 'matrix-cross-board';
 
 // `graphql` resolves to two module instances under the test transform. The
 // schema was built with the CJS copy, so `execute` has to come from the same
@@ -142,6 +151,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       { userId: PRIVATE_AUTHOR, isPrivate: true },
       { userId: PRIVATE_SENDER, isPrivate: true },
       { userId: DELETED_AUTHOR, isPrivate: true },
+      { userId: MAPPED_PRIVATE, isPrivate: true },
       { userId: PUBLIC_SENDER, isPrivate: false, displayName: 'Public sender' },
     ]);
     await db.insert(schema.userFollows).values([
@@ -149,9 +159,11 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       { followerId: FOLLOWER, followingId: PRIVATE_SENDER },
     ]);
     // The private author's linked board account sets under the same name.
-    await db
-      .insert(schema.userBoardMappings)
-      .values({ userId: PRIVATE_AUTHOR, boardType: BOARD, boardUsername: SETTER_NAME });
+    await db.insert(schema.userBoardMappings).values([
+      { userId: PRIVATE_AUTHOR, boardType: BOARD, boardUsername: SETTER_NAME },
+      { userId: MAPPED_PRIVATE, boardType: BOARD, boardUsername: MAPPED_SETTER_NAME },
+      { userId: PUBLIC_SENDER, boardType: 'tension', boardUsername: CROSS_BOARD_SETTER_NAME },
+    ]);
 
     await insertClimb(PRIVATE_PUBLISHED, PRIVATE_AUTHOR, {});
     await insertClimb(TICKED_PUBLISHED, PRIVATE_AUTHOR, {});
@@ -162,6 +174,8 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(HIDDEN, PRIVATE_AUTHOR, { isHidden: true });
     await insertClimb(PUBLIC_HIDDEN, PUBLIC_SENDER, { isHidden: true, setterUsername: 'matrix-public-setter' });
     await insertClimb(PUBLIC_SHOWN, PUBLIC_SENDER, { setterUsername: 'matrix-public-setter' });
+    await insertClimb(MAPPED_ONLY, null, { setterUsername: MAPPED_SETTER_NAME });
+    await insertClimb(CROSS_BOARD, null, { setterUsername: CROSS_BOARD_SETTER_NAME });
     await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
       isDraft: true,
       isListed: false,
@@ -275,27 +289,80 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     });
   });
 
-  it('names the private account behind its setter name to everyone', async () => {
-    // Who set a published, listed climb is public with it, and the setter page
-    // only exists for such climbs.
+  it('names a private account behind a setter name it set Boardsesh climbs under, to everyone', async () => {
+    // Who set a published, listed climb is public with it: the private author
+    // is the `user_id` on published, listed climbs under this name.
     for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
       const profile = await setterFollowQueries.setterProfile(undefined, { input: { username: SETTER_NAME } }, ctx);
       expect(profile).toMatchObject({ linkedUserId: PRIVATE_AUTHOR, linkedUserDisplayName: `Name ${PRIVATE_AUTHOR}` });
     }
   });
 
-  it("lists a private account's published, listed climbs under it to everyone", async () => {
-    // A stranger, an anonymous caller and a follower get the same list: the
-    // published, listed ones, its linked setter name's included, and not the
-    // one the community hid, the unlisted one or the draft.
+  it('keeps a private account linked to a setter name by its Kilter login alone from strangers', async () => {
+    // No climb under this name carries the account's id, so naming it would
+    // reveal which board login the private account linked.
+    const profileFor = (ctx: ConnectionContext) =>
+      setterFollowQueries.setterProfile(undefined, { input: { username: MAPPED_SETTER_NAME } }, ctx);
     for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
-      const listed = await setterFollowQueries.userClimbs(undefined, { input: { userId: PRIVATE_AUTHOR } }, ctx);
-      expect(listed.climbs.map((climb) => climb.uuid).sort()).toEqual(
-        [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY].sort(),
-      );
-      expect(listed.totalCount).toBe(3);
-      expect(listed.climbs.every((climb) => climb.is_hidden !== true)).toBe(true);
+      const profile = await profileFor(ctx);
+      expect(profile?.climbCount).toBe(1);
+      expect(profile?.linkedUserId ?? null).toBeNull();
+      expect(profile?.linkedUserDisplayName ?? null).toBeNull();
     }
+    expect((await profileFor(ctxFor(MAPPED_PRIVATE)))?.linkedUserId).toBe(MAPPED_PRIVATE);
+
+    // Nor are the climbs imported under that login listed under the account.
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      expect(await setterFollowQueries.userClimbs(undefined, { input: { userId: MAPPED_PRIVATE } }, ctx)).toEqual({
+        climbs: [],
+        totalCount: 0,
+        hasMore: false,
+      });
+    }
+    const forOwner = await setterFollowQueries.userClimbs(
+      undefined,
+      { input: { userId: MAPPED_PRIVATE } },
+      ctxFor(MAPPED_PRIVATE),
+    );
+    expect(forOwner.climbs.map((climb) => climb.uuid)).toEqual([MAPPED_ONLY]);
+  });
+
+  it("never names an account whose login is on another board type than the setter name's climbs", async () => {
+    // A public account linked Tension "matrix-cross-board-setter"; the climbs
+    // under that name are on Kilter, set by someone else.
+    for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(PUBLIC_SENDER)]) {
+      const profile = await setterFollowQueries.setterProfile(
+        undefined,
+        { input: { username: CROSS_BOARD_SETTER_NAME } },
+        ctx,
+      );
+      expect(profile?.climbCount).toBe(1);
+      expect(profile?.linkedUserId ?? null).toBeNull();
+    }
+  });
+
+  it("lists a private account's own published, listed climbs to everyone, and its linked login's to followers", async () => {
+    // A stranger and an anonymous caller get the published, listed climbs
+    // whose `user_id` is the account. The climb imported under its linked
+    // Kilter login carries no `user_id`, so it stays with the viewers who may
+    // see the account's activity.
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      const listed = await setterFollowQueries.userClimbs(undefined, { input: { userId: PRIVATE_AUTHOR } }, ctx);
+      expect(listed.climbs.map((climb) => climb.uuid).sort()).toEqual([PRIVATE_PUBLISHED, TICKED_PUBLISHED].sort());
+      expect(listed.totalCount).toBe(2);
+    }
+    // A follower also gets the linked login's climb. Nobody but the owner gets
+    // the one the community hid, the unlisted one or the draft.
+    const forFollower = await setterFollowQueries.userClimbs(
+      undefined,
+      { input: { userId: PRIVATE_AUTHOR } },
+      ctxFor(FOLLOWER),
+    );
+    expect(forFollower.climbs.map((climb) => climb.uuid).sort()).toEqual(
+      [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY].sort(),
+    );
+    expect(forFollower.totalCount).toBe(3);
+    expect(forFollower.climbs.every((climb) => climb.is_hidden !== true)).toBe(true);
 
     // The owner also sees their unlisted climb, and the hidden one flagged.
     const forOwner = await setterFollowQueries.userClimbs(
@@ -351,7 +418,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     expect(await firstAscent(ctxFor(FOLLOWER))).toEqual({ name: `Name ${PRIVATE_SENDER}`, at: '2026-01-01' });
   });
 
-  it("names a published climb's author to everyone, and any other private actor on it only to who may see them", async () => {
+  it("names a published climb's author on its new-climb row to everyone, and a comment on it only to who may see the commenter", async () => {
     await db.insert(schema.notifications).values([
       // The private author published it. Who set a published, listed climb is
       // public with it, as on every other surface.
@@ -363,12 +430,23 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
         entityType: 'climb',
         entityId: PRIVATE_PUBLISHED,
       },
-      // A different private account acting on the same climb keeps it too.
+      // A different private account's comment reply on the same climb, stored
+      // with no comment row (the inline writer, or a reply deleted since).
       {
         uuid: 'matrix-n-other',
         recipientId: STRANGER,
         actorId: PRIVATE_SENDER,
-        type: 'proposal_created',
+        type: 'comment_reply',
+        entityType: 'climb',
+        entityId: PRIVATE_PUBLISHED,
+      },
+      // The author's own comment reply on their climb is activity, not
+      // authorship: it keeps the account's privacy.
+      {
+        uuid: 'matrix-n-author-reply',
+        recipientId: STRANGER,
+        actorId: PRIVATE_AUTHOR,
+        type: 'comment_reply',
         entityType: 'climb',
         entityId: PRIVATE_PUBLISHED,
       },
@@ -377,7 +455,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     // sits in the select list, so the planner never runs it across the table.
     const visibleTo = async (viewerId: string) => {
       const visible: string[] = [];
-      for (const uuid of ['matrix-n-author', 'matrix-n-other']) {
+      for (const uuid of ['matrix-n-author', 'matrix-n-other', 'matrix-n-author-reply']) {
         const [row] = await db
           .select({ allowed: notificationPrivacyCondition(viewerId) })
           .from(schema.notifications)
@@ -386,21 +464,40 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       }
       return visible;
     };
-    // The stranger is told who set the climb, never who else acted on it.
+    // The stranger is told who set the climb, never who commented on it, the
+    // author included.
     expect(await visibleTo(STRANGER)).toEqual(['matrix-n-author']);
-    // An approved follower of both accounts sees both.
-    expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other']);
+    // An approved follower of both accounts sees all three.
+    expect(await visibleTo(FOLLOWER)).toEqual(['matrix-n-author', 'matrix-n-other', 'matrix-n-author-reply']);
+
+    // The inbox itself, flat and grouped, as the app reads it.
+    const strangerInbox = await socialNotificationQueries.notifications(null, {}, ctxFor(STRANGER));
+    const strangerUuids = strangerInbox.notifications.map((notification) => notification.uuid);
+    expect(strangerUuids).toContain('matrix-n-author');
+    expect(strangerUuids).not.toContain('matrix-n-author-reply');
+    expect(strangerUuids).not.toContain('matrix-n-other');
+    const strangerGroups = await socialNotificationQueries.groupedNotifications(null, { limit: 50 }, ctxFor(STRANGER));
+    expect(
+      strangerGroups.groups.filter((group) => group.type === 'comment_reply' && group.entityId === PRIVATE_PUBLISHED),
+    ).toEqual([]);
 
     // The worker's check before it writes a notification agrees.
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER)).toBe(true);
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, FOLLOWER)).toBe(true);
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER)).toBe(false);
-    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER)).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER, 'new_climb')).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER, 'new_climb_global')).toBe(
+      true,
+    );
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, FOLLOWER, 'new_climb')).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, STRANGER, 'comment_reply')).toBe(
+      false,
+    );
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_AUTHOR, FOLLOWER, 'comment_reply')).toBe(true);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, STRANGER, 'new_climb')).toBe(false);
+    expect(await canSeeActorOnEntity('climb', PRIVATE_PUBLISHED, PRIVATE_SENDER, FOLLOWER, 'new_climb')).toBe(true);
     // An unlisted climb and a draft are not public, so their private author
     // keeps the account rule.
-    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, STRANGER)).toBe(false);
-    expect(await canSeeActorOnEntity('climb', DRAFT, PRIVATE_AUTHOR, STRANGER)).toBe(false);
-    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, FOLLOWER)).toBe(true);
+    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, STRANGER, 'new_climb')).toBe(false);
+    expect(await canSeeActorOnEntity('climb', DRAFT, PRIVATE_AUTHOR, STRANGER, 'new_climb')).toBe(false);
+    expect(await canSeeActorOnEntity('climb', UNLISTED, PRIVATE_AUTHOR, FOLLOWER, 'new_climb')).toBe(true);
   });
 
   it("still delivers a deleted author's published climb in a notification, never their draft", async () => {
@@ -627,7 +724,15 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     `;
     const searchInput = { boardName: BOARD, layoutId: LAYOUT_ID, sizeId: 1, setIds: '1', angle: ANGLE, pageSize: 50 };
     /** Published, listed and not hidden, whoever set them: what every viewer's search returns. */
-    const SEARCHABLE = [PRIVATE_PUBLISHED, TICKED_PUBLISHED, LINKED_ONLY, DELETED_PUBLISHED, PUBLIC_SHOWN].sort();
+    const SEARCHABLE = [
+      PRIVATE_PUBLISHED,
+      TICKED_PUBLISHED,
+      LINKED_ONLY,
+      DELETED_PUBLISHED,
+      PUBLIC_SHOWN,
+      MAPPED_ONLY,
+      CROSS_BOARD,
+    ].sort();
     type SearchAnswer = {
       searchClimbs: { totalCount: number; climbs: Array<{ uuid: string; userId: string | null }> };
     };

@@ -5,6 +5,7 @@ import {
   getClimbStars,
   getGradeLabel,
   sprayClimbVisibilityCondition,
+  userActivityVisibilityCondition,
   withSerialPlan,
   type SerialPlanDb,
 } from '@boardsesh/db/queries';
@@ -80,8 +81,9 @@ function visibleSetterClimbsWhere(username: string): SQL | undefined {
   //
   // No account privacy, item audience or follow relation: a published, listed
   // climb is public to everyone, so a private account's published climbs list
-  // here too, and the hero names the account behind them (`fetchSetterIdentity`).
-  // The spray predicate is the wall's own rule, not the climb's.
+  // here too. Whether the hero names the account behind them is
+  // `fetchSetterIdentity`'s rule. The spray predicate is the wall's own rule,
+  // not the climb's.
   return and(
     eq(boardClimbs.setterUsername, username),
     eq(boardClimbs.isListed, true),
@@ -207,10 +209,12 @@ type SetterIdentity = { displayName: string; avatarUrl: string | null; followerC
 /**
  * Display name, avatar and follower count for the hero.
  *
- * Who set a published, listed climb is public with it, so the hero names the
- * Boardsesh account behind the setter name whatever that account's privacy.
- * The page only exists when the setter has such a climb (`getSetterPageData`).
- * Exported for its test.
+ * The account comes from a Kilter or Tension login linked under this name
+ * (`user_board_mappings`), on a board type the page lists climbs for. Who set a
+ * published, listed climb is public with it, so a private account is named
+ * when it is the `user_id` on one of this page's climbs. A login linked alone
+ * is on no climb, so a private account's stays private: this page has no
+ * viewer, and the hero falls back to the setter name. Exported for its test.
  *
  * Raw `sql` rather than Drizzle builders because `user_board_mappings` →
  * `users` → `user_profiles` is a three-table lookup for at most one row and the
@@ -240,6 +244,17 @@ export async function fetchSetterIdentity(username: string): Promise<SetterIdent
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
       WHERE ubm.board_username = ${username}
+        AND EXISTS (
+          SELECT 1 FROM board_climbs
+          WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.board_type = ubm.board_type
+        )
+        AND (
+          ${userActivityVisibilityCondition(sql`ubm.user_id`, null)}
+          OR EXISTS (
+            SELECT 1 FROM board_climbs
+            WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.user_id = ubm.user_id
+          )
+        )
       -- Deterministic, and the setters shard sorts identically. The unique
       -- index is (user_id, board_type), so two different users can share a
       -- setter name; a bare LIMIT 1 renders whichever the planner happened to
