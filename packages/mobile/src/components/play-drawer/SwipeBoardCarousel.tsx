@@ -286,6 +286,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
+  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
@@ -383,7 +384,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     screenWidth,
     enabled: gesturesEnabled,
     isZoomedSV,
-    pageArt,
+    // The static capture board cannot share readiness owned by retained slots.
+    // Its capture markers still wait for actual image display.
+    pageArt: isScreenshotMode ? undefined : pageArt,
     scrollRef,
   });
 
@@ -421,7 +424,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     () => (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? countLitHolds(currentFrames) : 0),
     [currentFrames],
   );
-  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
   // Remembered so the climbs list can start the next climb's play-size render at
   // the tap, before this carousel has mounted and measured again.
   const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;

@@ -232,12 +232,17 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     const { getByTestId, queryByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     measure(350, 500);
     const board = getByTestId('board-current');
+    const { pageArt } = recorded.swipeOptions.mock.calls.at(-1)![0] as {
+      pageArt?: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
+    };
     if (screenshotMode === '1') {
+      expect(pageArt).toBeUndefined();
       expect(board.parentElement?.dataset.accessible).toBe('false');
       expect(board.parentElement?.dataset.importantForAccessibility).toBe('no');
       expect(board.dataset.overlayTestid).toBe('play-drawer-board-overlay');
       expect(queryByTestId('play-drawer-board-accessibility')).toBeNull();
     } else {
+      expect(pageArt?.value).toEqual({});
       // One fixed stand-in is the accessibility element, the size of the board.
       // The boards themselves change places on a swipe and are hidden from it.
       const standIn = getByTestId('play-drawer-board-accessibility');
