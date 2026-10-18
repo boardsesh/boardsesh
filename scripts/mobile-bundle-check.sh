@@ -44,6 +44,14 @@ for PLATFORM in ios android; do
   else
     echo "[mobile-bundle] $PLATFORM bundle: OK (bundle file not found for size check)"
   fi
+
+  # The story harness is dev-only (docs/mobile-stories.md). Its log line in a
+  # production bundle means a require escaped the __DEV__ gate in
+  # packages/mobile/src/dev/stories/load.ts.
+  if grep -rqa '\[stories\] ready' "$PLATFORM_DIR"; then
+    echo "[mobile-bundle] $PLATFORM bundle: FAILED (the dev-only story harness is in the production bundle; see packages/mobile/src/dev/stories/load.ts)"
+    FAILED=1
+  fi
 done
 
 if [ "$FAILED" -ne 0 ]; then

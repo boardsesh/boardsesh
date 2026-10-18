@@ -31,6 +31,7 @@ import {
   stopReadinessServer,
   waitForHomeReady,
   waitForMetro,
+  type StartMetroOptions,
 } from './metro-dev-server';
 
 const DEFAULT_LOG_PREFIX = '[android-dev-client]';
@@ -49,12 +50,15 @@ export function installDevClient(adbBinary: string, serial: string, apkPath: str
 }
 
 /** Bring up Metro (+ readiness server) for the dev-client to load its JS from. */
-export function startMetroForDevClient(metroEnv: NodeJS.ProcessEnv): DevClientSession {
+export function startMetroForDevClient(
+  metroEnv: NodeJS.ProcessEnv,
+  metroOptions: Pick<StartMetroOptions, 'watch'> = {},
+): DevClientSession {
   if (portInUse(METRO_PORT)) {
     throw new Error(`port ${METRO_PORT} is already in use; stop it or set BOARDSESH_METRO_PORT to a free port.`);
   }
   const readinessServer = startReadinessServer();
-  const metro = startMetro(metroEnv);
+  const metro = startMetro(metroEnv, metroOptions);
   if (!waitForMetro()) {
     // Clean up what this call already started rather than leaking a detached
     // Metro/readiness process group back to the caller, which has no handle on

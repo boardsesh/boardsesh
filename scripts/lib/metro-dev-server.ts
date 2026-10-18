@@ -12,7 +12,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,17 @@ export const METRO_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-metro.log');
 // 8081; override with BOARDSESH_METRO_PORT when it's taken (this repo runs a
 // Metro per worktree). The orchestrator passes the matching dev-client URL to
 // Maestro via `-e MAESTRO_DEV_CLIENT_URL`, so the flows never hard-code a port.
-export const METRO_PORT = Number.parseInt(process.env.BOARDSESH_METRO_PORT ?? '', 10) || 8081;
+export const DEFAULT_METRO_PORT = 8081;
+export const METRO_PORT = Number.parseInt(process.env.BOARDSESH_METRO_PORT ?? '', 10) || DEFAULT_METRO_PORT;
+
+/**
+ * Where a Metro on `port` tees its output. 8081 keeps METRO_LOG_PATH (CI uploads
+ * it by that name); any other port gets its own file, so two Metros on one
+ * machine never truncate and interleave the same log.
+ */
+export function metroLogPathForPort(port: number = METRO_PORT): string {
+  return port === DEFAULT_METRO_PORT ? METRO_LOG_PATH : join(tmpdir(), `boardsesh-screenshot-metro-${port}.log`);
+}
 // The app pings this local port (from the sim, which shares the host loopback)
 // once it reaches home, so reach-home detection doesn't depend on Metro forwarding
 // the `$screen /home` marker to its stdout — that forwarding intermittently dies
@@ -198,7 +208,40 @@ export function stopReadinessServer(server: ChildProcess): void {
   }
 }
 
-export function startMetro(env: NodeJS.ProcessEnv): ChildProcess {
+export interface StartMetroOptions {
+  /**
+   * Keep Metro's file watcher on so edits hot-reload. Off by default: `CI=1`
+   * keeps expo non-interactive, and Expo also turns watching off under it,
+   * which store captures want (one frozen bundle per run).
+   */
+  watch?: boolean;
+  /** Where Metro's output is tee'd. Defaults to METRO_LOG_PATH. */
+  logPath?: string;
+}
+
+/**
+ * The environment `expo start` runs with. A watch run drops `CI` (Expo disables
+ * file watching under it) and defaults TAILSCALE_HOSTNAME to localhost: without
+ * it, Metro's log socket to the app dies after about five minutes on a machine
+ * running Tailscale, and console lines stop reaching the log.
+ */
+export function metroProcessEnv(env: NodeJS.ProcessEnv, watch = false): NodeJS.ProcessEnv {
+  if (!watch) return { ...env, CI: '1' };
+  const watchEnv: NodeJS.ProcessEnv = { ...env, TAILSCALE_HOSTNAME: env.TAILSCALE_HOSTNAME ?? 'localhost' };
+  delete watchEnv.CI;
+  return watchEnv;
+}
+
+/**
+ * The ad-hoc shots scripts' default: watch while `run` holds Metro, so edits
+ * hot-reload into the open app; a `--shutdown` one-shot never edits mid-run.
+ * `--watch` / `--no-watch` set `watch` explicitly.
+ */
+export function shotsMetroWatch(options: { watch: boolean | null; shutdown: boolean }): boolean {
+  return options.watch ?? !options.shutdown;
+}
+
+export function startMetro(env: NodeJS.ProcessEnv, options: StartMetroOptions = {}): ChildProcess {
   // Pipe Metro's output through `tee` to METRO_LOG_PATH so waitForHomeReady can poll
   // it for the app's "$screen /home" marker — the JS console logs land in Metro's
   // stdout, NOT the device's unified log.
@@ -215,9 +258,10 @@ export function startMetro(env: NodeJS.ProcessEnv): ChildProcess {
   //     so the marker appears promptly. `tee` (no `-a`) truncates for a clean run.
   // Trade-off: Metro no longer streams into the live CI run log — dumpMetroLogTail
   // surfaces it on a reach-home failure instead.
-  return spawn('sh', ['-c', `vp exec expo start --port ${METRO_PORT} 2>&1 | tee ${METRO_LOG_PATH}`], {
+  const logPath = options.logPath ?? METRO_LOG_PATH;
+  return spawn('sh', ['-c', `vp exec expo start --port ${METRO_PORT} 2>&1 | tee '${logPath}'`], {
     cwd: MOBILE_DIR,
-    env: { ...env, CI: '1' },
+    env: metroProcessEnv(env, options.watch),
     stdio: 'ignore',
     detached: true,
   });
@@ -345,8 +389,8 @@ function sleepSeconds(seconds: number): void {
  * analytics line lands in Metro's stdout (NOT the device's unified log), which
  * startMetro tee's to METRO_LOG_PATH — so count occurrences in that file.
  */
-export function homeReadyMarkerCount(): number {
-  const metroLog = existsSync(METRO_LOG_PATH) ? readFileSync(METRO_LOG_PATH, 'utf8') : '';
+export function homeReadyMarkerCount(metroLogPath: string = METRO_LOG_PATH): number {
+  const metroLog = existsSync(metroLogPath) ? readFileSync(metroLogPath, 'utf8') : '';
   return metroLog.split('$screen /home').length - 1;
 }
 
@@ -368,13 +412,66 @@ export function waitForHomeReady(
   readyBaseline = 0,
   timeoutSeconds = 180,
   giveUpWhen?: () => boolean,
+  metroLogPath: string = METRO_LOG_PATH,
 ): boolean {
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (Date.now() < deadline) {
-    if (homeReadyMarkerCount() > markerBaseline) return true;
+    if (homeReadyMarkerCount(metroLogPath) > markerBaseline) return true;
     if (screenshotReadinessCount() > readyBaseline) return true;
     if (giveUpWhen?.()) return false;
     sleepSeconds(2);
   }
   return false;
+}
+
+/** The log's size in bytes now: the baseline for readMetroLogSince. 0 if it doesn't exist yet. */
+export function metroLogOffset(logPath: string = METRO_LOG_PATH): number {
+  return existsSync(logPath) ? statSync(logPath).size : 0;
+}
+
+/**
+ * Everything written to the log after `offset`. Reads only the new bytes, so
+ * polling a long watch session's log stays cheap. A log smaller than the offset
+ * was truncated by a Metro restart; read it from the start.
+ */
+export function readMetroLogSince(offset: number, logPath: string = METRO_LOG_PATH): string {
+  if (!existsSync(logPath)) return '';
+  const size = statSync(logPath).size;
+  const start = size < offset ? 0 : offset;
+  if (size === start) return '';
+  const buffer = Buffer.alloc(size - start);
+  const descriptor = openSync(logPath, 'r');
+  try {
+    readSync(descriptor, buffer, 0, buffer.length, start);
+  } finally {
+    closeSync(descriptor);
+  }
+  return buffer.toString('utf8');
+}
+
+/** Metro's "iOS Bundled 812ms index.ts (4102 modules)" line: the app asked this Metro for its bundle. */
+export function isIosBundledLine(line: string): boolean {
+  return /\biOS\b.*\bBundled\b/.test(line);
+}
+
+/**
+ * Poll the log for a line written after `offset` that `matches`. Returns the
+ * first matching line, or null once `timeoutSeconds` pass.
+ */
+export function waitForMetroLogLine(
+  matches: (line: string) => boolean,
+  offset: number,
+  timeoutSeconds: number,
+  logPath: string = METRO_LOG_PATH,
+  pollSeconds = 0.25,
+): string | null {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  for (;;) {
+    const found = readMetroLogSince(offset, logPath)
+      .split('\n')
+      .find((line) => matches(line));
+    if (found !== undefined) return found;
+    if (Date.now() >= deadline) return null;
+    sleepSeconds(pollSeconds);
+  }
 }

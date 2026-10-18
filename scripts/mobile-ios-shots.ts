@@ -14,9 +14,15 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *   vp run mobile:ios-shots                        # boot + install + Metro + launch, then hold Metro
  *   vp run mobile:ios-shots -- --to climbs --label climbs --shutdown   # one-shot: boot, shoot, tear down
  *   vp run mobile:ios-shots -- screenshot --to board-view --label board   # shoot a running simulator
+ *   vp run mobile:ios-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile-stories.md)
  *   vp run mobile:ios-shots -- navigate --to discover                  # deep-link only
  *   vp run mobile:ios-shots -- --flow app-store                        # run the Maestro flow
  *   vp run mobile:ios-shots -- shutdown                                # stop simulator + Metro
+ *
+ * `--story <id>` is `--to dev/stories/<id>` (plus `?theme=`/`?variant=` from
+ * `--theme dark|light` and `--variant liquidGlass|material`), labelled with the id.
+ * Instead of the fixed settle it waits for the app's `[stories] ready <id>` line
+ * in the Metro log, then 0.5 s more.
  *
  * Screenshots land in .boardsesh/ios-screenshots/NN-<label>.png (absolute paths
  * printed). Auto-login (prod test account) is on by default via EXPO_PUBLIC_SCREENSHOT_MODE;
@@ -28,31 +34,64 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  * iOS-specific: navigation deep links go through Maestro, not bare `simctl openurl`,
  * because iOS pops an undismissable-from-the-CLI "Open in 'Boardsesh'?" confirmation
  * for the custom scheme. `run` primes that dialog away once (after a fresh install),
- * so subsequent navigations land cleanly. Metro must run on port 8081: the cached
- * .app bakes its launcher URL to localhost:8081 (there's no `adb reverse` on iOS).
+ * so subsequent navigations land cleanly.
+ *
+ * Any Metro port: the cached .app bakes its launcher URL to localhost:8081 (there's
+ * no `adb reverse` on iOS), so with BOARDSESH_METRO_PORT=<n> `run` installs a copy
+ * at ~/.cache/boardsesh/ios-shots-apps/<n>/Boardsesh.app with the URL rewritten and
+ * re-signed. Set the same BOARDSESH_METRO_PORT on every later subcommand.
+ *
+ * File watching: the holding `run` starts Metro with its watcher on, so edits
+ * hot-reload into the open app. A `--shutdown` one-shot keeps the frozen-bundle
+ * `CI=1` Metro. `--watch` / `--no-watch` override either.
  *
  * Recommended agent flow: run the bare command in the background (it holds Metro),
  * then use the `screenshot`/`navigate` subcommands in the foreground to grab shots.
  */
 
 import { type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit, sleepSeconds } from './lib/exec';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
+  DEFAULT_METRO_PORT,
   METRO_PORT,
   homeReadyMarkerCount,
+  isIosBundledLine,
   metroDevClientUrl,
+  metroLogOffset,
+  metroLogPathForPort,
   portInUse,
   prewarmMetroBundle,
+  shotsMetroWatch,
   startMetro,
   stopMetro,
   waitForHomeReady,
   waitForMetro,
+  waitForMetroLogLine,
 } from './lib/metro-dev-server';
+import {
+  STORY_THEMES,
+  STORY_VARIANTS,
+  type StoryTheme,
+  type StoryVariant,
+  applyStoryOptions,
+  assertStoryId,
+  resolveMetroLogPath,
+  settleAfterStory,
+} from './lib/mobile-stories';
 import {
   DEFAULT_USER_EMAIL,
   DEFAULT_USER_PASSWORD,
@@ -76,10 +115,16 @@ const DEFAULT_OUT_DIR = join(ROOT_DIR, '.boardsesh', 'ios-screenshots');
 const APP_ID = 'com.boardsesh.app';
 const APP_SCHEME = 'com.boardsesh.app';
 const DEFAULT_DEVICE = 'iPhone 16 Pro Max';
-// The .app's DEV_CLIENT_DEFAULT_LAUNCHER_URL is baked to this port at build time
+// The .app's DEV_CLIENT_DEFAULT_LAUNCHER_URL is baked at build time
 // (packages/mobile/plugins/with-screenshot-dev-menu.js), so a `simctl launch`
-// auto-loads Metro only when Metro is on 8081. iOS has no `adb reverse` to remap it.
-const REQUIRED_METRO_PORT = 8081;
+// auto-loads Metro only on that port. iOS has no `adb reverse` to remap it, so
+// another port gets a rewritten, re-signed copy of the .app here (never /tmp:
+// it's a RAM disk on the dev machines).
+const PORT_APPS_DIR = join(homedir(), '.cache', 'boardsesh', 'ios-shots-apps');
+const LAUNCHER_URL_KEY = 'DEV_CLIENT_DEFAULT_LAUNCHER_URL';
+// A freshly installed dev client sometimes shows its launcher list instead of
+// auto-connecting. No "iOS Bundled" line this long after launch means that.
+const BUNDLE_REQUEST_TIMEOUT_SECONDS = 20;
 const MAESTRO_INSTALL_HINT = 'install it (https://maestro.mobile.dev)';
 
 // Friendly screen names -> deep-link routes (the screenshot-mode params are app
@@ -122,6 +167,14 @@ interface ShotsOptions {
   settleSeconds: number;
   /** Skip the device-wide `simctl keychain reset` so a manual login survives. */
   keepKeychain: boolean;
+  /** Dev story id; sets `to` to its route and waits for its ready line instead of the settle. */
+  story: string | null;
+  theme: StoryTheme | null;
+  variant: StoryVariant | null;
+  /** Metro file watching for `run`; null = on while holding Metro, off for `--shutdown`. */
+  watch: boolean | null;
+  /** Metro log to watch for story lines (default: see resolveMetroLogPath). */
+  metroLog: string | null;
 }
 
 function expectValue(flag: string, value: string | undefined): string {
@@ -135,7 +188,7 @@ function expectEnum(flag: string, value: string | undefined, allowed: readonly s
   return resolved;
 }
 
-function parseShotsArgs(argv: readonly string[]): ShotsOptions {
+export function parseShotsArgs(argv: readonly string[]): ShotsOptions {
   const args = argv.filter((argument) => argument !== '--');
   const options: ShotsOptions = {
     command: 'run',
@@ -150,6 +203,11 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
     device: DEFAULT_DEVICE,
     settleSeconds: 3,
     keepKeychain: false,
+    story: null,
+    theme: null,
+    variant: null,
+    watch: null,
+    metroLog: null,
   };
 
   let index = 0;
@@ -217,11 +275,34 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
       case '--keep-keychain':
         options.keepKeychain = true;
         break;
+      case '--story':
+        options.story = assertStoryId(expectValue(flag, value));
+        index++;
+        break;
+      case '--theme':
+        options.theme = expectEnum(flag, value, STORY_THEMES) as StoryTheme;
+        index++;
+        break;
+      case '--variant':
+        options.variant = expectEnum(flag, value, STORY_VARIANTS) as StoryVariant;
+        index++;
+        break;
+      case '--watch':
+        options.watch = true;
+        break;
+      case '--no-watch':
+        options.watch = false;
+        break;
+      case '--metro-log':
+        options.metroLog = resolve(expectValue(flag, value));
+        index++;
+        break;
       default:
         throw new Error(`Unknown argument: ${flag}`);
     }
   }
 
+  applyStoryOptions(options);
   return options;
 }
 
@@ -351,6 +432,138 @@ function effectiveSettle(options: ShotsOptions, screen: string | null): number {
   return options.settleSeconds;
 }
 
+/**
+ * Navigate to `options.to`, then wait until it's worth capturing: a story's
+ * ready line (offset taken before the navigation, which can paint mid-Maestro),
+ * or the fixed settle for everything else.
+ */
+function navigateAndSettle(udid: string, options: ShotsOptions, metroLogPath: string): void {
+  if (!options.to) return;
+  const offset = metroLogOffset(metroLogPath);
+  navigate(udid, options.to, process.env);
+  if (options.story) {
+    settleAfterStory(options.story, metroLogPath, offset, effectiveSettle(options, null), LOG);
+  } else {
+    sleepSeconds(effectiveSettle(options, options.to));
+  }
+}
+
+export function portAppPath(port: number, root: string = PORT_APPS_DIR): string {
+  return join(root, String(port), 'Boardsesh.app');
+}
+
+interface PortAppStamp {
+  source: string;
+  sourceMtimeMs: number;
+}
+
+/** Reuse the per-port copy only while it was made from this exact build of this source. */
+export function portAppIsCurrent(stamp: PortAppStamp | null, source: string, sourceMtimeMs: number): boolean {
+  return stamp !== null && stamp.source === source && stamp.sourceMtimeMs === sourceMtimeMs;
+}
+
+/** Newest mtime among the files every rebuild or re-export rewrites. */
+function appBuildMtimeMs(appPath: string): number {
+  return Math.max(
+    ...[
+      appPath,
+      join(appPath, 'Info.plist'),
+      join(appPath, 'Boardsesh'),
+      join(appPath, '_CodeSignature', 'CodeResources'),
+    ]
+      .filter((path) => existsSync(path))
+      .map((path) => statSync(path).mtimeMs),
+  );
+}
+
+function readLauncherUrl(appPath: string): string | null {
+  const result = runCapture('plutil', ['-extract', LAUNCHER_URL_KEY, 'raw', '-o', '-', join(appPath, 'Info.plist')]);
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function readPortAppStamp(stampPath: string): PortAppStamp | null {
+  try {
+    return JSON.parse(readFileSync(stampPath, 'utf8')) as PortAppStamp;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The .app to install for a Metro on `port`: `source` itself when its baked
+ * launcher URL already points there, otherwise a copy under PORT_APPS_DIR with
+ * the URL rewritten and an ad-hoc re-sign. The re-sign takes NO entitlements
+ * file: signing scripts/screenshot-sim.entitlements into the signature makes the
+ * simulator refuse to launch it (POSIX 163). Re-copied only when `source` changes.
+ */
+function ensurePortApp(source: string, port: number): string {
+  const launcherUrl = `http://localhost:${port}`;
+  if (readLauncherUrl(source) === launcherUrl) return source;
+
+  const target = portAppPath(port);
+  const stampPath = join(dirname(target), 'source.json');
+  const sourceMtimeMs = appBuildMtimeMs(source);
+  if (
+    existsSync(target) &&
+    portAppIsCurrent(readPortAppStamp(stampPath), source, sourceMtimeMs) &&
+    readLauncherUrl(target) === launcherUrl
+  ) {
+    console.log(`${LOG} Reusing ${target} (launcher URL ${launcherUrl}).`);
+    return target;
+  }
+
+  console.log(`${LOG} Copying ${source} to ${target} with launcher URL ${launcherUrl}...`);
+  // Drop the stamp first: a copy that dies halfway is redone next run.
+  rmSync(stampPath, { force: true });
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(dirname(target), { recursive: true });
+  const copy = runCapture('ditto', [source, target]);
+  if (copy.status !== 0) throw new Error(`ditto ${source} -> ${target} exited ${copy.status}: ${copy.stderr.trim()}`);
+  const plist = join(target, 'Info.plist');
+  let edit = runCapture('/usr/libexec/PlistBuddy', ['-c', `Set :${LAUNCHER_URL_KEY} ${launcherUrl}`, plist]);
+  if (edit.status !== 0) {
+    edit = runCapture('/usr/libexec/PlistBuddy', ['-c', `Add :${LAUNCHER_URL_KEY} string ${launcherUrl}`, plist]);
+  }
+  if (edit.status !== 0) throw new Error(`PlistBuddy could not set ${LAUNCHER_URL_KEY}: ${edit.stderr.trim()}`);
+  const sign = runCapture('codesign', ['--force', '--sign', '-', target]);
+  if (sign.status !== 0) throw new Error(`codesign exited ${sign.status}: ${sign.stderr.trim()}`);
+  writeFileSync(stampPath, `${JSON.stringify({ source, sourceMtimeMs } satisfies PortAppStamp)}\n`);
+  return target;
+}
+
+/**
+ * The .app for this run. On the default port that's resolveAppPath's answer
+ * (it refuses an --app-path baked for another port). On any other port an
+ * --app-path is taken as the source of a per-port copy instead; a fresh build
+ * already bakes BOARDSESH_METRO_PORT, so it's used as is.
+ */
+function resolveShotsAppPath(options: ShotsOptions): string {
+  if (METRO_PORT === DEFAULT_METRO_PORT) return resolveAppPath(screenshotEnvOptions(options));
+  const source = options.appPath ?? resolveAppPath(screenshotEnvOptions(options));
+  if (!existsSync(source)) throw new Error(`--app-path not found: ${source}`);
+  return ensurePortApp(source, METRO_PORT);
+}
+
+/** The dev-client deep link that points the app at our Metro (the launcher-list escape). */
+function devClientOpenUrl(port: number): string {
+  return `${APP_SCHEME}://expo-development-client/?url=${encodeURIComponent(`http://localhost:${port}`)}`;
+}
+
+/** Tap "Open" on the scheme confirmation if one is up. Best-effort. */
+function confirmSchemeDialog(udid: string, env: NodeJS.ProcessEnv): void {
+  if (!commandExists('maestro')) return;
+  const flow = [
+    `appId: ${APP_ID}`,
+    '---',
+    '- tapOn:',
+    '    text: "Open"',
+    '    optional: true',
+    '- waitForAnimationToEnd',
+    '',
+  ].join('\n');
+  runMaestroFlowFile(udid, flow, env);
+}
+
 function runFlow(udid: string, options: ShotsOptions, env: NodeJS.ProcessEnv): void {
   ensureMaestro('--flow needs it to drive the committed Maestro flow.');
   // Resolve by flow NAME rather than a two-way ternary, so a new flow (`help`)
@@ -425,11 +638,16 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
   };
 }
 
-function printReadyBanner(device: DeviceInfo): void {
+function printReadyBanner(device: DeviceInfo, watch: boolean, metroLogPath: string): void {
+  const command = `${METRO_PORT === DEFAULT_METRO_PORT ? '' : `BOARDSESH_METRO_PORT=${METRO_PORT} `}vp run mobile:ios-shots --`;
   console.log(`\n${LOG} Ready. Simulator ${device.name} (${device.udid}) | Metro http://localhost:${METRO_PORT}`);
-  console.log(`${LOG}   shot:      vp run mobile:ios-shots -- screenshot --to climbs --label climbs`);
-  console.log(`${LOG}   navigate:  vp run mobile:ios-shots -- navigate --to board-view`);
-  console.log(`${LOG}   stop:      vp run mobile:ios-shots -- shutdown`);
+  console.log(`${LOG}   Metro log: ${metroLogPath} (file watching ${watch ? 'on' : 'off'})`);
+  console.log(`${LOG}   shot:      ${command} screenshot --to climbs --label climbs`);
+  console.log(
+    `${LOG}   story:     ${command} screenshot --story <id> [--theme dark|light] [--variant liquidGlass|material]`,
+  );
+  console.log(`${LOG}   navigate:  ${command} navigate --to board-view`);
+  console.log(`${LOG}   stop:      ${command} shutdown`);
   console.log(`${LOG} Holding Metro — stop this process (or run \`shutdown\`) to release it.\n`);
 }
 
@@ -457,8 +675,7 @@ function attachToSimulator(device: string): DeviceInfo {
 function runScreenshotSubcommand(options: ShotsOptions): number {
   const device = attachToSimulator(options.device);
   if (options.to && options.to !== 'home') {
-    navigate(device.udid, options.to, process.env);
-    sleepSeconds(effectiveSettle(options, options.to));
+    navigateAndSettle(device.udid, options, resolveMetroLogPath(options.metroLog, ROOT_DIR));
   }
   const label = options.label ?? options.to ?? 'shot';
   const file = captureScreenshot(device.udid, label, options.outDir);
@@ -467,9 +684,14 @@ function runScreenshotSubcommand(options: ShotsOptions): number {
 }
 
 function runNavigateSubcommand(options: ShotsOptions): number {
-  if (!options.to) throw new Error('navigate requires --to <screen>');
+  if (!options.to) throw new Error('navigate requires --to <screen> or --story <id>');
   const device = attachToSimulator(options.device);
-  navigate(device.udid, options.to, process.env);
+  if (options.story) {
+    // Wait for the story too, so a capture right after this lands on a painted screen.
+    navigateAndSettle(device.udid, options, resolveMetroLogPath(options.metroLog, ROOT_DIR));
+  } else {
+    navigate(device.udid, options.to, process.env);
+  }
   return 0;
 }
 
@@ -534,16 +756,7 @@ function blockUntilExit(metro: ChildProcess): Promise<void> {
 async function runFullPipeline(options: ShotsOptions): Promise<number> {
   assertDarwinWithSimctl();
 
-  // The cached .app auto-loads Metro from a build-time-baked localhost:8081 URL;
-  // a non-8081 port silently loads nothing (no `adb reverse` on iOS).
-  if (METRO_PORT !== REQUIRED_METRO_PORT) {
-    throw new Error(
-      `iOS needs Metro on port ${REQUIRED_METRO_PORT} (the .app bakes its launcher URL); ` +
-        `unset BOARDSESH_METRO_PORT (currently ${METRO_PORT}) or rebuild the .app for that port.`,
-    );
-  }
-
-  const appPath = resolveAppPath(screenshotEnvOptions(options));
+  const appPath = resolveShotsAppPath(options);
   const device = findOrCreateIosDevice(resolveIosScreenshotDevices([options.device])[0]);
   bootDevice(device);
   applyCleanStatusBar(device.udid);
@@ -558,23 +771,37 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   const metroEnv = options.screenshotMode
     ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
     : { ...process.env };
+  const watch = shotsMetroWatch(options);
+  const metroLogPath = options.metroLog ?? metroLogPathForPort(METRO_PORT);
   console.log(
-    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend})...`,
+    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend}, ` +
+      `watch=${watch}, log ${metroLogPath})...`,
   );
-  const metro = startMetro(metroEnv);
+  const metro = startMetro(metroEnv, { watch, logPath: metroLogPath });
 
   let succeeded = false;
   try {
     if (!waitForMetro()) throw new Error(`Metro did not become ready on port ${METRO_PORT}`);
     prewarmMetroBundle('ios');
 
-    const baseline = homeReadyMarkerCount();
-    console.log(`${LOG} Launching the app (auto-loads Metro via DEV_CLIENT_DEFAULT_LAUNCHER_URL)...`);
+    const baseline = homeReadyMarkerCount(metroLogPath);
+    // After the pre-warm, whose own request logs an "iOS Bundled" line.
+    const bundleOffset = metroLogOffset(metroLogPath);
+    console.log(`${LOG} Launching the app (auto-loads Metro via ${LAUNCHER_URL_KEY})...`);
     const launch = simctl(['launch', device.udid, APP_ID]);
     if (launch.status !== 0) throw new Error(`simctl launch exited ${launch.status}`);
+    if (!waitForMetroLogLine(isIosBundledLine, bundleOffset, BUNDLE_REQUEST_TIMEOUT_SECONDS, metroLogPath)) {
+      const url = devClientOpenUrl(METRO_PORT);
+      console.warn(
+        `${LOG} The app hasn't asked Metro for its bundle after ${BUNDLE_REQUEST_TIMEOUT_SECONDS}s ` +
+          `(probably stuck on the dev-launcher list); opening ${url}...`,
+      );
+      simctl(['openurl', device.udid, url]);
+      confirmSchemeDialog(device.udid, process.env);
+    }
 
     if (options.screenshotMode) {
-      if (waitForHomeReady(baseline, 0, 240)) {
+      if (waitForHomeReady(baseline, 0, 240, undefined, metroLogPath)) {
         console.log(`${LOG} App reached home.`);
       } else {
         console.warn(
@@ -595,10 +822,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     if (options.flow) runFlow(device.udid, options, process.env);
 
     if (options.to) {
-      if (options.to !== 'home') {
-        navigate(device.udid, options.to, process.env);
-        sleepSeconds(effectiveSettle(options, options.to));
-      }
+      if (options.to !== 'home') navigateAndSettle(device.udid, options, metroLogPath);
       const file = captureScreenshot(device.udid, options.label ?? options.to, options.outDir);
       console.log(`${LOG} Saved ${file}`);
     }
@@ -606,7 +830,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     if (options.shutdown) {
       console.log(`${LOG} --shutdown requested; tearing down.`);
     } else {
-      printReadyBanner(device);
+      printReadyBanner(device, watch, metroLogPath);
       await blockUntilExit(metro);
     }
     succeeded = true;

@@ -54,6 +54,7 @@ import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 import { fetchBoardByUuid } from '../lib/graphql/hooks/fetch-board-by-uuid';
 import { boardUuidOrNull } from '../lib/boards/board-identity';
+import { DevScenarioOverridesHost } from '../dev/stories/load';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
 export type ResolveBoardArgs = {
@@ -777,7 +778,9 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     <BoardPresenceControlsContext.Provider value={controls}>
       <BoardPresenceProvider boardId={visibleBoardId} boardUuid={readerBoardUuid} client={liveClient}>
         <BoardPresenceForegroundSync />
-        {children}
+        {/* Dev builds only: a story can fake a live value (a crew in the session)
+            for everything below. A pass-through in production. docs/mobile-stories.md */}
+        <DevScenarioOverridesHost>{children}</DevScenarioOverridesHost>
       </BoardPresenceProvider>
       <BoardDisambiguationSheet
         visible={visibleDisambiguation !== null}

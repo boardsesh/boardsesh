@@ -12,6 +12,7 @@
  *   vp run mobile:android-shots                       # boot + install + Metro + launch, then hold Metro
  *   vp run mobile:android-shots -- --to climbs --label climbs --shutdown   # one-shot: boot, shoot, tear down
  *   vp run mobile:android-shots -- screenshot --to board-view --label board   # shoot a running emulator
+ *   vp run mobile:android-shots -- screenshot --story <id> --theme light    # shoot a dev story (docs/mobile-stories.md)
  *   vp run mobile:android-shots -- navigate --to discover                  # deep-link only
  *   vp run mobile:android-shots -- --flow app-store                        # run the Maestro flow
  *   vp run mobile:android-shots -- shutdown                                # stop emulator + Metro
@@ -20,6 +21,11 @@
  * printed). Auto-login (prod test account) is on by default via EXPO_PUBLIC_SCREENSHOT_MODE;
  * pass --no-screenshot-mode for the plain app, and set SCREENSHOT_USER_PASSWORD for the
  * prod test account (the seeded test/test pair only exists on --backend local).
+ *
+ * `--story`, `--theme`, `--variant`, `--watch`/`--no-watch` and `--metro-log`
+ * work as in scripts/mobile-ios-shots.ts: a story waits for its
+ * `[stories] ready <id>` line in the Metro log instead of the fixed settle, and
+ * the holding `run` starts Metro with file watching on.
  *
  * Recommended agent flow: run the bare command in the background (it holds Metro),
  * then use the `screenshot`/`navigate` subcommands in the foreground to grab shots.
@@ -46,7 +52,17 @@ import { adbPath, androidEnv, ensureAndroidSdk, resolveAndroidHome } from './lib
 import { bootEmulator, resolveRunningEmulator, shutdownEmulator } from './lib/android-emulator';
 import { ANDROID_DEV_PACKAGE, ANDROID_SCHEME } from './lib/android-app';
 import { ensureAndroidApk } from './mobile-android-apk';
-import { METRO_PORT, stopMetro } from './lib/metro-dev-server';
+import { METRO_LOG_PATH, METRO_PORT, metroLogOffset, shotsMetroWatch, stopMetro } from './lib/metro-dev-server';
+import {
+  STORY_THEMES,
+  STORY_VARIANTS,
+  type StoryTheme,
+  type StoryVariant,
+  applyStoryOptions,
+  assertStoryId,
+  resolveMetroLogPath,
+  settleAfterStory,
+} from './lib/mobile-stories';
 import {
   connectDevClient,
   installDevClient,
@@ -105,6 +121,14 @@ interface ShotsOptions {
   backend: 'prod' | 'local';
   settleSeconds: number;
   headless: boolean;
+  /** Dev story id; sets `to` to its route and waits for its ready line instead of the settle. */
+  story: string | null;
+  theme: StoryTheme | null;
+  variant: StoryVariant | null;
+  /** Metro file watching for `run`; null = on while holding Metro, off for `--shutdown`. */
+  watch: boolean | null;
+  /** Metro log to watch for story lines (default: see resolveMetroLogPath). */
+  metroLog: string | null;
 }
 
 function expectValue(flag: string, value: string | undefined): string {
@@ -118,7 +142,7 @@ function expectEnum(flag: string, value: string | undefined, allowed: readonly s
   return resolved;
 }
 
-function parseShotsArgs(argv: readonly string[]): ShotsOptions {
+export function parseShotsArgs(argv: readonly string[]): ShotsOptions {
   const args = argv.filter((argument) => argument !== '--');
   const options: ShotsOptions = {
     command: 'run',
@@ -134,6 +158,11 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
     backend: 'prod',
     settleSeconds: 3,
     headless: true,
+    story: null,
+    theme: null,
+    variant: null,
+    watch: null,
+    metroLog: null,
   };
 
   let index = 0;
@@ -204,12 +233,47 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
       case '--windowed':
         options.headless = false;
         break;
+      case '--story':
+        options.story = assertStoryId(expectValue(flag, value));
+        index++;
+        break;
+      case '--theme':
+        options.theme = expectEnum(flag, value, STORY_THEMES) as StoryTheme;
+        index++;
+        break;
+      case '--variant':
+        options.variant = expectEnum(flag, value, STORY_VARIANTS) as StoryVariant;
+        index++;
+        break;
+      case '--watch':
+        options.watch = true;
+        break;
+      case '--no-watch':
+        options.watch = false;
+        break;
+      case '--metro-log':
+        options.metroLog = resolve(expectValue(flag, value));
+        index++;
+        break;
       default:
         throw new Error(`Unknown argument: ${flag}`);
     }
   }
 
+  applyStoryOptions(options);
   return options;
+}
+
+/**
+ * Navigate to `options.to`, then wait for a story's ready line (offset taken
+ * before the intent fires) or the fixed settle for everything else.
+ */
+function navigateAndSettle(serial: string, env: NodeJS.ProcessEnv, options: ShotsOptions, metroLogPath: string): void {
+  if (!options.to) return;
+  const offset = metroLogOffset(metroLogPath);
+  navigate(serial, env, options.to);
+  if (options.story) settleAfterStory(options.story, metroLogPath, offset, options.settleSeconds, LOG);
+  else sleepSeconds(options.settleSeconds);
 }
 
 /** Put the cache SDK on PATH so reused helpers that call bare `adb` resolve it. */
@@ -367,10 +431,7 @@ function attachToEmulator(): { serial: string; env: NodeJS.ProcessEnv } {
 
 function runScreenshotSubcommand(options: ShotsOptions): number {
   const { serial, env } = attachToEmulator();
-  if (options.to) {
-    navigate(serial, env, options.to);
-    sleepSeconds(options.settleSeconds);
-  }
+  if (options.to) navigateAndSettle(serial, env, options, resolveMetroLogPath(options.metroLog, ROOT_DIR));
   const label = options.label ?? options.to ?? 'shot';
   const file = captureScreenshot(serial, env, label, options.outDir);
   console.log(`${LOG} Saved ${file}`);
@@ -378,9 +439,11 @@ function runScreenshotSubcommand(options: ShotsOptions): number {
 }
 
 function runNavigateSubcommand(options: ShotsOptions): number {
-  if (!options.to) throw new Error('navigate requires --to <screen>');
+  if (!options.to) throw new Error('navigate requires --to <screen> or --story <id>');
   const { serial, env } = attachToEmulator();
-  navigate(serial, env, options.to);
+  // A story waits for its ready line, so a capture right after this lands on a painted screen.
+  if (options.story) navigateAndSettle(serial, env, options, resolveMetroLogPath(options.metroLog, ROOT_DIR));
+  else navigate(serial, env, options.to);
   return 0;
 }
 
@@ -464,8 +527,9 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   const metroEnv = options.screenshotMode
     ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
     : { ...process.env };
+  const watch = shotsMetroWatch(options);
   console.log(
-    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend})...`,
+    `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend}, watch=${watch})...`,
   );
 
   // Declared before the try so a Metro startup failure (startMetroForDevClient
@@ -474,7 +538,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   let session: DevClientSession | null = null;
   let succeeded = false;
   try {
-    session = startMetroForDevClient(metroEnv);
+    session = startMetroForDevClient(metroEnv, { watch });
     connectDevClient(adbBinary, serial);
 
     if (options.screenshotMode) {
@@ -497,8 +561,8 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     if (options.flow) runMaestroFlow(serial, options, env);
 
     if (options.to) {
-      navigate(serial, env, options.to);
-      sleepSeconds(options.settleSeconds);
+      // startMetroForDevClient tees to METRO_LOG_PATH, whatever the port.
+      navigateAndSettle(serial, env, options, METRO_LOG_PATH);
       const file = captureScreenshot(serial, env, options.label ?? options.to, options.outDir);
       console.log(`${LOG} Saved ${file}`);
     }

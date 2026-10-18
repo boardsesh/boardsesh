@@ -50,6 +50,38 @@ vp run mobile:ios-shots -- --to climbs --label climbs --shutdown
 PNGs land in `.boardsesh/ios-screenshots/NN-<label>.png` (numbered, gitignored); the absolute
 path is printed.
 
+Another session usually holds Metro's 8081. Pick a free port and set it on **every** command:
+
+```bash
+BOARDSESH_METRO_PORT=8087 vp run mobile:ios-shots -- --app-path <cached Boardsesh.app>   # background
+BOARDSESH_METRO_PORT=8087 vp run mobile:ios-shots -- screenshot --to climbs
+```
+
+The holding `run` starts Metro with file watching on, so an edit hot-reloads into the open app
+and the next `screenshot` shows it. A `--shutdown` one-shot keeps the old frozen-bundle Metro
+(`CI=1`). `--watch` / `--no-watch` override either.
+
+### Stories
+
+`--story <id>` opens one dev story (a single component state or a scenario) and captures it as
+soon as it has painted. Story ids, how to write one and the scenario overrides are in
+[docs/mobile-stories.md](mobile-stories.md).
+
+```bash
+vp run mobile:ios-shots -- screenshot --story crew-browse--pills
+vp run mobile:ios-shots -- screenshot --story crew-browse--pills --theme light --variant material
+```
+
+- It is `--to dev/stories/<id>` plus `?theme=dark|light` and `?variant=liquidGlass|material`.
+  The label defaults to the id, with the theme and variant appended when passed.
+- Instead of the fixed settle it waits up to 15 s for `[stories] ready <id>` in the Metro log,
+  then 0.5 s more. A scenario story (`[stories] scenario <id> -> <route>`) gets the normal
+  `--settle` for its real screen. An unknown id fails with the app's "did you mean" list.
+- No ready line in 15 s: it warns and captures anyway. Re-opening the story already on screen
+  does not remount it, so that case always waits the full 15 s.
+- `screenshot` and `navigate` read the newest of the `run` Metro log and `vp run dev:mobile`'s
+  `.boardsesh/mobile-metro.log`. Point `--metro-log <path>` at any other Metro's output.
+
 ### Screens (`--to`)
 
 Friendly names map to deep-link routes (kept in sync with the Android tool):
@@ -77,8 +109,16 @@ A Debug dev-client built by `vp run mobile:build-sim-app` and cached at
 `packages/mobile/.app-cache/Boardsesh.app`. It bakes `DEV_CLIENT_DEFAULT_LAUNCHER_URL` to
 `http://localhost:8081` (via `packages/mobile/plugins/with-screenshot-dev-menu.js`), so a plain
 `simctl launch` auto-connects to Metro with no "Open in 'Boardsesh'?" dialog on initial load —
-**but only when Metro is on port 8081** (there's no `adb reverse` on iOS to remap it). `run`
-errors if `BOARDSESH_METRO_PORT` is anything else; unset it or rebuild the `.app` for that port.
+**but only on the port it was built for** (there's no `adb reverse` on iOS to remap it). With
+`BOARDSESH_METRO_PORT=<n>`, `run` installs a copy at
+`~/.cache/boardsesh/ios-shots-apps/<n>/Boardsesh.app` with the launcher URL rewritten by
+PlistBuddy and an ad-hoc re-sign (`codesign --force --sign -`, no entitlements file: signing
+`scripts/screenshot-sim.entitlements` in makes the simulator refuse to launch it, POSIX 163). The
+copy is redone only when the source `.app` changes.
+
+A fresh dev client sometimes shows its launcher list instead of connecting. If Metro logs no
+`iOS Bundled` line within 20 s of launch, `run` opens
+`com.boardsesh.app://expo-development-client/?url=http%3A%2F%2Flocalhost%3A<port>` itself.
 
 ## Login state
 
@@ -162,7 +202,10 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 | Flag                   | Default                      | Notes                                                            |
 | ---------------------- | ---------------------------- | ---------------------------------------------------------------- |
 | `--to <screen>`        | —                            | Friendly name or raw deep-link route.                            |
-| `--label <name>`       | `--to` value                 | Screenshot filename label.                                       |
+| `--story <id>`         | —                            | Dev story; waits for its ready line (see Stories).               |
+| `--theme <mode>`       | —                            | With `--story`: `dark` / `light`.                                |
+| `--variant <name>`     | —                            | With `--story`: `liquidGlass` / `material`.                      |
+| `--label <name>`       | `--to` value or story id     | Screenshot filename label.                                       |
 | `--out <dir>`          | `.boardsesh/ios-screenshots` | Output directory.                                                |
 | `--device "<name>"`    | `iPhone 16 Pro Max`          | Simulator to boot/attach to.                                     |
 | `--flow <name>`        | —                            | `app-store` / `onboarding` / `help` committed Maestro flow.      |
@@ -173,6 +216,8 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 | `--keep-keychain`      | off                          | Skip the device-wide keychain reset.                             |
 | `--shutdown`           | off                          | Tear down after the run instead of holding Metro.                |
 | `--keep-alive`         | —                            | Inverse of `--shutdown` (hold Metro).                            |
+| `--watch`/`--no-watch` | on unless `--shutdown`       | Metro file watching for `run`.                                   |
+| `--metro-log <path>`   | newest known Metro log       | Log to read story lines from.                                    |
 
 ## Subcommands
 
@@ -184,7 +229,8 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 ## Gotchas
 
 - **macOS only**; no software-GPU/KVM story like Android — `simctl` runs the simulator natively.
-- **Port 8081 is required** with the cached `.app` (baked launcher URL).
+- **Set `BOARDSESH_METRO_PORT` on every subcommand** when `run` used a port other than 8081;
+  `screenshot` finds the right Metro log and the port check from it.
 - **First run is slow** (~30-min `.app` build); cached afterward. Pass `--app-path` to skip it.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you
