@@ -2192,9 +2192,6 @@ describe('ClimbList row highlight', () => {
   });
 });
 
-// The native header is a UIKit bar outside the screen's view tree, so nothing the
-// screen positions itself can sit above it. The grade rail has to be a row of the
-// chrome, which the header lays out below itself and the list insets by.
 // Recent is a pinnable chip (#6288). Unpinning it is a display choice: the saved
 // searches and the search in force are untouched, new searches still save, and
 // pinning it again shows the same history at once. Whether the row draws the
@@ -2265,6 +2262,9 @@ describe('ClimbList with the Recent chip unpinned', () => {
   });
 });
 
+// The native header is a UIKit bar outside the screen's view tree, so nothing the
+// screen positions itself can sit above it. The grade rail has to be a row of the
+// chrome, which the header lays out below itself and the list insets by.
 describe('ClimbList grade row', () => {
   const gradeRowToggles = () => mocks.track.mock.calls.filter(([eventName]) => eventName === 'Grade Row Toggled');
 
