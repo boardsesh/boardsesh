@@ -364,6 +364,35 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(resolveRest(state)?.phase, .waiting(signedSeconds: 90))
     }
 
+    func testRestTimerStoreAndResolverRejectNumbersTheWidgetCannotDraw() {
+        // JSONEncoder writes 1e300 without complaint, and Int(1e300) would trap
+        // the widget extension. Out-of-bounds snapshots render as "no timer".
+        let outOfBounds: [SharedRestTimerState] = [
+            restState(status: SharedRestTimerState.statusWaiting, targetSeconds: 1e300, frozenSignedSeconds: 1e300),
+            restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -1e300),
+            restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90, periodSeconds: 1e300),
+            restState(status: SharedRestTimerState.statusRunning, startOffset: 1e300, deadlineOffset: 90),
+            restState(status: SharedRestTimerState.statusCountUp, startOffset: -1e300, targetSeconds: nil),
+        ]
+        for state in outOfBounds {
+            XCTAssertFalse(state.isWithinBounds)
+            XCTAssertTrue(SharedRestTimerStore.save(state, to: defaults))
+            XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+            XCTAssertNil(resolveRest(state))
+        }
+        // A value on the bound still draws.
+        let edge = restState(status: SharedRestTimerState.statusPaused, frozenSignedSeconds: -86_400)
+        XCTAssertEqual(resolveRest(edge)?.phase, .paused(signedSeconds: -86_400))
+    }
+
+    func testRestWholeSecondsNeverTraps() {
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(1e300), 86_400)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(-1e300), -86_400)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(.nan), 0)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(.infinity), 0)
+        XCTAssertEqual(ResolvedRestTimer.wholeSeconds(-12.9), -12)
+    }
+
     func testRunningRestCountsDownToItsDeadline() {
         let resolved = resolveRest(restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90))
         XCTAssertEqual(

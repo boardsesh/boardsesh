@@ -165,7 +165,10 @@ class BoardSessionService : Service() {
             }
             ACTION_REST_TIMER -> {
                 val restSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
-                if (sessionId.isEmpty() || restSessionId == sessionId) {
+                // Only for the session this service is showing. A service the
+                // system restarted without its START extras has no session yet,
+                // so it takes no rest timer until the app starts one again.
+                if (sessionId.isNotEmpty() && restSessionId == sessionId) {
                     restTimer = if (intent.getBooleanExtra(EXTRA_REST_CLEAR, false)) {
                         null
                     } else {

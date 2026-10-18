@@ -525,9 +525,11 @@ class BoardSessionServiceTest {
 
     private val restNowMs = 1_700_000_000_000L
 
+    private val restSessionId = "rest-session"
+
     private fun restIntent(
         status: String,
-        sessionId: String? = null,
+        sessionId: String? = restSessionId,
         startMs: Long? = null,
         deadlineMs: Long? = null,
         periodSeconds: Long? = null,
@@ -558,7 +560,11 @@ class BoardSessionServiceTest {
         scheduled: MutableList<Pair<Runnable, Long>> = mutableListOf(),
     ): BoardSessionService {
         every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
-        val service = startService()
+        val start = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }
+        val service = Robolectric.buildService(BoardSessionService::class.java, start).create().startCommand(0, 1).get()
         service.wallClockMs = { restNowMs }
         service.elapsedRealtimeMs = { SystemClock.elapsedRealtime() }
         service.scheduleOnMain = { task, delayMs -> scheduled.add(task to delayMs) }
@@ -776,6 +782,20 @@ class BoardSessionServiceTest {
 
         service.onStartCommand(restIntent("running", clear = true), 0, 3)
 
+        assertEquals(android.view.View.GONE,
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a service with no session yet takes no rest timer`() {
+        // The system can restart the service without its START extras.
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startService()
+        service.wallClockMs = { restNowMs }
+
+        service.onStartCommand(restIntent("running", startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 2)
+        service.onStartCommand(restIntent("running", sessionId = null, startMs = restNowMs, deadlineMs = restNowMs + 60_000), 0, 3)
         assertEquals(android.view.View.GONE,
             renderRest(service, R.layout.notification_session_collapsed).findViewById<android.view.View>(R.id.session_rest).visibility)
     }

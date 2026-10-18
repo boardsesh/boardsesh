@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   nowMs: Date.parse('2026-10-18T10:00:00.000Z'),
   appStateListener: null as null | ((state: string) => void),
   sent: [] as (LiveActivityRestTimerOptions | null)[],
+  supportsRestTimer: true,
 }));
 
 const settingsStore = vi.hoisted(() => ({
@@ -53,6 +54,9 @@ vi.mock('../../../settings', async () => {
 });
 
 vi.mock('../live-activity-plugin', () => ({
+  get sessionPresenceSupportsRestTimer() {
+    return harness.supportsRestTimer;
+  },
   updateLiveActivityRestTimer: async (options: LiveActivityRestTimerOptions | null) => {
     harness.sent.push(options);
   },
@@ -102,6 +106,7 @@ beforeEach(() => {
   harness.nowMs = T0;
   harness.sent = [];
   harness.appStateListener = null;
+  harness.supportsRestTimer = true;
   settingsStore.values = {
     restTimerTargetSeconds: 120,
     restTimerMode: 'afterTick',
@@ -117,6 +122,17 @@ afterEach(() => {
 });
 
 describe('LiveActivityRestTimerSync', () => {
+  it('stays silent on a binary that predates the rest timer: no sends, no timeouts, no app-state listener', () => {
+    harness.supportsRestTimer = false;
+    renderSync();
+    armAndTick();
+    advance(120_000 + REST_TIMER_DEADLINE_SLACK_MS);
+
+    expect(harness.sent).toEqual([]);
+    expect(harness.appStateListener).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('clears the Lock Screen once on mount, so a killed app never leaves a timer behind', () => {
     renderSync();
     expect(harness.sent).toEqual([null]);

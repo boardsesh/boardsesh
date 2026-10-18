@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { useSetting } from '../../settings';
 import { nowMs } from '../clock';
-import { updateLiveActivityRestTimer } from './live-activity-plugin';
+import { sessionPresenceSupportsRestTimer, updateLiveActivityRestTimer } from './live-activity-plugin';
 import { buildRestTimerLiveActivityPayload } from './rest-timer-payload';
 
 /**
@@ -53,6 +53,9 @@ export function useLiveActivityRestTimer({ sessionId, activityStartCount }: UseL
   const deadlinePassedRef = useRef(false);
 
   useEffect(() => {
+    // A binary that predates the rest timer (this JS over the air) has nothing
+    // to draw it with: build no snapshots and arm no timeouts there.
+    if (!sessionPresenceSupportsRestTimer) return undefined;
     const now = nowMs();
     const payload = buildRestTimerLiveActivityPayload({
       state: restState,
@@ -91,6 +94,7 @@ export function useLiveActivityRestTimer({ sessionId, activityStartCount }: UseL
   // Going to the background is the last chance to hand native a fresh window
   // before JS stops; coming back flushes whatever moved while away.
   useEffect(() => {
+    if (!sessionPresenceSupportsRestTimer) return undefined;
     const subscription = AppState.addEventListener('change', () => {
       setClockTick((tick) => tick + 1);
     });

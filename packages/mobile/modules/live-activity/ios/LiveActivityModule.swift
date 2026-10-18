@@ -1008,7 +1008,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = await activityManager.lastPushedState() == state
+            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1119,7 +1119,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = await activityManager.lastPushedState() == state
+            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1264,4 +1264,19 @@ struct UpdateActivityClimbOptions: Record {
     /// The climber's saved board look; nil (older JS) leaves the staged value
     /// untouched. See StartSessionOptions.renderMode.
     @Field var renderMode: String?
+}
+
+/// Dedup comparison for JS-driven updates. The rest-timer re-render bumps
+/// `restRevision` on the state it shows, while JS-built states always carry
+/// nil, so a plain `==` would never collapse the next same-climb update inside
+/// the dedup window. The revision is only a redraw trigger, so ignore it here.
+private func sameContentIgnoringRestRevision(
+    _ shown: ClimbSessionAttributes.ContentState?,
+    _ incoming: ClimbSessionAttributes.ContentState
+) -> Bool {
+    guard var shown else { return false }
+    var incoming = incoming
+    shown.restRevision = nil
+    incoming.restRevision = nil
+    return shown == incoming
 }

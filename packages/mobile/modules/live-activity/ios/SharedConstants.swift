@@ -436,7 +436,16 @@ enum VGradeFormatter {
         return vGrade
     }
 
-    private static let displayedVGradeRegex = try! NSRegularExpression(pattern: "^V\\d+\\+?$", options: .caseInsensitive)
+    /// True for an already-formatted display V-grade: "V" then digits, with an
+    /// optional trailing "+" ("V5", "v12", "V5+"). Plain character checks, so
+    /// nothing in the widget's static setup can throw.
+    private static func isDisplayVGrade(_ grade: String) -> Bool {
+        var rest = Substring(grade)
+        guard let first = rest.first, first == "V" || first == "v" else { return false }
+        rest = rest.dropFirst()
+        if rest.last == "+" { rest = rest.dropLast() }
+        return !rest.isEmpty && rest.allSatisfy { $0.isASCII && $0.isNumber }
+    }
 
     /// The grade the widget shows, whatever path delivered it.
     ///
@@ -448,8 +457,7 @@ enum VGradeFormatter {
     /// alone would drop the "+".
     static func displayGrade(_ difficulty: String) -> String {
         let trimmed = difficulty.trimmingCharacters(in: .whitespacesAndNewlines)
-        let nsRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
-        if displayedVGradeRegex.firstMatch(in: trimmed, range: nsRange) != nil {
+        if isDisplayVGrade(trimmed) {
             return trimmed.uppercased()
         }
         return formatVGrade(trimmed)
@@ -489,15 +497,34 @@ struct SharedRestTimerState: Codable, Equatable {
     /// queue-ended snapshot is live and carries timing instead; this is only
     /// its fallback when it has none.
     let frozenSignedSeconds: Double?
+
+    /// Seconds fields stay within a day either way.
+    static let maxAbsSeconds: Double = 86_400
+    /// Epoch milliseconds stay between 2000-01-01 and 2100-01-01.
+    static let minEpochMs: Double = 946_684_800_000
+    static let maxEpochMs: Double = 4_102_444_800_000
+
+    /// Whether every number is one the widget can draw. `JSONEncoder` rejects
+    /// NaN and infinity but writes 1e300 happily, and `Int(1e300)` traps — in
+    /// the widget extension that takes the whole card down. A snapshot outside
+    /// these bounds renders as "no timer".
+    var isWithinBounds: Bool {
+        let seconds = [targetSeconds, periodSeconds, frozenSignedSeconds].compactMap { $0 }
+        let millis = [startMs, deadlineMs].compactMap { $0 }
+        return seconds.allSatisfy { $0.isFinite && abs($0) <= Self.maxAbsSeconds }
+            && millis.allSatisfy { $0.isFinite && $0 >= Self.minEpochMs && $0 <= Self.maxEpochMs }
+    }
 }
 
 enum SharedRestTimerStore {
-    /// Nil for an absent key, unreadable bytes, or a version this build does
-    /// not know — an unknown shape renders as "no timer", never as a guess.
+    /// Nil for an absent key, unreadable bytes, a version this build does not
+    /// know, or numbers out of bounds — an unknown shape renders as "no
+    /// timer", never as a guess.
     static func load(from defaults: UserDefaults) -> SharedRestTimerState? {
         guard let data = defaults.data(forKey: SharedConstants.restTimerKey),
               let state = try? JSONDecoder().decode(SharedRestTimerState.self, from: data),
-              state.v == SharedRestTimerState.currentVersion
+              state.v == SharedRestTimerState.currentVersion,
+              state.isWithinBounds
         else { return nil }
         return state
     }
@@ -556,10 +583,10 @@ struct ResolvedRestTimer: Equatable {
     /// Nil hides the timer: no snapshot, another session's snapshot, an
     /// unknown status, or a running snapshot with nothing to count against.
     static func resolve(state: SharedRestTimerState?, sessionId: String, now: Date) -> ResolvedRestTimer? {
-        guard let state, state.sessionId == sessionId else { return nil }
+        guard let state, state.sessionId == sessionId, state.isWithinBounds else { return nil }
         let period = state.periodSeconds.flatMap { $0 > 0 ? $0 : nil }
         let target = state.targetSeconds.flatMap { $0 > 0 ? $0 : nil }
-        let frozen = Int((state.frozenSignedSeconds ?? target ?? 0).rounded(.towardZero))
+        let frozen = wholeSeconds(state.frozenSignedSeconds ?? target ?? 0)
 
         let phase: RestTimerRenderPhase
         switch state.status {
@@ -586,10 +613,18 @@ struct ResolvedRestTimer: Equatable {
 
         return ResolvedRestTimer(
             phase: phase,
-            periodSeconds: period.map { Int($0) },
-            targetSeconds: target.map { Int($0) },
+            periodSeconds: period.map { wholeSeconds($0) },
+            targetSeconds: target.map { wholeSeconds($0) },
             muted: state.status == SharedRestTimerState.statusQueueEnded
         )
+    }
+
+    /// Whole seconds from a Double without a trap: non-finite reads as 0, and
+    /// anything beyond a day either way is pinned to a day.
+    static func wholeSeconds(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        let bound = SharedRestTimerState.maxAbsSeconds
+        return Int(min(max(value, -bound), bound).rounded(.towardZero))
     }
 
     /// The clock a snapshot's timing describes at `now`: a countdown to its

@@ -156,6 +156,8 @@ vi.mock('../use-live-activity', () => ({
 }));
 
 vi.mock('../live-activity-plugin', () => ({
+  // The rest timer leaf has its own tests; keep it quiet here.
+  sessionPresenceSupportsRestTimer: false,
   updateLiveActivityRestTimer: widget.updateRestTimer,
   getPendingWidgetMirror: widget.pendingMirror,
   acknowledgeWidgetMirror: widget.acknowledgeMirror,
