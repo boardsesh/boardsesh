@@ -485,6 +485,11 @@
           "title": "Spraywalls",
           "useOwnLook": "Usar mi aspecto en los Spraywalls",
           "footer": "Los Spraywalls muestran el aspecto que eligió su creador para la foto. Actívalo para ver tu propio aspecto en ellos."
+        },
+        "moonboard": {
+          "title": "MoonBoard",
+          "gridLabels": "Letras y números de la cuadrícula",
+          "footer": "Muestra de la A a la K y los números de fila alrededor del plafón, para que puedas nombrar presas como F5."
         }
       },
       "accessibility": {

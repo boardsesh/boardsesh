@@ -124,6 +124,15 @@ type LayeredClimbImageProps = {
    */
   underOverlay?: ReactNode;
   /**
+   * Drawn ABOVE the holds overlay, for marks the overlay must not wash: the
+   * MoonBoard grid labels, which the dark-mode veil faded to 2.25:1 when they sat
+   * in the background stack (issue #6234). Pointer-transparent, held back with
+   * the rest of the stack while `revealWithOverlay` waits, and kept out of the
+   * paint bookkeeping (`onArtDisplayed`, `paintedTestID`): it is decoration, not
+   * the climb.
+   */
+  aboveOverlay?: ReactNode;
+  /**
    * Drawn in place of the overlay while no overlay has ever painted — i.e. when
    * the native renderer is missing entirely (Expo Go, a binary that predates it)
    * and `overlayUri` would stay null forever. Lets a surface that MUST show its
@@ -205,6 +214,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   paintedExtraTestID,
   retainPreviousOverlayFor,
   underOverlay,
+  aboveOverlay,
   emptyOverlayFallback,
 }: LayeredClimbImageProps) {
   const shouldShowEmptyFallback = backgroundPaths.length === 0 && missingBackgroundCount === 0;
@@ -539,6 +549,15 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}
         />
       )}
+      {aboveOverlay ? (
+        <View
+          testID="layered-climb-image-above-overlay"
+          style={concealed ? [styles.layer, concealed] : styles.layer}
+          pointerEvents="none"
+        >
+          {aboveOverlay}
+        </View>
+      ) : null}
       {awaitingOverlay && revealPlaceholderColor ? (
         <View
           testID="layered-climb-image-reveal-placeholder"

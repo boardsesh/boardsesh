@@ -27,6 +27,7 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
     onApplySuggestion: vi.fn(),
     onDismissSuggestion: vi.fn(),
     sprayWalls: null,
+    moonboardGridLabels: null,
     lightingSections: LIGHTING_SECTIONS,
     ...overrides,
   };
@@ -128,6 +129,32 @@ describe('buildBoardLookModel — spray walls', () => {
     expect(row.value).toBe(false);
     row.onValueChange(true);
     expect(onUseOwnLookChange).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('buildBoardLookModel — MoonBoard grid letters and numbers', () => {
+  it('leaves the section out when the active board is not a MoonBoard', () => {
+    expect(sectionKeys(makeInput())).not.toContain('moonboard');
+  });
+
+  it('sits after the spray walls and before the lighting, and flips the setting', () => {
+    const onChange = vi.fn();
+    const input = makeInput({
+      sprayWalls: { useOwnLook: false, onUseOwnLookChange: vi.fn() },
+      moonboardGridLabels: { enabled: true, onChange },
+    });
+    expect(sectionKeys(input)).toEqual(['presets', 'destinations', 'sprayWalls', 'moonboard', 'lighting', 'bluetooth']);
+
+    const section = buildBoardLookModel(input).sections.find((candidate) => candidate.key === 'moonboard');
+    expect(section?.title).toBe('mobile.settings.boardLook.moonboard.title');
+    expect(section?.footer).toBe('mobile.settings.boardLook.moonboard.footer');
+    const row = section?.rows[0];
+    if (row?.kind !== 'toggle') throw new Error('no MoonBoard grid labels toggle');
+    expect(row.key).toBe('moonboardGridLabels');
+    expect(row.label).toBe('mobile.settings.boardLook.moonboard.gridLabels');
+    expect(row.value).toBe(true);
+    row.onValueChange(false);
+    expect(onChange).toHaveBeenCalledWith(false);
   });
 });
 

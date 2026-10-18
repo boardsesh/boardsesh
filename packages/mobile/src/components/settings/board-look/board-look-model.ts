@@ -46,6 +46,11 @@ export type BoardLookModelInput = {
    * (spray walls not enabled for this climber).
    */
   sprayWalls: { useOwnLook: boolean; onUseOwnLookChange: (useOwnLook: boolean) => void } | null;
+  /**
+   * The MoonBoard grid letters and numbers switch, or `null` to leave the section
+   * out (the active board is not a MoonBoard).
+   */
+  moonboardGridLabels: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
   /** What lights the board and when the phone lets go of it (`useBoardLightingSections`), last on the page. */
   lightingSections: readonly MoreSection[];
 };
@@ -167,6 +172,24 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
         },
       ],
       footer: t('mobile.settings.boardLook.sprayWalls.footer'),
+    });
+  }
+
+  if (input.moonboardGridLabels) {
+    const { enabled, onChange } = input.moonboardGridLabels;
+    sections.push({
+      key: 'moonboard',
+      title: t('mobile.settings.boardLook.moonboard.title'),
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'moonboardGridLabels',
+          label: t('mobile.settings.boardLook.moonboard.gridLabels'),
+          value: enabled,
+          onValueChange: onChange,
+        },
+      ],
+      footer: t('mobile.settings.boardLook.moonboard.footer'),
     });
   }
 

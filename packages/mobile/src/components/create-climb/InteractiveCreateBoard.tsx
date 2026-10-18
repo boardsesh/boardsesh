@@ -277,6 +277,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               retainPreviousOverlay
               underOverlay={underOverlay}
               emptyOverlayFallback={paintedHoldsFallback}
+              showGridLabels
             />
 
             {/* At-rest tap overlay: one full-bleed detector inside the (identity)

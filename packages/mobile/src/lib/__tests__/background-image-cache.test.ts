@@ -68,6 +68,9 @@ const MOONBOARD_2016_LAYERS = [
 
 const { toFilesystemPath, ensureBackgroundsCached, tryGetBackgroundPathsSync } =
   await import('../background-image-cache');
+// The resolution rules live in bundled-board-art.ts; the manifest mock above
+// covers it too.
+const { bundledBoardArtSource } = await import('../bundled-board-art');
 const { getBoardRenderData } = await import('../board-details');
 
 describe('toFilesystemPath', () => {
@@ -525,5 +528,27 @@ describe('bundled Woods board art', () => {
       paths: ['/bundled/503.webp'],
       missingCount: 0,
     });
+  });
+});
+
+// The MoonBoard grid labels draw straight from the bundle, above the holds
+// overlay (issue #6234), so they need the module id rather than a file path, in
+// the right colour scheme.
+describe('bundledBoardArtSource', () => {
+  it('returns the light label art in light mode', () => {
+    expect(bundledBoardArtSource('moonboard/moonboard-bg.webp', 'light')).toBe(400);
+  });
+
+  it('returns the full-size dark copy in dark mode, not the thumb (403)', () => {
+    expect(bundledBoardArtSource('moonboard/moonboard-bg.webp', 'dark')).toBe(401);
+  });
+
+  it('falls back to the light file when no dark copy is bundled', () => {
+    expect(bundledBoardArtSource('moonboard/moonboard2016/holdseta.webp', 'dark')).toBe(420);
+  });
+
+  it('returns null when nothing is bundled under the key', () => {
+    expect(bundledBoardArtSource('moonboard/not-bundled.webp', 'light')).toBeNull();
+    expect(bundledBoardArtSource('moonboard/not-bundled.webp', 'dark')).toBeNull();
   });
 });

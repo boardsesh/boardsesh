@@ -200,6 +200,9 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
             // recycles on a change of climb, not on every playback frame.
             recyclingKey={frames}
             style={boardBox}
+            // Every board in the strip, neighbours too, so the labels are
+            // already there when a swipe brings the next climb in.
+            showGridLabels
             // A board whose play-size overlay is not rendered yet shows the wall
             // and its holds together, a few frames later, rather than the bare
             // wall first. Only the first paint of this mount. No placeholder
@@ -473,6 +476,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         backgroundVariant="full"
         recyclingKey={currentFrames}
         style={imageBox}
+        showGridLabels
         overlayTestID="play-drawer-board-overlay"
         paintedTestID={capturePaintedTestID}
         paintedExtraTestID={captureLocalMirrorTestID}

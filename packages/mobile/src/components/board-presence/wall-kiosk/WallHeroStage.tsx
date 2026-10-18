@@ -70,6 +70,7 @@ function WallHeroStageComponent({
         renderWidth={overlayRenderWidth}
         backgroundVariant="full"
         style={{ width: artWidth, height: artHeight }}
+        showGridLabels
       />
     </View>
   );

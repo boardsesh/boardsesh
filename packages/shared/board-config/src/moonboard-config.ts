@@ -214,7 +214,10 @@ export type MoonBoardGridGeometry = {
   // Board-art image dimensions (px).
   width: number;
   height: number;
-  // Background image filename under public/images/moonboard/.
+  // Background image filename under public/images/moonboard/. Labels only: the
+  // A-K column letters and row numbers, transparent everywhere else. Web stacks
+  // it under the holds; mobile draws it above the holds overlay so the
+  // dark-mode veil cannot fade it (issue #6234).
   backgroundImage: string;
   // Margins (0-1) of the hold grid within the image.
   calibration: { leftMargin: number; rightMargin: number; topMargin: number; bottomMargin: number };

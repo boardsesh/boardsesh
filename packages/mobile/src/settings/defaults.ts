@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,
   moonboardLightAdjacentHolds: false,
+  moonboardGridLabels: true,
   lightOnSwipe: true,
   lightOnClimbTap: true,
   gradeRowShown: false,

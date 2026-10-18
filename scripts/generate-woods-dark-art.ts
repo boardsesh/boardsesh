@@ -11,7 +11,7 @@
  * it creates alpha by keying the white ground out, so the holds sit straight on whatever
  * surface is behind them, which is the same transparent-art shape MoonBoard's dark siblings
  * already have. Output naming and encoder settings match that script exactly, so
- * scripts/sync-mobile-board-backgrounds.sh and background-image-cache.ts pick these up with
+ * scripts/sync-mobile-board-backgrounds.sh and bundled-board-art.ts pick these up with
  * no change (see the notes in generate-dark-board-art.ts).
  *
  * The pipeline, and why each step is there:
@@ -57,7 +57,7 @@ const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 
 /**
  * Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in
- * background-image-cache.ts and `DARK_SUFFIX` in scripts/generate-dark-board-art.ts. Copied
+ * bundled-board-art.ts and `DARK_SUFFIX` in scripts/generate-dark-board-art.ts. Copied
  * rather than imported because that module runs its own generator on load.
  */
 const DARK_SUFFIX = '.dark.webp';

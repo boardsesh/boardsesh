@@ -21,6 +21,9 @@ vi.mock('@boardsesh/board-config', async () => {
     MOONBOARD_SIZE: { id: 1 },
     WOODS_LAYOUTS: actual.WOODS_LAYOUTS,
     getMoonBoardDetails: vi.fn(),
+    // Real: the label-art key comes off the real layout geometry, which is what
+    // tells the Mini boards' file from the full-size one.
+    getMoonBoardGeometryByLayoutId: actual.getMoonBoardGeometryByLayoutId,
     getWoodsBoardDetails: actual.getWoodsBoardDetails,
   };
 });
@@ -31,7 +34,13 @@ vi.mock('../env', () => ({
 
 import { getImageFilename } from '@boardsesh/board-constants/product-sizes';
 import { BOARD_IMAGE_DIMENSIONS, getMoonBoardDetails } from '@boardsesh/board-config';
-import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } from '../board-details';
+import type { MoonBoardLayoutKey } from '@boardsesh/board-config';
+import {
+  clearBoardRenderDataCache,
+  getBoardAspectRatio,
+  getBoardRenderData,
+  moonBoardGridLabelsImageKey,
+} from '../board-details';
 
 const mockedGetImageFilename = vi.mocked(getImageFilename);
 const mockedGetMoonBoardDetails = vi.mocked(getMoonBoardDetails);
@@ -126,12 +135,39 @@ describe('getBoardRenderData', () => {
       setIds: [8],
     });
 
+    // The label art is not in the stack: full-size boards draw it above the holds
+    // overlay instead (issue #6234).
     expect(result).toEqual({
       boardWidth: 650,
       boardHeight: 1000,
-      backgroundImageKeys: ['moonboard/moonboard-bg.webp', 'moonboard/moonboard2024/woodenholds.webp'],
+      backgroundImageKeys: ['moonboard/moonboard2024/woodenholds.webp'],
       holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 12 }],
     });
+  });
+
+  // Against the real MoonBoard config, every layout: the dark-mode veil sits over
+  // the whole background stack, so label art left in it would be washed out again.
+  it.each([
+    [1, 'moonboard/moonboard-bg.webp'],
+    [2, 'moonboard/moonboard-bg.webp'],
+    [3, 'moonboard/moonboard-bg.webp'],
+    [4, 'moonboard/moonboard-bg.webp'],
+    [5, 'moonboard/moonboard-bg.webp'],
+    [6, 'moonboard/minimoonboard-bg.webp'],
+    [7, 'moonboard/minimoonboard-bg.webp'],
+  ])('keeps layout %i label art (%s) out of the background stack', async (layoutId, labelsKey) => {
+    const actual = await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
+    mockedGetMoonBoardDetails.mockImplementation(actual.getMoonBoardDetails);
+    const [layoutKey] = actual.getLayoutById(layoutId)!;
+    const setIds = actual.getHoldSetsForLayout(layoutKey as MoonBoardLayoutKey).map((holdSet) => holdSet.id);
+
+    const result = getBoardRenderData({ boardName: 'moonboard', layoutId, sizeId: 1, setIds });
+
+    expect(moonBoardGridLabelsImageKey(layoutId)).toBe(labelsKey);
+    expect(result?.backgroundImageKeys).not.toContain(labelsKey);
+    // Every hold set is still drawn, one layer each.
+    expect(result?.backgroundImageKeys).toHaveLength(setIds.length);
+    expect(setIds.length).toBeGreaterThan(0);
   });
 
   it('returns null for an invalid MoonBoard size', () => {

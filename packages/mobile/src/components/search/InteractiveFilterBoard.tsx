@@ -418,6 +418,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                 boardHeight={boardHeight}
                 mirrored={mirrored}
                 underOverlay={underOverlay}
+                showGridLabels
               />
             )}
             {holdsFilter ? (

@@ -213,6 +213,11 @@
           "title": "Spraywalls",
           "useOwnLook": "Utiliser mon rendu sur les Spraywalls",
           "footer": "Les Spraywalls s'affichent avec le rendu choisi par leur créateur pour la photo. Active cette option pour y voir ton propre rendu."
+        },
+        "moonboard": {
+          "title": "MoonBoard",
+          "gridLabels": "Lettres et numéros de la grille",
+          "footer": "Affiche les lettres de A à K et les numéros de rangée autour de la board, pour annoncer les prises comme F5."
         }
       },
       "accessibility": {

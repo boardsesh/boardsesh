@@ -213,6 +213,11 @@
           "title": "Spraywalls",
           "useOwnLook": "Use my look on Spraywalls",
           "footer": "Spraywalls show the look their creator picked for the photo. Turn this on to see your own look there instead."
+        },
+        "moonboard": {
+          "title": "MoonBoard",
+          "gridLabels": "Grid letters and numbers",
+          "footer": "Shows A to K and the row numbers around the board, so you can call holds like F5."
         }
       },
       "accessibility": {

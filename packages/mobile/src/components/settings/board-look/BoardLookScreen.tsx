@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
+import { isMoonboardBoardName, toBoardName } from '@boardsesh/board-config';
 import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
@@ -30,6 +31,8 @@ import { useSprayWallsUseOwnLookSetting } from '../../../lib/spray-wall-look-pre
 import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useBoardLightingSections } from '../board-lighting/use-board-lighting-sections';
+import { useActiveBoard } from '../../../lib/graphql/use-active-board';
+import { useSetting } from '../../../settings';
 
 /**
  * "Board" — the parent. Pick a look from a rail of renders of your own board,
@@ -67,6 +70,24 @@ export function BoardLookScreen() {
       },
     }),
     [useOwnLook, setUseOwnLook],
+  );
+  // Only for a climber whose active board is a MoonBoard, the same rule as the
+  // MoonBoard lighting switch further down this page.
+  const { data: activeBoard } = useActiveBoard();
+  const showMoonboardGridLabels = isMoonboardBoardName(toBoardName(activeBoard?.boardType));
+  const [moonboardGridLabelsEnabled, setMoonboardGridLabelsEnabled] = useSetting('moonboardGridLabels');
+  const moonboardGridLabels = useMemo(
+    () =>
+      showMoonboardGridLabels
+        ? {
+            enabled: moonboardGridLabelsEnabled,
+            onChange: (enabled: boolean) => {
+              hapticSelection();
+              setMoonboardGridLabelsEnabled(enabled);
+            },
+          }
+        : null,
+    [showMoonboardGridLabels, moonboardGridLabelsEnabled, setMoonboardGridLabelsEnabled],
   );
 
   // Start fully dismissed, so a banner can never flash in during hydration and
@@ -166,6 +187,7 @@ export function BoardLookScreen() {
           onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),
           onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
           sprayWalls,
+          moonboardGridLabels,
           lightingSections,
         }),
         'board',
@@ -182,6 +204,7 @@ export function BoardLookScreen() {
       suggestion,
       settleSuggestion,
       sprayWalls,
+      moonboardGridLabels,
       lightingSections,
     ],
   );

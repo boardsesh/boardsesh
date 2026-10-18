@@ -37,7 +37,7 @@
  *
  * The output files are committed. `scripts/sync-mobile-board-backgrounds.sh` derives a
  * manifest key per file path, so `holdsetb.dark.webp` becomes its own key with no
- * change to that script; `packages/mobile/src/lib/background-image-cache.ts` then
+ * change to that script; `packages/mobile/src/lib/bundled-board-art.ts` then
  * prefers the `.dark.webp` sibling when the colour scheme is dark, and falls back to
  * the original whenever no sibling is bundled. That fallback is what keeps every other
  * board — and light mode — byte-identical.
@@ -59,7 +59,7 @@ const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 
 /**
  * Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in
- * background-image-cache.ts, and `DARK_SUFFIX` in scripts/generate-woods-dark-art.ts, which
+ * packages/mobile/src/lib/bundled-board-art.ts, and `DARK_SUFFIX` in scripts/generate-woods-dark-art.ts, which
  * writes the same kind of sibling through a different transform. Deliberately not shared by
  * import: this module runs its generator on load, so importing it from the Woods script
  * would regenerate the MoonBoard art as a side effect.

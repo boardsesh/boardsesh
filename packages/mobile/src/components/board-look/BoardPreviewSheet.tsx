@@ -100,6 +100,7 @@ export function BoardPreviewSheet({
               renderSettingsOverride={renderSettingsOverride}
               holdColorOverride={holdColorOverride}
               recyclingKey={recyclingKey}
+              showGridLabels
             />
           </View>
           {note ? (

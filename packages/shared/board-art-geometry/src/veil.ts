@@ -37,8 +37,9 @@ export const VEIL_TUNING = {
    * Share of a board's placements that must carry an art reading before the
    * strong bucket is allowed. Under it the board is mostly bare grid, and what
    * the veil dims is the field's own furniture rather than hold art — on both
-   * MoonBoards the A-K / 1-18 labels, which are painted into the board art and
-   * go down with the wall.
+   * MoonBoards the A-K / 1-18 labels, which are painted into the board art. The
+   * mobile app draws that label art above the overlay (issue #6234), so there
+   * they no longer go down with the wall.
    */
   veilMinCoverage: 0.6,
   /**

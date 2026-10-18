@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
 import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
+import { MoonBoardGridLabels } from './board/MoonBoardGridLabels';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
@@ -113,6 +115,12 @@ type BoardImageNativeProps = {
    */
   emptyOverlayFallback?: ReactNode;
   /**
+   * Draw the MoonBoard's A-K / row-number labels above the holds, when the
+   * climber has them on (Settings › Board). For full-size boards only: at
+   * thumbnail size the labels are 1-2 px specks. No effect on other boards.
+   */
+  showGridLabels?: boolean;
+  /**
    * Draw under a different board-render settings bundle than the climber's
    * stored one — the board-look carousel's preview cards. Only the board-render
    * half is substituted: hold colours and marker shapes still come from the
@@ -175,6 +183,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   retainPreviousOverlay,
   underOverlay,
   emptyOverlayFallback,
+  showGridLabels = false,
 }: BoardImageNativeProps) {
   const {
     overlayUri,
@@ -253,6 +262,19 @@ const BoardImageNative = React.memo(function BoardImageNative({
 
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, frames);
 
+  // One element for both stacks (the bridge and the live board), memoised so
+  // `LayeredClimbImage`'s memo still holds across this component's renders.
+  // Never on a mirrored board: the art's letters would read backwards.
+  // `ReadyBoardArtIdentity` keeps the scheme as a plain string.
+  const artColorScheme = artworkIdentity.colorScheme === 'dark' ? 'dark' : 'light';
+  const gridLabels = useMemo(
+    () =>
+      showGridLabels && isMoonboardBoardName(boardName) && !mirrored ? (
+        <MoonBoardGridLabels layoutId={layoutId} colorScheme={artColorScheme} />
+      ) : null,
+    [showGridLabels, boardName, layoutId, mirrored, artColorScheme],
+  );
+
   return (
     <View
       accessible={accessible}
@@ -268,6 +290,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
           baseColor={openingArt.backgroundBaseColor}
           mirrored={openingArt.mirrored}
           suppressOverlayTransition
+          aboveOverlay={gridLabels}
         />
       )}
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, opacity: bridging ? 0 : 1 }}>
@@ -311,6 +334,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
             retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
           }
           underOverlay={underOverlay}
+          aboveOverlay={gridLabels}
           // Only once the loader has given up: a null overlay during an ordinary
           // cold render is "not yet", and showing the fallback there would flash
           // JS-drawn holds before the real ones on every capable device.
