@@ -216,6 +216,12 @@ async function runClimbPolicyMigration(): Promise<void> {
 
 describe('migration 0276 re-sends the climbs the old board sync withheld', () => {
   beforeEach(async () => {
+    // This tests 0276, which ran while the CHECK still allowed 'climb'. The test
+    // database has the narrowed CHECK from 0280, so allow 'climb' again here to
+    // seed the rows 0276 deletes, and restore the narrowed CHECK afterwards.
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta'))`);
     await seedPrivateSetter();
     // The other two rows the old sync withheld: a public account's climb with
     // an "Only me" policy, and a deleted author's climb with its tombstone.
@@ -224,6 +230,13 @@ describe('migration 0276 re-sends the climbs the old board sync withheld', () =>
     await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
     await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
       VALUES ('climb', 'policy-only-me', ${OWNER_ID}, 'only_me'), ('climb', 'policy-tombstone', NULL, 'only_me')`);
+  });
+
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'playlist', 'beta'))`);
   });
 
   // A phone that pulled under the old rule walked its cursor past these rows

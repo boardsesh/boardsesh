@@ -17,7 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, inArray, like, sql } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import type {
   BoardPresenceEvent,
   BoardPresenceClimb,
@@ -790,31 +790,22 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
     const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Separate Gates');
     const elsewhere = await makeSprayBoard(makeUnlistedBoard, 'Spray Different Layout');
     const publicClimb = await makeSprayClimbDisplay(board);
-    const privateClimb = await makeSprayClimbDisplay(board);
     const draft = await makeSprayClimbDisplay(board);
     const otherWall = await makeSprayClimbDisplay(elsewhere);
-    // A climb has no audience: a stray legacy "Only me" climb policy (the
-    // CHECK still accepts one for a release) hides nothing.
-    await db.execute(
-      sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
-        VALUES ('climb', ${privateClimb.climbUuid}, ${OWNER}, 'only_me')`,
-    );
     await db.update(dbSchema.boardClimbs).set({ isDraft: true }).where(eq(dbSchema.boardClimbs.uuid, draft.climbUuid));
     await db.insert(dbSchema.userProfiles).values({ userId: OTHER_STRANGER, isPrivate: true });
     vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([
       { ...publicClimb, sentByUserId: OTHER_STRANGER, sentByDisplayName: 'Private Sender' },
-      privateClimb,
       draft,
       otherWall,
     ]);
     for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
-      const [visible, legacyPolicy, ...concealed] = await boardPresenceQueries.boardRecentClimbs(
+      const [visible, ...concealed] = await boardPresenceQueries.boardRecentClimbs(
         undefined,
         { boardId: board.id, boardUuid: board.uuid },
         ctx,
       );
       expect(visible).toMatchObject({ name: publicClimb.name, frames: publicClimb.frames, sentByDisplayName: null });
-      expect(legacyPolicy).toMatchObject({ name: privateClimb.name, frames: privateClimb.frames });
       expect(concealed).toHaveLength(2);
       for (const returned of concealed) expect(returned).toMatchObject({ name: null, frames: null });
     }
