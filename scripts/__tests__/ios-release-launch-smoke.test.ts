@@ -134,6 +134,8 @@ describe('Release launch CLI and PID parsing', () => {
       [],
       ['--app', '/app'],
       ['--app', '/app', '--device', 'booted', '--evidence-dir', '/evidence'],
+      ['--app', '/app', '--device', '-'.repeat(36), '--evidence-dir', '/evidence'],
+      ['--app', '/app', '--device', 'a'.repeat(36), '--evidence-dir', '/evidence'],
       ['--app', '/app', '--app', '/other'],
       ['--unknown', 'option'],
     ])
@@ -388,6 +390,30 @@ describe('Release simulator launch smoke', () => {
     expect(smoke.summary().cleanupError).toMatch(/terminate fixture failure/);
     expect(smoke.release).toHaveBeenCalledOnce();
   });
+
+  it.each([false, true])(
+    'preserves the launch error if the final summary write fails (prior failure: %s)',
+    async (priorFailure) => {
+      const smoke = fixture();
+      if (priorFailure) {
+        const crashPath = '/host/DiagnosticReports/Boardsesh-new.ips';
+        smoke.controls.currentReports = () => [{ path: crashPath, modifiedMs: 1, bytes: 100 }];
+        smoke.controls.reportContents.set(crashPath, modernReport());
+      }
+      const runCommand = smoke.dependencies.run;
+      smoke.dependencies.run = (command, args, timeoutMs) => {
+        const commandResult = runCommand(command, args, timeoutMs);
+        if (args[1] === 'terminate') {
+          const summaryPath = join(smoke.options.evidenceDir, 'summary.json');
+          rmSync(summaryPath);
+          mkdirSync(summaryPath);
+        }
+        return commandResult;
+      };
+      await expect(smoke.run()).rejects.toThrow(priorFailure ? /Fresh crash report/ : /Could not write launch summary/);
+      expect(smoke.release).toHaveBeenCalledOnce();
+    },
+  );
 
   it('retains the measured passing verdict and records cleanup or lease release failures', async () => {
     for (const failLease of [false, true]) {

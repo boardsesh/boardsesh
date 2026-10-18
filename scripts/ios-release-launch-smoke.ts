@@ -13,6 +13,7 @@ import { acquireSimulatorLease, processIsAlive } from './lib/ios-simulator-lease
 
 const survivalWindowMs = 20_000;
 const pollIntervalMs = 1_000;
+const simulatorUdidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export interface ReleaseLaunchOptions {
@@ -93,7 +94,7 @@ export function parseReleaseLaunchArgs(args: readonly string[]): ReleaseLaunchOp
   const evidenceDir = options.get('--evidence-dir');
   if (!appPath || !device || !evidenceDir)
     throw new Error('Usage: --app <Release .app> --device <UDID> --evidence-dir <directory>');
-  if (!/^[0-9a-f-]{36}$/i.test(device)) throw new Error('--device requires an explicit simulator UDID.');
+  if (!simulatorUdidPattern.test(device)) throw new Error('--device requires an explicit simulator UDID.');
   return { appPath: resolve(appPath), device, evidenceDir: resolve(evidenceDir) };
 }
 
@@ -177,7 +178,14 @@ export async function runReleaseLaunchSmoke(
     observations: [],
     crashReports: [],
   };
-  const writeSummary = () => writeFileSync(join(options.evidenceDir, 'summary.json'), JSON.stringify(summary, null, 2));
+  const writeSummary = () => {
+    try {
+      writeFileSync(join(options.evidenceDir, 'summary.json'), JSON.stringify(summary, null, 2));
+    } catch (error) {
+      summary.status = 'failed';
+      summary.error ??= `Could not write launch summary: ${failureMessage(error)}`;
+    }
+  };
   const run = (command: string, args: string[], timeoutMs: number): SmokeCommandResult => {
     const result = dependencies.run(command, args, timeoutMs);
     appendFileSync(
@@ -196,7 +204,8 @@ export async function runReleaseLaunchSmoke(
   let baseline: IosDiagnosticReport[] = [];
   let directories: string[] = [];
   try {
-    if (!/^[0-9a-f-]{36}$/i.test(options.device)) throw new Error('A smoke test requires an explicit simulator UDID.');
+    if (!simulatorUdidPattern.test(options.device))
+      throw new Error('A smoke test requires an explicit simulator UDID.');
     if (!existsSync(join(options.appPath, 'main.jsbundle')))
       throw new Error('Release app is missing embedded main.jsbundle.');
     const bundleIdentifier = checked(
@@ -313,12 +322,7 @@ export async function runReleaseLaunchSmoke(
       summary.status = 'failed';
       summary.error ??= failureMessage(error);
     }
-    try {
-      writeSummary();
-    } catch (error) {
-      summary.status = 'failed';
-      summary.error ??= failureMessage(error);
-    }
+    writeSummary();
     try {
       if (summary.pid !== undefined && summary.bundleIdentifier && dependencies.isProcessAlive(summary.pid))
         checked('xcrun', ['simctl', 'terminate', options.device, summary.bundleIdentifier], 15_000);
