@@ -83,6 +83,12 @@ const privacySchema = readFileSync(
   new URL('../../../db/drizzle/0261_account_resource_privacy.sql', import.meta.url),
   'utf8',
 );
+// Contract step of #6376: the CHECK without 'climb', applied after 0261 so the
+// test database rejects a climb policy exactly as production does.
+const narrowedPrivacyTypeCheck = readFileSync(
+  new URL('../../../db/drizzle/0280_narrow_content_privacy_type_check.sql', import.meta.url),
+  'utf8',
+);
 const anonymousOnForeignBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0266_anonymous_on_foreign_boards.sql', import.meta.url),
   'utf8',
@@ -2178,6 +2184,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
+  ${narrowedPrivacyTypeCheck}
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
 `;
