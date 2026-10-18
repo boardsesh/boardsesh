@@ -19,8 +19,7 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
-  COORDINATE_LINE_KEYS,
-  COUNT_LINE_KEYS,
+  ACTIVE_HOLDS_LINE_KEYS,
   activeHoldsLineCandidates,
   activeHoldsLineWidthKey,
   chooseActiveHoldsLine,
@@ -92,8 +91,7 @@ export function markerChipColor(markerColor: string): string {
  * A role's marker on this board: its canonical code's colour under the board's
  * render mode, then the climber's colour, and the glyph the board draws. A
  * role without a canonical code (MoonBoard's live-preview foot) takes its first
- * code. Every code of a role shares one marker, so Kilter's Tycho colours
- * (36–41) and MoonBoard's preview hand colours (47, 48) all show as Hand.
+ * code.
  */
 function roleMarker(
   boardName: BoardName,
@@ -114,17 +112,13 @@ function roleMarker(
 
 export type ActiveHoldsRow = ActiveHoldsGroup & {
   roleName: string;
-  /** The holds as read out: coordinates joined by commas, or the count. */
+  /** The holds as read out: coordinates joined by commas. */
   spokenHolds: string;
   marker: ActiveHoldMarker | null;
 };
 
 /** The climb's holds by role, each with the marker the board draws for it. */
-function useActiveHoldsRows(
-  boardName: BoardName,
-  layoutId: number,
-  frames: string,
-): { rows: ActiveHoldsRow[]; hasLabels: boolean } {
+function useActiveHoldsRows(boardName: BoardName, layoutId: number, frames: string): ActiveHoldsRow[] {
   const { t } = useTranslation('climbs');
   const { overrides: colorOverrides, shapes: shapeOverrides } = useHoldColorOverrides();
   const look = useBoardRenderMode(boardName, layoutId);
@@ -143,10 +137,10 @@ function useActiveHoldsRows(
     const rows = summary.groups.map((group) => ({
       ...group,
       roleName: roleNames[group.role],
-      spokenHolds: group.labels ? group.labels.join(', ') : String(group.count),
+      spokenHolds: group.labels?.join(', ') ?? '',
       marker: roleMarker(boardName, group.role, look, colorOverrides, shapeOverrides),
     }));
-    return { rows, hasLabels: summary.hasLabels };
+    return rows;
   }, [summary, boardName, look, colorOverrides, shapeOverrides, startLabel, handLabel, finishLabel, footLabel]);
 }
 
@@ -215,37 +209,24 @@ function LineRow({ segments, markers, chipSize, handShrinks, onLayout, testID }:
 }
 
 /**
- * The collapsed header: each role's marker, then its holds (`● I4 ● G8 K10
- * G12 D14 F14 ● F18`, or `● Start 2 ● Hand 6 ● Finish 2 ● Foot 4`), in the
- * title's place. It measures every reading off screen and draws the richest
- * one that fits the row at the climber's text size: only Hand is ever cut
- * short, then Hand becomes a count (or the role words go), and when not even
- * that fits, the section's title stands in.
+ * The collapsed header: each role's marker, then its MoonBoard coordinates
+ * (`● I4 ● G8 K10 G12 D14 F14 ● F18`), in the title's place. It measures every
+ * reading off screen and draws the richest one that fits the row at the
+ * climber's text size: only Hand is ever cut short, then Hand becomes a count,
+ * and when not even that fits, the section's title stands in.
  */
 export const ActiveHoldsLine = memo(function ActiveHoldsLine({
   rows,
-  hasLabels,
   fallbackTitle,
 }: {
   rows: readonly ActiveHoldsRow[];
-  hasLabels: boolean;
   /** Drawn instead of the line when no reading fits, so the header always names the section. */
   fallbackTitle: string;
 }) {
-  const { t } = useTranslation('climbs');
   const chipSize = useChipSize();
-  const candidates = useMemo(
-    () =>
-      activeHoldsLineCandidates(rows, (group) =>
-        t('mobile.activeHolds.countGroup', {
-          role: rows.find((row) => row.role === group.role)?.roleName ?? '',
-          count: group.count,
-        }),
-      ),
-    [rows, t],
-  );
+  const candidates = useMemo(() => activeHoldsLineCandidates(rows), [rows]);
   const markers = useMemo(() => new Map(rows.map((row) => [row.role, row.marker])), [rows]);
-  const keys: readonly ActiveHoldsLineKey[] = hasLabels ? COORDINATE_LINE_KEYS : COUNT_LINE_KEYS;
+  const keys: readonly ActiveHoldsLineKey[] = ACTIVE_HOLDS_LINE_KEYS;
   const { fontScale } = useWindowDimensions();
   const widthKeys = useMemo(
     () =>
@@ -274,19 +255,14 @@ export const ActiveHoldsLine = memo(function ActiveHoldsLine({
     if (width !== undefined) widths[key] = width;
   }
   const measured = available !== null && keys.every((key) => widths[key] !== undefined);
-  const choice = chooseActiveHoldsLine({
-    hasLabels,
-    widths,
-    available,
-    lastChoice: rememberedLineChoice(hasLabels),
-  });
+  const choice = chooseActiveHoldsLine({ widths, available, lastChoice: rememberedLineChoice() });
   const choiceKey = choice?.key ?? null;
   const choiceShrinks = choice?.handShrinks ?? false;
   // Only a measured reading is remembered, to stand in while the next climb measures.
   useEffect(() => {
     if (!measured) return;
-    rememberLineChoice(hasLabels, choiceKey === null ? null : { key: choiceKey, handShrinks: choiceShrinks });
-  }, [measured, hasLabels, choiceKey, choiceShrinks]);
+    rememberLineChoice(choiceKey === null ? null : { key: choiceKey, handShrinks: choiceShrinks });
+  }, [measured, choiceKey, choiceShrinks]);
   return (
     <View style={styles.lineFrame} onLayout={handleFrameLayout} testID="active-holds-line-frame">
       {/* Every reading at its natural width, unseen. Each row is keyed by what
@@ -331,7 +307,7 @@ export const ActiveHoldsLine = memo(function ActiveHoldsLine({
   );
 });
 
-/** One row a role: its marker, its name, then the coordinates or the count. */
+/** One row a role: its marker, its name, then its coordinates. */
 const ActiveHoldsList = memo(function ActiveHoldsList({ rows }: { rows: readonly ActiveHoldsRow[] }) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -358,7 +334,7 @@ const ActiveHoldsList = memo(function ActiveHoldsList({ rows }: { rows: readonly
             {row.roleName}
           </Text>
           <Text variant="subheadline" numeric style={styles.holds}>
-            {row.labels ? row.labels.join(' ') : String(row.count)}
+            {row.labels?.join(' ')}
           </Text>
         </View>
       ))}
@@ -377,12 +353,12 @@ type ActiveHoldsSectionProps = {
 };
 
 /**
- * The climb's holds by role, as a section below the climb. Collapsed (as the
- * peek at the fold, say) its header is just the line of holds, with no title;
- * expanded, it is titled and lists a row a role. MoonBoard lists wall
- * coordinates bottom to top; boards with none on the wall show a count. It
- * reads the frames the board already has: no state, no effects, no queries
- * and no Bluetooth.
+ * A MoonBoard climb's holds by role, as a section below the climb (the drawer
+ * only offers it on a MoonBoard: other boards are too dense for a list of holds
+ * to help). Collapsed (as the peek at the fold, say) its header is just the
+ * line of wall coordinates, bottom to top, with no title; expanded, it is
+ * titled and lists a row a role. It reads the frames the board already has:
+ * no state, no effects, no queries and no Bluetooth.
  */
 export const ActiveHoldsSection = memo(function ActiveHoldsSection({
   boardName,
@@ -393,7 +369,7 @@ export const ActiveHoldsSection = memo(function ActiveHoldsSection({
 }: ActiveHoldsSectionProps) {
   const { t } = useTranslation('climbs');
   const playbackFrame = useContext(PlaybackFrameContext);
-  const { rows, hasLabels } = useActiveHoldsRows(boardName, layoutId, playbackFrame ?? frames);
+  const rows = useActiveHoldsRows(boardName, layoutId, playbackFrame ?? frames);
   // VoiceOver and TalkBack hear every hold on the collapsed header, past any cut.
   const spokenSummary = useMemo(
     () =>
@@ -407,11 +383,7 @@ export const ActiveHoldsSection = memo(function ActiveHoldsSection({
   return (
     <CollapsibleSection
       title={t('mobile.activeHolds.title')}
-      summary={
-        rows.length > 0 ? (
-          <ActiveHoldsLine rows={rows} hasLabels={hasLabels} fallbackTitle={t('mobile.activeHolds.title')} />
-        ) : null
-      }
+      summary={rows.length > 0 ? <ActiveHoldsLine rows={rows} fallbackTitle={t('mobile.activeHolds.title')} /> : null}
       summaryAccessibilityLabel={spokenSummary}
       hideTitleWhenCollapsed
       persistKey="activeHolds"

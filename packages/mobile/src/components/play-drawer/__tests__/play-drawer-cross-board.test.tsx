@@ -1061,6 +1061,11 @@ describe('PlayDrawer configurable sections', () => {
 });
 
 describe('PlayDrawer active holds section', () => {
+  // A MoonBoard 2024 climb: Active holds is MoonBoard only.
+  const MOON_CLIMB = {
+    ...climbOn('moonboard', 3, 40, 'MOON00000000000000000000000DDDD'),
+    frames: 'p49r42p90r43p196r44',
+  };
   function showOnlyActiveHolds() {
     drawerSections.sections = {
       activeHolds: true,
@@ -1078,24 +1083,7 @@ describe('PlayDrawer active holds section', () => {
     if (!props) throw new Error('DeferredSections never rendered');
     return props.climb;
   }
-
-  it('is the peek on its own, so the drawer scrolls to it, and reads the climb it shows', () => {
-    showOnlyActiveHolds();
-    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
-    renderDrawer();
-    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
-    expect(recorded.deferredSections.at(-1)).toMatchObject({ boardName: 'kilter', layoutId: 8 });
-    expect(lastSectionsClimb()).toBe(HOMEWALL_CLIMB);
-    // A static climb: no playback frame, so Active holds reads the climb's frames.
-    expect(recorded.playbackFrames.at(-1)).toBeNull();
-  });
-
-  it('follows the board to the next climb', () => {
-    showOnlyActiveHolds();
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    const rendered = renderDrawer();
-    const nextClimb = { ...TWELVE_CLIMB, uuid: 'NEXT00000000000000000000000CCCC', frames: 'p1145r12p1146r14' };
-    queueState.currentClimbQueueItem = queueItem(nextClimb, 'queue-next');
+  function rerenderDrawer(rendered: ReturnType<typeof renderDrawer>) {
     rendered.rerender(
       createElement(PlayDrawer, {
         presentation: 'pane' as const,
@@ -1104,51 +1092,63 @@ describe('PlayDrawer active holds section', () => {
         onOpenQueue: vi.fn(),
       }),
     );
+  }
+
+  it('is the peek on its own on a MoonBoard climb, so the drawer scrolls to it', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(MOON_CLIMB, 'queue-moon');
+    renderDrawer();
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
+    expect(recorded.deferredSections.at(-1)).toMatchObject({ boardName: 'moonboard', layoutId: 3 });
+    expect(lastSectionsClimb()).toBe(MOON_CLIMB);
+    // A static climb: no playback frame, so Active holds reads the climb's frames.
+    expect(recorded.playbackFrames.at(-1)).toBeNull();
+  });
+
+  it('never shows on another board, switched on or not: the drawer has nothing to scroll to', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections).toHaveLength(0);
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
+  });
+
+  it('follows the board to the next climb', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(MOON_CLIMB, 'queue-moon');
+    const rendered = renderDrawer();
+    const nextClimb = { ...MOON_CLIMB, uuid: 'NEXTMOON000000000000000000EEEE', frames: 'p5r42p100r44' };
+    queueState.currentClimbQueueItem = queueItem(nextClimb, 'queue-next');
+    rerenderDrawer(rendered);
     expect(lastSectionsClimb()).toBe(nextClimb);
   });
 
   it("hands Active holds the playback frame the board paints by context, keeping the sections' props", () => {
     showOnlyActiveHolds();
     playbackState.isAnimatable = true;
-    playbackState.currentFrameString = 'p1145r12';
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    playbackState.currentFrameString = 'p49r42';
+    queueState.currentClimbQueueItem = queueItem(MOON_CLIMB, 'queue-moon');
     const rendered = renderDrawer();
-    expect(lastBoardProps().currentFrameOverride).toBe('p1145r12');
-    expect(recorded.playbackFrames.at(-1)).toBe('p1145r12');
+    expect(lastBoardProps().currentFrameOverride).toBe('p49r42');
+    expect(recorded.playbackFrames.at(-1)).toBe('p49r42');
     const before = recorded.deferredSections.at(-1) ?? {};
-    playbackState.currentFrameString = 'p1146r13';
-    rendered.rerender(
-      createElement(PlayDrawer, {
-        presentation: 'pane' as const,
-        boardConfig: TWELVE_BY_TWELVE,
-        openTarget: null,
-        onOpenQueue: vi.fn(),
-      }),
-    );
-    expect(recorded.playbackFrames.at(-1)).toBe('p1146r13');
+    playbackState.currentFrameString = 'p90r43';
+    rerenderDrawer(rendered);
+    expect(recorded.playbackFrames.at(-1)).toBe('p90r43');
     const after = recorded.deferredSections.at(-1) ?? {};
     // No prop carries the frame, so the memoised sections skip a playback tick.
-    expect(Object.values(after)).not.toContain('p1146r13');
+    expect(Object.values(after)).not.toContain('p90r43');
     expect(after.climb).toBe(before.climb);
     expect(after.sections).toBe(before.sections);
   });
 
   it('provides no playback frame while Active holds is off, so a tick changes nothing for nobody', () => {
     playbackState.isAnimatable = true;
-    playbackState.currentFrameString = 'p1145r12';
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    playbackState.currentFrameString = 'p49r42';
+    queueState.currentClimbQueueItem = queueItem(MOON_CLIMB, 'queue-moon');
     renderDrawer();
-    expect(lastBoardProps().currentFrameOverride).toBe('p1145r12');
+    expect(lastBoardProps().currentFrameOverride).toBe('p49r42');
     expect(recorded.playbackFrames.at(-1)).toBeNull();
-  });
-
-  it('keeps the same climb when it is mirrored: the counts are the same either way', () => {
-    showOnlyActiveHolds();
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    renderDrawer();
-    act(() => (recorded.actionBar.at(-1)?.onMirror as () => void)());
-    expect(lastBoardProps().mirrored).toBe(true);
-    expect(lastSectionsClimb()).toBe(TWELVE_CLIMB);
   });
 });
 

@@ -26,6 +26,7 @@ const ELIGIBLE_INPUT = {
   isAuthenticated: true,
   boardseshGradeEnabled: true,
   description: 'Start with your left hand on the sidepull.',
+  boardName: 'moonboard',
   screenshotMode: false,
 };
 
@@ -158,7 +159,7 @@ describe('visiblePlayDrawerSections', () => {
     expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, sections: NO_SECTIONS })).toEqual([]);
   });
 
-  it('treats Active holds as a section like the rest: on its own it is the peek', () => {
+  it('treats Active holds as a section like the rest on a MoonBoard: on its own it is the peek', () => {
     expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, sections: { ...NO_SECTIONS, activeHolds: true } })).toEqual([
       'activeHolds',
     ]);
@@ -172,4 +173,17 @@ describe('visiblePlayDrawerSections', () => {
       })[0],
     ).toBe('activeHolds');
   });
+
+  it.each(['kilter', 'tension', 'woods', 'spray'])(
+    'never shows Active holds on a %s climb, switched on or not, so the next section is the peek',
+    (boardName) => {
+      const sections = { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true };
+      const visible = visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, boardName, sections });
+      expect(visible).not.toContain('activeHolds');
+      expect(visible[0]).toBe('logbook');
+      expect(
+        visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, boardName, sections: { ...NO_SECTIONS, activeHolds: true } }),
+      ).toEqual([]);
+    },
+  );
 });

@@ -24,7 +24,6 @@ const COPY: Record<string, string> = {
   'mobile.activeHolds.title': 'Active holds',
   'mobile.activeHolds.a11yGroup': '{{role}}: {{holds}}',
   'mobile.activeHolds.empty': 'This climb lights no holds.',
-  'mobile.activeHolds.countGroup': '{{role}} {{count}}',
   'mobile.create.brush.start': 'Start',
   'mobile.create.brush.hand': 'Hand',
   'mobile.create.brush.finish': 'Finish',
@@ -114,7 +113,8 @@ const MOON_FRAMES = [
   moonHold('F8', 43),
   moonHold('J18', 44),
 ].join('');
-const KILTER_FRAMES = 'p1r42p2r42p3r43p4r44p5r45p6r45p7r45';
+// Every role, foot included (code 45, our firmware's live-preview foot).
+const MOON_ALL_ROLES = [moonHold('A1', 42), moonHold('C3', 43), moonHold('E5', 44), moonHold('G7', 45)].join('');
 
 function renderSection(boardName: BoardName, frames: string) {
   return render(createElement(ActiveHoldsSection, { boardName, layoutId: 1, frames }));
@@ -188,30 +188,6 @@ describe('ActiveHoldsSection', () => {
     expect(view.getByTestId('active-holds-line-title').textContent).toBe('Active holds');
   });
 
-  it('keeps the role words on a count board when they fit, else bare counts', () => {
-    const view = renderSection('kilter', KILTER_FRAMES);
-    // Before measuring: the bare counts, which never clip.
-    expect(lineText(view)).toBe('●2●1●1●3');
-    layOut(300, { words: 280, counts: 120 });
-    expect(lineText(view)).toBe('●Start 2●Hand 1●Finish 1●Foot 3');
-    layOut(200, {});
-    expect(lineText(view)).toBe('●2●1●1●3');
-    layOut(100, {});
-    expect(lineText(view)).toBeNull();
-    expect(view.getByTestId('active-holds-line-title').textContent).toBe('Active holds');
-  });
-
-  it('keeps the role words through a swipe to other counts, with no flash of the bare counts', () => {
-    const view = renderSection('kilter', KILTER_FRAMES);
-    layOut(300, { words: 280, counts: 120 });
-    expect(lineText(view)).toBe('●Start 2●Hand 1●Finish 1●Foot 3');
-    // Another climb: other counts, the same widths (tabular figures), so no new measuring.
-    view.rerender(
-      createElement(ActiveHoldsSection, { boardName: 'kilter', layoutId: 1, frames: 'p1r42p2r43p3r43p4r44p5r45' }),
-    );
-    expect(lineText(view)).toBe('●Start 1●Hand 2●Finish 1●Foot 1');
-  });
-
   it('keeps the last reading while a new climb measures, and after the section folds open and shut', () => {
     const view = renderSection('moonboard', MOON_FRAMES);
     layOut(110, { labels: 240, handFirst: 120, handCount: 100 });
@@ -231,40 +207,27 @@ describe('ActiveHoldsSection', () => {
     renderSection('moonboard', MOON_FRAMES);
     expect(harness.hidesTitle).toBe(true);
     expect(harness.spokenSummary).toBe('Start: B5. Hand: F8, K8, F10, H13, I14. Finish: J18.');
-    cleanup();
-    renderSection('kilter', KILTER_FRAMES);
-    expect(harness.spokenSummary).toBe('Start: 2. Hand: 1. Finish: 1. Foot: 3.');
   });
 
   it("reads the playback frame on screen over the climb's frames", () => {
     const view = render(
       createElement(
         PlaybackFrameContext.Provider,
-        { value: 'p9r12' },
-        createElement(ActiveHoldsSection, { boardName: 'kilter', layoutId: 1, frames: KILTER_FRAMES }),
+        { value: moonHold('D4', 42) },
+        createElement(ActiveHoldsSection, { boardName: 'moonboard', layoutId: 1, frames: MOON_FRAMES }),
       ),
     );
-    expect(view.getByTestId('active-holds-row-STARTING').textContent).toBe('●Start1');
+    expect(view.getByTestId('active-holds-row-STARTING').textContent).toBe('●StartD4');
     expect(view.queryByTestId('active-holds-row-HAND')).toBeNull();
-  });
-
-  it('counts each role on a board without wall coordinates', () => {
-    const view = renderSection('kilter', KILTER_FRAMES);
-    expect(rowText(view, 'STARTING')).toBe('●Start2');
-    expect(rowText(view, 'HAND')).toBe('●Hand1');
-    expect(rowText(view, 'FOOT')).toBe('●Foot3');
   });
 
   it('reads every row out in full', () => {
     const moon = renderSection('moonboard', MOON_FRAMES);
     expect(moon.getByTestId('active-holds-row-HAND').getAttribute('aria-label')).toBe('Hand: F8, K8, F10, H13, I14');
-    cleanup();
-    const kilter = renderSection('kilter', KILTER_FRAMES);
-    expect(kilter.getByTestId('active-holds-row-FOOT').getAttribute('aria-label')).toBe('Foot: 3');
   });
 
   it('says so for a climb with no holds lit', () => {
-    const view = renderSection('kilter', '');
+    const view = renderSection('moonboard', '');
     expect(view.container.textContent).toBe('This climb lights no holds.');
     expect(view.container.querySelector('header')?.childElementCount).toBe(0);
   });
@@ -288,7 +251,7 @@ describe('ActiveHoldsSection', () => {
     it("draws the climber's marker shapes in classic, the octagon as a hexagon", () => {
       harness.look = { mode: 'classic', roleGlyphs: false };
       harness.shapes = SHAPES;
-      const view = renderSection('kilter', 'p1r42p3r43p4r44p5r45');
+      const view = renderSection('moonboard', MOON_ALL_ROLES);
       expect(markerOf(view, 'STARTING').textContent).toBe('▲');
       expect(markerOf(view, 'HAND').textContent).toBe('◆');
       expect(markerOf(view, 'FINISH').textContent).toBe('■');
@@ -298,14 +261,14 @@ describe('ActiveHoldsSection', () => {
 
     it('draws a dot for every role in Aura, which ignores marker shapes', () => {
       harness.shapes = SHAPES;
-      const view = renderSection('kilter', 'p1r42p3r43p4r44p5r45');
+      const view = renderSection('moonboard', MOON_ALL_ROLES);
       for (const role of ['STARTING', 'HAND', 'FINISH', 'FOOT']) expect(markerOf(view, role).textContent).toBe('●');
     });
 
     it("draws Aura's role glyphs when the climber turned them on", () => {
       harness.look = { mode: 'aura', roleGlyphs: true };
       harness.shapes = SHAPES;
-      const view = renderSection('kilter', 'p1r42p3r43p4r44p5r45');
+      const view = renderSection('moonboard', MOON_ALL_ROLES);
       expect(markerOf(view, 'STARTING').textContent).toBe('━');
       expect(markerOf(view, 'HAND').textContent).toBe('┃');
       expect(markerOf(view, 'FINISH').textContent).toBe('✕');
@@ -320,15 +283,13 @@ describe('ActiveHoldsSection', () => {
   });
 
   describe('marker chips', () => {
-    it('gives every role colour of every board at least 3:1 on its chip, classic and Aura alike', () => {
-      for (const [boardName, stateMap] of Object.entries(HOLD_STATE_MAP)) {
-        for (const [code, stateInfo] of Object.entries(stateMap)) {
-          if (!['STARTING', 'HAND', 'FINISH', 'FOOT'].includes(stateInfo.name)) continue;
-          for (const mode of ['classic', 'aura'] as const) {
-            const color = getHoldDisplayColor(stateInfo, mode);
-            const ratio = contrastRatio(color, markerChipColor(color));
-            expect(ratio, `${boardName} ${code} ${mode} ${color}`).toBeGreaterThanOrEqual(3);
-          }
+    it('gives every MoonBoard role colour at least 3:1 on its chip, classic and Aura alike', () => {
+      for (const [code, stateInfo] of Object.entries(HOLD_STATE_MAP.moonboard)) {
+        if (!['STARTING', 'HAND', 'FINISH', 'FOOT'].includes(stateInfo.name)) continue;
+        for (const mode of ['classic', 'aura'] as const) {
+          const color = getHoldDisplayColor(stateInfo, mode);
+          const ratio = contrastRatio(color, markerChipColor(color));
+          expect(ratio, `${code} ${mode} ${color}`).toBeGreaterThanOrEqual(3);
         }
       }
     });
@@ -340,14 +301,14 @@ describe('ActiveHoldsSection', () => {
     });
 
     it('sits a dark marker on the light field instead', () => {
-      // Decoy's classic hand blue, and a near-black colour a climber could pick.
+      // A pure blue and a near-black colour a climber could pick.
       expect(markerChipColor('#0000FF')).toBe(BOARD_FIELD_COLORS.light);
       expect(markerChipColor('#101010')).toBe(BOARD_FIELD_COLORS.light);
     });
 
     it('paints each marker on its chip in both themes alike', () => {
-      harness.look = { mode: 'classic', roleGlyphs: false };
-      const view = renderSection('decoy', 'p1r1p2r2');
+      harness.colors = { HAND: '#101010' };
+      const view = renderSection('moonboard', MOON_FRAMES);
       const startChip = markerOf(view, 'STARTING').parentElement;
       const handChip = markerOf(view, 'HAND').parentElement;
       expect(startChip?.getAttribute('data-style')).toContain(`"backgroundColor":"${BOARD_FIELD_COLORS.dark}"`);

@@ -939,7 +939,6 @@
     "activeHolds": {
       "title": "Presas activas",
       "a11yGroup": "{{role}}: {{holds}}",
-      "countGroup": "{{role}} {{count}}",
       "empty": "Este bloque no ilumina ninguna presa."
     }
   },

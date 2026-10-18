@@ -188,10 +188,14 @@ export function setPlayDrawerSection(sectionId: PlayDrawerSectionId, enabled: bo
   persist();
 }
 
-export function setAllPlayDrawerSections(enabled: boolean): void {
+/** Switches every section, or only `sectionIds` (the ones a screen lists), on or off. */
+export function setAllPlayDrawerSections(
+  enabled: boolean,
+  sectionIds: readonly PlayDrawerSectionId[] = PLAY_DRAWER_SECTION_IDS,
+): void {
   loadBeforeWriting();
   const sections = { ...snapshot.sections };
-  for (const sectionId of PLAY_DRAWER_SECTION_IDS) {
+  for (const sectionId of sectionIds) {
     changedSections.add(sectionId);
     sections[sectionId] = enabled;
   }

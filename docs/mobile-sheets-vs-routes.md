@@ -315,21 +315,29 @@ The sheet has two tabs, **Below the climb** (these sections) and **Buttons** (th
 next, and whether the controls sit below or above the board). The buttons, their layout rule, storage and the ⋯
 stand-ins are described in [climb-view-options.md](climb-view-options.md).
 
-**Active holds** (`activeHolds`, #6290) leads the default order and starts switched off, so
-the default drawer is unchanged; a record saved before it existed has no key for it and
-reads as off, and an order saved before it slots it in first. Switched on, it is the peek at
-the fold. Collapsed, its header is just its line (`ActiveHoldsLine`, a summary node drawn in
-the title's place through `CollapsibleSection`'s `hideTitleWhenCollapsed`): each role's marker
-followed by its holds, across the row up to the chevron. Expanded (`ActiveHoldsSection`), it
-is titled and lists a row a role. MoonBoard shows
-coordinates bottom to top (`B5`); boards without coordinates on the wall show a count per
-role, with the role word ("Start 2") when it fits.
+**Active holds** (`activeHolds`, #6290) is MoonBoard only: other boards are too dense for a
+list of holds to help. `visiblePlayDrawerSections` makes it eligible only when the climb on
+screen is drawn on a MoonBoard, so on any other board it never mounts, never peeks and takes
+no slot, whatever the stored switch says. View options and Settings → Climbs & grades →
+Climb view list its switch only while the active board is a MoonBoard
+(`useActiveBoardIsMoonboard`, the same gate as Board look's MoonBoard grid labels). Show all
+and Hide all touch only the listed switches, and an arrow steps past an unlisted section. It
+leads the default order and starts switched off, so the default drawer is unchanged; a
+record saved before it existed has no key for it and reads as off, and an order saved before
+it slots it in first. Switched on, on a MoonBoard climb, it is the peek at the fold.
+Collapsed, its header is just its line (`ActiveHoldsLine`, a summary node drawn in the
+title's place through `CollapsibleSection`'s `hideTitleWhenCollapsed`): each role's marker
+followed by its wall coordinates, bottom to top (`B5`), across the row up to the chevron.
+Expanded (`ActiveHoldsSection`), it is titled and lists a row a role.
 
 The line measures each of its readings off screen and draws the richest one that fits the
 row at the climber's text size (`chooseActiveHoldsLine` in `active-holds-line.ts`): every
 coordinate; then only Hand cut short, never below its first coordinate and never collapsing
-under its chip; then Hand as a count; then the section's title instead of a line. Count
-boards drop the role words first. Start and Finish are never cut. The header's
+under its chip; then Hand as a count; then the section's title instead of a line. Start and
+Finish are never cut. Widths are cached by a reading's words with every digit as 0 (the line
+draws tabular figures) at module scope, with the room it last had and the reading it last
+drew, which stands in until a new climb is measured; so a swipe, a playback frame or folding
+the section open and shut never flashes another reading. The header's
 `summaryAccessibilityLabel` reads the title and every hold ("Active holds. Start: B5. Hand:
 F8, K8. Finish: J18.") on the collapsed header, whatever the line shows.
 
@@ -339,12 +347,11 @@ the board's look (`useBoardRenderMode` in `src/hooks/use-board-render-look.ts`):
 draws the climber's marker shape, Aura a dot, or the role glyph (━ ┃ ✕ ○) when role glyphs
 are on. Each marker sits on a chip in the board's dark field colour (`BOARD_FIELD_COLORS.dark`)
 in both themes, or the light field for a colour that is under 3:1 on the dark one, so every
-role colour of every board clears 3:1 on a light or a dark sheet. The summary is
-`summarizeActiveHolds` in `@boardsesh/play-view`. It reads frames only: no queries, no
-Bluetooth, nothing to wait for, so it draws as the peek at once. On an animated climb the
-playback frame reaches it through `PlaybackFrameContext`, which only Active holds reads, so
-a playback frame never re-renders the other sections. A spray climb whose wall lost a hold
-still counts that hold, while the board draws one fewer.
+marker clears 3:1 on a light or a dark sheet. The summary is `summarizeActiveHolds` in
+`@boardsesh/play-view`. It reads frames only: no queries, no Bluetooth, nothing to wait for,
+so it draws as the peek at once. On an animated climb the playback frame reaches it through
+`PlaybackFrameContext`, which only Active holds reads and which stays `null` while it is not
+shown, so a playback frame never re-renders the other sections.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.

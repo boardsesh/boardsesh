@@ -132,6 +132,11 @@ vi.mock('../../../lib/play-drawer-sections-preference', () => {
   };
 });
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+// Active holds is listed only while the active board is a MoonBoard.
+const activeBoard = vi.hoisted(() => ({ isMoonboard: true }));
+vi.mock('../../../hooks/use-active-board-is-moonboard', () => ({
+  useActiveBoardIsMoonboard: () => activeBoard.isMoonboard,
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
@@ -301,6 +306,7 @@ beforeEach(() => {
   preferences.order = [...DEFAULT_ORDER];
   preferences.ready = true;
   preferences.setAll.mockClear();
+  activeBoard.isMoonboard = true;
   preferences.setSection.mockClear();
   preferences.move.mockClear();
   preferences.restoreDefaults.mockClear();
@@ -404,7 +410,10 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(preferences.setSection).toHaveBeenCalledWith('logbook', true);
     fireEvent.click(screen.getByTestId('play-drawer-sections-show-all'));
     fireEvent.click(screen.getByTestId('play-drawer-sections-hide-all'));
-    expect(preferences.setAll.mock.calls).toEqual([[true], [false]]);
+    expect(preferences.setAll.mock.calls).toEqual([
+      [true, DEFAULT_ORDER],
+      [false, DEFAULT_ORDER],
+    ]);
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -570,5 +579,38 @@ describe('PlayDrawerSectionsSheet', () => {
     fireEvent.click(restore);
     expect(playerButtons.restoreDefaults).toHaveBeenCalledTimes(1);
     expect(preferences.restoreDefaults).not.toHaveBeenCalled();
+  });
+
+  describe('on a board other than a MoonBoard', () => {
+    it('lists no Active holds switch, and Show all leaves it alone', () => {
+      activeBoard.isMoonboard = false;
+      preferences.sections = { ...preferences.sections, logbook: false };
+      const screen = render(sheet());
+      const labels = screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'));
+      expect(labels).toHaveLength(7);
+      expect(labels).not.toContain('mobile.settings.climbDrawer.sections.activeHolds');
+      fireEvent.click(screen.getByTestId('play-drawer-sections-show-all'));
+      expect(preferences.setAll).toHaveBeenCalledWith(
+        true,
+        DEFAULT_ORDER.filter((sectionId) => sectionId !== 'activeHolds'),
+      );
+    });
+
+    it('moves a row past the unlisted Active holds, so each arrow moves it one place on screen', () => {
+      activeBoard.isMoonboard = false;
+      preferences.order = [
+        'logbook',
+        'activeHolds',
+        ...DEFAULT_ORDER.filter((sectionId) => !['logbook', 'activeHolds'].includes(sectionId)),
+      ];
+      preferences.move.mockReturnValue(true);
+      const screen = render(sheet());
+      fireEvent.click(screen.getByTestId('section-layout-move-down-logbook'));
+      expect(preferences.move.mock.calls).toEqual([
+        ['logbook', 1],
+        ['logbook', 1],
+      ]);
+      preferences.move.mockReset();
+    });
   });
 });

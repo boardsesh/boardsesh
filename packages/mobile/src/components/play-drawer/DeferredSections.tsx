@@ -202,9 +202,10 @@ export const DeferredSections = memo(function DeferredSections({
         isAuthenticated,
         boardseshGradeEnabled,
         description: climb.description,
+        boardName,
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
-    [sections, order, isAuthenticated, boardseshGradeEnabled, climb.description],
+    [sections, order, isAuthenticated, boardseshGradeEnabled, climb.description, boardName],
   );
   const visibleSectionSet = useMemo(() => new Set(visibleSections), [visibleSections]);
   const firstSectionId = visibleSections[0];

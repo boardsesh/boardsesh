@@ -432,6 +432,19 @@ export function PlayCore({
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
 
+  // #5099: the shown climb does not have to belong to the board the climber has
+  // selected. A queue item left over from a board switch, a party peer on
+  // another wall, or a restored launch snapshot all keep their own
+  // `boardType`/`layoutId` — and drawing them against the active board's
+  // placements matches none of their hold ids, so the renderer drops every hold
+  // and paints a veil over bare board art. Draw each climb on ITS board instead,
+  // at its own angle, and let the mismatch raise the switch-board gate below.
+  const renderBoardResolution = useMemo(
+    () => resolveClimbRenderBoard(displayedClimb, boardConfig),
+    [displayedClimb, boardConfig],
+  );
+  const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
+
   const drawerGradeSectionEnabled = useBoardseshGradeEnabled();
   const visibleSectionIds = useMemo(
     () =>
@@ -441,9 +454,17 @@ export function PlayCore({
         isAuthenticated,
         boardseshGradeEnabled: drawerGradeSectionEnabled,
         description: displayedClimb?.description,
+        boardName: renderBoardConfig.boardName,
         screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
-    [sections, sectionOrder, isAuthenticated, drawerGradeSectionEnabled, displayedClimb?.description],
+    [
+      sections,
+      sectionOrder,
+      isAuthenticated,
+      drawerGradeSectionEnabled,
+      displayedClimb?.description,
+      renderBoardConfig.boardName,
+    ],
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
@@ -503,19 +524,6 @@ export function PlayCore({
         climbMirrored: displayedClimb?.mirrored,
       });
   const clearMirror = useCallback(() => setMirrorFlip(null), []);
-
-  // #5099: the shown climb does not have to belong to the board the climber has
-  // selected. A queue item left over from a board switch, a party peer on
-  // another wall, or a restored launch snapshot all keep their own
-  // `boardType`/`layoutId` — and drawing them against the active board's
-  // placements matches none of their hold ids, so the renderer drops every hold
-  // and paints a veil over bare board art. Draw each climb on ITS board instead,
-  // at its own angle, and let the mismatch raise the switch-board gate below.
-  const renderBoardResolution = useMemo(
-    () => resolveClimbRenderBoard(displayedClimb, boardConfig),
-    [displayedClimb, boardConfig],
-  );
-  const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
 
   // A climb that lost a hold: the banner's count and its one action, Remix.
   const { lostHoldCount, onRemix: handleRemixLostHolds } = useLostHoldRemix({
@@ -1985,7 +1993,11 @@ export function PlayCore({
                           holds alone (and only while it is on): the sections' own
                           props stay the same between playback frames. */}
                       <PlaybackFrameContext.Provider
-                        value={sections.activeHolds && playback.isAnimatable ? playback.currentFrameString : null}
+                        value={
+                          visibleSectionIds.includes('activeHolds') && playback.isAnimatable
+                            ? playback.currentFrameString
+                            : null
+                        }
                       >
                         <DeferredSections
                           climb={displayedClimb}

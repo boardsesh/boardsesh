@@ -15,7 +15,7 @@ vi.mock('../../PressableSurface', async () => {
 import { createElement, type ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb } from '@boardsesh/shared-schema';
 
 const deferred = vi.hoisted(() => ({
   ready: false,
@@ -298,6 +298,7 @@ type RenderOptions = {
   description?: string | null;
   climbOverrides?: Partial<Climb>;
   onOpenFullLogbook?: () => void;
+  boardName?: BoardName;
   handlers?: {
     onOpenClimberLogs?: () => void;
     onOpenClimberProfile?: (userId: string) => void;
@@ -310,7 +311,7 @@ function renderSections(options: RenderOptions = {}) {
   return render(
     <DeferredSections
       climb={options.description === undefined ? base : ({ ...base, description: options.description } as Climb)}
-      boardName="kilter"
+      boardName={options.boardName ?? 'kilter'}
       layoutId={1}
       sizeId={10}
       setIds="1,2"
@@ -844,13 +845,17 @@ describe('DeferredSections visibility preferences', () => {
     expect(screen.queryByTestId('active-holds')).toBeNull();
     expect(activeHoldsSection.props).toBeNull();
   });
-  it('makes Active holds the measured peek once it is on, reading the climb on its board and asking for nothing', () => {
+  it('makes Active holds the measured peek on a MoonBoard climb, reading it on its board and asking for nothing', () => {
     lineQueries.history.calls = [];
     lineQueries.beta.calls = [];
     const onFirstSectionHeaderLayout = vi.fn();
-    renderSections({ sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true }, onFirstSectionHeaderLayout });
+    renderSections({
+      boardName: 'moonboard',
+      sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true },
+      onFirstSectionHeaderLayout,
+    });
     expect(screen.getByTestId('active-holds')).toBeDefined();
-    expect(activeHoldsSection.props).toMatchObject({ boardName: 'kilter', layoutId: 1, frames: climb.frames });
+    expect(activeHoldsSection.props).toMatchObject({ boardName: 'moonboard', layoutId: 1, frames: climb.frames });
     expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
     // The Logbook below it waits for scrolling, and nothing is fetched for a frames read.
     expect(screen.queryByTestId('logbook')).toBeNull();
@@ -860,11 +865,19 @@ describe('DeferredSections visibility preferences', () => {
     expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
     expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
   });
+  it('leaves Active holds out on another board, switched on or not, so Logbook is the peek', () => {
+    const onFirstSectionHeaderLayout = vi.fn();
+    renderSections({ sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true }, onFirstSectionHeaderLayout });
+    expect(screen.queryByTestId('active-holds')).toBeNull();
+    expect(activeHoldsSection.props).toBeNull();
+    expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
+    expect(document.querySelector('section')?.getAttribute('data-title')).toBe('mobile.logbook.title');
+  });
   it('lets a playback frame reach Active holds without re-rendering the sections', () => {
     deferred.ready = true;
     const props = {
       climb,
-      boardName: 'kilter' as const,
+      boardName: 'moonboard' as const,
       layoutId: 1,
       sizeId: 10,
       setIds: '1,2',
@@ -900,11 +913,11 @@ describe('DeferredSections visibility preferences', () => {
       'activeHolds',
     ];
     const sections = { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true };
-    const view = renderSections({ sections, order });
+    const view = renderSections({ boardName: 'moonboard', sections, order });
     expect(activeHoldsSection.props).toBeNull();
     deferred.ready = true;
     view.unmount();
-    renderSections({ sections, order, contentEnabled: true });
+    renderSections({ boardName: 'moonboard', sections, order, contentEnabled: true });
     expect(screen.getByTestId('active-holds')).toBeDefined();
   });
   it('mounts and measures a Beta header eagerly without mounting its body', () => {

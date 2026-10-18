@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import { isMoonboardBoardName, toBoardName } from '@boardsesh/board-config';
 import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
@@ -31,7 +30,7 @@ import { useSprayWallsUseOwnLookSetting } from '../../../lib/spray-wall-look-pre
 import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useBoardLightingSections } from '../board-lighting/use-board-lighting-sections';
-import { useActiveBoard } from '../../../lib/graphql/use-active-board';
+import { useActiveBoardIsMoonboard } from '../../../hooks/use-active-board-is-moonboard';
 import { useSetting } from '../../../settings';
 
 /**
@@ -74,8 +73,7 @@ export function BoardLookScreen() {
   // Only when the climber's active board is a MoonBoard. (The MoonBoard lighting
   // switch further down this page gates on the connected Bluetooth board
   // instead; the labels are about the board on screen, not the one on the wall.)
-  const { data: activeBoard } = useActiveBoard();
-  const showMoonboardGridLabels = isMoonboardBoardName(toBoardName(activeBoard?.boardType));
+  const showMoonboardGridLabels = useActiveBoardIsMoonboard();
   const [moonboardGridLabelsEnabled, setMoonboardGridLabelsEnabled] = useSetting('moonboardGridLabels');
   const moonboardGridLabels = useMemo(
     () =>

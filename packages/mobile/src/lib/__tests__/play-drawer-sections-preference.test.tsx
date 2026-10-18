@@ -17,6 +17,11 @@ const { storage, read, write, reportError, addErrorBreadcrumb } = vi.hoisted(() 
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: read, setItem: write } }));
 vi.mock('../error-reporting', () => ({ reportError, addErrorBreadcrumb }));
 vi.mock('../haptics', () => ({ hapticSelection: vi.fn() }));
+// Settings and View options list Active holds only while the active board is a MoonBoard.
+const activeBoard = vi.hoisted(() => ({ isMoonboard: true }));
+vi.mock('../../hooks/use-active-board-is-moonboard', () => ({
+  useActiveBoardIsMoonboard: () => activeBoard.isMoonboard,
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 function storeSections(sections: Record<string, unknown>): void {
@@ -123,6 +128,7 @@ describe('play drawer section preferences', () => {
         isAuthenticated: true,
         boardseshGradeEnabled: true,
         description: 'Start left',
+        boardName: 'moonboard',
         screenshotMode: false,
       }),
     ).not.toContain('activeHolds');
