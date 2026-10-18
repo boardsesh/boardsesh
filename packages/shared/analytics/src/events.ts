@@ -209,10 +209,6 @@ export const SHARED_EVENTS = {
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
   SessionQueueGenerated: 'Session Queue Generated',
-  // Web-only by design: mobile's generator is a live auto-regenerating
-  // preview with no matching discrete "generate" moment. Use
-  // WorkoutGeneratorOpened + SessionQueueGenerated for cross-platform funnels.
-  WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
   // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in

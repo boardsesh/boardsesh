@@ -1172,6 +1172,14 @@ export function PlayCore({
       sharesMirrorState
     )
       return;
+    track(SHARED_EVENTS.MirrorClimb, {
+      climbUuid: displayedClimbUuid,
+      boardName,
+      layoutId,
+      isMirrored: !isMirrored, // send the new orientation
+      surface: 'play_drawer',
+      shared: sharesMirrorState,
+    });
     if (sharesMirrorState && currentClimbQueueItem) {
       void mirrorCurrentClimb(!isMirrored, currentClimbQueueItem.uuid);
     } else {
