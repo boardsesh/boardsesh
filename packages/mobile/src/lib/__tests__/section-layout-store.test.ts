@@ -239,4 +239,32 @@ describe('createSectionLayoutStore', () => {
     store.restoreDefaults();
     expect(store.getLayout().order).toEqual(['mirror', 'favorite', 'share', 'queue']);
   });
+
+  it('records its own write from the settings signal, without reading again', () => {
+    const storage = createStorage();
+    const store = createSectionLayoutStore({ spec: SPEC, ...storage });
+    storage.read.mockClear();
+    store.move('queue', -1);
+    // One look before the change, one from the write's own signal.
+    expect(storage.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a later release's sections through two writes that send no settings signal", () => {
+    const silent = createStorage({
+      version: 1,
+      order: ['mirror', 'angle', 'favorite', 'share', 'queue'],
+      visible: { angle: true },
+    });
+    silent.write.mockImplementation((record: SectionLayoutRecord | null) => {
+      silent.value = JSON.parse(JSON.stringify(record));
+    });
+    const store = createSectionLayoutStore({ spec: SPEC, ...silent });
+    store.move('queue', -1);
+    store.move('mirror', 1);
+    expect(silent.value).toEqual({
+      version: 1,
+      order: ['favorite', 'mirror', 'angle', 'queue', 'share'],
+      visible: { mirror: true, favorite: true, share: true, queue: true, angle: true },
+    });
+  });
 });

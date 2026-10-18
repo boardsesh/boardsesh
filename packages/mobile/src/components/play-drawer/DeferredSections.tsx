@@ -486,6 +486,11 @@ export const DeferredSections = memo(function DeferredSections({
           </CollapsibleSection>
         );
         break;
+      default:
+        // A new id in BELOW_FOLD_SECTION_IDS stops compiling here until it gets a case,
+        // instead of drawing an empty wrapper. At run time it draws nothing.
+        sectionId satisfies never;
+        return null;
     }
     return (
       <View key={sectionId} onLayout={isFirst ? handleFirstSectionLayout : undefined}>
