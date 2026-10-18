@@ -102,6 +102,7 @@ export function BoardLookSlider({
             renderSettingsOverride={previewSettings.get(selectedOption.id)}
             recyclingKey={selectedOption.id}
             style={styles.fill}
+            showGridLabels
           />
         )}
         {selectedOption.placeholderOverlay && !skeleton ? (

@@ -27,7 +27,12 @@ function PlaylistBoardBackdropImpl({ boardType, layoutId }: PlaylistBoardBackdro
   // variant is plenty — and it keeps expo-image from resampling a ~1080px
   // source on the main thread. colorScheme picks up the MoonBoard `.dark.webp`
   // siblings (issue #3885 / PR #3961) so the tile doesn't show the light art's
-  // near-black lettering and hold sheets behind the dark-mode colour tint.
+  // near-black hold sheets behind the dark-mode colour tint.
+  //
+  // It draws `paths[0]`, the first layer of the stack. On a MoonBoard that is
+  // the first hold set (2024: Hold Set D): the A-K / 1-18 label art used to come
+  // first and left the stack in #6234, which suits a backdrop meant to read as a
+  // board.
   const backdropConfig = useMemo(
     () => (config ? { ...config, variant: 'thumb' as const, colorScheme } : null),
     [config, colorScheme],

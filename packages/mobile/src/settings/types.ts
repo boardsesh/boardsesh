@@ -94,9 +94,9 @@ export type AppSettings = {
   moonboardLightAdjacentHolds: boolean;
   /**
    * Draw the MoonBoard's A-K column letters and 1-18 row numbers (1-12 on the
-   * Minis) on full-size boards: play, create, search by holds, the wall kiosk
-   * and the enlarged preview (issue #6234). Display only; no effect on other
-   * boards or on the LEDs.
+   * Minis) on the large boards: play, create, search by holds, the wall kiosk,
+   * the long-press climb menu, the board-look step and the enlarged preview
+   * (issue #6234). Display only; no effect on other boards or on the LEDs.
    */
   moonboardGridLabels: boolean;
   /** Light the connected board when swiping to the next/previous climb in the play view. */

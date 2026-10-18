@@ -55,13 +55,14 @@ describe('LayeredClimbImage aboveOverlay', () => {
         aboveOverlay={labels}
       />,
     );
-    const stack = container.firstElementChild!;
-    const children = [...stack.children];
-    const slot = container.querySelector(SLOT)!;
-    const overlay = container.querySelector('img[src="file:///overlay.png"]')!;
-    expect(children.indexOf(slot)).toBeGreaterThan(children.indexOf(overlay));
-    expect(slot.getAttribute('data-pointer-events')).toBe('none');
-    expect(slot.querySelector('[data-testid="grid-labels"]')).toBeTruthy();
+    const slot = container.querySelector(SLOT);
+    const overlay = container.querySelector('img[src="file:///overlay.png"]');
+    expect(slot).not.toBeNull();
+    expect(overlay).not.toBeNull();
+    // Later in document order = drawn on top.
+    expect(overlay!.compareDocumentPosition(slot!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slot!.getAttribute('data-pointer-events')).toBe('none');
+    expect(slot!.querySelector('[data-testid="grid-labels"]')).toBeTruthy();
   });
 
   it('adds nothing when no caller fills the slot', () => {

@@ -594,6 +594,7 @@ export function ClimbReactionMenu({
                   renderWidth={overlayRenderWidth}
                   backgroundVariant="full"
                   style={styles.artFill}
+                  showGridLabels
                 />
               </Animated.View>
             ) : null}

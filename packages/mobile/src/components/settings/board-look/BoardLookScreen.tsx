@@ -71,8 +71,9 @@ export function BoardLookScreen() {
     }),
     [useOwnLook, setUseOwnLook],
   );
-  // Only for a climber whose active board is a MoonBoard, the same rule as the
-  // MoonBoard lighting switch further down this page.
+  // Only when the climber's active board is a MoonBoard. (The MoonBoard lighting
+  // switch further down this page gates on the connected Bluetooth board
+  // instead; the labels are about the board on screen, not the one on the wall.)
   const { data: activeBoard } = useActiveBoard();
   const showMoonboardGridLabels = isMoonboardBoardName(toBoardName(activeBoard?.boardType));
   const [moonboardGridLabelsEnabled, setMoonboardGridLabelsEnabled] = useSetting('moonboardGridLabels');

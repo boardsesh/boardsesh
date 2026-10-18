@@ -117,11 +117,12 @@ describe('MoonBoardGridLabels', () => {
 describe('BoardImageNative showGridLabels', () => {
   it('draws the labels above the holds overlay on a MoonBoard', () => {
     const { container } = render(<BoardImageNative {...MOONBOARD_2024} showGridLabels />);
-    const images = [...container.querySelectorAll('img')];
-    const labelsIndex = images.findIndex((image) => image.getAttribute('data-testid') === 'moonboard-grid-labels');
-    const overlayIndex = images.findIndex((image) => image.getAttribute('src') === 'file:///overlay.png');
-    expect(overlayIndex).toBeGreaterThanOrEqual(0);
-    expect(labelsIndex).toBeGreaterThan(overlayIndex);
+    const labels = container.querySelector(LABELS);
+    const overlay = container.querySelector('img[src="file:///overlay.png"]');
+    expect(labels).not.toBeNull();
+    expect(overlay).not.toBeNull();
+    // Later in document order = drawn on top.
+    expect(overlay!.compareDocumentPosition(labels!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('leaves them off a surface that does not ask (thumbnails, cards)', () => {
