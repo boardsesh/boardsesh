@@ -1848,10 +1848,11 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
   }
 
   /**
-   * What mobile's `revalidatePrivateCatalog` does to a downloaded board when it
-   * authorizes the catalogue for a new credential: other climbers' rows go, every
-   * board-table checkpoint and every `scope-complete:` marker goes, and
-   * `bootstrap-done:` stays.
+   * The state an older app bundle leaves a downloaded board in. Its catalogue
+   * revalidation pass (removed in #6545) deleted other climbers' rows, every
+   * board-table checkpoint and every `scope-complete:` marker, and kept
+   * `bootstrap-done:`. A phone that ran that bundle, or rolls back to it, can
+   * still arrive here, so the replay has to recover from it.
    */
   async function withdrawProtectedCatalog(): Promise<void> {
     await db.runAsync('DELETE FROM board_climbs WHERE user_id IS NOT NULL AND user_id <> ?', [VIEWER_ID]);
@@ -1866,7 +1867,7 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     return climbs.map((climb) => climb.uuid);
   }
 
-  it('replays a snapshot-bootstrapped scope after a privacy revalidation reset its checkpoints', async () => {
+  it("replays a snapshot-bootstrapped scope after an older bundle's revalidation reset its checkpoints", async () => {
     const artifactPath = join(workDirectory, 'kilter-1.db');
     const manifest = await buildReferenceArtifact(artifactPath);
     const { source, downloadArtifact } = makeSnapshotSource(manifest, artifactPath);
@@ -1891,7 +1892,7 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
     expect(await readCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toEqual(AUTHORED_CURSOR);
     expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
     // It came back over GraphQL. The kept marker still stops a second artifact
-    // install, which is what the revalidation keeps it for.
+    // install, which is what the old revalidation kept it for.
     expect(await readCheckpoint(db, `bootstrap-done:${SCOPE_KEY}`)).not.toBeNull();
     expect(downloadArtifact).toHaveBeenCalledTimes(1);
   });

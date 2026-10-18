@@ -83,13 +83,13 @@ The physical iPhone test used native runtime fingerprint
 40 degrees, was selected with more than 369,000 Original climbs stored. Reload
 fired immediately after a real `board_climbs:kilter:1:10` transaction began.
 The replacement runtime acquired a fresh writer in 1 ms at a 100 ms timeout,
-catalogue authorization recovered, and downloads resumed. Native process 32582
+catalogue authorization (removed since, in #6545) recovered, and downloads resumed. Native process 32582
 survived the reload. This establishes lock recovery; completed-catalogue offline
 browsing and cold-start checks are separate gates.
 
 1. Reload during a real Kilter pull transaction. The replacement runtime must
    write and resume downloading without a force-quit.
-2. Repeat during catalogue privacy repair and with a larger catalogue.
+2. Repeat with a larger catalogue.
 3. In a temporary database, retain committed tick/outbox pairs and roll back both
    sides of an uncommitted pair across reload.
 4. Repeat foreground/background cycles and check the database remains writable.

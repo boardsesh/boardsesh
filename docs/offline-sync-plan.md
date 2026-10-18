@@ -1417,6 +1417,8 @@ On logout or account switch:
 4. Reset `syncEnabledBoards` and the `offlineBoardsV1` snapshots (board names must not survive into the next account on a shared device).
 5. On new login, sync pull client fetches the new user's data (small, seconds).
 
+**These wipes are the only local-data boundaries (#6545).** The explicit sign-out (`purgeLocalDataForSignOut`) deletes everything. The forced sign-outs and the owner-stamp recovery in `OfflineSyncBridge` run `clearUserData`, which keeps the downloaded catalogue and its checkpoints and deletes user data, the outbox, spray walls with their climbs, and the per-viewer first-ascent names. Nothing else removes downloaded data: not a privacy change, a reconnect, a token refresh or a republished database handle. The app used to run a catalogue revalidation pass on every new token. It deleted other setters' published climbs and, with them, every board checkpoint and completion marker, so each weekly token refresh re-downloaded every board page by page, although the server sends those climbs to every device. Accepted trade-off: a climb or spray wall whose audience narrows stays on a phone that already downloaded it until that board is downloaded again.
+
 ## Usage telemetry
 
 Offline mode's whole value proposition is "you can still climb when the signal
@@ -1781,5 +1783,5 @@ cached board settles its indicator through the existing completion-marker check,
 without requiring another download-completed event.
 
 These progress and transfer changes use the existing single-cursor sync and
-snapshot compatibility rules. They introduce no privacy-event subscription or
-catalogue revalidation path.
+snapshot compatibility rules. They introduce no privacy-event subscription, and
+the app has had no catalogue revalidation path since #6545.

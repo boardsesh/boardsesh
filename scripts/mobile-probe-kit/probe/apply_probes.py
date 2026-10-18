@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inject the measurement probes into a Boardsesh checkout. See docs/mobile-visible-performance.md.
 
-    apply_probes.py <repo-root> [--settle-consent] [--keep-offline-boards]
+    apply_probes.py <repo-root> [--settle-consent]
 
 Every edit is an exact-text replacement and asserts that its anchor occurs once,
 so a probe point that has moved fails loudly instead of silently measuring
@@ -14,16 +14,15 @@ Never commit the result. Undo:
                        Consent stays undecided, so analytics stay off. Without
                        it a fresh install waits on the prompt, and answering it
                        records a decision against the signed-in account.
---keep-offline-boards  Ignore the privacy stream in this build. The server sends
-                       one PrivacyChanged event per subscribe (every launch), and
-                       each one drops every offline board's checkpoints (#6306),
-                       so the downloaded board is re-crawled between runs.
+
+The old --keep-offline-boards flag is gone: since #6545 nothing in the app
+drops the offline boards between runs, so there is nothing to suppress.
 """
 import os, sys
 
 args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
 flags = {arg for arg in sys.argv[1:] if arg.startswith("--")}
-unknown = flags - {"--settle-consent", "--keep-offline-boards"}
+unknown = flags - {"--settle-consent"}
 if len(args) != 1 or unknown:
     sys.exit(__doc__)
 root = args[0].rstrip("/")
@@ -242,13 +241,11 @@ edit("src/lib/graphql/offline-request.ts", [
 """      localDb = getDatabaseHandle();
       if (PERF_PROBE_ENABLED && variables !== undefined) {
         const probeGateStartedAtMs = perfNow();
-        const probeCatalog = localDb ? await canReadPrivateCatalog(localDb) : false;
-        const probeCanServe = localDb && probeCatalog ? await operation.canServeLocal(localDb, variables as never) : false;
+        const probeCanServe = localDb ? await operation.canServeLocal(localDb, variables as never) : false;
         perfProbe('offline-gate', {
           surface: String(operation.surface),
           allowed: localAllowed(),
           hasDb: localDb != null,
-          catalog: probeCatalog,
           canServe: probeCanServe === true,
           online: isOnline,
           gateMs: Math.round(perfNow() - probeGateStartedAtMs),
@@ -284,17 +281,6 @@ text = open(M + "src/lib/graphql/offline-request.ts").read()
 first_import = text.index("import ")
 open(M + "src/lib/graphql/offline-request.ts", "w").write(text[:first_import] + "import { PERF_PROBE_ENABLED, perfNow, perfProbe } from '../perf-probe';\n" + text[first_import:])
 
-KEEP_OFFLINE_BOARDS = [
-("""        next: revokeSnapshots,
-        // A lost privacy stream invalidates displayed protected material too.
-        error: revokeSnapshots,""",
-"""        next: () => perfProbe('privacy-event-skipped', { kind: 'next' }),
-        error: () => perfProbe('privacy-event-skipped', { kind: 'error' }),"""),
-("import { reportHandledError } from '../../lib/error-reporting';\n",
- "import { reportHandledError } from '../../lib/error-reporting';\nimport { perfProbe } from '../../lib/perf-probe';\n"),
-]
-if "--keep-offline-boards" in flags:
-    edit("src/components/privacy/PrivacySyncBridge.tsx", KEEP_OFFLINE_BOARDS)
 
 SETTLE_CONSENT = [
 ("""    if (killed || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {

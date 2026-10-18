@@ -9,7 +9,7 @@ These are local tools. Nothing here runs in CI or ships in the app. Python 3, st
 | File | What it is |
 | --- | --- |
 | `probe/perf-probe.ts.template` | The module the probe build adds to the app: events, the stall monitor, marker files |
-| `probe/apply_probes.py` | Adds the probes to a checkout. `--settle-consent`, `--keep-offline-boards` |
+| `probe/apply_probes.py` | Adds the probes to a checkout. `--settle-consent` |
 | `probe/apply_launch_markers.py` | Adds launch attribution on top |
 | `probe/apply_swipe_probes.py` | Adds the play drawer's swipe and pull-down probes, and the five-climb-queue marker |
 | `probe/apply_schema_hold.py` | Keeps a probe build from migrating the phone's offline database |
@@ -29,7 +29,7 @@ These are local tools. Nothing here runs in CI or ships in the app. Python 3, st
 
 ```sh
 export BOARDSESH_PROBE_UDID=<udid>            # xcrun devicectl list devices
-scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent --keep-offline-boards \
+scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent \
   scripts/mobile-probe-kit/probe/apply_launch_markers.py
 python3 scripts/mobile-probe-kit/scenario_launch.py baseline-1
 python3 scripts/mobile-probe-kit/scenario_list_and_drawer.py baseline-list-1 --cold   # needs the UI driver
@@ -39,7 +39,7 @@ For the swipe scenario, check the schema first and add the swipe probes (and the
 
 ```sh
 python3 scripts/mobile-probe-kit/schema_check.py
-scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent --keep-offline-boards \
+scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent \
   scripts/mobile-probe-kit/probe/apply_launch_markers.py scripts/mobile-probe-kit/probe/apply_swipe_probes.py \
   scripts/mobile-probe-kit/probe/apply_schema_hold.py
 python3 scripts/mobile-probe-kit/scenario_play_swipe.py baseline-swipe-1               # needs the UI driver

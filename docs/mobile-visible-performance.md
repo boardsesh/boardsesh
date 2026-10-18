@@ -72,7 +72,7 @@ Every edit is an exact-text replacement that asserts its anchor occurs once. Whe
 Two flags change behaviour, on purpose and only in this build:
 
 - `--settle-consent` skips the consent prompt and leaves consent undecided, so analytics stay off. It reuses the path screenshot mode takes.
-- `--keep-offline-boards` ignores the privacy stream. The server sends one event per subscribe, which is every launch, and each one drops every offline board's checkpoints (#6306). Without the flag the board re-downloads between runs and no two runs see the same data. Remove the flag when #6306 is fixed.
+- There is no `--keep-offline-boards` flag any more. It suppressed the privacy stream, whose events dropped every offline board's checkpoints between runs (#6306); since #6545 nothing in the app does that, so the downloaded board stays put from run to run.
 
 Events are written to `Documents/perf-probe/` on the phone as JSON chunks and pulled after the run. A Release build drops `console.log`, so the log is not a transport. The diagnostic folder is emptied at each launch: pull before you relaunch. This removes only previous probe chunks; it does not clear the user's database or downloaded boards. Opening comparisons do not create the `perf-probe-cold` marker.
 
@@ -121,7 +121,7 @@ Everything below runs from the repo root on a Mac with the phone wired and unloc
 
    ```sh
    export BOARDSESH_PROBE_UDID=<udid>
-   scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent --keep-offline-boards \
+   scripts/mobile-probe-kit/build_ios.sh /tmp/probe-build.log --settle-consent \
      scripts/mobile-probe-kit/probe/apply_launch_markers.py
    ```
 
@@ -178,10 +178,6 @@ an unchanged image on a retained route may not emit a new native display event.
 Keep that opening incomplete rather than inventing a fresh display acknowledgement.
 
 Use at least 30 warm opens per build in alternating baseline/candidate batches, including 60 downward scrolls, repeated row opens and hard flicks back through recycled rows. Poll until an actual row is settled and visible before tapping. Keep render/decode misses separate. Record queue length, loaded result count, offline/network lane and thermal conditions before each batch. Reject a run that becomes thermally incomparable; capture native hitches separately after these timings, and do not erase account data, downloads or render caches to manufacture a cold run.
-
-For a cannot-open reproduction, keep the production privacy stream enabled.
-`--keep-offline-boards` suppresses that stream in the measurement build; a run
-with that flag cannot validate opening across real withdrawal/revalidation.
 
 Run `vp exec python3 scripts/mobile-probe-kit/analyze_opening.py <run-directory>`
 to inspect the evidence. Add `--gestures-verified` only after physical
@@ -288,7 +284,7 @@ An earlier build of the three-board carousel was run on a hot phone before the h
 | --- | --- | --- |
 | A blank Safari tab on every cold start | A probe build before #6300 handed its own root link to the system | Use a build that includes #6300 |
 | The app sits on a privacy prompt | Fresh install, consent undecided | Build with `--settle-consent`. Do not tap the prompt |
-| The offline board is "downloading" again on every run | The privacy stream reset it (#6306) | Build with `--keep-offline-boards` |
+| The offline board is "downloading" again on every run | A build before #6545: its catalogue pass reset it on every token refresh (#6306) | Build a commit that includes #6545 |
 | An offline download takes many minutes | The build has no `EXPO_PUBLIC_SNAPSHOT_BASE_URL`, so it crawls page by page | Use `build_ios.sh`, which sets what a store build sets |
 | Launches are several times slower than an hour ago, on the same build | Not established. Seen once, with a long-attached UI driver and fresh installs | Compare A and B alternately in one sitting; rerun later before believing an absolute launch number |
 | A flick does not scroll | It started on the header or the bottom bar | Start between 28% and 74% of the screen height |
