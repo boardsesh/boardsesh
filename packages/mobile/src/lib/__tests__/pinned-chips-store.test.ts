@@ -172,10 +172,10 @@ describe('pinned-chips-store', () => {
   });
 });
 
-// Recent became pinnable in #6288. Every saved list predates it, so the store
+// Recent became pinnable after every saved list was written, so the store
 // must tell "saved before Recent was pinnable" (keep it) from "unpinned" (hide it).
 describe('pinned-chips-store: the Recent pin', () => {
-  // What the defaults persisted as before #6288 (Tier-1 chips + the 'shape' alias).
+  // What the defaults persisted as before Recent was pinnable (Tier-1 chips + the 'shape' alias).
   const savedBeforeRecentPin = ['grade', 'progress', 'collection', 'tall', 'wide', 'shape', 'popularity', 'rating'];
 
   beforeEach(async () => {

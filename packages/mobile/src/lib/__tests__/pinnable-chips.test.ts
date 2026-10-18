@@ -171,7 +171,7 @@ describe('toStoredPinnedChips', () => {
   });
 
   it('stays readable by an older bundle, which knows neither Recent nor the marker', () => {
-    // The bundle before #6288: its catalog had no 'recent', and its normalize
+    // A bundle from before Recent was pinnable: its catalog had no 'recent', and its normalize
     // folded 'shape' into Tall + Wide and kept only catalog kinds.
     const olderCatalog = [
       'grade',

@@ -2192,7 +2192,7 @@ describe('ClimbList row highlight', () => {
   });
 });
 
-// Recent is a pinnable chip (#6288). Unpinning it is a display choice: the saved
+// Recent is a pinnable chip. Unpinning it is a display choice: the saved
 // searches and the search in force are untouched, new searches still save, and
 // pinning it again shows the same history at once. Whether the row draws the
 // chip from these props is locked in climb-capsules.test.ts.

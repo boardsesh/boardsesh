@@ -828,7 +828,7 @@ export function ClimbFilterSheet({
                 placeholder={t('search.placeholders.climbs')}
                 accessibilityLabel={t('mobile.filter.section.name')}
               />
-              {/* The Recent chip's pin (#6288). Shown with or without saved
+              {/* The Recent chip's pin. Shown with or without saved
                   searches, so the chip can be hidden before it ever appears. */}
               <View style={filterSheetStyles.subsectionGap} />
               <FilterLabelRow

@@ -13,7 +13,7 @@
 // remaining sheet-only controls (setters, holds, zones) are a later fast-follow
 // because they open a full picker rather than switching a value in place.
 //
-// 'recent' is the saved-searches menu (#6288). It backs no filter, and it shows
+// 'recent' is the saved-searches menu. It backs no filter, and it shows
 // only while there are saved searches, but it pins like any chip so a climber
 // who never uses it can hide it. It is pinned by default, and a list saved
 // before it was pinnable gains it on load (see fromStoredPinnedChips).
