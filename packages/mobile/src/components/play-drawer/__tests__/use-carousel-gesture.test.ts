@@ -649,6 +649,36 @@ describe('useCarouselGesture', () => {
       expect(pager.isAnimating.value).toBe(false);
     });
 
+    it('cancels retained intent after React acknowledges a step whose next artwork already failed', () => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'ready', 2: 'loading' });
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+      landFling();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+      expect(pager.jsState.value.processedStep).toBe(0);
+      expect(pager.uiSteps.value).toBe(1);
+
+      // Failure arrives before React acknowledges the first swipe's render.
+      pageArt.value = { ...pageArt.value, 2: 'failed' };
+      catchUp();
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.isAnimating.value).toBe(false);
+
+      // A later successful repair must not revive the cancelled release.
+      pageArt.value = { ...pageArt.value, 2: 'ready' };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.anchorPage.value).toBe(1);
+      expect(pager.translateX.value).toBe(0);
+      expect(pager.isAnimating.value).toBe(false);
+      expect(springCallbacks).toHaveLength(0);
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+    });
+
     it('revokes drag access when a displayed neighbour starts a new artwork attempt', () => {
       const pager = makePager();
       const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'ready' });
