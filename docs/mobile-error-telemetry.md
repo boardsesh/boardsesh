@@ -51,10 +51,13 @@ The first write to them segfaulted every launch of TestFlight 2.6.0 (15), 100 ms
 any crash handler existed, so nothing reached Sentry. If the DSN fails to parse, the iOS block
 logs and the app launches without native Sentry.
 
-That block is compiled only into Release builds (`#if !DEBUG`). iOS CI builds a Release app, so
-it proves the block compiles. Nothing launches a Release app before TestFlight: dev clients, the
-simulator smokes and the screenshot captures are all Debug. After editing the block, launch a
-Release simulator build.
+That block is compiled only into Release builds (`#if !DEBUG`). On native-input PRs, iOS CI
+builds an ad-hoc-signed Release simulator app, checks its embedded framework ABI, then cold-launches
+that same app and watches its original PID for 20 seconds. Process death or a fresh crash report
+for that launch fails the job; stdout, stderr and diagnostics are saved in the Release launch
+artifact. The CI DSN points at localhost so native Sentry starts without contacting Sentry.
+Dev clients, navigation smokes and screenshot captures remain Debug. This launch check proves
+native process survival, not sign-in, rendered content, or delivery of a published OTA update.
 
 JavaScript sets `autoInitializeNativeSdk: false` so it cannot replace those native callbacks.
 Native startup uses the configured DSN and a fixed production environment, keeps crash/ANR/app-hang

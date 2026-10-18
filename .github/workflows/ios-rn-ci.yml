@@ -14,6 +14,11 @@ on:
       - 'scripts/prepare-rn-ios-tests.mjs'
       - 'scripts/mobile-framework-abi-check.ts'
       - 'scripts/__tests__/mobile-framework-abi-check.test.ts'
+      - 'scripts/ios-release-launch-smoke.ts'
+      - 'scripts/__tests__/ios-release-launch-smoke*.test.ts'
+      - 'scripts/lib/ios-capture-diagnostics.ts'
+      - 'scripts/lib/ios-simulator-lease.ts'
+      - 'scripts/screenshot-sim.entitlements'
       - '.github/workflows/ios-rn-ci.yml'
       - '.github/actions/mobile-native-gate/**'
   workflow_dispatch:
@@ -35,8 +40,8 @@ env:
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
-  # Generate the app-owned Sentry callbacks for real native typechecking. This
-  # compile-only app never launches; the collector is local, never Sentry.
+  # Compile and launch the app-owned native Sentry callbacks in Release. The
+  # collector is local, never Sentry.
   EXPO_PUBLIC_SENTRY_DSN: http://ci-compiler@127.0.0.1:1/1
 
 jobs:
@@ -90,6 +95,13 @@ jobs:
 
       - name: Install Node.js dependencies
         run: vp install --frozen-lockfile
+
+      - name: Check the Release launch guard
+        run: >-
+          vp test run --project scripts
+          scripts/__tests__/ios-release-launch-smoke.test.ts
+          scripts/__tests__/ios-release-launch-smoke-workflow.test.ts
+          --reporter=agent
 
       - name: Check widget Swift duplicate drift
         run: vp test run packages/mobile/src/lib/live-activity/__tests__/widget-target-drift.test.ts --reporter=agent
@@ -153,9 +165,10 @@ jobs:
       # Building the app scheme is what actually compiles the Pods — RNScreens,
       # Reanimated, the BLE stack, our own modules under packages/mobile/modules.
       # Runs before the test target is grafted on, so it builds the project exactly
-      # as `expo prebuild` produced it. Signing is off: this is a compile gate, not
-      # something we install (contrast scripts/mobile-build-sim-app.ts, which
-      # ad-hoc signs because that app has to actually run).
+      # as `expo prebuild` produced it. Ad-hoc signing and literal simulator
+      # entitlements match scripts/mobile-build-sim-app.ts so this same Release
+      # binary can run below. Keep Xcode's simulated entitlement packaging on;
+      # signing afterward cannot restore the missing embedded sections.
       # -derivedDataPath is pinned here (and on both test steps below, so they keep
       # sharing these build products instead of rebuilding into the default
       # DerivedData) to give the ABI check a deterministic path to the .app.
@@ -172,9 +185,9 @@ jobs:
               -destination 'generic/platform=iOS Simulator' \
               -derivedDataPath packages/mobile/ios/build \
               ARCHS=arm64 \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGN_IDENTITY=- \
+              CODE_SIGNING_ALLOWED=YES \
+              CODE_SIGN_ENTITLEMENTS="$PWD/scripts/screenshot-sim.entitlements" \
               2>&1 | tee "$1"
           }
           # New Architecture codegen ("Generate Specs") races the compile on a cold
@@ -244,37 +257,60 @@ jobs:
       # catches it on the PR, an hour and one branch upstream of the TestFlight
       # archive. Debug vs Release is irrelevant — the frameworks are prebuilt
       # either way.
-      - name: Check embedded framework ABI
-        run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app
-
-      - name: Add RN Swift test target
-        run: node scripts/prepare-rn-ios-tests.mjs
-
       - name: Resolve simulator destination
         id: simulator
         run: |
-          DEVICE_NAME=$(xcrun simctl list devices available -j \
+          SIMULATOR_UDID=$(xcrun simctl list devices available -j \
             | python3 -c "
           import json, sys
-          data = json.load(sys.stdin)
-          for runtime in sorted(data['devices'].keys(), reverse=True):
+          listing = json.load(sys.stdin)
+          for runtime in sorted(listing['devices'].keys(), reverse=True):
               if 'iOS' not in runtime:
                   continue
-              for d in data['devices'][runtime]:
-                  if 'iPhone' in d['name'] and d['isAvailable']:
-                      print(d['name'])
+              for device in listing['devices'][runtime]:
+                  if 'iPhone' in device['name'] and device['isAvailable']:
+                      print(device['udid'])
                       sys.exit(0)
           sys.exit(1)
           ")
-          echo "device=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
-          echo "Using simulator: $DEVICE_NAME"
+          echo "udid=$SIMULATOR_UDID" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $SIMULATOR_UDID"
+
+      - name: Check embedded framework ABI
+        run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app
+
+      # Compiling #if !DEBUG is insufficient: #6312 compiled successfully but
+      # crashed before JavaScript or a crash handler ran. Watch this exact PID;
+      # a restart must never turn a launch crash into a passing smoke.
+      - name: Launch the Release app and watch for crashes
+        id: release-smoke
+        # Leave time for the helper's bounded cold boot/install commands and
+        # diagnostic collection; external cancellation would lose its summary.
+        timeout-minutes: 15
+        run: >-
+          vp exec tsx scripts/ios-release-launch-smoke.ts
+          --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app
+          --device '${{ steps.simulator.outputs.udid }}'
+          --evidence-dir '${{ runner.temp }}/ios-release-launch-smoke'
+
+      - name: Preserve Release launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-launch-smoke-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-release-launch-smoke
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Add RN Swift test target
+        run: node scripts/prepare-rn-ios-tests.mjs
 
       - name: Build for testing
         run: |
           xcodebuild build-for-testing \
             -workspace "$WORKSPACE_PATH" \
             -scheme "$SCHEME" \
-            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest' \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' \
             -configuration Debug \
             -derivedDataPath packages/mobile/ios/build \
             CODE_SIGN_IDENTITY="" \
@@ -286,5 +322,5 @@ jobs:
           xcodebuild test-without-building \
             -workspace "$WORKSPACE_PATH" \
             -scheme "$SCHEME" \
-            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest' \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' \
             -derivedDataPath packages/mobile/ios/build

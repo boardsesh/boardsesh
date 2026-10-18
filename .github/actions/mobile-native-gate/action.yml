@@ -107,6 +107,16 @@ runs:
           build "CI plumbing changed"
         fi
 
+        # The Release launch guard is CI plumbing too. Exercise changes to its
+        # implementation even though they do not move the app's fingerprint.
+        if [ "$PLATFORM" = ios ] && [ -n "$(changed \
+              scripts/ios-release-launch-smoke.ts \
+              'scripts/__tests__/ios-release-launch-smoke*.test.ts' \
+              scripts/lib/ios-capture-diagnostics.ts scripts/lib/ios-simulator-lease.ts \
+              scripts/screenshot-sim.entitlements)" ]; then
+          build "iOS Release launch plumbing changed"
+        fi
+
         # Path screen: nothing in the canonical native-input set (mirrors the
         # ios-rn-ci Pods cache key) changed → skip without paying for a resolve.
         if [ -z "$(changed \
