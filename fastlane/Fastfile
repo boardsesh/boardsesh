@@ -93,14 +93,21 @@ rescue => error
   true
 end
 
-# App Store version states in which a version is still open: being prepared,
-# sent back by Apple or by us, or queued for or in review. deliver's version
-# check (App#ensure_version!) renames the editable version to whatever version it
-# is asked to draft, so drafting 2.7.1 while 2.7.0 sits in one of these states
-# would quietly turn the 2.7.0 someone is about to submit into 2.7.1.
+# App Store version states in which a version is not out yet: being prepared,
+# sent back by Apple or by us, queued for or in review, or approved and waiting
+# to be released. deliver's version check (App#ensure_version!) renames the
+# editable version to whatever version it is asked to draft, so drafting 2.7.1
+# while 2.7.0 is editable would quietly turn the 2.7.0 someone is about to
+# submit into 2.7.1. An approved 2.7.0 is not editable, but the next version
+# still waits until it is released. The live version (READY_FOR_DISTRIBUTION,
+# legacy READY_FOR_SALE) and replaced or removed versions do not hold a draft.
+# appVersionState names first, then the legacy appStoreState names that differ.
 OPEN_APP_STORE_VERSION_STATES = %w[
   PREPARE_FOR_SUBMISSION DEVELOPER_REJECTED REJECTED METADATA_REJECTED INVALID_BINARY
   READY_FOR_REVIEW WAITING_FOR_REVIEW IN_REVIEW
+  ACCEPTED WAITING_FOR_EXPORT_COMPLIANCE PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE
+  PROCESSING_FOR_DISTRIBUTION
+  PROCESSING_FOR_APP_STORE PENDING_CONTRACT
 ].freeze
 
 # The open iOS versions (raw appStoreVersions resources) carrying a version
@@ -500,16 +507,17 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
     UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") if app.nil?
 
-    # Never let deliver rename another open version (see
-    # OPEN_APP_STORE_VERSION_STATES). Read straight from the API with that state
-    # list, so the guard does not depend on which states deliver's own lookup
-    # treats as editable. The workflow step is continue-on-error and warns.
+    # Draft only once every other version is out (see
+    # OPEN_APP_STORE_VERSION_STATES), so deliver never renames one. Read straight
+    # from the API with that state list, so the guard does not depend on which
+    # states deliver's own lookup treats as editable. The workflow step is
+    # continue-on-error and warns.
     client = BoardseshASC::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
     other_open = other_open_app_store_versions(
       client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200"), version
     )
     unless other_open.empty?
-      UI.user_error!("App Store Connect already has an open iOS version #{other_open.join(', ')}. Refusing to draft #{version}: deliver would rename that version to #{version}. Submit, release or remove it first, then re-run this draft.")
+      UI.user_error!("App Store Connect already has an unreleased iOS version #{other_open.join(', ')}. Refusing to draft #{version} until it is out: deliver would rename an editable version to #{version}, and the next version waits for an approved one's release. Submit and release it, or remove it, then re-run this draft.")
     end
 
     # Create the App Store version if it doesn't exist, leaving it in 'Prepare
