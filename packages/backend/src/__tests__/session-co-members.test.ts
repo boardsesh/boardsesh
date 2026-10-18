@@ -337,13 +337,14 @@ describe('a fellow member of the session', () => {
     const sessionId = await hostSession({ endedAt: '2026-10-10T12:00:00Z' });
     await join(sessionId);
     const inSession = await logTick(sessionId);
-    // Reconciliation stamps a climber's loose ticks from the same day with the
-    // session id: another wall, before the session started, after it ended.
+    // Reconciliation stamps the session id on a climber's whole run of ticks
+    // with gaps of 8 h or less: another wall, well before the session started,
+    // well after it ended.
     const otherWallTick = await logTick(sessionId, { boardId: otherWall.id });
     const beforeStart = await logTick(sessionId, { climbedAt: '2026-10-10T09:00:00Z', difficulty: 25 });
     const afterEnd = await logTick(sessionId, { climbedAt: '2026-10-10T13:00:00Z' });
-    // A member's own time starts when they joined.
-    const beforeJoining = await logTick(sessionId, { userId: MEMBER, climbedAt: '2026-10-10T10:01:00Z' });
+    // A member's own time starts when they joined (15 minutes before is beyond any clock drift).
+    const beforeJoining = await logTick(sessionId, { userId: MEMBER, climbedAt: '2026-10-10T09:50:00Z' });
     const memberInSession = await logTick(sessionId, { userId: MEMBER, climbedAt: '2026-10-10T10:40:00Z' });
 
     const forMember = await sessionFeedQueries.sessionDetail(null, { sessionId }, viewer(MEMBER));
@@ -364,6 +365,41 @@ describe('a fellow member of the session', () => {
     const forHost = await sessionFeedQueries.sessionDetail(null, { sessionId }, viewer(CLIMBER));
     expect(forHost?.ticks.filter((tick) => tick.userId === MEMBER).map((tick) => tick.uuid)).toEqual([memberInSession]);
     expect(JSON.stringify(forHost)).not.toContain(beforeJoining);
+  });
+
+  it('allows ten minutes of clock drift on the session’s boards, and none anywhere else', async () => {
+    await setAccount(CLIMBER, { isPrivate: true });
+    await setAccount(MEMBER, { isPrivate: true });
+    const sessionId = await hostSession({ endedAt: '2026-10-10T12:00:00Z' });
+    await join(sessionId);
+    // Five minutes before the member joined, five minutes after the session ended.
+    const earlyOnWall = await logTick(sessionId, { userId: MEMBER, climbedAt: '2026-10-10T10:00:00Z' });
+    const lateOnWall = await logTick(sessionId, { climbedAt: '2026-10-10T12:05:00Z' });
+    const earlyElsewhere = await logTick(sessionId, {
+      userId: MEMBER,
+      boardId: otherWall.id,
+      climbedAt: '2026-10-10T10:00:00Z',
+    });
+    const lateElsewhere = await logTick(sessionId, { boardId: otherWall.id, climbedAt: '2026-10-10T12:05:00Z' });
+
+    const forMember = await sessionFeedQueries.sessionDetail(null, { sessionId }, viewer(MEMBER));
+    expect(forMember?.ticks.filter((tick) => tick.userId === CLIMBER).map((tick) => tick.uuid)).toEqual([lateOnWall]);
+    expect(JSON.stringify(forMember)).not.toContain(lateElsewhere);
+    const forHost = await sessionFeedQueries.sessionDetail(null, { sessionId }, viewer(CLIMBER));
+    expect(forHost?.ticks.filter((tick) => tick.userId === MEMBER).map((tick) => tick.uuid)).toEqual([earlyOnWall]);
+    expect(JSON.stringify(forHost)).not.toContain(earlyElsewhere);
+
+    // A config path names no wall, so its window gets no grace.
+    const configPath = await hostSession({ boardId: null, endedAt: '2026-10-10T12:00:00Z' });
+    await join(configPath);
+    const inWindow = await logTick(configPath, { boardId: otherWall.id });
+    await logTick(configPath, { boardId: otherWall.id, climbedAt: '2026-10-10T09:55:00Z' });
+    await logTick(configPath, { boardId: otherWall.id, climbedAt: '2026-10-10T12:05:00Z' });
+    expect(
+      (await sessionFeedQueries.sessionDetail(null, { sessionId: configPath }, viewer(MEMBER)))?.ticks.map(
+        (tick) => tick.uuid,
+      ),
+    ).toEqual([inWindow]);
   });
 
   it('counts every board the session was on, and only the time window on a config path with no board', async () => {

@@ -423,17 +423,27 @@ export function sessionCoMemberCondition(
 }
 
 /**
+ * How far a phone's clock may run from the server's when it stamps a send on
+ * the session's own wall: a tick that far before its climber joined, or after
+ * the session ended, still counts there. Not applied off the session's boards.
+ */
+const SESSION_TICK_CLOCK_GRACE = sql.raw(`interval '10 minutes'`);
+
+/**
  * Whether a fellow member of the tick's session (`sessionCoMemberCondition`) may
  * see this tick there: its climb, grade, attempts and result under the climber's
  * name, never its note or clips. Only a tick logged while its climber was in the
- * session counts. Reconciliation stamps a climber's loose ticks from the same
- * day, on any wall, with the session id, so the id alone is no evidence:
+ * session counts. Reconciliation stamps the session id on a climber's whole run
+ * of ticks with gaps of 8 h or less, on any wall, so the id alone is no
+ * evidence:
  *
- * - it was climbed between the climber joining (`joined_at`, or the session's
- *   start for its host) and the session's end (now while it is still open);
- * - it was logged on one of the session's boards (its primary board or one in
- *   `session_boards`). A session on a config path with no board row has only
- *   the time window to go on.
+ * - on one of the session's boards (its primary board or one in
+ *   `session_boards`), it was climbed between the climber joining (`joined_at`,
+ *   or the session's start for its host) and the session's end (now while it is
+ *   still open), give or take `SESSION_TICK_CLOCK_GRACE` for a phone's clock;
+ * - a session on a config path with no board row has only the time window to go
+ *   on, so it gets no grace;
+ * - a tick with no board, or on a board the session never named, fails closed.
  *
  * A tick its climber kept to themselves (`only_me`) is never released. Never
  * NULL.
@@ -451,18 +461,27 @@ export function sessionCoMemberTickCondition(
       WHERE co_tick_privacy.entity_type = 'tick' AND co_tick_privacy.entity_id = ${ticks.uuid}
         AND co_tick_privacy.owner_id = ${ticks.userId} AND co_tick_privacy.audience = 'only_me')
     AND EXISTS (SELECT 1 FROM board_sessions co_tick_session
-      WHERE co_tick_session.id = ${ticks.sessionId}
-        AND ${ticks.climbedAt} <= COALESCE(co_tick_session.ended_at, LOCALTIMESTAMP)
-        AND ${ticks.climbedAt} >= LEAST(
+      CROSS JOIN LATERAL (SELECT
+        LEAST(
           CASE WHEN co_tick_session.created_by_user_id = ${ticks.userId}
             THEN COALESCE(co_tick_session.started_at, co_tick_session.created_at) END,
           (SELECT co_tick_joined.joined_at FROM board_session_participants co_tick_joined
-            WHERE co_tick_joined.session_id = co_tick_session.id AND co_tick_joined.user_id = ${ticks.userId}))
-        AND (${ticks.boardId} = co_tick_session.board_id
-          OR EXISTS (SELECT 1 FROM session_boards co_tick_board
-            WHERE co_tick_board.session_id = co_tick_session.id AND co_tick_board.board_id = ${ticks.boardId})
-          OR (co_tick_session.board_id IS NULL AND NOT EXISTS (SELECT 1 FROM session_boards co_tick_any_board
-            WHERE co_tick_any_board.session_id = co_tick_session.id)))))`;
+            WHERE co_tick_joined.session_id = co_tick_session.id AND co_tick_joined.user_id = ${ticks.userId})
+        ) AS joined_at,
+        COALESCE(co_tick_session.ended_at, LOCALTIMESTAMP) AS ended_at,
+        COALESCE(${ticks.boardId} = co_tick_session.board_id OR EXISTS (SELECT 1 FROM session_boards co_tick_board
+          WHERE co_tick_board.session_id = co_tick_session.id AND co_tick_board.board_id = ${ticks.boardId}), false)
+          AS on_session_board,
+        co_tick_session.board_id IS NULL AND NOT EXISTS (SELECT 1 FROM session_boards co_tick_any_board
+          WHERE co_tick_any_board.session_id = co_tick_session.id) AS config_path_only
+      ) co_tick_window
+      WHERE co_tick_session.id = ${ticks.sessionId}
+        AND ((co_tick_window.on_session_board
+            AND ${ticks.climbedAt} >= co_tick_window.joined_at - ${SESSION_TICK_CLOCK_GRACE}
+            AND ${ticks.climbedAt} <= co_tick_window.ended_at + ${SESSION_TICK_CLOCK_GRACE})
+          OR (co_tick_window.config_path_only
+            AND ${ticks.climbedAt} >= co_tick_window.joined_at
+            AND ${ticks.climbedAt} <= co_tick_window.ended_at))))`;
 }
 
 /** Separate location policy; knowledge of a board UUID alone cannot reveal its address. */

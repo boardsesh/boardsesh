@@ -13,7 +13,7 @@ import {
   visibleBoardIdentityIds,
 } from '../../../services/privacy';
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
-import { dbRead } from '../../../db/client';
+import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessionCoMemberTickCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition, sprayTickVisibleSql } from '../shared/spray-tick-visibility';
@@ -608,8 +608,11 @@ export async function getSessionFeed(
         boardMemberNames(hardestSend.userId) &&
         (await canViewBoardTickOverride(hardestSend.userId, hardestSend.uuid, viewerUserId));
       // A fellow member's send from their time in the session, without its note
-      // unless the viewer may read that too.
-      const hardestCoMemberSend = !isDailyHighlight && hardestSendCoMemberSessions.has(row.session_id);
+      // unless the viewer may read that too. The flag comes with the replica's
+      // ranking and only places the tick in the session's time and boards; the
+      // membership itself is the primary's answer (`coMember`).
+      const hardestCoMemberSend =
+        !isDailyHighlight && hardestSendCoMemberSessions.has(row.session_id) && coMember(hardestSend?.userId);
       const featuredTickReadable =
         !!featuredBeta &&
         (await canViewActivityIdentity(featuredBeta.tick.userId, viewerUserId, {
@@ -819,10 +822,12 @@ export const sessionFeedQueries = {
     const tickUuids = tickRows.map((r) => r.tick.uuid);
     // The ticks this viewer may see listed: ones they may read, and, in a party
     // session, a fellow member's ticks from their time in it (#6582), shown
-    // without the note or clips unless the viewer may read those too.
+    // without the note or clips unless the viewer may read those too. A policy
+    // read, so the primary: a lagging replica must not restore a removed
+    // member's ticks or a revoked follow.
     const readableTickRows = aggregateOnly
       ? []
-      : await dbRead
+      : await db
           .select({
             uuid: dbSchema.boardseshTicks.uuid,
             noteReadable: sql<boolean>`${tickPrivacyCondition(ctx?.userId)}`,
@@ -1150,7 +1155,8 @@ async function fetchParticipants(
 ): Promise<SessionFeedParticipant[]> {
   if (userIds.length === 0) return [];
 
-  const participantRows = await dbRead.execute(sql`
+  // A policy read (who appears, by the same rule as the tick list), so the primary.
+  const participantRows = await db.execute(sql`
     SELECT
       t.user_id AS "userId",
       COALESCE(up.display_name, u.name) AS "displayName",
