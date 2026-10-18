@@ -32,10 +32,14 @@ export function useSessionDetail({ sessionId, initialData, enabled = true }: Use
     // Live updates arrive via SessionStatsUpdated cache patches, so a
     // window-focus refetch would only race the WS feed and reintroduce flicker.
     refetchOnWindowFocus: false,
+    // The server-rendered copy is the signed-out projection, so it is stale
+    // from the start: a signed-in viewer refetches as soon as their token is in,
+    // and a fellow member of the session then sees everyone in it by name. The
+    // query stays disabled for a signed-out viewer, who keeps the copy.
     ...(initialData
       ? {
           initialData,
-          initialDataUpdatedAt: Date.now(),
+          initialDataUpdatedAt: 0,
         }
       : {}),
   });

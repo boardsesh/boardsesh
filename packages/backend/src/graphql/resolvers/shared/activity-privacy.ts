@@ -7,6 +7,7 @@ import {
   ownedOrPublicClimbCondition,
   playlistClimbEntityClimbUuid,
   playlistClimbEntityPlaylistUuid,
+  sessionCoMemberTickCondition,
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { playlistVisibilityCondition } from '../playlists/helpers/enrichment';
@@ -80,6 +81,8 @@ function scopedClimbCondition(
  * Logs follow their author and item audience. Session and board privacy hides
  * board identity only; draft, publication and spray-wall rules still apply.
  * Raw owner reads can retain a missing climb without exposing its cached name.
+ * `authorRelease` widens only the author/audience half (see
+ * `sessionTickVisibleCondition`); the climb half always applies.
  */
 export function tickPrivacyCondition(
   viewerId: string | null | undefined,
@@ -91,6 +94,7 @@ export function tickPrivacyCondition(
   } = schema.boardseshTicks,
   allowOwnWithoutClimb = false,
   climbScope: ClimbScope = 'listed',
+  authorRelease?: SQL,
 ): SQL {
   const climb = alias(schema.boardClimbs, 'privacy_tick_climb');
   const climbAlias = alias(schema.boardClimbAliases, 'privacy_tick_climb_alias');
@@ -103,7 +107,9 @@ export function tickPrivacyCondition(
     eq(climb.boardType, ticks.boardType),
   );
   return and(
-    contentVisibilityCondition('tick', ticks.uuid, ticks.userId, viewerId),
+    authorRelease
+      ? or(contentVisibilityCondition('tick', ticks.uuid, ticks.userId, viewerId), authorRelease)
+      : contentVisibilityCondition('tick', ticks.uuid, ticks.userId, viewerId),
     // A tick never reveals another climber's draft, an unlisted climb outside
     // that climb's own page, or a climb on a wall the viewer cannot see. It is
     // never hidden because of who set its climb. Enriched feeds may retain
@@ -119,6 +125,28 @@ export function tickPrivacyCondition(
       ),
     ),
   )!;
+}
+
+/**
+ * A tick a session's own surfaces (its detail, summary and feed card) may count
+ * and list: one the viewer may read (`tickPrivacyCondition`), or one a fellow
+ * member of its session logged while in it (`sessionCoMemberTickCondition`,
+ * #6582), shown with its climb, grade, attempts and result. The climb rule
+ * still applies to both. Its note and clips still need `tickPrivacyCondition`.
+ */
+export function sessionTickVisibleCondition(
+  viewerId: string | null | undefined,
+  ticks: {
+    uuid: SQLWrapper;
+    userId: SQLWrapper;
+    climbUuid: SQLWrapper;
+    boardType: SQLWrapper;
+    sessionId: SQLWrapper;
+    climbedAt: SQLWrapper;
+    boardId: SQLWrapper;
+  } = schema.boardseshTicks,
+): SQL {
+  return tickPrivacyCondition(viewerId, ticks, false, 'listed', sessionCoMemberTickCondition(ticks, viewerId));
 }
 
 /**

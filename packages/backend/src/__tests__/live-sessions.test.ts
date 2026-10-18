@@ -26,6 +26,7 @@ import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions'
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { sessionQueries } from '../graphql/resolvers/sessions/queries';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
+import { sessionVisibleUserIds } from '../services/board-session-privacy';
 
 vi.mock('../graphql/resolvers/shared/helpers', async (importOriginal) => {
   const original = (await importOriginal()) as Record<string, unknown>;
@@ -1231,6 +1232,23 @@ describe('followedLiveSessions — staying anonymous on boards they don’t own'
     const [own] = await followedLiveSessions(FRIEND);
     expect(own.host?.userId).toBe(FRIEND);
     expect(own.participants.map((participant) => participant.userId)).toEqual([FRIEND]);
+  });
+
+  it('keeps them anonymous on Climbing now to a viewer who joined their session (#6582)', async () => {
+    await stayAnonymous(FRIEND);
+    const gymWall = await makeBoard({ name: 'Gym Wall' });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardId: gymWall.id });
+    await goLive(sessionId, FRIEND);
+    await goLive(sessionId, VIEWER);
+    // A fellow member: the session itself names them to the viewer…
+    expect(await sessionVisibleUserIds([FRIEND], VIEWER, sessionId)).toEqual(new Set([FRIEND]));
+    // …while the rail, a listing, does not.
+    const [card] = await boardLiveSessionsFor(gymWall.id, authCtx(VIEWER));
+    expect(card.sessionId).toBe(sessionId);
+    expect(card.host).toBeNull();
+    expect(card.participants.map((participant) => participant.userId)).not.toContain(FRIEND);
+    expect(JSON.stringify(card)).not.toContain(FRIEND);
+    expect(JSON.stringify(card)).not.toContain('Friend Profile');
   });
 
   it('names them on their own board, even with another climber’s wall attached to the session', async () => {

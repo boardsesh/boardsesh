@@ -24,6 +24,11 @@ const readable = vi.hoisted(() => ({
    */
   nextLookup: null as ClimbRow[] | null,
 }));
+/**
+ * The session membership read (`sessionsCoMemberIds`): the climbers it reports
+ * as fellow members of the viewer, and the candidates each read asked about.
+ */
+const coMembers = vi.hoisted(() => ({ found: [] as string[], reads: [] as string[][] }));
 vi.mock('../services/privacy', () => privacy);
 vi.mock('../services/session-board', () => ({
   resolveSessionBoards: sessionBoard.resolve,
@@ -31,10 +36,23 @@ vi.mock('../services/session-board', () => ({
 }));
 vi.mock('../db/client', async () => {
   const { boardSessions } = await import('@boardsesh/db/schema');
+  const { PgDialect } = await import('drizzle-orm/pg-core');
+  const dialect = new PgDialect();
   return {
     db: {
       select: () => ({
         from: (table: unknown) => ({
+          // Only the membership read joins: its VALUES rows carry (row, climber, session).
+          innerJoin: () => ({
+            where: async () => {
+              const params = dialect.sqlToQuery(table as Parameters<typeof dialect.sqlToQuery>[0]).params;
+              const candidates = params.filter((_, index) => index % 3 === 1) as string[];
+              coMembers.reads.push(candidates);
+              return candidates
+                .map((userId) => ({ rowIndex: params[params.indexOf(userId) - 1] as number, userId }))
+                .filter(({ userId }) => coMembers.found.includes(userId));
+            },
+          }),
           where: () => {
             // A live session's own row, for the board resolution; climb rows otherwise.
             const rows =
@@ -100,6 +118,8 @@ beforeEach(() => {
   );
   readable.climbs = [{ uuid: display.climbUuid, userId: null, isListed: true, isDraft: false }];
   readable.nextLookup = null;
+  coMembers.found = [];
+  coMembers.reads = [];
   privacy.canViewContent.mockResolvedValue(true);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -306,10 +326,34 @@ describe('session roster identity', () => {
     isLeader: true,
     connectionState: 'CONNECTED',
   };
-  it('does not treat session participation as permission to identify somebody', async () => {
-    const [hidden] = await redactSessionUsers([user], 'fellow-participant', 'session-1');
+  it('names nobody the account read and the membership read both leave out', async () => {
+    const [hidden] = await redactSessionUsers([user], 'stranger', 'session-1');
     expect(hidden).toMatchObject({ userId: null, username: '', avatarUrl: undefined, isLeader: true });
     expect(hidden.id).not.toBe(user.userId);
+    expect(coMembers.reads).toEqual([['climber-1']]);
+  });
+  it('names a fellow member of the session, under the opaque protocol id (#6582)', async () => {
+    coMembers.found = ['climber-1'];
+    const [named] = await redactSessionUsers([user], 'fellow-member', 'session-1');
+    expect(named).toMatchObject({ userId: 'climber-1', username: 'Private climber' });
+    expect(named.id).toBe(sessionParticipantId('session-1', 'climber-1'));
+  });
+  it('asks the membership read only about the climbers the account read left out, and never without a viewer', async () => {
+    coMembers.found = ['climber-1', 'climber-2'];
+    privacy.visibleActivityUserIdsByBoard.mockImplementation(async (rows: readonly BoardRow[]) =>
+      rows.map((row) => new Set(row.userIds.filter((userId) => userId === 'climber-2'))),
+    );
+    expect(await sessionVisibleUserIds(['climber-1', 'climber-2', 'viewer'], 'viewer', 'session-1')).toEqual(
+      new Set(['climber-1', 'climber-2', 'viewer']),
+    );
+    expect(coMembers.reads).toEqual([['climber-1']]);
+    // Signed out: no membership read at all.
+    expect(await sessionVisibleUserIds(['climber-1'], null, 'session-1')).toEqual(new Set());
+    expect(coMembers.reads).toHaveLength(1);
+    // Outside a session there is nobody to be a fellow member of.
+    privacy.visibleActivityUserIds.mockResolvedValue(new Set());
+    expect(await sessionVisibleUserIds(['climber-1'], 'viewer', null)).toEqual(new Set());
+    expect(coMembers.reads).toHaveLength(1);
   });
   it('keeps protocol identity stable on reconnect but unlinks different sessions', () => {
     expect(sessionParticipantId('session-1', 'climber-1')).toBe(sessionParticipantId('session-1', 'climber-1'));
@@ -486,10 +530,13 @@ describe('one lookup per session projection', () => {
       'viewer',
     );
     expect(privacy.canViewActivityIdentity).not.toHaveBeenCalled();
+    // One membership read too, about the climbers left unnamed.
+    expect(coMembers.reads).toEqual([['climber-1', 'climber-3']]);
 
     // Nothing is cached past the projection: the next one asks again.
     await ClimbQueueItem.addedBy(items[0], undefined, ctx);
     expect(privacy.visibleActivityUserIdsByBoard).toHaveBeenCalledTimes(2);
+    expect(coMembers.reads).toHaveLength(2);
   });
 });
 

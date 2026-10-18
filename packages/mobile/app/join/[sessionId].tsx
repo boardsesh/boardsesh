@@ -344,6 +344,10 @@ function JoinSessionScreen() {
           ))}
         </View>
 
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.namesVisible}>
+          {t('mobileJoin.namesVisible')}
+        </Text>
+
         <View style={styles.buttonColumn}>
           <Button
             title={t('mobileJoin.join')}
@@ -392,6 +396,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   boardLabel: {
+    textAlign: 'center',
+  },
+  namesVisible: {
     textAlign: 'center',
   },
   avatarRow: {

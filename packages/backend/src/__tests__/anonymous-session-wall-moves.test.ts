@@ -158,6 +158,10 @@ async function logSend(userId: string, sessionId: string, boardUuid?: string): P
   return tick?.boardId == null ? null : Number(tick.boardId);
 }
 
+// The roster is mocked and CLIMBER holds no `board_session_participants` row,
+// so neither FRIEND (the host) nor STRANGER counts as a fellow member of theirs
+// (#6582): these tests cover the board-facing projection a viewer outside the
+// session gets. 'a fellow member' at the end covers the other case.
 const climberRow = (sessionId: string): SessionUser =>
   ({
     id: sessionParticipantId(sessionId, CLIMBER),
@@ -434,6 +438,30 @@ describe('what a connected peer re-projects', () => {
         sessionId,
         expect.objectContaining({ __typename: 'SessionBoardPathChanged', wallChanged: true, pathUnchanged: true }),
       );
+    } finally {
+      await peer.close();
+    }
+  });
+});
+
+describe('a fellow member', () => {
+  it('keeps the climber’s name through a move onto a wall they don’t own', async () => {
+    const sessionId = await insertSession(ownBoard.id, `/b/${ownBoard.slug}/40`);
+    await db.insert(dbSchema.boardSessionParticipants).values({ sessionId, userId: CLIMBER });
+    const peer = await connectPeer(sessionId);
+    try {
+      expect(peer.seedName).toBe(CLIMBER);
+      expect(peer.seedAddedBy).toBe(CLIMBER);
+      await updateSessionBoardPathIfChanged(sessionId, `/b/${friendBoard.slug}/40`, FRIEND, 'friend-pid');
+      expect(await wallMoveNames(peer, true)).toMatchObject({
+        presence: CLIMBER,
+        presenceName: 'Climber Name',
+        snapshot: CLIMBER,
+        addedBy: CLIMBER,
+        tickedBy: [CLIMBER],
+      });
+      // The stranger, who never joined, still gets the anonymous rows.
+      expect(await rosterName(STRANGER, sessionId)).toBeNull();
     } finally {
       await peer.close();
     }

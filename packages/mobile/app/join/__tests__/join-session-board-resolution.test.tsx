@@ -182,6 +182,12 @@ beforeEach(() => {
 describe('JoinSessionScreen board resolution', () => {
   // The real resolver re-checks ownership even when a followed row sorts first;
   // the loader's profile and pagination contract has its own GraphQL tests.
+  it('tells the climber that everyone in the session will see their name before they join', () => {
+    const rendered = render(createElement(JoinSessionScreen));
+    expect(rendered.getByText('mobileJoin.namesVisible')).toBeDefined();
+    expect(rendered.getByRole('button', { name: 'mobileJoin.join' })).toBeDefined();
+  });
+
   it('reuses the current viewer board when a followed physical wall sorts first', async () => {
     const followed = board({ uuid: 'followed-first', ownerId: 'another-viewer', isOwned: true });
     const matching = board({ uuid: 'viewer-wall', isOwned: false });

@@ -7,7 +7,7 @@ vi.mock('../services/privacy', () => ({
   canAccessResource: vi.fn().mockResolvedValue(true),
   climbDraftVisibilityCondition: () => ({}),
 }));
-vi.mock('../graphql/resolvers/shared/activity-privacy', () => ({ tickPrivacyCondition: () => ({}) }));
+vi.mock('../graphql/resolvers/shared/activity-privacy', () => ({ sessionTickVisibleCondition: () => ({}) }));
 
 // Shared mock state, declared with vi.hoisted to ensure availability before mock setup
 const mockState = vi.hoisted(() => ({

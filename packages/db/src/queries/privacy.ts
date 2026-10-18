@@ -371,6 +371,100 @@ export function anonymousOnBoardCondition(
         AND anon_own_board.is_owned AND anon_own_board.deleted_at IS NULL ${ownActionInSession}))`;
 }
 
+/**
+ * Whether `userIdSql` belongs to session `sessionIdColumn`: its host, or a
+ * signed-in climber who joined it (`board_session_participants`, written on join
+ * and kept after they leave), with no revoked grant on it. `alias` keeps the
+ * subqueries' table names unique where the viewer's and the climber's tests sit
+ * side by side.
+ */
+function sessionMemberCondition(
+  userIdSql: SQLWrapper,
+  sessionIdColumn: SQLWrapper,
+  alias: 'co_viewer' | 'co_climber',
+): SQL<boolean> {
+  const host = sql.raw(`${alias}_host`);
+  const joined = sql.raw(`${alias}_joined`);
+  const revoked = sql.raw(`${alias}_revoked`);
+  return sql<boolean>`((EXISTS (SELECT 1 FROM board_sessions ${host}
+      WHERE ${host}.id = ${sessionIdColumn} AND ${host}.created_by_user_id = ${userIdSql})
+    OR EXISTS (SELECT 1 FROM board_session_participants ${joined}
+      WHERE ${joined}.session_id = ${sessionIdColumn} AND ${joined}.user_id = ${userIdSql}))
+    AND NOT EXISTS (SELECT 1 FROM resource_grants ${revoked}
+      WHERE ${revoked}.kind = 'session' AND ${revoked}.resource_id = ${sessionIdColumn}
+        AND ${revoked}.user_id = ${userIdSql} AND ${revoked}.status = 'revoked'))`;
+}
+
+/**
+ * Whether the viewer and `climberIdColumn` are fellow members of session
+ * `sessionIdColumn` (#6582, owner decision 2026-10-19: sessions are for friends,
+ * so everyone who joined sees everyone else in it by name). Both are members by
+ * `sessionMemberCondition`, and the viewer can still open the session, so a
+ * member who was removed, or lost access when its audience narrowed to Only me,
+ * stops seeing names. A signed-out viewer never is one. A permanent session
+ * (`is_permanent`) names nobody this way: it behaves like a gym wall, and its
+ * membership has no end.
+ *
+ * Pass a bound session id, and the viewer's half is evaluated once per
+ * statement; pass a column (a page of session cards) and it is checked per row.
+ * Never NULL.
+ */
+export function sessionCoMemberCondition(
+  climberIdColumn: SQLWrapper,
+  sessionIdColumn: SQLWrapper,
+  viewerId: ViewerId,
+): SQL<boolean> {
+  if (!viewerId) return sql<boolean>`false`;
+  return sql<boolean>`(EXISTS (SELECT 1 FROM board_sessions co_member_session
+      WHERE co_member_session.id = ${sessionIdColumn} AND NOT co_member_session.is_permanent)
+    AND ${sessionMemberCondition(sql`${viewerId}::text`, sessionIdColumn, 'co_viewer')}
+    AND ${resourceAccessCondition('session', sessionIdColumn, viewerId)}
+    AND ${sessionMemberCondition(climberIdColumn, sessionIdColumn, 'co_climber')})`;
+}
+
+/**
+ * Whether a fellow member of the tick's session (`sessionCoMemberCondition`) may
+ * see this tick there: its climb, grade, attempts and result under the climber's
+ * name, never its note or clips. Only a tick logged while its climber was in the
+ * session counts. Reconciliation stamps a climber's loose ticks from the same
+ * day, on any wall, with the session id, so the id alone is no evidence:
+ *
+ * - it was climbed between the climber joining (`joined_at`, or the session's
+ *   start for its host) and the session's end (now while it is still open);
+ * - it was logged on one of the session's boards (its primary board or one in
+ *   `session_boards`). A session on a config path with no board row has only
+ *   the time window to go on.
+ *
+ * A tick its climber kept to themselves (`only_me`) is never released. Never
+ * NULL.
+ */
+export function sessionCoMemberTickCondition(
+  ticks: { uuid: SQLWrapper; userId: SQLWrapper; sessionId: SQLWrapper; climbedAt: SQLWrapper; boardId: SQLWrapper },
+  viewerId: ViewerId,
+): SQL<boolean> {
+  if (!viewerId) return sql<boolean>`false`;
+  // Timestamps are stored without a zone, written as UTC; LOCALTIMESTAMP is the
+  // same reading `defaultNow()` gives `joined_at`.
+  return sql<boolean>`(${ticks.sessionId} IS NOT NULL
+    AND ${sessionCoMemberCondition(ticks.userId, ticks.sessionId, viewerId)}
+    AND NOT EXISTS (SELECT 1 FROM content_privacy co_tick_privacy
+      WHERE co_tick_privacy.entity_type = 'tick' AND co_tick_privacy.entity_id = ${ticks.uuid}
+        AND co_tick_privacy.owner_id = ${ticks.userId} AND co_tick_privacy.audience = 'only_me')
+    AND EXISTS (SELECT 1 FROM board_sessions co_tick_session
+      WHERE co_tick_session.id = ${ticks.sessionId}
+        AND ${ticks.climbedAt} <= COALESCE(co_tick_session.ended_at, LOCALTIMESTAMP)
+        AND ${ticks.climbedAt} >= LEAST(
+          CASE WHEN co_tick_session.created_by_user_id = ${ticks.userId}
+            THEN COALESCE(co_tick_session.started_at, co_tick_session.created_at) END,
+          (SELECT co_tick_joined.joined_at FROM board_session_participants co_tick_joined
+            WHERE co_tick_joined.session_id = co_tick_session.id AND co_tick_joined.user_id = ${ticks.userId}))
+        AND (${ticks.boardId} = co_tick_session.board_id
+          OR EXISTS (SELECT 1 FROM session_boards co_tick_board
+            WHERE co_tick_board.session_id = co_tick_session.id AND co_tick_board.board_id = ${ticks.boardId})
+          OR (co_tick_session.board_id IS NULL AND NOT EXISTS (SELECT 1 FROM session_boards co_tick_any_board
+            WHERE co_tick_any_board.session_id = co_tick_session.id)))))`;
+}
+
 /** Separate location policy; knowledge of a board UUID alone cannot reveal its address. */
 export function resourceLocationCondition(boardUuid: SQLWrapper, viewerId: ViewerId): SQL {
   return sql`EXISTS (SELECT 1 FROM user_boards privacy_location_board

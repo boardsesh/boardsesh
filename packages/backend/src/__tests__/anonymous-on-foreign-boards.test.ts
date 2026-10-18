@@ -770,7 +770,9 @@ describe('approved members of an identified restricted board', () => {
     expect(await rosterName(CLIMBER, sessionId)).toBe(CLIMBER);
   });
 
-  it('does not reveal a private account when a public session member rebinds to their board and fabricates a grant', async () => {
+  // The stranger never joined (no participant row), so they are not a fellow
+  // member of the session (#6582) and only the board rules apply.
+  it('does not reveal a private account to a viewer outside the session who rebinds it to their board and fabricates a grant', async () => {
     await setPreference(true);
     await db.update(dbSchema.userProfiles).set({ isPrivate: true }).where(eq(dbSchema.userProfiles.userId, CLIMBER));
     try {
@@ -818,6 +820,46 @@ describe('approved members of an identified restricted board', () => {
         confirmedAt: '2026-10-03T10:00:00Z',
       });
       expect(await rosterName(STRANGER, sessionId)).toBe(CLIMBER);
+    } finally {
+      await db.update(dbSchema.userProfiles).set({ isPrivate: false }).where(eq(dbSchema.userProfiles.userId, CLIMBER));
+    }
+  });
+
+  it('names that climber once the viewer joins the session, while the board itself stays anonymous (#6582)', async () => {
+    await setPreference(true);
+    await db.update(dbSchema.userProfiles).set({ isPrivate: true }).where(eq(dbSchema.userProfiles.userId, CLIMBER));
+    try {
+      const board = await insertBoard(STRANGER, 'Rebound garage');
+      const sessionId = 'anon-boards-joined-rebind';
+      await insertSession(sessionId, ownBoard.id);
+      await seedSessionTicks(sessionId, ownBoard.id);
+      await db.insert(dbSchema.resourcePrivacy).values({
+        kind: 'board',
+        resourceId: board.uuid,
+        audience: 'invite_only',
+        locationAudience: 'only_me',
+      });
+      await db.insert(dbSchema.resourceGrants).values({
+        kind: 'board',
+        resourceId: board.uuid,
+        userId: CLIMBER,
+        status: 'approved',
+        invitedBy: STRANGER,
+      });
+      await db
+        .update(dbSchema.boardSessions)
+        .set({ boardId: board.id, boardPath: `/b/${board.slug}/40` })
+        .where(eq(dbSchema.boardSessions.id, sessionId));
+      expect(await rosterName(STRANGER, sessionId)).toBeNull();
+
+      await db.insert(dbSchema.boardSessionParticipants).values({ sessionId, userId: STRANGER });
+      expect(await rosterName(STRANGER, sessionId)).toBe(CLIMBER);
+      expect((await redactQueueItem(queueItem, STRANGER, sessionId)).addedBy).toBe(CLIMBER);
+      expect((await sessionFeedQueries.sessionDetail(null, { sessionId }, viewer(STRANGER)))?.ownerUserId).toBe(
+        CLIMBER,
+      );
+      // The board's own Bluetooth holder is not a surface of the session.
+      expect(await redactBoardHolder(holder, STRANGER, board.id)).toMatchObject({ userId: null, displayName: null });
     } finally {
       await db.update(dbSchema.userProfiles).set({ isPrivate: false }).where(eq(dbSchema.userProfiles.userId, CLIMBER));
     }
@@ -1194,6 +1236,12 @@ describe('nearby discovery', () => {
     );
     expect(await nearbyHost(onConfig, STRANGER)).toBeNull();
 
+    // Joining makes the stranger a fellow member: the session names the host to
+    // them, and nearby discovery, a listing, still does not.
+    await db.insert(dbSchema.boardSessionParticipants).values({ sessionId: onGym, userId: STRANGER });
+    expect(await rosterName(STRANGER, onGym)).toBe(CLIMBER);
+    expect(await nearbyHost(onGym, STRANGER)).toBeNull();
+
     await setPreference(false);
     expect(await nearbyHost(onGym, STRANGER)).toBe(CLIMBER);
   });
@@ -1251,7 +1299,7 @@ describe('a live session’s detail, stats and summary', () => {
     await insertSession('anon-boards-detail', gymBoard.id);
     await seedSessionTicks('anon-boards-detail', gymBoard.id);
 
-    for (const reader of [STRANGER, FOLLOWER]) {
+    for (const reader of [STRANGER, FOLLOWER, null]) {
       const detail = await sessionFeedQueries.sessionDetail(
         undefined,
         { sessionId: 'anon-boards-detail' },

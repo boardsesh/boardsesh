@@ -96,8 +96,13 @@ vi.mock('../db/client', () => {
       }
       if (table === dbSchema.boardseshTicks) {
         return makeChain(
-          projection && Object.keys(projection).length === 1 && 'uuid' in projection
-            ? betaLinkTestState.tickRows.map((row) => ({ uuid: (row.tick as { uuid: string }).uuid }))
+          // The readable-ticks lookup selects the uuid and whether its note is
+          // readable; every tick in these cases is the viewer's to read.
+          projection && 'uuid' in projection && !('tick' in projection)
+            ? betaLinkTestState.tickRows.map((row) => ({
+                uuid: (row.tick as { uuid: string }).uuid,
+                noteReadable: true,
+              }))
             : betaLinkTestState.tickRows,
         );
       }

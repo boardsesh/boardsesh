@@ -1,7 +1,11 @@
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
-import { ownedOrPublicClimbCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  ownedOrPublicClimbCondition,
+  sessionCoMemberCondition,
+  sprayClimbVisibilityCondition,
+} from '@boardsesh/db/queries';
 import type {
   BoardConnectionHolder,
   BoardPresenceClimb,
@@ -9,11 +13,20 @@ import type {
   BoardPresenceStats,
   BoardPresenceHardestSend,
   SessionUser,
+  SessionParticipant,
   ClimbQueueItem,
   Climb,
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { boardClimbs, boardSessions, contentPrivacy, resourceGrants, userBoards } from '@boardsesh/db/schema';
+import {
+  boardClimbs,
+  boardSessions,
+  contentPrivacy,
+  resourceGrants,
+  userBoards,
+  users as accounts,
+} from '@boardsesh/db/schema';
+import { batchedLookup, type PendingLookups } from './batched-lookup';
 import {
   anonymousOnBoardUserIds,
   canAccessResource,
@@ -32,10 +45,24 @@ type ViewerId = string | null | undefined;
 const rosterSourceSessions = new WeakMap<SessionUser, string>();
 const queueSourceSessions = new WeakMap<ClimbQueueItem, string | null>();
 const hardestSendSourceBoards = new WeakMap<BoardPresenceHardestSend, number>();
+const summaryParticipantSourceSessions = new WeakMap<SessionParticipant, string>();
 
 export const sessionUserSourceSessionId = (user: SessionUser) => rosterSourceSessions.get(user);
 export const queueItemSourceSessionId = (item: ClimbQueueItem) => queueSourceSessions.get(item);
 export const hardestSendSourceBoardId = (send: BoardPresenceHardestSend) => hardestSendSourceBoards.get(send);
+export const summaryParticipantSourceSessionId = (participant: SessionParticipant) =>
+  summaryParticipantSourceSessions.get(participant);
+
+/**
+ * A session summary's participant row, cloned with the session it was projected
+ * for, so its GraphQL fields can let a fellow member of that session keep the
+ * name (`sessionCoMemberIds`) where account privacy alone would blank it.
+ */
+export function withSummaryParticipantSession<T extends SessionParticipant>(participant: T, sessionId: string): T {
+  const projected = { ...participant };
+  summaryParticipantSourceSessions.set(projected, sessionId);
+  return projected;
+}
 
 /** Session protocol IDs must never double as profile IDs. */
 export function sessionParticipantId(sessionId: string, userId: string): string {
@@ -103,6 +130,9 @@ function mergeRows(count: number, queryRows: readonly { rowIndex: number }[], fo
  * `visibleActivityUserIds` for rows of live sessions, each judged on the one
  * board its session is on (`sessionBoardRows`). One query for every row, plus
  * the board resolution. Unidentified sessions use the same anonymous rule.
+ * Listings (Climbing now, nearby discovery) call this directly: they are
+ * board-facing, so being a fellow member of a listed session names nobody
+ * there. A session's own surfaces use `sessionVisibleUserIds`.
  */
 export async function sessionsVisibleUserIds(
   rows: SessionRows,
@@ -128,9 +158,56 @@ async function loadSessionBoardSource(sessionId: string): Promise<SessionBoardSo
   return session ?? { id: sessionId, boardId: null, boardPath: null, createdByUserId: null };
 }
 
+type CoMemberRows = readonly { sessionId: string; userIds: readonly (string | null | undefined)[] }[];
+
+/**
+ * The climbers on each row the viewer shares that row's session with
+ * (`sessionCoMemberCondition`, #6582), in the order given: on that session's
+ * own surfaces, a fellow member is named whatever their account privacy or
+ * "Stay anonymous on boards I don't own" says. One statement for every row,
+ * none without a viewer. Read from the primary: a joiner's participant row is
+ * written just before `UserJoined` goes out. A daily card's synthetic id is not
+ * a session and has no members.
+ */
+export async function sessionsCoMemberIds(rows: CoMemberRows, viewerId: ViewerId): Promise<Set<string>[]> {
+  const found = rows.map(() => new Set<string>());
+  if (!viewerId) return found;
+  const candidates = rows.flatMap(({ sessionId, userIds }, rowIndex) =>
+    sessionId.startsWith('daily:')
+      ? []
+      : distinctIds(userIds)
+          .filter((userId) => userId !== viewerId)
+          .map((userId) => ({ rowIndex, userId, sessionId })),
+  );
+  if (candidates.length === 0) return found;
+  // One session: bind it, so the viewer's half of the test runs once.
+  const sessionIds = new Set(candidates.map(({ sessionId }) => sessionId));
+  const sessionIdSql = sessionIds.size === 1 ? sql`${candidates[0].sessionId}::text` : sql`co_row.session_id`;
+  const values = candidates.map(
+    ({ rowIndex, userId, sessionId }) => sql`(${rowIndex}::int, ${userId}::text, ${sessionId}::text)`,
+  );
+  const matches = await db
+    .select({ rowIndex: sql<number>`co_row.row_index`, userId: accounts.id })
+    .from(sql`(VALUES ${sql.join(values, sql`, `)}) AS co_row(row_index, user_id, session_id)`)
+    .innerJoin(accounts, eq(accounts.id, sql`co_row.user_id`))
+    .where(sessionCoMemberCondition(accounts.id, sessionIdSql, viewerId));
+  for (const { rowIndex, userId } of matches) found[Number(rowIndex)]?.add(userId);
+  return found;
+}
+
+/** `sessionsCoMemberIds` for one session. */
+export async function sessionCoMemberIds(
+  userIds: readonly (string | null | undefined)[],
+  viewerId: ViewerId,
+  sessionId: string,
+): Promise<Set<string>> {
+  return (await sessionsCoMemberIds([{ sessionId, userIds }], viewerId))[0];
+}
+
 /**
  * Climbers who show as anonymous in this live session: they stay anonymous on
- * boards they don't own and the session's board is not theirs. For rows whose
+ * boards they don't own and the session's board is not theirs, and the viewer
+ * is not a fellow member of the session (`sessionCoMemberIds`). For rows whose
  * identity follows the logs' own audience rather than the account (session
  * detail, the session summary).
  */
@@ -145,15 +222,20 @@ export async function sessionAnonymousUserIds(
     [{ session: await loadSessionBoardSource(sessionId), userIds: others }],
     viewerId,
   );
-  return mergeRows(1, queryRows, await anonymousOnBoardUserIdsByBoard(queryRows, viewerId))[0];
+  const anonymous = mergeRows(1, queryRows, await anonymousOnBoardUserIdsByBoard(queryRows, viewerId))[0];
+  if (anonymous.size === 0) return anonymous;
+  for (const userId of await sessionCoMemberIds([...anonymous], viewerId, sessionId)) anonymous.delete(userId);
+  return anonymous;
 }
 
 /**
- * Climbers a live session's board-facing rows (roster, queue attribution, host,
- * Live Activity holder) may name: their account lets the viewer see them, and
- * they do not stay anonymous on the session's board (`sessionsVisibleUserIds`).
- * None of it when the only climber is the viewer, who always sees their own
- * name. Outside a session (`sessionId` null) only the account decides.
+ * Climbers a live session's rows (roster, queue attribution, host, Live
+ * Activity holder) may name: their account lets the viewer see them and they do
+ * not stay anonymous on the session's board (`sessionsVisibleUserIds`), or they
+ * are a fellow member of the session (`sessionCoMemberIds`), which is read only
+ * for the climbers the first test left out. None of it when the only climber is
+ * the viewer, who always sees their own name. Outside a session (`sessionId`
+ * null) only the account decides.
  */
 export async function sessionVisibleUserIds(
   userIds: readonly (string | null | undefined)[],
@@ -163,57 +245,60 @@ export async function sessionVisibleUserIds(
   const candidates = distinctIds(userIds);
   const self = viewerId && candidates.includes(viewerId) ? [viewerId] : [];
   if (candidates.length === self.length) return new Set(self);
-  const visible = sessionId
-    ? (
-        await sessionsVisibleUserIds(
-          [{ session: await loadSessionBoardSource(sessionId), userIds: candidates }],
-          viewerId,
-        )
-      )[0]
-    : await visibleActivityUserIds(candidates, viewerId);
+  if (!sessionId) {
+    const visible = await visibleActivityUserIds(candidates, viewerId);
+    for (const userId of self) visible.add(userId);
+    return visible;
+  }
+  const visible = (
+    await sessionsVisibleUserIds([{ session: await loadSessionBoardSource(sessionId), userIds: candidates }], viewerId)
+  )[0];
   for (const userId of self) visible.add(userId);
+  const unnamed = candidates.filter((userId) => !visible.has(userId));
+  if (unnamed.length === 0) return visible;
+  for (const userId of await sessionCoMemberIds(unnamed, viewerId, sessionId)) visible.add(userId);
   return visible;
 }
 
-const pendingSessionVisibility = new Map<string, { userIds: Set<string>; visible: Promise<ReadonlySet<string>> }>();
+const pendingSessionVisibility: PendingLookups = new Map();
 /**
  * `sessionVisibleUserIds` for the GraphQL field projections (`ClimbQueueItem`,
  * `SessionUser`), which graphql-js resolves one item and one field at a time.
- * Every lookup for the same viewer and session made before the event loop moves
- * on (all the items of one queue or roster) shares one board resolution and
- * one query. Nothing outlives that batch, so a privacy change applies to the next
- * projection.
+ * Every lookup for the same viewer and session in one pass (all the items of
+ * one queue or roster) shares one board resolution and one query, plus one
+ * membership read when someone is left unnamed (`batchedLookup`).
  */
 export function batchedSessionVisibleUserIds(
   userIds: readonly (string | null | undefined)[],
   viewerId: ViewerId,
   sessionId: string | null | undefined,
 ): Promise<ReadonlySet<string>> {
-  const key = JSON.stringify([viewerId ?? null, sessionId ?? null]);
-  let pending = pendingSessionVisibility.get(key);
-  if (!pending) {
-    const batch = new Set<string>();
-    const visible = new Promise<ReadonlySet<string>>((resolve, reject) => {
-      // Like DataLoader: after the promise jobs already queued, so every sibling
-      // field and list item graphql-js started in this pass has asked.
-      void Promise.resolve().then(() =>
-        process.nextTick(() => {
-          pendingSessionVisibility.delete(key);
-          sessionVisibleUserIds([...batch], viewerId, sessionId).then(resolve, reject);
-        }),
-      );
-    });
-    pending = { userIds: batch, visible };
-    pendingSessionVisibility.set(key, pending);
-  }
-  for (const userId of userIds) if (userId) pending.userIds.add(userId);
-  return pending.visible;
+  return batchedLookup(
+    pendingSessionVisibility,
+    JSON.stringify([viewerId ?? null, sessionId ?? null]),
+    userIds,
+    (ids) => sessionVisibleUserIds(ids, viewerId, sessionId),
+  );
+}
+
+const pendingSessionCoMembers: PendingLookups = new Map();
+/** `sessionCoMemberIds` for GraphQL field projections, one read per viewer and session per pass. */
+export function batchedSessionCoMemberIds(
+  userIds: readonly (string | null | undefined)[],
+  viewerId: ViewerId,
+  sessionId: string,
+): Promise<ReadonlySet<string>> {
+  if (!viewerId) return Promise.resolve(new Set());
+  return batchedLookup(pendingSessionCoMembers, JSON.stringify([viewerId, sessionId]), userIds, (ids) =>
+    sessionCoMemberIds(ids, viewerId, sessionId),
+  );
 }
 
 /**
  * The roster names a climber by their account, except that a climber who stays
  * anonymous on boards they don't own is anonymous in a session on such a board,
- * to everyone but themselves. Opaque per-session ids either way. Pass
+ * to everyone but themselves and the session's other members. Opaque
+ * per-session ids either way. Pass
  * `visibleUserIds` (`sessionVisibleUserIds`) when it is already known.
  */
 export async function redactSessionUsers(

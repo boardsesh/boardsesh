@@ -773,6 +773,7 @@
     "retry": "Reintentar",
     "confirmTitle": "¿Unirte a la sesión de {{host}}?",
     "boardLabel": "{{board}} · {{count}} escalando",
+    "namesVisible": "Todos en esta sesión ven tu nombre y tus encadenes.",
     "join": "Unirse a la sesión",
     "cancel": "Cancelar",
     "switchTitle": "¿Salir de tu sesión actual?",
