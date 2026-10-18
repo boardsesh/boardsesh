@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider, QueryObserver, type QueryKey } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver, onlineManager, type QueryKey } from '@tanstack/react-query';
 const useNotificationUpdatesMock = vi.hoisted(() => vi.fn());
 vi.mock('../../notifications/use-notification-updates', async () => {
   const { useEffect } = await import('react');
@@ -41,15 +41,6 @@ vi.mock('../../lib/analytics-offline-engine-state', () => ({
 // Native offline mode is baked on. The bridge still owns auth/schema lifecycle,
 // scheduler teardown, progress wiring, and notifications.
 
-const privacySync = vi.hoisted(() => ({ listener: undefined as (() => void) | undefined, trigger: vi.fn() }));
-vi.mock('../../offline/privacy-revalidation', () => ({
-  subscribePrivacyRevalidation: (listener: () => void) => {
-    privacySync.listener = listener;
-    return () => {
-      privacySync.listener = undefined;
-    };
-  },
-}));
 const startSyncSchedulerStop = vi.fn();
 const startSyncSchedulerMock = vi.fn(() => startSyncSchedulerStop);
 const notifyBootstrapMetadataChangedMock = vi.hoisted(() => vi.fn());
@@ -67,7 +58,6 @@ const startBackgroundTrackingMock = vi.fn(() => startBackgroundTrackingStop);
 // react-native — mock it so Rolldown's scan never parses the RN Flow entry).
 vi.mock('../../offline/offline-sync-adapter', () => ({
   startSyncScheduler: (...args: unknown[]) => startSyncSchedulerMock(...(args as [])),
-  triggerSync: (...args: unknown[]) => privacySync.trigger(...args),
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
   startBackgroundTracking: () => startBackgroundTrackingMock(),
 }));
@@ -188,6 +178,7 @@ import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 
 function Harness({ flags, queryClient }: { flags: FeatureFlags; queryClient: QueryClient }) {
   return (
@@ -284,22 +275,64 @@ afterEach(() => {
 // that survives a sign-out wipe that did not finish (a locked database — #4314 —
 // or a crash mid-sign-out). Without it, every user-scoped local read on the next
 // account reads the previous climber's data.
-describe('OfflineSyncBridge — local user-data owner stamp', () => {
-  it('replays enabled downloads after privacy repair and detaches on teardown', async () => {
+// #6545. The owner-stamp wipe and the sign-out wipes are the only account
+// boundaries. Nothing the same signed-in account goes through may purge, wipe or
+// restart the downloads: not a token refresh (new token, same credential
+// generation), not signing in again (the generation moves), not a reconnect.
+describe('OfflineSyncBridge — the same account keeps its downloads', () => {
+  afterEach(() => {
+    onlineManager.setOnline(true);
+  });
+
+  async function renderSignedIn() {
     const queryClient = makeQueryClient();
     const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
-    act(() => privacySync.listener?.());
-    expect(privacySync.trigger).toHaveBeenCalledOnce();
-    const argumentsPassed = privacySync.trigger.mock.calls[0];
-    expect(argumentsPassed[0]).toBe(fakeDb);
-    expect(argumentsPassed[1]).toBe(queryClient);
-    expect(argumentsPassed.at(-1)).toEqual(getStartSyncSchedulerOptions());
-    view.unmount();
-    expect(privacySync.listener).toBeUndefined();
-    expect(startSyncSchedulerStop).toHaveBeenCalledOnce();
+    // The owner effect's last step: everything it does for a matching stamp is done.
+    await waitFor(() => expect(loadFollowedAuthorsMock).toHaveBeenCalled());
+    return { view, queryClient };
+  }
+
+  function expectNoCull() {
+    expect(beginGlobalPurgeMock).not.toHaveBeenCalled();
+    expect(clearUserDataMock).not.toHaveBeenCalled();
+    expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    expect(startSyncSchedulerStop).not.toHaveBeenCalled();
+    expect(startSyncSchedulerMock).toHaveBeenCalledOnce();
+  }
+
+  it('starts no purge on a token refresh', async () => {
+    const { view, queryClient } = await renderSignedIn();
+    // A refresh stores a new token under the same generation and the same
+    // account: the bridge sees the same inputs again.
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await act(async () => {});
+    expectNoCull();
   });
 
+  it('starts no purge when the same account signs in again', async () => {
+    await renderSignedIn();
+    // `storeTokens` → `advanceCredentialGeneration` moves the generation.
+    await act(async () => {
+      invalidatePrivacySnapshots('credential');
+    });
+    expectNoCull();
+  });
+
+  it('starts no purge on a reconnect', async () => {
+    await renderSignedIn();
+    await act(async () => {
+      onlineManager.setOnline(false);
+    });
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    expectNoCull();
+  });
+});
+
+describe('OfflineSyncBridge — local user-data owner stamp', () => {
   it('claims a never-stamped device for the signed-in climber', async () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);

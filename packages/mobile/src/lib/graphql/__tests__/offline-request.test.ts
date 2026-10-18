@@ -52,14 +52,10 @@ const {
   recordOfflineReadUnavailable: vi.fn(),
 }));
 
-const catalog = vi.hoisted(() => ({ epoch: 0, allowed: true, repairRequired: false, privacyGeneration: 0 }));
-vi.mock('../../../offline/privacy-revalidation', () => ({ needsPrivacyRevalidation: () => catalog.repairRequired }));
-vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => catalog.privacyGeneration }));
-vi.mock('../../../offline/catalog-access', () => ({
-  canReadPrivateCatalog: vi.fn(async () => catalog.allowed),
-  captureCatalogReadEpoch: () => catalog.epoch,
-  isCatalogReadCurrent: (epoch: number) => epoch === catalog.epoch,
-}));
+// The sign-in generation: `invalidatePrivacySnapshots('credential')` moves it at
+// every sign-in and sign-out. A token refresh does not.
+const privacy = vi.hoisted(() => ({ generation: 0 }));
+vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => privacy.generation }));
 vi.mock('../../../db', () => ({ getDatabaseHandle }));
 vi.mock('../../../db/queries/board-download-status', () => ({
   isBoardDownloadedLocally,
@@ -110,7 +106,17 @@ vi.mock('../../connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => connectivity.snapshot,
 }));
 
-const fakeDb = { tag: 'db' };
+// The owner stamp (`local_user_id` in sync_meta) is the only row the interceptor
+// itself reads; every other sync_meta read answers nothing. No catalogue marker
+// exists anywhere, which is the point (#6545).
+const ownerStamp = vi.hoisted(() => ({ userId: null as string | null }));
+const fakeDb = {
+  tag: 'db',
+  getFirstAsync: async (sql: string, params?: unknown[]) =>
+    sql.includes('sync_meta') && params?.[0] === 'local_user_id' && ownerStamp.userId !== null
+      ? { value: ownerStamp.userId }
+      : null,
+};
 
 import {
   NETWORK_ENRICHMENT_BUDGET_MS,
@@ -193,11 +199,10 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  catalog.epoch = 0;
-  catalog.repairRequired = false;
-  catalog.privacyGeneration = 0;
-  catalog.allowed = true;
+  privacy.generation = 0;
+  ownerStamp.userId = null;
   vi.clearAllMocks();
+  favoritesGate.readLocalUserId.mockResolvedValue(undefined);
   connectivity.snapshot = { effectiveOffline: false, reason: null };
   setOfflineEngineEnabled(true);
   getDatabaseHandle.mockReturnValue(fakeDb);
@@ -466,6 +471,7 @@ describe('offlineAwareRequest — GET_CLIMB', () => {
       layoutId: 1,
       angle: 40,
       climbUuid: 'c1',
+      viewerId: null,
     });
     expect(request).not.toHaveBeenCalled();
   });
@@ -764,7 +770,7 @@ describe('offlineAwareRequest — BOARDSESH_GRADE', () => {
     setOnline(true);
     const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
     expect(result).toEqual({ boardseshGrade: localGrade });
-    expect(getBoardseshGradeLocal).toHaveBeenCalledWith(fakeDb, gradeVars);
+    expect(getBoardseshGradeLocal).toHaveBeenCalledWith(fakeDb, { ...gradeVars, viewerId: null });
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -819,7 +825,7 @@ describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
     );
     expect(result.boardseshGradesForAngles).toHaveLength(1);
     expect(result.boardseshGradesForAngles[0].angle).toBe(40);
-    expect(getBoardseshGradesForAnglesLocal).toHaveBeenCalledWith(fakeDb, gradesForAnglesVars);
+    expect(getBoardseshGradesForAnglesLocal).toHaveBeenCalledWith(fakeDb, { ...gradesForAnglesVars, viewerId: null });
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -874,7 +880,7 @@ describe('offlineAwareRequest — CLIMB_STATS_HISTORY', () => {
     const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
     expect(result).toEqual({ climbStatsHistory: [localStatsEntry] });
     expect(isClimbLayoutDownloadedLocally).toHaveBeenCalledWith(fakeDb, 'kilter', 'c1');
-    expect(getClimbStatsHistoryLocal).toHaveBeenCalledWith(fakeDb, statsHistoryVars);
+    expect(getClimbStatsHistoryLocal).toHaveBeenCalledWith(fakeDb, { ...statsHistoryVars, viewerId: null });
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -1628,48 +1634,16 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
   });
 });
 
-describe('withdrawn downloaded catalogue reads', () => {
-  it('serves HTTP immediately while local privacy repair is pending or failed', async () => {
+describe('a sign-in or sign-out while a request is in flight', () => {
+  // `privacy.generation` is the in-memory sign-in generation. With the catalogue
+  // marker gone (#6545) it is the only thing that retires an answer begun under
+  // the previous session.
+  it('discards a network response when the account changes while it is in flight', async () => {
     setOnline(true);
-    catalog.repairRequired = true;
-    const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
-    expect(response.searchClimbs.climbs[0].uuid).toBe('net');
-    expect(searchClimbsLocal).not.toHaveBeenCalled();
-    expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])('keeps local-only reads fail closed during repair (online=%s)', async (online) => {
-    setOnline(online);
-    catalog.repairRequired = true;
-    expect(
-      await offlineAwareRequest(SIMILAR_CLIMBS_QUERY, { input: { boardType: 'kilter', layoutId: 1, sizeId: 5 } }),
-    ).toEqual({ similarClimbs: [] });
-    expect(request).not.toHaveBeenCalled();
-    expect(getSimilarClimbsLocal).not.toHaveBeenCalled();
-  });
-
-  it('returns the offline fallback without waiting for a failed local repair', async () => {
-    setOnline(false);
-    catalog.repairRequired = true;
-    expect(await offlineAwareRequest(GET_CLIMB, climbVars)).toEqual({ climb: null });
-    expect(request).not.toHaveBeenCalled();
-    expect(getClimbLocal).not.toHaveBeenCalled();
-  });
-
-  it('never rescues a failed HTTP request with a withdrawn catalogue', async () => {
-    setOnline(true);
-    catalog.repairRequired = true;
-    request.mockRejectedValueOnce(new Error('network unavailable'));
-    await expect(offlineAwareRequest(GET_CLIMB, climbVars)).rejects.toThrow('network unavailable');
-    expect(getClimbLocal).not.toHaveBeenCalled();
-  });
-
-  it('discards a network response when credentials or privacy change while it is in flight', async () => {
-    setOnline(true);
-    catalog.repairRequired = true;
+    isBoardDownloadedLocally.mockResolvedValue(false);
     request.mockImplementationOnce(async () => {
-      catalog.privacyGeneration += 1;
-      return { climb: { uuid: 'withdrawn' } };
+      privacy.generation += 1;
+      return { climb: { uuid: 'previous-session' } };
     });
     await expect(offlineAwareRequest(GET_CLIMB, climbVars)).rejects.toMatchObject({
       name: 'AbortError',
@@ -1678,12 +1652,11 @@ describe('withdrawn downloaded catalogue reads', () => {
     expect(fillClimbRevisionNumbersLocal).not.toHaveBeenCalled();
   });
 
-  it('discards an answer withdrawn while local network enrichment is pending', async () => {
+  it('discards an answer when the account changes while local network enrichment is pending', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(false);
     fillClimbRevisionNumbersLocal.mockImplementationOnce(async (_db: unknown, _board: string, climbs: unknown[]) => {
-      catalog.privacyGeneration += 1;
-      catalog.epoch += 1;
+      privacy.generation += 1;
       return climbs;
     });
     await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toMatchObject({
@@ -1691,33 +1664,144 @@ describe('withdrawn downloaded catalogue reads', () => {
     });
   });
 
-  it('does not rescue an old failed request from a newly authorized catalogue', async () => {
+  it('does not rescue a request that failed after the account changed', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(false);
     request.mockImplementationOnce(async () => {
-      catalog.epoch += 1;
+      privacy.generation += 1;
       throw new Error('old request failed');
     });
     await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow('old request failed');
     expect(searchClimbsLocal).not.toHaveBeenCalled();
   });
 
-  it('discards a local result that finishes after privacy revalidation', async () => {
+  it('returns the fallback for a local result that finishes after the account changed', async () => {
     setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
     searchClimbsLocal.mockImplementationOnce(async () => {
-      catalog.epoch += 1;
-      return { climbs: [{ uuid: 'withdrawn' }], hasMore: false };
+      privacy.generation += 1;
+      return { climbs: [{ uuid: 'previous-session' }], hasMore: false };
     });
     const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
     expect(result.searchClimbs.climbs).toEqual([]);
   });
-  it('does not rescue a failed request with a different account catalogue', async () => {
-    setOnline(true);
-    catalog.allowed = false;
+});
+
+// #6545: downloads have no viewer gate. A token refresh, a reconnect or a fresh
+// launch must not stop a downloaded board from answering. If a catalogue marker
+// gate comes back, these go red: nothing in sync_meta would satisfy it.
+describe('downloaded boards answer with no catalogue marker', () => {
+  it('serves a fresh launch offline, with nothing in sync_meta', async () => {
+    setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
+    expect(await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).toEqual({
+      climb: { uuid: 'local-detail' },
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('serves a fresh launch online, local-first, with nothing in sync_meta', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'local' }]);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  // A token refresh writes a new token under the same generation
+  // (`auth-interceptor.ts` → `storeTokensForGeneration`): same account, nothing moves.
+  it('keeps answering locally across a token refresh', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    ownerStamp.userId = 'me';
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
+    expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
+      uuid: 'local-detail',
+    });
+    // The refreshed token decodes to the same account and the generation stays.
+    expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
+      uuid: 'local-detail',
+    });
+    expect(getClimbLocal).toHaveBeenCalledTimes(2);
+  });
+
+  // Signing in again as the same account moves the generation
+  // (`storeTokens` → `advanceCredentialGeneration`). The next read is local again.
+  it('answers locally again after the same account signs in again', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    ownerStamp.userId = 'me';
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
+    privacy.generation += 1;
+    expect((await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).climb).toEqual({
+      uuid: 'local-detail',
+    });
+  });
+
+  it("asks the detail read for the signed-in account's drafts only", async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
+    await offlineAwareRequest(GET_CLIMB, climbVars);
+    await offlineAwareRequest(BOARDSESH_GRADE, gradeVars);
+    await offlineAwareRequest(BOARDSESH_GRADES_FOR_ANGLES, gradesForAnglesVars);
+    await offlineAwareRequest(CLIMB_STATS_HISTORY, statsHistoryVars);
+    expect(getClimbLocal).toHaveBeenCalledWith(fakeDb, expect.objectContaining({ viewerId: 'me' }));
+    expect(getBoardseshGradeLocal).toHaveBeenCalledWith(fakeDb, { ...gradeVars, viewerId: 'me' });
+    expect(getBoardseshGradesForAnglesLocal).toHaveBeenCalledWith(fakeDb, { ...gradesForAnglesVars, viewerId: 'me' });
+    expect(getClimbStatsHistoryLocal).toHaveBeenCalledWith(fakeDb, { ...statsHistoryVars, viewerId: 'me' });
+  });
+});
+
+// The rows on the phone can still belong to the previous account when its
+// sign-out wipe failed or never ran. Until the owner-stamp recovery replaces
+// them, nothing answers locally: local search binds ticks to the stamp.
+describe('rows stamped for another account', () => {
+  beforeEach(() => {
+    ownerStamp.userId = 'previous-account';
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
+    isBoardDownloadedLocally.mockResolvedValue(true);
+  });
+
+  it('returns the offline fallback instead of the local read', async () => {
+    setOnline(false);
+    expect(await offlineAwareRequest(GET_CLIMB, climbVars)).toEqual({ climb: null });
+    expect(getClimbLocal).not.toHaveBeenCalled();
+  });
+
+  it('goes to the network online', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result.searchClimbs.climbs).toEqual([{ uuid: 'net' }]);
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('does not rescue a failed request from those rows', async () => {
+    setOnline(true);
+    setOfflineEngineEnabled(false);
     request.mockRejectedValueOnce(new Error('network unavailable'));
     await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow('network unavailable');
     expect(searchClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('keeps a local-only read on its empty fallback', async () => {
+    setOnline(true);
+    expect(
+      await offlineAwareRequest(SIMILAR_CLIMBS_QUERY, { input: { boardType: 'kilter', layoutId: 1, sizeId: 5 } }),
+    ).toEqual({ similarClimbs: [] });
+    expect(getSimilarClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('declines while signed out too', async () => {
+    setOnline(false);
+    favoritesGate.readLocalUserId.mockResolvedValue(undefined);
+    expect(await offlineAwareRequest(GET_CLIMB, climbVars)).toEqual({ climb: null });
+    expect(getClimbLocal).not.toHaveBeenCalled();
+  });
+
+  it('answers again once the stamp names the signed-in account', async () => {
+    setOnline(false);
+    ownerStamp.userId = 'me';
+    expect(await offlineAwareRequest(GET_CLIMB, climbVars)).toEqual({ climb: { uuid: 'local-detail' } });
   });
 });

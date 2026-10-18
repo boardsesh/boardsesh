@@ -60,6 +60,9 @@ import {
   getDownloadedScopeKeys,
   scopeSyncMetaKeys,
   BOARD_DATA_TABLES,
+  assertLocalUserDataOwner,
+  getLocalUserId,
+  stampLocalUserId,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { SPRAY_PHOTO_PENDING_PREFIX } from '../../offline/spray-photo-retry';
@@ -261,6 +264,64 @@ describe('clearUserData', () => {
       expect(await getCheckpoint(db, getCheckpointKey(tableName, 'kilter:1:1'))).not.toBeNull();
     }
     expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
+  });
+
+  // #6545. With the catalogue revalidation pass gone, this wipe is what hands a
+  // phone from one account to the next when no explicit sign-out wiped it: the
+  // sign-outs the climber did not choose, and the owner-stamp recovery in
+  // OfflineSyncBridge, which runs exactly this sequence.
+  it('hands the phone from account A to account B and keeps the downloaded catalogue', async () => {
+    await seedSignedInDevice();
+    await stampLocalUserId(db, 'account-a');
+    // Another account's published climb, and A's own draft: catalogue rows that stay.
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, is_listed) VALUES (?, 'kilter', ?, ?, 1)`,
+      ['published-by-someone', 'someone-else', 0],
+    );
+    await db.runAsync(
+      `INSERT INTO board_climbs (uuid, board_type, user_id, is_draft, is_listed) VALUES (?, 'kilter', ?, ?, 1)`,
+      ['draft-by-a', 'account-a', 1],
+    );
+    // The first-ascent name the stats sync projected for A.
+    await db.runAsync(
+      `UPDATE board_climb_stats SET fa_username = 'private-climber', fa_at = '2026-01-01T00:00:00Z' WHERE climb_uuid = 'climb-1'`,
+    );
+    // A spray wall A could see, with a climb on it and its scope markers.
+    await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
+      4,
+      'wall-4',
+      'spray-walls/wall-4/photo-1.jpg',
+    ]);
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES (?, 'spray', 4)`, ['spray-climb']);
+    for (const key of scopeSyncMetaKeys('spray:4:4')) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
+    }
+
+    expect(await assertLocalUserDataOwner(db, 'account-b')).toBe('mismatch');
+    await clearUserData(db);
+    await stampLocalUserId(db, 'account-b');
+
+    expect(await getLocalUserId(db)).toBe('account-b');
+    expect(await countRows('spray_walls')).toBe(0);
+    expect(await countRows("board_climbs WHERE board_type = 'spray'")).toBe(0);
+    for (const key of scopeSyncMetaKeys('spray:4:4')) {
+      expect(await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [key]), key).toBeNull();
+    }
+    expect(await db.getAllAsync("SELECT uuid FROM board_climbs WHERE board_type = 'kilter' ORDER BY uuid")).toEqual([
+      { uuid: 'climb-1' },
+      { uuid: 'draft-by-a' },
+      { uuid: 'published-by-someone' },
+    ]);
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect(await getCheckpoint(db, getCheckpointKey(tableName, 'kilter:1:1')), tableName).not.toBeNull();
+    }
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
+    expect(
+      await db.getFirstAsync(
+        'SELECT ascensionist_count, fa_username, fa_at FROM board_climb_stats WHERE climb_uuid = ?',
+        ['climb-1'],
+      ),
+    ).toEqual({ ascensionist_count: 12, fa_username: null, fa_at: null });
   });
 });
 

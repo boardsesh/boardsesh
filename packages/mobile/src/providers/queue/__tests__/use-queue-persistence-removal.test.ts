@@ -2,11 +2,14 @@ import { getPrivacyRevocationGeneration, invalidatePrivacySnapshots } from '../.
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { QueueState } from '@boardsesh/queue';
+import type { QueueAction, QueueState } from '@boardsesh/queue';
 
-const catalog = vi.hoisted(() => ({ viewer: vi.fn(async (): Promise<string | null> => null) }));
+// Offline cold start: the profile has not answered, so the queue owner comes from
+// the phone, the token's account when the owner stamp names that same account.
+const owner = vi.hoisted(() => ({ stamp: null as string | null, token: undefined as string | undefined }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
-vi.mock('../../../offline/catalog-access', () => ({ getAuthorizedCatalogViewerId: catalog.viewer }));
+vi.mock('@boardsesh/offline-sync', () => ({ getLocalUserId: async () => owner.stamp }));
+vi.mock('../../../lib/local-user-id', () => ({ readLocalUserId: async () => owner.token }));
 
 const snapshots = vi.hoisted(() => ({ generation: 0, get: vi.fn(), set: vi.fn() }));
 vi.mock('../../../lib/queue-snapshot-store', () => ({
@@ -95,18 +98,8 @@ it('waits for a signed-in owner without overwriting their queue while the profil
   unmount();
 });
 
-it('restores an offline queue using the credential-bound catalogue viewer', async () => {
-  snapshots.get.mockReset();
-  snapshots.set.mockReset();
-  catalog.viewer.mockResolvedValueOnce('verified-viewer');
-  const references = {
-    queue: [{ uuid: 'saved-slot', climb: { uuid: 'saved-climb' } }],
-    currentClimbQueueItem: null,
-    playlistSuggestionSource: null,
-  };
-  snapshots.get.mockResolvedValue(references);
-  const dispatch = vi.fn();
-  const { unmount } = renderHook(() =>
+function renderOfflineColdStart(dispatch: React.Dispatch<QueueAction>) {
+  return renderHook(() =>
     useQueuePersistence({
       authenticatedUserId: null,
       identityReady: false,
@@ -122,15 +115,54 @@ it('restores an offline queue using the credential-bound catalogue viewer', asyn
       activeBoardSettled: true,
     }),
   );
-  await waitFor(() => expect(snapshots.get).toHaveBeenCalledWith({ userId: 'verified-viewer', authSessionId: '' }));
+}
+
+const savedReferences = {
+  queue: [{ uuid: 'saved-slot', climb: { uuid: 'saved-climb' } }],
+  currentClimbQueueItem: null,
+  playlistSuggestionSource: null,
+};
+
+it('restores an offline queue when the token and the owner stamp name the same account', async () => {
+  snapshots.get.mockReset();
+  snapshots.set.mockReset();
+  owner.stamp = 'viewer-a';
+  owner.token = 'viewer-a';
+  snapshots.get.mockResolvedValue(savedReferences);
+  const dispatch = vi.fn();
+  const { unmount } = renderOfflineColdStart(dispatch);
+  await waitFor(() => expect(snapshots.get).toHaveBeenCalledWith({ userId: 'viewer-a', authSessionId: '' }), {
+    timeout: 5_000,
+  });
   expect(dispatch).toHaveBeenCalledWith({
     type: 'UPDATE_QUEUE',
-    payload: { queue: references.queue, currentClimbQueueItem: null },
+    payload: { queue: savedReferences.queue, currentClimbQueueItem: null },
   });
   unmount();
 });
 
-it('reschedules a pending solo save after privacy revalidation completes', async () => {
+it.each([
+  ['the stamp names another account', 'viewer-a', 'viewer-b'],
+  ['nothing is stamped', null, 'viewer-b'],
+  ['the token names nobody', 'viewer-a', undefined],
+])('restores no offline queue when %s', async (_case, stamp, token) => {
+  snapshots.get.mockReset();
+  snapshots.set.mockReset();
+  owner.stamp = stamp;
+  owner.token = token;
+  snapshots.get.mockResolvedValue(savedReferences);
+  const dispatch = vi.fn();
+  const { unmount } = renderOfflineColdStart(dispatch);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, SOLO_QUEUE_SAVE_DEBOUNCE_MS + 30));
+  });
+  expect(snapshots.get).not.toHaveBeenCalled();
+  expect(snapshots.set).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  unmount();
+});
+
+it('reschedules a pending solo save after a sign-in or sign-out', async () => {
   snapshots.get.mockReset();
   snapshots.set.mockReset();
   snapshots.get.mockResolvedValue(null);

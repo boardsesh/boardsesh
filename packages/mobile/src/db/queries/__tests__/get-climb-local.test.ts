@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { runMigrations, ensureMutationQueueTable } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { getClimbLocal } from '../get-climb-local';
+import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../get-boardsesh-grade-local';
+import { getClimbStatsHistoryLocal } from '../get-climb-stats-history-local';
 
 // Focused coverage for the get-climb-local grade join. The Climb-field mapping is
 // shared with search-climbs-local (mapRowToClimb) and covered there; what this file
@@ -278,5 +280,73 @@ describe('getClimbLocal — cross-angle detail on an angle-bound board', () => {
 
     expect(climb?.statsAngle).toBeNull();
     expect(climb?.ascensionist_count).toBe(0);
+  });
+});
+
+// A draft goes to its owner alone. The phone can still hold someone else's: the
+// previous account's drafts outlive the sign-out wipe that keeps the catalogue,
+// and a phone that pulled before that rule kept drafts with no Boardsesh owner.
+// Those rows stay on disk (nothing deletes them) and read as missing for anyone
+// but their owner; online the request then goes to the server.
+describe('drafts read for their owner only', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await insertClimb(db, 'published-by-a');
+    await insertClimb(db, 'draft-by-a');
+    await insertClimb(db, 'ownerless-draft');
+    await db.runAsync("UPDATE board_climbs SET user_id = 'account-a' WHERE uuid IN ('published-by-a', 'draft-by-a')");
+    await db.runAsync("UPDATE board_climbs SET is_draft = 1 WHERE uuid IN ('draft-by-a', 'ownerless-draft')");
+    for (const climbUuid of ['published-by-a', 'draft-by-a', 'ownerless-draft']) {
+      await insertGrade(db, { climbUuid, localGrade: 20 });
+      await db.runAsync(
+        `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count, updated_at)
+         VALUES ('kilter', ?, 40, 3, '2026-01-01T00:00:00Z')`,
+        [climbUuid],
+      );
+    }
+  });
+
+  async function readAll(climbUuid: string, viewerId: string | null) {
+    return {
+      climb: await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid, viewerId }),
+      grade: await getBoardseshGradeLocal(db, { boardName: 'kilter', climbUuid, angle: 40, viewerId }),
+      grades: await getBoardseshGradesForAnglesLocal(db, { boardName: 'kilter', climbUuid, viewerId }),
+      stats: await getClimbStatsHistoryLocal(db, { boardName: 'kilter', climbUuid, viewerId }),
+    };
+  }
+
+  it("opens a draft, its grades and its stats for the draft's owner", async () => {
+    const own = await readAll('draft-by-a', 'account-a');
+    expect(own.climb?.uuid).toBe('draft-by-a');
+    expect(own.grade).not.toBeNull();
+    expect(own.grades).toHaveLength(1);
+    expect(own.stats).toHaveLength(1);
+  });
+
+  it.each([
+    ['another account', 'account-b'],
+    ['nobody signed in', null],
+  ])("hides another account's draft from %s, leaving its rows on disk", async (_who, viewerId) => {
+    expect(await readAll('draft-by-a', viewerId)).toEqual({ climb: null, grade: null, grades: [], stats: [] });
+    const kept = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM board_climbs WHERE uuid = 'draft-by-a'",
+    );
+    expect(kept?.count).toBe(1);
+  });
+
+  it('hides a draft with no Boardsesh owner from everyone', async () => {
+    expect(await readAll('ownerless-draft', 'account-b')).toEqual({ climb: null, grade: null, grades: [], stats: [] });
+  });
+
+  it("still opens another account's published climb", async () => {
+    const published = await readAll('published-by-a', 'account-b');
+    expect(published.climb?.uuid).toBe('published-by-a');
+    expect(published.grade).not.toBeNull();
+    expect(published.grades).toHaveLength(1);
+    expect(published.stats).toHaveLength(1);
   });
 });
