@@ -82,6 +82,8 @@ const PUBLIC_HIDDEN = 'matrix-public-hidden';
 /** Imported under the mapped private account's Kilter login: no `user_id`. */
 const MAPPED_SETTER_NAME = 'matrix-mapped-setter';
 const MAPPED_ONLY = 'matrix-mapped-only';
+/** The mapped private account's own climb under that name, hidden by the community. */
+const MAPPED_HIDDEN = 'matrix-mapped-hidden';
 /** A Kilter setter name that a public account linked on Tension, not on Kilter. */
 const CROSS_BOARD_SETTER_NAME = 'matrix-cross-board-setter';
 const CROSS_BOARD = 'matrix-cross-board';
@@ -175,6 +177,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(PUBLIC_HIDDEN, PUBLIC_SENDER, { isHidden: true, setterUsername: 'matrix-public-setter' });
     await insertClimb(PUBLIC_SHOWN, PUBLIC_SENDER, { setterUsername: 'matrix-public-setter' });
     await insertClimb(MAPPED_ONLY, null, { setterUsername: MAPPED_SETTER_NAME });
+    await insertClimb(MAPPED_HIDDEN, MAPPED_PRIVATE, { setterUsername: MAPPED_SETTER_NAME, isHidden: true });
     await insertClimb(CROSS_BOARD, null, { setterUsername: CROSS_BOARD_SETTER_NAME });
     await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
       isDraft: true,
@@ -299,8 +302,9 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
   });
 
   it('keeps a private account linked to a setter name by its Kilter login alone from strangers', async () => {
-    // No climb under this name carries the account's id, so naming it would
-    // reveal which board login the private account linked.
+    // No listable climb under this name carries the account's id, so naming it
+    // would reveal which board login the private account linked. Its own climb
+    // there was hidden by the community, and a hidden climb names no one.
     const profileFor = (ctx: ConnectionContext) =>
       setterFollowQueries.setterProfile(undefined, { input: { username: MAPPED_SETTER_NAME } }, ctx);
     for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
@@ -324,7 +328,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       { input: { userId: MAPPED_PRIVATE } },
       ctxFor(MAPPED_PRIVATE),
     );
-    expect(forOwner.climbs.map((climb) => climb.uuid)).toEqual([MAPPED_ONLY]);
+    expect(forOwner.climbs.map((climb) => climb.uuid).sort()).toEqual([MAPPED_HIDDEN, MAPPED_ONLY].sort());
   });
 
   it("never names an account whose login is on another board type than the setter name's climbs", async () => {

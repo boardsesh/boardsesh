@@ -120,9 +120,11 @@ export const setterFollowQueries = {
 
     // The linked Boardsesh account: a Kilter or Tension login under this name,
     // on a board type the name has visible climbs on. A private account is
-    // named only when it is the `user_id` on one of this name's visible climbs
-    // (who set a published, listed climb is public with it); a login linked
-    // alone stays private to viewers who may not see the account's activity.
+    // named only when it is the `user_id` on one of this name's listable
+    // climbs (who set a published, listed climb is public with it; a climb the
+    // community hid names no one, as on every browse surface and the web
+    // hero); a login linked alone stays private to viewers who may not see the
+    // account's activity.
     // Ordered, so two accounts sharing a name always resolve the same way, as
     // the web setter hero does.
     const linkedUsers = await db
@@ -148,7 +150,7 @@ export const setterFollowQueries = {
                 .from(dbSchema.boardClimbs)
                 .where(
                   and(
-                    ...visibleSetterClimbConditions(username, ctx.userId),
+                    ...listableSetterClimbConditions(username, ctx.userId),
                     eq(dbSchema.boardClimbs.userId, dbSchema.userBoardMappings.userId),
                   ),
                 ),
