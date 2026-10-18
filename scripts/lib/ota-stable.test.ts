@@ -160,7 +160,7 @@ describe('daily release decisions', () => {
       health[1]!.judgement.verdict = 'insufficient-evidence';
       health[1]!.canary = canary;
       health[1]!.control = { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 };
-      health[1]!.canaryIssues = { updateIssues: 0, runtimeIssues: 0 };
+      health[1]!.canaryIssues = { updateIssues: 0, runtimeIssues: 0, source: 'snapshots' };
       return health;
     };
 
@@ -192,9 +192,11 @@ describe('daily release decisions', () => {
 
     it('holds when the fleetless canary reports launch or JS issues', () => {
       const health = fleetlessAndroid();
-      health[1]!.canaryIssues = { updateIssues: 1, runtimeIssues: 0 };
+      health[1]!.canaryIssues = { updateIssues: 1, runtimeIssues: 0, source: 'snapshots' };
       expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
       health[1]!.canaryIssues = null;
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+      health[1]!.canaryIssues = { updateIssues: 0, runtimeIssues: 0, source: 'state' };
       expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
     });
 

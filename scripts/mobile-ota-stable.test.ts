@@ -672,7 +672,10 @@ describe('stable controller execution', () => {
     expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
     expect(options.log).toHaveBeenCalledWith(expect.stringContaining('android has no fleet to judge'));
   });
-  it('holds at 50% when the fleetless Android canary reports a launch issue', async () => {
+  it.each([
+    ['a launch issue in the snapshot history', 'snapshots', 1],
+    ["zero issues from the degraded 'state' history", 'state', 0],
+  ])('holds at 50%% when the fleetless Android canary has %s', async (_label, source, updateIssues) => {
     const { options, live, client } = fixture();
     options.now = new Date('2026-10-09T22:00:00Z');
     options.state.active!.percentage = 50;
@@ -691,8 +694,8 @@ describe('stable controller execution', () => {
       ),
     );
     client.getUpdateHealthHistory.mockImplementation(async (ids: string[]) => ({
-      source: 'snapshots',
-      latest: Object.fromEntries(ids.map((id) => [id, { updateIssues: 1, runtimeIssues: 0 }])),
+      source,
+      latest: Object.fromEntries(ids.map((id) => [id, { updateIssues, runtimeIssues: 0 }])),
     }));
     await tickStable(options);
     expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalledWith(

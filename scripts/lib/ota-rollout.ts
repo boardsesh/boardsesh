@@ -389,7 +389,8 @@ export function judgeCanary(
  *   1. The verdict is `insufficient-evidence` (never healthy, never unhealthy).
  *   2. Canary and control counts are valid.
  *   3. No canary device is faulty, and the canary's launch and JS issue
- *      counters are present and read zero.
+ *      counters come from the snapshot history (not the degraded `state`
+ *      answer) and read zero.
  *   4. Canary and control together, counting each cohort as the larger of its
  *      devices-on-update and its reporting devices, are under
  *      `noFleetBelowDevicesPerPlatform`. That cap sits far below the evidence
@@ -405,7 +406,8 @@ export function fleetlessReason(
   const control = judgedCohort(entry.control);
   if (!isCount(cap) || !canary || !control || canary.faulty !== 0) return null;
   const issues = entry.canaryIssues;
-  if (!issues || issues.updateIssues !== 0 || issues.runtimeIssues !== 0) return null;
+  // Only the snapshot history counts: the degraded `state` answer is not evidence of zero issues.
+  if (!issues || issues.source !== 'snapshots' || issues.updateIssues !== 0 || issues.runtimeIssues !== 0) return null;
   const devices = Math.max(canary.devicesOnUpdate, canary.judged) + Math.max(control.devicesOnUpdate, control.judged);
   if (devices >= cap) return null;
   return (
@@ -421,7 +423,8 @@ export interface RolloutHealth {
   canary: XpremUpdateHealth | null;
   control: XpremUpdateHealth | null;
   /** Launch and JS issue counts from the newest history point. Reported, not judged. */
-  canaryIssues: { updateIssues: number; runtimeIssues: number } | null;
+  /** `source` is the history's: `snapshots` is real; `state` is the degraded answer the dashboard discards. */
+  canaryIssues: { updateIssues: number; runtimeIssues: number; source: string | null } | null;
   judgement: CanaryJudgement;
 }
 
@@ -445,7 +448,9 @@ export async function readUpdateHealth(
     controlUpdateUUID,
     canary,
     control,
-    canaryIssues: issues ? { updateIssues: issues.updateIssues, runtimeIssues: issues.runtimeIssues } : null,
+    canaryIssues: issues
+      ? { updateIssues: issues.updateIssues, runtimeIssues: issues.runtimeIssues, source: history.source }
+      : null,
     judgement: judgeCanary(canary, control, policy),
   };
 }

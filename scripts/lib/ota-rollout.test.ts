@@ -566,12 +566,12 @@ describe('fleetlessReason', () => {
     successfulDevices: successful,
     faultyDevices: faulty,
   });
-  const quiet = { updateIssues: 0, runtimeIssues: 0 };
+  const quiet = { updateIssues: 0, runtimeIssues: 0, source: 'snapshots' as string | null };
   const entry = (
     canary: ReturnType<typeof cohort> | null,
     control: ReturnType<typeof cohort> | null,
     verdict: 'healthy' | 'unhealthy' | 'insufficient-evidence' = 'insufficient-evidence',
-    canaryIssues: { updateIssues: number; runtimeIssues: number } | null = quiet,
+    canaryIssues: { updateIssues: number; runtimeIssues: number; source: string | null } | null = quiet,
   ) => ({
     rollout: {
       branch: 'production',
@@ -615,6 +615,11 @@ describe('fleetlessReason', () => {
     ],
     ['JS issues on the canary', entry(cohort(0), cohort(1), 'insufficient-evidence', { ...quiet, runtimeIssues: 2 })],
     ['missing issue counters', entry(cohort(0), cohort(1), 'insufficient-evidence', null)],
+    [
+      "the degraded 'state' history",
+      entry(cohort(0), cohort(1), 'insufficient-evidence', { ...quiet, source: 'state' }),
+    ],
+    ['an unknown history source', entry(cohort(0), cohort(1), 'insufficient-evidence', { ...quiet, source: null })],
     ['a missing canary', entry(null, cohort(1))],
     ['a missing control', entry(cohort(0), null)],
     ['malformed counts', entry({ devicesOnUpdate: 0, successfulDevices: Number.NaN, faultyDevices: 0 }, cohort(0))],

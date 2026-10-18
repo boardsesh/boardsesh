@@ -965,8 +965,8 @@ when its store binary has not reached people: Android 2.6.0 sat as a Play draft 
 its canary had 0 devices and its control 1, and the release held at 50% for days (#6524). Precisely, the
 platform's verdict is `insufficient-evidence`, its canary and control together have fewer than 5 devices
 (`noFleetBelowDevicesPerPlatform`, counting each cohort as the larger of devices on the update and
-reporting devices), no canary device is faulty, and the canary's launch and JS issue counters are present
-and read zero. Such a platform does not block the finish when at least one other changed platform is
+reporting devices), no canary device is faulty, and the canary's launch and JS issue counters come from
+the snapshot history (the degraded `state` answer of a server without ClickHouse never counts) and read zero. Such a platform does not block the finish when at least one other changed platform is
 healthy; the finish reason names it with its device count. A runtime with 5 to 14 devices has started to
 reach people and waits for the normal 15-device verdict.
 
