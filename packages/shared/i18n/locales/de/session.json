@@ -316,7 +316,8 @@
       "retry": "Nochmal versuchen",
       "preparing": "Ähnliche Boulder werden vorbereitet …",
       "waitingForDownload": "Ähnliche Boulder erscheinen, sobald {{name}} fertig geladen ist.",
-      "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen"
+      "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen",
+      "collapsedSummary": "Am ähnlichsten: {{name}}"
     },
     "community": {
       "moderation": {
@@ -336,7 +337,8 @@
       "ascensionists_other": "{{count}} Begeher*innen",
       "avgQuality": "Durchschnittliche Qualität",
       "ascentsByAngle": "Begehungen nach Winkel",
-      "logScale": "Log-Skala"
+      "logScale": "Log-Skala",
+      "collapsedSummary": "Die meisten Begehungen bei {{angle}}°"
     },
     "betaVideos": {
       "title": "Beta-Videos",
@@ -378,7 +380,8 @@
       "instagramNotInstalled": "Instagram ist nicht installiert — stattdessen die Website geöffnet",
       "instagramOpenFailed": "Instagram konnte nicht geöffnet werden",
       "shareBackInstructions": "Zwei Wege zurück: Tipp bei deinem Reel auf Teilen und wähl Boardsesh (versteckt sich manchmal unter „Mehr“), oder kopier den Link des Reels und füg ihn unten ein. So oder so ordnen wir ihn diesem Boulder zu.",
-      "pasteSectionLabel": "Schon einen Link?"
+      "pasteSectionLabel": "Schon einen Link?",
+      "collapsedEmpty": "Noch keine"
     },
     "angleSelector": {
       "title": "Winkel wählen",

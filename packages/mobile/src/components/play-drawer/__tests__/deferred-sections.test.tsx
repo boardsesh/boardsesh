@@ -24,6 +24,16 @@ const deferred = vi.hoisted(() => ({
 
 const flags = vi.hoisted(() => ({ boardseshGrade: false }));
 
+// The reads behind the collapsed lines: what each was asked with, and what it answers.
+const lineQueries = vi.hoisted(() => ({
+  history: {
+    calls: [] as Array<{ climbUuid: string | null; enabled: boolean | undefined }>,
+    data: undefined as unknown,
+  },
+  beta: { calls: [] as Array<{ climbUuid: string; enabled: boolean | undefined }>, data: undefined as unknown },
+  similar: { calls: [] as Array<{ climbUuid: string | null; angle: number }>, data: undefined as unknown },
+}));
+
 const boardseshGradeQuery = vi.hoisted(() => ({
   calls: [] as Array<{ boardName: string; climbUuid: string | null; angle: number; enabled: boolean | undefined }>,
   data: undefined as unknown,
@@ -184,7 +194,14 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     boardseshGradeQuery.calls.push({ boardName, climbUuid, angle, enabled: options?.enabled });
     return { data: boardseshGradeQuery.data };
   },
-  useClimbStatsHistory: () => ({ data: undefined }),
+  useClimbStatsHistory: (_boardName: string, climbUuid: string | null, options?: { enabled?: boolean }) => {
+    lineQueries.history.calls.push({ climbUuid, enabled: options?.enabled });
+    return { data: lineQueries.history.data };
+  },
+  useBetaLinks: (_boardName: string, climbUuid: string, enabled?: boolean) => {
+    lineQueries.beta.calls.push({ climbUuid, enabled });
+    return { data: lineQueries.beta.data };
+  },
   useFollowingClimbLogs: (boardName: string, climbUuid: string | null, options?: { enabled?: boolean }) => {
     crewQuery.calls.push({ boardName, climbUuid, enabled: options?.enabled });
     return { data: crewQuery.data };
@@ -192,6 +209,13 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimbLogsPreview: (args: { boardName: string; climbUuid: string | null; enabled: boolean }) => {
     everyoneQuery.calls.push(args);
     return { data: undefined };
+  },
+}));
+
+vi.mock('../../../lib/graphql/hooks/use-similar-climbs', () => ({
+  useSimilarClimbs: (_scope: unknown, climbUuid: string | null, angle: number) => {
+    lineQueries.similar.calls.push({ climbUuid, angle });
+    return { data: lineQueries.similar.data };
   },
 }));
 
@@ -885,5 +909,161 @@ describe('DeferredSections visibility preferences', () => {
       expect(everyoneQuery.calls).toHaveLength(0);
       expect(screen.getByTestId('similar-climbs')).not.toBeNull();
     });
+  });
+});
+
+describe('collapsed lines, and what each section may ask for', () => {
+  const ORDER: BelowFoldSectionId[] = [
+    'logbook',
+    'climberLogs',
+    'setterNotes',
+    'betaVideos',
+    'boardseshGrade',
+    'community',
+    'similarClimbs',
+  ];
+  const first = (sectionId: BelowFoldSectionId): BelowFoldSectionId[] => [
+    sectionId,
+    ...ORDER.filter((other) => other !== sectionId),
+  ];
+  const summaryOf = (container: HTMLElement, title: string) =>
+    container.querySelector(`section[data-title="${title}"]`)?.getAttribute('data-summary') ?? null;
+  const historyEntry = (angle: number, ascensionistCount: number) => ({
+    angle,
+    ascensionistCount,
+    qualityAverage: 3,
+    difficultyAverage: 20,
+    displayDifficulty: 20,
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+
+  beforeEach(() => {
+    deferred.ready = false;
+    i18n.locale = 'en-US';
+    auth.isAuthenticated = true;
+    flags.boardseshGrade = true;
+    crewQuery.settled = true;
+    crewQuery.calls = [];
+    crewQuery.data = undefined;
+    everyoneQuery.calls = [];
+    everyoneQuery.offline = false;
+    followedAuthors.result = { data: { users: [{ userId: 'friend' }] }, isError: false };
+    logbook.calls = [];
+    boardseshGradeQuery.calls = [];
+    lineQueries.history = { calls: [], data: undefined };
+    lineQueries.beta = { calls: [], data: undefined };
+    lineQueries.similar = { calls: [], data: undefined };
+  });
+
+  it("Setter's notes show their first written line", () => {
+    const { container } = renderSections({
+      order: first('setterNotes'),
+      description: 'No match\n\n  Start left, cross to the pinch.\nThen match the jug.',
+    });
+    expect(summaryOf(container, 'mobile.setterNotes.title')).toBe('Start left, cross to the pinch.');
+  });
+
+  it('Beta Videos as the peek ask for the videos once settled and count them', () => {
+    lineQueries.beta.data = [{}, {}, {}];
+    const { container } = renderSections({ order: first('betaVideos') });
+    expect(lineQueries.beta.calls.at(-1)).toEqual({ climbUuid: 'climb-1', enabled: true });
+    expect(summaryOf(container, 'Beta Videos')).toBe('3 videos');
+  });
+
+  it('Beta Videos say when there are none, so the shelf is never opened for nothing', () => {
+    lineQueries.beta.data = [];
+    const { container } = renderSections({ order: first('betaVideos') });
+    expect(summaryOf(container, 'Beta Videos')).toBe('None yet');
+  });
+
+  it.each([
+    ['on a climb only swiped past', () => (crewQuery.settled = false)],
+    ['with no signal', () => (everyoneQuery.offline = true)],
+  ])('Beta Videos as the peek ask for nothing %s', (_label, arrange) => {
+    arrange();
+    renderSections({ order: first('betaVideos') });
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+  });
+
+  it('Community as the peek names the angle most climbers sent it at', () => {
+    lineQueries.history.data = [historyEntry(35, 12), historyEntry(40, 410), historyEntry(45, 90)];
+    const { container } = renderSections({ order: first('community') });
+    expect(lineQueries.history.calls.at(-1)).toEqual({ climbUuid: 'climb-1', enabled: true });
+    expect(summaryOf(container, 'Community')).toBe('Most sends at 40°');
+  });
+
+  it('Community shows no line until there is a send to point at', () => {
+    lineQueries.history.data = [historyEntry(40, 0)];
+    const { container } = renderSections({ order: first('community') });
+    expect(summaryOf(container, 'Community')).toBeNull();
+  });
+
+  it('Similar climbs as the peek name the closest match its first card shows', () => {
+    lineQueries.similar.data = [
+      { uuid: 'a', name: 'Off the wall', compatibleSizeIds: [99] },
+      { uuid: 'b', name: 'Guessing Games', compatibleSizeIds: [10] },
+    ];
+    const { container } = renderSections({ order: first('similarClimbs') });
+    expect(lineQueries.similar.calls.at(-1)).toEqual({ climbUuid: 'climb-1', angle: 40 });
+    expect(summaryOf(container, 'Similar Climbs')).toBe('Closest: Guessing Games');
+  });
+
+  it('Similar climbs say when nothing matched', () => {
+    lineQueries.similar.data = [];
+    const { container } = renderSections({ order: first('similarClimbs') });
+    expect(summaryOf(container, 'Similar Climbs')).toBe('No similar climbs found');
+  });
+
+  it('Boardsesh grade as the peek asks for its grade once settled, before any scroll', () => {
+    renderSections({ order: first('boardseshGrade') });
+    expect(boardseshGradeQuery.calls.at(-1)?.enabled).toBe(true);
+  });
+
+  it('a section below the fold asks for nothing until the climber scrolls to it', () => {
+    const order: BelowFoldSectionId[] = [
+      'setterNotes',
+      'betaVideos',
+      'boardseshGrade',
+      'community',
+      'similarClimbs',
+      'climberLogs',
+      'logbook',
+    ];
+    renderSections({ order, description: 'Left hand first.' });
+    expect(logbook.calls.every(({ boardName }) => boardName === null)).toBe(true);
+    expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(everyoneQuery.calls).toHaveLength(0);
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(lineQueries.history.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(boardseshGradeQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(lineQueries.similar.calls).toHaveLength(0);
+  });
+
+  it('a hidden section asks for nothing even as the peek would', () => {
+    renderSections({
+      order: first('similarClimbs'),
+      sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, similarClimbs: false, betaVideos: false, community: false },
+      contentEnabled: true,
+    });
+    expect(lineQueries.similar.calls).toHaveLength(0);
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+  });
+
+  it('a section further down shows a line only from what is already cached', () => {
+    deferred.ready = true;
+    lineQueries.history.data = [historyEntry(30, 5), historyEntry(25, 40)];
+    lineQueries.beta.data = [{}];
+    const { container } = renderSections({ order: ORDER, contentEnabled: true });
+    expect(lineQueries.history.calls.at(-1)?.enabled).toBe(true); // the Boardsesh grade, now on screen, asks
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(summaryOf(container, 'Community')).toBe('Most sends at 25°');
+    expect(summaryOf(container, 'Beta Videos')).toBe('1 video');
+    expect(lineQueries.similar.calls).toHaveLength(0);
+  });
+
+  it('keeps the Logbook peek reading its ticks and the crew, as before', () => {
+    renderSections({ order: ORDER });
+    expect(logbook.calls.at(-1)?.boardName).toBe('kilter');
+    expect(crewQuery.calls.at(-1)?.enabled).toBe(true);
   });
 });

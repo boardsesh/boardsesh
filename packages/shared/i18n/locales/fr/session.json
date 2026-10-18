@@ -316,7 +316,8 @@
       "retry": "Reessayer",
       "preparing": "Préparation des blocs similaires…",
       "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger.",
-      "downloadToSee": "Télécharge cette board pour voir les blocs similaires"
+      "downloadToSee": "Télécharge cette board pour voir les blocs similaires",
+      "collapsedSummary": "Le plus proche : {{name}}"
     },
     "community": {
       "moderation": {
@@ -336,7 +337,8 @@
       "ascensionists_other": "{{count}} grimpeurs",
       "avgQuality": "Qualite moyenne",
       "ascentsByAngle": "Ascensions par angle",
-      "logScale": "Échelle logarithmique"
+      "logScale": "Échelle logarithmique",
+      "collapsedSummary": "Le plus de croix à {{angle}}°"
     },
     "betaVideos": {
       "title": "Videos Beta",
@@ -378,7 +380,8 @@
       "instagramNotInstalled": "Instagram n'est pas installé — on a ouvert le site web",
       "instagramOpenFailed": "Impossible d'ouvrir Instagram",
       "shareBackInstructions": "Deux façons de le récupérer : sur ton reel appuie sur Partager et choisis Boardsesh (peut-être sous Plus), ou copie le lien du reel et colle-le ci-dessous. Dans les deux cas, on l'associera à cette voie.",
-      "pasteSectionLabel": "Tu as déjà un lien ?"
+      "pasteSectionLabel": "Tu as déjà un lien ?",
+      "collapsedEmpty": "Aucune pour l'instant"
     },
     "angleSelector": {
       "title": "Choisir l'angle",

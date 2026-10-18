@@ -177,19 +177,20 @@ export function setAllPlayDrawerSections(enabled: boolean): void {
   persist();
 }
 
-/** Moves a below-the-fold section one place past its neighbour, hidden or not. */
-export function movePlayDrawerSection(sectionId: BelowFoldSectionId, direction: SectionMoveDirection): void {
+/** Moves a below-the-fold section one place past its neighbour, hidden or not. False when it cannot move. */
+export function movePlayDrawerSection(sectionId: BelowFoldSectionId, direction: SectionMoveDirection): boolean {
   const { order } = withSectionMoved(
     BELOW_FOLD_SECTION_LAYOUT,
     { order: snapshot.order, visible: snapshot.sections },
     sectionId,
     direction,
   );
-  if (order === snapshot.order) return;
+  if (order === snapshot.order) return false;
   loadBeforeWriting();
   changedOrder = true;
   publish({ order, sections: snapshot.sections }, snapshot.ready);
   persist();
+  return true;
 }
 
 export function restorePlayDrawerSectionDefaults(): void {

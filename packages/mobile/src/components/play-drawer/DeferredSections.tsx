@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
@@ -16,18 +16,21 @@ import { SimilarClimbsSection } from './SimilarClimbsSection';
 import { CommunitySection } from './CommunitySection';
 import { BoardseshGradeSection } from './BoardseshGradeSection';
 import { buildBoardseshGradeView, buildBoardseshGradeSummary } from './boardsesh-grade-utils';
-import { buildAngleGradeBars } from './community-utils';
+import { buildAngleGradeBars, type AngleGradeBar } from './community-utils';
+import { rankBySizeCompatibility } from './similar-climbs-utils';
 import { BetaVideosSection } from './BetaVideosSection';
 import { SetterNotesSection } from './SetterNotesSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
 import {
+  useBetaLinks,
   useBoardseshGrade,
   useClimbLogsPreview,
   useClimbStatsHistory,
   useFollowingClimbLogs,
 } from '../../lib/graphql/hooks';
+import { useSimilarClimbs } from '../../lib/graphql/hooks/use-similar-climbs';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useFollowedAuthorsSnapshot } from '../../lib/graphql/hooks/use-followed-authors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -100,6 +103,41 @@ const ClimbLogsPreviewRequest = memo(function ClimbLogsPreviewRequest({
 });
 
 /**
+ * Asks for the similar climbs while Similar climbs is the peek at the fold, and
+ * hands back the name its first card would show, for the collapsed line. Mounted
+ * only then, so a Similar climbs section further down asks for nothing. Same
+ * hook and key as the section's own read, so expanding it costs no request.
+ */
+const SimilarClimbsPeekRequest = memo(function SimilarClimbsPeekRequest({
+  boardName,
+  layoutId,
+  sizeId,
+  climbUuid,
+  angle,
+  onAnswer,
+}: {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  climbUuid: string;
+  angle: number;
+  onAnswer: (answer: SimilarClimbsPeek) => void;
+}) {
+  const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
+  const { data: similarClimbs } = useSimilarClimbs(scope, climbUuid, angle);
+  const closestName = similarClimbs
+    ? (rankBySizeCompatibility(similarClimbs, sizeId)[0]?.climb.name ?? null)
+    : undefined;
+  useEffect(() => {
+    // No answer yet (or none to be had without a download): no line at all.
+    if (closestName !== undefined) onAnswer({ climbUuid, angle, closestName });
+  }, [climbUuid, angle, closestName, onAnswer]);
+  return null;
+});
+
+type SimilarClimbsPeek = { climbUuid: string; angle: number; closestName: string | null };
+
+/**
  * Below-fold deferred content for the play drawer.
  * Uses InteractionManager.runAfterInteractions() to defer rendering
  * until after the drawer open animation completes, preventing jank.
@@ -140,9 +178,6 @@ export const DeferredSections = memo(function DeferredSections({
     screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
   });
   const firstSectionId = visibleSections[0];
-  const showLogbook = enabled && visibleSections.includes('logbook');
-  const showClimberLogs = enabled && visibleSections.includes('climberLogs');
-  const crewWanted = showLogbook || showClimberLogs;
 
   const handleAddBetaVideoPress = useCallback(() => {
     void Haptics.selectionAsync();
@@ -163,6 +198,31 @@ export const DeferredSections = memo(function DeferredSections({
   // runAfterInteractions — falls back to a bounded timeout, so a starved
   // interaction queue can't leave these sections blank until the drawer reopens.
   const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
+
+  // A section is on screen when it is the peek at the fold, or once the climber
+  // has scrolled to the sections. Only then may it read anything: a section
+  // further down mounts nothing and asks for nothing until it can be seen.
+  const isOnScreen = (sectionId: BelowFoldSectionId) =>
+    enabled && visibleSections.includes(sectionId) && (firstSectionId === sectionId || readyToRender);
+  const showLogbook = isOnScreen('logbook');
+  // The Climber logs card straight under a Logbook peek (the default layout)
+  // keeps the head start it has always had: the crew read behind the Logbook
+  // line decides whether the card's rows are needed at all.
+  const showClimberLogs =
+    isOnScreen('climberLogs') || (enabled && firstSectionId === 'logbook' && visibleSections[1] === 'climberLogs');
+  const crewWanted = showLogbook || showClimberLogs;
+  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade and
+  // stats-history queries below have nothing to answer with — skip them for
+  // both. (BoardseshGradeSection gates its own by-angle query the same way.)
+  const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
+  // The peek may ask for what its collapsed line needs, once the climb has
+  // settled (a fast swipe asks for nothing). Any other section's line comes
+  // from what is already cached, or stays empty: no spinner in a header.
+  const peekLineFetches =
+    firstSectionId === 'betaVideos' ||
+    firstSectionId === 'community' ||
+    firstSectionId === 'similarClimbs' ||
+    (firstSectionId === 'boardseshGrade' && !noCrowdGrade);
 
   // The climber's ticks for this climb across every angle. Fed to the summary's
   // cross-angle clause below. Reading it here is eager (one fetch per climb on
@@ -189,7 +249,8 @@ export const DeferredSections = memo(function DeferredSections({
   // snapshot is only read here: the root sync bridge keeps it fresh, so opening
   // the drawer costs no followed-authors request and no SQLite write. A missing
   // one loads behind the same settle gate.
-  const settled = useClimbSettled(enabled && crewWanted, climb.uuid);
+  const settled = useClimbSettled(enabled && (crewWanted || peekLineFetches), climb.uuid);
+  const peekMayFetch = (sectionId: BelowFoldSectionId) => enabled && firstSectionId === sectionId && settled;
   // What a climber's own grade is compared against: only one that differs is worth a mention.
   const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
   const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
@@ -307,24 +368,54 @@ export const DeferredSections = memo(function DeferredSections({
   // (rather than read from BoardseshGradeSection) because that section
   // unmounts while collapsed — React Query dedupes this fetch with the
   // section's identical-key one once it expands, so this costs no extra request.
-  // MoonBoard and Woods carry no crowd grade, so the Boardsesh-grade and
-  // stats-history queries below have nothing to answer with — skip them for
-  // both. (BoardseshGradeSection gates its own by-angle query the same way.)
-  const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
-  const boardseshReady = enabled && sections.boardseshGrade && boardseshGradeEnabled && !noCrowdGrade && readyToRender;
+  const boardseshReady =
+    visibleSections.includes('boardseshGrade') &&
+    !noCrowdGrade &&
+    ((enabled && readyToRender) || peekMayFetch('boardseshGrade'));
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
     enabled: boardseshReady,
   });
   // The crowd grade at this angle turns the teaser into the correction "V4 ▸ V3+ ✓".
   // React Query dedupes this with CommunitySection's identical fetch, so it costs
   // no extra request; it stays null until loaded and the teaser drops the "V4 ▸".
-  const { data: history } = useClimbStatsHistory(boardName, boardseshReady ? climb.uuid : null);
+  // Also read for Community's line ("most sends at 40°"); asked for only by the
+  // Boardsesh grade above or a Community peek, otherwise the cached answer.
+  const { data: history } = useClimbStatsHistory(boardName, climb.uuid, {
+    enabled: boardseshReady || peekMayFetch('community'),
+  });
   const boardseshSummary = useMemo(() => {
     const view = buildBoardseshGradeView(boardName, boardseshGrade ?? null, gradeFormat);
     const crowdLabel =
       buildAngleGradeBars(history, gradeFormat, boardName).find((bar) => bar.angle === angle)?.gradeName ?? null;
     return buildBoardseshGradeSummary(view, { crowdLabel, localWord: tClimbs('boardseshGrade.summaryLocal') });
   }, [boardName, boardseshGrade, gradeFormat, history, angle, tClimbs]);
+
+  // Community's collapsed line: the angle most climbers sent it at.
+  const communitySummary = useMemo(() => {
+    const busiest = buildAngleGradeBars(history, gradeFormat, boardName).reduce<AngleGradeBar | null>(
+      (best, bar) => (bar.sends > (best?.sends ?? 0) ? bar : best),
+      null,
+    );
+    return busiest ? t('mobile.community.collapsedSummary', { angle: busiest.angle }) : null;
+  }, [history, gradeFormat, boardName, t]);
+
+  // Beta Videos' collapsed line: how many there are, so an empty shelf is never
+  // opened for nothing. Same hook and key as the shelf, which reads it on open.
+  const { data: betaLinks } = useBetaLinks(boardName, climb.uuid, peekMayFetch('betaVideos') && !isOffline);
+  const betaVideosSummary = betaLinks
+    ? betaLinks.length > 0
+      ? t('mobile.betaVideos.videoCount', { count: betaLinks.length })
+      : t('mobile.betaVideos.collapsedEmpty')
+    : null;
+
+  // Similar climbs' collapsed line: the closest match by name.
+  const [similarPeek, setSimilarPeek] = useState<SimilarClimbsPeek | null>(null);
+  const similarSummary =
+    similarPeek && similarPeek.climbUuid === climb.uuid && similarPeek.angle === angle
+      ? similarPeek.closestName
+        ? t('mobile.similarClimbs.collapsedSummary', { name: similarPeek.closestName })
+        : t('mobile.similarClimbs.empty')
+      : null;
 
   if (!enabled || visibleSections.length === 0) {
     return null;
@@ -402,6 +493,7 @@ export const DeferredSections = memo(function DeferredSections({
         section = (
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
+            summary={betaVideosSummary}
             defaultExpanded
             persistKey={BETA_SHELF_SECTION_KEY}
             onHeaderLayout={onHeaderLayout}
@@ -445,6 +537,7 @@ export const DeferredSections = memo(function DeferredSections({
         section = (
           <CollapsibleSection
             title={t('mobile.community.title')}
+            summary={communitySummary}
             defaultExpanded
             persistKey="community"
             onHeaderLayout={onHeaderLayout}
@@ -468,6 +561,7 @@ export const DeferredSections = memo(function DeferredSections({
         section = (
           <CollapsibleSection
             title={t('mobile.similarClimbs.title')}
+            summary={similarSummary}
             persistKey="similarClimbs"
             onHeaderLayout={onHeaderLayout}
             onToggle={onToggle}
@@ -503,6 +597,16 @@ export const DeferredSections = memo(function DeferredSections({
     <View style={styles.container}>
       {showClimberLogs && (
         <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
+      )}
+      {peekMayFetch('similarClimbs') && (
+        <SimilarClimbsPeekRequest
+          boardName={boardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          climbUuid={climb.uuid}
+          angle={angle}
+          onAnswer={setSimilarPeek}
+        />
       )}
       {visibleSections.map(renderSection)}
     </View>

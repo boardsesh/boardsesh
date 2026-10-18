@@ -33,6 +33,12 @@ export function SetterNotesSection({
   const notes = getDisplayDescription(description);
 
   if (!notes) return null;
+  // Collapsed, the header shows the first line the setter wrote: often the beta itself.
+  const firstLine =
+    notes
+      .split('\n')
+      .find((line) => line.trim())
+      ?.trim() ?? null;
 
   // `persistKey` is deliberately climb-agnostic, like every sibling section here
   // (logbook, community, similarClimbs): collapsing the notes is a standing
@@ -40,6 +46,7 @@ export function SetterNotesSection({
   return (
     <CollapsibleSection
       title={t('mobile.setterNotes.title')}
+      summary={firstLine}
       defaultExpanded
       persistKey="setterNotes"
       onHeaderLayout={onHeaderLayout}

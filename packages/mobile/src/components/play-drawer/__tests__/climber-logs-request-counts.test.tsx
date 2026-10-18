@@ -90,7 +90,9 @@ vi.mock('../../../lib/connectivity/use-connectivity', () => ({
 }));
 
 // The two real query hooks, behind the barrel DeferredSections imports from.
+vi.mock('../../../lib/graphql/hooks/use-similar-climbs', () => ({ useSimilarClimbs: () => ({ data: undefined }) }));
 vi.mock('../../../lib/graphql/hooks', async () => ({
+  useBetaLinks: () => ({ data: undefined }),
   useBoardseshGrade: () => ({ data: undefined }),
   useClimbStatsHistory: () => ({ data: undefined }),
   ...(await import('../../../lib/graphql/hooks/use-following-climb-logs')),

@@ -78,9 +78,9 @@ export function usePlayDrawerSectionControls() {
     [ready, setSection],
   );
   const onMove = useCallback(
-    (sectionId: PlayDrawerSectionId, direction: SectionMoveDirection) => {
-      if (!ready || !isBelowFoldSection(sectionId)) return;
-      move(sectionId, direction);
+    (sectionId: PlayDrawerSectionId, direction: SectionMoveDirection): boolean => {
+      if (!ready || !isBelowFoldSection(sectionId)) return false;
+      return move(sectionId, direction);
     },
     [ready, move],
   );
