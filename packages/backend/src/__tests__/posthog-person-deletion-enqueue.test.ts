@@ -282,6 +282,8 @@ describe('the erasure worker', () => {
   const replies: {
     lookup: number;
     anonymousIds: string[];
+    /** Distinct ids, besides the account, that also identified from an anonymous id. */
+    identifiedAs: Map<string, string[]>;
     deletion: number;
     personsFound: number;
     personsDeleted: number;
@@ -289,6 +291,7 @@ describe('the erasure worker', () => {
   } = {
     lookup: 200,
     anonymousIds: [],
+    identifiedAs: new Map(),
     deletion: 202,
     personsFound: 1,
     personsDeleted: 0,
@@ -305,7 +308,12 @@ describe('the erasure worker', () => {
     if (url.endsWith('/query/')) {
       const accountId = body.query?.values?.account_id ?? '';
       return new Response(
-        JSON.stringify({ results: replies.anonymousIds.map((anonymousId) => [anonymousId, [accountId]]) }),
+        JSON.stringify({
+          results: replies.anonymousIds.map((anonymousId) => [
+            anonymousId,
+            [accountId, ...(replies.identifiedAs.get(anonymousId) ?? [])],
+          ]),
+        }),
         { status: replies.lookup },
       );
     }
@@ -338,6 +346,7 @@ describe('the erasure worker', () => {
   afterEach(() => {
     replies.lookup = 200;
     replies.anonymousIds = [];
+    replies.identifiedAs = new Map();
     replies.deletion = 202;
     replies.personsFound = 1;
     replies.personsDeleted = 0;
@@ -424,6 +433,75 @@ describe('the erasure worker', () => {
     expect(rows.find((row) => row.data.stage === 'delete')?.state).toBe('completed');
     expect(deletedIds.get(distinctId)).toEqual([[distinctId, 'sdk-anon-split']]);
     expect(rows.find((row) => row.id === lateId)?.data.anonymousIds).toEqual(['sdk-anon-split']);
+  });
+
+  /** Run a first pass due now and wait until its delete step has settled. */
+  async function workFirstPassThroughDelete(distinctId: string): Promise<ErasureRow[]> {
+    const first = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+    expect(first).toMatchObject({ state: 'completed', output: { outcome: 'discovered' } });
+    return waitUntil(
+      () => erasureRows(distinctId),
+      (rows) => rows.some((row) => row.data.stage === 'delete' && row.state !== 'created' && row.state !== 'active'),
+    );
+  }
+
+  it.each([
+    ['a looked-up id carries a NUL', ['sdk-anon-\u0000-nul', 'sdk-anon-split'], []],
+    ['a looked-up id carries half a surrogate pair', ['sdk-anon-\ud800-half', 'sdk-anon-split'], []],
+    ['an id that identified from it carries a NUL', ['sdk-anon-split'], [['sdk-anon-split', ['party-\u0000-uuid']]]],
+  ] satisfies [string, string[], [string, string[]][]][])(
+    'still erases the account and its split person when %s',
+    async (_label, anonymousIds, identifiedAs) => {
+      const distinctId = randomUUID();
+      replies.anonymousIds = anonymousIds;
+      replies.identifiedAs = new Map(identifiedAs);
+
+      const rows = await workFirstPassThroughDelete(distinctId);
+
+      expect(rows.find((row) => row.data.stage === 'delete')?.state).toBe('completed');
+      expect(deletedIds.get(distinctId)).toEqual([[distinctId, 'sdk-anon-split']]);
+    },
+  );
+
+  it('settles a pass whose error text carries a NUL, so pg-boss can store it and retry', async () => {
+    const distinctId = randomUUID();
+    const boss = requireJobQueue();
+    const findJobs = boss.findJobs.bind(boss);
+    vi.spyOn(boss, 'findJobs').mockImplementation(async (name, options) => {
+      // A failed query's message lists its parameters (drizzle), whatever they hold.
+      if (JSON.stringify(options?.data ?? {}).includes(distinctId)) throw new Error('Failed query\nparams: a\u0000b');
+      return findJobs(name, options);
+    });
+
+    const state = await workOne({ distinctId, reason: 'account_deleted', pass: 'first' });
+
+    expect(state).toMatchObject({ state: 'retry', retry_count: 0, output: { error: 'Failed query params: a b' } });
+    expect(deletedIds.get(distinctId)).toBeUndefined();
+  });
+
+  it('skips an anonymous id more than 100 distinct ids signed in from, and still erases the rest', async () => {
+    const distinctId = randomUUID();
+    replies.anonymousIds = ['sdk-anon-kiosk', 'sdk-anon-split'];
+    replies.identifiedAs = new Map([['sdk-anon-kiosk', Array.from({ length: 101 }, () => randomUUID())]]);
+
+    const rows = await workFirstPassThroughDelete(distinctId);
+
+    expect(rows.find((row) => row.data.stage === 'delete')?.state).toBe('completed');
+    expect(deletedIds.get(distinctId)).toEqual([[distinctId, 'sdk-anon-split']]);
+  });
+
+  it('checks 70,000 looked-up ids against accounts without passing the driver parameter limit', async () => {
+    const distinctId = randomUUID();
+    // 700 anonymous ids with 99 more distinct ids each, the account making 100: none is skipped as crowded.
+    replies.anonymousIds = Array.from({ length: 700 }, (_, index) => `sdk-anon-${index}`);
+    replies.identifiedAs = new Map(
+      replies.anonymousIds.map((anonymousId) => [anonymousId, Array.from({ length: 99 }, () => randomUUID())]),
+    );
+
+    const rows = await workFirstPassThroughDelete(distinctId);
+
+    expect(rows.find((row) => row.data.stage === 'delete')?.state).toBe('completed');
+    expect(deletedIds.get(distinctId)).toEqual([[distinctId, ...replies.anonymousIds]]);
   });
 
   it('persists the ids before deleting, and the late pass deletes them after their $identify events are gone', async () => {

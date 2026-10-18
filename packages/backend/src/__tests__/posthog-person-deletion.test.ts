@@ -162,6 +162,115 @@ describe('deletePosthogPerson, discovery step', () => {
     warnLog.mockRestore();
   });
 
+  it('drops an anonymous id carrying a control character or half a surrogate pair, and logs only the count', async () => {
+    const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const fetchImpl = mockPosthog({
+      lookup: () =>
+        jsonResponse(200, {
+          results: [
+            // PostgreSQL text cannot hold a NUL: the account check would fail on every retry.
+            ['sdk-anon-\u0000', [DISTINCT_ID]],
+            ['sdk-anon-\u0001', [DISTINCT_ID]],
+            ['sdk-anon-\u001f', [DISTINCT_ID]],
+            ['sdk-anon-\u007f', [DISTINCT_ID]],
+            // jsonb refuses half a surrogate pair: persisting the ids would fail on every retry.
+            ['sdk-anon-\ud800', [DISTINCT_ID]],
+            ['sdk-anon-\udc00', [DISTINCT_ID]],
+            ['sdk-anon-own', [DISTINCT_ID]],
+            // A whole pair is fine.
+            ['sdk-anon-\ud83e\uddd7', [DISTINCT_ID]],
+          ],
+        }),
+    });
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-own', 'sdk-anon-\ud83e\uddd7']);
+    expect(warnLog.mock.calls).toEqual([
+      [
+        expect.stringContaining('Dropped'),
+        {
+          event: 'posthog_person_deletion_invalid_ids_dropped',
+          reason: 'account_deleted',
+          pass: 'first',
+          jobId: undefined,
+          source: 'lookup',
+          dropped: 6,
+        },
+      ],
+    ]);
+    warnLog.mockRestore();
+  });
+
+  it('leaves an id that identified from an anonymous id out of the account check when no account can have it', async () => {
+    const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const fetchImpl = mockPosthog({
+      lookup: () =>
+        jsonResponse(200, { results: [['sdk-anon-own', [DISTINCT_ID, 'party-\u0000-uuid', 'y'.repeat(300), 42]]] }),
+    });
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-own']);
+    expect(warnLog.mock.calls).toEqual([
+      [expect.stringContaining('Dropped'), expect.objectContaining({ source: 'identified_as', dropped: 3 })],
+    ]);
+    expect(JSON.stringify(warnLog.mock.calls)).not.toContain('party-');
+    warnLog.mockRestore();
+  });
+
+  it('skips an anonymous id more than 100 distinct ids signed in from, and logs only the count', async () => {
+    const infoLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+    const strangers = (count: number) => Array.from({ length: count }, () => randomUUID());
+    const fetchImpl = mockPosthog({
+      lookup: () =>
+        jsonResponse(200, {
+          results: [
+            ['sdk-anon-kiosk', [DISTINCT_ID, ...strangers(100)]],
+            ['sdk-anon-busy', [DISTINCT_ID, ...strangers(99)]],
+            ['sdk-anon-own', [DISTINCT_ID]],
+          ],
+        }),
+    });
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(persistDiscovery).toHaveBeenCalledWith(discoverJob, ['sdk-anon-busy', 'sdk-anon-own']);
+    expect(infoLog).toHaveBeenCalledWith(expect.stringContaining('Skipped'), {
+      event: 'posthog_person_deletion_shared_ids_skipped',
+      reason: 'account_deleted',
+      pass: 'first',
+      shared: 0,
+      crowded: 1,
+    });
+    infoLog.mockRestore();
+  });
+
+  it('checks looked-up ids against accounts 1,000 per query, past the first 1,000', async () => {
+    const otherAccount = await createAccount();
+    // 11 anonymous ids and 99 more distinct ids each: 1,100 ids, the other account last.
+    const results = Array.from({ length: 11 }, (_, index) => [
+      `sdk-anon-${index}`,
+      [DISTINCT_ID, ...Array.from({ length: 99 }, () => randomUUID())],
+    ]);
+    results[10][1] = [DISTINCT_ID, ...Array.from({ length: 98 }, () => randomUUID()), otherAccount];
+    const fetchImpl = mockPosthog({ lookup: () => jsonResponse(200, { results }) });
+    const select = vi.spyOn(db, 'select');
+    const { persistDiscovery, run } = discover(fetchImpl);
+
+    await expect(run).resolves.toBe('discovered');
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(persistDiscovery).toHaveBeenCalledWith(
+      discoverJob,
+      Array.from({ length: 10 }, (_, index) => `sdk-anon-${index}`),
+    );
+    select.mockRestore();
+  });
+
   it('keeps ids an earlier pass persisted when the $identify events are gone', async () => {
     const fetchImpl = mockPosthog({ lookup: () => jsonResponse(200, { results: [['sdk-anon-new', [DISTINCT_ID]]] }) });
     const latePass = { ...discoverJob, pass: 'late' as const, anonymousIds: ['sdk-anon-split'] };
@@ -259,6 +368,7 @@ describe('deletePosthogPerson, delete step', () => {
   it.each([
     ['an id longer than a job can carry', ['x'.repeat(300), 'sdk-anon-a'], [DISTINCT_ID, 'sdk-anon-a']],
     ['ids that are not ids', ['', 42, null, 'sdk-anon-a'], [DISTINCT_ID, 'sdk-anon-a']],
+    ['an id with a control character', ['sdk-anon-\u0001', 'sdk-anon-a'], [DISTINCT_ID, 'sdk-anon-a']],
     ['a list that is not a list', 'sdk-anon-a', [DISTINCT_ID]],
   ])('still erases the account when the job carries %s', async (_label, anonymousIds, sent) => {
     const fetchImpl = mockPosthog();

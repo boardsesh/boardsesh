@@ -347,14 +347,23 @@ anything is deleted.
    `$screen` events. The query also returns every distinct id that identified
    from each anonymous id. An anonymous id that another live account also
    signed in from (a shared phone) is skipped, so erasing one climber never
-   erases another. Ids that are not accounts, such as the party UUID a
-   signed-out install identified as before #6078, belong to the same install
-   and go with it. At most 999 anonymous ids, the `bulk_delete` limit less the
-   account id. An id longer than 200 characters is dropped: no SDK mints one
-   (they are 36-character UUIDs), the capture endpoint takes any
-   `$anon_distinct_id` under the public project key, and a job cannot carry
-   it. The log (`posthog_person_deletion_invalid_ids_dropped`) has the count,
-   never the id.
+   erases another. So is an anonymous id that more than 100 distinct ids
+   identified from: that is no one climber's device, and the cap keeps the
+   account check near 101,000 ids, which it runs 1,000 per query (postgres.js
+   refuses a query with 65,534 parameters). The log
+   (`posthog_person_deletion_shared_ids_skipped`) has the counts, `shared` and
+   `crowded`. Ids that are not accounts, such as the party UUID a signed-out
+   install identified as before #6078, belong to the same install and go with
+   it. At most 999 anonymous ids, the `bulk_delete` limit less the account id.
+   An id longer than 200 characters, or carrying a control character or half
+   of a surrogate pair, is dropped: no SDK mints one (they are 36-character
+   UUIDs), the capture endpoint takes any `$anon_distinct_id` under the public
+   project key, a job cannot carry an over-long id, and PostgreSQL cannot store
+   a NUL or half a pair, so one would fail the account check or the persist on
+   every retry. The same check drops such an id from the distinct ids that
+   identified from an anonymous id: it is no account, so the account check
+   never needs it. The log (`posthog_person_deletion_invalid_ids_dropped`, with
+   `source` `lookup`, `identified_as` or `job`) has the count, never the id.
 
    The ids found, plus any the job already carried, are then written, in one
    transaction, into `anonymousIds` on every erasure of this account still
@@ -400,7 +409,8 @@ Responses:
   until it is fixed and the failed jobs are replayed, rather than deleting the
   history it needs.
 - **A job it cannot read.** A bad entry in `anonymousIds` (not a string, empty,
-  over 200 characters, or the field not a list) is dropped at either step and
+  over 200 characters, carrying a control character or half of a surrogate
+  pair, or the field not a list) is dropped at either step and
   counted in `posthog_person_deletion_invalid_ids_dropped`; the account id is
   still erased. A bad `distinctId`, `reason`, `pass` or `stage` fails the job
   at once with `posthog_person_deletion_invalid_job`, which logs the `jobId`,
@@ -409,7 +419,10 @@ Responses:
 
 Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
-`posthog_person_deletion_exhausted`. A queued job waits up to 14 days past its
+`posthog_person_deletion_exhausted`. A retried job's output keeps the first
+1,000 characters of the error, control characters and half surrogate pairs
+replaced with spaces: a failed query's message lists its parameters, and a NUL
+there would stop pg-boss storing the result, so the job would never settle. A queued job waits up to 14 days past its
 start for a worker (`retentionSeconds`). A finished or failed job is kept 7
 days so a failed erasure can be replayed, then pg-boss deletes it.
 

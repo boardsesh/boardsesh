@@ -83,6 +83,25 @@ const PASSES: ReadonlyArray<readonly [PosthogPersonDeletionPass, number]> = [
 const MAX_ANONYMOUS_IDS = 999;
 /** Far above any id our SDKs mint (a 36-character UUID), and the most a job carries. */
 const MAX_DISTINCT_ID_LENGTH = 200;
+/**
+ * More distinct ids than this signed in from one anonymous id means it is no one
+ * climber's device (a kiosk, or ids sent with the public key): skipped like a
+ * shared phone. It also caps one discovery's account check near 101,000 ids.
+ */
+const MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID = 100;
+/** Ids per `users` query: postgres.js refuses a query with 65,534 parameters. */
+const ACCOUNT_LOOKUP_CHUNK_SIZE = 1000;
+
+/**
+ * A character no SDK puts in a distinct id: a control character (PostgreSQL
+ * cannot store a NUL in text or jsonb) or half of a surrogate pair (jsonb
+ * refuses it). Matching control characters is the point of the pattern, hence
+ * the disable.
+ */
+const UNSTORABLE_CHARACTER =
+  // oxlint-disable-next-line no-control-regex
+  /[\u0000-\u001F\u007F]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const UNSTORABLE_CHARACTERS = new RegExp(UNSTORABLE_CHARACTER.source, 'g');
 
 /**
  * `distinctId`, `reason`, `pass` and `stage` must be exact: without them the job
@@ -99,19 +118,22 @@ const jobSchema = z.object({
   stage: z.literal('delete').optional(),
 });
 
-function isStorableAnonymousId(id: unknown): id is string {
-  return typeof id === 'string' && id.length > 0 && id.length <= MAX_DISTINCT_ID_LENGTH;
+/** 1 to {@link MAX_DISTINCT_ID_LENGTH} characters, none of them {@link UNSTORABLE_CHARACTER}. */
+function isUsableDistinctId(id: unknown): id is string {
+  return (
+    typeof id === 'string' && id.length > 0 && id.length <= MAX_DISTINCT_ID_LENGTH && !UNSTORABLE_CHARACTER.test(id)
+  );
 }
 
 /**
- * The ids a job may send: strings of 1 to {@link MAX_DISTINCT_ID_LENGTH}
- * characters, deduplicated, at most {@link MAX_ANONYMOUS_IDS}. `dropped` counts
- * the rest, for a log line that never carries them.
+ * The ids a job may send: {@link isUsableDistinctId}, deduplicated, at most
+ * {@link MAX_ANONYMOUS_IDS}. `dropped` counts the rest, for a log line that
+ * never carries them.
  */
 function sanitizeAnonymousIds(raw: unknown): { ids: string[]; dropped: number } {
   if (raw === undefined) return { ids: [], dropped: 0 };
   if (!Array.isArray(raw)) return { ids: [], dropped: 1 };
-  const ids = [...new Set(raw.filter(isStorableAnonymousId))].slice(0, MAX_ANONYMOUS_IDS);
+  const ids = [...new Set(raw.filter(isUsableDistinctId))].slice(0, MAX_ANONYMOUS_IDS);
   return { ids, dropped: raw.length - ids.length };
 }
 
@@ -311,13 +333,16 @@ function throwRetryable(context: RequestContext, path: string, status: number, d
   throw new PosthogPersonDeletionRetryableError(`PostHog ${path} returned ${status}`, status);
 }
 
-/** Counts only: an id that failed the check is never logged. */
+/**
+ * Counts only: an id that failed the check is never logged. An `identified_as`
+ * id leaves only the shared-phone check, never a deletion.
+ */
 function logDroppedAnonymousIds(
   { reason, pass, jobId }: Pick<RequestContext, 'reason' | 'pass' | 'jobId'>,
   dropped: number,
-  source: 'lookup' | 'job',
+  source: 'lookup' | 'identified_as' | 'job',
 ): void {
-  logger.warn('[PostHogErasure] Dropped anonymous ids a deletion request cannot carry', {
+  logger.warn('[PostHogErasure] Dropped distinct ids that are too long or carry characters PostgreSQL cannot store', {
     event: 'posthog_person_deletion_invalid_ids_dropped',
     reason,
     pass,
@@ -378,34 +403,45 @@ async function findAnonymousIds(context: RequestContext, distinctId: string, dat
   const parsed = queryResponseSchema.safeParse(await response.json().catch(() => null));
   if (!parsed.success) throwRetryable(context, path, response.status, 'answered the lookup with no result set');
 
+  // Nothing skipped here can stop the account's own person from being erased:
+  // the delete step always sends the account id.
   const candidates = new Map<string, string[]>();
-  let tooLong = 0;
+  let unusable = 0;
+  let unusableIdentifiedAs = 0;
+  let crowded = 0;
   for (const [anonId, identifiedAs] of parsed.data.results) {
     if (typeof anonId !== 'string' || anonId === '' || anonId === distinctId) continue;
     // A job could not carry it, and no SDK mints one: someone sent it with the
-    // public key. Persisting it would fail every later step of this erasure.
-    if (!isStorableAnonymousId(anonId)) {
-      tooLong += 1;
+    // public key. Persisting it, or querying with it, would fail every later
+    // step of this erasure.
+    if (!isUsableDistinctId(anonId)) {
+      unusable += 1;
       continue;
     }
-    const others = Array.isArray(identifiedAs)
-      ? identifiedAs.filter((id): id is string => typeof id === 'string' && id !== distinctId)
-      : [];
+    const identifiedAsList: unknown[] = Array.isArray(identifiedAs) ? identifiedAs : [];
+    if (identifiedAsList.length > MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID) {
+      crowded += 1;
+      continue;
+    }
+    const others: string[] = [];
+    for (const id of identifiedAsList) {
+      if (id === distinctId) continue;
+      // Account ids are UUIDs, so an id that fails the check is no account and
+      // leaving it out of the account check never hides a shared phone.
+      if (isUsableDistinctId(id)) others.push(id);
+      else unusableIdentifiedAs += 1;
+    }
     candidates.set(anonId, others);
   }
-  if (tooLong > 0) logDroppedAnonymousIds(context, tooLong, 'lookup');
-  if (candidates.size === 0) return [];
+  if (unusable > 0) logDroppedAnonymousIds(context, unusable, 'lookup');
+  if (unusableIdentifiedAs > 0) logDroppedAnonymousIds(context, unusableIdentifiedAs, 'identified_as');
 
   // "Another account" is a live `users` row. The account being erased is never
   // in the set (its id is filtered out above, and on deletion its row is gone).
   // An id that is not an account (the party UUID a signed-out install
   // identified as before #6078) belongs to the same install and goes with it.
   const idsToCheck = [...new Set([...candidates.keys(), ...[...candidates.values()].flat()])];
-  const accountRows = await database
-    .select({ id: dbSchema.users.id })
-    .from(dbSchema.users)
-    .where(inArray(dbSchema.users.id, idsToCheck));
-  const otherAccounts = new Set(accountRows.map((row) => row.id));
+  const otherAccounts = await findAccountIds(database, idsToCheck);
 
   const anonymousIds: string[] = [];
   let shared = 0;
@@ -416,15 +452,33 @@ async function findAnonymousIds(context: RequestContext, distinctId: string, dat
     }
     anonymousIds.push(anonId);
   }
-  if (shared > 0) {
-    logger.info('[PostHogErasure] Skipped anonymous ids another account also signed in from', {
+  if (shared > 0 || crowded > 0) {
+    logger.info('[PostHogErasure] Skipped anonymous ids other accounts also signed in from', {
       event: 'posthog_person_deletion_shared_ids_skipped',
       reason: context.reason,
       pass: context.pass,
       shared,
+      crowded,
     });
   }
   return anonymousIds;
+}
+
+/**
+ * The ids in `ids` that are live accounts, {@link ACCOUNT_LOOKUP_CHUNK_SIZE} per
+ * query: one query carrying them all could pass the driver's parameter limit,
+ * and that error would block every pass of the erasure.
+ */
+async function findAccountIds(database: Database, ids: string[]): Promise<Set<string>> {
+  const accountIds = new Set<string>();
+  for (let start = 0; start < ids.length; start += ACCOUNT_LOOKUP_CHUNK_SIZE) {
+    const rows = await database
+      .select({ id: dbSchema.users.id })
+      .from(dbSchema.users)
+      .where(inArray(dbSchema.users.id, ids.slice(start, start + ACCOUNT_LOOKUP_CHUNK_SIZE)));
+    for (const row of rows) accountIds.add(row.id);
+  }
+  return accountIds;
 }
 
 /**
@@ -503,9 +557,10 @@ function rawDistinctId(payload: unknown): string | undefined {
  *   (`person:write`) with the account id and the persisted ids, events and
  *   recordings included.
  *
- * An anonymous id longer than {@link MAX_DISTINCT_ID_LENGTH}, or not a string,
- * is dropped (counted in `posthog_person_deletion_invalid_ids_dropped`) at
- * either step, never persisted, and never fails the job: the account id is
+ * An anonymous id longer than {@link MAX_DISTINCT_ID_LENGTH}, carrying a
+ * character PostgreSQL cannot store ({@link UNSTORABLE_CHARACTER}), or not a
+ * string, is dropped (counted in `posthog_person_deletion_invalid_ids_dropped`)
+ * at either step, never persisted, and never fails the job: the account id is
  * always sent. A job whose `distinctId`, `reason`, `pass` or `stage` fails the
  * schema is `rejected`, logged with its job id and distinct id for a replay.
  *
@@ -658,6 +713,20 @@ export type StartPosthogPersonDeletionOptions = {
 
 type ErasureJobOutput = { outcome: PosthogPersonDeletionOutcome } | { error: string };
 
+/** Enough of an error for an operator; a failed query's message also lists every parameter. */
+const MAX_OUTPUT_ERROR_LENGTH = 1000;
+
+/**
+ * Error text pg-boss can store as a job's output. A failed query's message
+ * carries its parameters (drizzle), and a NUL or half a surrogate pair in the
+ * output fails pg-boss's write, so the job would never settle. Cut first: the
+ * cut can split a surrogate pair, and the replace then removes the stray half.
+ */
+function storableErrorText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, MAX_OUTPUT_ERROR_LENGTH).replace(UNSTORABLE_CHARACTERS, ' ');
+}
+
 /** One job's pg-boss disposition: completed, failed (retried), or failed for good. */
 async function settleErasureJob(
   boss: PgBoss,
@@ -683,7 +752,7 @@ async function settleErasureJob(
         jobId: job.id,
       });
     }
-    return { id: job.id, status: 'failed', output: { error: error instanceof Error ? error.message : String(error) } };
+    return { id: job.id, status: 'failed', output: { error: storableErrorText(error) } };
   }
 }
 
