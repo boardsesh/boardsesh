@@ -47,7 +47,13 @@ export function BoardOpenRecorder(): null {
     // `data` is undefined while the AsyncStorage read is in flight; treating
     // that tick as "no board" would fire again the moment it resolves.
     if (isPending) return;
-    if (!isAuthenticated || boardUuid == null || userId == null) return;
+    // A hidden board ('') or no board is not recordable, but it is still a
+    // selection: the next real board is a new open, even the one recorded last.
+    if (boardUuid == null) {
+      lastRecordedKey = null;
+      return;
+    }
+    if (!isAuthenticated || userId == null) return;
     // Screenshot builds drive the active board themselves to stage captures.
     // Recording those would reorder the store-shot account's board list between
     // runs. Inlined so it dead-strips from normal builds.

@@ -94,6 +94,26 @@ describe('BoardOpenRecorder', () => {
     expect(recordMock).not.toHaveBeenCalled();
   });
 
+  // A blank board is still a selection. Returning to the board recorded last
+  // is a new open, so the dedupe key must not survive the blank one.
+  it('records the last board again after a hidden board was selected in between', () => {
+    const { rerender } = render(createElement(BoardOpenRecorder));
+    expect(recordMock).toHaveBeenCalledTimes(1);
+
+    // Signed out, the climber picks a hidden board from a scan, then signs in.
+    state.isAuthenticated = false;
+    state.activeBoard = { uuid: '' };
+    rerender(createElement(BoardOpenRecorder));
+    state.isAuthenticated = true;
+    rerender(createElement(BoardOpenRecorder));
+    expect(recordMock).toHaveBeenCalledTimes(1);
+
+    state.activeBoard = { uuid: 'board-a' };
+    rerender(createElement(BoardOpenRecorder));
+    expect(recordMock).toHaveBeenCalledTimes(2);
+    expect(recordMock).toHaveBeenLastCalledWith('board-a', expect.anything());
+  });
+
   it('records nothing with no board', () => {
     state.activeBoard = undefined;
     render(createElement(BoardOpenRecorder));
