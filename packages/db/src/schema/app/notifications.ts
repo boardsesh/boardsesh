@@ -20,6 +20,12 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'proposal_on_your_climb',
   'spray_wall_detection_completed',
   'follow_request',
+  // Comments on an item, sent to its owner (#6385). `comment_on_tick` and
+  // `comment_on_climb` above cover ticks and climbs.
+  'comment_on_session',
+  'comment_on_playlist',
+  'comment_on_board',
+  'comment_on_gym',
 ]);
 
 export const notifications = pgTable(
@@ -73,4 +79,8 @@ export type NotificationType =
   | 'gym_claim_approved'
   | 'proposal_on_your_climb'
   | 'spray_wall_detection_completed'
-  | 'follow_request';
+  | 'follow_request'
+  | 'comment_on_session'
+  | 'comment_on_playlist'
+  | 'comment_on_board'
+  | 'comment_on_gym';

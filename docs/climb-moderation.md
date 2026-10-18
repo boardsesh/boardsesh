@@ -249,7 +249,7 @@ the rows straight back. The write side is also guarded: a hide approval fans out
 
 | Type                     | Who gets it                                | When                                    |
 | ------------------------ | ------------------------------------------ | --------------------------------------- |
-| `proposal_on_your_climb` | The climb's setter                          | Someone reports or proposes on their climb |
+| `proposal_on_your_climb` | The climb's setter (unnamed reporter when the setter may not see their account) | Someone reports or proposes on their climb |
 | `proposal_created`       | Everyone who has ticked the climb           | A proposal opens on it                  |
 | `proposal_vote`          | The proposer                                | Someone votes on their proposal         |
 | `proposal_approved`      | The proposer and every upvoter              | It clears the threshold or is resolved  |
@@ -268,6 +268,13 @@ hold that login about every report on a stranger's climbs.
 
 **A setter who also ticked their own climb gets one notification, not two** — the setter row wins
 (`mergeProposalCreatedRecipients`). The reporter never notifies themselves.
+
+**A private reporter is not named to the setter, and the setter is still told** (#6385). A proposal
+has no owner, so the setter sees the reporter only if the reporter's account lets them. When it does
+not, the row is stored with no actor and the app words it "Someone reported your climb". The worker's
+hour-long redelivery dedup treats that NULL row as the same notification (`isDuplicate`); one proposal
+has one proposer, so it cannot hide a second reporter. Climbers who ticked the climb
+(`proposal_created`) still hear nothing about a reporter they may not see.
 
 Clients need to word the setter row differently per report kind, so `Notification` and
 `GroupedNotification` carry `proposalType` alongside `proposalUuid`.

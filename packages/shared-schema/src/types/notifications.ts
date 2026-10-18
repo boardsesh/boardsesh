@@ -20,7 +20,11 @@ export type NotificationType =
   | 'gym_claim_approved'
   | 'proposal_on_your_climb'
   | 'spray_wall_detection_completed'
-  | 'follow_request';
+  | 'follow_request'
+  | 'comment_on_session'
+  | 'comment_on_playlist'
+  | 'comment_on_board'
+  | 'comment_on_gym';
 
 export type Notification = {
   uuid: string;

@@ -14,9 +14,10 @@ import crypto from 'crypto';
 import {
   resolveClimbCreatedFollowerRecipients,
   resolveClimbCreatedSubscriptionRecipients,
+  resolveCommentRecipients,
 } from './recipient-resolution';
 import { isHideProposalEvent } from './notification-worker';
-import { canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
+import { canReadSocialEntity, canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { writeFollowRequestNotification } from './follow-request-notifications';
@@ -92,33 +93,24 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         });
         return;
       }
-      case 'comment.created': {
-        if (event.entityType === 'tick') {
-          const [tick] = await db
-            .select({ userId: dbSchema.boardseshTicks.userId })
-            .from(dbSchema.boardseshTicks)
-            .where(eq(dbSchema.boardseshTicks.uuid, event.entityId))
-            .limit(1);
-          if (tick) {
-            recipientId = tick.userId;
-            notificationType = 'comment_on_tick';
-          }
-        }
-        break;
-      }
+      case 'comment.created':
       case 'comment.reply': {
-        if (event.metadata.parentCommentId) {
-          const [parent] = await db
-            .select({ userId: dbSchema.comments.userId })
-            .from(dbSchema.comments)
-            .where(eq(dbSchema.comments.uuid, event.metadata.parentCommentId))
-            .limit(1);
-          if (parent) {
-            recipientId = parent.userId;
-            notificationType = 'comment_reply';
-          }
+        // The worker's recipients and its read check, so local-only mode tells
+        // the same people: the item's owners and, for a reply, the parent
+        // comment's author, each only if they may read the comment. An owner
+        // always may (#6356), so a private commenter still reaches them.
+        const commentUuid = event.metadata.commentUuid;
+        if (!commentUuid) return;
+        const commentRecipients = await resolveCommentRecipients(
+          event.entityType,
+          event.entityId,
+          event.type === 'comment.reply' ? event.metadata.parentCommentId : undefined,
+        );
+        for (const recipient of commentRecipients) {
+          if (!(await canReadSocialEntity('comment', commentUuid, recipient.recipientId, 'listed'))) continue;
+          await writeInlineNotification(event, recipient.recipientId, recipient.notificationType);
         }
-        break;
+        return;
       }
       case 'proposal.voted': {
         // Notify proposer about the vote
@@ -316,71 +308,84 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
       }
     }
 
-    if (!recipientId || !notificationType || recipientId === event.actorId) return;
-
-    // Deduplicate: check if a similar notification already exists recently
-    const [existing] = await db
-      .select({ id: dbSchema.notifications.id })
-      .from(dbSchema.notifications)
-      .where(
-        and(
-          eq(dbSchema.notifications.actorId, event.actorId),
-          eq(dbSchema.notifications.recipientId, recipientId),
-          eq(dbSchema.notifications.type, notificationType),
-          eq(dbSchema.notifications.entityId, event.entityId),
-          sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
-        ),
-      )
-      .limit(1);
-    if (existing) return;
-
-    // `follow.created` carries entityType 'user', which is NOT a member of the
-    // social_entity_type enum — passing it through threw on insert and the catch
-    // below swallowed it, so a follow made no notification at all whenever Redis
-    // was down. The worker path already passes null here.
-    const entityType = SOCIAL_ENTITY_TYPES.has(event.entityType)
-      ? (event.entityType as dbSchema.SocialEntityType)
-      : null;
-
-    const uuid = crypto.randomUUID();
-    await db.insert(dbSchema.notifications).values({
-      uuid,
-      recipientId,
-      actorId: event.actorId,
-      type: notificationType,
-      entityType,
-      entityId: event.entityId,
-    });
-
-    // Enrich and push via PubSub
-    const [actor] = await db
-      .select({
-        name: dbSchema.users.name,
-        image: dbSchema.users.image,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-      })
-      .from(dbSchema.users)
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.users.id, event.actorId))
-      .limit(1);
-
-    pubsub.publishNotificationEvent(recipientId, {
-      notification: {
-        uuid,
-        type: notificationType as NotificationType,
-        actorId: event.actorId,
-        actorDisplayName: actor?.displayName || actor?.name || undefined,
-        actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
-        entityType,
-        entityId: event.entityId,
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      },
-    });
+    if (!recipientId || !notificationType) return;
+    await writeInlineNotification(event, recipientId, notificationType);
   } catch (error) {
     logger.error('[Events] Inline notification failed:', error);
   }
+}
+
+/**
+ * Write one inline notification and push it: the tail every single-recipient
+ * case shares, and the loop body of the multi-recipient comment case. Never to
+ * the actor themselves, and not twice for the same actor, recipient, type and
+ * item within an hour.
+ */
+async function writeInlineNotification(
+  event: SocialEvent,
+  recipientId: string,
+  notificationType: dbSchema.NotificationType,
+): Promise<void> {
+  if (recipientId === event.actorId) return;
+
+  // Deduplicate: check if a similar notification already exists recently
+  const [existing] = await db
+    .select({ id: dbSchema.notifications.id })
+    .from(dbSchema.notifications)
+    .where(
+      and(
+        eq(dbSchema.notifications.actorId, event.actorId),
+        eq(dbSchema.notifications.recipientId, recipientId),
+        eq(dbSchema.notifications.type, notificationType),
+        eq(dbSchema.notifications.entityId, event.entityId),
+        sql`${dbSchema.notifications.createdAt} > NOW() - INTERVAL '1 hour'`,
+      ),
+    )
+    .limit(1);
+  if (existing) return;
+
+  // `follow.created` carries entityType 'user', which is NOT a member of the
+  // social_entity_type enum — passing it through threw on insert and the catch
+  // below swallowed it, so a follow made no notification at all whenever Redis
+  // was down. The worker path already passes null here.
+  const entityType = SOCIAL_ENTITY_TYPES.has(event.entityType) ? (event.entityType as dbSchema.SocialEntityType) : null;
+
+  const uuid = crypto.randomUUID();
+  await db.insert(dbSchema.notifications).values({
+    uuid,
+    recipientId,
+    actorId: event.actorId,
+    type: notificationType,
+    entityType,
+    entityId: event.entityId,
+  });
+
+  // Enrich and push via PubSub
+  const [actor] = await db
+    .select({
+      name: dbSchema.users.name,
+      image: dbSchema.users.image,
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+    })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(eq(dbSchema.users.id, event.actorId))
+    .limit(1);
+
+  pubsub.publishNotificationEvent(recipientId, {
+    notification: {
+      uuid,
+      type: notificationType as NotificationType,
+      actorId: event.actorId,
+      actorDisplayName: actor?.displayName || actor?.name || undefined,
+      actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
+      entityType,
+      entityId: event.entityId,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    },
+  });
 }
 
 async function fanoutInlineActivity(event: SocialEvent): Promise<void> {

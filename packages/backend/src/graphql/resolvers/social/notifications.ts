@@ -311,7 +311,17 @@ export const socialNotificationQueries = {
     const climbTypes = ['new_climb', 'new_climb_global'];
     // The types that hang off a comment thread. Clients open the thread for
     // these rather than a climb, so they need `threadEntityType`/`threadEntityId`.
-    const threadTypes = ['comment_reply', 'comment_on_tick', 'comment_on_climb', 'vote_on_tick', 'vote_on_comment'];
+    const threadTypes = [
+      'comment_reply',
+      'comment_on_tick',
+      'comment_on_climb',
+      'comment_on_session',
+      'comment_on_playlist',
+      'comment_on_board',
+      'comment_on_gym',
+      'vote_on_tick',
+      'vote_on_comment',
+    ];
 
     // Collect entity IDs by type
     const climbEntityIds: string[] = [];
@@ -333,6 +343,10 @@ export const socialNotificationQueries = {
         // names the commented-on entity.
         if (group.entityType === 'comment') commentEntityIds.push(group.entityId);
         else if (group.entityType === 'tick') tickEntityIds.push(group.entityId);
+        // The owner rows name the item, so the client can word them ("on your
+        // climb {{climb}}", "on your gym {{gym}}") and draw the climb.
+        else if (group.type === 'comment_on_climb') climbEntityIds.push(group.entityId);
+        else if (group.type === 'comment_on_gym') gymEntityIds.push(group.entityId);
       }
     }
 
@@ -497,6 +511,20 @@ export const socialNotificationQueries = {
 
         group.threadEntityType = thread.entityType;
         group.threadEntityId = thread.entityId;
+
+        if (group.type === 'comment_on_gym') {
+          group.gymName = gymNameMap.get(group.entityId) ?? undefined;
+          continue;
+        }
+        if (group.type === 'comment_on_climb') {
+          const climb = climbMap.get(group.entityId);
+          if (!climb) continue;
+          group.climbUuid = group.entityId;
+          group.climbName = climb.name ?? undefined;
+          group.boardType = climb.boardType;
+          applyClimbBoardFields(group, climb);
+          continue;
+        }
 
         // An ascent's thread carries the climb it was logged on, which is what
         // lets these rows draw board art like a climb row does.

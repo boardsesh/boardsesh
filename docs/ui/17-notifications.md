@@ -31,7 +31,11 @@ Each `NotificationItem` is a `ListItem` with:
 | `new_follower`                   | "X followed you"                    | `PersonAddOutlined` |
 | `comment_reply`                  | "X replied to your comment: [body]" | `ChatBubbleOutline` |
 | `comment_on_tick`                | "X commented on your tick: [body]"  | `ChatBubbleOutline` |
-| `comment_on_climb`               | "X commented on the climb: [body]"  | `ChatBubbleOutline` |
+| `comment_on_climb`               | "X commented on your climb: [body]" / no body: "X commented on your climb [name]" | `ChatBubbleOutline` |
+| `comment_on_session`             | "X commented on your session: [body]" | `ChatBubbleOutline` |
+| `comment_on_playlist`            | "X commented on your playlist: [body]" | `ChatBubbleOutline` |
+| `comment_on_board`               | "X commented on your board: [body]" | `ChatBubbleOutline` |
+| `comment_on_gym`                 | "X commented on your gym: [body]" / no body: "X commented on your gym [name]" | `ChatBubbleOutline` |
 | `vote_on_tick`                   | "X liked your tick"                 | `ThumbUpOutlined`   |
 | `vote_on_comment`                | "X liked your comment"              | `ThumbUpOutlined`   |
 | `proposal_created`               | "X created a proposal" / hide: "X reported [name]" | `LightbulbOutlined` |

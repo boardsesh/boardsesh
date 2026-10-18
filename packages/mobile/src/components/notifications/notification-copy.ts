@@ -118,10 +118,31 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
       return commentBody
         ? { textI18nKey: 'items.commentOnTickWithBody', params: { actor, body: commentBody } }
         : { textI18nKey: 'items.commentOnTick', params: { actor } };
+    // The owner rows (#6385). With a comment preview the body fills the two
+    // lines, so it says only what was commented on; without one, the climb or
+    // gym is named when the group carries its name.
     case 'comment_on_climb':
+      if (commentBody) return { textI18nKey: 'items.commentOnClimbWithBody', params: { actor, body: commentBody } };
+      return climb
+        ? { textI18nKey: 'items.commentOnClimb', params: { actor, climb } }
+        : { textI18nKey: 'items.commentOnClimbGeneric', params: { actor } };
+    case 'comment_on_session':
       return commentBody
-        ? { textI18nKey: 'items.commentOnClimbWithBody', params: { actor, body: commentBody } }
-        : { textI18nKey: 'items.commentOnClimb', params: { actor } };
+        ? { textI18nKey: 'items.commentOnSessionWithBody', params: { actor, body: commentBody } }
+        : { textI18nKey: 'items.commentOnSession', params: { actor } };
+    case 'comment_on_playlist':
+      return commentBody
+        ? { textI18nKey: 'items.commentOnPlaylistWithBody', params: { actor, body: commentBody } }
+        : { textI18nKey: 'items.commentOnPlaylist', params: { actor } };
+    case 'comment_on_board':
+      return commentBody
+        ? { textI18nKey: 'items.commentOnBoardWithBody', params: { actor, body: commentBody } }
+        : { textI18nKey: 'items.commentOnBoard', params: { actor } };
+    case 'comment_on_gym':
+      if (commentBody) return { textI18nKey: 'items.commentOnGymWithBody', params: { actor, body: commentBody } };
+      return gymName
+        ? { textI18nKey: 'items.commentOnGym', params: { actor, gym: gymName } }
+        : { textI18nKey: 'items.commentOnGymGeneric', params: { actor } };
     case 'vote_on_tick':
       return { textI18nKey: 'items.voteOnTick', params: { actor } };
     case 'vote_on_comment':
@@ -185,6 +206,10 @@ export function notificationIconName(type: NotificationType): IconName {
     case 'comment_reply':
     case 'comment_on_tick':
     case 'comment_on_climb':
+    case 'comment_on_session':
+    case 'comment_on_playlist':
+    case 'comment_on_board':
+    case 'comment_on_gym':
       return 'comment';
     case 'vote_on_tick':
     case 'vote_on_comment':

@@ -24,6 +24,10 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
   'comment_reply',
   'comment_on_tick',
   'comment_on_climb',
+  'comment_on_session',
+  'comment_on_playlist',
+  'comment_on_board',
+  'comment_on_gym',
   'vote_on_tick',
   'vote_on_comment',
 ]);

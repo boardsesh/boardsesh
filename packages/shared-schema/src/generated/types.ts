@@ -5879,7 +5879,11 @@ export type NotificationEvent = {
 };
 
 export type NotificationType =
+  | 'comment_on_board'
   | 'comment_on_climb'
+  | 'comment_on_gym'
+  | 'comment_on_playlist'
+  | 'comment_on_session'
   | 'comment_on_tick'
   | 'comment_reply'
   | 'follow_request'

@@ -40,6 +40,17 @@ export function isNewClimbNotification(type: string): boolean {
 }
 
 /**
+ * A notification that still goes out, stored with no actor, when the recipient
+ * may not see who acted. A new climb is announced under its public setter name.
+ * A report on the recipient's own climb reads "Someone reported your climb": a
+ * proposal has no owner, so a private reporter stays unnamed to the setter, but
+ * the setter still hears that their climb was reported (#6385).
+ */
+export function notifiesWithoutActor(type: string): boolean {
+  return isNewClimbNotification(type) || type === 'proposal_on_your_climb';
+}
+
+/**
  * Whether the proposal behind this event is a `hide`.
  *
  * An approved `hide` is a moderation outcome, not something to celebrate in the
@@ -407,11 +418,20 @@ export class NotificationWorker {
     entityId: string,
     intervalMinutes: number,
   ): Promise<boolean> {
+    // A type that can be stored without its actor also matches a row stored
+    // that way: the actor was hidden from this recipient, so a NULL row is the
+    // same notification. Every such type names one actor per entity (a
+    // proposal has one proposer, a climb one setter), so this cannot swallow a
+    // second person. Other types never match NULL: a NULL there is a deleted
+    // account, not this actor.
+    const sameActor = notifiesWithoutActor(type)
+      ? sql`(actor_id = ${actorId} OR actor_id IS NULL)`
+      : sql`actor_id = ${actorId}`;
     const rows = await executeRows<unknown>(
       db,
       sql`
       SELECT 1 FROM notifications
-      WHERE actor_id = ${actorId}
+      WHERE ${sameActor}
         AND recipient_id = ${recipientId}
         AND type = ${type}
         AND entity_id = ${entityId}
@@ -456,9 +476,10 @@ export class NotificationWorker {
       if (!canSeeActor) {
         // A published climb is public, and so is its setter name: a stranger
         // watching the layout hears about it with no account id or avatar, the
-        // way the board's new-climb feed shows it. Anything else about a
+        // way the board's new-climb feed shows it. A report on the
+        // recipient's own climb goes out unnamed too. Anything else about a
         // hidden actor is not sent.
-        if (!isNewClimbNotification(type)) return;
+        if (!notifiesWithoutActor(type)) return;
         storedActorId = null;
       }
     }

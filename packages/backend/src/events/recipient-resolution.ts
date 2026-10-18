@@ -1,4 +1,6 @@
 import { eq, and, ne } from 'drizzle-orm';
+import { executeRows } from '@boardsesh/db/client';
+import { entityOwnerIdsQuery } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
@@ -9,8 +11,40 @@ export type RecipientInfo = {
 };
 
 /**
- * Resolve recipients for a comment event.
- * Returns the entity owner and/or parent comment author.
+ * The notification an item's owner gets for a comment on it, by the commented
+ * item's entity type. Only items with an owner are here: a proposal has none,
+ * and a comment's own author hears about replies through `comment_reply`.
+ */
+const COMMENT_ON_OWNED_ITEM = new Map<string, NotificationType>([
+  ['tick', 'comment_on_tick'],
+  ['session', 'comment_on_session'],
+  ['climb', 'comment_on_climb'],
+  ['playlist_climb', 'comment_on_playlist'],
+  ['board', 'comment_on_board'],
+  ['gym', 'comment_on_gym'],
+]);
+
+/**
+ * Everyone who owns an item, read from the same owner definition the privacy
+ * rule uses (`entityOwnerIdsQuery`): the tick's climber, the session's host,
+ * the climb's Boardsesh setter (`board_climbs.user_id`; an Aurora-only
+ * `setter_id` names no Boardsesh account here), the playlist's owner, the
+ * live board's or gym's owner.
+ */
+async function resolveEntityOwnerIds(entityType: string, entityId: string): Promise<string[]> {
+  const ownerQuery = entityOwnerIdsQuery(entityType, entityId);
+  if (!ownerQuery) return [];
+  const owners = await executeRows<{ owner_id: string }>(db, ownerQuery);
+  return owners.map((owner) => owner.owner_id);
+}
+
+/**
+ * Resolve recipients for a comment event: the owner of the commented item, and
+ * for a reply the author of the comment it answers.
+ *
+ * Since #6356 an item's owner reads every comment on it, so every owned item
+ * notifies its owner (#6385). The worker still checks each recipient, and a
+ * private commenter passes for the owner because the owner may read them.
  */
 export async function resolveCommentRecipients(
   entityType: string,
@@ -35,26 +69,16 @@ export async function resolveCommentRecipients(
     }
   }
 
-  // Notify the entity owner
-  if (entityType === 'tick') {
-    const [tick] = await db
-      .select({ userId: dbSchema.boardseshTicks.userId })
-      .from(dbSchema.boardseshTicks)
-      .where(eq(dbSchema.boardseshTicks.uuid, entityId))
-      .limit(1);
-
-    if (tick) {
-      recipients.push({
-        recipientId: tick.userId,
-        notificationType: 'comment_on_tick',
-      });
+  // Notify the item's owner(s)
+  const ownerNotificationType = COMMENT_ON_OWNED_ITEM.get(entityType);
+  if (ownerNotificationType) {
+    for (const ownerId of await resolveEntityOwnerIds(entityType, entityId)) {
+      recipients.push({ recipientId: ownerId, notificationType: ownerNotificationType });
     }
   }
 
-  // For climb comments, we don't have a single owner to notify
-  // (climbs are set by Aurora users, not boardsesh users)
-
-  // Deduplicate: if the parent comment author IS the tick owner, only send one notification
+  // One notification per person: a reply to the owner's own comment reaches
+  // them once, as the reply. The commenter is dropped later, by the writer.
   const seen = new Set<string>();
   return recipients.filter((r) => {
     if (seen.has(r.recipientId)) return false;

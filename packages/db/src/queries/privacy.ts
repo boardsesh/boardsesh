@@ -56,17 +56,87 @@ export function playlistClimbEntityClimbUuid(entityIdColumn: SQLWrapper): SQL<st
 }
 
 /**
- * Whether the viewer owns the item a comment, like or notification is about:
- * the tick's climber, the session's host, the climb's setter, the playlist's
- * owner, the comment's author, the board's or gym's owner. An owner sees every
- * comment and like on their own item, whatever the commenter's account privacy.
- * A deleted board or gym has no owner here, and an unknown entity type has none
- * at all.
+ * Where one kind of item keeps its owner: the aliased table(s) holding it, the
+ * match on its id (plus any rule that leaves it ownerless, such as a soft
+ * delete or a non-owner role), and the column naming the owner.
+ */
+type EntityOwnerSource = {
+  from: SQL;
+  item: (entityId: SQLWrapper) => SQL;
+  owner: SQL;
+};
+
+/**
+ * The one definition of who owns an item a comment, like or notification is
+ * about: the tick's climber, the session's host, the climb's setter (its
+ * Boardsesh `user_id`), the playlist's owner, the comment's author, the board's
+ * or gym's owner. A deleted board or gym has no owner here, and a type missing
+ * from this table (a proposal, `beta`, anything unknown) has none at all.
+ *
+ * {@link entityOwnerCondition} asks it "does the viewer own this?" inside a
+ * read, and {@link entityOwnerIdsQuery} asks it "who owns this?" when a new
+ * comment needs its recipients. Both read the same rows, so the owner who may
+ * read every comment on an item and the owner told about a new one cannot
+ * drift apart.
  *
  * A proposal has no owner. It is moderation on someone else's climb: its
  * proposer reads other people's comments on it and hears about its votes and
  * outcome by the same account rule as everyone else: a private moderator, voter
  * or later reporter is named to them only if they follow that account.
+ */
+const ENTITY_OWNER_SOURCES = {
+  tick: {
+    from: sql`boardsesh_ticks owner_tick`,
+    item: (entityId) => sql`owner_tick.uuid = ${entityId}`,
+    owner: sql`owner_tick.user_id`,
+  },
+  session: {
+    from: sql`board_sessions owner_session`,
+    item: (entityId) => sql`owner_session.id = ${entityId}`,
+    owner: sql`owner_session.created_by_user_id`,
+  },
+  climb: {
+    from: sql`board_climbs owner_climb`,
+    item: (entityId) => sql`owner_climb.uuid = ${entityId}`,
+    owner: sql`owner_climb.user_id`,
+  },
+  playlist_climb: {
+    from: sql`playlists owner_playlist
+      JOIN playlist_ownership owner_playlist_role ON owner_playlist_role.playlist_id = owner_playlist.id`,
+    item: (entityId) =>
+      sql`owner_playlist.uuid = ${playlistClimbEntityPlaylistUuid(entityId)} AND owner_playlist_role.role = 'owner'`,
+    owner: sql`owner_playlist_role.user_id`,
+  },
+  comment: {
+    from: sql`comments owner_comment`,
+    item: (entityId) => sql`owner_comment.uuid = ${entityId}`,
+    owner: sql`owner_comment.user_id`,
+  },
+  board: {
+    from: sql`user_boards owner_board`,
+    item: (entityId) => sql`owner_board.uuid = ${entityId} AND owner_board.deleted_at IS NULL`,
+    owner: sql`owner_board.owner_id`,
+  },
+  gym: {
+    from: sql`gyms owner_gym`,
+    item: (entityId) => sql`owner_gym.uuid = ${entityId} AND owner_gym.deleted_at IS NULL`,
+    owner: sql`owner_gym.owner_id`,
+  },
+} satisfies Record<string, EntityOwnerSource>;
+
+/** An entity type that has an owner in {@link ENTITY_OWNER_SOURCES}. */
+export type OwnedEntityType = keyof typeof ENTITY_OWNER_SOURCES;
+
+const OWNED_ENTITY_TYPES = Object.keys(ENTITY_OWNER_SOURCES) as OwnedEntityType[];
+
+function isOwnedEntityType(entityType: string): entityType is OwnedEntityType {
+  return Object.hasOwn(ENTITY_OWNER_SOURCES, entityType);
+}
+
+/**
+ * Whether the viewer owns the item a comment, like or notification is about
+ * (see {@link ENTITY_OWNER_SOURCES}). An owner sees every comment and like on
+ * their own item, whatever the commenter's account privacy.
  *
  * The entity type is compared as text: social columns are enums, and callers
  * also pass the non-social types `content_privacy` covers (which own nothing).
@@ -77,26 +147,30 @@ export function entityOwnerCondition(
   viewerId: ViewerId,
 ): SQL<boolean> {
   if (!viewerId) return sql<boolean>`false`;
+  // The type names are this module's own constants, so they go in as literals:
+  // the CASE reads exactly as it did when it was written out by hand.
+  const ownerCases = OWNED_ENTITY_TYPES.map((ownedType) => {
+    const source = ENTITY_OWNER_SOURCES[ownedType];
+    return sql`WHEN ${sql.raw(`'${ownedType}'`)} THEN EXISTS (SELECT 1 FROM ${source.from}
+      WHERE ${source.item(entityIdColumn)} AND ${source.owner} = ${viewerId})`;
+  });
   return sql<boolean>`COALESCE(CASE (${entityType})::text
-    WHEN 'tick' THEN EXISTS (SELECT 1 FROM boardsesh_ticks owner_tick
-      WHERE owner_tick.uuid = ${entityIdColumn} AND owner_tick.user_id = ${viewerId})
-    WHEN 'session' THEN EXISTS (SELECT 1 FROM board_sessions owner_session
-      WHERE owner_session.id = ${entityIdColumn} AND owner_session.created_by_user_id = ${viewerId})
-    WHEN 'climb' THEN EXISTS (SELECT 1 FROM board_climbs owner_climb
-      WHERE owner_climb.uuid = ${entityIdColumn} AND owner_climb.user_id = ${viewerId})
-    WHEN 'playlist_climb' THEN EXISTS (SELECT 1 FROM playlists owner_playlist
-      JOIN playlist_ownership owner_playlist_role ON owner_playlist_role.playlist_id = owner_playlist.id
-      WHERE owner_playlist.uuid = ${playlistClimbEntityPlaylistUuid(entityIdColumn)}
-        AND owner_playlist_role.user_id = ${viewerId} AND owner_playlist_role.role = 'owner')
-    WHEN 'comment' THEN EXISTS (SELECT 1 FROM comments owner_comment
-      WHERE owner_comment.uuid = ${entityIdColumn} AND owner_comment.user_id = ${viewerId})
-    WHEN 'board' THEN EXISTS (SELECT 1 FROM user_boards owner_board
-      WHERE owner_board.uuid = ${entityIdColumn} AND owner_board.owner_id = ${viewerId}
-        AND owner_board.deleted_at IS NULL)
-    WHEN 'gym' THEN EXISTS (SELECT 1 FROM gyms owner_gym
-      WHERE owner_gym.uuid = ${entityIdColumn} AND owner_gym.owner_id = ${viewerId}
-        AND owner_gym.deleted_at IS NULL)
+    ${sql.join(ownerCases, sql`\n    `)}
     ELSE false END, false)`;
+}
+
+/**
+ * The owners of one item, as a query returning `owner_id` rows (usually one,
+ * none for an ownerless item; a playlist can name more than one owner). Null for
+ * a type that has no owner, such as a proposal. The same rows
+ * {@link entityOwnerCondition} admits, so a notification goes exactly to the
+ * people the privacy rule treats as the item's owner.
+ */
+export function entityOwnerIdsQuery(entityType: string, entityId: string): SQL | null {
+  if (!isOwnedEntityType(entityType)) return null;
+  const source = ENTITY_OWNER_SOURCES[entityType];
+  return sql`SELECT DISTINCT ${source.owner} AS owner_id FROM ${source.from}
+    WHERE ${source.item(sql`${entityId}`)} AND ${source.owner} IS NOT NULL`;
 }
 
 export function resourceAccessCondition(
