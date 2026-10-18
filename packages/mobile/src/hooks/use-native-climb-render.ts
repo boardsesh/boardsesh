@@ -74,7 +74,6 @@ import {
   DEFAULT_HOLD_BRUSH_THICKNESS,
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
-  buildHoldColorOverrideSignature,
   buildHoldRenderOverrideSignature,
   resolveHoldStateMarker,
   useHoldColorOverrides,
@@ -101,6 +100,13 @@ import {
   setBoardseshSupportProbe,
   subscribeToBoardseshSupport,
 } from './boardsesh-renderer-support';
+import {
+  getUnsupportedSignatureRevision,
+  isRenderSignatureUnsupported,
+  markRenderSignatureUnsupported,
+  resolveEffectiveRenderOverrides,
+  subscribeToUnsupportedSignatures,
+} from './marker-renderer-support';
 import { getPlayOverlayWidth } from '../lib/board-render/play-board-prewarm';
 import { isBoardArtInMemory } from '../lib/board-render/board-art-memory-index';
 import {
@@ -403,35 +409,6 @@ function isExactNativeRender(
 const inflightRenders = new Map<string, Promise<RenderedOverlayEntry>>();
 const INFLIGHT_RENDERS_MAX = 50;
 
-// Render signatures the installed renderer told us it cannot honour (an old
-// native binary that predates marker support throws
-// MARKER_RENDERER_UNAVAILABLE_MESSAGE). Module-scoped: one refusal is a
-// property of the binary, not of the climb, so every hook instance learns from
-// it. `unsupportedSignatureRevision` is the useSyncExternalStore tick — without
-// it a Set mutated inside a promise catch would never reach the components that
-// have to re-resolve which overrides they can still ask for.
-const unsupportedRenderSignatures = new Set<string>();
-const unsupportedSignatureListeners = new Set<() => void>();
-let unsupportedSignatureRevision = 0;
-
-function markRenderSignatureUnsupported(renderSignature: string): void {
-  if (unsupportedRenderSignatures.has(renderSignature)) return;
-  unsupportedRenderSignatures.add(renderSignature);
-  unsupportedSignatureRevision += 1;
-  for (const listener of unsupportedSignatureListeners) listener();
-}
-
-function subscribeToUnsupportedSignatures(onStoreChange: () => void): () => void {
-  unsupportedSignatureListeners.add(onStoreChange);
-  return () => {
-    unsupportedSignatureListeners.delete(onStoreChange);
-  };
-}
-
-function getUnsupportedSignatureRevision(): number {
-  return unsupportedSignatureRevision;
-}
-
 // ── Boardsesh render-mode capability (issue #2202) ─────────────────────────
 // Separate from `unsupportedRenderSignatures` on purpose. A marker refusal is
 // about ONE signature and degrades that signature's geometry; a Boardsesh
@@ -495,66 +472,7 @@ export function ensureBoardseshSupportProbed(): void {
 
 export const _BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE;
 
-const EMPTY_HOLD_COLOR_OVERRIDES: HoldColorOverrides = {};
-const EMPTY_HOLD_SHAPE_OVERRIDES: HoldShapeOverrides = {};
-
-/** The override set the installed renderer can actually draw, plus its signature. */
-export type EffectiveRenderOverrides = {
-  signature: string;
-  colors: HoldColorOverrides;
-  shapes: HoldShapeOverrides;
-  brushThickness: number;
-  shapeSize: number;
-};
-
-/**
- * Pick the richest override set the renderer has not refused.
- *
- * A refusal is about marker GEOMETRY — shape, size, brush — which only the
- * marker-aware binaries draw. Colours are honoured by every binary ever
- * shipped, so the fallback keeps them and drops the geometry, rather than
- * dropping the overlay entirely. Before issue #4495 the caller simply stopped
- * rendering on a refused signature, so one unsupported setting blanked the
- * holds on every climb — the opposite of the "falls back to default rendering"
- * this code has always claimed.
- *
- * The signature must stay in lock-step with the overrides it describes: it is
- * the cache key, so returning a degraded config under the full signature would
- * persist wrong pixels under a key a capable renderer later reuses.
- */
-export function resolveEffectiveRenderOverrides(
-  colors: HoldColorOverrides,
-  shapes: HoldShapeOverrides,
-  brushThickness: number,
-  shapeSize: number,
-  renderSignature: string,
-): EffectiveRenderOverrides {
-  if (!unsupportedRenderSignatures.has(renderSignature)) {
-    return { signature: renderSignature, colors, shapes, brushThickness, shapeSize };
-  }
-
-  const colorSignature = buildHoldColorOverrideSignature(colors);
-  if (colorSignature !== renderSignature && !unsupportedRenderSignatures.has(colorSignature)) {
-    return {
-      signature: colorSignature,
-      colors,
-      shapes: EMPTY_HOLD_SHAPE_OVERRIDES,
-      brushThickness: DEFAULT_HOLD_BRUSH_THICKNESS,
-      shapeSize: DEFAULT_HOLD_SHAPE_SIZE,
-    };
-  }
-
-  // Colours alone were refused too (or there were none to keep). Fall all the
-  // way back to the board's own palette — DEFAULT_HOLD_COLOR_SIGNATURE is never
-  // recorded as unsupported, so this always renders something.
-  return {
-    signature: DEFAULT_HOLD_COLOR_SIGNATURE,
-    colors: EMPTY_HOLD_COLOR_OVERRIDES,
-    shapes: EMPTY_HOLD_SHAPE_OVERRIDES,
-    brushThickness: DEFAULT_HOLD_BRUSH_THICKNESS,
-    shapeSize: DEFAULT_HOLD_SHAPE_SIZE,
-  };
-}
+export { resolveEffectiveRenderOverrides, type EffectiveRenderOverrides } from './marker-renderer-support';
 
 // FIFO, keyed on getBoardConfig's `configKey` — board identity, style, width and
 // the render signature. Sized so a screen full of preview cards can never evict
@@ -1170,7 +1088,7 @@ export { _renderedOverlaysForTests };
 export const _cacheRenderedOverlayForTests = cacheRenderedOverlay;
 export const _getRenderedOverlayForTests = getRenderedOverlay;
 export const _invalidateRenderedOverlayForTests = invalidateRenderedOverlay;
-export const _unsupportedRenderSignaturesForTests = unsupportedRenderSignatures;
+export { _unsupportedRenderSignaturesForTests } from './marker-renderer-support';
 export const _markRenderSignatureUnsupportedForTests = markRenderSignatureUnsupported;
 export const _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = MARKER_RENDERER_UNAVAILABLE_MESSAGE;
 
@@ -2384,7 +2302,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effectiveOverrideSignature has already stepped away from anything the
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
-    if (!flatFrames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
+    if (!flatFrames || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
 
     // The lit placement ids the renderer will actually draw, parsed ONCE: the
     // hold-match check right below needs them, and so does the Aura outline

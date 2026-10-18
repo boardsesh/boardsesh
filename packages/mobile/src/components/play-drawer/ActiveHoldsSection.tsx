@@ -9,9 +9,9 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Text } from '../Text';
 import { useBoardRenderMode } from '../../hooks/use-board-render-look';
+import { useEffectiveHoldMarkers } from '../../hooks/marker-renderer-support';
 import {
   resolveHoldStateMarker,
-  useHoldColorOverrides,
   type HoldColorOverrides,
   type HoldMarkerShape,
   type HoldShapeOverrides,
@@ -121,7 +121,9 @@ export type ActiveHoldsRow = ActiveHoldsGroup & {
 /** The climb's holds by role, each with the marker the board draws for it. */
 function useActiveHoldsRows(boardName: BoardName, layoutId: number, frames: string): ActiveHoldsRow[] {
   const { t } = useTranslation('climbs');
-  const { overrides: colorOverrides, shapes: shapeOverrides } = useHoldColorOverrides();
+  // The colours and shapes the board actually draws: an older renderer that
+  // refuses marker shapes drops them on the board, and so here.
+  const { colors: colorOverrides, shapes: shapeOverrides } = useEffectiveHoldMarkers();
   const look = useBoardRenderMode(boardName, layoutId);
   const summary = useMemo(() => summarizeActiveHolds(boardName, frames), [boardName, frames]);
   const startLabel = t('mobile.create.brush.start');

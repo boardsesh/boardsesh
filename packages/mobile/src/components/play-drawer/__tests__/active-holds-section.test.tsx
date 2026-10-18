@@ -13,6 +13,8 @@ const harness = vi.hoisted(() => ({
   look: { mode: 'aura' as 'aura' | 'classic', roleGlyphs: false },
   colors: {} as HoldColorOverrides,
   shapes: {} as HoldShapeOverrides,
+  // The stored marker signature, as the board's renderer is asked for it.
+  renderSignature: 'stored-markers',
   // Each View's onLayout by testID, so a case can play the layout pass.
   layouts: new Map<string, (event: { nativeEvent: { layout: { width: number } } }) => void>(),
   spokenSummary: undefined as string | undefined,
@@ -93,12 +95,20 @@ vi.mock('../../../hooks/use-board-render-look', () => ({ useBoardRenderMode: () 
 // Real colour and shape rules; only the climber's stored choices are faked.
 vi.mock('../../../lib/hold-color-overrides', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/hold-color-overrides')>()),
-  useHoldColorOverrides: () => ({ overrides: harness.colors, shapes: harness.shapes }),
+  useHoldColorOverrides: () => ({
+    overrides: harness.colors,
+    shapes: harness.shapes,
+    brushThickness: 1,
+    shapeSize: 1,
+    renderSignature: harness.renderSignature,
+  }),
 }));
 
 const { ActiveHoldsSection, markerChipColor, markerGlyph } = await import('../ActiveHoldsSection');
 const { PlaybackFrameContext } = await import('../playback-frame-context');
 const { _resetActiveHoldsLineMemoryForTests } = await import('../active-holds-line');
+const { _unsupportedRenderSignaturesForTests, markRenderSignatureUnsupported } =
+  await import('../../../hooks/marker-renderer-support');
 
 function moonHold(coordinate: MoonBoardCoordinate, roleCode: number): string {
   return `p${coordinateToHoldId(coordinate)}r${roleCode}`;
@@ -145,6 +155,8 @@ beforeEach(() => {
   harness.look = { mode: 'aura', roleGlyphs: false };
   harness.colors = {};
   harness.shapes = {};
+  harness.renderSignature = 'stored-markers';
+  _unsupportedRenderSignaturesForTests.clear();
   harness.layouts.clear();
   harness.spokenSummary = undefined;
   _resetActiveHoldsLineMemoryForTests();
@@ -273,6 +285,18 @@ describe('ActiveHoldsSection', () => {
       expect(markerOf(view, 'HAND').textContent).toBe('┃');
       expect(markerOf(view, 'FINISH').textContent).toBe('✕');
       expect(markerOf(view, 'FOOT').textContent).toBe('○');
+    });
+
+    it('drops the shapes an older renderer refuses, as the board does, and keeps the colours', () => {
+      harness.look = { mode: 'classic', roleGlyphs: false };
+      harness.shapes = SHAPES;
+      harness.colors = { FINISH: '#123456' };
+      const view = renderSection('moonboard', MOON_ALL_ROLES);
+      expect(markerOf(view, 'STARTING').textContent).toBe('▲');
+      // The renderer refuses the climber's marker signature after the line drew.
+      act(() => markRenderSignatureUnsupported('stored-markers'));
+      for (const role of ['STARTING', 'HAND', 'FINISH', 'FOOT']) expect(markerOf(view, role).textContent).toBe('●');
+      expect(markerOf(view, 'FINISH').getAttribute('data-color')).toBe('#123456');
     });
 
     it('picks the glyph from the mode alone', () => {
