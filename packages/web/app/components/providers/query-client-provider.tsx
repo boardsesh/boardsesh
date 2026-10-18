@@ -4,7 +4,6 @@ import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'rea
 import { QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
-import { PrivacySyncBridge } from './privacy-sync-bridge';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 
@@ -50,7 +49,6 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
       <SessionCacheBuster persister={persister} sessionUserId={sessionUserId} />
-      <PrivacySyncBridge persister={persister} />
       {children}
     </PersistQueryClientProvider>
   );
