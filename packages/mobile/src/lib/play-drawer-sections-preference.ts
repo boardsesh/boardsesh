@@ -10,8 +10,13 @@ import {
   type SectionMoveDirection,
 } from './section-layout';
 
-/** The sections below the fold: each has a switch and a place in the climber's order. */
+/**
+ * The sections below the fold: each has a switch and a place in the climber's
+ * order. Active holds (#6290) leads the default order but starts switched off,
+ * so the drawer opens as it always has; switched on, it is the peek at the fold.
+ */
 export const BELOW_FOLD_SECTION_IDS = [
+  'activeHolds',
   'logbook',
   'climberLogs',
   'setterNotes',
@@ -27,6 +32,9 @@ export type PlayDrawerSectionId = (typeof PLAY_DRAWER_SECTION_IDS)[number];
 export type PlayDrawerSectionsVisibility = Readonly<Record<PlayDrawerSectionId, boolean>>;
 
 export const DEFAULT_PLAY_DRAWER_SECTIONS: PlayDrawerSectionsVisibility = Object.freeze({
+  // Off, so the drawer looks as it always has until the climber asks for it.
+  // A record saved before it existed has no key for it and reads as off.
+  activeHolds: false,
   logbook: true,
   climberLogs: true,
   setterNotes: true,

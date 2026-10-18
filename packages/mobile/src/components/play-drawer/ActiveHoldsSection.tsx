@@ -1,0 +1,306 @@
+import { memo, useMemo } from 'react';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE, type BoardRenderMode } from '@boardsesh/board-constants/hold-states';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { summarizeActiveHolds, type ActiveHoldRole, type ActiveHoldsGroup } from '@boardsesh/play-view';
+import type { BoardName } from '@boardsesh/shared-schema';
+import { CollapsibleSection } from '../CollapsibleSection';
+import { Text } from '../Text';
+import { useBoardRenderMode } from '../../hooks/use-board-render-look';
+import {
+  resolveHoldStateMarker,
+  useHoldColorOverrides,
+  type HoldColorOverrides,
+  type HoldMarkerShape,
+  type HoldShapeOverrides,
+} from '../../lib/hold-color-overrides';
+import { useTheme } from '../../providers/theme-provider';
+import { borderRadius, spacing } from '../../theme/tokens';
+
+/**
+ * Classic marker shapes as text glyphs. The octagon is a hexagon (⬢): no Apple
+ * system font has the black octagon (U+2BC3), so iOS would draw a box.
+ */
+const SHAPE_GLYPHS: Readonly<Record<HoldMarkerShape, string>> = {
+  circle: '●',
+  'triangle-up': '▲',
+  'triangle-down': '▼',
+  square: '■',
+  diamond: '◆',
+  octagon: '⬢',
+};
+
+/** Aura's accessibility glyphs as text: start a level bar, hand an upright bar, finish an X, foot a ring. */
+const ROLE_GLYPHS: Readonly<Record<ActiveHoldRole, string>> = {
+  STARTING: '━',
+  HAND: '┃',
+  FINISH: '✕',
+  FOOT: '○',
+};
+
+/** The least contrast a marker needs against its chip (WCAG 1.4.11, graphical objects). */
+const MARKER_MIN_CONTRAST = 3;
+
+export type ActiveHoldMarker = { color: string; glyph: string; chipColor: string };
+
+/**
+ * The glyph the board draws for a role. Classic draws the climber's marker
+ * shape; Aura ignores shapes and draws a filled glow, or the role's
+ * accessibility glyph when the climber turned those on.
+ */
+export function markerGlyph(
+  role: ActiveHoldRole,
+  shape: HoldMarkerShape,
+  look: { mode: BoardRenderMode; roleGlyphs: boolean },
+): string {
+  if (look.mode === 'classic') return SHAPE_GLYPHS[shape];
+  return look.roleGlyphs ? ROLE_GLYPHS[role] : SHAPE_GLYPHS.circle;
+}
+
+/**
+ * The chip a marker sits on, so it reads on a light or a dark sheet alike: the
+ * dark field the Aura board art sits on, where every default role colour
+ * reaches 3:1, or the light field for a colour that does not (a classic dark
+ * blue, a dark colour the climber picked). One of the two always clears 4:1.
+ */
+export function markerChipColor(markerColor: string): string {
+  const onDarkField = contrastRatio(markerColor, BOARD_FIELD_COLORS.dark);
+  return onDarkField === null || onDarkField >= MARKER_MIN_CONTRAST
+    ? BOARD_FIELD_COLORS.dark
+    : BOARD_FIELD_COLORS.light;
+}
+
+/**
+ * A role's marker on this board: its canonical code's colour under the board's
+ * render mode, then the climber's colour, and the glyph the board draws. A
+ * role without a canonical code (MoonBoard's live-preview foot) takes its first
+ * code. Every code of a role shares one marker, so Kilter's Tycho colours
+ * (36–41) and MoonBoard's preview hand colours (47, 48) all show as Hand.
+ */
+function roleMarker(
+  boardName: BoardName,
+  role: ActiveHoldRole,
+  look: { mode: BoardRenderMode; roleGlyphs: boolean },
+  colorOverrides: HoldColorOverrides,
+  shapeOverrides: HoldShapeOverrides,
+): ActiveHoldMarker | null {
+  const stateMap = HOLD_STATE_MAP[boardName];
+  const primaryCode = STATE_TO_PRIMARY_CODE[boardName]?.[role];
+  const stateInfo =
+    (primaryCode === undefined ? undefined : stateMap?.[primaryCode]) ??
+    Object.values(stateMap ?? {}).find((candidate) => candidate.name === role);
+  if (!stateInfo) return null;
+  const { color, shape } = resolveHoldStateMarker(stateInfo, look.mode, colorOverrides, shapeOverrides);
+  return { color, glyph: markerGlyph(role, shape, look), chipColor: markerChipColor(color) };
+}
+
+export type ActiveHoldsRow = ActiveHoldsGroup & {
+  roleName: string;
+  /** The holds as read out: coordinates joined by commas, or the count. */
+  spokenHolds: string;
+  marker: ActiveHoldMarker | null;
+};
+
+/** The climb's holds by role, each with the marker the board draws for it. */
+function useActiveHoldsRows(boardName: BoardName, layoutId: number, frames: string): ActiveHoldsRow[] {
+  const { t } = useTranslation('climbs');
+  const { overrides: colorOverrides, shapes: shapeOverrides } = useHoldColorOverrides();
+  const look = useBoardRenderMode(boardName, layoutId);
+  const summary = useMemo(() => summarizeActiveHolds(boardName, frames), [boardName, frames]);
+  const startLabel = t('mobile.create.brush.start');
+  const handLabel = t('mobile.create.brush.hand');
+  const finishLabel = t('mobile.create.brush.finish');
+  const footLabel = t('mobile.create.brush.foot');
+  return useMemo(() => {
+    const roleNames: Record<ActiveHoldRole, string> = {
+      STARTING: startLabel,
+      HAND: handLabel,
+      FINISH: finishLabel,
+      FOOT: footLabel,
+    };
+    return summary.groups.map((group) => ({
+      ...group,
+      roleName: roleNames[group.role],
+      spokenHolds: group.labels ? group.labels.join(', ') : String(group.count),
+      marker: roleMarker(boardName, group.role, look, colorOverrides, shapeOverrides),
+    }));
+  }, [summary, boardName, look, colorOverrides, shapeOverrides, startLabel, handLabel, finishLabel, footLabel]);
+}
+
+/** A role's glyph in its board colour, on a chip that keeps it readable on either theme. */
+const MarkerChip = memo(function MarkerChip({ marker, size }: { marker: ActiveHoldMarker; size: number }) {
+  return (
+    <View
+      style={[styles.chip, { width: size, height: size, backgroundColor: marker.chipColor }]}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+    >
+      <Text variant="caption2" color={marker.color} style={styles.glyph}>
+        {marker.glyph}
+      </Text>
+    </View>
+  );
+});
+
+/** A chip as tall as a line of footnote text, growing with the climber's text size. */
+function useChipSize(): number {
+  const { textStyles } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  return Math.round((textStyles.footnote.lineHeight ?? textStyles.footnote.fontSize ?? 0) * fontScale);
+}
+
+/**
+ * The collapsed line: each role's marker, then its coordinates or its count
+ * (`● I4 ● G8 K10 G12 D14 F14 ● F18`, or `● 2 ● 7 ● 1 ● 5`). When the line runs
+ * out of room, only the role with the most holds is cut short, so the start and
+ * the finish stay in view.
+ */
+export const ActiveHoldsLine = memo(function ActiveHoldsLine({ rows }: { rows: readonly ActiveHoldsRow[] }) {
+  const { systemColors } = useTheme();
+  const chipSize = useChipSize();
+  const longestRole = rows.reduce<ActiveHoldsRow | null>(
+    (longest, row) => ((row.labels?.length ?? 0) > (longest?.labels?.length ?? 0) ? row : longest),
+    null,
+  )?.role;
+  return (
+    <View style={styles.line} testID="active-holds-line">
+      {rows.map((row) => (
+        <View key={row.role} style={[styles.lineGroup, row.role === longestRole && styles.lineGroupShrinks]}>
+          {row.marker ? <MarkerChip marker={row.marker} size={chipSize} /> : null}
+          <Text
+            variant="footnote"
+            numeric
+            numberOfLines={1}
+            color={systemColors.secondaryLabel}
+            style={styles.lineHolds}
+          >
+            {row.labels ? row.labels.join(' ') : String(row.count)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+});
+
+/** One row a role: its marker, its name, then the coordinates or the count. */
+const ActiveHoldsList = memo(function ActiveHoldsList({ rows }: { rows: readonly ActiveHoldsRow[] }) {
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+  const chipSize = useChipSize();
+  if (rows.length === 0) {
+    return (
+      <Text variant="subheadline" color={systemColors.secondaryLabel}>
+        {t('mobile.activeHolds.empty')}
+      </Text>
+    );
+  }
+  return (
+    <View style={styles.list}>
+      {rows.map((row) => (
+        <View
+          key={row.role}
+          style={styles.row}
+          accessible
+          accessibilityLabel={t('mobile.activeHolds.a11yGroup', { role: row.roleName, holds: row.spokenHolds })}
+          testID={`active-holds-row-${row.role}`}
+        >
+          {row.marker ? <MarkerChip marker={row.marker} size={chipSize} /> : null}
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.roleName}>
+            {row.roleName}
+          </Text>
+          <Text variant="subheadline" numeric style={styles.holds}>
+            {row.labels ? row.labels.join(' ') : String(row.count)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+});
+
+type ActiveHoldsSectionProps = {
+  /** The board the displayed climb is drawn on. */
+  boardName: BoardName;
+  layoutId: number;
+  /** What the board paints: the playback frame for an animated climb, else the climb's frames. */
+  frames: string;
+  onHeaderLayout?: (height: number) => void;
+  onToggle?: (expanded: boolean) => void;
+};
+
+/**
+ * The climb's holds by role, as a section below the climb. Collapsed (the peek
+ * at the fold, by default) it is one line; expanded, a row a role. MoonBoard
+ * lists wall coordinates bottom to top; boards with none on the wall show a
+ * count. It reads the frames the board already has: no state, no effects, no
+ * queries and no Bluetooth.
+ */
+export const ActiveHoldsSection = memo(function ActiveHoldsSection({
+  boardName,
+  layoutId,
+  frames,
+  onHeaderLayout,
+  onToggle,
+}: ActiveHoldsSectionProps) {
+  const { t } = useTranslation('climbs');
+  const rows = useActiveHoldsRows(boardName, layoutId, frames);
+  return (
+    <CollapsibleSection
+      title={t('mobile.activeHolds.title')}
+      summary={rows.length > 0 ? <ActiveHoldsLine rows={rows} /> : null}
+      persistKey="activeHolds"
+      onHeaderLayout={onHeaderLayout}
+      onToggle={onToggle}
+    >
+      <ActiveHoldsList rows={rows} />
+    </CollapsibleSection>
+  );
+});
+
+const styles = StyleSheet.create({
+  chip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.sm,
+  },
+  glyph: {
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  // Shrinks to the slot; whatever still does not fit is clipped at the end.
+  line: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flexShrink: 1,
+    maxWidth: '100%',
+    overflow: 'hidden',
+  },
+  lineGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    flexShrink: 0,
+  },
+  lineGroupShrinks: {
+    flexShrink: 1,
+  },
+  lineHolds: {
+    flexShrink: 1,
+  },
+  list: {
+    gap: spacing[2],
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  roleName: {
+    minWidth: 56,
+  },
+  holds: {
+    flex: 1,
+  },
+});

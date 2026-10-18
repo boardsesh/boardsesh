@@ -21,7 +21,6 @@ import { RENDERER_VERSION } from './renderer-version';
 import {
   HOLD_STATE_MAP,
   getBoardStrokeWidthMultiplier,
-  getHoldDisplayColor,
   parseFramesSegments,
   toFlatFrames,
 } from '@boardsesh/board-constants/hold-states';
@@ -38,11 +37,10 @@ import {
   activeSprayArt,
   ensureSprayWallLoaded,
   getSprayWall,
-  sprayBoardRenderDefault,
   sprayCacheToken,
   subscribeToSprayWalls,
 } from '../lib/spray/spray-wall-registry';
-import { useSprayWallsUseOwnLook } from '../lib/spray-wall-look-preference';
+import { useBoardRenderDefault } from './use-board-render-look';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -78,8 +76,7 @@ import {
   DEFAULT_HOLD_SHAPE_SIZE,
   buildHoldColorOverrideSignature,
   buildHoldRenderOverrideSignature,
-  getEffectiveHoldStateColor,
-  getEffectiveHoldStateShape,
+  resolveHoldStateMarker,
   useHoldColorOverrides,
   type HoldColorOverrides,
   type HoldShapeOverrides,
@@ -87,7 +84,6 @@ import {
 import { buildAuraRenderFields } from '@boardsesh/board-look';
 import {
   boardFieldColorForScheme,
-  boardLookForRender,
   buildBoardRenderSignature,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
@@ -1604,18 +1600,19 @@ function getBoardConfig(
     const stateMap = HOLD_STATE_MAP[boardName];
     const holdStateMap: Record<number, { color: string; render_style?: string; shape?: string; role?: string }> = {};
     for (const [codeStr, stateInfo] of Object.entries(stateMap)) {
-      const shape = getEffectiveHoldStateShape(stateInfo.name, shapeOverrides);
       // The glyph vocabulary covers four roles; MoonBoard's AUX and the Tycho
       // colour-mode codes have no glyph and are left without a role rather than
       // handed one the renderer would draw wrong.
       const role = boardsesh && BOARDSESH_GLYPH_ROLES.has(stateInfo.name) ? stateInfo.name.toLowerCase() : undefined;
       // `colorOverrides` is the climber's own map on every real surface, and a
       // palette card's map on the colour-vision rail — substituted upstream, in
-      // the hook, so this point never has to know which it got.
-      const resolvedColor = getEffectiveHoldStateColor(
-        stateInfo.name,
-        getHoldDisplayColor(stateInfo, boardsesh ? 'aura' : 'classic'),
+      // the hook, so this point never has to know which it got. The active-holds
+      // line under the board resolves its markers through the same helper.
+      const { color: resolvedColor, shape } = resolveHoldStateMarker(
+        stateInfo,
+        boardsesh ? 'aura' : 'classic',
         colorOverrides,
+        shapeOverrides,
       );
       holdStateMap[Number(codeStr)] = {
         color: resolvedColor,
@@ -2012,22 +2009,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getBoardseshSupportRevision,
   );
   // The board's own stored look — a spray wall's, `null` for every catalogue
-  // board. It wins over the climber's own look unless they chose their own on
-  // spray walls. A preview card's bundle and a heatmap's mark override are
-  // asking for one specific drawing, so the wall's look never applies to them.
-  // Its own subscription rather than a ride on `sprayVersionToken` below: that
-  // token only moves with the wall's VERSION, and a look stored without a reset
-  // would never reach a surface mounted before it. The registry keeps an
-  // unchanged look's identity across re-registrations, so a revalidation costs
-  // no re-resolve.
-  const storedBoardLook = useSyncExternalStore(
-    subscribeToSprayWalls,
-    useCallback(() => sprayBoardRenderDefault(boardName, layoutId), [boardName, layoutId]),
-  );
-  const useOwnLookOnSprayWalls = useSprayWallsUseOwnLook();
-  const boardRenderDefault = boardLookForRender({
-    storedLook: storedBoardLook,
-    useOwnLook: useOwnLookOnSprayWalls,
+  // board. A preview card's bundle and a heatmap's mark override are asking for
+  // one specific drawing, so the wall's look never applies to them.
+  const boardRenderDefault = useBoardRenderDefault(boardName, layoutId, {
     hasSettingsOverride: renderSettingsOverride !== undefined,
     hasMarkStyleOverride: markStyleOverride !== undefined,
   });

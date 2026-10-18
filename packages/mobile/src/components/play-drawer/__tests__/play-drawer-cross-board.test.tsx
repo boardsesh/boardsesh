@@ -69,8 +69,12 @@ const navigation = vi.hoisted(() => ({
   },
 }));
 
+// What the playback hook reports: a static climb unless a case animates one.
+const playbackState = vi.hoisted(() => ({ isAnimatable: false, currentFrameString: '' }));
+
 const drawerSections = vi.hoisted(() => ({
   defaults: {
+    activeHolds: false,
     logbook: true,
     climberLogs: true,
     setterNotes: true,
@@ -80,6 +84,7 @@ const drawerSections = vi.hoisted(() => ({
     similarClimbs: true,
   },
   sections: {
+    activeHolds: false,
     logbook: true,
     climberLogs: true,
     setterNotes: true,
@@ -91,7 +96,16 @@ const drawerSections = vi.hoisted(() => ({
   ready: true,
 }));
 vi.mock('../../../lib/play-drawer-sections-preference', () => {
-  const order = ['logbook', 'climberLogs', 'setterNotes', 'betaVideos', 'boardseshGrade', 'community', 'similarClimbs'];
+  const order = [
+    'activeHolds',
+    'logbook',
+    'climberLogs',
+    'setterNotes',
+    'betaVideos',
+    'boardseshGrade',
+    'community',
+    'similarClimbs',
+  ];
   return {
     DEFAULT_PLAY_DRAWER_SECTIONS: drawerSections.defaults,
     DEFAULT_PLAY_DRAWER_SECTION_ORDER: order,
@@ -387,7 +401,7 @@ vi.mock('../../../hooks/use-mounted-on-first-open', () => ({ useMountedOnFirstOp
 vi.mock('../use-mobile-playback', () => ({
   useMobilePlayback: (args: Props) => {
     recorded.playback.push(args);
-    return { isAnimatable: false };
+    return { ...playbackState };
   },
 }));
 vi.mock('../use-drawer-dismiss-gesture', () => ({
@@ -505,6 +519,8 @@ beforeEach(() => {
   recorded.sectionsSheet = [];
   recorded.actionsMenu = [];
   recorded.pinnedSheets.clear();
+  playbackState.isAnimatable = false;
+  playbackState.currentFrameString = '';
   platform.OS = 'web';
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
@@ -886,6 +902,7 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
 describe('PlayDrawer configurable sections', () => {
   function hideEverySection() {
     drawerSections.sections = {
+      activeHolds: false,
       logbook: false,
       climberLogs: false,
       setterNotes: false,
@@ -1032,6 +1049,77 @@ describe('PlayDrawer configurable sections', () => {
     expect(recorded.actionsMenu.at(-1)).toBeDefined();
     expect(recorded.actionBar.at(-1)).not.toHaveProperty('onEditSections');
     expect(recorded.actionBar.at(-1)).not.toHaveProperty('onOpenActions');
+  });
+});
+
+describe('PlayDrawer active holds section', () => {
+  function showOnlyActiveHolds() {
+    drawerSections.sections = {
+      activeHolds: true,
+      logbook: false,
+      climberLogs: false,
+      setterNotes: false,
+      betaVideos: false,
+      boardseshGrade: false,
+      community: false,
+      similarClimbs: false,
+    };
+  }
+  function lastActiveHoldsFrames(): unknown {
+    const props = recorded.deferredSections.at(-1);
+    if (!props) throw new Error('DeferredSections never rendered');
+    return props.activeHoldsFrames;
+  }
+
+  it('hands the sections no frames for it while it is switched off', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(lastActiveHoldsFrames()).toBeUndefined();
+  });
+
+  it('is the peek on its own, so the drawer scrolls to it, and reads the climb it shows', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    renderDrawer();
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
+    expect(recorded.deferredSections.at(-1)).toMatchObject({ boardName: 'kilter', layoutId: 8 });
+    expect(lastActiveHoldsFrames()).toBe(HOMEWALL_CLIMB.frames);
+  });
+
+  it('follows the board to the next climb', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    const nextClimb = { ...TWELVE_CLIMB, uuid: 'NEXT00000000000000000000000CCCC', frames: 'p1145r12p1146r14' };
+    queueState.currentClimbQueueItem = queueItem(nextClimb, 'queue-next');
+    rendered.rerender(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(lastActiveHoldsFrames()).toBe(nextClimb.frames);
+  });
+
+  it('reads the playback frame the board paints on an animated climb', () => {
+    showOnlyActiveHolds();
+    playbackState.isAnimatable = true;
+    playbackState.currentFrameString = 'p1145r12';
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(lastBoardProps().currentFrameOverride).toBe('p1145r12');
+    expect(lastActiveHoldsFrames()).toBe('p1145r12');
+  });
+
+  it('keeps the same frames when the climb is mirrored: the counts are the same either way', () => {
+    showOnlyActiveHolds();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    act(() => (recorded.actionBar.at(-1)?.onMirror as () => void)());
+    expect(lastBoardProps().mirrored).toBe(true);
+    expect(lastActiveHoldsFrames()).toBe(TWELVE_CLIMB.frames);
   });
 });
 

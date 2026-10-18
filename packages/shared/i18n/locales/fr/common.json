@@ -449,6 +449,7 @@
         "showAll": "Tout afficher",
         "restoreDefaults": "Rétablir les réglages par défaut",
         "sections": {
+          "activeHolds": "Prises actives",
           "logbook": "Carnet",
           "climberLogs": "Entrées des grimpeurs",
           "setterNotes": "Notes de l’ouvreur",

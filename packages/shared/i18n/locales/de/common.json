@@ -449,6 +449,7 @@
         "showAll": "Alles anzeigen",
         "restoreDefaults": "Standard wiederherstellen",
         "sections": {
+          "activeHolds": "Aktive Griffe",
           "logbook": "Routenbuch",
           "climberLogs": "Einträge von Kletterer*innen",
           "setterNotes": "Notizen vom Routenbau",

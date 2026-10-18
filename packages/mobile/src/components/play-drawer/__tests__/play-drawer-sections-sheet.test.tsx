@@ -9,6 +9,7 @@ import type {
 } from '../../../lib/play-drawer-sections-preference';
 
 const DEFAULT_ORDER: BelowFoldSectionId[] = [
+  'activeHolds',
   'logbook',
   'climberLogs',
   'setterNotes',
@@ -20,6 +21,7 @@ const DEFAULT_ORDER: BelowFoldSectionId[] = [
 
 const preferences = vi.hoisted(() => ({
   sections: {
+    activeHolds: false,
     logbook: true,
     climberLogs: true,
     setterNotes: true,
@@ -110,11 +112,22 @@ vi.mock('../../use-ios-sheet-background-style', () => ({
   useIosSheetBackgroundStyle: () => presentation.iosBackgroundStyle,
 }));
 vi.mock('../../../lib/play-drawer-sections-preference', () => {
-  const order = ['logbook', 'climberLogs', 'setterNotes', 'betaVideos', 'boardseshGrade', 'community', 'similarClimbs'];
+  const order = [
+    'activeHolds',
+    'logbook',
+    'climberLogs',
+    'setterNotes',
+    'betaVideos',
+    'boardseshGrade',
+    'community',
+    'similarClimbs',
+  ];
   return {
     PLAY_DRAWER_SECTION_IDS: order,
+    // Active holds starts off; every section below the climb starts on.
     isDefaultPlayDrawerLayout: ({ sections, order: current }: { sections: Record<string, boolean>; order: string[] }) =>
-      Object.values(sections).every(Boolean) && current.join() === order.join(),
+      Object.entries(sections).every(([sectionId, visible]) => visible === (sectionId !== 'activeHolds')) &&
+      current.join() === order.join(),
     usePlayDrawerSectionsPreference: () => preferences,
   };
 });
@@ -276,6 +289,7 @@ beforeEach(() => {
   presentation.platform = 'web';
   presentation.iosBackgroundStyle = undefined;
   preferences.sections = {
+    activeHolds: false,
     logbook: true,
     climberLogs: true,
     setterNotes: true,
@@ -351,12 +365,13 @@ describe('PlayDrawerSectionsSheet', () => {
       expect(button.getAttribute('data-style')).toContain('"width":"100%"');
       expect(button.parentElement?.getAttribute('data-style')).toContain('"flex":1');
     }
-    expect(screen.getAllByRole('switch')).toHaveLength(7);
+    expect(screen.getAllByRole('switch')).toHaveLength(8);
     expect(screen.container.querySelector('[data-sheet]')?.getAttribute('data-scrollable')).toBe('false');
     expect(screen.getByText('mobile.settings.climbDrawer.footer').closest('footer')).toBeTruthy();
   });
 
   it('disables redundant bulk actions and enables both for mixed choices', () => {
+    preferences.sections = { ...preferences.sections, activeHolds: true };
     const screen = render(sheet());
     const showAll = screen.getByTestId('play-drawer-sections-show-all') as HTMLButtonElement;
     const hideAll = screen.getByTestId('play-drawer-sections-hide-all') as HTMLButtonElement;
@@ -367,6 +382,7 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(showAll.disabled).toBe(false);
     expect(hideAll.disabled).toBe(false);
     preferences.sections = {
+      activeHolds: false,
       logbook: false,
       climberLogs: false,
       setterNotes: false,
@@ -406,19 +422,20 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(preferences.setAll).not.toHaveBeenCalled();
   });
 
-  it('lists the rows in the saved order, each with a pair of arrows', () => {
+  it('lists the rows in the saved order, Active holds among them, each with a pair of arrows', () => {
     preferences.order = ['similarClimbs', ...DEFAULT_ORDER.filter((sectionId) => sectionId !== 'similarClimbs')];
     const screen = render(sheet());
     expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual(
       preferences.order.map((sectionId) => `mobile.settings.climbDrawer.sections.${sectionId}`),
     );
-    expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(7);
-    expect(screen.container.querySelectorAll('[data-icon="arrow.down"]')).toHaveLength(7);
+    expect(screen.getByTestId('section-layout-move-up-activeHolds')).toBeTruthy();
+    expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(8);
+    expect(screen.container.querySelectorAll('[data-icon="arrow.down"]')).toHaveLength(8);
   });
 
   it('disables the arrows that would leave the list, and moves on the others', () => {
     const screen = render(sheet());
-    const firstUp = screen.getByTestId('section-layout-move-up-logbook') as HTMLButtonElement;
+    const firstUp = screen.getByTestId('section-layout-move-up-activeHolds') as HTMLButtonElement;
     const lastDown = screen.getByTestId('section-layout-move-down-similarClimbs') as HTMLButtonElement;
     expect(firstUp.disabled).toBe(true);
     expect(lastDown.disabled).toBe(true);
@@ -441,8 +458,16 @@ describe('PlayDrawerSectionsSheet', () => {
     );
     fireEvent.click(moveUp);
     expect(accessibility.announce).toHaveBeenCalledWith(
-      'mobile.settings.sectionLayout.moved {"section":"mobile.settings.climbDrawer.sections.community","position":5,"count":7}',
+      'mobile.settings.sectionLayout.moved {"section":"mobile.settings.climbDrawer.sections.community","position":6,"count":8}',
     );
+  });
+
+  it('switches Active holds on and off like any other section', () => {
+    const screen = render(sheet());
+    const activeHolds = screen.getByRole('switch', { name: 'mobile.settings.climbDrawer.sections.activeHolds' });
+    expect((activeHolds as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(activeHolds);
+    expect(preferences.setSection).toHaveBeenCalledWith('activeHolds', true);
   });
 
   it('offers Restore defaults under the list only once something differs from the defaults', () => {
@@ -450,7 +475,14 @@ describe('PlayDrawerSectionsSheet', () => {
     const restore = screen.getByTestId('play-drawer-sections-restore-defaults') as HTMLButtonElement;
     expect(restore.closest('footer')).toBeTruthy();
     expect(restore.disabled).toBe(true);
-    preferences.order = ['logbook', 'setterNotes', 'climberLogs', ...DEFAULT_ORDER.slice(3)];
+    // Active holds on is a change from the defaults too.
+    preferences.sections = { ...preferences.sections, activeHolds: true };
+    screen.rerender(sheet());
+    expect(restore.disabled).toBe(false);
+    preferences.sections = { ...preferences.sections, activeHolds: false };
+    screen.rerender(sheet());
+    expect(restore.disabled).toBe(true);
+    preferences.order = ['activeHolds', 'logbook', 'setterNotes', 'climberLogs', ...DEFAULT_ORDER.slice(4)];
     screen.rerender(sheet());
     expect(restore.disabled).toBe(false);
     fireEvent.click(restore);
@@ -459,7 +491,7 @@ describe('PlayDrawerSectionsSheet', () => {
 
   it('keeps the arrows and Restore defaults inert until preferences are ready', () => {
     preferences.ready = false;
-    preferences.order = ['similarClimbs', ...DEFAULT_ORDER.slice(0, 6)];
+    preferences.order = ['similarClimbs', ...DEFAULT_ORDER.slice(0, 7)];
     const screen = render(sheet());
     const arrows = [...screen.container.querySelectorAll('[data-testid^="section-layout-move"]')];
     expect(arrows.every((arrow) => (arrow as HTMLButtonElement).disabled)).toBe(true);

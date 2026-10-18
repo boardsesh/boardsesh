@@ -721,6 +721,7 @@
         "showAll": "Mostrar todo",
         "restoreDefaults": "Restablecer valores predeterminados",
         "sections": {
+          "activeHolds": "Presas activas",
           "logbook": "Logbook",
           "climberLogs": "Registros de escaladores",
           "setterNotes": "Notas del setter",

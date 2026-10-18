@@ -255,7 +255,7 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climbs & grades → Climb view and the player's ⋯ → View options use the same seven visibility
+Settings → Climbs & grades → Climb view and the player's ⋯ → View options use the same eight visibility
 switches, listed in the climber's order. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
@@ -279,7 +279,7 @@ account included, keeps the stored choices, because ⋯ → View options and Set
 Climbs & grades → Climb view both write them. These device-local choices use AsyncStorage (IndexedDB in
 the browser) and keep each section's existing expansion preference.
 
-The climber also orders the seven sections below the fold. Each sheet row carries ↑/↓
+The climber also orders the eight sections below the fold. Each sheet row carries ↑/↓
 arrows (44-point buttons named "Move Logbook up" and so on, disabled at the ends; a move
 announces the new place), drawn by the shared `SectionLayoutList`. A hidden section keeps
 its place, so showing it again puts it back. Restore defaults, under the list, brings back
@@ -300,8 +300,8 @@ for surfaces that must know it before the first frame: one store per key, the on
 that key, re-reading it on every settings change, and storing `null` for the defaults unless
 a later release's ids still need a home.
 
-Any section can be the peek at the fold, so each says something while collapsed: Logbook
-your ticks at this angle (plus crew and other angles), Climber logs the crew counts,
+Any section can be the peek at the fold, so each says something while collapsed: Active
+holds the climb's holds by role, Logbook your ticks at this angle (plus crew and other angles), Climber logs the crew counts,
 Setter's notes their first line, Beta Videos a count or "None yet", Boardsesh grade its
 grade, Community the angle with the most sends, Similar climbs the closest match by name
 (or that the board needs downloading). `CollapsibleSection`'s `summary` also takes a React
@@ -313,6 +313,25 @@ a Logbook peek keeps its head start.
 The sheet has two tabs, **Below the climb** (these sections) and **Buttons** (the player's buttons, Previous and
 next, and whether the controls sit below or above the board). The buttons, their layout rule, storage and the ⋯
 stand-ins are described in [climb-view-options.md](climb-view-options.md).
+
+**Active holds** (`activeHolds`, #6290) leads the default order and starts switched off, so
+the default drawer is unchanged; a record saved before it existed has no key for it and
+reads as off, and an order saved before it slots it in first. Switched on, it is the peek at
+the fold. Collapsed, its line (`ActiveHoldsLine`, a summary node) is each role's marker
+followed by its holds; expanded (`ActiveHoldsSection`), it is a row a role. MoonBoard shows coordinates bottom to top
+(`B5`); boards without coordinates on the wall show a count per role. Each role's marker
+matches the board: its colour and the climber's override through `resolveHoldStateMarker`
+(the helper the renderer's hold-state map uses), and its glyph from the board's look
+(`useBoardRenderMode` in `src/hooks/use-board-render-look.ts`): classic draws the climber's
+marker shape, Aura a dot, or the role glyph (bar, bar, ✕, ring) when role glyphs are on.
+Each marker sits on a chip in the board's dark field colour (`BOARD_FIELD_COLORS.dark`) in
+both themes, or the light field for a colour that is under 3:1 on the dark one, so every
+marker clears 3:1 on a light or a dark sheet. The summary is `summarizeActiveHolds` in
+`@boardsesh/play-view`. It reads frames only: no queries, no Bluetooth, nothing to wait
+for, so it draws as the peek at once. `PlayCore` hands it the frames the board paints (the
+playback frame on an animated climb) only while it is on, so a playback frame never
+re-renders the sections for nothing. A spray climb whose wall lost a hold still counts that
+hold, while the board draws one fewer.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.

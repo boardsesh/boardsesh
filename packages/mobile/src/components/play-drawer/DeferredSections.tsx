@@ -20,6 +20,7 @@ import { buildAngleGradeBars, type AngleGradeBar } from './community-utils';
 import { rankBySizeCompatibility } from './similar-climbs-utils';
 import { BetaVideosSection } from './BetaVideosSection';
 import { SetterNotesSection } from './SetterNotesSection';
+import { ActiveHoldsSection } from './ActiveHoldsSection';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -60,6 +61,8 @@ type DeferredSectionsProps = {
   sections?: PlayDrawerSectionsVisibility;
   /** The climber's order for the sections below the fold. */
   order?: readonly BelowFoldSectionId[];
+  /** What the board paints (the playback frame on an animated climb), for Active holds. Defaults to the climb's frames. */
+  activeHoldsFrames?: string;
   onSimilarClimbPress: (climb: Climb) => void;
   /** Reports the measured height of the first visible section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
@@ -177,6 +180,7 @@ export const DeferredSections = memo(function DeferredSections({
   contentEnabled,
   sections = DEFAULT_PLAY_DRAWER_SECTIONS,
   order = DEFAULT_PLAY_DRAWER_SECTION_ORDER,
+  activeHoldsFrames,
   onSimilarClimbPress,
   onFirstSectionHeaderLayout,
   onFirstSectionLayout,
@@ -458,6 +462,18 @@ export const DeferredSections = memo(function DeferredSections({
       const onToggle = isFirst ? onFirstSectionToggle : undefined;
       let section: ReactNode;
       switch (sectionId) {
+        case 'activeHolds':
+          // Reads only the frames: nothing to fetch, so it may draw as the peek at once.
+          section = (
+            <ActiveHoldsSection
+              boardName={boardName}
+              layoutId={layoutId}
+              frames={activeHoldsFrames ?? climb.frames}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            />
+          );
+          break;
         case 'logbook':
           section = (
             <CollapsibleSection
@@ -628,6 +644,7 @@ export const DeferredSections = memo(function DeferredSections({
       t,
       tClimbs,
       climb,
+      activeHoldsFrames,
       boardName,
       layoutId,
       sizeId,

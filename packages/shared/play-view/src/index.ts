@@ -7,6 +7,7 @@ export * from './tick-utils';
 export * from './tick-context';
 export * from './quick-tick-state';
 export * from './board-utils';
+export * from './active-holds';
 export * from './climb-rules';
 export * from './browse-defaults';
 export * from './swipe-carousel';

@@ -177,6 +177,16 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('p', { 'data-testid': 'text' }, children),
 }));
 
+// Its own suite covers the markers; here only whether it mounts, and what it reads.
+const activeHoldsSection = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+vi.mock('../ActiveHoldsSection', () => ({
+  ActiveHoldsSection: (props: Record<string, unknown> & { onHeaderLayout?: (height: number) => void }) => {
+    activeHoldsSection.props = props;
+    props.onHeaderLayout?.(44);
+    return createElement('section', { 'data-testid': 'active-holds' });
+  },
+}));
+
 vi.mock('../BetaVideosSection', () => ({
   BetaVideosSection: () => createElement('div', { 'data-testid': 'beta-videos' }),
 }));
@@ -283,6 +293,7 @@ type RenderOptions = {
   contentEnabled?: boolean;
   sections?: PlayDrawerSectionsVisibility;
   order?: readonly BelowFoldSectionId[];
+  activeHoldsFrames?: string;
   onFirstSectionHeaderLayout?: (height: number) => void;
   description?: string | null;
   climbOverrides?: Partial<Climb>;
@@ -308,6 +319,7 @@ function renderSections(options: RenderOptions = {}) {
       contentEnabled={options.contentEnabled ?? false}
       sections={options.sections}
       order={options.order}
+      activeHoldsFrames={options.activeHoldsFrames}
       onFirstSectionHeaderLayout={options.onFirstSectionHeaderLayout}
       onSimilarClimbPress={vi.fn()}
       onOpenFullLogbook={options.onOpenFullLogbook}
@@ -804,6 +816,7 @@ describe('DeferredSections', () => {
 
 describe('DeferredSections visibility preferences', () => {
   const hiddenSections: PlayDrawerSectionsVisibility = {
+    activeHolds: false,
     logbook: false,
     climberLogs: false,
     setterNotes: false,
@@ -824,6 +837,52 @@ describe('DeferredSections visibility preferences', () => {
     boardseshGradeQuery.calls = [];
     logbook.calls = [];
     logbookSection.props = null;
+    activeHoldsSection.props = null;
+  });
+  it('never mounts Active holds while it is off, as it is by default', () => {
+    deferred.ready = true;
+    renderSections({ contentEnabled: true });
+    expect(screen.queryByTestId('active-holds')).toBeNull();
+    expect(activeHoldsSection.props).toBeNull();
+  });
+  it('makes Active holds the measured peek once it is on, reading the climb on its board and asking for nothing', () => {
+    lineQueries.history.calls = [];
+    lineQueries.beta.calls = [];
+    const onFirstSectionHeaderLayout = vi.fn();
+    renderSections({ sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true }, onFirstSectionHeaderLayout });
+    expect(screen.getByTestId('active-holds')).toBeDefined();
+    expect(activeHoldsSection.props).toMatchObject({ boardName: 'kilter', layoutId: 1, frames: climb.frames });
+    expect(onFirstSectionHeaderLayout).toHaveBeenCalledWith(44);
+    // The Logbook below it waits for scrolling, and nothing is fetched for a frames read.
+    expect(screen.queryByTestId('logbook')).toBeNull();
+    expect(logbook.calls.every(({ boardName }) => boardName === null)).toBe(true);
+    expect(boardseshGradeQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(lineQueries.history.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
+  });
+  it('reads the frames the drawer hands it, such as the playback frame', () => {
+    renderSections({ sections: { ...hiddenSections, activeHolds: true }, activeHoldsFrames: 'p1r12' });
+    expect(activeHoldsSection.props).toMatchObject({ frames: 'p1r12' });
+  });
+  it('mounts Active holds further down only once the climber scrolls to it', () => {
+    const order: BelowFoldSectionId[] = [
+      'logbook',
+      'climberLogs',
+      'setterNotes',
+      'betaVideos',
+      'boardseshGrade',
+      'community',
+      'similarClimbs',
+      'activeHolds',
+    ];
+    const sections = { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true };
+    const view = renderSections({ sections, order });
+    expect(activeHoldsSection.props).toBeNull();
+    deferred.ready = true;
+    view.unmount();
+    renderSections({ sections, order, contentEnabled: true });
+    expect(screen.getByTestId('active-holds')).toBeDefined();
   });
   it('mounts and measures a Beta header eagerly without mounting its body', () => {
     const onFirstSectionHeaderLayout = vi.fn();

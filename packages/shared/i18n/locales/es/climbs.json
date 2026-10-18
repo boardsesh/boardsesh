@@ -935,6 +935,11 @@
       "chooseRole": "Elegir tipo de presa",
       "showList": "Elegir presas de una lista",
       "showBoard": "Volver al plafón"
+    },
+    "activeHolds": {
+      "title": "Presas activas",
+      "a11yGroup": "{{role}}: {{holds}}",
+      "empty": "Este bloque no ilumina ninguna presa."
     }
   },
   "frontDoor": {

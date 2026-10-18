@@ -22,6 +22,7 @@ export {
   getHoldSetImages,
   getMoonBoardDetails,
   encodeMoonBoardHoldsToFrames,
+  convertLitUpHoldsMapToMoonBoardHolds,
 } from '@boardsesh/board-config';
 export type {
   MoonBoardLayoutKey,

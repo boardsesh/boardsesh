@@ -935,6 +935,11 @@
       "chooseRole": "Choose hold role",
       "showList": "Choose holds from a list",
       "showBoard": "Back to the board"
+    },
+    "activeHolds": {
+      "title": "Active holds",
+      "a11yGroup": "{{role}}: {{holds}}",
+      "empty": "This climb lights no holds."
     }
   },
   "frontDoor": {

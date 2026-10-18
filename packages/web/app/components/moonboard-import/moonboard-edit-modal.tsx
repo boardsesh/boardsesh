@@ -15,8 +15,11 @@ import { useMoonBoardCreateClimb } from './use-moonboard-create-climb';
 import HoldIndicator from './hold-indicator';
 import HoldTypePicker from './hold-type-picker';
 import { useHoldTypePicker } from './use-hold-type-picker';
-import { coordinateToHoldId, MOONBOARD_HOLD_STATES } from '@/app/lib/moonboard-config';
-import { convertLitUpHoldsMapToMoonBoardHolds } from '@/app/lib/moonboard-climb-helpers';
+import {
+  convertLitUpHoldsMapToMoonBoardHolds,
+  coordinateToHoldId,
+  MOONBOARD_HOLD_STATES,
+} from '@/app/lib/moonboard-config';
 import type { MoonBoardClimb, GridCoordinate } from '@boardsesh/moonboard-ocr/browser';
 import type { LitUpHoldsMap } from '../board-renderer/types';
 import styles from './moonboard-edit-modal.module.css';

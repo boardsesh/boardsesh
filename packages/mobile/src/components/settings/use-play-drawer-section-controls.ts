@@ -29,6 +29,7 @@ export function usePlayDrawerSectionControls() {
   const hideAllLabel = t('mobile.settings.climbDrawer.hideAll');
   const showAllLabel = t('mobile.settings.climbDrawer.showAll');
   const restoreDefaultsLabel = t('mobile.settings.climbDrawer.restoreDefaults');
+  const activeHoldsLabel = t('mobile.settings.climbDrawer.sections.activeHolds');
   const logbookLabel = t('mobile.settings.climbDrawer.sections.logbook');
   const climberLogsLabel = t('mobile.settings.climbDrawer.sections.climberLogs');
   const setterNotesLabel = t('mobile.settings.climbDrawer.sections.setterNotes');
@@ -38,6 +39,7 @@ export function usePlayDrawerSectionControls() {
   const similarClimbsLabel = t('mobile.settings.climbDrawer.sections.similarClimbs');
   const controls = useMemo<PlayDrawerSectionControl[]>(() => {
     const labels: Record<PlayDrawerSectionId, string> = {
+      activeHolds: activeHoldsLabel,
       logbook: logbookLabel,
       climberLogs: climberLogsLabel,
       setterNotes: setterNotesLabel,
@@ -50,6 +52,7 @@ export function usePlayDrawerSectionControls() {
   }, [
     sections,
     order,
+    activeHoldsLabel,
     logbookLabel,
     climberLogsLabel,
     setterNotesLabel,

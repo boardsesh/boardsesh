@@ -11,6 +11,7 @@ vi.mock('../../../lib/preference-store', () => ({ getPreference: vi.fn(), setPre
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 
 const NO_SECTIONS: PlayDrawerSectionsVisibility = {
+  activeHolds: false,
   logbook: false,
   climberLogs: false,
   setterNotes: false,
@@ -155,5 +156,20 @@ describe('visiblePlayDrawerSections', () => {
 
   it('returns no sections when the user hides everything, regardless of eligibility', () => {
     expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, sections: NO_SECTIONS })).toEqual([]);
+  });
+
+  it('treats Active holds as a section like the rest: on its own it is the peek', () => {
+    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, sections: { ...NO_SECTIONS, activeHolds: true } })).toEqual([
+      'activeHolds',
+    ]);
+    // Off by default, so the default drawer is unchanged.
+    expect(visiblePlayDrawerSections(ELIGIBLE_INPUT)).not.toContain('activeHolds');
+    // Switched on, it leads the default order.
+    expect(
+      visiblePlayDrawerSections({
+        ...ELIGIBLE_INPUT,
+        sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true },
+      })[0],
+    ).toBe('activeHolds');
   });
 });

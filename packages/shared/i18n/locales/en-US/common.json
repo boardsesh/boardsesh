@@ -449,6 +449,7 @@
         "showAll": "Show all",
         "restoreDefaults": "Restore defaults",
         "sections": {
+          "activeHolds": "Active holds",
           "logbook": "Logbook",
           "climberLogs": "Climber logs",
           "setterNotes": "Setter’s notes",

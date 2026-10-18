@@ -935,6 +935,11 @@
       "chooseRole": "Griffart wählen",
       "showList": "Griffe aus einer Liste wählen",
       "showBoard": "Zurück zum Board"
+    },
+    "activeHolds": {
+      "title": "Aktive Griffe",
+      "a11yGroup": "{{role}}: {{holds}}",
+      "empty": "Dieser Boulder beleuchtet keine Griffe."
     }
   },
   "frontDoor": {

@@ -2,6 +2,7 @@
 // This file contains all MoonBoard-specific configuration that differs from Aurora boards
 
 import { MOONBOARD_GRID } from '@boardsesh/board-constants/moonboard';
+import type { LitUpHoldsMap, MoonBoardHoldsInput } from '@boardsesh/shared-schema';
 
 // Feature flag - enabled by default
 export const MOONBOARD_ENABLED = true;
@@ -410,4 +411,23 @@ export function encodeMoonBoardHoldsToFrames(holds: { start: string[]; hand: str
   });
 
   return parts.join('');
+}
+
+/**
+ * Decode a lit-holds map into MoonBoard coordinates per role, the inverse of
+ * `encodeMoonBoardHoldsToFrames`. Each role lists its holds in ascending hold
+ * id, which is bottom row first, left to right within a row: the order you
+ * climb them. Foot, AUX and any other role are left out, as MoonBoard climbs
+ * only carry start, hand and finish.
+ */
+export function convertLitUpHoldsMapToMoonBoardHolds(litUpHoldsMap: LitUpHoldsMap): MoonBoardHoldsInput {
+  const holds: MoonBoardHoldsInput = { start: [], hand: [], finish: [] };
+  const sortedEntries = Object.entries(litUpHoldsMap).sort(([leftId], [rightId]) => Number(leftId) - Number(rightId));
+  for (const [holdId, hold] of sortedEntries) {
+    const coordinate = holdIdToCoordinate(Number(holdId));
+    if (hold.state === 'STARTING') holds.start.push(coordinate);
+    else if (hold.state === 'HAND') holds.hand.push(coordinate);
+    else if (hold.state === 'FINISH') holds.finish.push(coordinate);
+  }
+  return holds;
 }

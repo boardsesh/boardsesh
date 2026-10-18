@@ -935,6 +935,11 @@
       "chooseRole": "Choisir le rôle de la prise",
       "showList": "Choisir des prises dans une liste",
       "showBoard": "Revenir au board"
+    },
+    "activeHolds": {
+      "title": "Prises actives",
+      "a11yGroup": "{{role}} : {{holds}}",
+      "empty": "Ce bloc n’allume aucune prise."
     }
   },
   "frontDoor": {

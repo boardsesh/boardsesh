@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
+import {
+  HOLD_STATE_MAP,
+  STATE_TO_PRIMARY_CODE,
+  getHoldDisplayColor,
+  type BoardRenderMode,
+  type HoldStateInfo,
+} from '@boardsesh/board-constants/hold-states';
 import type { BoardName, HoldState } from '@boardsesh/shared-schema';
 import { getPreference, removePreference, setPreference } from './preference-store';
 
@@ -532,6 +538,24 @@ export function getEffectiveHoldRoleShape(role: HoldColorOverrideRole, overrides
 
 export function getEffectiveHoldStateShape(state: HoldState, overrides: HoldShapeOverrides): HoldMarkerShape {
   return isHoldColorOverrideRole(state) ? getEffectiveHoldRoleShape(state, overrides) : DEFAULT_HOLD_MARKER_SHAPE;
+}
+
+/**
+ * How a hold state is drawn on screen: the colour the render mode picks for its
+ * role, the climber's own colour over that, and their marker shape. The board
+ * renderer's hold-state map and the active-holds line under the board both
+ * read it, so the line's markers can't drift from the board.
+ */
+export function resolveHoldStateMarker(
+  stateInfo: HoldStateInfo,
+  mode: BoardRenderMode,
+  colorOverrides: HoldColorOverrides,
+  shapeOverrides: HoldShapeOverrides,
+): { color: string; shape: HoldMarkerShape } {
+  return {
+    color: getEffectiveHoldStateColor(stateInfo.name, getHoldDisplayColor(stateInfo, mode), colorOverrides),
+    shape: getEffectiveHoldStateShape(stateInfo.name, shapeOverrides),
+  };
 }
 
 export function getBluetoothColorOverrides(
