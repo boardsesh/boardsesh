@@ -523,7 +523,7 @@ describe('BluetoothQuickstartSheet board rows', () => {
 
     try {
       const { container } = render(
-        createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect }),
+        createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect, ...actions }),
       );
 
       const rows = container.querySelectorAll('button');
