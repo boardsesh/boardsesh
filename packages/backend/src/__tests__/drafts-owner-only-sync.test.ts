@@ -279,6 +279,43 @@ describe('migration 0276 re-sends the climbs the old board sync withheld', () =>
   });
 });
 
+describe('migration 0279 re-sends the climbs a stray climb policy withheld', () => {
+  beforeEach(async () => {
+    // A rolled-back backend could write a climb policy while the CHECK still
+    // allowed 'climb'. The test database has the narrowed CHECK from 0280, so
+    // allow it here to seed such rows, and restore the narrowed CHECK after.
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'climb', 'playlist', 'beta'))`);
+    await insertClimb({ uuid: 'stray-policy', userId: OWNER_ID, isDraft: false, isListed: true });
+    await insertClimb({ uuid: 'stray-draft', userId: OWNER_ID, isDraft: true, isListed: false });
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+      VALUES ('climb', 'stray-policy', ${OWNER_ID}, 'only_me'), ('climb', 'stray-draft', ${OWNER_ID}, 'only_me')`);
+  });
+
+  afterEach(async () => {
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
+    await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
+    await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
+      CHECK (entity_type IN ('tick', 'session', 'comment', 'playlist', 'beta'))`);
+  });
+
+  it('moves the published climb past a cursor that walked by it, leaves the draft, deletes the policies', async () => {
+    const before = await syncQueries.syncClimbs(undefined, scope, ctx(STRANGER_ID));
+    const migration = readFileSync(
+      new URL('../../../db/drizzle/0279_drop_stray_climb_content_privacy.sql', import.meta.url),
+      'utf8',
+    );
+    for (const statement of migration.split('--> statement-breakpoint')) {
+      await db.execute(sql.raw(statement));
+    }
+    const after = await syncQueries.syncClimbs(undefined, { ...scope, cursor: before.cursor }, ctx(STRANGER_ID));
+    expect(documentField(after, 'uuid')).toEqual(['stray-policy']);
+    const policies = rowsFromResult(await db.execute(sql`SELECT 1 FROM content_privacy WHERE entity_type = 'climb'`));
+    expect(policies).toHaveLength(0);
+  });
+});
+
 /**
  * A draft whose stats and grade rows sit before every row other devices have
  * already pulled: the sync hid them while it was a draft. A draft sent to a
