@@ -104,9 +104,10 @@ const ClimbLogsPreviewRequest = memo(function ClimbLogsPreviewRequest({
 
 /**
  * Asks for the similar climbs while Similar climbs is the peek at the fold, and
- * hands back the name its first card would show, for the collapsed line. Mounted
- * only then, so a Similar climbs section further down asks for nothing. Same
- * hook and key as the section's own read, so expanding it costs no request.
+ * hands back its collapsed line: the name its first card would show, that none
+ * matched, or that the board needs downloading first. Mounted only then, so a
+ * Similar climbs section further down asks for nothing. Same hook and key as the
+ * section's own read, so expanding it costs no request.
  */
 const SimilarClimbsPeekRequest = memo(function SimilarClimbsPeekRequest({
   boardName,
@@ -123,19 +124,25 @@ const SimilarClimbsPeekRequest = memo(function SimilarClimbsPeekRequest({
   angle: number;
   onAnswer: (answer: SimilarClimbsPeek) => void;
 }) {
+  const { t } = useTranslation('session');
   const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
-  const { data: similarClimbs } = useSimilarClimbs(scope, climbUuid, angle);
-  const closestName = similarClimbs
-    ? (rankBySizeCompatibility(similarClimbs, sizeId)[0]?.climb.name ?? null)
-    : undefined;
+  const { data: similarClimbs, source, isResolvingSource } = useSimilarClimbs(scope, climbUuid, angle);
+  const closestName = similarClimbs ? (rankBySizeCompatibility(similarClimbs, sizeId)[0]?.climb.name ?? null) : null;
+  // No answer yet: no line at all, never a spinner.
+  const line = similarClimbs
+    ? closestName
+      ? t('mobile.similarClimbs.collapsedSummary', { name: closestName })
+      : t('mobile.similarClimbs.empty')
+    : source === 'download' && !isResolvingSource
+      ? t('mobile.similarClimbs.collapsedDownload')
+      : null;
   useEffect(() => {
-    // No answer yet (or none to be had without a download): no line at all.
-    if (closestName !== undefined) onAnswer({ climbUuid, angle, closestName });
-  }, [climbUuid, angle, closestName, onAnswer]);
+    if (line !== null) onAnswer({ climbUuid, angle, line });
+  }, [climbUuid, angle, line, onAnswer]);
   return null;
 });
 
-type SimilarClimbsPeek = { climbUuid: string; angle: number; closestName: string | null };
+type SimilarClimbsPeek = { climbUuid: string; angle: number; line: string };
 
 /**
  * Below-fold deferred content for the play drawer.
@@ -411,11 +418,7 @@ export const DeferredSections = memo(function DeferredSections({
   // Similar climbs' collapsed line: the closest match by name.
   const [similarPeek, setSimilarPeek] = useState<SimilarClimbsPeek | null>(null);
   const similarSummary =
-    similarPeek && similarPeek.climbUuid === climb.uuid && similarPeek.angle === angle
-      ? similarPeek.closestName
-        ? t('mobile.similarClimbs.collapsedSummary', { name: similarPeek.closestName })
-        : t('mobile.similarClimbs.empty')
-      : null;
+    similarPeek && similarPeek.climbUuid === climb.uuid && similarPeek.angle === angle ? similarPeek.line : null;
 
   if (!enabled || visibleSections.length === 0) {
     return null;

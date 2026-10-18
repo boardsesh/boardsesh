@@ -31,7 +31,11 @@ const lineQueries = vi.hoisted(() => ({
     data: undefined as unknown,
   },
   beta: { calls: [] as Array<{ climbUuid: string; enabled: boolean | undefined }>, data: undefined as unknown },
-  similar: { calls: [] as Array<{ climbUuid: string | null; angle: number }>, data: undefined as unknown },
+  similar: {
+    calls: [] as Array<{ climbUuid: string | null; angle: number }>,
+    data: undefined as unknown,
+    source: 'local' as 'local' | 'network' | 'download',
+  },
 }));
 
 const boardseshGradeQuery = vi.hoisted(() => ({
@@ -215,7 +219,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../lib/graphql/hooks/use-similar-climbs', () => ({
   useSimilarClimbs: (_scope: unknown, climbUuid: string | null, angle: number) => {
     lineQueries.similar.calls.push({ climbUuid, angle });
-    return { data: lineQueries.similar.data };
+    return { data: lineQueries.similar.data, source: lineQueries.similar.source, isResolvingSource: false };
   },
 }));
 
@@ -952,7 +956,7 @@ describe('collapsed lines, and what each section may ask for', () => {
     boardseshGradeQuery.calls = [];
     lineQueries.history = { calls: [], data: undefined };
     lineQueries.beta = { calls: [], data: undefined };
-    lineQueries.similar = { calls: [], data: undefined };
+    lineQueries.similar = { calls: [], data: undefined, source: 'local' };
   });
 
   it("Setter's notes show their first written line", () => {
@@ -1006,6 +1010,17 @@ describe('collapsed lines, and what each section may ask for', () => {
     const { container } = renderSections({ order: first('similarClimbs') });
     expect(lineQueries.similar.calls.at(-1)).toEqual({ climbUuid: 'climb-1', angle: 40 });
     expect(summaryOf(container, 'Similar Climbs')).toBe('Closest: Guessing Games');
+  });
+
+  it('Similar climbs say the board needs downloading when that is why there is nothing', () => {
+    lineQueries.similar.source = 'download';
+    const { container } = renderSections({ order: first('similarClimbs') });
+    expect(summaryOf(container, 'Similar Climbs')).toBe('Download to see them');
+  });
+
+  it('Similar climbs show no line while the answer is still out', () => {
+    const { container } = renderSections({ order: first('similarClimbs') });
+    expect(summaryOf(container, 'Similar Climbs')).toBeNull();
   });
 
   it('Similar climbs say when nothing matched', () => {

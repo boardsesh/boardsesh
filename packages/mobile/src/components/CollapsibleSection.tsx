@@ -19,8 +19,13 @@ type CollapsibleSectionProps = {
    * (e.g. Beta Videos) where users should always see the content.
    */
   keepExpanded?: boolean;
-  /** Short text shown next to the title when the section is collapsed (e.g. active filter values). */
-  summary?: string | null;
+  /**
+   * One line shown next to the title while the section is collapsed (e.g. active
+   * filter values). Text is drawn as a dimmed, right-aligned footnote. Anything
+   * else (a row of coloured markers, say) is drawn as given in the same slot, which
+   * clips it to the title's row; it brings its own colours and one-line layout.
+   */
+  summary?: ReactNode;
   /** When this value changes, expanded state resets to `defaultExpanded` without remounting the tree. */
   resetKey?: number;
   /** Optional trailing action rendered in the header (e.g. an Attach button). */
@@ -108,7 +113,7 @@ function CollapsibleSectionInternal({
 }: {
   title: string;
   defaultExpanded: boolean;
-  summary?: string | null;
+  summary?: ReactNode;
   resetKey?: number;
   headerAction?: ReactNode;
   // Internal prop takes the raw LayoutChangeEvent; the public `onHeaderLayout`
@@ -194,11 +199,13 @@ function CollapsibleSectionInternal({
           <Text variant="headline" style={styles.title}>
             {title}
           </Text>
-          {!expanded && summary ? (
+          {expanded || summary == null || summary === '' ? null : typeof summary === 'string' ? (
             <Text variant="footnote" style={styles.summary} numberOfLines={1}>
               {summary}
             </Text>
-          ) : null}
+          ) : (
+            <View style={styles.summarySlot}>{summary}</View>
+          )}
         </PressableSurface>
         {headerAction}
         <PressableSurface
@@ -258,6 +265,16 @@ const styles = StyleSheet.create({
     flexBasis: 0,
     flexShrink: 1,
     textAlign: 'right',
+    marginStart: spacing[2],
+    marginEnd: spacing[2],
+  },
+  // The same share of the row as a text summary, for a summary that draws itself.
+  summarySlot: {
+    flexGrow: 1,
+    flexBasis: 0,
+    flexShrink: 1,
+    alignItems: 'flex-end',
+    overflow: 'hidden',
     marginStart: spacing[2],
     marginEnd: spacing[2],
   },

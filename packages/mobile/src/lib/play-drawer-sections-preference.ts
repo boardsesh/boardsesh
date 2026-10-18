@@ -10,13 +10,7 @@ import {
   type SectionMoveDirection,
 } from './section-layout';
 
-/**
- * Sections that describe the board and sit directly under it: a switch each,
- * never reordered and never counted for scrolling. None yet.
- */
-// The first board section, #6290's `activeHolds`, goes here.
-export const BOARD_SECTION_IDS = [] as const;
-/** The sections below the fold. Only these take part in the climber's order. */
+/** The sections below the fold: each has a switch and a place in the climber's order. */
 export const BELOW_FOLD_SECTION_IDS = [
   'logbook',
   'climberLogs',
@@ -26,8 +20,8 @@ export const BELOW_FOLD_SECTION_IDS = [
   'community',
   'similarClimbs',
 ] as const;
-/** Every section with a switch. */
-export const PLAY_DRAWER_SECTION_IDS = [...BOARD_SECTION_IDS, ...BELOW_FOLD_SECTION_IDS] as const;
+/** Every section with a switch. All of them sit below the fold and take part in the order. */
+export const PLAY_DRAWER_SECTION_IDS = BELOW_FOLD_SECTION_IDS;
 export type BelowFoldSectionId = (typeof BELOW_FOLD_SECTION_IDS)[number];
 export type PlayDrawerSectionId = (typeof PLAY_DRAWER_SECTION_IDS)[number];
 export type PlayDrawerSectionsVisibility = Readonly<Record<PlayDrawerSectionId, boolean>>;

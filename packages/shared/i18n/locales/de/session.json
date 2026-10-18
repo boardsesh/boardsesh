@@ -317,7 +317,8 @@
       "preparing": "Ähnliche Boulder werden vorbereitet …",
       "waitingForDownload": "Ähnliche Boulder erscheinen, sobald {{name}} fertig geladen ist.",
       "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen",
-      "collapsedSummary": "Am ähnlichsten: {{name}}"
+      "collapsedSummary": "Am ähnlichsten: {{name}}",
+      "collapsedDownload": "Zum Ansehen herunterladen"
     },
     "community": {
       "moderation": {

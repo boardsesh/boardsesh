@@ -317,7 +317,8 @@
       "preparing": "Preparing similar climbs…",
       "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading.",
       "downloadToSee": "Download this board to see similar climbs",
-      "collapsedSummary": "Closest: {{name}}"
+      "collapsedSummary": "Closest: {{name}}",
+      "collapsedDownload": "Download to see them"
     },
     "community": {
       "moderation": {
