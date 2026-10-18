@@ -1185,7 +1185,15 @@ export function PlayCore({
     } else {
       setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
     }
-  }, [displayedClimbUuid, isMirrored, sharesMirrorState, currentClimbQueueItem, mirrorCurrentClimb]);
+  }, [
+    displayedClimbUuid,
+    isMirrored,
+    sharesMirrorState,
+    currentClimbQueueItem,
+    mirrorCurrentClimb,
+    boardName,
+    layoutId,
+  ]);
 
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;
