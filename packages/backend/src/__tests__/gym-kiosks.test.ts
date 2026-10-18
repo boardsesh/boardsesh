@@ -791,7 +791,7 @@ describe('gymKiosk public read', () => {
     await expect(requireAnonReadableBoard(inviteOnly.id, EDITOR)).resolves.toBeUndefined();
   });
 
-  it('opens an Unlisted gym board to an editor only through its uuid, the way the kiosk preview sends it', async () => {
+  it('opens an Unlisted gym board another owner holds to an editor only when the caller presents its uuid', async () => {
     const unlisted = await insertBoard({
       gymId: publicGym.id,
       ownerId: RANDOM,

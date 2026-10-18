@@ -1449,6 +1449,17 @@ export const tickMutations = {
             ? canonicalBoardId
             : null;
         const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
+        // Why the association was dropped, for the warning below. A missing
+        // canonical row is a concurrent delete or a dangling tombstone chain. A
+        // merge that landed on a board the climber cannot read without a link
+        // (the survivor has another owner, so the presented uuid is no longer
+        // its link) is a different case and needs a different follow-up.
+        const boardAssociationDropReason =
+          canonicalBoardId == null
+            ? 'canonical_missing'
+            : canonicalBoardId !== boardId && !presentedLink
+              ? 'merged_into_unreadable_survivor'
+              : 'board_unreadable';
         const [createdTick] = await tx
           .insert(dbSchema.boardseshTicks)
           .values({
@@ -1493,16 +1504,20 @@ export const tickMutations = {
         }
 
         if (boardAssociationBecameUnavailable) {
-          // The board was valid when we resolved it above, but a concurrent
-          // delete or dangling tombstone chain won the canonical row lock. Keep
-          // the valid tick and deliberately leave its nullable association empty;
-          // falling back to config here could stamp it onto a different wall.
+          // The board was valid when we resolved it above, but it is no longer
+          // one this climber may attach a tick to (see boardAssociationDropReason:
+          // a concurrent delete or dangling tombstone chain, a merge into another
+          // owner's board they cannot read without a link, or a board they can no
+          // longer read). Keep the valid tick and deliberately leave its nullable
+          // association empty; falling back to config here could stamp it onto a
+          // different wall.
           // Emit only after a new row was returned: a concurrent idempotent replay
           // that won the UUID insert must not produce this warning for our no-op.
           logger.warn('[saveTick] Board association became unavailable; saving tick without board association', {
             tickUuid: uuid,
             userId,
             requestedBoardId: boardId,
+            reason: boardAssociationDropReason,
             boardAssociationSource,
             boardType: validatedInput.boardType,
             climbUuid,

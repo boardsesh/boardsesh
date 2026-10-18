@@ -759,8 +759,10 @@ export async function isBoardAnonReadable(boardId: number): Promise<boolean> {
  * community admin or leader whose role covers the gym) adds nothing here. The
  * gym lists a board to its editors by the same no-link reading (`gymBoards`),
  * so a stranger's Invite-only or Only-me board linked to the gym stays
- * not-found to them, exactly as `board(uuid)` is. An Unlisted slot board opens
- * through its uuid, which the kiosk preview forwards with each slot.
+ * not-found to them, exactly as `board(uuid)` is. An Unlisted board opens for a
+ * caller who presents its uuid, but the kiosk preview only shows slots
+ * `gymBoards` lists, so another owner's Unlisted board is a missing tile there
+ * and the public TV page leaves it out.
  */
 async function canReadPresenceBoard(
   board: Pick<BoardVisibility, 'uuid'>,
