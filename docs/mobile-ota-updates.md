@@ -628,8 +628,9 @@ leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing
 run and those branches. Protection is the second lock.
 
 The same file declares the daily controller's release policy: canary steps 5, 10, 25, 50,
-four hours per step, at least 20 hours overall and eight hours at 50%, then a healthy finish in the
-22:00 UTC daily window. The controller stays read-only for production until
+four hours per step, at least 20 hours overall and eight hours at 50%, then a finish in the
+22:00 UTC daily window once every changed platform is healthy or has no fleet yet (see the daily
+stable runbook). The controller stays read-only for production until
 `OTA_STABLE_RELEASE_ENABLED=true`. Health thresholds remain provisional until the fleet's normal
 faulty-device rate has been measured; see the daily stable runbook below.
 
@@ -959,12 +960,22 @@ read-only plan that skips boot execution; the controller's other jobs retain the
 Each of 5%, 10%, 25% and 50% must soak for at least four hours. Completion additionally needs at
 least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on every changed platform.
 Insufficient samples with valid counts may progress through 50%, then hold.
-One exception keeps a store lag from freezing both platforms. A changed platform whose canary and
-control together have fewer than 15 reporting devices, with no faulty canary device, has no fleet to
-judge: that native runtime has not reached people yet (for example, Android 2.6.0 sat as a Play draft
-while iOS 2.6.0 was live, #6524). Such a platform does not block the finish, provided at least one other
-changed platform is healthy; the finish reason names it with its device count. A faulty canary device,
-missing or malformed counts, or no healthy platform at all still holds. Missing or malformed
+One exception keeps a store lag from freezing both platforms. A changed platform has **no fleet yet**
+when its store binary has not reached people: Android 2.6.0 sat as a Play draft while iOS 2.6.0 was live,
+its canary had 0 devices and its control 1, and the release held at 50% for days (#6524). Precisely, the
+platform's verdict is `insufficient-evidence`, its canary and control together have fewer than 5 devices
+(`noFleetBelowDevicesPerPlatform`, counting each cohort as the larger of devices on the update and
+reporting devices), no canary device is faulty, and the canary's launch and JS issue counters are present
+and read zero. Such a platform does not block the finish when at least one other changed platform is
+healthy; the finish reason names it with its device count. A runtime with 5 to 14 devices has started to
+reach people and waits for the normal 15-device verdict.
+
+A no-fleet finish ships that platform's bundle at 100% with no device evidence; its only launch proof is
+the frozen candidate's native boot check. Nothing reverts it automatically later: the next canary uses
+it as its control. If it turns out bad once the store binary ships, publish known-good bytes through the
+trusted manual route. A lone changed platform with no fleet (the other platform unchanged) still holds
+at 50%, because there is no healthy sibling to prove the health feed works. Release that store binary,
+or dispatch `command=abort` to clear the release so later candidates can start. Missing or malformed
 health data holds progression. An unhealthy platform reverts the owned canaries, except the partial-finish
 case below. There is only one active production canary; staging and beta continue independently.
 Start and step clocks begin after every changed platform write is confirmed, so a partial write never shortens a soak.

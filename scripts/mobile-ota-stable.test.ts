@@ -98,7 +98,10 @@ function fixture() {
     getUpdateHealth: vi.fn(async (ids: string[]) =>
       Object.fromEntries(ids.map((id) => [id, { devicesOnUpdate: 20, successfulDevices: 20, faultyDevices: 0 }])),
     ),
-    getUpdateHealthHistory: vi.fn(async () => ({ source: 'state', latest: {} })),
+    getUpdateHealthHistory: vi.fn(async (_ids: string[]) => ({
+      source: 'state',
+      latest: {} as Record<string, { updateIssues: number; runtimeIssues: number }>,
+    })),
   };
   const save = vi.fn();
   const options: Parameters<typeof tickStable>[0] = {
@@ -633,6 +636,72 @@ describe('stable controller execution', () => {
     expect(options.state.active).toBeNull();
     expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
     expect(options.state.candidate?.receipt.baselineProductionUpdateIds).toEqual(nativeUUIDs);
+  });
+  it('finishes both platforms when iOS is healthy and Android has no fleet (#6524)', async () => {
+    const { options, live, client } = fixture();
+    options.now = new Date('2026-10-09T22:00:00Z');
+    options.state.active!.percentage = 50;
+    options.state.active!.stepSince = '2026-10-09T10:00:00Z';
+    live.forEach((entry) => {
+      entry.percentage = 50;
+    });
+    const androidControl = candidateFixture().receipt.baselineProductionUpdateIds.android;
+    // The real shape: Android 2.6.0 still a Play draft, canary 0 devices, control 1. Judged by the real judgeCanary.
+    client.getUpdateHealth.mockImplementation(async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          id === nativeUUIDs.android
+            ? { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 }
+            : id === androidControl
+              ? { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 }
+              : { devicesOnUpdate: 20, successfulDevices: 20, faultyDevices: 0 },
+        ]),
+      ),
+    );
+    client.getUpdateHealthHistory.mockImplementation(async (ids: string[]) => ({
+      source: 'snapshots',
+      latest: Object.fromEntries(ids.map((id) => [id, { updateIssues: 0, runtimeIssues: 0 }])),
+    }));
+    await tickStable(options);
+    const finished = client.setUpdateRolloutPercentage.mock.calls
+      .filter(([, , percentage]) => percentage === 100)
+      .map(([, , , id]) => id);
+    expect(finished.sort()).toEqual(['31', '32']);
+    expect(options.state.active).toBeNull();
+    expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
+    expect(options.log).toHaveBeenCalledWith(expect.stringContaining('android has no fleet to judge'));
+  });
+  it('holds at 50% when the fleetless Android canary reports a launch issue', async () => {
+    const { options, live, client } = fixture();
+    options.now = new Date('2026-10-09T22:00:00Z');
+    options.state.active!.percentage = 50;
+    options.state.active!.stepSince = '2026-10-09T10:00:00Z';
+    live.forEach((entry) => {
+      entry.percentage = 50;
+    });
+    client.getUpdateHealth.mockImplementation(async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          id === nativeUUIDs.android
+            ? { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 }
+            : { devicesOnUpdate: 20, successfulDevices: 20, faultyDevices: 0 },
+        ]),
+      ),
+    );
+    client.getUpdateHealthHistory.mockImplementation(async (ids: string[]) => ({
+      source: 'snapshots',
+      latest: Object.fromEntries(ids.map((id) => [id, { updateIssues: 1, runtimeIssues: 0 }])),
+    }));
+    await tickStable(options);
+    expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      100,
+      expect.anything(),
+    );
+    expect(options.state.active).not.toBeNull();
   });
   it('hotfix interruption preserves its head and reverts only the remaining owned platform', async () => {
     const { options, live, baselineIds, client } = fixture();

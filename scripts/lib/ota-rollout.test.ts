@@ -561,15 +561,17 @@ describe('judgeCanary', () => {
 });
 
 describe('fleetlessReason', () => {
-  const cohort = (successful: number, faulty = 0) => ({
-    devicesOnUpdate: successful + faulty,
+  const cohort = (successful: number, faulty = 0, devicesOnUpdate = successful + faulty) => ({
+    devicesOnUpdate,
     successfulDevices: successful,
     faultyDevices: faulty,
   });
+  const quiet = { updateIssues: 0, runtimeIssues: 0 };
   const entry = (
     canary: ReturnType<typeof cohort> | null,
     control: ReturnType<typeof cohort> | null,
     verdict: 'healthy' | 'unhealthy' | 'insufficient-evidence' = 'insufficient-evidence',
+    canaryIssues: { updateIssues: number; runtimeIssues: number } | null = quiet,
   ) => ({
     rollout: {
       branch: 'production',
@@ -582,23 +584,37 @@ describe('fleetlessReason', () => {
     },
     canary,
     control,
+    canaryIssues,
     judgement: { verdict, reason: 'test' },
   });
 
-  it('names a runtime with no devices to judge', () => {
+  it('names a runtime with no devices to judge (the #6524 shape: canary 0, control 1)', () => {
     expect(fleetlessReason(entry(cohort(0), cohort(1)), POLICY)).toBe(
-      'android has no fleet to judge: 1 device(s) reported on its canary and control together, ' +
-        'under the 15-device floor, with no faulty canary device',
+      'android has no fleet to judge: 1 device(s) on its canary and control together, ' +
+        'under the 5-device no-fleet cap, with no faulty canary device and no canary issues',
     );
   });
 
-  it('counts canary and control together against the floor', () => {
-    expect(fleetlessReason(entry(cohort(7), cohort(7)), POLICY)).not.toBeNull();
-    expect(fleetlessReason(entry(cohort(7), cohort(8)), POLICY)).toBeNull();
+  it('counts canary and control together against the no-fleet cap, far below the evidence floor', () => {
+    expect(POLICY.noFleetBelowDevicesPerPlatform).toBe(5);
+    expect(fleetlessReason(entry(cohort(2), cohort(2)), POLICY)).not.toBeNull();
+    expect(fleetlessReason(entry(cohort(2), cohort(3)), POLICY)).toBeNull();
+    expect(fleetlessReason(entry(cohort(7), cohort(7)), POLICY)).toBeNull();
+  });
+
+  it('counts devices on the update even when they have not reported', () => {
+    expect(fleetlessReason(entry(cohort(0, 0, 4), cohort(1)), POLICY)).toBeNull();
   });
 
   it.each([
     ['a faulty canary device', entry(cohort(1, 1), cohort(1))],
+    ['a crash-loop shape (faulty over devices on update)', entry(cohort(0, 2, 0), cohort(1))],
+    [
+      'launch issues on the canary',
+      entry(cohort(0), cohort(1), 'insufficient-evidence', { ...quiet, updateIssues: 1 }),
+    ],
+    ['JS issues on the canary', entry(cohort(0), cohort(1), 'insufficient-evidence', { ...quiet, runtimeIssues: 2 })],
+    ['missing issue counters', entry(cohort(0), cohort(1), 'insufficient-evidence', null)],
     ['a missing canary', entry(null, cohort(1))],
     ['a missing control', entry(cohort(0), null)],
     ['malformed counts', entry({ devicesOnUpdate: 0, successfulDevices: Number.NaN, faultyDevices: 0 }, cohort(0))],
@@ -610,7 +626,7 @@ describe('fleetlessReason', () => {
 
   it('is never fleetless under a malformed policy', () => {
     expect(
-      fleetlessReason(entry(cohort(0), cohort(0)), { ...POLICY, evidenceFloorDevicesPerPlatform: Number.NaN }),
+      fleetlessReason(entry(cohort(0), cohort(0)), { ...POLICY, noFleetBelowDevicesPerPlatform: Number.NaN }),
     ).toBeNull();
   });
 });

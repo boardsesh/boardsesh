@@ -111,12 +111,17 @@ describe('the declaration', () => {
         maxFaultyRateOverControlPercent: 2,
         maxFaultyRatePercent: 5,
         smallSampleFaultyRatePercent: 30,
+        noFleetBelowDevicesPerPlatform: 5,
       },
     });
     // The ramp must fit inside the soak, or a canary could be finished mid-ramp.
     const rampHours = (otaReleasePolicy.canarySteps.length - 1) * otaReleasePolicy.stepHours;
     expect(rampHours).toBeLessThan(otaReleasePolicy.minimumSoakHours);
     expect(otaReleasePolicy.minimumSoakHours).toBeLessThan(24);
+    // "No fleet" must stay well under the floor a real verdict needs.
+    expect(otaReleasePolicy.health.noFleetBelowDevicesPerPlatform).toBeLessThan(
+      otaReleasePolicy.health.evidenceFloorDevicesPerPlatform,
+    );
     expect([...otaReleasePolicy.canarySteps].sort((left, right) => left - right)).toEqual([
       ...otaReleasePolicy.canarySteps,
     ]);

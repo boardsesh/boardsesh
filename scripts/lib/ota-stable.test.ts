@@ -160,13 +160,14 @@ describe('daily release decisions', () => {
       health[1]!.judgement.verdict = 'insufficient-evidence';
       health[1]!.canary = canary;
       health[1]!.control = { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 };
+      health[1]!.canaryIssues = { updateIssues: 0, runtimeIssues: 0 };
       return health;
     };
 
     it('finishes the healthy platform and names the fleetless one', () => {
       const decision = decideStable({ ...initialStableState(), active: soaked() }, window, fleetlessAndroid());
       expect(decision).toMatchObject({ action: 'finish', reason: expect.stringContaining('android has no fleet') });
-      expect(decision.reason).toContain('1 device(s) reported');
+      expect(decision.reason).toContain('1 device(s) on its canary and control');
     });
 
     it('still needs the daily window and the full soak', () => {
@@ -181,12 +182,30 @@ describe('daily release decisions', () => {
       expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
     });
 
-    it('holds once the runtime reaches the evidence floor without a verdict', () => {
-      const health = fleetlessAndroid({ devicesOnUpdate: 10, successfulDevices: 10, faultyDevices: 0 });
-      health[1]!.control = { devicesOnUpdate: 5, successfulDevices: 5, faultyDevices: 0 };
+    it('holds once the runtime reaches the no-fleet cap without a verdict', () => {
+      const health = fleetlessAndroid({ devicesOnUpdate: 3, successfulDevices: 3, faultyDevices: 0 });
+      health[1]!.control = { devicesOnUpdate: 2, successfulDevices: 2, faultyDevices: 0 };
       expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
-      health[1]!.control = { devicesOnUpdate: 4, successfulDevices: 4, faultyDevices: 0 };
+      health[1]!.control = { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 };
       expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('finish');
+    });
+
+    it('holds when the fleetless canary reports launch or JS issues', () => {
+      const health = fleetlessAndroid();
+      health[1]!.canaryIssues = { updateIssues: 1, runtimeIssues: 0 };
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+      health[1]!.canaryIssues = null;
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+    });
+
+    it('finishes the remaining fleetless platform after iOS already completed', () => {
+      const active: StableRelease = { ...soaked(), phase: 'finishing', completedPlatforms: { ios: baselineIds.ios } };
+      const health = fleetlessAndroid();
+      health[0]!.rollout.percentage = 100;
+      expect(decideStable({ ...initialStableState(), active }, window, health)).toMatchObject({
+        action: 'finish',
+        reason: expect.stringContaining('android has no fleet'),
+      });
     });
 
     it('never finishes when no platform is healthy', () => {

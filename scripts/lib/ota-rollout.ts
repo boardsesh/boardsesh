@@ -381,30 +381,36 @@ export function judgeCanary(
 /**
  * Why a changed platform has no fleet to judge, or null when it has one.
  *
- * A platform is fleetless when its canary and control together have fewer
- * reporting devices than the evidence floor and none of the canary's devices
- * failed. That is a native runtime whose store binary has not reached people
- * yet: Android 2.6.0 sat as a Play draft while iOS 2.6.0 was live, and its
- * canary stayed at zero devices for days (#6524). Holding for evidence that
- * cannot arrive protects nobody on that platform and freezes the other one.
+ * Android 2.6.0 sat as a Play draft while iOS 2.6.0 was live, and its canary
+ * stayed at zero devices for days (#6524). Holding for evidence that cannot
+ * arrive protects nobody on that platform and freezes the other one.
  *
- * Only an `insufficient-evidence` verdict with valid counts qualifies. A faulty
- * canary device, malformed counts or any other verdict never does.
+ * All of these must hold, or the platform is judged normally:
+ *   1. The verdict is `insufficient-evidence` (never healthy, never unhealthy).
+ *   2. Canary and control counts are valid.
+ *   3. No canary device is faulty, and the canary's launch and JS issue
+ *      counters are present and read zero.
+ *   4. Canary and control together, counting each cohort as the larger of its
+ *      devices-on-update and its reporting devices, are under
+ *      `noFleetBelowDevicesPerPlatform`. That cap sits far below the evidence
+ *      floor, so a runtime that has started to reach people waits for a verdict.
  */
 export function fleetlessReason(
-  entry: Pick<RolloutHealth, 'rollout' | 'canary' | 'control' | 'judgement'>,
+  entry: Pick<RolloutHealth, 'rollout' | 'canary' | 'control' | 'canaryIssues' | 'judgement'>,
   policy: OtaHealthPolicy,
 ): string | null {
   if (entry.judgement.verdict !== 'insufficient-evidence') return null;
-  const floor = policy.evidenceFloorDevicesPerPlatform;
+  const cap = policy.noFleetBelowDevicesPerPlatform;
   const canary = judgedCohort(entry.canary);
   const control = judgedCohort(entry.control);
-  if (!isCount(floor) || !canary || !control || canary.faulty !== 0) return null;
-  const reporting = canary.judged + control.judged;
-  if (reporting >= floor) return null;
+  if (!isCount(cap) || !canary || !control || canary.faulty !== 0) return null;
+  const issues = entry.canaryIssues;
+  if (!issues || issues.updateIssues !== 0 || issues.runtimeIssues !== 0) return null;
+  const devices = Math.max(canary.devicesOnUpdate, canary.judged) + Math.max(control.devicesOnUpdate, control.judged);
+  if (devices >= cap) return null;
   return (
-    `${entry.rollout.platform} has no fleet to judge: ${reporting} device(s) reported on its canary and control ` +
-    `together, under the ${floor}-device floor, with no faulty canary device`
+    `${entry.rollout.platform} has no fleet to judge: ${devices} device(s) on its canary and control together, ` +
+    `under the ${cap}-device no-fleet cap, with no faulty canary device and no canary issues`
   );
 }
 
