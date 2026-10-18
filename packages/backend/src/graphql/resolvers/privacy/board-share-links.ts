@@ -13,9 +13,9 @@ import {
 /**
  * A home board's share link. The rules live in `services/board-share-links.ts`.
  *
- * None of these publishes `privacyChanged`. A join only adds access, the
- * joiner's own app refreshes after its own mutation, and the server checks
- * access on every read, so no other client has anything to drop.
+ * A join only adds access: the joiner's own app refreshes after its own
+ * mutation, and the server checks access on every read, so no other client has
+ * anything to drop. Kiosk previews of the board are refreshed after the grant.
  *
  * The token is an argument here and nowhere else: none of these resolvers logs
  * it, and the errors they throw never carry it.
@@ -68,7 +68,7 @@ export const boardShareLinkMutations = {
         const { notifyResourcePrivacyChanged } = await import('../../../services/board-session-privacy');
         await notifyResourcePrivacyChanged('board', redemption.boardUuid);
       } catch (error) {
-        logger.warn('[BoardShareLink] board preview republish failed after a link join', { error });
+        logger.error('[BoardShareLink] board preview republish failed after a link join', { error });
       }
     }
     return { boardUuid: redemption.boardUuid, slug: redemption.slug };

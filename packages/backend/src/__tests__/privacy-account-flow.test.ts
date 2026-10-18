@@ -458,10 +458,11 @@ describe('privacy controls against Postgres', () => {
     const loggedError = vi.spyOn(logger, 'error');
 
     // The session preview refresh starts with a Redis read of the session's wall.
+    // The move has committed by then, so it resolves and the failure is logged.
     const redisDown = vi.spyOn(pubsub, 'getSessionBoard').mockRejectedValue(new Error('redis down'));
     try {
-      await expect(updateSessionBoardPathIfChanged(sessionId, `/b/${home.slug}/40`, owner)).rejects.toThrow(
-        'redis down',
+      await expect(updateSessionBoardPathIfChanged(sessionId, `/b/${home.slug}/40`, owner)).resolves.toBe(
+        `/b/${first.slug}/40`,
       );
     } finally {
       redisDown.mockRestore();
@@ -471,6 +472,10 @@ describe('privacy controls against Postgres', () => {
       .from(schema.boardSessions)
       .where(eq(schema.boardSessions.id, sessionId));
     expect(session.boardId).toBe(home.id);
+    expect(loggedError).toHaveBeenCalledWith(
+      '[SessionDiscovery] kiosk preview refresh failed after a committed wall move',
+      expect.objectContaining({ sessionId, error: 'redis down' }),
+    );
 
     // A board's preview refresh publishes a tombstone to its kiosks. The revoke
     // has committed by then, so the mutation succeeds and the failure is logged.

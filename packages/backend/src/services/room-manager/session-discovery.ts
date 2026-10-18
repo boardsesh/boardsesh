@@ -93,7 +93,18 @@ export async function updateSessionBoardPathIfChanged(
   // queue. An angle change keeps the wall: peers only apply the path.
   // Published before the preview's fallible reads.
   publishSessionBoardPathChanged(sessionId, boardPath, changedByParticipantId, transition.parentChanged);
-  if (transition.parentChanged) await notifyResourcePrivacyChanged('session', sessionId);
+  if (transition.parentChanged) {
+    // The move has committed, and a retry would find the path already stored,
+    // so a failed kiosk refresh is logged rather than failing the move.
+    try {
+      await notifyResourcePrivacyChanged('session', sessionId);
+    } catch (error) {
+      logger.error('[SessionDiscovery] kiosk preview refresh failed after a committed wall move', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   return transition.previous;
 }
 

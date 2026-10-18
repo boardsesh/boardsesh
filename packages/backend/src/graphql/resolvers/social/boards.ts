@@ -69,6 +69,11 @@ import { listableSprayWallCondition, ownedUnfinishedSprayWallCondition } from '.
 // Helpers
 // ============================================
 
+/** A board's audience as the read gates see it: its policy row first, then the legacy booleans. */
+function effectiveBoardAudience(policyAudience: string | undefined, row: { isPublic: boolean; isUnlisted: boolean }) {
+  return policyAudience ?? (row.isUnlisted ? 'unlisted' : row.isPublic ? 'public' : 'only_me');
+}
+
 function throwIfBoardSerialConflict(error: unknown): void {
   if (isUniqueViolation(error, 'user_boards_unique_owner_serial')) {
     throw new GraphQLError('You already have another board linked to that serial', {
@@ -2421,10 +2426,12 @@ export const socialBoardMutations = {
     }
 
     let updated: typeof dbSchema.userBoards.$inferSelect;
-    // The locked row's visibility before this edit, for the kiosk tombstone below.
-    let previousVisibility = null as { isPublic: boolean; isUnlisted: boolean; anonReadable: boolean } | null;
+    // Whether a board a signed-out viewer could read changed audience, for the
+    // kiosk tombstone below.
+    let kioskAudienceChanged = false;
     try {
       const updatedRows = await db.transaction(async (tx) => {
+        kioskAudienceChanged = false;
         // Serialize partial edits to the same board before deriving the final
         // serial+config tuple. Without this row lock, a serial-only edit could
         // validate against C1 while a concurrent config-only edit changes the
@@ -2472,15 +2479,6 @@ export const socialBoardMutations = {
         if (lockedBoard.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
           throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
         }
-        // System-owned boards stay anon-readable whatever their flags say.
-        previousVisibility = {
-          isPublic: lockedBoard.isPublic,
-          isUnlisted: lockedBoard.isUnlisted,
-          anonReadable:
-            (lockedBoard.isPublic || lockedBoard.isUnlisted) &&
-            lockedBoard.deletedAt === null &&
-            lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID,
-        };
 
         const lockedLayoutId = Number(lockedBoard.layoutId);
         const lockedSizeId = Number(lockedBoard.sizeId);
@@ -2548,6 +2546,19 @@ export const socialBoardMutations = {
             updateValues.hideLocation = locationAudience !== 'public';
             if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
           }
+          // Read the audience the way the read gates do. System-owned boards
+          // stay anon-readable whatever their flags say.
+          const audienceBefore = effectiveBoardAudience(policy?.audience, lockedBoard);
+          const flagAfter = (value: unknown, before: boolean) => (typeof value === 'boolean' ? value : before);
+          const audienceAfter = effectiveBoardAudience(privacyUpdates.audience ?? policy?.audience, {
+            isPublic: flagAfter(updateValues.isPublic, lockedBoard.isPublic),
+            isUnlisted: flagAfter(updateValues.isUnlisted, lockedBoard.isUnlisted),
+          });
+          kioskAudienceChanged =
+            lockedBoard.deletedAt === null &&
+            lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID &&
+            (audienceBefore === 'public' || audienceBefore === 'unlisted') &&
+            audienceAfter !== audienceBefore;
           const changesPrivacy =
             (updateValues.isPublic !== undefined && updateValues.isPublic !== lockedBoard.isPublic) ||
             (updateValues.isUnlisted !== undefined && updateValues.isUnlisted !== lockedBoard.isUnlisted) ||
@@ -2574,7 +2585,7 @@ export const socialBoardMutations = {
       throw error;
     }
 
-    // A Public or Unlisted board whose visibility changes may drop out of a
+    // A Public or Unlisted board whose audience changes may drop out of a
     // kiosk's reach: going private takes it out of the anon-readable set, and
     // going Unlisted takes it away from kiosks that hold only its numeric id.
     // Either way the preview producer goes quiet and kiosks would keep the last
@@ -2583,10 +2594,7 @@ export const socialBoardMutations = {
     // uses the locked pre-update row: a board that was never anon-readable must
     // not get a publish on its channel at all (that alone would leak "something
     // changed here" to anyone who guessed the board id).
-    if (
-      previousVisibility?.anonReadable &&
-      (updated.isPublic !== previousVisibility.isPublic || updated.isUnlisted !== previousVisibility.isUnlisted)
-    ) {
+    if (kioskAudienceChanged) {
       try {
         await publishBoardQueuePreviewTombstoneForBoard(board.id);
       } catch (error) {

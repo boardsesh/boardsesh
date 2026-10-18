@@ -1253,6 +1253,33 @@ describe('board-queue-preview tombstone', () => {
     }
   });
 
+  it('moving a board with no privacy policy from Public to Unlisted tombstones its kiosks', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      // The legacy booleans only: `isUnlisted` wins over the `isPublic` left set.
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isUnlisted: true } }, authCtx());
+      expect(received).toEqual([expect.objectContaining({ boardId, ...EMPTY_PREVIEW_SHAPE })]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('making an Unlisted board private tombstones its kiosks', async () => {
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: false, isUnlisted: true });
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isUnlisted: false } }, authCtx());
+      expect(received).toEqual([expect.objectContaining({ boardId, ...EMPTY_PREVIEW_SHAPE })]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('deleting an account tombstones the kiosks of its Public and Unlisted boards, not its private ones', async () => {
     await seedSystemBoardOwner();
     const leaver = 'board-queue-preview-leaver';

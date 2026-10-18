@@ -77,9 +77,8 @@ describe('committed public wall move notification', () => {
     await ensureSessionRecordExists(sessionId, own.path, OWNER);
     const sessionEvent = vi.spyOn(pubsub, 'publishSessionEvent').mockImplementation(() => {});
     vi.spyOn(pubsub, 'getSessionBoard').mockRejectedValue(new Error('preview unavailable'));
-    await expect(updateSessionBoardPathIfChanged(sessionId, foreign.path, OWNER)).rejects.toThrow(
-      'preview unavailable',
-    );
+    // The move has committed, so the failed kiosk refresh is logged, not thrown.
+    await expect(updateSessionBoardPathIfChanged(sessionId, foreign.path, OWNER)).resolves.toBe(own.path);
     expect(sessionEvent).toHaveBeenCalledExactlyOnceWith(sessionId, {
       __typename: 'SessionBoardPathChanged',
       boardPath: foreign.path,
