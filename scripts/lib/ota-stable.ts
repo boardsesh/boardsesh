@@ -6,6 +6,7 @@ import type { StageReceipt } from '../mobile-ota-promote.ts';
 import { object, string, UPDATE_ID } from './ota-publish-protocol.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { OtaPlatform } from './ota-publish-protocol.ts';
+import { fleetlessReason } from './ota-rollout.ts';
 import type { RolloutHealth } from './ota-rollout.ts';
 
 export const PLATFORMS = ['ios', 'android'] as const;
@@ -215,6 +216,30 @@ export type StableDecision =
   | { action: 'start' | 'resume' | 'revert' | 'finish'; reason: string }
   | { action: 'raise'; percentage: number; reason: string };
 
+/**
+ * Whether every changed platform may finish: each is healthy or has no fleet to
+ * judge (`fleetlessReason`), and at least one is healthy, so all-zero counts
+ * from a broken health feed never finish blind.
+ */
+function finishEvidence(health: RolloutHealth[]): { ready: boolean; fleetless: string[] } {
+  const fleetless: string[] = [];
+  let healthy = 0;
+  for (const entry of health) {
+    if (entry.judgement.verdict === 'healthy') {
+      healthy += 1;
+      continue;
+    }
+    const reason = fleetlessReason(entry, otaReleasePolicy.health);
+    if (reason === null) return { ready: false, fleetless: [] };
+    fleetless.push(reason);
+  }
+  return { ready: healthy > 0, fleetless };
+}
+
+function withFleetless(reason: string, fleetless: string[]): string {
+  return fleetless.length === 0 ? reason : `${reason} Not waiting on ${fleetless.join('; ')}.`;
+}
+
 /** Pure decision: delayed ticks advance one step; an empty health answer never means healthy. */
 export function decideStable(state: StableState, now: Date, health: RolloutHealth[]): StableDecision {
   const active = state.active;
@@ -269,8 +294,15 @@ export function decideStable(state: StableState, now: Date, health: RolloutHealt
   );
   if (!valid) return { action: 'hold', reason: 'Missing or malformed health counts; no progression.' };
   if (active.phase === 'finishing') {
-    return health.every((entry) => entry.judgement.verdict === 'healthy')
-      ? { action: 'finish', reason: 'Resume the recorded finish after rechecking every changed platform cohort.' }
+    const evidence = finishEvidence(health);
+    return evidence.ready
+      ? {
+          action: 'finish',
+          reason: withFleetless(
+            'Resume the recorded finish after rechecking every changed platform cohort.',
+            evidence.fleetless,
+          ),
+        }
       : { action: 'hold', reason: 'Finish needs healthy evidence on every changed platform.' };
   }
   if (active.pendingPercentage !== null)
@@ -294,9 +326,16 @@ export function decideStable(state: StableState, now: Date, health: RolloutHealt
   if (!dailyWindow || totalHours < otaReleasePolicy.minimumSoakHours || stepHours < 8) {
     return { action: 'hold', reason: 'Finish needs the daily window, twenty total hours and eight hours at 50%.' };
   }
-  if (!health.every((entry) => entry.judgement.verdict === 'healthy'))
+  const evidence = finishEvidence(health);
+  if (!evidence.ready)
     return { action: 'hold', reason: '50% holds until every changed platform has sufficient healthy evidence.' };
-  return { action: 'finish', reason: 'Every changed platform is healthy after the full soak.' };
+  return {
+    action: 'finish',
+    reason:
+      evidence.fleetless.length === 0
+        ? 'Every changed platform is healthy after the full soak.'
+        : withFleetless('Every judged platform is healthy after the full soak.', evidence.fleetless),
+  };
 }
 
 /** Baseline refresh is allowed only for the controller's just-finished canary. */

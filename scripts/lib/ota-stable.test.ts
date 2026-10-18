@@ -151,6 +151,80 @@ describe('daily release decisions', () => {
       expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), changedHealth)).toMatchObject({ action: 'revert' });
     },
   );
+  describe('a changed platform with no fleet to judge (#6524)', () => {
+    // iOS 2.6.0 live and healthy; Android 2.6.0 still a Play draft, so its runtime has almost no devices.
+    const soaked = () => ({ ...activeFixture(), percentage: 50, stepSince: '2026-10-09T10:00:00Z' });
+    const window = new Date('2026-10-09T22:00:00Z');
+    const fleetlessAndroid = (canary = { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 }) => {
+      const health = healthFixture();
+      health[1]!.judgement.verdict = 'insufficient-evidence';
+      health[1]!.canary = canary;
+      health[1]!.control = { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 };
+      return health;
+    };
+
+    it('finishes the healthy platform and names the fleetless one', () => {
+      const decision = decideStable({ ...initialStableState(), active: soaked() }, window, fleetlessAndroid());
+      expect(decision).toMatchObject({ action: 'finish', reason: expect.stringContaining('android has no fleet') });
+      expect(decision.reason).toContain('1 device(s) reported');
+    });
+
+    it('still needs the daily window and the full soak', () => {
+      const state = { ...initialStableState(), active: soaked() };
+      expect(decideStable(state, new Date('2026-10-09T21:00:00Z'), fleetlessAndroid()).action).toBe('hold');
+      state.active.stepSince = '2026-10-09T15:00:00Z';
+      expect(decideStable(state, window, fleetlessAndroid()).action).toBe('hold');
+    });
+
+    it('holds when the fleetless canary has a faulty device', () => {
+      const health = fleetlessAndroid({ devicesOnUpdate: 2, successfulDevices: 1, faultyDevices: 1 });
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+    });
+
+    it('holds once the runtime reaches the evidence floor without a verdict', () => {
+      const health = fleetlessAndroid({ devicesOnUpdate: 10, successfulDevices: 10, faultyDevices: 0 });
+      health[1]!.control = { devicesOnUpdate: 5, successfulDevices: 5, faultyDevices: 0 };
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+      health[1]!.control = { devicesOnUpdate: 4, successfulDevices: 4, faultyDevices: 0 };
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('finish');
+    });
+
+    it('never finishes when no platform is healthy', () => {
+      const health = fleetlessAndroid();
+      health[0]!.judgement.verdict = 'insufficient-evidence';
+      health[0]!.canary = { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 };
+      health[0]!.control = { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 };
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+    });
+
+    it('holds a lone changed platform that is fleetless', () => {
+      const active = soaked();
+      active.unchangedPlatforms = { ios: baselineIds.ios };
+      delete active.updateIds.ios;
+      const health = fleetlessAndroid().filter((entry) => entry.rollout.platform === 'android');
+      expect(decideStable({ ...initialStableState(), active }, window, health).action).toBe('hold');
+    });
+
+    it('holds when the fleetless platform has malformed or missing control counts', () => {
+      const health = fleetlessAndroid();
+      health[1]!.control = null;
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('hold');
+    });
+
+    it('still reverts when the other platform is unhealthy', () => {
+      const health = fleetlessAndroid();
+      health[0]!.judgement.verdict = 'unhealthy';
+      expect(decideStable({ ...initialStableState(), active: soaked() }, window, health).action).toBe('revert');
+    });
+
+    it('resumes a recorded finish with a fleetless platform', () => {
+      const active: StableRelease = { ...soaked(), phase: 'finishing' };
+      expect(decideStable({ ...initialStableState(), active }, window, fleetlessAndroid())).toMatchObject({
+        action: 'finish',
+        reason: expect.stringContaining('android has no fleet'),
+      });
+    });
+  });
   it('unhealthy evidence reverts even before the timer expires', () => {
     expect(
       decideStable(

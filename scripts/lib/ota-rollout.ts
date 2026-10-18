@@ -378,6 +378,36 @@ export function judgeCanary(
   return { verdict: 'healthy', reason: `Healthy: ${observed}, within ${allowance}.` };
 }
 
+/**
+ * Why a changed platform has no fleet to judge, or null when it has one.
+ *
+ * A platform is fleetless when its canary and control together have fewer
+ * reporting devices than the evidence floor and none of the canary's devices
+ * failed. That is a native runtime whose store binary has not reached people
+ * yet: Android 2.6.0 sat as a Play draft while iOS 2.6.0 was live, and its
+ * canary stayed at zero devices for days (#6524). Holding for evidence that
+ * cannot arrive protects nobody on that platform and freezes the other one.
+ *
+ * Only an `insufficient-evidence` verdict with valid counts qualifies. A faulty
+ * canary device, malformed counts or any other verdict never does.
+ */
+export function fleetlessReason(
+  entry: Pick<RolloutHealth, 'rollout' | 'canary' | 'control' | 'judgement'>,
+  policy: OtaHealthPolicy,
+): string | null {
+  if (entry.judgement.verdict !== 'insufficient-evidence') return null;
+  const floor = policy.evidenceFloorDevicesPerPlatform;
+  const canary = judgedCohort(entry.canary);
+  const control = judgedCohort(entry.control);
+  if (!isCount(floor) || !canary || !control || canary.faulty !== 0) return null;
+  const reporting = canary.judged + control.judged;
+  if (reporting >= floor) return null;
+  return (
+    `${entry.rollout.platform} has no fleet to judge: ${reporting} device(s) reported on its canary and control ` +
+    `together, under the ${floor}-device floor, with no faulty canary device`
+  );
+}
+
 export interface RolloutHealth {
   rollout: ActiveRollout;
   canaryUpdateUUID: string | null;

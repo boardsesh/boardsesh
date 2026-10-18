@@ -4,7 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { otaReleasePolicy } from '../../infra/ota/config';
 import { FAKE_APP, fakeXprem } from '../__tests__/helpers/fake-xprem';
 import type { FakeRoute } from '../__tests__/helpers/fake-xprem';
-import { judgeCanary, listActiveRollouts, readRolloutHealth, revertRollout, setRolloutPercentage } from './ota-rollout';
+import {
+  fleetlessReason,
+  judgeCanary,
+  listActiveRollouts,
+  readRolloutHealth,
+  revertRollout,
+  setRolloutPercentage,
+} from './ota-rollout';
 
 const IOS_RTV = 'a'.repeat(40);
 const ANDROID_RTV = 'b'.repeat(40);
@@ -550,6 +557,61 @@ describe('judgeCanary', () => {
     expect(judgeCanary(usable, control, { ...POLICY, maxFaultyRatePercent: Number.NaN }).verdict).toBe(
       'insufficient-evidence',
     );
+  });
+});
+
+describe('fleetlessReason', () => {
+  const cohort = (successful: number, faulty = 0) => ({
+    devicesOnUpdate: successful + faulty,
+    successfulDevices: successful,
+    faultyDevices: faulty,
+  });
+  const entry = (
+    canary: ReturnType<typeof cohort> | null,
+    control: ReturnType<typeof cohort> | null,
+    verdict: 'healthy' | 'unhealthy' | 'insufficient-evidence' = 'insufficient-evidence',
+  ) => ({
+    rollout: {
+      branch: 'production',
+      runtimeVersion: ANDROID_RTV,
+      platform: 'android' as const,
+      updateId: '32',
+      controlUpdateId: '1',
+      percentage: 50,
+      createdAt: '2026-10-14T22:55:52Z',
+    },
+    canary,
+    control,
+    judgement: { verdict, reason: 'test' },
+  });
+
+  it('names a runtime with no devices to judge', () => {
+    expect(fleetlessReason(entry(cohort(0), cohort(1)), POLICY)).toBe(
+      'android has no fleet to judge: 1 device(s) reported on its canary and control together, ' +
+        'under the 15-device floor, with no faulty canary device',
+    );
+  });
+
+  it('counts canary and control together against the floor', () => {
+    expect(fleetlessReason(entry(cohort(7), cohort(7)), POLICY)).not.toBeNull();
+    expect(fleetlessReason(entry(cohort(7), cohort(8)), POLICY)).toBeNull();
+  });
+
+  it.each([
+    ['a faulty canary device', entry(cohort(1, 1), cohort(1))],
+    ['a missing canary', entry(null, cohort(1))],
+    ['a missing control', entry(cohort(0), null)],
+    ['malformed counts', entry({ devicesOnUpdate: 0, successfulDevices: Number.NaN, faultyDevices: 0 }, cohort(0))],
+    ['a healthy verdict', entry(cohort(0), cohort(0), 'healthy')],
+    ['an unhealthy verdict', entry(cohort(0), cohort(0), 'unhealthy')],
+  ])('is never fleetless with %s', (_label, health) => {
+    expect(fleetlessReason(health, POLICY)).toBeNull();
+  });
+
+  it('is never fleetless under a malformed policy', () => {
+    expect(
+      fleetlessReason(entry(cohort(0), cohort(0)), { ...POLICY, evidenceFloorDevicesPerPlatform: Number.NaN }),
+    ).toBeNull();
   });
 });
 

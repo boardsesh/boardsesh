@@ -203,6 +203,9 @@ export const otaReleasePolicy: OtaReleasePolicy = {
   health: {
     // About 450 devices check in a day, so a 50% canary reaches a few dozen per
     // platform. 15 is what the smaller platform can plausibly reach in a day.
+    // A platform whose canary and control together stay under it, with no faulty
+    // canary device, has no fleet yet and does not block the other platform's
+    // finish (`fleetlessReason` in scripts/lib/ota-rollout.ts, #6524).
     evidenceFloorDevicesPerPlatform: 15,
     // Two faulty devices can be two unlucky phones. Three is a pattern.
     minFaultyDevicesToFail: 3,

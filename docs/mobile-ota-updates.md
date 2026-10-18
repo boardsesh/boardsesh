@@ -958,7 +958,13 @@ read-only plan that skips boot execution; the controller's other jobs retain the
 
 Each of 5%, 10%, 25% and 50% must soak for at least four hours. Completion additionally needs at
 least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on every changed platform.
-Insufficient samples with valid counts may progress through 50%, then hold. Missing or malformed
+Insufficient samples with valid counts may progress through 50%, then hold.
+One exception keeps a store lag from freezing both platforms. A changed platform whose canary and
+control together have fewer than 15 reporting devices, with no faulty canary device, has no fleet to
+judge: that native runtime has not reached people yet (for example, Android 2.6.0 sat as a Play draft
+while iOS 2.6.0 was live, #6524). Such a platform does not block the finish, provided at least one other
+changed platform is healthy; the finish reason names it with its device count. A faulty canary device,
+missing or malformed counts, or no healthy platform at all still holds. Missing or malformed
 health data holds progression. An unhealthy platform reverts the owned canaries, except the partial-finish
 case below. There is only one active production canary; staging and beta continue independently.
 Start and step clocks begin after every changed platform write is confirmed, so a partial write never shortens a soak.
