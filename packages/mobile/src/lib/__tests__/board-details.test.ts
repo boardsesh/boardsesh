@@ -158,16 +158,20 @@ describe('getBoardRenderData', () => {
   ])('keeps layout %i label art (%s) out of the background stack', async (layoutId, labelsKey) => {
     const actual = await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
     mockedGetMoonBoardDetails.mockImplementation(actual.getMoonBoardDetails);
-    const [layoutKey] = actual.getLayoutById(layoutId)!;
-    const setIds = actual.getHoldSetsForLayout(layoutKey as MoonBoardLayoutKey).map((holdSet) => holdSet.id);
+    const [layoutKey, layout] = actual.getLayoutById(layoutId)!;
+    const holdSets = actual.getHoldSetsForLayout(layoutKey as MoonBoardLayoutKey);
+    const setIds = holdSets.map((holdSet) => holdSet.id);
+    // Straight from the layout table, not from `images_to_holds`: every hold
+    // set's own art, in set order, and nothing else.
+    const holdSetArtKeys = holdSets.map((holdSet) =>
+      `moonboard/${layout.folder}/${holdSet.imageFile}`.replace(/\.png$/, '.webp'),
+    );
 
     const result = getBoardRenderData({ boardName: 'moonboard', layoutId, sizeId: 1, setIds });
 
     expect(moonBoardGridLabelsImageKey(layoutId)).toBe(labelsKey);
-    expect(result?.backgroundImageKeys).not.toContain(labelsKey);
-    // Every hold set is still drawn, one layer each.
-    expect(result?.backgroundImageKeys).toHaveLength(setIds.length);
-    expect(setIds.length).toBeGreaterThan(0);
+    expect(holdSetArtKeys.length).toBeGreaterThan(0);
+    expect(result?.backgroundImageKeys).toEqual(holdSetArtKeys);
   });
 
   it('returns null for an invalid MoonBoard size', () => {
