@@ -709,4 +709,15 @@ describe('native release workflow contracts', () => {
     expect(steps[guard]?.run).toContain('echo "skip=true" >> "$GITHUB_OUTPUT"');
     expect(steps[guard]?.run).not.toContain('skip=false');
   });
+
+  // On 2026-10-18 a store-draft run read 2.6.0 as a draft four seconds before a
+  // production release committed it, then wrote a second draft on top (#6524).
+  it('serializes the production draft with the production release on one Play lock', () => {
+    type Jobs = { jobs: Record<string, { concurrency?: { group?: string; 'cancel-in-progress'?: boolean } }> };
+    const releaseJob = (parse(workflow('mobile-store-android-production.yml')) as Jobs).jobs['release'];
+    const draftJob = (parse(draft) as Jobs).jobs['android'];
+    for (const job of [releaseJob, draftJob]) {
+      expect(job?.concurrency).toEqual({ group: 'play-production-track', 'cancel-in-progress': false });
+    }
+  });
 });

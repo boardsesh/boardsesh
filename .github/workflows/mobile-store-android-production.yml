@@ -36,6 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     timeout-minutes: 10
+    # Shared with the store-draft workflow's Android job. Without it, a draft run
+    # can read the build as "still a draft" just before this job releases it, then
+    # write a second production draft over the top (#6524, 2026-10-18).
+    concurrency:
+      group: play-production-track
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

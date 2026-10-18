@@ -493,6 +493,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Production
+    # Shared with Android Production Release, so the draft guard's read and the
+    # draft write can never interleave with a production release (#6524).
+    concurrency:
+      group: play-production-track
+      cancel-in-progress: false
 
     steps:
       - name: Checkout repository

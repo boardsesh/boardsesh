@@ -463,7 +463,10 @@ build instead. After a build is released, the store-draft workflow's Android job
 reads the production track first (GET-only) and leaves it alone once that build is in
 review, rolling out or live, or when production carries a newer build (a newer draft
 included). A release-branch checkout that predates the guard skips the Play draft too:
-merge `main` into the train, or draft from `main`.
+merge `main` into the train, or draft from `main`. That job and Android Production
+Release share the `play-production-track` job lock, so the guard's read and the draft
+write never interleave with a release. Before the lock, a draft run read 2.6.0 as a
+draft four seconds before a release committed it, then wrote a second draft on top.
 
 Until Android reaches production, the daily stable OTA controller has no Android
 devices to judge on that native runtime. Release Android promptly after its store
