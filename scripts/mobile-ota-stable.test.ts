@@ -683,13 +683,17 @@ describe('stable controller execution', () => {
     live.forEach((entry) => {
       entry.percentage = 50;
     });
+    const androidControl = candidateFixture().receipt.baselineProductionUpdateIds.android;
+    // Same no-fleet shape as the finishing case (canary 0, control 1), so only the issue counters decide.
     client.getUpdateHealth.mockImplementation(async (ids: string[]) =>
       Object.fromEntries(
         ids.map((id) => [
           id,
           id === nativeUUIDs.android
             ? { devicesOnUpdate: 0, successfulDevices: 0, faultyDevices: 0 }
-            : { devicesOnUpdate: 20, successfulDevices: 20, faultyDevices: 0 },
+            : id === androidControl
+              ? { devicesOnUpdate: 1, successfulDevices: 1, faultyDevices: 0 }
+              : { devicesOnUpdate: 20, successfulDevices: 20, faultyDevices: 0 },
         ]),
       ),
     );
