@@ -390,6 +390,9 @@ vi.mock('../../lib/routing/anonymous-auth-gate', async () => {
 
 import { AuthProvider } from '../auth-provider';
 import { GATED_PATHS, READ_ONLY_PATHS } from '../../lib/routing/__tests__/read-only-route-corpus';
+// The real store behind the start-up choice (only the settings barrel is
+// stubbed above), so `getAppEntryHref()` reads what the test wrote.
+import { setSetting } from '../../settings/hooks';
 
 function renderGate() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -475,5 +478,35 @@ describe('AuthProvider anonymous read-only gate (web)', () => {
 
     await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('evil.example'));
+  });
+
+  // #6289: the start-up choice only fills in when sign-in has nowhere of its
+  // own to go. The climb a visitor signed in to see still wins.
+  describe('with Home chosen as the start-up tab', () => {
+    beforeEach(() => setSetting('startupScreen', 'home'));
+    afterEach(() => setSetting('startupScreen', 'climbs'));
+
+    it('still lands a freshly signed-in visitor on the climb their next= names', async () => {
+      const next = '/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+      getAuthTokenMock.mockResolvedValue('jwt-token');
+      routerState.segments = ['auth', 'login'];
+      window.history.replaceState({}, '', `/auth/login?next=${encodeURIComponent(next)}`);
+
+      renderGate();
+
+      await waitFor(() => expect(redirectMock).toHaveBeenCalledWith(next));
+      expect(redirectMock).not.toHaveBeenCalledWith('/(tabs)/home');
+    });
+
+    it('lands an untargeted sign-in on Home', async () => {
+      getAuthTokenMock.mockResolvedValue('jwt-token');
+      routerState.segments = ['auth', 'login'];
+      window.history.replaceState({}, '', '/auth/login');
+
+      renderGate();
+
+      await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+      expect(redirectMock).not.toHaveBeenCalledWith('/(tabs)/climbs');
+    });
   });
 });

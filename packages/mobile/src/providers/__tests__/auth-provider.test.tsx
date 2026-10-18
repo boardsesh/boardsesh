@@ -432,6 +432,9 @@ import {
   sprayWallViewerGeneration,
 } from '../../lib/spray/spray-wall-registry';
 import { GATED_PATHS, READ_ONLY_PATHS } from '../../lib/routing/__tests__/read-only-route-corpus';
+// The real store behind the start-up choice (only the settings barrel is
+// stubbed above), so `getAppEntryHref()` reads what the test wrote.
+import { setSetting } from '../../settings/hooks';
 
 describe('AuthProvider loading state', () => {
   beforeEach(() => {
@@ -3124,5 +3127,22 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
     await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(redirectMock).not.toHaveBeenCalledWith(next);
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
+  });
+
+  // #6289: a sign-in with nowhere of its own to go opens the start-up tab the
+  // climber chose, like a launch does.
+  it('lands a sign-in on Home when the climber chose Home to start', async () => {
+    setSetting('startupScreen', 'home');
+    try {
+      getAuthTokenMock.mockResolvedValue('jwt-token');
+      routerState.segments = ['auth', 'login'];
+
+      renderGate();
+
+      await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+      expect(redirectMock).not.toHaveBeenCalledWith('/(tabs)/climbs');
+    } finally {
+      setSetting('startupScreen', 'climbs');
+    }
   });
 });

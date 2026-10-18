@@ -50,9 +50,29 @@ There are **5 tabs** (the web has a 6th "Create" tab but it is between Discover 
 The mobile tabs remain **Home, Climbs, Session, Discover, You**, in that order.
 Session keeps the `/record` route; only its visible navigation label changes.
 An ordinary launch and untargeted post-login entry select **Climbs**, using the
-stored active board. Selecting the initial tab does not reorder the bar. Explicit
-deep links, session joins and warm resumes retain their own destinations.
-Screenshot mode intentionally starts on Home to preserve the capture readiness contract.
+stored active board, unless the climber chose **Home** under Settings › General ›
+"Open the app on" (#6289). Selecting the initial tab does not reorder the bar.
+
+- **Where it lives:** `startupScreen: 'climbs' | 'home'` in the MMKV settings store,
+  default `climbs`, per device. Sign-out does not clear it. An unknown stored value
+  opens Climbs, and older bundles ignore the key, so an OTA rollback opens Climbs.
+- **Who reads it:** only `getAppEntryTab()` / `getAppEntryHref()` in
+  `src/lib/app-entry-route.ts`, synchronously. `app/(tabs)/_layout.tsx` reads it
+  once at module load for `initialRouteName`; the launcher (`app/index.tsx`), the
+  post-login redirect and the session-unavailable recovery in `auth-provider.tsx`
+  read it on render.
+- **When it applies:** from the next start. Changing it never navigates, and
+  nothing re-reads it on resume, so returning from the background keeps the
+  current screen.
+- **What still wins:** a deep link resolves to its own route and never renders the
+  launcher; a tapped notification pushes its destination after entry; the
+  onboarding gate pushes the first-board picker over whichever tab is showing; on
+  web a post-login `next=` return is read before the start-up tab. Session joins
+  and warm resumes keep their own destinations too.
+- **Screenshot mode** always starts on Home to preserve the capture readiness
+  contract, whatever the simulator has stored.
+
+The bar itself depends on the device:
 
 - **Native iPhone:** Liquid Glass uses `NativeTabs` (the system UIKit tab bar) on
   every iPhone, iOS 18 included. On iOS 26 Climbs keeps `role="search"` and its

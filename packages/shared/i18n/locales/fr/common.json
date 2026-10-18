@@ -385,6 +385,10 @@
         "contributeTitle": "Aidez à traduire Boardsesh",
         "contributeSubtitle": "Les traductions sont maintenues par la communauté. Ouvrez les fichiers {{language}} sur GitHub pour corriger ou ajouter une phrase."
       },
+      "startup": {
+        "title": "Ouvrir l'app sur",
+        "footer": "S'applique à la prochaine ouverture de l'app. Les liens, les notifications et la configuration initiale t'emmènent toujours à leur destination."
+      },
       "diagnostics": {
         "recording": "Partager les enregistrements de session",
         "recordingDescription": "Enregistre ton écran dans l’app pour qu’on voie le bug se produire. Ce que tu tapes et tes photos restent masqués. Active-le pendant que tu reproduis un problème pour le support, puis désactive-le."

@@ -87,6 +87,19 @@ describe('native import notification handlers', () => {
     expect(router.push).toHaveBeenCalledOnce();
   });
 
+  // #6289: the start-up tab is for a plain launch. A tapped notification opens
+  // where it points, over whichever tab the launch picked.
+  it('opens a tapped notification where it points with Home chosen to start', async () => {
+    const { setSetting } = await import('../../settings/hooks');
+    setSetting('startupScreen', 'home');
+    mocks.lastResponse.mockReturnValue(response({ type: 'session_invite', sessionId: 'session' }));
+    const { setupNotificationHandlers } = await import('../handlers');
+    const router = { push: vi.fn() };
+    setupNotificationHandlers(router, { canNavigate: true });
+    expect(router.push).toHaveBeenCalledOnce();
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/(tabs)/queue', params: { sessionId: 'session' } });
+  });
+
   it('refreshes import progress for a foreground completion without navigating', async () => {
     const { setupNotificationHandlers } = await import('../handlers');
     const router = { push: vi.fn() };

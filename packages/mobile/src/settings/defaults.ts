@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   restTimerAutoAdvance: false,
   restTimerMode: 'afterTick',
   theme: 'system',
+  startupScreen: 'climbs',
   hapticFeedbackEnabled: true,
   notifySessionInvites: true,
   notifyClimbComments: true,

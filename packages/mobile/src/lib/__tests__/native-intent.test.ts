@@ -7,6 +7,7 @@ vi.mock('expo-share-intent', () => ({
 }));
 
 import { redirectSystemPath } from '../../../app/+native-intent';
+import { setSetting } from '../../settings/hooks';
 
 const JOIN_LINK = '/join/123e4567-e89b-12d3-a456-426614174000';
 
@@ -31,6 +32,20 @@ describe('redirectSystemPath', () => {
   it('leaves ordinary deep links untouched', () => {
     getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
     expect(redirectSystemPath({ path: JOIN_LINK, initial: true })).toBe(JOIN_LINK);
+  });
+
+  // #6289: the start-up tab is for a plain launch. A link opens where it
+  // points, cold or warm, and never detours through the launcher route.
+  it.each([true, false])('keeps a deep link on its own route with Home chosen to start (initial=%s)', (initial) => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    const climbLink = 'https://boardsesh.com/b/the-gym/40/view/crimpy-thing-0A1B2C3D4E5F60718293A4B5C6D7E8F9';
+    setSetting('startupScreen', 'home');
+    try {
+      expect(redirectSystemPath({ path: JOIN_LINK, initial })).toBe(JOIN_LINK);
+      expect(redirectSystemPath({ path: climbLink, initial })).toBe(climbLink);
+    } finally {
+      setSetting('startupScreen', 'climbs');
+    }
   });
 
   it.each([

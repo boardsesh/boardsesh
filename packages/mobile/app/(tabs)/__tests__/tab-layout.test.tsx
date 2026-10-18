@@ -316,6 +316,21 @@ describe('TabLayout', () => {
     expect(unstable_settings.initialRouteName).toBe('climbs');
   });
 
+  // The navigator reads the start-up choice once, when this module loads, so
+  // the next launch is a fresh module graph that finds the stored value there.
+  // The bar's order is the test below; only the selected tab moves.
+  it('selects Home on the next launch once the climber chose Home', async () => {
+    vi.resetModules();
+    const { setSetting } = await import('../../../src/settings/hooks');
+    setSetting('startupScreen', 'home');
+
+    const nextLaunch = await import('../_layout');
+
+    expect(nextLaunch.unstable_settings.initialRouteName).toBe('home');
+    // The module already loaded keeps what it read at its own launch.
+    expect(unstable_settings.initialRouteName).toBe('climbs');
+  });
+
   it('renders Home as the leftmost native tab', () => {
     const { container } = render(<TabLayout />);
     const triggerNames = Array.from(container.querySelectorAll('[data-trigger]')).map((trigger) =>

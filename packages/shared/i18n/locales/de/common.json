@@ -385,6 +385,10 @@
         "contributeTitle": "Hilf mit, Boardsesh zu übersetzen",
         "contributeSubtitle": "Die Übersetzungen kommen aus der Community. Öffne die {{language}}-Dateien auf GitHub, um eine Formulierung zu korrigieren oder zu ergänzen."
       },
+      "startup": {
+        "title": "Startbildschirm",
+        "footer": "Gilt ab dem nächsten App-Start. Links, Benachrichtigungen und die Einrichtung öffnen weiterhin ihr eigenes Ziel."
+      },
       "diagnostics": {
         "recording": "Sitzungsaufzeichnungen teilen",
         "recordingDescription": "Zeichnet deinen Bildschirm in der App auf, damit wir sehen, wie ein Bug passiert. Deine Eingaben und Fotos bleiben verborgen. Schalte es ein, während du ein Problem für den Support nachstellst, und danach wieder aus."

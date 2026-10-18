@@ -385,6 +385,10 @@
         "contributeTitle": "Help translate Boardsesh",
         "contributeSubtitle": "These come from the community. Open the {{language}} files on GitHub to fix or add a phrase."
       },
+      "startup": {
+        "title": "Open the app on",
+        "footer": "Starts next time you open the app. Links, notifications and setup still open where they point."
+      },
       "diagnostics": {
         "recording": "Share session recordings",
         "recordingDescription": "Records your screen in the app so we can see a bug happen. Your typing and photos stay hidden. Turn it on while you reproduce a problem for support, then switch it off."

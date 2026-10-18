@@ -51,6 +51,8 @@ export function GeneralSettingsScreen() {
   // itself is `useKeepBoardsOffline`, mounted once by the settings layout; the
   // tap is `makeAutoOfflineBoardsToggle`.
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
+  // Read by `getAppEntryTab()` on the next start; writing it moves nothing now.
+  const [startupScreen, setStartupScreen] = useSetting('startupScreen');
   const missingOfflineBoards = useMissingOfflineBoards();
   const { effectiveOffline, offlineMode } = useConnectivity();
   // What is still sitting in the outbox. Gated on `schemaReady`: on a contended
@@ -133,6 +135,11 @@ export function GeneralSettingsScreen() {
             hapticLight();
             void openExternalUrl(`${GITHUB_LOCALES_TREE_URL}/${activeLocale}`, 'more-help-translate');
           },
+          startupScreen,
+          onStartupScreenChange: (screen) => {
+            hapticSelection();
+            setStartupScreen(screen);
+          },
           offline: {
             offlineEnabled,
             // Native only: on Expo web there is no storage behind the switch
@@ -164,6 +171,8 @@ export function GeneralSettingsScreen() {
       localePreference,
       setLocalePreference,
       activeLocale,
+      startupScreen,
+      setStartupScreen,
       offlineEnabled,
       offlineMode,
       autoOfflineBoards,

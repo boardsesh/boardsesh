@@ -14,6 +14,9 @@ export type OwnedSprayWallPinLedger = {
   wallUuids: string[];
 };
 
+/** The tab an ordinary launch opens on (Settings › General, #6289). */
+export type StartupScreen = 'climbs' | 'home';
+
 export type AppSettings = {
   defaultBoardUuid: string | null;
   syncEnabledBoards: string[];
@@ -114,6 +117,15 @@ export type AppSettings = {
   /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
   restTimerMode: RestTimerMode;
   theme: 'system' | 'light' | 'dark';
+  /**
+   * Which tab an ordinary launch opens on. Read synchronously by
+   * `getAppEntryTab()` (`lib/app-entry-route.ts`), which the tab navigator
+   * evaluates once at module load, so a change applies from the next start and
+   * never navigates on its own. Links, notification taps, onboarding and a
+   * post-login return still open where they point. Per device, and it survives
+   * sign-out: nothing at the account boundary clears this store.
+   */
+  startupScreen: StartupScreen;
   hapticFeedbackEnabled: boolean;
   notifySessionInvites: boolean;
   notifyClimbComments: boolean;

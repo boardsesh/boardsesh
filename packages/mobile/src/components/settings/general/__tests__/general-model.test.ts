@@ -35,6 +35,8 @@ function makeInput(overrides: Partial<GeneralModelInput> = {}): GeneralModelInpu
     onLanguageChange: vi.fn(),
     activeLocale: 'fr',
     onHelpTranslate: vi.fn(),
+    startupScreen: 'climbs',
+    onStartupScreenChange: vi.fn(),
     offline: makeOffline(),
     onReplayWalkthrough: vi.fn(),
     onReplayBoardLook: vi.fn(),
@@ -64,11 +66,12 @@ function findRow(input: GeneralModelInput, key: string): MoreRow {
 }
 
 describe('buildGeneralModel', () => {
-  it('runs appearance, language, help translate, offline, then the walkthroughs', () => {
+  it('runs appearance, language, help translate, start-up tab, offline, then the walkthroughs', () => {
     expect(buildGeneralModel(makeInput()).sections.map((section) => section.key)).toEqual([
       'appearance',
       'language',
       'languageContribute',
+      'startup',
       'offline',
       'storage',
       'replay',
@@ -94,6 +97,41 @@ describe('buildGeneralModel', () => {
     if (row.kind !== 'select') throw new Error('language is not a select');
     expect(row.options.map((option) => option.key)).toEqual(['system', 'en-US', 'es', 'fr', 'de']);
     expect(row.options.find((option) => option.key === 'es')?.label).toBe('Español');
+  });
+
+  describe('the start-up tab', () => {
+    it('offers Climbs then Home under the tab names, with Climbs chosen by default', () => {
+      const row = findRow(makeInput(), 'startupScreen');
+      if (row.kind !== 'segmented') throw new Error('startupScreen is not a segmented row');
+      expect(row.options).toEqual([
+        { key: 'climbs', label: 'mobile.nav.climbs' },
+        { key: 'home', label: 'mobile.nav.home' },
+      ]);
+      expect(row.selectedKey).toBe('climbs');
+      expect(row.label).toBe('mobile.settings.startup.title');
+    });
+
+    it('shows a stored Home choice', () => {
+      const row = findRow(makeInput({ startupScreen: 'home' }), 'startupScreen');
+      if (row.kind !== 'segmented') throw new Error('startupScreen is not a segmented row');
+      expect(row.selectedKey).toBe('home');
+    });
+
+    it('says when it applies and what still opens elsewhere', () => {
+      const section = buildGeneralModel(makeInput()).sections.find((candidate) => candidate.key === 'startup');
+      expect(section?.title).toBe('mobile.settings.startup.title');
+      expect(section?.footer).toBe('mobile.settings.startup.footer');
+    });
+
+    it('saves known tabs only', () => {
+      const onStartupScreenChange = vi.fn();
+      const row = findRow(makeInput({ onStartupScreenChange }), 'startupScreen');
+      if (row.kind !== 'segmented') throw new Error('startupScreen is not a segmented row');
+      row.onSelect('home');
+      row.onSelect('profile');
+      expect(onStartupScreenChange).toHaveBeenCalledTimes(1);
+      expect(onStartupScreenChange).toHaveBeenCalledWith('home');
+    });
   });
 
   it('changes appearance and language to known options only', () => {

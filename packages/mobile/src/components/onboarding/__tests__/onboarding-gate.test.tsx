@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import type { OnboardingGateEvaluation } from '../../../lib/onboarding/onboarding-gate-analytics';
 import { clearBoardLinkReplay, setBoardLinkReplay } from '../../../lib/routing/board-link-replay';
+import { setSetting } from '../../../settings/hooks';
 
 // The profile's creation times the suite uses, against a frozen "now". Most
 // cases describe an existing climber, which the first-board picker (#5654)
@@ -852,6 +853,22 @@ describe('OnboardingGate', () => {
       expect(readShowCountMock).toHaveBeenCalledWith('user-new');
       expect(recordShownMock).toHaveBeenCalledWith('user-new', 1);
       expect(recordShownMock.mock.invocationCallOrder[0]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
+    });
+
+    // #6289: a climber can start on Home instead of Climbs. Setup is required,
+    // so it still opens over whichever tab the launch picked.
+    it('opens the picker over Home when the climber chose to start there', async () => {
+      setSetting('startupScreen', 'home');
+      segmentsCtrl.segments = ['(tabs)', 'home'];
+      try {
+        render(<OnboardingGate />);
+
+        await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+        expect(pushMock).toHaveBeenCalledWith(FIRST_BOARD_HREF);
+        expect(decisions()[0]).toMatchObject({ outcome: 'presented', reason: 'new_account', topSegment: '(tabs)' });
+      } finally {
+        setSetting('startupScreen', 'climbs');
+      }
     });
 
     // The decision is what stops the watchdog, so it goes out before the push:

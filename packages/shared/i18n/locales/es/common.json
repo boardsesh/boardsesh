@@ -657,6 +657,10 @@
         "contributeTitle": "Ayuda a traducir Boardsesh",
         "contributeSubtitle": "Las traducciones las mantiene la comunidad. Abre los archivos de {{language}} en GitHub para corregir o añadir una frase."
       },
+      "startup": {
+        "title": "Abrir la app en",
+        "footer": "Se aplica la próxima vez que abras la app. Los enlaces, las notificaciones y la configuración inicial te siguen llevando a su destino."
+      },
       "diagnostics": {
         "recording": "Compartir grabaciones de sesión",
         "recordingDescription": "Graba tu pantalla en la app para que veamos cómo ocurre un error. Lo que escribes y tus fotos quedan ocultos. Actívalo mientras reproduces un problema para soporte y luego desactívalo."

@@ -31,8 +31,10 @@ import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
 
-// Select Climbs on ordinary entry without moving its native search tab. Explicit
-// routes keep their destination; screenshot captures still start at Home.
+// Select the start-up tab (Climbs unless the climber chose Home) on ordinary
+// entry without moving its native search tab. Read once, at module load, so a
+// change in Settings applies from the next start. Explicit routes keep their
+// destination; screenshot captures still start at Home.
 export const unstable_settings = { initialRouteName: getAppEntryTab() };
 
 type TabIconProps = { focused: boolean; color: ColorValue; size: number };

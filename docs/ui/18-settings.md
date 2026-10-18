@@ -59,6 +59,10 @@ The mobile Settings screen contains appearance and UI-style controls that have n
 
 - `SegmentedControl` with three options persisted as `ThemeOverride` in key-value storage.
 
+**Open the app on** (Climbs / Home, Settings › General):
+
+- Segmented row persisted as `startupScreen` in the MMKV settings store; Climbs is the default. Applies from the next start and never navigates. Links, notification taps, onboarding and a post-login return still open where they point. See `01-navigation.md` → "Mobile: library entry and tab variants".
+
 **UI Style**:
 
 - `SegmentedControl` with three options: Auto, Liquid Glass, Material.

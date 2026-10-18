@@ -1,4 +1,4 @@
-export type { AppSettings, SettingsKey, RememberedSprayWallArchive } from './types';
+export type { AppSettings, SettingsKey, RememberedSprayWallArchive, StartupScreen } from './types';
 export { DEFAULT_SETTINGS } from './defaults';
 export {
   getSetting,

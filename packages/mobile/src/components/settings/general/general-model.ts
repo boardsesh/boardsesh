@@ -1,6 +1,7 @@
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
 import { LOCALE_LABELS, SUPPORTED_LOCALES, type Locale } from '@boardsesh/i18n';
 import type { LocaleOverride } from '../../../lib/i18n/locale-preference';
+import type { StartupScreen } from '../../../settings';
 import type { MoreFormModel, MoreOption, MoreRow, MoreSection, MoreToggleRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
 
@@ -13,6 +14,9 @@ export type GeneralModelInput = {
   /** The language the app is showing now ('system' resolved), for the Help translate footer. */
   activeLocale: Locale;
   onHelpTranslate: () => void;
+  /** The tab an ordinary launch opens on. */
+  startupScreen: StartupScreen;
+  onStartupScreenChange: (screen: StartupScreen) => void;
   /** What the phone keeps for when there's no signal. */
   offline: GeneralOfflineInput;
   onReplayWalkthrough: () => void;
@@ -102,8 +106,8 @@ function buildGeneralOfflineSections(t: SettingsTranslate, input: GeneralOffline
 }
 
 /**
- * "General": how the app looks and reads, what it keeps for when there's no
- * signal, and the two walkthroughs you can run again.
+ * "General": how the app looks and reads, which tab it opens on, what it keeps
+ * for when there's no signal, and the two walkthroughs you can run again.
  */
 export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
   const { t } = input;
@@ -120,6 +124,13 @@ export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
   const languageOptions: (MoreOption & { key: LocaleOverride })[] = [
     { key: 'system', label: t('mobile.settings.language.system') },
     ...SUPPORTED_LOCALES.map((locale) => ({ key: locale, label: LOCALE_LABELS[locale] })),
+  ];
+
+  // The tab names, so the choice reads exactly like the tab bar. Climbs first:
+  // it is the default.
+  const startupOptions: (MoreOption & { key: StartupScreen })[] = [
+    { key: 'climbs', label: t('mobile.nav.climbs') },
+    { key: 'home', label: t('mobile.nav.home') },
   ];
 
   return {
@@ -171,6 +182,26 @@ export function buildGeneralModel(input: GeneralModelInput): MoreFormModel {
             // Opens the catalog on GitHub, outside the app.
             external: true,
             onPress: input.onHelpTranslate,
+          },
+        ],
+      },
+      {
+        // Changing it never navigates: the footer says when it takes effect,
+        // and what still opens somewhere else.
+        key: 'startup',
+        title: t('mobile.settings.startup.title'),
+        footer: t('mobile.settings.startup.footer'),
+        rows: [
+          {
+            kind: 'segmented',
+            key: 'startupScreen',
+            label: t('mobile.settings.startup.title'),
+            options: startupOptions,
+            selectedKey: input.startupScreen,
+            onSelect: (key) => {
+              const next = startupOptions.find((option) => option.key === key);
+              if (next) input.onStartupScreenChange(next.key);
+            },
           },
         ],
       },
