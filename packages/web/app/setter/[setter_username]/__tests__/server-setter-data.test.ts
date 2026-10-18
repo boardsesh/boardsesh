@@ -220,20 +220,24 @@ describe('the setter hero identity', () => {
     return normalise(new PgDialect().sqlToQuery(executedStatements[0] as SQL).sql);
   }
 
-  it("names a private account only when it is the user_id on one of this page's climbs", async () => {
-    // Who set a published, listed climb is public with it (#6418). A Kilter or
-    // Tension login linked to a private account is on no climb, so the account
-    // rule still applies to it: anonymous here, so public accounts only.
+  it("names the account that set the page's climbs first, whatever its privacy", async () => {
+    // Who set a published, listed climb is public with it (#6418), and a
+    // MoonBoard or other Boardsesh climb has no linked login to find it by.
     const sql = await identitySql();
-    expect(sql).toContain('from user_board_mappings ubm');
-    expect(sql).toContain('is_private');
-    expect(sql).toMatch(/or exists \( select 1 from board_climbs where .* and board_climbs\.user_id = ubm\.user_id \)/);
+    const authored = sql.indexOf('select board_climbs.user_id, 0 as source_rank');
+    const linked = sql.indexOf('from user_board_mappings ubm');
+    expect(authored).toBeGreaterThan(-1);
+    expect(linked).toBeGreaterThan(authored);
+    // The authored source reads no account privacy; the linked login does.
+    expect(sql.slice(authored, linked)).not.toContain('is_private');
+    expect(sql.slice(linked)).toContain('is_private');
+    expect(sql).toMatch(/order by candidate\.source_rank, candidate\.climb_count desc/);
   });
 
   it('only links a login on a board type this page lists climbs for, through the page predicate', async () => {
     const sql = await identitySql();
     expect(sql).toContain('board_climbs.board_type = ubm.board_type');
-    // Both EXISTS read the page's visible-climb predicate, hidden climbs out.
+    // Both sources read the page's visible-climb predicate, hidden climbs out.
     expect(sql.match(/"board_climbs"\."is_hidden" = /g)?.length).toBe(2);
   });
 });

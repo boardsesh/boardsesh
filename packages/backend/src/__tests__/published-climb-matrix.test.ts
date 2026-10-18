@@ -57,7 +57,18 @@ const PUBLIC_SENDER = 'matrix-public-sender';
 const DELETED_AUTHOR = 'matrix-deleted-author';
 /** A private account linked to a Kilter login only, with no Boardsesh-authored climb under it. */
 const MAPPED_PRIVATE = 'matrix-mapped-private';
-const USERS = [PRIVATE_AUTHOR, FOLLOWER, STRANGER, PRIVATE_SENDER, PUBLIC_SENDER, DELETED_AUTHOR, MAPPED_PRIVATE];
+/** A private account with no linked board login, which set a climb in Boardsesh (as a MoonBoard climb is set). */
+const UNLINKED_AUTHOR = 'matrix-unlinked-author';
+const USERS = [
+  PRIVATE_AUTHOR,
+  FOLLOWER,
+  STRANGER,
+  PRIVATE_SENDER,
+  PUBLIC_SENDER,
+  DELETED_AUTHOR,
+  MAPPED_PRIVATE,
+  UNLINKED_AUTHOR,
+];
 
 const PRIVATE_PUBLISHED = 'matrix-private-published';
 const TICKED_PUBLISHED = 'matrix-ticked-published';
@@ -87,6 +98,8 @@ const MAPPED_HIDDEN = 'matrix-mapped-hidden';
 /** A Kilter setter name that a public account linked on Tension, not on Kilter. */
 const CROSS_BOARD_SETTER_NAME = 'matrix-cross-board-setter';
 const CROSS_BOARD = 'matrix-cross-board';
+const UNLINKED_SETTER_NAME = 'matrix-unlinked-setter';
+const UNLINKED_AUTHORED = 'matrix-unlinked-authored';
 
 // `graphql` resolves to two module instances under the test transform. The
 // schema was built with the CJS copy, so `execute` has to come from the same
@@ -154,6 +167,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       { userId: PRIVATE_SENDER, isPrivate: true },
       { userId: DELETED_AUTHOR, isPrivate: true },
       { userId: MAPPED_PRIVATE, isPrivate: true },
+      { userId: UNLINKED_AUTHOR, isPrivate: true, displayName: 'Unlinked author' },
       { userId: PUBLIC_SENDER, isPrivate: false, displayName: 'Public sender' },
     ]);
     await db.insert(schema.userFollows).values([
@@ -179,6 +193,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(MAPPED_ONLY, null, { setterUsername: MAPPED_SETTER_NAME });
     await insertClimb(MAPPED_HIDDEN, MAPPED_PRIVATE, { setterUsername: MAPPED_SETTER_NAME, isHidden: true });
     await insertClimb(CROSS_BOARD, null, { setterUsername: CROSS_BOARD_SETTER_NAME });
+    await insertClimb(UNLINKED_AUTHORED, UNLINKED_AUTHOR, { setterUsername: UNLINKED_SETTER_NAME });
     await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
       isDraft: true,
       isListed: false,
@@ -298,6 +313,19 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     for (const ctx of [ctxFor(STRANGER), anonymous, ctxFor(FOLLOWER)]) {
       const profile = await setterFollowQueries.setterProfile(undefined, { input: { username: SETTER_NAME } }, ctx);
       expect(profile).toMatchObject({ linkedUserId: PRIVATE_AUTHOR, linkedUserDisplayName: `Name ${PRIVATE_AUTHOR}` });
+    }
+  });
+
+  it('names a private account that set climbs under a name with no linked login', async () => {
+    // A MoonBoard climb, or any climb set in Boardsesh, carries the author's
+    // `user_id` with no Kilter or Tension login behind it.
+    for (const ctx of [ctxFor(STRANGER), anonymous]) {
+      const profile = await setterFollowQueries.setterProfile(
+        undefined,
+        { input: { username: UNLINKED_SETTER_NAME } },
+        ctx,
+      );
+      expect(profile).toMatchObject({ linkedUserId: UNLINKED_AUTHOR, linkedUserDisplayName: 'Unlinked author' });
     }
   });
 
@@ -736,6 +764,7 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       PUBLIC_SHOWN,
       MAPPED_ONLY,
       CROSS_BOARD,
+      UNLINKED_AUTHORED,
     ].sort();
     type SearchAnswer = {
       searchClimbs: { totalCount: number; climbs: Array<{ uuid: string; userId: string | null }> };
@@ -818,6 +847,48 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       }
     });
 
+    it('fills the author on producers that never select it (userClimbs, setterClimbsFull)', async () => {
+      const USER_CLIMBS = /* GraphQL */ `
+        query ($userId: ID!) {
+          userClimbs(input: { userId: $userId }) {
+            climbs {
+              uuid
+              userId
+            }
+          }
+        }
+      `;
+      const SETTER_CLIMBS_FULL = /* GraphQL */ `
+        query ($username: String!) {
+          setterClimbsFull(input: { username: $username }) {
+            climbs {
+              uuid
+              userId
+            }
+          }
+        }
+      `;
+      type ClimbRows = { climbs: Array<{ uuid: string; userId: string | null }> };
+      for (const ctx of [ctxFor(STRANGER), anonymous]) {
+        const { userClimbs } = await run<{ userClimbs: ClimbRows }>(USER_CLIMBS, { userId: PRIVATE_AUTHOR }, ctx);
+        expect(Object.fromEntries(userClimbs.climbs.map((climb) => [climb.uuid, climb.userId]))).toEqual({
+          [PRIVATE_PUBLISHED]: PRIVATE_AUTHOR,
+          [TICKED_PUBLISHED]: PRIVATE_AUTHOR,
+        });
+        const { setterClimbsFull } = await run<{ setterClimbsFull: ClimbRows }>(
+          SETTER_CLIMBS_FULL,
+          { username: SETTER_NAME },
+          ctx,
+        );
+        expect(Object.fromEntries(setterClimbsFull.climbs.map((climb) => [climb.uuid, climb.userId]))).toEqual({
+          [PRIVATE_PUBLISHED]: PRIVATE_AUTHOR,
+          [TICKED_PUBLISHED]: PRIVATE_AUTHOR,
+          // Imported under the linked login: no author on the row.
+          [LINKED_ONLY]: null,
+        });
+      }
+    });
+
     it('names the private author of an unlisted climb opened by its link only to who may see the account', async () => {
       for (const [ctx, expectedAuthor] of [
         [ctxFor(STRANGER), null],
@@ -847,17 +918,22 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       expect(await resolveClimbAuthorId(draft, ctxFor(PRIVATE_AUTHOR))).toBe(PRIVATE_AUTHOR);
     });
 
-    it("takes the author from the row, so a claimed private author on someone else's climb stays hidden", async () => {
-      // PRIVATE_PUBLISHED is the private author's; the claim names another
-      // private account, which a stranger may not see.
+    it('takes the author of a published, listed climb from its row, whatever the parent claims', async () => {
+      // PRIVATE_PUBLISHED is the private author's. A parent that claims another
+      // private account, or claims nobody at all (a producer that never selects
+      // the field), still gets the real author; a draft with no claim gets none.
       const spoofed = { uuid: PRIVATE_PUBLISHED, userId: PRIVATE_SENDER };
-      expect(await resolveClimbAuthorId(spoofed, ctxFor(STRANGER))).toBeNull();
-      // Resolved in one batch with the real claim, each parent gets its own answer.
-      const [real, claimed] = await Promise.all([
+      expect(await resolveClimbAuthorId(spoofed, ctxFor(STRANGER))).toBe(PRIVATE_AUTHOR);
+      // Resolved in one batch, each parent gets its own answer.
+      const answers = await Promise.all([
         resolveClimbAuthorId({ uuid: PRIVATE_PUBLISHED, userId: PRIVATE_AUTHOR }, ctxFor(STRANGER)),
         resolveClimbAuthorId(spoofed, ctxFor(STRANGER)),
+        resolveClimbAuthorId({ uuid: TICKED_PUBLISHED }, ctxFor(STRANGER)),
+        resolveClimbAuthorId({ uuid: LINKED_ONLY }, ctxFor(STRANGER)),
+        resolveClimbAuthorId({ uuid: DRAFT }, ctxFor(STRANGER)),
+        resolveClimbAuthorId({ uuid: UNLISTED, userId: PRIVATE_AUTHOR }, ctxFor(STRANGER)),
       ]);
-      expect([real, claimed]).toEqual([PRIVATE_AUTHOR, null]);
+      expect(answers).toEqual([PRIVATE_AUTHOR, PRIVATE_AUTHOR, PRIVATE_AUTHOR, null, null, null]);
     });
   });
 

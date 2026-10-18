@@ -209,18 +209,20 @@ type SetterIdentity = { displayName: string; avatarUrl: string | null; followerC
 /**
  * Display name, avatar and follower count for the hero.
  *
- * The account comes from a Kilter or Tension login linked under this name
- * (`user_board_mappings`), on a board type the page lists climbs for. Who set a
- * published, listed climb is public with it, so a private account is named
- * when it is the `user_id` on one of this page's climbs. A login linked alone
- * is on no climb, so a private account's stays private: this page has no
+ * First the account that set this page's climbs (`board_climbs.user_id` on the
+ * page's own visible climbs): who set a published, listed climb is public with
+ * it, a private account included, and a MoonBoard or other Boardsesh climb has
+ * no linked login to find it by. Most climbs first, then the id.
+ *
+ * Otherwise a Kilter or Tension login linked under this name
+ * (`user_board_mappings`), on a board type the page lists climbs for. That
+ * login is on no climb, so a private account's stays private: this page has no
  * viewer, and the hero falls back to the setter name. Exported for its test.
  *
- * Raw `sql` rather than Drizzle builders because `user_board_mappings` →
- * `users` → `user_profiles` is a three-table lookup for at most one row and the
- * follower count is a scalar subquery; expressing it as a join chain buys
- * nothing. Falls back to the raw username, which is what the setter is called
- * on every climb row anyway.
+ * Raw `sql` rather than Drizzle builders because the two candidate sources are
+ * one UNION for at most one row and the follower count is a scalar subquery;
+ * expressing it as a join chain buys nothing. Falls back to the raw username,
+ * which is what the setter is called on every climb row anyway.
  */
 export async function fetchSetterIdentity(username: string): Promise<SetterIdentity> {
   const rows = await executeRows<{
@@ -240,26 +242,29 @@ export async function fetchSetterIdentity(username: string): Promise<SetterIdent
     FROM (SELECT 1) AS seed
     LEFT JOIN (
       SELECT u.name, p.display_name, p.avatar_url
-      FROM user_board_mappings ubm
-      JOIN users u ON u.id = ubm.user_id
-      LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
-      WHERE ubm.board_username = ${username}
-        AND EXISTS (
-          SELECT 1 FROM board_climbs
-          WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.board_type = ubm.board_type
-        )
-        AND (
-          ${userActivityVisibilityCondition(sql`ubm.user_id`, null)}
-          OR EXISTS (
+      FROM (
+        SELECT board_climbs.user_id, 0 AS source_rank, count(*) AS climb_count
+        FROM board_climbs
+        WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.user_id IS NOT NULL
+        GROUP BY board_climbs.user_id
+        UNION ALL
+        SELECT ubm.user_id, 1 AS source_rank, 0 AS climb_count
+        FROM user_board_mappings ubm
+        WHERE ubm.board_username = ${username}
+          AND EXISTS (
             SELECT 1 FROM board_climbs
-            WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.user_id = ubm.user_id
+            WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.board_type = ubm.board_type
           )
-        )
-      -- Deterministic, and the setters shard sorts identically. The unique
-      -- index is (user_id, board_type), so two different users can share a
-      -- setter name; a bare LIMIT 1 renders whichever the planner happened to
-      -- reach, and the shard's <lastmod> could describe the other one.
-      ORDER BY p.user_id IS NULL, ubm.user_id
+          AND ${userActivityVisibilityCondition(sql`ubm.user_id`, null)}
+      ) AS candidate
+      JOIN users u ON u.id = candidate.user_id
+      LEFT JOIN user_profiles p ON p.user_id = candidate.user_id
+      -- Deterministic: the setter's own climbs first, then a linked login. The
+      -- unique index is (user_id, board_type), so two different users can share
+      -- a setter name; a bare LIMIT 1 renders whichever the planner happened to
+      -- reach. The setters shard's <lastmod> reads the linked login alone
+      -- (setter-query.ts), so it can describe another account than this one.
+      ORDER BY candidate.source_rank, candidate.climb_count DESC, p.user_id IS NULL, candidate.user_id
       LIMIT 1
     ) AS profile ON true
   `,

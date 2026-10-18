@@ -159,8 +159,10 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // in here at all because the page's `<h1>`, summary, avatar and `ProfilePage`
   // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
   // rename a mapped setter and every one of those changes while the climb rows
-  // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s own lookup, so the
-  // clock describes the identity the page actually renders.
+  // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s linked-login lookup.
+  // The hero names the account that set the page's climbs before a linked
+  // login, and this clock does not read that account yet, so for such a setter
+  // `<lastmod>` can trail a rename.
   //
   // `linked_at` is in the fold because it is the only clock that moves when an
   // account is newly linked to a setter name — the moment the rendered identity

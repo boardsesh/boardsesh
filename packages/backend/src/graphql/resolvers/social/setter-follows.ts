@@ -1,6 +1,6 @@
 import { requestPrivacyFollow, removePrivacyFollow } from '../privacy';
 import { canViewUserActivity, userActivityVisibilityCondition } from '../../../services/privacy';
-import { eq, and, count, sql, ilike, inArray, or, exists } from 'drizzle-orm';
+import { eq, and, count, desc, sql, ilike, inArray } from 'drizzle-orm';
 import { isSizeScopedBoard, resolveRenderBoard } from '@boardsesh/board-config';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
@@ -118,48 +118,58 @@ export const setterFollowQueries = {
       isFollowedByMe = Number(followCheck?.count ?? 0) > 0;
     }
 
-    // The linked Boardsesh account: a Kilter or Tension login under this name,
-    // on a board type the name has visible climbs on. A private account is
-    // named only when it is the `user_id` on one of this name's listable
-    // climbs (who set a published, listed climb is public with it; a climb the
-    // community hid names no one, as on every browse surface and the web
-    // hero); a login linked alone stays private to viewers who may not see the
-    // account's activity.
-    // Ordered, so two accounts sharing a name always resolve the same way, as
-    // the web setter hero does.
-    const linkedUsers = await db
-      .select({
-        userId: dbSchema.userBoardMappings.userId,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-        userName: dbSchema.users.name,
-        userImage: dbSchema.users.image,
-      })
-      .from(dbSchema.userBoardMappings)
-      .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
-      .where(
-        and(
-          eq(dbSchema.userBoardMappings.boardUsername, username),
-          inArray(dbSchema.userBoardMappings.boardType, boardTypes),
-          or(
-            userActivityVisibilityCondition(dbSchema.userBoardMappings.userId, ctx.isAuthenticated ? ctx.userId : null),
-            exists(
-              db
-                .select({ uuid: dbSchema.boardClimbs.uuid })
-                .from(dbSchema.boardClimbs)
-                .where(
-                  and(
-                    ...listableSetterClimbConditions(username, ctx.userId),
-                    eq(dbSchema.boardClimbs.userId, dbSchema.userBoardMappings.userId),
-                  ),
-                ),
-            ),
-          ),
-        ),
+    // The Boardsesh account behind the name. First the account that set this
+    // name's listable climbs: who set a published, listed climb is public with
+    // it, a private account included, and a MoonBoard or other Boardsesh climb
+    // has no linked login to find it by. A climb the community hid names no
+    // one, as on every browse surface and the web hero. Most climbs first, then
+    // the id, so two accounts sharing a name resolve the same way every time.
+    const identityColumns = {
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+      userName: dbSchema.users.name,
+      userImage: dbSchema.users.image,
+    };
+    const authors = await db
+      .select({ userId: dbSchema.users.id, ...identityColumns })
+      .from(dbSchema.boardClimbs)
+      .innerJoin(dbSchema.users, eq(dbSchema.boardClimbs.userId, dbSchema.users.id))
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+      .where(and(...listableSetterClimbConditions(username, ctx.userId)))
+      .groupBy(
+        dbSchema.users.id,
+        dbSchema.userProfiles.displayName,
+        dbSchema.userProfiles.avatarUrl,
+        dbSchema.users.name,
+        dbSchema.users.image,
       )
-      .orderBy(sql`${dbSchema.userProfiles.userId} IS NULL`, dbSchema.userBoardMappings.userId)
+      .orderBy(desc(count()), dbSchema.users.id)
       .limit(1);
+
+    // Otherwise a Kilter or Tension login linked under this name, on a board
+    // type the name has visible climbs on. That login is on no climb, so a
+    // private account's stays with the viewers who may see its activity.
+    // Ordered as the web setter hero orders it.
+    const linkedUsers =
+      authors.length > 0
+        ? authors
+        : await db
+            .select({ userId: dbSchema.userBoardMappings.userId, ...identityColumns })
+            .from(dbSchema.userBoardMappings)
+            .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
+            .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
+            .where(
+              and(
+                eq(dbSchema.userBoardMappings.boardUsername, username),
+                inArray(dbSchema.userBoardMappings.boardType, boardTypes),
+                userActivityVisibilityCondition(
+                  dbSchema.userBoardMappings.userId,
+                  ctx.isAuthenticated ? ctx.userId : null,
+                ),
+              ),
+            )
+            .orderBy(sql`${dbSchema.userProfiles.userId} IS NULL`, dbSchema.userBoardMappings.userId)
+            .limit(1);
 
     const linkedUser = linkedUsers[0];
 
