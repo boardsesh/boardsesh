@@ -675,7 +675,7 @@ describe('stable controller execution', () => {
   it.each([
     ['a launch issue in the snapshot history', 'snapshots', 1],
     ["zero issues from the degraded 'state' history", 'state', 0],
-  ])('holds at 50%% when the fleetless Android canary has %s', async (_label, source, updateIssues) => {
+  ])('holds the last canary step when the no-fleet Android canary has %s', async (_label, source, updateIssues) => {
     const { options, live, client } = fixture();
     options.now = new Date('2026-10-09T22:00:00Z');
     options.state.active!.percentage = 50;
