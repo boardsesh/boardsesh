@@ -517,7 +517,7 @@ platform :ios do
       client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200"), version
     )
     unless other_open.empty?
-      UI.user_error!("App Store Connect already has an unreleased iOS version #{other_open.join(', ')}. Refusing to draft #{version} until it is out: deliver would rename an editable version to #{version}, and the next version waits for an approved one's release. Submit and release it, or remove it, then re-run this draft.")
+      UI.user_error!("App Store Connect already has an unreleased iOS version #{other_open.join(', ')}. Refusing to draft #{version} until it is out. An editable version would be renamed to #{version} by deliver; an approved one has to be released before the next version is drafted. Release, submit or remove it, then re-run this draft.")
     end
 
     # Create the App Store version if it doesn't exist, leaving it in 'Prepare
