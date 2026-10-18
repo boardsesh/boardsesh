@@ -71,10 +71,18 @@ vi.mock('../use-ble-permissions', async (importOriginal) => {
 import { useBoardScan } from '../use-board-scan';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../scan-options';
 
+type ScannedDevice = {
+  id?: string;
+  localName?: string;
+  name?: string;
+  rssi?: number | null;
+  serviceUUIDs?: string[] | null;
+};
+
 /** Grab the scan callback react-native-ble-plx was handed so tests can feed it devices. */
 function scanCallback() {
   const call = mockBleManager.startDeviceScan.mock.calls.at(-1);
-  return call?.[2] as (error: unknown, device: { localName?: string; name?: string } | null) => void;
+  return call?.[2] as (error: unknown, device: ScannedDevice | null) => void;
 }
 
 describe('useBoardScan', () => {
@@ -452,6 +460,8 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
       outcome: 'error',
       found_count: 0,
+      serialless_count: 0,
+      moonboard_count: 0,
     });
 
     act(() => {
@@ -559,6 +569,8 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
       outcome: 'completed',
       found_count: 2,
+      serialless_count: 0,
+      moonboard_count: 0,
     });
   });
 
@@ -580,6 +592,8 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
       outcome: 'stopped',
       found_count: 1,
+      serialless_count: 0,
+      moonboard_count: 0,
     });
   });
 
@@ -612,6 +626,8 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
       outcome: 'stopped',
       found_count: 0,
+      serialless_count: 0,
+      moonboard_count: 0,
     });
   });
 
@@ -652,6 +668,195 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
       outcome: 'completed',
       found_count: 0,
+      serialless_count: 0,
+      moonboard_count: 0,
+    });
+  });
+});
+
+// Slice 1 of the first-run redesign: the quickstart keeps boards that advertise
+// no serial. MoonBoards never do, and Kilter-built boxes advertise a bare
+// "Kilter Board". Both used to be dropped, so a climber at one heard nothing.
+describe('useBoardScan keeps boards with no serial', () => {
+  beforeEach(() => {
+    permissionStatusOverride.status = null;
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function startScan() {
+    const hook = renderHook(() => useBoardScan());
+    await act(async () => {
+      await hook.result.current.start();
+    });
+    return hook;
+  }
+
+  it('keeps a MoonBoard by its name, one entry per device, without a serial lookup', async () => {
+    const { result } = await startScan();
+
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -70, serviceUUIDs: ['uart-uuid'] });
+      cb(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -40, serviceUUIDs: ['uart-uuid'] }); // repeat
+      cb(null, { id: 'mb-2', localName: 'Moonboard', rssi: -60, serviceUUIDs: [] });
+    });
+
+    expect(result.current.devices.map((device) => [device.deviceId, device.kind, device.boardType])).toEqual([
+      ['mb-2', 'moonboard', 'moonboard'],
+      ['mb-1', 'moonboard', 'moonboard'],
+    ]);
+    // The first reading stands; the repeat doesn't move the row.
+    expect(result.current.devices.find((device) => device.deviceId === 'mb-1')?.rssi).toBe(-70);
+    expect(result.current.serials).toEqual([]);
+  });
+
+  it('drops a UART gadget that is not named like a MoonBoard', async () => {
+    const { result } = await startScan();
+
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 'hr-1', localName: 'Polar H10', rssi: -50, serviceUUIDs: ['uart-uuid'] });
+      cb(null, { id: 'uart-1', localName: 'Nordic_UART', rssi: -45, serviceUUIDs: ['uart-uuid'] });
+      cb(null, { id: 'woods-1', localName: 'Woods Board 12x12', rssi: -45, serviceUUIDs: ['uart-uuid'] });
+    });
+
+    expect(result.current.devices).toEqual([]);
+  });
+
+  it('keeps a Kilter-built box that advertises a bare name, keyed by device', async () => {
+    const { result } = await startScan();
+
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 'kb-1', localName: 'Kilter Board', rssi: -55, serviceUUIDs: ['aurora-uuid'] });
+      cb(null, { id: 'kb-2', localName: 'Kilter Board', rssi: -65, serviceUUIDs: ['aurora-uuid'] });
+    });
+
+    expect(result.current.devices.map((device) => [device.deviceId, device.kind, device.boardType])).toEqual([
+      ['kb-1', 'bare_name', 'kilter'],
+      ['kb-2', 'bare_name', 'kilter'],
+    ]);
+    expect(result.current.serials).toEqual([]);
+  });
+
+  // Otherwise the box would show twice: as "doesn't say which one" and as the
+  // board its serial resolves to.
+  it('lets a box that turns out to carry a serial replace its serial-less entry', async () => {
+    const { result } = await startScan();
+
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 'box-1', name: 'Kilter Board', rssi: -55 });
+      cb(null, { id: 'box-1', localName: 'Kilter Board#alpha@3', rssi: -50 });
+      cb(null, { id: 'box-1', name: 'Kilter Board', rssi: -52 }); // the cached name again
+    });
+
+    expect(result.current.devices.map((device) => [device.deviceId, device.kind])).toEqual([['box-1', 'serial']]);
+    expect(result.current.serials).toEqual(['alpha']);
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'completed',
+      found_count: 1,
+      serialless_count: 0,
+      moonboard_count: 0,
+    });
+  });
+
+  it('lists every board strongest signal first, serial or not', async () => {
+    const { result } = await startScan();
+
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 'far', localName: 'MoonBoard A', rssi: -90 });
+      cb(null, { id: 'serial', localName: 'Kilter Board#alpha@3', rssi: -40 });
+      cb(null, { id: 'unknown', localName: 'Kilter Board', rssi: null });
+      cb(null, { id: 'mid', localName: 'Tension Board', rssi: -60 });
+    });
+
+    expect(result.current.devices.map((device) => device.deviceId)).toEqual(['serial', 'mid', 'far', 'unknown']);
+  });
+
+  // A new lookup key per MoonBoard would refetch the serial lookup for nothing.
+  it('leaves the serial lookup alone when a board with no serial turns up', async () => {
+    const { result } = await startScan();
+    act(() => {
+      scanCallback()(null, { id: 'serial', localName: 'Kilter Board#alpha@3', rssi: -40 });
+    });
+    const { serials, advertisedTypes } = result.current;
+
+    act(() => {
+      scanCallback()(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -60 });
+    });
+
+    expect(result.current.serials).toBe(serials);
+    expect(result.current.advertisedTypes).toBe(advertisedTypes);
+    expect(result.current.devices).toHaveLength(2);
+  });
+
+  it('counts serials, boards with no serial, and MoonBoards apart', async () => {
+    const { result } = await startScan();
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { id: 's-1', localName: 'Kilter Board#alpha@3', rssi: -40 });
+      cb(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -60 });
+      cb(null, { id: 'mb-2', localName: 'MoonBoard B', rssi: -61 });
+      cb(null, { id: 'kb-1', localName: 'Kilter Board', rssi: -62 });
+      cb(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -60 }); // repeat
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    // `found_count` stays serials-only so its series is unbroken.
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'completed',
+      found_count: 1,
+      serialless_count: 3,
+      moonboard_count: 2,
+    });
+    expect(result.current.status).toBe('done');
+  });
+
+  it('clears the boards it heard on reset and counts afresh', async () => {
+    const { result } = await startScan();
+    act(() => {
+      scanCallback()(null, { id: 'mb-1', localName: 'MoonBoard A', rssi: -60 });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.devices).toEqual([]);
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'stopped',
+      found_count: 0,
+      serialless_count: 1,
+      moonboard_count: 1,
+    });
+    analytics.track.mockClear();
+
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'completed',
+      found_count: 0,
+      serialless_count: 0,
+      moonboard_count: 0,
     });
   });
 });

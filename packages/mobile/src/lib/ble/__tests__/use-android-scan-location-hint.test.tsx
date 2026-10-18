@@ -33,6 +33,15 @@ const services = vi.hoisted(() => ({
 }));
 vi.mock('../android-location-services', () => services);
 
+// The installed binary's versionCode. 2000754 predates the `neverForLocation`
+// manifest flag (first in 2000761), so the hint still applies.
+const application = vi.hoisted(() => ({ nativeBuildVersion: '2000754' as string | null }));
+vi.mock('expo-application', () => ({
+  get nativeBuildVersion() {
+    return application.nativeBuildVersion;
+  },
+}));
+
 import { useAndroidScanLocationHint } from '../use-android-scan-location-hint';
 
 function fireAppStateActive() {
@@ -45,6 +54,7 @@ describe('useAndroidScanLocationHint', () => {
     appState.handlers = [];
     platform.OS = 'android';
     platform.apiLevel = 34;
+    application.nativeBuildVersion = '2000754';
     permissions.androidApiLevel.mockImplementation(() => platform.apiLevel);
     permissions.getAndroidLocationPermissionState.mockResolvedValue(false);
     permissions.requestAndroidScanLocationPermission.mockResolvedValue(true);
@@ -98,6 +108,28 @@ describe('useAndroidScanLocationHint', () => {
 
     expect(permissions.getAndroidLocationPermissionState).not.toHaveBeenCalled();
     expect(result.current.shouldOfferLocationGrant).toBe(false);
+  });
+
+  // From versionCode 2000761 the manifest says `neverForLocation`, so Android
+  // delivers scan results without location and an empty scan is a real one.
+  it('never offers the grant on a binary whose manifest carries neverForLocation', async () => {
+    application.nativeBuildVersion = '2000761';
+    const { result } = renderHook(() => useAndroidScanLocationHint(true));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.shouldOfferLocationGrant).toBe(false);
+    expect(permissions.getAndroidLocationPermissionState).not.toHaveBeenCalled();
+  });
+
+  it('keeps the grant when the binary cannot say which build it is', async () => {
+    application.nativeBuildVersion = null;
+    const { result } = renderHook(() => useAndroidScanLocationHint(true));
+
+    await waitFor(() => {
+      expect(result.current.shouldOfferLocationGrant).toBe(true);
+    });
   });
 
   it('swaps to the granted state after a successful request', async () => {

@@ -42,7 +42,9 @@ const state = vi.hoisted(() => ({
 }));
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
-type BuilderOptions = { preset?: (boardName: string) => unknown; privacyEnabled?: boolean } | undefined;
+type BuilderOptions =
+  | { preset?: (boardName: string) => unknown; initialBoardName?: string; privacyEnabled?: boolean }
+  | undefined;
 const builderCalls = vi.hoisted(() => ({ options: [] as BuilderOptions[] }));
 
 const existingBoard = {
@@ -496,6 +498,21 @@ describe('CreateBoard from "My own board"', () => {
   it('opens the builder empty without the param', () => {
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)?.preset).toBeUndefined();
+  });
+
+  // The Bluetooth quickstart heard a board it couldn't name and the climber
+  // said it's their own: open on that type, not on Kilter.
+  it('opens on the board type the quickstart heard', () => {
+    state.params = { preset: '1', presetBoardType: 'moonboard', source: 'onboarding' };
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.initialBoardName).toBe('moonboard');
+  });
+
+  // `toBoardName` (mocked here) is what drops a type this build doesn't know.
+  it('ignores the board type without a preset open', () => {
+    state.params = { presetBoardType: 'moonboard' };
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.initialBoardName).toBeUndefined();
   });
 
   // A Popular card is the climber's own pick; a preset must not replace it.

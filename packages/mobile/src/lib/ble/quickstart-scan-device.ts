@@ -1,0 +1,136 @@
+// What the Bluetooth quickstart keeps from one advertisement, and the order it
+// lists boards in.
+//
+// The quickstart used to keep only devices whose name carried an Aurora serial
+// (`Kilter Board#751737@3`). That dropped every MoonBoard (no serial, ever) and
+// every Kilter-built box (a bare `Kilter Board`), so a climber standing at one
+// waited 15 seconds for "No boards in range". 45% of the connect picker's
+// sightings had no serial. These are kept now, keyed by the BLE device id, so
+// the sheet can say what it found and offer the next step.
+
+import type { BoardName } from '@boardsesh/shared-schema';
+import { isKilterBuiltBox, parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
+import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
+import { MOONBOARD_BOARD_NAME, toBoardName } from '@boardsesh/board-config';
+import { isLikelyBoardDevice } from './board-device-filter';
+
+type QuickstartScanDeviceBase = {
+  /**
+   * One entry per key. A serial box is keyed by its serial, which is how the
+   * lookup has always deduplicated them. A serial-less board is keyed by its BLE
+   * device id, the only thing that tells two of them apart.
+   */
+  key: string;
+  deviceId: string;
+  /** The advertised name. Kept because the board type and serial live in it. */
+  name: string;
+  /**
+   * Signal strength of the first advertisement heard, in dBm, or null when the
+   * platform gave none. Used to order rows, closest first, and nothing else:
+   * walls, bodies and the controller's own antenna move it by 10 dB or more.
+   */
+  rssi: number | null;
+};
+
+/**
+ * An Aurora box whose name carries its serial. The sheet resolves it to a saved
+ * board through `boardsBySerialNumbers`, exactly as before.
+ */
+export type QuickstartSerialDevice = QuickstartScanDeviceBase & {
+  kind: 'serial';
+  serial: string;
+  /** The board type the name announces, or null when it names none we know. */
+  boardType: BoardName | null;
+};
+
+/**
+ * A board that advertises no serial: a MoonBoard controller (never has one) or
+ * a Kilter-built Aurora box that advertises only its type, `Kilter Board`
+ * (`isKilterBuiltBox`). Its type is all we know.
+ */
+export type QuickstartSeriallessDevice = QuickstartScanDeviceBase & {
+  kind: 'moonboard' | 'bare_name';
+  serial: null;
+  boardType: BoardName;
+};
+
+export type QuickstartScanDevice = QuickstartSerialDevice | QuickstartSeriallessDevice;
+
+// CoreBluetooth reports 127 when it has no RSSI for a packet. Read as a number
+// it would sort that board above every real reading.
+const RSSI_UNAVAILABLE = 127;
+
+function usableRssi(rssi: number | null | undefined): number | null {
+  return typeof rssi === 'number' && Number.isFinite(rssi) && rssi < RSSI_UNAVAILABLE ? rssi : null;
+}
+
+/**
+ * The board one advertisement belongs to, or null when it is not one the
+ * quickstart lists.
+ *
+ * A MoonBoard is admitted by its advertised name prefix and nothing else. The
+ * Nordic UART service it may advertise is shared by heart-rate straps, LED
+ * strips and every other UART gadget, and the MoonBoard-family scan filter
+ * (`isLikelyBoardDevice` with `scanFamily: 'moonboard'`) also admits Woods
+ * boards. Neither belongs in a list that says "Found a MoonBoard".
+ *
+ * Aurora boxes go through the same check the quickstart has always used, so a
+ * stray `Printer #751737` still never reaches the serial lookup.
+ */
+export function classifyQuickstartDevice({
+  deviceId,
+  name,
+  serviceUuids,
+  rssi,
+}: {
+  deviceId: string;
+  name: string | undefined;
+  serviceUuids: string[];
+  rssi: number | null | undefined;
+}): QuickstartScanDevice | null {
+  if (!name) return null;
+  const signal = usableRssi(rssi);
+
+  if (isMoonboardDeviceName(name)) {
+    return {
+      key: `device:${deviceId}`,
+      deviceId,
+      name,
+      kind: 'moonboard',
+      boardType: MOONBOARD_BOARD_NAME,
+      serial: null,
+      rssi: signal,
+    };
+  }
+
+  if (!isLikelyBoardDevice({ name, serviceUuids, scanFamily: 'aurora' })) return null;
+
+  const serial = parseSerialNumber(name);
+  if (serial) {
+    return {
+      key: `serial:${serial}`,
+      deviceId,
+      name,
+      kind: 'serial',
+      boardType: toBoardName(parseBoardTypeFromDeviceName(name)),
+      serial,
+      rssi: signal,
+    };
+  }
+
+  if (!isKilterBuiltBox(name)) return null;
+  const boardType = toBoardName(parseBoardTypeFromDeviceName(name));
+  if (!boardType) return null;
+  return { key: `device:${deviceId}`, deviceId, name, kind: 'bare_name', boardType, serial: null, rssi: signal };
+}
+
+/**
+ * Strongest signal first, the order the connect picker uses. A board with no
+ * reading goes last, and ties keep the order they were heard in.
+ */
+export function compareBySignal(first: { rssi: number | null }, second: { rssi: number | null }): number {
+  if (first.rssi === second.rssi) return 0;
+  if (first.rssi === null) return 1;
+  if (second.rssi === null) return -1;
+  return second.rssi - first.rssi;
+}

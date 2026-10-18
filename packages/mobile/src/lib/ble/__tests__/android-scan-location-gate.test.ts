@@ -2,27 +2,83 @@ import { describe, it, expect } from 'vitest';
 import {
   androidBuildHidesScanResultsWithoutLocation,
   androidScanRequiresLocationServices,
-  MANIFEST_HAS_NEVER_FOR_LOCATION,
+  FIRST_ANDROID_BUILD_WITH_NEVER_FOR_LOCATION,
+  manifestHasNeverForLocation,
   type AndroidScanLocationGateInput,
 } from '../android-scan-location-gate';
 
+// The last Android build without `neverForLocation` and the first with it, by
+// release tag: build-android-v2.3.0-2000754 does not contain db21745fe7,
+// build-android-v2.3.0-2000761 does.
+const LAST_BUILD_WITHOUT_FLAG = '2000754';
+const FIRST_BUILD_WITH_FLAG = '2000761';
+
+describe('manifestHasNeverForLocation', () => {
+  it('names the first build that shipped the flag', () => {
+    expect(FIRST_ANDROID_BUILD_WITH_NEVER_FOR_LOCATION).toBe(Number(FIRST_BUILD_WITH_FLAG));
+  });
+
+  it('is true from the first build with the flag onward', () => {
+    expect(manifestHasNeverForLocation(FIRST_BUILD_WITH_FLAG)).toBe(true);
+    expect(manifestHasNeverForLocation('2001310')).toBe(true);
+  });
+
+  // The floor names a build that HAS the flag. An earlier revision keyed it to
+  // the last build without it, which retired the hint one build early.
+  it('is false for the build just below the floor', () => {
+    expect(manifestHasNeverForLocation(String(FIRST_ANDROID_BUILD_WITH_NEVER_FOR_LOCATION - 1))).toBe(false);
+    expect(manifestHasNeverForLocation(LAST_BUILD_WITHOUT_FLAG)).toBe(false);
+  });
+
+  // A binary we can't place keeps the hint: an unneeded hint costs a sentence,
+  // a missing one an empty scan blamed on the board.
+  it.each([null, undefined, '', '   ', 'abc', '2000761.1', '-2000761', '2.3.0'])(
+    'is false for an unreadable build number (%s)',
+    (nativeBuildVersion) => {
+      expect(manifestHasNeverForLocation(nativeBuildVersion)).toBe(false);
+    },
+  );
+});
+
 describe('androidBuildHidesScanResultsWithoutLocation', () => {
-  it('flags Android 12+ while the manifest still omits the disavowal', () => {
+  it('flags Android 12+ on a binary built before the flag', () => {
     expect(
       androidBuildHidesScanResultsWithoutLocation({
         platformOs: 'android',
         androidApiLevel: 31,
+        nativeBuildVersion: LAST_BUILD_WITHOUT_FLAG,
       }),
     ).toBe(true);
   });
 
-  it('keeps flagging the newest Android API level', () => {
+  it('stops flagging Android 12+ from the first binary with the flag', () => {
+    expect(
+      androidBuildHidesScanResultsWithoutLocation({
+        platformOs: 'android',
+        androidApiLevel: 31,
+        nativeBuildVersion: FIRST_BUILD_WITH_FLAG,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps flagging when the build number is unknown', () => {
+    expect(
+      androidBuildHidesScanResultsWithoutLocation({
+        platformOs: 'android',
+        androidApiLevel: 34,
+        nativeBuildVersion: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps flagging the newest Android API level on an old binary', () => {
     // Upper-bound sanity: the gate reads the API level only for the Android 12
     // floor, so a future platform release must not change the answer.
     expect(
       androidBuildHidesScanResultsWithoutLocation({
         platformOs: 'android',
         androidApiLevel: 36,
+        nativeBuildVersion: LAST_BUILD_WITHOUT_FLAG,
       }),
     ).toBe(true);
   });
@@ -32,43 +88,19 @@ describe('androidBuildHidesScanResultsWithoutLocation', () => {
       androidBuildHidesScanResultsWithoutLocation({
         platformOs: 'android',
         androidApiLevel: 30,
+        nativeBuildVersion: LAST_BUILD_WITHOUT_FLAG,
       }),
     ).toBe(false);
   });
 
-  it('stays off on iOS', () => {
+  it('stays off on iOS, whatever the build number', () => {
     expect(
       androidBuildHidesScanResultsWithoutLocation({
         platformOs: 'ios',
         androidApiLevel: 0,
+        nativeBuildVersion: '1',
       }),
     ).toBe(false);
-  });
-
-  it('pins the manifest flag to what the shipped manifest actually declares', () => {
-    // READ THIS BEFORE FLIPPING THE CONSTANT TO MAKE THIS TEST PASS.
-    //
-    // No released or in-flight Android binary declares `BLUETOOTH_SCAN` with
-    // `android:usesPermissionFlags="neverForLocation"`. The flag is native, so it
-    // can only reach a NEW binary — but this constant is JS and rides an OTA
-    // straight into every 2.2.x/2.3.x install that is still missing it. Flipping
-    // it on its own therefore turns the hint off for exactly the users who need
-    // it, and they go back to "make sure your board is powered on".
-    //
-    // The PR that adds the flag must gate on a versionCode floor as well
-    // (expo-application's `nativeBuildVersion`), set to the first build that
-    // contains it. An earlier revision of this module carried such a floor keyed
-    // to the LAST build without the flag, which retired the hint on the very next
-    // build number; the floor has to name a build that actually has the flag.
-    expect(MANIFEST_HAS_NEVER_FOR_LOCATION).toBe(false);
-
-    // The gate takes no build-number input today. Re-adding one is a type error
-    // here until this exhaustive map is updated alongside it.
-    const gateInputKeys: Record<keyof AndroidScanLocationGateInput, true> = {
-      platformOs: true,
-      androidApiLevel: true,
-    };
-    expect(Object.keys(gateInputKeys).sort()).toEqual(['androidApiLevel', 'platformOs']);
   });
 });
 
@@ -78,6 +110,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 23,
+        nativeBuildVersion: null,
       }),
     ).toBe(true);
   });
@@ -87,6 +120,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 26,
+        nativeBuildVersion: null,
       }),
     ).toBe(true);
   });
@@ -96,6 +130,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 30,
+        nativeBuildVersion: null,
       }),
     ).toBe(true);
   });
@@ -105,6 +140,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 31,
+        nativeBuildVersion: null,
       }),
     ).toBe(false);
   });
@@ -114,6 +150,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 34,
+        nativeBuildVersion: null,
       }),
     ).toBe(false);
   });
@@ -123,6 +160,7 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'android',
         androidApiLevel: 21,
+        nativeBuildVersion: null,
       }),
     ).toBe(false);
   });
@@ -132,16 +170,35 @@ describe('androidScanRequiresLocationServices', () => {
       androidScanRequiresLocationServices({
         platformOs: 'ios',
         androidApiLevel: 26,
+        nativeBuildVersion: null,
       }),
     ).toBe(false);
   });
 
-  it('is mutually exclusive with the permission gate at every API level', () => {
-    for (let apiLevel = 21; apiLevel <= 36; apiLevel += 1) {
-      const input: AndroidScanLocationGateInput = { platformOs: 'android', androidApiLevel: apiLevel };
-      const needsServices = androidScanRequiresLocationServices(input);
-      const needsPermissionOnly = androidBuildHidesScanResultsWithoutLocation(input);
-      expect(needsServices && needsPermissionOnly).toBe(false);
+  it('is mutually exclusive with the permission gate at every API level, on old and new binaries', () => {
+    for (const nativeBuildVersion of [LAST_BUILD_WITHOUT_FLAG, FIRST_BUILD_WITH_FLAG, null]) {
+      for (let apiLevel = 21; apiLevel <= 36; apiLevel += 1) {
+        const input: AndroidScanLocationGateInput = {
+          platformOs: 'android',
+          androidApiLevel: apiLevel,
+          nativeBuildVersion,
+        };
+        const needsServices = androidScanRequiresLocationServices(input);
+        const needsPermissionOnly = androidBuildHidesScanResultsWithoutLocation(input);
+        expect(needsServices && needsPermissionOnly).toBe(false);
+      }
     }
+  });
+
+  // Android 6-11 still needs Location services on to deliver scan results, flag
+  // or no flag: `neverForLocation` only means something from Android 12.
+  it('still asks for Location services on Android 11 with a flagged binary', () => {
+    expect(
+      androidScanRequiresLocationServices({
+        platformOs: 'android',
+        androidApiLevel: 30,
+        nativeBuildVersion: FIRST_BUILD_WITH_FLAG,
+      }),
+    ).toBe(true);
   });
 });

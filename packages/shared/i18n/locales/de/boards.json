@@ -97,7 +97,6 @@
       "ownHint": "Richte das Board ein, das du zu Hause hast",
       "sprayWall": "Meine Spraywall hinzufügen",
       "scan": "Nach dem Board vor mir suchen",
-      "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
       "searching": "Suche Boards in deiner Nähe…",
       "nearbyEmpty": "Nichts im Umkreis von 20 km",
       "nearbyError": "Boards in deiner Nähe konnten nicht geladen werden",
@@ -209,7 +208,17 @@
       "scanning": "Suche nach Boards…",
       "resolving": "Boards werden geladen…",
       "noResults": "Keine Boards in Reichweite",
-      "unavailable": "Schalt Bluetooth ein, um zu suchen"
+      "unavailable": "Schalt Bluetooth ein, um zu suchen",
+      "unknownSetupTitle": "{{board}} Board gefunden",
+      "unknownSetupBody": "Sein Setup kennen wir noch nicht.",
+      "moonboardTitle": "MoonBoard in der Nähe gefunden",
+      "moonboardBody": "Finden wir heraus, welches es ist.",
+      "bareNameTitle": "{{board}} Board in der Nähe gefunden",
+      "bareNameBody": "Seine Box verrät nicht, welches es ist.",
+      "needSignalTitle": "Board gefunden, Empfang nötig",
+      "needSignalBody": "Wir haben es erkannt, können es offline aber nicht nachschlagen.",
+      "findAtGym": "In meiner Halle finden",
+      "ownBoard": "Es ist mein eigenes Board"
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",

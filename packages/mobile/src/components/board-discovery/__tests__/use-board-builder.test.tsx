@@ -98,6 +98,30 @@ describe('useBoardBuilder', () => {
       expect(result.current.canCreate).toBe(true);
     });
 
+    // The Bluetooth quickstart opens the builder on the type it heard.
+    it("opens on the board type it is given, with that type's preset and angle", () => {
+      const moonboardPreset = { layoutId: 2, sizeId: 1, setIds: [2, 3, 4] };
+      const { result } = renderHook(() =>
+        useBoardBuilder(null, {
+          initialBoardName: 'moonboard',
+          preset: (boardName) => (boardName === 'moonboard' ? moonboardPreset : null),
+        }),
+      );
+
+      expect(result.current.boardName).toBe('moonboard');
+      expect(result.current.layoutId).toBe(2);
+      expect(result.current.setIds).toEqual([2, 3, 4]);
+      expect(result.current.angle).toBe(40);
+      expect(result.current.presetKept).toBe(true);
+    });
+
+    it('lets a seed win over the board type it is given', () => {
+      const { result } = renderHook(() =>
+        useBoardBuilder({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1' }, { initialBoardName: 'moonboard' }),
+      );
+      expect(result.current.boardName).toBe('woods');
+    });
+
     it('moves to the next board type preset instead of clearing the cascade', () => {
       const { result } = renderHook(() => useBoardBuilder(null, { preset: presetFor }));
       act(() => result.current.selectBoard('woods'));

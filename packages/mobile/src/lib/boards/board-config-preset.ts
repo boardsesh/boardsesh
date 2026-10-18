@@ -13,6 +13,14 @@
 // Save away from a board with the wrong climbs and the wrong holds lit. With
 // no popular setup for the type, the builder opens as before and the climber
 // picks their layout and size.
+//
+// MoonBoard is the one type with a fixed fallback. The popular list carries no
+// MoonBoard setups, yet MoonBoard is 37% of first binds that name a type, and
+// the Bluetooth quickstart now sends a climber standing at one straight to the
+// builder. The fallback is the setup most climbers actually use, not the
+// catalogue's first: MoonBoard 2016 (392 climbers over 30 days, ahead of 2024
+// with 304 and Masters 2019 with 282) with every hold set, at the builder's
+// default 40°.
 
 import type { BoardName, PopularBoardConfig } from '@boardsesh/shared-schema';
 import {
@@ -20,6 +28,8 @@ import {
   getBoardLayouts,
   getBoardSetsForLayoutAndSize,
   getBoardSizesForLayoutId,
+  MOONBOARD_LAYOUTS,
+  MOONBOARD_SIZE,
 } from '@boardsesh/board-config';
 
 export type BoardConfigPreset = {
@@ -35,11 +45,11 @@ export type BoardConfigPreset = {
  * against this build's own catalogue, because the builder can only show a
  * selection its chips know.
  *
- * `null` when the list has no usable entry for the type, so the builder opens
- * with nothing chosen. That is every MoonBoard today (the live list carries
- * only Kilter and Tension setups), any rarer board type, a spray wall, and
- * every type while the list has not loaded. The builder asks again when the
- * list lands.
+ * A MoonBoard with no popular entry gets MoonBoard 2016 with all its sets (see
+ * the note at the top). Every other type gets `null` when the list has no
+ * usable entry for it, so the builder opens with nothing chosen: any rarer
+ * board type, a spray wall, and every type while the list has not loaded. The
+ * builder asks again when the list lands.
  */
 export function presetBoardConfig(
   boardName: BoardName,
@@ -50,7 +60,19 @@ export function presetBoardConfig(
     const popularPreset = catalogueBackedPreset(boardName, config);
     if (popularPreset) return popularPreset;
   }
-  return null;
+  return boardName === 'moonboard' ? moonboardDefaultPreset() : null;
+}
+
+/**
+ * MoonBoard 2016, the most used MoonBoard layout, with every set it has. Built
+ * through the same catalogue check as a popular entry, so a build whose
+ * catalogue lacks it presets nothing rather than a setup the chips can't show.
+ */
+function moonboardDefaultPreset(): BoardConfigPreset | null {
+  const layoutId = MOONBOARD_LAYOUTS['moonboard-2016'].id;
+  const sizeId = MOONBOARD_SIZE.id;
+  const setIds = getBoardSetsForLayoutAndSize('moonboard', layoutId, sizeId).map((set) => set.id);
+  return catalogueBackedPreset('moonboard', { layoutId, sizeId, setIds });
 }
 
 /**
@@ -58,7 +80,10 @@ export function presetBoardConfig(
  * carry its layout, size or any of its sets. Sets the catalogue does not list
  * are dropped rather than failing the whole entry.
  */
-function catalogueBackedPreset(boardName: BoardName, config: PopularBoardConfig): BoardConfigPreset | null {
+function catalogueBackedPreset(
+  boardName: BoardName,
+  config: Pick<PopularBoardConfig, 'layoutId' | 'sizeId' | 'setIds'>,
+): BoardConfigPreset | null {
   if (!getBoardLayouts(boardName).some((layout) => layout.id === config.layoutId)) return null;
   if (!getBoardSizesForLayoutId(boardName, config.layoutId).some((size) => size.id === config.sizeId)) return null;
   const catalogueSetIds = new Set(

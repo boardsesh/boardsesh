@@ -372,10 +372,15 @@ export const SHARED_EVENTS = {
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started
-  // the radio. Props: { outcome, found_count }. `outcome`: 'completed' (the 15 s
-  // window ran out), 'stopped' (the sheet closed or a board was picked first),
-  // 'error' (the scan errored). `found_count` is the number of distinct board
-  // serials heard, before GraphQL resolves them to boards.
+  // the radio. Props: { outcome, found_count, serialless_count, moonboard_count }.
+  // `outcome`: 'completed' (the 15 s window ran out), 'stopped' (the sheet
+  // closed or a board was picked first), 'error' (the scan errored).
+  // `found_count` is the number of distinct board serials heard, before GraphQL
+  // resolves them to boards. It stays serials-only so its series doesn't break.
+  // `serialless_count` (2026-10) counts boards heard with no serial, one per BLE
+  // device: MoonBoards and Kilter-built boxes advertising a bare `Kilter Board`.
+  // `moonboard_count` is the MoonBoard part of it. A scan that heard nothing has
+  // all three at zero; older events have no `serialless_count`.
   BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial

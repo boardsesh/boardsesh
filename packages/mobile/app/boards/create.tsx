@@ -106,6 +106,11 @@ export default function CreateBoard() {
     seedSetIds?: string;
     /** `'1'` when "My own board" opened the builder: open with a setup chosen. */
     preset?: string;
+    /**
+     * The board type to open on, when the Bluetooth quickstart heard a board it
+     * couldn't name and the climber said it's their own.
+     */
+    presetBoardType?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   // Threaded through the picker from the first-run flow. Creating a board is one
@@ -140,8 +145,9 @@ export default function CreateBoard() {
   // type's most used setup already chosen, so the preview renders and Save
   // works from the first frame. The popular list is the picker's own query
   // (same key), so it is usually already cached; when it lands late the builder
-  // fills its still-empty cascade then. A type the list does not carry (every
-  // MoonBoard today) opens with nothing chosen rather than a guess.
+  // fills its still-empty cascade then. A type the list does not carry opens
+  // with nothing chosen rather than a guess, except MoonBoard, which opens on
+  // the 2016 board most of its climbers use (see presetBoardConfig).
   const presetRequested = params.preset === BUILDER_PRESET_PARAM_VALUE && seed === null;
   const { data: popularConfigs } = usePopularBoardConfigs({ limit: 12 }, { enabled: presetRequested });
   const popularConfigList = popularConfigs?.configs;
@@ -150,8 +156,11 @@ export default function CreateBoard() {
     [popularConfigList],
   );
   const { data: privacySettings, refetch: refetchPrivacySettings } = usePrivacySettings();
+  // A seed names its own board type, so this only applies to a preset open.
+  const initialBoardName = presetRequested ? (toBoardName(params.presetBoardType) ?? undefined) : undefined;
   const builder = useBoardBuilder(seed, {
     preset: presetRequested ? presetForBoard : undefined,
+    initialBoardName,
     privacyEnabled: privacySettings?.enabled,
   });
 

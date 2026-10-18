@@ -110,12 +110,6 @@ export function FirstBoardChoice({
 
       <View style={styles.scan}>
         <Button title={t('mobile.firstBoard.scan')} variant="text" icon="bluetooth" onPress={onScan} />
-        {/* Always visible, not only after a scan comes up empty: the scan cannot
-            see MoonBoards or boxes that don't advertise a serial, and a climber
-            standing at one should know that before they wait on it. */}
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footnote}>
-          {t('mobile.firstBoard.scanFootnote')}
-        </Text>
       </View>
     </View>
   );
@@ -188,13 +182,9 @@ const styles = StyleSheet.create({
   scan: {
     paddingHorizontal: spacing[4],
     alignItems: 'flex-start',
-    gap: spacing[1],
   },
   textAction: {
     paddingHorizontal: spacing[4],
     alignItems: 'flex-start',
-  },
-  footnote: {
-    paddingHorizontal: spacing[1],
   },
 });

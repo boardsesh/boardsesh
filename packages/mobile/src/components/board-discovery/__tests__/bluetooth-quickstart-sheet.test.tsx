@@ -16,17 +16,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
+import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
 
 const scan = vi.hoisted(() => ({
   status: 'done' as 'idle' | 'scanning' | 'done' | 'unavailable',
   unavailableReason: null as 'permission_denied' | 'unauthorized' | 'powered_off' | 'unsupported' | 'unknown' | null,
   serials: [] as string[],
   advertisedTypes: new Map<string, string>(),
+  devices: [] as QuickstartScanDevice[],
   start: vi.fn(async () => {}),
   reset: vi.fn(),
 }));
 
-const boards = vi.hoisted(() => ({ data: [] as unknown[], isLoading: false }));
+const boards = vi.hoisted(() => ({
+  data: [] as unknown[] | undefined,
+  isLoading: false,
+  isError: false,
+  fetchStatus: 'idle' as 'idle' | 'fetching' | 'paused',
+  refetch: vi.fn(async () => undefined),
+}));
+
+const actions = vi.hoisted(() => ({ onFindAtGym: vi.fn(), onOwnBoard: vi.fn() }));
 
 const serialConfigs = vi.hoisted(() => ({ data: [] as BoardSerialConfig[], isResolving: false }));
 
@@ -61,8 +71,12 @@ vi.mock('react-native', () => ({
   },
 }));
 
+// The interpolated board name rides along after the key, so a row can be
+// checked for the board type it names.
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, params?: { board?: string }) => (params?.board ? `${key}[${params.board}]` : key),
+  }),
 }));
 
 vi.mock('../../../lib/ble/use-board-scan', () => ({
@@ -107,7 +121,9 @@ vi.mock('../../../lib/ble/use-my-board-serial-configs', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
-  useTheme: () => ({ systemColors: { label: '#111', secondaryLabel: '#666', tertiaryLabel: '#999' } }),
+  useTheme: () => ({
+    systemColors: { label: '#111', secondaryLabel: '#666', tertiaryLabel: '#999', separator: '#ccc' },
+  }),
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -143,8 +159,12 @@ import { BluetoothQuickstartSheet } from '../BluetoothQuickstartSheet';
 
 const hasText = (root: HTMLElement, text: string) => root.textContent?.includes(text) ?? false;
 
+function sheet(onSelect: (board: unknown) => void = vi.fn()) {
+  return <BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={onSelect} {...actions} />;
+}
+
 function renderSheet() {
-  return render(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+  return render(sheet());
 }
 
 describe('BluetoothQuickstartSheet', () => {
@@ -155,11 +175,17 @@ describe('BluetoothQuickstartSheet', () => {
     appSettings.openAppSettings.mockClear();
     scan.serials = [];
     scan.advertisedTypes = new Map();
+    scan.devices = [];
     resolveCalls.length = 0;
     scan.start.mockClear();
     scan.reset.mockReset();
     boards.data = [];
     boards.isLoading = false;
+    boards.isError = false;
+    boards.fetchStatus = 'idle';
+    boards.refetch.mockClear();
+    actions.onFindAtGym.mockClear();
+    actions.onOwnBoard.mockClear();
     serialConfigs.data = [];
     serialConfigs.isResolving = false;
     locationHint.shouldOfferLocationGrant = false;
@@ -182,17 +208,17 @@ describe('BluetoothQuickstartSheet', () => {
     expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(true);
   });
 
-  // #5654: the scan only sees Aurora boxes that put a serial in their name, so a
-  // climber at a MoonBoard is told before the scan runs out, not after.
-  it.each(['scanning', 'done'] as const)('says what the scan cannot see while %s', (status) => {
+  // The scan lists MoonBoards and boxes with no serial now, so the caveat that
+  // it can't see them is gone.
+  it.each(['scanning', 'done'] as const)('no longer warns that the scan misses MoonBoards while %s', (status) => {
     scan.status = status;
     const { container } = renderSheet();
 
-    expect(hasText(container, 'mobile.firstBoard.scanFootnote')).toBe(true);
+    expect(hasText(container, 'scanFootnote')).toBe(false);
   });
 
-  // #5654: the footnote above every state pushes the Android empty scan's
-  // recovery buttons past a 55% sheet on a small phone at large text.
+  // #5654: the Android empty scan's recovery buttons run past a 55% sheet on a
+  // small phone at large text.
   it('scrolls, so the recovery buttons are never cut off', () => {
     locationHint.shouldOfferLocationGrant = true;
     renderSheet();
@@ -234,7 +260,7 @@ describe('BluetoothQuickstartSheet', () => {
 
     // useBoardScan is mocked, so the status flip can't re-render on its own the
     // way the real hook's state update would.
-    rerender(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+    rerender(sheet());
 
     await waitFor(() => {
       expect(scan.start).toHaveBeenCalledOnce();
@@ -260,6 +286,8 @@ describe('BluetoothQuickstartSheet', () => {
     expect(locationHint.lastActive).toBe(false);
 
     scan.status = 'done';
+    // A lookup only runs for heard serials.
+    scan.serials = ['1234'];
     boards.data = [{ uuid: 'board-1', name: 'Home wall', boardType: 'kilter', sizeName: 'Small' }];
     renderSheet();
     expect(locationHint.lastActive).toBe(false);
@@ -309,7 +337,7 @@ describe('BluetoothQuickstartSheet', () => {
       expect(scan.reset).toHaveBeenCalledOnce();
     });
 
-    rerender(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+    rerender(sheet());
 
     await waitFor(() => {
       expect(scan.start).toHaveBeenCalledOnce();
@@ -334,8 +362,11 @@ describe('BluetoothQuickstartSheet board rows', () => {
   beforeEach(() => {
     scan.status = 'done';
     scan.serials = ['1234'];
+    scan.devices = [];
     boards.data = [];
     boards.isLoading = false;
+    boards.isError = false;
+    boards.fetchStatus = 'idle';
     serialConfigs.data = [];
     serialConfigs.isResolving = false;
   });
@@ -375,7 +406,7 @@ describe('BluetoothQuickstartSheet board rows', () => {
     scan.serials = ['12345'];
     scan.advertisedTypes = new Map([['12345', 'tension']]);
 
-    render(createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect: () => {} }));
+    render(sheet());
 
     const lastCall = resolveCalls.at(-1);
     expect({ serialNumbers: lastCall?.serialNumbers, advertisedTypes: [...(lastCall?.advertisedTypes ?? [])] }).toEqual(
@@ -413,9 +444,7 @@ describe('BluetoothQuickstartSheet board rows', () => {
     ];
     const onSelect = vi.fn();
 
-    const { container } = render(
-      createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect }),
-    );
+    const { container } = render(sheet(onSelect));
 
     expect(hasText(container, 'Garage')).toBe(true);
     expect(hasText(container, 'MILES')).toBe(false);
@@ -458,7 +487,7 @@ describe('BluetoothQuickstartSheet board rows', () => {
       },
     ];
     serialConfigs.isResolving = false;
-    rerender(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+    rerender(sheet());
 
     expect(hasText(container, 'Garage')).toBe(true);
     expect(hasText(container, 'MILES')).toBe(false);
@@ -513,9 +542,12 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
     scan.status = 'unavailable';
     scan.unavailableReason = null;
     scan.serials = [];
+    scan.devices = [];
     scan.reset.mockReset();
     boards.data = [];
     boards.isLoading = false;
+    boards.isError = false;
+    boards.fetchStatus = 'idle';
     appSettings.canOpen = true;
     appSettings.openAppSettings.mockClear();
   });
@@ -619,9 +651,216 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
 
   it('shows no Scan again while boards are listed', () => {
     scan.status = 'done';
+    // A lookup only runs for heard serials.
+    scan.serials = ['1234'];
     boards.data = [{ uuid: 'board-1', name: 'Gym Kilter', boardType: 'kilter', sizeName: 'Small' }];
     const { container } = renderSheet();
 
     expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+});
+
+// Slice 1 of the first-run redesign: every board the scan hears gets a row and
+// a next step. MoonBoards and Kilter-built boxes advertise no serial, a serial
+// can belong to a board nobody saved, and a lookup can fail offline. Each of
+// those used to read "No boards in range".
+describe('BluetoothQuickstartSheet boards it cannot name', () => {
+  const moonboard: QuickstartScanDevice = {
+    key: 'device:mb-1',
+    deviceId: 'mb-1',
+    name: 'MoonBoard A',
+    kind: 'moonboard',
+    serial: null,
+    boardType: 'moonboard',
+    rssi: -80,
+  };
+  const bareKilter: QuickstartScanDevice = {
+    key: 'device:kb-1',
+    deviceId: 'kb-1',
+    name: 'Kilter Board',
+    kind: 'bare_name',
+    serial: null,
+    boardType: 'kilter',
+    rssi: -60,
+  };
+  const kilterSerial: QuickstartScanDevice = {
+    key: 'serial:751737',
+    deviceId: 'ks-1',
+    name: 'Kilter Board#751737@3',
+    kind: 'serial',
+    serial: '751737',
+    boardType: 'kilter',
+    rssi: -50,
+  };
+  const tensionSerial: QuickstartScanDevice = {
+    key: 'serial:12345',
+    deviceId: 'ts-1',
+    name: 'Tension Board#12345@3',
+    kind: 'serial',
+    serial: '12345',
+    boardType: 'tension',
+    rssi: -70,
+  };
+  const gymKilter = {
+    uuid: 'gym-kilter',
+    serialNumber: '751737',
+    name: 'Crux Kilter',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 7,
+    sizeName: null,
+  };
+
+  const button = (root: HTMLElement, title: string) =>
+    root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
+
+  beforeEach(() => {
+    scan.status = 'done';
+    scan.unavailableReason = null;
+    scan.serials = [];
+    scan.advertisedTypes = new Map();
+    scan.devices = [];
+    boards.data = [];
+    boards.isLoading = false;
+    boards.isError = false;
+    boards.fetchStatus = 'idle';
+    boards.refetch.mockClear();
+    serialConfigs.data = [];
+    serialConfigs.isResolving = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.lastActive = null;
+    actions.onFindAtGym.mockClear();
+    actions.onOwnBoard.mockClear();
+  });
+
+  it('says it found a MoonBoard, and offers the gym list and the builder for it', () => {
+    scan.devices = [moonboard];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.moonboardTitle')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.moonboardBody')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
+    expect(locationHint.lastActive).toBe(false);
+
+    button(container, 'mobile.bluetooth.findAtGym')?.click();
+    expect(actions.onFindAtGym).toHaveBeenCalledWith('moonboard');
+    button(container, 'mobile.bluetooth.ownBoard')?.click();
+    expect(actions.onOwnBoard).toHaveBeenCalledWith('moonboard');
+  });
+
+  it('shows two MoonBoards in range as one row: both would say the same thing', () => {
+    scan.devices = [moonboard, { ...moonboard, key: 'device:mb-2', deviceId: 'mb-2', rssi: -55 }];
+    const { container } = renderSheet();
+
+    expect(container.querySelectorAll('[data-button="mobile.bluetooth.findAtGym"]')).toHaveLength(1);
+  });
+
+  it('says it found a Kilter box that does not say which board it is', () => {
+    scan.devices = [bareKilter];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.bareNameTitle[Kilter]')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.bareNameBody')).toBe(true);
+
+    button(container, 'mobile.bluetooth.findAtGym')?.click();
+    expect(actions.onFindAtGym).toHaveBeenCalledWith('kilter');
+    button(container, 'mobile.bluetooth.ownBoard')?.click();
+    expect(actions.onOwnBoard).toHaveBeenCalledWith('kilter');
+  });
+
+  it('names the type of a serial nobody has saved a board for', () => {
+    scan.serials = ['12345'];
+    scan.advertisedTypes = new Map([['12345', 'tension']]);
+    scan.devices = [tensionSerial];
+    boards.data = [];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unknownSetupTitle[Tension]')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.unknownSetupBody')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
+
+    button(container, 'mobile.bluetooth.ownBoard')?.click();
+    expect(actions.onOwnBoard).toHaveBeenCalledWith('tension');
+  });
+
+  it('lists a saved board and an unknown serial side by side', () => {
+    scan.serials = ['751737', '12345'];
+    scan.devices = [kilterSerial, tensionSerial];
+    boards.data = [gymKilter];
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'Crux Kilter')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.unknownSetupTitle[Tension]')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.unknownSetupTitle[Kilter]')).toBe(false);
+  });
+
+  it('lists every board closest first', () => {
+    scan.serials = ['751737'];
+    scan.devices = [moonboard, bareKilter, kilterSerial];
+    boards.data = [gymKilter];
+    const text = renderSheet().container.textContent ?? '';
+
+    const savedBoard = text.indexOf('Crux Kilter');
+    const bareBox = text.indexOf('mobile.bluetooth.bareNameTitle');
+    const moonboardRow = text.indexOf('mobile.bluetooth.moonboardTitle');
+    expect(savedBoard).toBeGreaterThanOrEqual(0);
+    expect(savedBoard).toBeLessThan(bareBox);
+    expect(bareBox).toBeLessThan(moonboardRow);
+  });
+
+  it('shows a MoonBoard straight away while serials are still being looked up', () => {
+    scan.status = 'scanning';
+    scan.serials = ['751737'];
+    scan.devices = [kilterSerial, moonboard];
+    boards.data = undefined;
+    boards.isLoading = true;
+    boards.fetchStatus = 'fetching';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.moonboardTitle')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.unknownSetupTitle')).toBe(false);
+    expect(hasText(container, 'mobile.bluetooth.needSignalTitle')).toBe(false);
+  });
+
+  // Offline the lookup pauses rather than failing, and the sheet used to
+  // read that as "No boards in range".
+  it.each([
+    ['paused for want of a network', { isError: false, fetchStatus: 'paused' as const }],
+    ['failed after its retries', { isError: true, fetchStatus: 'idle' as const }],
+  ])('says it heard a board but needs signal when the lookup is %s, and tries again', (_label, lookup) => {
+    scan.serials = ['751737'];
+    scan.devices = [kilterSerial];
+    boards.data = undefined;
+    boards.isError = lookup.isError;
+    boards.fetchStatus = lookup.fetchStatus;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.needSignalTitle')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.needSignalBody')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
+    expect(locationHint.lastActive).toBe(false);
+    expect(button(container, 'mobile.bluetooth.findAtGym')).toBeNull();
+
+    button(container, 'mobile.errorRetry')?.click();
+    expect(boards.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the MoonBoard row next to the need-signal row', () => {
+    scan.serials = ['751737'];
+    scan.devices = [kilterSerial, moonboard];
+    boards.data = undefined;
+    boards.fetchStatus = 'paused';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.needSignalTitle')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.moonboardTitle')).toBe(true);
+  });
+
+  it('still says "No boards in range" when the scan heard nothing', () => {
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(true);
+    expect(locationHint.lastActive).toBe(true);
   });
 });

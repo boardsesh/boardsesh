@@ -120,9 +120,11 @@ describe('FirstBoardChoice', () => {
     expect(onAddSprayWall).toHaveBeenCalledTimes(1);
   });
 
-  it('says up front what the scan cannot see', () => {
+  // The scan now lists MoonBoards and boxes with no serial, so the caveat that
+  // it couldn't see them is gone.
+  it('no longer warns that the scan misses MoonBoards', () => {
     renderChoice();
-    expect(screen.getByText("MoonBoards and some Kilter boxes don't show up here yet.")).toBeTruthy();
+    expect(screen.queryByText(/MoonBoards and some Kilter boxes/)).toBeNull();
   });
 
   it('hands each tap to its flow', () => {

@@ -68,6 +68,13 @@ export type BoardBuilderOptions = {
    * climber has picked something, a new identity changes nothing.
    */
   preset?: (boardName: BoardName) => BoardConfigPreset | null;
+  /**
+   * The board type to open on when there is no `seed`, instead of the first
+   * supported board. The Bluetooth quickstart passes the type it heard, so a
+   * climber at a MoonBoard lands on MoonBoard chips (and its preset), not
+   * Kilter's.
+   */
+  initialBoardName?: BoardName;
 };
 
 function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: number | null, setIds: number[]) {
@@ -84,7 +91,7 @@ function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: n
  * stay hidden behind Advanced for the 99% case.
  */
 export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardBuilderOptions) {
-  const initialBoard = seed?.boardName ?? SUPPORTED_BOARDS[0];
+  const initialBoard = seed?.boardName ?? options?.initialBoardName ?? SUPPORTED_BOARDS[0];
   // A seed is the climber's own choice (a Popular card, the board being
   // edited), so it always wins over a preset.
   const [initialPreset] = useState(() => (seed ? null : (options?.preset?.(initialBoard) ?? null)));

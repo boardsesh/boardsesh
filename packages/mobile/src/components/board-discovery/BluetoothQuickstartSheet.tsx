@@ -1,10 +1,10 @@
 import { PressableSurface } from '../PressableSurface';
-import { forwardRef, useCallback, useEffect, useMemo } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
-import type { UserBoard } from '@boardsesh/shared-schema';
-import { boardRowSubtitle } from '@boardsesh/board-config';
+import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
+import { boardRowSubtitle, formatBoardDisplayName, type BoardLabelOptions } from '@boardsesh/board-config';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
@@ -13,7 +13,6 @@ import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates';
 import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
-import { boardRowKeys } from '../../lib/boards/board-identity';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { Sheet } from '../Sheet';
@@ -22,44 +21,69 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
+import { buildQuickstartRows, quickstartLookupState, type QuickstartRow } from './quickstart-scan-rows';
+
+const EMPTY_BOARDS: UserBoard[] = [];
 
 type BluetoothQuickstartSheetProps = {
   /** True while the sheet is open — drives when the scan kicks off. */
   active: boolean;
   onClose: () => void;
+  /** Fired once the sheet has finished sliding away, however it was closed. */
+  onFullyDismissed?: () => void;
   onSelect: (board: UserBoard) => void;
+  /** "Find it at my gym" on a board we couldn't name: the boards near the climber, of this type. */
+  onFindAtGym: (boardType: BoardName) => void;
+  /** "It's my own board" on a board we couldn't name: the builder, opened on this type. */
+  onOwnBoard: (boardType: BoardName) => void;
 };
 
 /**
- * Bluetooth quickstart: scans for in-range Aurora boards (scan-only, no
- * connection), resolves their serials to boards, and lets the user pick one to
- * make active. Mirrors the web home's Bluetooth card flow.
+ * Bluetooth quickstart: scans for in-range boards (scan-only, no connection),
+ * resolves Aurora serials to saved boards, and lets the user pick one to make
+ * active. Mirrors the web home's Bluetooth card flow.
+ *
+ * A board it can't name still gets a row, closest first: a MoonBoard, a
+ * Kilter-built box with no serial in its name, a serial nobody has saved, and a
+ * serial it couldn't look up offline. Each says what we heard and offers the
+ * next step (see quickstart-scan-rows.ts).
  */
 export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickstartSheetProps>(
-  function BluetoothQuickstartSheet({ active, onClose, onSelect }, ref) {
+  function BluetoothQuickstartSheet({ active, onClose, onFullyDismissed, onSelect, onFindAtGym, onOwnBoard }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
     const { t: tSettings } = useTranslation('settings');
     const labelOptions = useSprayLabelOptions();
-    const { status, unavailableReason, serials, advertisedTypes, start, reset } = useBoardScan();
+    const { status, unavailableReason, serials, advertisedTypes, devices, start, reset } = useBoardScan();
     // Scoped to what each controller announced. Aurora reuses a serial across
     // board apps, so unscoped this sheet would offer a stranger's Kilter board
     // for an in-range Tension controller and let the user make it active.
-    const { data: boards = [], isLoading: isResolvingBoards } = useBoardsBySerialNumbers(serials, advertisedTypes);
+    const boardLookup = useBoardsBySerialNumbers(serials, advertisedTypes);
+    const { data: boards, isLoading: isResolvingBoards, refetch: refetchBoards } = boardLookup;
     const { data: serialConfigs, isResolving: isResolvingPreferences } = useMyBoardSerialConfigs(serials);
     const visibleBoards = useMemo(
-      () => selectBleBoardCandidates(boards, serialConfigs, advertisedTypes),
+      () => selectBleBoardCandidates(boards ?? EMPTY_BOARDS, serialConfigs, advertisedTypes),
       [advertisedTypes, boards, serialConfigs],
     );
-    // A hidden board found by serial has an empty uuid, so rows can't key on it.
-    const visibleBoardKeys = useMemo(() => boardRowKeys(visibleBoards), [visibleBoards]);
-    const isResolving = isResolvingBoards || isResolvingPreferences;
+    // With no signal the lookup pauses instead of failing (`networkMode:
+    // 'offlineFirst'`), so a paused lookup counts as failed: it used to read as
+    // "No boards in range" while a board stood in front of the climber.
+    const lookup = quickstartLookupState({
+      serialCount: serials.length,
+      hasResult: boards !== undefined,
+      failed: boardLookup.isError || boardLookup.fetchStatus === 'paused',
+      resolving: isResolvingBoards || isResolvingPreferences,
+    });
+    const rows = useMemo(
+      () => buildQuickstartRows({ devices, boards: visibleBoards, lookup }),
+      [devices, visibleBoards, lookup],
+    );
 
-    // `!isResolving` matters: the scan reports 'done' the moment the radio work
-    // finishes, while `boards` stays empty until GraphQL has turned the serials
-    // into boards. Without it, a scan that found plenty of boards spends the
-    // resolution window looking exactly like a scan that found none.
-    const scanFinishedEmpty = status === 'done' && visibleBoards.length === 0 && !isResolving;
+    // `lookup !== 'pending'` matters: the scan reports 'done' the moment the
+    // radio work finishes, while serial rows wait until GraphQL has turned the
+    // serials into boards. Without it, a scan that found plenty of boards spends
+    // the resolution window looking exactly like a scan that found none.
+    const scanFinishedEmpty = status === 'done' && rows.length === 0 && lookup !== 'pending';
     // Same Android 12+ scan-result suppression the device picker guards against —
     // this sheet runs its own scan through use-board-scan, so it needs its own
     // hint. See lib/ble/android-scan-location-gate.ts.
@@ -90,6 +114,9 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     const handleOpenSettings = useCallback(() => {
       void openAppSettings();
     }, []);
+    const handleRetryLookup = useCallback(() => {
+      void refetchBoards();
+    }, [refetchBoards]);
 
     // Start scanning when the sheet opens; reset back to idle when it closes so
     // the next open re-scans from scratch.
@@ -161,26 +188,25 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         );
       }
 
-      if (visibleBoards.length > 0 && !isResolvingPreferences) {
+      if (rows.length > 0) {
+        // Not virtualised: one row per board in radio range, with the boards we
+        // can't name folded to one row per type, so it stays a handful.
         return (
           <View style={styles.list}>
-            {visibleBoards.map((board, boardIndex) => (
-              <PressableSurface
-                key={visibleBoardKeys[boardIndex]}
-                accessibilityRole="button"
-                onPress={() => onSelect(board)}
-                style={[styles.row, { borderColor: systemColors.separator }]}
-              >
-                <Icon name="bluetooth" size={20} color={systemColors.label} />
-                <View style={styles.rowText}>
-                  <Text variant="headline">{board.name}</Text>
-                  <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                    {boardRowSubtitle(board, labelOptions)}
-                  </Text>
-                </View>
-                <Icon name="add" size={20} color={systemColors.tertiaryLabel} />
-              </PressableSurface>
-            ))}
+            {rows.map((row) =>
+              row.kind === 'board' ? (
+                <ResolvedBoardRow key={row.key} board={row.board} labelOptions={labelOptions} onSelect={onSelect} />
+              ) : (
+                <NextStepRow
+                  key={row.key}
+                  kind={row.kind}
+                  boardType={row.kind === 'lookup_failed' ? null : row.boardType}
+                  onFindAtGym={onFindAtGym}
+                  onOwnBoard={onOwnBoard}
+                  onRetryLookup={handleRetryLookup}
+                />
+              ),
+            )}
           </View>
         );
       }
@@ -254,21 +280,22 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         <View style={styles.state}>
           <ActivityIndicator size="large" />
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
-            {isResolving ? t('mobile.bluetooth.resolving') : t('mobile.bluetooth.scanning')}
+            {lookup === 'pending' ? t('mobile.bluetooth.resolving') : t('mobile.bluetooth.scanning')}
           </Text>
         </View>
       );
     };
 
-    // Scrollable: the footnote sits above every state, and the Android empty
-    // scan (hint title, body and a grant button under "No boards in range")
-    // runs past a medium sheet on a 667 pt phone at large text. Without a scroll
-    // the recovery buttons at the bottom were the part that got cut off.
+    // Scrollable: the Android empty scan (hint title, body and a grant button
+    // under "No boards in range") runs past a medium sheet on a 667 pt phone at
+    // large text, and so do a few rows that each carry two buttons. Without a
+    // scroll the buttons at the bottom were the part that got cut off.
     return (
       <Sheet
         ref={ref}
         snapPoints={MEDIUM_SNAP_POINTS}
         onClose={onClose}
+        onFullyDismissed={onFullyDismissed}
         scrollable
         contentContainerStyle={styles.scrollContent}
       >
@@ -276,19 +303,131 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}
           </Text>
-          {/* On screen for the whole scan, not only once it comes up empty
-              (#5654): the scan cannot see MoonBoards or Kilter boxes that don't
-              put a serial in their name, and a climber standing at one should
-              know before waiting 15 seconds for "No boards in range". */}
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footnote}>
-            {t('mobile.firstBoard.scanFootnote')}
-          </Text>
           {renderBody()}
         </View>
       </Sheet>
     );
   },
 );
+
+/** A heard serial that matched a saved board: tap to make it active. */
+const ResolvedBoardRow = memo(function ResolvedBoardRow({
+  board,
+  labelOptions,
+  onSelect,
+}: {
+  board: UserBoard;
+  labelOptions: BoardLabelOptions;
+  onSelect: (board: UserBoard) => void;
+}) {
+  const { systemColors } = useTheme();
+  const handlePress = useCallback(() => onSelect(board), [board, onSelect]);
+  return (
+    <PressableSurface
+      accessibilityRole="button"
+      onPress={handlePress}
+      style={[styles.row, { borderColor: systemColors.separator }]}
+    >
+      <Icon name="bluetooth" size={20} color={systemColors.label} />
+      <View style={styles.rowText}>
+        <Text variant="headline">{board.name}</Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {boardRowSubtitle(board, labelOptions)}
+        </Text>
+      </View>
+      <Icon name="add" size={20} color={systemColors.tertiaryLabel} />
+    </PressableSurface>
+  );
+});
+
+type NextStepKind = Exclude<QuickstartRow['kind'], 'board'>;
+
+/**
+ * A board we heard but can't name, or can't look up: what it is, and the way
+ * forward. `boardType` is null only for `lookup_failed`, whose way forward is
+ * trying the lookup again.
+ */
+const NextStepRow = memo(function NextStepRow({
+  kind,
+  boardType,
+  onFindAtGym,
+  onOwnBoard,
+  onRetryLookup,
+}: {
+  kind: NextStepKind;
+  boardType: BoardName | null;
+  onFindAtGym: (boardType: BoardName) => void;
+  onOwnBoard: (boardType: BoardName) => void;
+  onRetryLookup: () => void;
+}) {
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  const handleFindAtGym = useCallback(() => {
+    if (boardType) onFindAtGym(boardType);
+  }, [boardType, onFindAtGym]);
+  const handleOwnBoard = useCallback(() => {
+    if (boardType) onOwnBoard(boardType);
+  }, [boardType, onOwnBoard]);
+
+  const board = boardType ? formatBoardDisplayName(boardType) : '';
+  // Literal keys per kind: the i18n lint rejects a computed one.
+  let title: string;
+  let body: string;
+  switch (kind) {
+    case 'unknown_setup':
+      title = t('mobile.bluetooth.unknownSetupTitle', { board });
+      body = t('mobile.bluetooth.unknownSetupBody');
+      break;
+    case 'moonboard':
+      title = t('mobile.bluetooth.moonboardTitle');
+      body = t('mobile.bluetooth.moonboardBody');
+      break;
+    case 'bare_name':
+      title = t('mobile.bluetooth.bareNameTitle', { board });
+      body = t('mobile.bluetooth.bareNameBody');
+      break;
+    case 'lookup_failed':
+      title = t('mobile.bluetooth.needSignalTitle');
+      body = t('mobile.bluetooth.needSignalBody');
+      break;
+  }
+
+  return (
+    <View style={[styles.row, styles.nextStepRow, { borderColor: systemColors.separator }]}>
+      <View style={styles.nextStepHeader}>
+        <Icon name="bluetooth" size={20} color={systemColors.label} />
+        <View style={styles.rowText}>
+          <Text variant="headline">{title}</Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {body}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.nextStepActions}>
+        {kind === 'lookup_failed' ? (
+          <Button title={t('mobile.errorRetry')} onPress={onRetryLookup} variant="tonal" size="small" icon="refresh" />
+        ) : (
+          <>
+            <Button
+              title={t('mobile.bluetooth.findAtGym')}
+              onPress={handleFindAtGym}
+              variant="tonal"
+              size="small"
+              icon="gym"
+            />
+            <Button
+              title={t('mobile.bluetooth.ownBoard')}
+              onPress={handleOwnBoard}
+              variant="text"
+              size="small"
+              icon="home"
+            />
+          </>
+        )}
+      </View>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   // At least the sheet's height, so a short state still centres in it; taller
@@ -333,7 +472,21 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
   },
-  footnote: {
-    marginBottom: spacing[3],
+  // Text above, buttons below: two labelled buttons beside the text would leave
+  // the title a word wide on a small phone.
+  nextStepRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  nextStepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  nextStepActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing[2],
   },
 });

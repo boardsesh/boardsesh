@@ -164,10 +164,11 @@ export function DevicePickerSheet({
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
 
-  // While our manifest declares `BLUETOOTH_SCAN` without `neverForLocation`, an
-  // empty list on Android 12+ with location denied is the OS hiding scan
-  // results, not a board problem — so replace the hardware troubleshooting with
-  // copy that is actually actionable. See lib/ble/android-scan-location-gate.ts.
+  // On a binary whose manifest declares `BLUETOOTH_SCAN` without
+  // `neverForLocation` (before Android versionCode 2000761), an empty list on
+  // Android 12+ with location denied is the OS hiding scan results, not a board
+  // problem — so replace the hardware troubleshooting with copy that is
+  // actually actionable. See lib/ble/android-scan-location-gate.ts.
   const locationHint = useAndroidScanLocationHint(showEmptyState);
   const showLocationHint = locationHint.shouldOfferLocationGrant || locationHint.wasGranted;
   // Same idea, but for Android 11 and below: the permission is fine, the

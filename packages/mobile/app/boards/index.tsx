@@ -7,7 +7,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import {
   useMyBoards,
   usePopularBoardConfigs,
@@ -251,6 +251,13 @@ export default function BoardSelection() {
   // a denial, so a second tap has to be able to ask again: a climber coming back
   // from Settings gets their gyms from that tap, not from reopening the picker.
   const location = useDeviceLocation({ retryAfterDenial: true });
+  // Set by the Bluetooth quickstart's "Find it at my gym" on a board it heard
+  // but couldn't name: the nearby list then holds only that board type, so a
+  // climber at a MoonBoard picks from the MoonBoards around them. Filtered by
+  // the server, not just here: the 20 nearest boards of every type could hold
+  // none of it. Find nearby and "At a gym" clear it.
+  const [nearbyBoardType, setNearbyBoardType] = useState<BoardName | null>(null);
+  const nearbyBoardTypes = useMemo(() => (nearbyBoardType ? [nearbyBoardType] : undefined), [nearbyBoardType]);
   // 20 km, not the hook's 1 km default — "nearby" should reach across town
   // (a gym a couple of streets away must still surface).
   const {
@@ -258,7 +265,7 @@ export default function BoardSelection() {
     isFetching: isNearbyFetching,
     isError: isNearbyError,
     refetch: refetchNearby,
-  } = useNearbyBoards(location.coords, 20);
+  } = useNearbyBoards(location.coords, 20, undefined, undefined, nearbyBoardTypes);
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
@@ -302,8 +309,16 @@ export default function BoardSelection() {
     [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions, importStatusStale],
   );
   const nearbyItems = useMemo(
-    () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
-    [nearby?.boards, activeBoard?.uuid, labelOptions],
+    () =>
+      userBoardsToItems(
+        // Also filtered here: while a newly filtered search loads, the query
+        // keeps showing the previous, unfiltered list.
+        nearbyBoardType
+          ? (nearby?.boards ?? []).filter((board) => board.boardType === nearbyBoardType)
+          : (nearby?.boards ?? []),
+        { activeUuid: activeBoard?.uuid, labelOptions },
+      ),
+    [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions],
   );
   const offlineItems = useMemo(
     () => userBoardsToItems(offlineRows, { activeUuid: activeBoard?.uuid, labelOptions }),
@@ -687,11 +702,31 @@ export default function BoardSelection() {
       if (!moved) void refetchNearby();
     });
   }, [locationGranted, refetchNearby, refreshLocation, requestLocation]);
-  const onModeFindNearby = searchNearby;
+  const onModeFindNearby = useCallback(() => {
+    setNearbyBoardType(null);
+    searchNearby();
+  }, [searchNearby]);
 
+  // What the quickstart sheet asked for, run once it has finished sliding away
+  // (`onFullyDismissed`), so a push or the location prompt never starts while
+  // the native sheet is still dismissing.
+  const afterBluetoothSheetDismissedRef = useRef<(() => void) | null>(null);
   const onModeBluetooth = useCallback(() => {
+    // A dismissal that never settled must not run its action on a later close.
+    afterBluetoothSheetDismissedRef.current = null;
     setBluetoothActive(true);
     bluetoothSheetRef.current?.expand();
+  }, []);
+  const closeBluetoothSheetThen = useCallback((action: () => void) => {
+    afterBluetoothSheetDismissedRef.current = action;
+    // Inactive stops the scan (the sheet resets it); close slides it away.
+    setBluetoothActive(false);
+    bluetoothSheetRef.current?.close();
+  }, []);
+  const onBluetoothSheetDismissed = useCallback(() => {
+    const action = afterBluetoothSheetDismissedRef.current;
+    afterBluetoothSheetDismissedRef.current = null;
+    action?.();
   }, []);
 
   // Deliberate "create an owned board" flow: the full-screen builder (a home
@@ -741,6 +776,7 @@ export default function BoardSelection() {
   const [gymChosen, setGymChosen] = useState(false);
   const onFirstBoardGym = useCallback(() => {
     chooseFirstBoardPath('gym');
+    setNearbyBoardType(null);
     setGymChosen(true);
     searchNearby();
   }, [chooseFirstBoardPath, searchNearby]);
@@ -770,6 +806,45 @@ export default function BoardSelection() {
     chooseFirstBoardPath('gym_map');
     onModeFindGym();
   }, [chooseFirstBoardPath, onModeFindGym]);
+  // Stable, so the quickstart's memoised rows don't re-render with this screen.
+  const onBluetoothSheetClosed = useCallback(() => setBluetoothActive(false), []);
+  const onScanSelectBoard = useCallback(
+    (board: UserBoard) => {
+      bluetoothSheetRef.current?.close();
+      void activateBoard(board, { pickSource: 'bluetooth' });
+    },
+    [activateBoard],
+  );
+  // The quickstart's two ways forward for a board it heard but couldn't name
+  // (a MoonBoard, a box with no serial, a serial nobody has saved). Neither
+  // reports a first-board path: the climber already chose the scan, and the
+  // bind keeps `source`, so it still closes out first-run.
+  //
+  // "Find it at my gym": the boards near the climber, of that type only. In
+  // first-board mode they show under "At a gym", elsewhere under the tiles.
+  // Location is asked here, on the tap, never when the scan finds the board.
+  const onScanFindAtGym = useCallback(
+    (boardType: BoardName) => {
+      closeBluetoothSheetThen(() => {
+        setNearbyBoardType(boardType);
+        if (showFirstBoardChoice) setGymChosen(true);
+        searchNearby();
+      });
+    },
+    [closeBluetoothSheetThen, searchNearby, showFirstBoardChoice],
+  );
+  // "It's my own board": the builder, opened on that type with its preset.
+  const onScanOwnBoard = useCallback(
+    (boardType: BoardName) => {
+      closeBluetoothSheetThen(() => {
+        router.push({
+          pathname: '/boards/create',
+          params: { returnTo: boardReturnTo, source, preset: BUILDER_PRESET_PARAM_VALUE, presetBoardType: boardType },
+        });
+      });
+    },
+    [closeBluetoothSheetThen, router, boardReturnTo, source],
+  );
   const onOpenLocationSettings = useCallback(() => {
     void openAppSettings();
   }, []);
@@ -1021,11 +1096,11 @@ export default function BoardSelection() {
       <BluetoothQuickstartSheet
         ref={bluetoothSheetRef}
         active={bluetoothActive}
-        onClose={() => setBluetoothActive(false)}
-        onSelect={(board) => {
-          bluetoothSheetRef.current?.close();
-          void activateBoard(board, { pickSource: 'bluetooth' });
-        }}
+        onClose={onBluetoothSheetClosed}
+        onFullyDismissed={onBluetoothSheetDismissed}
+        onSelect={onScanSelectBoard}
+        onFindAtGym={onScanFindAtGym}
+        onOwnBoard={onScanOwnBoard}
       />
     </>
   );

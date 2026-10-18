@@ -83,10 +83,11 @@ export async function requestBleRuntimePermissionStatus({
     return 'granted';
   }
 
-  // The API-31+ branch is only *complete* once BLUETOOTH_SCAN is declared with
-  // android:usesPermissionFlags="neverForLocation". Until then Android silently
-  // drops every scan result for a caller without location permission — no error,
-  // no callback, just an empty list. See android-scan-location-gate.ts.
+  // The API-31+ branch is only *complete* on a binary whose manifest declares
+  // BLUETOOTH_SCAN with android:usesPermissionFlags="neverForLocation" (Android
+  // versionCode 2000761 onward). On older binaries Android silently drops every
+  // scan result for a caller without location permission — no error, no
+  // callback, just an empty list. See android-scan-location-gate.ts.
   // The API<31 branch genuinely needs fine location; there is no way around it.
   const requiredPermissions: AndroidPermission[] =
     androidApiLevel() >= 31

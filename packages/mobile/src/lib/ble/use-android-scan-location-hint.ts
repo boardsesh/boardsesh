@@ -1,9 +1,10 @@
 // Drives the "Android is hiding the scan results until Location is allowed"
 // empty-state hint. See android-scan-location-gate.ts for why the hint exists
-// and why it stays until the manifest changes.
+// and why it stays only on binaries built before the manifest change.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
+import * as Application from 'expo-application';
 import {
   androidApiLevel,
   getAndroidLocationPermissionState,
@@ -64,14 +65,15 @@ export function useAndroidScanLocationHint(active: boolean): AndroidScanLocation
   // API level, but no reason to couple their lifecycles).
   const servicesReadRef = useRef(0);
 
-  const buildHidesResults = androidBuildHidesScanResultsWithoutLocation({
+  const gateInput = {
     platformOs: Platform.OS,
     androidApiLevel: androidApiLevel(),
-  });
-  const requiresServices = androidScanRequiresLocationServices({
-    platformOs: Platform.OS,
-    androidApiLevel: androidApiLevel(),
-  });
+    // Read from the installed binary, so an OTA can't claim a manifest flag the
+    // APK on this phone doesn't have.
+    nativeBuildVersion: Application.nativeBuildVersion,
+  };
+  const buildHidesResults = androidBuildHidesScanResultsWithoutLocation(gateInput);
+  const requiresServices = androidScanRequiresLocationServices(gateInput);
 
   useEffect(() => {
     if (!active || !buildHidesResults) {

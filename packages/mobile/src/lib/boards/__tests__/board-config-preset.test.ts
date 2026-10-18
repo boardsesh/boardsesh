@@ -90,15 +90,33 @@ describe('presetBoardConfig', () => {
     expect(presetBoardConfig('tension', [popular({ boardType: 'kilter', ...secondKilterSetup() })])).toBeNull();
   });
 
-  // The live list has only Kilter and Tension setups. The catalogue's first
-  // MoonBoard layout is the 2010 board, which almost no current owner has.
-  it('leaves a MoonBoard owner to pick their own year and size', () => {
+  // The live list has only Kilter and Tension setups, and the catalogue's first
+  // MoonBoard layout is the 2010 board, which almost no current owner has. The
+  // Bluetooth quickstart sends a climber at a MoonBoard straight here, so it
+  // opens on the setup most climbers use: 2016 with every hold set.
+  it('presets MoonBoard 2016 with every set when the popular list has no MoonBoard', () => {
     const kilterAndTension = [
       popular({ boardType: 'kilter', ...secondKilterSetup() }),
       popular({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [1] }),
     ];
-    expect(presetBoardConfig('moonboard', kilterAndTension)).toBeNull();
-    expect(presetBoardConfig('moonboard', [])).toBeNull();
+    const moonboard2016 = getBoardLayouts('moonboard').find((layout) => layout.name === 'MoonBoard 2016');
+    if (!moonboard2016) throw new Error('the MoonBoard catalogue has no 2016 layout');
+    const size = getBoardSizesForLayoutId('moonboard', moonboard2016.id)[0];
+    const expected = {
+      layoutId: moonboard2016.id,
+      sizeId: size.id,
+      setIds: getBoardSetsForLayoutAndSize('moonboard', moonboard2016.id, size.id).map((set) => set.id),
+    };
+
+    expect(expected.setIds.length).toBeGreaterThan(0);
+    expect(presetBoardConfig('moonboard', kilterAndTension)).toEqual(expected);
+    expect(presetBoardConfig('moonboard', [])).toEqual(expected);
+    expect(presetBoardConfig('moonboard', undefined)).toEqual(expected);
+  });
+
+  it('never presets the MoonBoard 2010 board, the catalogue first', () => {
+    const firstLayout = getBoardLayouts('moonboard')[0];
+    expect(presetBoardConfig('moonboard', undefined)?.layoutId).not.toBe(firstLayout.id);
   });
 
   it('presets a MoonBoard setup once the popular list carries one', () => {

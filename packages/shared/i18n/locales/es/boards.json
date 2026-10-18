@@ -97,7 +97,6 @@
       "ownHint": "Configura el plafón que tienes en casa",
       "sprayWall": "Añadir mi Spraywall",
       "scan": "Buscar el plafón que tengo delante",
-      "scanFootnote": "Los MoonBoard y algunas cajas de Kilter aún no aparecen aquí.",
       "searching": "Buscando plafones cerca de ti…",
       "nearbyEmpty": "Nada a menos de 20 km",
       "nearbyError": "No se pudieron cargar los plafones cerca de ti",
@@ -209,7 +208,17 @@
       "scanning": "Buscando plafones…",
       "resolving": "Cargando plafones…",
       "noResults": "Ningún plafón al alcance",
-      "unavailable": "Activa el Bluetooth para buscar"
+      "unavailable": "Activa el Bluetooth para buscar",
+      "unknownSetupTitle": "Encontramos un plafón {{board}}",
+      "unknownSetupBody": "Aún no sabemos cómo está configurado.",
+      "moonboardTitle": "Hay un MoonBoard cerca",
+      "moonboardBody": "Vamos a averiguar cuál es.",
+      "bareNameTitle": "Hay un plafón {{board}} cerca",
+      "bareNameBody": "Su caja no dice cuál es.",
+      "needSignalTitle": "Plafón encontrado, falta conexión",
+      "needSignalBody": "Lo detectamos, pero sin conexión no podemos buscarlo.",
+      "findAtGym": "Buscarlo en mi rocódromo",
+      "ownBoard": "Es mi propio plafón"
     },
     "boardDetail": {
       "setActive": "Usar este plafón",
