@@ -217,7 +217,7 @@ async function runClimbPolicyMigration(): Promise<void> {
 describe('migration 0276 re-sends the climbs the old board sync withheld', () => {
   beforeEach(async () => {
     // This tests 0276, which ran while the CHECK still allowed 'climb'. The test
-    // database has the narrowed CHECK from 0280, so allow 'climb' again here to
+    // database has the narrowed CHECK from 0281, so allow 'climb' again here to
     // seed the rows 0276 deletes, and restore the narrowed CHECK afterwards.
     await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
     await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check
@@ -279,10 +279,10 @@ describe('migration 0276 re-sends the climbs the old board sync withheld', () =>
   });
 });
 
-describe('migration 0279 re-sends the climbs a stray climb policy withheld', () => {
+describe('migration 0280 re-sends the climbs a stray climb policy withheld', () => {
   beforeEach(async () => {
     // A rolled-back backend could write a climb policy while the CHECK still
-    // allowed 'climb'. The test database has the narrowed CHECK from 0280, so
+    // allowed 'climb'. The test database has the narrowed CHECK from 0281, so
     // allow it here to seed such rows, and restore the narrowed CHECK after.
     await db.execute(sql`ALTER TABLE content_privacy DROP CONSTRAINT content_privacy_type_check`);
     await db.execute(sql`ALTER TABLE content_privacy ADD CONSTRAINT content_privacy_type_check

@@ -5,7 +5,7 @@
 -- schema. The backend now in production writes no climb policy, so that window
 -- is over. This re-stamps the sync position of the climbs those rows withheld,
 -- then deletes any climb row a rolled-back backend wrote during the window, so
--- the CHECK in the next migration (0280) can drop 'climb' without failing.
+-- the CHECK in the next migration (0281) can drop 'climb' without failing.
 --
 -- One way: no code reads a climb policy any more, so nothing depends on the
 -- deleted rows, but they cannot be restored. Dry run: the owner runs
@@ -13,14 +13,14 @@
 -- the DELETE below removes (expected 0).
 --   SELECT count(*) FROM content_privacy WHERE entity_type = 'climb';
 --
--- Locks. The next migration (0280) drops and re-adds the CHECK, which takes
+-- Locks. The next migration (0281) drops and re-adds the CHECK, which takes
 -- ACCESS EXCLUSIVE on content_privacy. The snapshot exporter holds long
 -- REPEATABLE READ transactions that read it, and a bare ALTER would queue
 -- behind one and then block every privacy read behind itself. Take the lock up
 -- front in one retry-protected step, the 0144/0220/0250 shape: each attempt
 -- waits up to 3 s, at most 40 attempts one second apart, then the deploy fails
 -- and rolls back. The deploy runs every pending migration in one transaction,
--- so the lock is held through 0280 and released at its commit.
+-- so the lock is held through 0281 and released at its commit.
 DO $$
 DECLARE
   attempts integer := 0;
