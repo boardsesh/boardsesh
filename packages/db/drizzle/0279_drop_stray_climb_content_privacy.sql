@@ -1,0 +1,13 @@
+-- Contract step of #6376. A published climb is public to everyone, so a climb
+-- has no audience. Migration 0276 deleted every stored climb policy and kept
+-- 'climb' in content_privacy_type_check for one release (expand/contract),
+-- because migrations run before the backend deploys and a rollback keeps the
+-- schema. The backend now in production writes no climb policy, so that window
+-- is over. This deletes any climb row a rolled-back backend wrote during it, so
+-- the CHECK in the next migration (0280) can drop 'climb' without failing.
+--
+-- One way: the deleted rows are not read by anything. Dry run: the owner runs
+-- this count on the read-only standby before merge; it is the number of rows
+-- the DELETE below removes (expected 0).
+--   SELECT count(*) FROM content_privacy WHERE entity_type = 'climb';
+DELETE FROM content_privacy WHERE entity_type = 'climb';
