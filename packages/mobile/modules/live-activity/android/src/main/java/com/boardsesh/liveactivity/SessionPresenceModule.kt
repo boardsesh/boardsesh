@@ -72,6 +72,7 @@ class RestTimerOptions : Record {
     @Field var targetSeconds: Double? = null
     @Field var frozenSignedSeconds: Double? = null
     @Field var androidCaption: String? = null
+    @Field var androidOverCaption: String? = null
 }
 
 /**

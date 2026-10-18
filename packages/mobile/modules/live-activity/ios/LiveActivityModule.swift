@@ -1151,8 +1151,10 @@ extension LiveActivityModule {
                 ),
                 to: defaults
             )
-        } else {
-            SharedRestTimerStore.clear(in: defaults)
+        } else if !SharedRestTimerStore.clear(in: defaults) {
+            // Nothing was on screen (JS sends this once after every start, and
+            // for every climber who never arms the timer): no redraw needed.
+            return
         }
 
         guard #available(iOS 17.0, *) else { return }

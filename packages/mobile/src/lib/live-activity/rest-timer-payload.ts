@@ -86,27 +86,20 @@ export function buildRestTimerLiveActivityPayload({
     };
   }
 
-  if (queueEnded) {
-    return {
-      ...base,
-      status: 'queueEnded',
-      startMs: null,
-      deadlineMs: null,
-      frozenSignedSeconds: shownSeconds,
-      androidCaption: t('mobile.restTimer.queueEnded'),
-    };
-  }
+  // Everything below is a live clock. Queue ended keeps counting exactly as
+  // the pill does (its heartbeat ignores queueEnded), so it carries the same
+  // timing as the snapshot it replaces; only the status and caption change,
+  // and native draws it muted instead of turning red past zero.
+  const queueEndedCaption = t('mobile.restTimer.queueEnded');
 
   if (target === null) {
-    return {
-      ...base,
-      status: 'countUp',
-      startMs: anchorMs,
-      deadlineMs: null,
-      frozenSignedSeconds: null,
-      androidCaption: t('mobile.restTimer.clockCaptionCountUp'),
-    };
+    const countUp = { ...base, startMs: anchorMs, deadlineMs: null, frozenSignedSeconds: null };
+    return queueEnded
+      ? { ...countUp, status: 'queueEnded', androidCaption: queueEndedCaption }
+      : { ...countUp, status: 'countUp', androidCaption: t('mobile.restTimer.clockCaptionCountUp') };
   }
+
+  const overCaption = t('mobile.restTimer.clockCaptionOver');
 
   if (mode === 'onTheMinute') {
     // The beat the auto-advance scheduler is counting to, so the widget and
@@ -114,29 +107,33 @@ export function buildRestTimerLiveActivityPayload({
     const deadlineMs =
       getAutoAdvanceDeadlineMs({ mode, anchorMs, targetSeconds: target, nowMs, lastFiredDeadlineMs }) ??
       anchorMs + target * 1000;
-    return {
+    const window = {
       ...base,
-      status: 'running',
       startMs: deadlineMs - target * 1000,
       deadlineMs,
       periodSeconds: target,
       frozenSignedSeconds: null,
-      androidCaption: t('mobile.restTimer.modeEvery', { length: formatRestTimerElapsed(target) }),
     };
+    return queueEnded
+      ? { ...window, status: 'queueEnded', androidCaption: queueEndedCaption }
+      : {
+          ...window,
+          status: 'running',
+          androidCaption: t('mobile.restTimer.modeEvery', { length: formatRestTimerElapsed(target) }),
+          androidOverCaption: overCaption,
+        };
   }
 
-  const deadlineMs = anchorMs + target * 1000;
-  return {
-    ...base,
-    status: 'running',
-    startMs: anchorMs,
-    deadlineMs,
-    frozenSignedSeconds: null,
-    // Android's chronometer keeps counting past zero by itself; the caption is
-    // what says the rest is over.
-    androidCaption:
-      nowMs >= deadlineMs
-        ? t('mobile.restTimer.clockCaptionOver')
-        : t('mobile.restTimer.clockCaptionRest', { target: formatRestTimerElapsed(target) }),
-  };
+  const rest = { ...base, startMs: anchorMs, deadlineMs: anchorMs + target * 1000, frozenSignedSeconds: null };
+  return queueEnded
+    ? { ...rest, status: 'queueEnded', androidCaption: queueEndedCaption }
+    : {
+        ...rest,
+        status: 'running',
+        // The before-the-deadline caption. Android's chronometer runs on past
+        // zero by itself and the service swaps to the over caption on its own
+        // deadline re-post, so the caption turns even while JS is suspended.
+        androidCaption: t('mobile.restTimer.clockCaptionRest', { target: formatRestTimerElapsed(target) }),
+        androidOverCaption: overCaption,
+      };
 }

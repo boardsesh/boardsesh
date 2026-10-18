@@ -485,8 +485,9 @@ struct SharedRestTimerState: Codable, Equatable {
     let periodSeconds: Double?
     /// The rest-length setting; nil when the length is Off.
     let targetSeconds: Double?
-    /// Frozen value for paused / queue ended / waiting: seconds left (+) or
-    /// over (−).
+    /// Frozen value for paused / waiting: seconds left (+) or over (−). A
+    /// queue-ended snapshot is live and carries timing instead; this is only
+    /// its fallback when it has none.
     let frozenSignedSeconds: Double?
 }
 
@@ -501,13 +502,27 @@ enum SharedRestTimerStore {
         return state
     }
 
-    static func save(_ state: SharedRestTimerState, to defaults: UserDefaults) {
-        guard let data = try? JSONEncoder().encode(state) else { return }
+    /// Stores the snapshot. One that cannot be encoded (a non-finite number,
+    /// which `JSONEncoder` rejects) clears the key instead: the previous
+    /// snapshot left in place would keep counting a rest that has changed.
+    /// Returns whether the new snapshot was stored.
+    @discardableResult
+    static func save(_ state: SharedRestTimerState, to defaults: UserDefaults) -> Bool {
+        guard let data = try? JSONEncoder().encode(state) else {
+            defaults.removeObject(forKey: SharedConstants.restTimerKey)
+            return false
+        }
         defaults.set(data, forKey: SharedConstants.restTimerKey)
+        return true
     }
 
-    static func clear(in defaults: UserDefaults) {
+    /// Removes the snapshot. Returns whether there was one, so a caller can
+    /// skip redrawing for a timer that was never on screen.
+    @discardableResult
+    static func clear(in defaults: UserDefaults) -> Bool {
+        let existed = defaults.object(forKey: SharedConstants.restTimerKey) != nil
         defaults.removeObject(forKey: SharedConstants.restTimerKey)
+        return existed
     }
 }
 
@@ -521,6 +536,9 @@ enum RestTimerRenderPhase: Equatable {
     /// Past the deadline of a rest that does not roll over.
     case over(deadline: Date)
     case paused(signedSeconds: Int)
+    /// A queue-ended snapshot with no timing to count from: its frozen value.
+    /// One with timing resolves to `running` / `over` / `countUp` instead,
+    /// flagged `muted` on the `ResolvedRestTimer`.
     case queueEnded(signedSeconds: Int)
     /// No rest length: counts up from `start`.
     case countUp(start: Date)
@@ -531,6 +549,9 @@ struct ResolvedRestTimer: Equatable {
     /// Fixed-window length when the cadence is `onTheMinute`.
     let periodSeconds: Int?
     let targetSeconds: Int?
+    /// The queue has run out. The clock keeps counting, as the app's pill
+    /// does, but is drawn muted under "Queue's empty" — never the over red.
+    var muted: Bool = false
 
     /// Nil hides the timer: no snapshot, another session's snapshot, an
     /// unknown status, or a running snapshot with nothing to count against.
@@ -547,12 +568,41 @@ struct ResolvedRestTimer: Equatable {
         case SharedRestTimerState.statusPaused:
             phase = .paused(signedSeconds: frozen)
         case SharedRestTimerState.statusQueueEnded:
-            phase = .queueEnded(signedSeconds: frozen)
+            // Live, like the pill: the clock of the rest it replaced. Only a
+            // snapshot with no timing at all falls back to its frozen value.
+            phase = liveClock(state: state, period: period, target: target, now: now)
+                ?? .queueEnded(signedSeconds: frozen)
         case SharedRestTimerState.statusCountUp:
             guard let startMs = state.startMs else { return nil }
             phase = .countUp(start: min(Date(timeIntervalSince1970: startMs / 1000), now))
         case SharedRestTimerState.statusRunning:
-            guard let deadlineMs = state.deadlineMs else { return nil }
+            guard state.deadlineMs != nil,
+                  let clock = liveClock(state: state, period: period, target: target, now: now)
+            else { return nil }
+            phase = clock
+        default:
+            return nil
+        }
+
+        return ResolvedRestTimer(
+            phase: phase,
+            periodSeconds: period.map { Int($0) },
+            targetSeconds: target.map { Int($0) },
+            muted: state.status == SharedRestTimerState.statusQueueEnded
+        )
+    }
+
+    /// The clock a snapshot's timing describes at `now`: a countdown to its
+    /// deadline (rolling a fixed window on in whole windows), the overrun once
+    /// a non-rolling deadline has passed, or a count-up from its start. Nil
+    /// when it carries no timing.
+    private static func liveClock(
+        state: SharedRestTimerState,
+        period: Double?,
+        target: Double?,
+        now: Date
+    ) -> RestTimerRenderPhase? {
+        if let deadlineMs = state.deadlineMs {
             var deadline = Date(timeIntervalSince1970: deadlineMs / 1000)
             var start = state.startMs.map { Date(timeIntervalSince1970: $0 / 1000) }
             if let period, now >= deadline {
@@ -563,21 +613,15 @@ struct ResolvedRestTimer: Equatable {
                 start = deadline.addingTimeInterval(-period)
             }
             if now >= deadline {
-                phase = .over(deadline: deadline)
-            } else {
-                let fallbackStart = deadline.addingTimeInterval(-(period ?? target ?? 0))
-                let resolvedStart = min(start ?? fallbackStart, deadline)
-                phase = .running(start: resolvedStart, deadline: deadline)
+                return .over(deadline: deadline)
             }
-        default:
-            return nil
+            let fallbackStart = deadline.addingTimeInterval(-(period ?? target ?? 0))
+            return .running(start: min(start ?? fallbackStart, deadline), deadline: deadline)
         }
-
-        return ResolvedRestTimer(
-            phase: phase,
-            periodSeconds: period.map { Int($0) },
-            targetSeconds: target.map { Int($0) }
-        )
+        if let startMs = state.startMs {
+            return .countUp(start: min(Date(timeIntervalSince1970: startMs / 1000), now))
+        }
+        return nil
     }
 }
 

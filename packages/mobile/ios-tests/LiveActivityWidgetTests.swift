@@ -318,7 +318,28 @@ final class LiveActivityWidgetTests: XCTestCase {
         SharedRestTimerStore.save(state, to: defaults)
         XCTAssertEqual(SharedRestTimerStore.load(from: defaults), state)
 
-        SharedRestTimerStore.clear(in: defaults)
+        XCTAssertTrue(SharedRestTimerStore.clear(in: defaults))
+        XCTAssertNil(SharedRestTimerStore.load(from: defaults))
+        // A second clear has nothing to take off the card, so it asks for no redraw.
+        XCTAssertFalse(SharedRestTimerStore.clear(in: defaults))
+    }
+
+    func testRestTimerSaveThatCannotEncodeClearsTheOldSnapshot() {
+        let old = restState(status: SharedRestTimerState.statusRunning, startOffset: -30, deadlineOffset: 90)
+        XCTAssertTrue(SharedRestTimerStore.save(old, to: defaults))
+
+        // JSONEncoder rejects a non-finite number; the old rest must not keep counting.
+        let unencodable = SharedRestTimerState(
+            v: SharedRestTimerState.currentVersion,
+            sessionId: "session",
+            status: SharedRestTimerState.statusRunning,
+            startMs: .nan,
+            deadlineMs: 1,
+            periodSeconds: nil,
+            targetSeconds: 120,
+            frozenSignedSeconds: nil
+        )
+        XCTAssertFalse(SharedRestTimerStore.save(unencodable, to: defaults))
         XCTAssertNil(SharedRestTimerStore.load(from: defaults))
     }
 
@@ -351,6 +372,7 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
         XCTAssertNil(resolved?.periodSeconds)
         XCTAssertEqual(resolved?.targetSeconds, 120)
+        XCTAssertEqual(resolved?.muted, false)
     }
 
     func testRunningRestRenderedAfterItsDeadlineIsOver() {
@@ -397,13 +419,51 @@ final class LiveActivityWidgetTests: XCTestCase {
             .paused(signedSeconds: -12)
         )
         XCTAssertEqual(
-            resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, frozenSignedSeconds: 40))?.phase,
-            .queueEnded(signedSeconds: 40)
-        )
-        XCTAssertEqual(
             resolveRest(restState(status: SharedRestTimerState.statusWaiting, frozenSignedSeconds: nil))?.phase,
             .waiting(signedSeconds: 120)
         )
+    }
+
+    func testQueueEndedKeepsCountingTheRestItReplacedMuted() {
+        // Before the deadline: the same countdown the rest was running.
+        let before = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -30, deadlineOffset: 90))
+        XCTAssertEqual(
+            before?.phase,
+            .running(start: restNow.addingTimeInterval(-30), deadline: restNow.addingTimeInterval(90))
+        )
+        XCTAssertEqual(before?.muted, true)
+
+        // Past it: the overrun keeps counting, still muted (never the over red).
+        let after = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -150, deadlineOffset: -30))
+        XCTAssertEqual(after?.phase, .over(deadline: restNow.addingTimeInterval(-30)))
+        XCTAssertEqual(after?.muted, true)
+    }
+
+    func testQueueEndedFixedWindowKeepsRolling() {
+        let resolved = resolveRest(restState(
+            status: SharedRestTimerState.statusQueueEnded,
+            startOffset: -190,
+            deadlineOffset: -130,
+            periodSeconds: 60,
+            targetSeconds: 60
+        ))
+        XCTAssertEqual(
+            resolved?.phase,
+            .running(start: restNow.addingTimeInterval(-10), deadline: restNow.addingTimeInterval(50))
+        )
+        XCTAssertEqual(resolved?.muted, true)
+    }
+
+    func testQueueEndedWithoutARestLengthCountsUp() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, startOffset: -42, targetSeconds: nil))
+        XCTAssertEqual(resolved?.phase, .countUp(start: restNow.addingTimeInterval(-42)))
+        XCTAssertEqual(resolved?.muted, true)
+    }
+
+    func testQueueEndedWithNoTimingFallsBackToItsFrozenValue() {
+        let resolved = resolveRest(restState(status: SharedRestTimerState.statusQueueEnded, frozenSignedSeconds: 40))
+        XCTAssertEqual(resolved?.phase, .queueEnded(signedSeconds: 40))
+        XCTAssertEqual(resolved?.muted, true)
     }
 
     func testCountUpRestNeverStartsInTheFuture() {

@@ -73,8 +73,10 @@ export function useLiveActivityRestTimer({ sessionId, activityStartCount }: UseL
       void updateLiveActivityRestTimer(payload);
     }
 
-    // Only a running rest has a moment in the future worth waking for.
-    const deadlineMs = payload?.status === 'running' ? payload.deadlineMs : null;
+    // Only a live countdown (running, or queue ended still counting) has a
+    // moment in the future worth waking for.
+    const isLiveCountdown = payload?.status === 'running' || payload?.status === 'queueEnded';
+    const deadlineMs = isLiveCountdown ? payload.deadlineMs : null;
     if (deadlineMs === null || deadlineMs <= now) return undefined;
     const timeout = setTimeout(
       () => {

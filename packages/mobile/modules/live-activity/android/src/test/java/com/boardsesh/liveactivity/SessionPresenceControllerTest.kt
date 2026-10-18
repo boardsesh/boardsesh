@@ -274,6 +274,7 @@ class SessionPresenceControllerTest {
         deadlineMs = 1_090_000.0
         targetSeconds = 90.0
         androidCaption = "Rest"
+        androidOverCaption = "Over your rest"
     }
 
     private fun startedController(sessionId: String = "session-1"): Pair<SessionPresenceController, MutableList<Intent>> {
@@ -299,6 +300,7 @@ class SessionPresenceControllerTest {
         assertFalse(intent.hasExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS))
         assertFalse(intent.hasExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS))
         assertEquals("Rest", intent.getStringExtra(BoardSessionService.EXTRA_REST_CAPTION))
+        assertEquals("Over your rest", intent.getStringExtra(BoardSessionService.EXTRA_REST_OVER_CAPTION))
         assertFalse(intent.getBooleanExtra(BoardSessionService.EXTRA_REST_CLEAR, false))
         assertEquals("session-1", controller.restTimer?.sessionId)
     }

@@ -61,6 +61,7 @@ vi.mock('../live-activity-plugin', () => ({
 import {
   armRestTimer,
   disarmRestTimer,
+  noteRestTimerQueueEnded,
   noteRestTimerTick,
   pauseRestTimer,
   resetRestTimerStoreForTests,
@@ -139,10 +140,12 @@ describe('LiveActivityRestTimerSync', () => {
 
     advance(120_000 + REST_TIMER_DEADLINE_SLACK_MS);
     expect(harness.sent).toHaveLength(sends + 1);
+    // The same snapshot, re-sent so iOS redraws; Android picks the over
+    // caption itself from androidOverCaption once past the deadline.
     expect(harness.sent.at(-1)).toMatchObject({
       status: 'running',
       deadlineMs: T0 + 120_000,
-      androidCaption: 'mobile.restTimer.clockCaptionOver',
+      androidOverCaption: 'mobile.restTimer.clockCaptionOver',
     });
 
     // Over is a resting state: no further wake-ups.
@@ -164,6 +167,20 @@ describe('LiveActivityRestTimerSync', () => {
 
     advance(60_000);
     expect(harness.sent.at(-1)).toMatchObject({ startMs: T0 + 120_000, deadlineMs: T0 + 180_000 });
+  });
+
+  it('keeps rolling a fixed window after the queue runs out', () => {
+    settingsStore.values.restTimerMode = 'onTheMinute';
+    settingsStore.values.restTimerTargetSeconds = 60;
+    renderSync();
+    act(() => {
+      armRestTimer('onTheMinute', harness.nowMs, SESSION);
+      noteRestTimerQueueEnded();
+    });
+    expect(harness.sent.at(-1)).toMatchObject({ status: 'queueEnded', startMs: T0, deadlineMs: T0 + 60_000 });
+
+    advance(60_000 + REST_TIMER_DEADLINE_SLACK_MS);
+    expect(harness.sent.at(-1)).toMatchObject({ status: 'queueEnded', startMs: T0 + 60_000, deadlineMs: T0 + 120_000 });
   });
 
   it('re-sends after every Live Activity start, even when nothing changed', () => {

@@ -79,6 +79,18 @@
             android:textAppearance="@style/TextAppearance.Compat.Notification.Title"
             android:textColor="@color/session_rest_over" />
 
+        <!-- The same clock once the queue has run out, in the muted colour: it
+             keeps counting like the app's pill but never turns red. -->
+        <Chronometer
+            android:id="@+id/session_rest_clock_muted"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum"
+            android:maxLines="1"
+            android:visibility="gone"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Title"
+            android:textColor="@color/session_rest_muted" />
+
         <TextView
             android:id="@+id/session_rest_static"
             android:layout_width="wrap_content"

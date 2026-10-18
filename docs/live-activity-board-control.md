@@ -119,17 +119,21 @@ The widget resolves the effective state per render with `resolveBoardState(...)`
 
 The rest timer counts down on the Lock Screen card, in the Dynamic Island (compact, minimal and expanded) and in the Android session notification. JS owns the state machine (`src/lib/rest-timer-store.ts` plus the `restTimer*` settings); the native side only draws it.
 
-**Where the state lives.** `buildRestTimerLiveActivityPayload` (`src/lib/live-activity/rest-timer-payload.ts`) reduces the store and settings to a status (`running`, `paused`, `waiting`, `queueEnded`, `countUp`), the current window's start and end in epoch ms, the fixed-window length, and a frozen value for the states that do not move. `LiveActivityRestTimerSync` (mounted by `LiveActivityBridge`) sends it through the optional `updateRestTimer` native method, and `null` takes it off. On iOS that writes the App Group key `bs_rest_timer` (`SharedConstants.restTimerKey`, `SharedRestTimerState`), then re-renders the activity by bumping `ContentState.restRevision`.
+**Where the state lives.** `buildRestTimerLiveActivityPayload` (`src/lib/live-activity/rest-timer-payload.ts`) reduces the store and settings to a status (`running`, `paused`, `waiting`, `queueEnded`, `countUp`), the current window's start and end in epoch ms, the fixed-window length, and a frozen value for the two states that do not move (`paused`, `waiting`). `queueEnded` is a live clock like the in-app pill: it carries the same window as the `running` (or `countUp`) snapshot it replaces and is drawn muted, never red. `LiveActivityRestTimerSync` (mounted by `LiveActivityBridge`) sends it through the optional `updateRestTimer` native method, and `null` takes it off. On iOS that writes the App Group key `bs_rest_timer` (`SharedConstants.restTimerKey`, `SharedRestTimerState`), then re-renders the activity by bumping `ContentState.restRevision`.
 
-**Why not in `ContentState`.** The backend re-sends the whole content state on every queue change and every 90 s, and `LiveActivityManager.buildContentState`, `ClimbNavigationIntent` and `MirrorClimbIntent` all build fresh states. None of them know about the rest timer, so a pushed field would be wiped within 90 s of backgrounding. `restRevision` is only a change trigger, so `nil` from those paths is harmless. The backend is untouched.
+**Why not in `ContentState`.** The backend re-sends the whole content state on every queue change and every 90 s, and `LiveActivityManager.buildContentState`, `ClimbNavigationIntent` and `MirrorClimbIntent` all build fresh states. None of them know about the rest timer, so a pushed field would be wiped by the next of those updates. `restRevision` is only a change trigger, so `nil` from those paths is harmless. The backend is untouched.
 
 **When JS speaks.** Only on a change: a rest-timer store event, a rest setting, the climber's "Show on Lock Screen" switch (`restTimerShowOnLockScreen`, default on), each successful Live Activity start (native clears the key in `endSession`, and in `startSession` when it belongs to another session), an app-state change, and one timeout at each deadline. Never once a second: the countdown itself is `Text(timerInterval:)`, `Text(date, style: .timer)` and `ProgressView(timerInterval:)` on iOS, and a chronometer on Android.
 
 **What the widget cannot do.** It runs no code at a deadline; it only re-renders on an update. `ResolvedRestTimer.resolve` decides at render time whether a running rest is over and rolls a fixed window on to the current one, but between renders only the timer views move. So, while the app is in the background:
 
-- an after-tick rest holds at 0:00 until the next update (at most 90 s, the server heartbeat) turns it into the red overrun;
-- a fixed window holds at 0:00 until the next update rolls it on. With a 60 s window and a 90 s heartbeat, a whole window can pass without a redraw;
+- an after-tick rest holds at 0:00 until the next update turns it into the red overrun;
+- a fixed window holds at 0:00 until the next update rolls it on;
 - auto-advance never fires (JS timers are suspended), which is why the widget never shows it.
+
+**How soon that next update comes is only partly known.** The backend's heartbeat push arrives every 90 s while a push token is registered. The first push after the app's last local update always differs from what the app last drew (it carries `restRevision: nil` where the app wrote a number), so ActivityKit applies a new state and the widget redraws. Later heartbeats re-send a byte-identical content state; we expect ActivityKit to redraw on those too, but that is not verified on a device. If it does not, an after-tick rest can sit at 0:00 until the climber next opens the app or the queue changes, and a 60 s fixed window can sit through several beats. Verify on a phone before relying on the 90 s figure.
+
+Android does not share this gap: the foreground service keeps running and re-posts its own notification at the deadline (the digits turn red and the caption swaps to `androidOverCaption`) and at every fixed-window beat.
 
 ## Architecture Decision: Where Does BLE Live?
 

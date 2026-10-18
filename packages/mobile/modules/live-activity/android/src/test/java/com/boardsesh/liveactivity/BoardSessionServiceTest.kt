@@ -533,6 +533,7 @@ class BoardSessionServiceTest {
         periodSeconds: Long? = null,
         frozenSignedSeconds: Long? = null,
         caption: String? = null,
+        overCaption: String? = null,
         clear: Boolean = false,
     ): Intent = Intent(context, BoardSessionService::class.java).apply {
         action = BoardSessionService.ACTION_REST_TIMER
@@ -547,6 +548,7 @@ class BoardSessionServiceTest {
         periodSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_PERIOD_SECONDS, it) }
         frozenSignedSeconds?.let { putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it) }
         caption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+        overCaption?.let { putExtra(BoardSessionService.EXTRA_REST_OVER_CAPTION, it) }
     }
 
     // A started service with "now" pinned to restNowMs and the Chronometer's
@@ -615,6 +617,25 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
+    fun `resolveRestDisplay keeps a queue-ended rest live and muted`() {
+        fun queueEnded(startMs: Long? = null, deadlineMs: Long? = null, periodSeconds: Long? = null) =
+            RestTimerSnapshot("queueEnded", startMs, deadlineMs, periodSeconds, frozenSignedSeconds = null, caption = null)
+
+        // After a tick: counts down, then on past zero, muted and with no re-post at the deadline.
+        assertEquals(RestDisplay.Countdown(90_000, over = false, nextTransitionMs = null, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 90_000), nowMs = 30_000))
+        assertEquals(RestDisplay.Countdown(90_000, over = true, nextTransitionMs = null, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 90_000), nowMs = 120_000))
+        // On the minute: still rolls beat to beat, like the app's pill.
+        assertEquals(RestDisplay.Countdown(120_000, over = false, nextTransitionMs = 120_000, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 0, deadlineMs = 60_000, periodSeconds = 60), nowMs = 70_000))
+        // No rest length: counts up.
+        assertEquals(RestDisplay.CountUp(5_000, muted = true),
+            BoardSessionService.resolveRestDisplay(queueEnded(startMs = 5_000), nowMs = 9_000))
+    }
+
+    @Test
+    @Config(sdk = [30])
     fun `no rest timer keeps the rest block hidden in both layouts`() {
         val service = startRestService()
         for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
@@ -658,6 +679,51 @@ class BoardSessionServiceTest {
         assertTrue(clock.isCountDown)
         assertEquals("−00:12", clock.text.toString())
         assertEquals(ContextCompat.getColor(context, R.color.session_rest_over), clock.currentTextColor)
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `an after-tick rest swaps to its over caption past the deadline`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("running", startMs = restNowMs - 30_000, deadlineMs = restNowMs + 90_000,
+                caption = "1:30 rest", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+        assertEquals("1:30 rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+
+        // The service's own deadline re-post renders with "now" past the deadline.
+        service.wallClockMs = { restNowMs + 120_000 }
+        assertEquals("Over your rest",
+            renderRest(service, R.layout.notification_session_collapsed).findViewById<TextView>(R.id.session_rest_caption).text.toString())
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a queue-ended rest keeps counting past zero in the muted colour`() {
+        val service = startRestService()
+        service.onStartCommand(
+            restIntent("queueEnded", startMs = restNowMs - 102_000, deadlineMs = restNowMs - 12_000,
+                caption = "Queue's empty", overCaption = "Over your rest"),
+            0,
+            2,
+        )
+
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            val content = renderRest(service, layout)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock).visibility)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_clock_over).visibility)
+            assertEquals(android.view.View.GONE, content.findViewById<android.view.View>(R.id.session_rest_static).visibility)
+            val clock = content.findViewById<Chronometer>(R.id.session_rest_clock_muted)
+            assertEquals(android.view.View.VISIBLE, clock.visibility)
+            assertTrue(clock.isCountDown)
+            assertEquals("−00:12", clock.text.toString())
+            assertEquals(ContextCompat.getColor(context, R.color.session_rest_muted), clock.currentTextColor)
+            // Queue ended keeps its own caption; the over caption is only for a running rest.
+            assertEquals("Queue's empty", content.findViewById<TextView>(R.id.session_rest_caption).text.toString())
+        }
     }
 
     @Test

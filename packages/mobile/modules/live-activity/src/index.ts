@@ -340,24 +340,32 @@ export type LiveActivityClimbUpdateOptions = Omit<LiveActivityUpdateOptions, 'qu
  * one of these; the native side only decides whether a `running` rest has
  * passed its deadline, and rolls a fixed-window cadence on to its current
  * window.
+ *
+ * `queueEnded` is a LIVE clock, exactly like the in-app pill: it carries the
+ * same timing fields as the `running` (or, with no rest length, `countUp`)
+ * snapshot it replaces and keeps counting, past zero too, but is drawn muted
+ * (never the over red) under a "Queue's empty" caption. Only `paused` and
+ * `waiting` are static.
  */
 export type LiveActivityRestTimerStatus = 'running' | 'paused' | 'waiting' | 'queueEnded' | 'countUp';
 
 export type LiveActivityRestTimerOptions = {
   sessionId: string;
   status: LiveActivityRestTimerStatus;
-  /** Epoch ms the current countdown / count-up started from (cycle anchor; beat start for onTheMinute). null while waiting. */
+  /** Epoch ms the current countdown / count-up started from (cycle anchor; beat start for onTheMinute). null while paused or waiting. */
   startMs: number | null;
-  /** Epoch ms the current rest or beat ends. null for countUp and waiting. */
+  /** Epoch ms the current rest or beat ends. null for countUp, a queueEnded with no rest length, paused and waiting. */
   deadlineMs: number | null;
   /** onTheMinute beat length in seconds; the widget rolls to the next beat at render. null for afterTick. */
   periodSeconds: number | null;
   /** The rest-length setting in seconds; null when the length is Off (count-up). */
   targetSeconds: number | null;
-  /** Frozen display value for paused / queueEnded / waiting: seconds remaining (+) or over (−). null otherwise. */
+  /** Frozen display value for paused / waiting: seconds remaining (+) or over (−). null otherwise (queueEnded is live). */
   frozenSignedSeconds: number | null;
-  /** Android only: localized one-line caption for the current status (Rest, Paused, Log a climb to start, Queue's empty, Since your last climb, Every 1:00). iOS ignores it. */
+  /** Android only: localized one-line caption for the current status (Rest, Paused, Log a climb to start, Queue's empty, Since your last climb, Every 1:00). For a running after-tick rest it is the before-the-deadline caption. iOS ignores it. */
   androidCaption?: string | null;
+  /** Android only: the caption once a running after-tick rest passes its deadline ("Over your rest"). The service swaps to it on its own deadline re-post, while JS is suspended. iOS ignores it. */
+  androidOverCaption?: string | null;
 };
 
 export type WidgetMirrorEvent = {

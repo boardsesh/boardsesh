@@ -169,6 +169,7 @@ internal class SessionPresenceController(
                     putExtra(BoardSessionService.EXTRA_REST_FROZEN_SECONDS, it)
                 }
                 options.androidCaption?.let { putExtra(BoardSessionService.EXTRA_REST_CAPTION, it) }
+                options.androidOverCaption?.let { putExtra(BoardSessionService.EXTRA_REST_OVER_CAPTION, it) }
             }
         }
         // Same transient-failure contract as updateActivity: the service is

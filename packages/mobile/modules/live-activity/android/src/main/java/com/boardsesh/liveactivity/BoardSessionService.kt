@@ -399,21 +399,26 @@ class BoardSessionService : Service() {
             periodSeconds = longExtra(EXTRA_REST_PERIOD_SECONDS),
             frozenSignedSeconds = longExtra(EXTRA_REST_FROZEN_SECONDS),
             caption = intent.getStringExtra(EXTRA_REST_CAPTION),
+            overCaption = intent.getStringExtra(EXTRA_REST_OVER_CAPTION),
         )
     }
 
-    // The custom view's rest block: a ticking Chronometer for a running or
-    // counting-up rest, a static clock for paused / waiting / queue ended, and the
-    // localized caption under it. GONE when there is no rest timer. "Over" uses
-    // the red twin views (session_rest_*_over) rather than setTextColor: every
-    // build sets every value view's visibility, so a reapplied RemoteViews can
-    // never leave a stale colour behind.
+    // The custom view's rest block: a ticking Chronometer for a running,
+    // counting-up or queue-ended rest, a static clock for paused / waiting, and the
+    // localized caption under it. GONE when there is no rest timer. "Over" and
+    // "muted" (queue ended) use twin views (session_rest_*_over / _muted) rather
+    // than setTextColor: every build sets every value view's visibility, so a
+    // reapplied RemoteViews can never leave a stale colour behind.
     private fun bindRestTimer(views: RemoteViews) {
         val display = restTimer?.let { resolveRestDisplay(it, wallClockMs()) }
         val shownValueId: Int? = when (display) {
             null -> null
-            is RestDisplay.Countdown -> if (display.over) R.id.session_rest_clock_over else R.id.session_rest_clock
-            is RestDisplay.CountUp -> R.id.session_rest_clock
+            is RestDisplay.Countdown -> when {
+                display.muted -> R.id.session_rest_clock_muted
+                display.over -> R.id.session_rest_clock_over
+                else -> R.id.session_rest_clock
+            }
+            is RestDisplay.CountUp -> if (display.muted) R.id.session_rest_clock_muted else R.id.session_rest_clock
             is RestDisplay.Frozen -> when {
                 display.text == null -> null
                 display.over -> R.id.session_rest_static_over
@@ -433,7 +438,12 @@ class BoardSessionService : Service() {
             return
         }
         views.setViewVisibility(R.id.session_rest, View.VISIBLE)
-        val caption = restTimer?.caption?.takeIf { it.isNotBlank() }
+        // Past the deadline an after-tick rest swaps to its "over" caption. The
+        // service's own deadline re-post lands here while JS is suspended, so the
+        // caption turns with the digits instead of waiting for the app.
+        val overCaption = restTimer?.overCaption?.takeIf { it.isNotBlank() }
+        val showsOver = display is RestDisplay.Countdown && display.over && !display.muted
+        val caption = (if (showsOver) overCaption else null) ?: restTimer?.caption?.takeIf { it.isNotBlank() }
         views.setViewVisibility(R.id.session_rest_caption, if (caption != null) View.VISIBLE else View.GONE)
         views.setTextViewText(R.id.session_rest_caption, caption ?: "")
 
@@ -449,8 +459,9 @@ class BoardSessionService : Service() {
                 views.setChronometer(clockId, display.deadlineMs + toElapsedRealtimeMs, null, true)
             }
             is RestDisplay.CountUp -> {
-                views.setChronometerCountDown(R.id.session_rest_clock, false)
-                views.setChronometer(R.id.session_rest_clock, display.startMs + toElapsedRealtimeMs, null, true)
+                val clockId = shownValueId ?: return
+                views.setChronometerCountDown(clockId, false)
+                views.setChronometer(clockId, display.startMs + toElapsedRealtimeMs, null, true)
             }
             is RestDisplay.Frozen -> {
                 val textId = shownValueId ?: return
@@ -719,6 +730,7 @@ class BoardSessionService : Service() {
         const val EXTRA_REST_PERIOD_SECONDS = "restPeriodSeconds"
         const val EXTRA_REST_FROZEN_SECONDS = "restFrozenSignedSeconds"
         const val EXTRA_REST_CAPTION = "restCaption"
+        const val EXTRA_REST_OVER_CAPTION = "restOverCaption"
 
         // LiveActivityRestTimerOptions.status values (modules/live-activity/src/index.ts).
         const val REST_STATUS_RUNNING = "running"
@@ -738,7 +750,8 @@ class BoardSessionService : Service() {
         // resolver sees "now" past the deadline and picks the next beat.
         internal const val REST_TRANSITION_SLACK_MS = 250L
 
-        private val REST_CLOCK_VIEW_IDS = intArrayOf(R.id.session_rest_clock, R.id.session_rest_clock_over)
+        private val REST_CLOCK_VIEW_IDS =
+            intArrayOf(R.id.session_rest_clock, R.id.session_rest_clock_over, R.id.session_rest_clock_muted)
         private val REST_VALUE_VIEW_IDS = REST_CLOCK_VIEW_IDS +
             intArrayOf(R.id.session_rest_static, R.id.session_rest_static_over)
 
@@ -751,39 +764,54 @@ class BoardSessionService : Service() {
          * - running, on the minute ([RestTimerSnapshot.periodSeconds]): count down
          *   to the next beat at or after [nowMs]; a beat is never "over".
          * - countUp: count up from the start.
-         * - paused / waiting / queue ended: a static clock from the frozen value.
+         * - queue ended: the same live clock as running / countUp (the app's pill
+         *   keeps ticking too), drawn muted: never the over red, and an after-tick
+         *   rest needs no re-post at its deadline because nothing changes there.
+         * - paused / waiting: a static clock from the frozen value.
          *
          * Returns null when the snapshot lacks what its status needs.
          */
         @VisibleForTesting
         internal fun resolveRestDisplay(rest: RestTimerSnapshot, nowMs: Long): RestDisplay? {
             return when (rest.status) {
-                REST_STATUS_RUNNING -> {
-                    val deadlineMs = rest.deadlineMs ?: return null
-                    val periodMs = rest.periodSeconds?.takeIf { it > 0 }?.times(1000L)
-                    if (periodMs != null) {
-                        val beatMs = if (nowMs < deadlineMs) {
-                            deadlineMs
-                        } else {
-                            deadlineMs + ((nowMs - deadlineMs) / periodMs + 1) * periodMs
-                        }
-                        RestDisplay.Countdown(deadlineMs = beatMs, over = false, nextTransitionMs = beatMs)
-                    } else {
-                        val over = nowMs >= deadlineMs
-                        RestDisplay.Countdown(
-                            deadlineMs = deadlineMs,
-                            over = over,
-                            nextTransitionMs = if (over) null else deadlineMs,
-                        )
-                    }
-                }
+                REST_STATUS_RUNNING -> rest.deadlineMs?.let { countdown(it, rest.periodSeconds, nowMs, muted = false) }
                 REST_STATUS_COUNT_UP -> rest.startMs?.let { RestDisplay.CountUp(startMs = it) }
-                REST_STATUS_PAUSED, REST_STATUS_WAITING, REST_STATUS_QUEUE_ENDED -> {
-                    val frozen = rest.frozenSignedSeconds
-                    RestDisplay.Frozen(text = frozen?.let { formatSignedSeconds(it) }, over = frozen != null && frozen < 0)
+                REST_STATUS_QUEUE_ENDED -> when {
+                    rest.deadlineMs != null -> countdown(rest.deadlineMs, rest.periodSeconds, nowMs, muted = true)
+                    rest.startMs != null -> RestDisplay.CountUp(startMs = rest.startMs, muted = true)
+                    else -> frozen(rest)
                 }
+                REST_STATUS_PAUSED, REST_STATUS_WAITING -> frozen(rest)
                 else -> null
             }
+        }
+
+        // A countdown to [deadlineMs]. With a period (on the minute) it rolls to
+        // the next beat at or after [nowMs] and is never over; without one it goes
+        // over at the deadline. Muted (queue ended) skips the deadline re-post: a
+        // muted clock looks the same either side of zero.
+        private fun countdown(deadlineMs: Long, periodSeconds: Long?, nowMs: Long, muted: Boolean): RestDisplay.Countdown {
+            val periodMs = periodSeconds?.takeIf { it > 0 }?.times(1000L)
+            if (periodMs != null) {
+                val beatMs = if (nowMs < deadlineMs) {
+                    deadlineMs
+                } else {
+                    deadlineMs + ((nowMs - deadlineMs) / periodMs + 1) * periodMs
+                }
+                return RestDisplay.Countdown(deadlineMs = beatMs, over = false, nextTransitionMs = beatMs, muted = muted)
+            }
+            val over = nowMs >= deadlineMs
+            return RestDisplay.Countdown(
+                deadlineMs = deadlineMs,
+                over = over,
+                nextTransitionMs = if (over || muted) null else deadlineMs,
+                muted = muted,
+            )
+        }
+
+        private fun frozen(rest: RestTimerSnapshot): RestDisplay.Frozen {
+            val frozen = rest.frozenSignedSeconds
+            return RestDisplay.Frozen(text = frozen?.let { formatSignedSeconds(it) }, over = frozen != null && frozen < 0)
         }
 
         /**
@@ -861,16 +889,26 @@ internal data class RestTimerSnapshot(
     val periodSeconds: Long?,
     val frozenSignedSeconds: Long?,
     val caption: String?,
+    /** Caption once an after-tick rest passes its deadline ("Over your rest"). */
+    val overCaption: String? = null,
 )
 
 /** What the notification's rest block renders; see [BoardSessionService.resolveRestDisplay]. */
 internal sealed class RestDisplay {
-    /** A ticking countdown to [deadlineMs]; [nextTransitionMs] is when to re-post. */
-    data class Countdown(val deadlineMs: Long, val over: Boolean, val nextTransitionMs: Long?) : RestDisplay()
+    /**
+     * A ticking countdown to [deadlineMs]; [nextTransitionMs] is when to re-post.
+     * [muted] draws it in the quiet colour (queue ended), never the over red.
+     */
+    data class Countdown(
+        val deadlineMs: Long,
+        val over: Boolean,
+        val nextTransitionMs: Long?,
+        val muted: Boolean = false,
+    ) : RestDisplay()
 
-    /** A ticking count-up from [startMs] (no rest length set). */
-    data class CountUp(val startMs: Long) : RestDisplay()
+    /** A ticking count-up from [startMs] (no rest length set); [muted] as above. */
+    data class CountUp(val startMs: Long, val muted: Boolean = false) : RestDisplay()
 
-    /** A static clock (paused / waiting / queue ended); [text] null shows only the caption. */
+    /** A static clock (paused / waiting); [text] null shows only the caption. */
     data class Frozen(val text: String?, val over: Boolean) : RestDisplay()
 }

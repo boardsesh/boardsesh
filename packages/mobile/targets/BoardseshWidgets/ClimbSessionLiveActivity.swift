@@ -538,26 +538,66 @@ private struct NavigationControlsView: View {
 
 // MARK: - Rest Timer Subviews (#6513)
 
-/// One colour per rest phase, matching the app's pill: violet while it runs,
-/// red once over, gray when frozen, faint gray while waiting for a first tick.
+/// One colour per rest state, matching the app's pill: violet while it runs,
+/// red once over, gray when frozen or once the queue has run out (that clock
+/// keeps counting, but is never the over red), faint gray while waiting for a
+/// first tick.
 @available(iOS 17.0, *)
-private func restTimerColor(_ phase: RestTimerRenderPhase, palette: VelvetSend.Palette) -> Color {
-    switch phase {
+private func restTimerColor(_ rest: ResolvedRestTimer, palette: VelvetSend.Palette) -> Color {
+    if case .waiting = rest.phase { return palette.tertiaryLabel }
+    if rest.muted { return palette.secondaryLabel }
+    switch rest.phase {
     case .running, .countUp:
         return palette.tint
     case .over:
         return palette.error
-    case .paused, .queueEnded:
+    case .paused, .queueEnded, .waiting:
         return palette.secondaryLabel
-    case .waiting:
-        return palette.tertiaryLabel
     }
 }
 
-/// The rest clock's digits. Only the system timer views move between renders,
+/// The rest clock as text. Only the system timer views move between renders,
 /// so a running rest counts down with `Text(timerInterval:)` (it holds at 0:00
-/// until the next render flips it to the red overrun), an overrun counts up from
+/// until the next render flips it to the overrun), an overrun counts up from
 /// the deadline behind a minus sign, and frozen phases print a fixed value.
+@available(iOS 17.0, *)
+private func restTimerDigitsText(_ phase: RestTimerRenderPhase) -> Text {
+    switch phase {
+    case let .running(start, deadline):
+        return Text(timerInterval: start...deadline, countsDown: true)
+    case let .over(deadline):
+        return Text(verbatim: "\u{2212}") + Text(deadline, style: .timer)
+    case let .countUp(start):
+        return Text(start, style: .timer)
+    case let .paused(seconds), let .queueEnded(seconds), let .waiting(seconds):
+        return Text(verbatim: RestTimerFormat.signedClock(seconds))
+    }
+}
+
+/// The word under the rest clock: what the number cannot say on its own.
+@available(iOS 17.0, *)
+private func restTimerCaptionText(_ rest: ResolvedRestTimer) -> Text {
+    if rest.muted { return Text("Queue's empty") }
+    switch rest.phase {
+    case .running:
+        if let period = rest.periodSeconds {
+            return Text("Every \(RestTimerFormat.clock(period))")
+        }
+        return Text("Rest")
+    case .over:
+        return Text("Over your rest")
+    case .paused:
+        return Text("Paused")
+    case .queueEnded:
+        return Text("Queue's empty")
+    case .countUp:
+        return Text("Since your last climb")
+    case .waiting:
+        return Text("Log a climb to start")
+    }
+}
+
+/// The rest clock's digits in a fixed frame.
 @available(iOS 17.0, *)
 private struct RestTimerDigits: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -568,11 +608,14 @@ private struct RestTimerDigits: View {
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        digits
+        restTimerDigitsText(rest.phase)
             .font(font)
             .monospacedDigit()
-            .foregroundColor(restTimerColor(rest.phase, palette: palette))
+            .foregroundColor(restTimerColor(rest, palette: palette))
             .lineLimit(1)
+            // An overrun grows without bound while nothing can redraw the card
+            // ("−12:34", then hours): shrink to fit rather than truncate.
+            .minimumScaleFactor(0.6)
             .multilineTextAlignment(textAlignment)
             // Timer text claims every point it is offered; a fixed frame keeps
             // it from pushing the climb name or the camera cut-out around.
@@ -586,22 +629,9 @@ private struct RestTimerDigits: View {
         case .trailing: return .trailing
         }
     }
-
-    private var digits: Text {
-        switch rest.phase {
-        case let .running(start, deadline):
-            return Text(timerInterval: start...deadline, countsDown: true)
-        case let .over(deadline):
-            return Text(verbatim: "\u{2212}") + Text(deadline, style: .timer)
-        case let .countUp(start):
-            return Text(start, style: .timer)
-        case let .paused(seconds), let .queueEnded(seconds), let .waiting(seconds):
-            return Text(verbatim: RestTimerFormat.signedClock(seconds))
-        }
-    }
 }
 
-/// The word under the rest clock: what the number cannot say on its own.
+/// The caption under the digits.
 @available(iOS 17.0, *)
 private struct RestTimerCaption: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -609,31 +639,11 @@ private struct RestTimerCaption: View {
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        caption
+        restTimerCaptionText(rest)
             .font(.caption2.weight(.semibold))
             .foregroundColor(palette.secondaryLabel)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-    }
-
-    private var caption: Text {
-        switch rest.phase {
-        case .running:
-            if let period = rest.periodSeconds {
-                return Text("Every \(RestTimerFormat.clock(period))")
-            }
-            return Text("Rest")
-        case .over:
-            return Text("Over your rest")
-        case .paused:
-            return Text("Paused")
-        case .queueEnded:
-            return Text("Queue's empty")
-        case .countUp:
-            return Text("Since your last climb")
-        case .waiting:
-            return Text("Log a climb to start")
-        }
     }
 }
 
@@ -651,8 +661,12 @@ private struct RestTimerBlock: View {
             RestTimerCaption(rest: rest)
                 .frame(maxWidth: width, alignment: .trailing)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Rest timer")
+        // One element: "Rest timer" names it, the value carries the clock and
+        // its caption. Overriding the label of a `.combine` element would drop
+        // both, and the closure form that keeps them needs iOS 18.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Rest timer"))
+        .accessibilityValue(restTimerDigitsText(rest.phase) + Text(verbatim: ", ") + restTimerCaptionText(rest))
     }
 }
 
@@ -669,6 +683,8 @@ private struct RestRingGlyph<Glyph: View>: View {
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
+        // Once the queue has run out the ring keeps going, muted.
+        let muted = rest?.muted == true
         switch rest?.phase {
         case let .running(start, deadline)?:
             ZStack {
@@ -678,14 +694,14 @@ private struct RestRingGlyph<Glyph: View>: View {
                     EmptyView()
                 }
                 .progressViewStyle(.circular)
-                .tint(palette.tint)
+                .tint(muted ? palette.secondaryLabel : palette.tint)
                 glyph()
             }
             .frame(width: size, height: size)
         case .over?:
             ZStack {
                 Circle()
-                    .stroke(palette.error, lineWidth: 2)
+                    .stroke(muted ? palette.secondaryLabel : palette.error, lineWidth: 2)
                 glyph()
             }
             .frame(width: size, height: size)

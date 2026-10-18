@@ -105,14 +105,15 @@ describe('after each climb', () => {
       targetSeconds: 120,
       frozenSignedSeconds: null,
       androidCaption: 'mobile.restTimer.clockCaptionRest:{"target":"2:00"}',
+      androidOverCaption: 'mobile.restTimer.clockCaptionOver',
     });
   });
 
-  it('keeps the same window once the rest is over, and says so', () => {
+  it('keeps the same window and both captions once the rest is over', () => {
     armAndTick('afterTick', 0);
-    const over = build({ nowMs: T0 + 150_000 });
-    expect(over).toMatchObject({ status: 'running', startMs: T0, deadlineMs: T0 + 120_000 });
-    expect(over?.androidCaption).toBe('mobile.restTimer.clockCaptionOver');
+    // Android picks the over caption itself at the deadline (JS may be
+    // suspended by then), so the snapshot is the same either side of zero.
+    expect(build({ nowMs: T0 + 150_000 })).toEqual(build({ nowMs: T0 + 30_000 }));
   });
 
   it('restarts the window from the moment an auto-advance fired', () => {
@@ -134,6 +135,7 @@ describe('fixed windows', () => {
       targetSeconds: 60,
       frozenSignedSeconds: null,
       androidCaption: 'mobile.restTimer.modeEvery:{"length":"1:00"}',
+      androidOverCaption: 'mobile.restTimer.clockCaptionOver',
     });
   });
 
@@ -176,17 +178,55 @@ describe('frozen states', () => {
     pauseRestTimer(T0 + 42_000);
     expect(build({ targetSeconds: null })).toMatchObject({ status: 'paused', frozenSignedSeconds: 42 });
   });
+});
 
-  it('says the queue is empty instead of counting against it', () => {
+describe('queue ended', () => {
+  // The pill keeps ticking once the queue runs out, so the Lock Screen must too:
+  // the same live window as before, only the status and caption change.
+  it('keeps counting the rest it was on, past zero too', () => {
     armAndTick('afterTick', 0);
     noteRestTimerQueueEnded();
-    expect(build({ nowMs: T0 + 130_000 })).toMatchObject({
+    expect(build({ nowMs: T0 + 130_000 })).toEqual({
+      sessionId: SESSION,
       status: 'queueEnded',
-      startMs: null,
-      deadlineMs: null,
-      frozenSignedSeconds: -10,
+      startMs: T0,
+      deadlineMs: T0 + 120_000,
+      periodSeconds: null,
+      targetSeconds: 120,
+      frozenSignedSeconds: null,
       androidCaption: 'mobile.restTimer.queueEnded',
     });
+  });
+
+  it('keeps rolling a fixed window', () => {
+    armRestTimer('onTheMinute', T0, SESSION);
+    noteRestTimerQueueEnded();
+    expect(build({ mode: 'onTheMinute', targetSeconds: 60, nowMs: T0 + 75_000 })).toMatchObject({
+      status: 'queueEnded',
+      startMs: T0 + 60_000,
+      deadlineMs: T0 + 120_000,
+      periodSeconds: 60,
+      frozenSignedSeconds: null,
+    });
+  });
+
+  it('keeps counting up with no rest length', () => {
+    armAndTick('afterTick', 0);
+    noteRestTimerQueueEnded();
+    expect(build({ targetSeconds: null, nowMs: T0 + 30_000 })).toMatchObject({
+      status: 'queueEnded',
+      startMs: T0,
+      deadlineMs: null,
+      frozenSignedSeconds: null,
+      androidCaption: 'mobile.restTimer.queueEnded',
+    });
+  });
+
+  it('still freezes while paused', () => {
+    armAndTick('afterTick', 0);
+    noteRestTimerQueueEnded();
+    pauseRestTimer(T0 + 45_000);
+    expect(build({ nowMs: T0 + 90_000 })).toMatchObject({ status: 'paused', frozenSignedSeconds: 75 });
   });
 });
 
