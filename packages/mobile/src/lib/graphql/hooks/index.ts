@@ -1238,37 +1238,22 @@ export function useFavoriteStatus(
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  GET_BETA_LINKS,
   GET_USER_BETA_LINKS,
   ATTACH_BETA_LINK,
-  type GetBetaLinksQueryResponse,
-  type GetBetaLinksQueryVariables,
   type GetUserBetaLinksQueryResponse,
   type GetUserBetaLinksQueryVariables,
   type RecentBetaLinkGqlRow,
   type AttachBetaLinkMutationVariables,
   type AttachBetaLinkMutationResponse,
 } from '@boardsesh/graphql/operations/beta-links';
-import { betaLinkIdentity, dedupeBetaLinks, isBetaVideoUrl, type BetaLink } from '@boardsesh/shared-schema';
-import { mapBetaLink, mapBetaLinks } from '../../beta-video-url';
+import { betaLinkIdentity, isBetaVideoUrl, type BetaLink } from '@boardsesh/shared-schema';
+import { mapBetaLink } from '../../beta-video-url';
 
 export type RecentBetaVideo = Omit<RecentBetaLinkGqlRow, 'betaLink'> & {
   betaLink: BetaLink;
 };
 
-export function useBetaLinks(boardType: string, climbUuid: string, enabled = true) {
-  return useQuery({
-    queryKey: ['betaLinks', boardType, climbUuid],
-    queryFn: () =>
-      getHttpClient().request<GetBetaLinksQueryResponse, GetBetaLinksQueryVariables>(GET_BETA_LINKS, {
-        boardType,
-        climbUuid,
-      }),
-    select: (data) => dedupeBetaLinks(mapBetaLinks(data.betaLinks)),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  });
-}
+export { useBetaLinks } from './use-beta-links';
 
 const USER_BETA_LINKS_PAGE_SIZE = 20;
 

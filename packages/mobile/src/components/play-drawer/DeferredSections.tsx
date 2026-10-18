@@ -39,6 +39,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-interactions';
 import { useClimbSettled } from '../../hooks/use-climb-settled';
 import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
+import { useSectionExpanded } from '../../lib/section-expand-store';
 import {
   DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   DEFAULT_PLAY_DRAWER_SECTIONS,
@@ -83,6 +84,22 @@ type DeferredSectionsProps = {
 };
 
 const noop = () => {};
+
+/**
+ * The sections whose collapsed line needs a request, with the expand state their
+ * header starts in. Shared by the header and the peek's request gate, so the gate
+ * reads the same saved state the header shows.
+ */
+const LINE_SECTION_EXPANSION = {
+  betaVideos: { persistKey: BETA_SHELF_SECTION_KEY, defaultExpanded: true },
+  boardseshGrade: { persistKey: 'boardseshGrade', defaultExpanded: true },
+  community: { persistKey: 'community', defaultExpanded: true },
+  similarClimbs: { persistKey: 'similarClimbs', defaultExpanded: false },
+} as const satisfies Partial<Record<BelowFoldSectionId, { persistKey: string; defaultExpanded: boolean }>>;
+type LineSectionId = keyof typeof LINE_SECTION_EXPANSION;
+function isLineSection(sectionId: BelowFoldSectionId | undefined): sectionId is LineSectionId {
+  return sectionId !== undefined && sectionId in LINE_SECTION_EXPANSION;
+}
 
 /**
  * Sends the request for everyone's newest logs on a climb and renders nothing.
@@ -223,13 +240,15 @@ export const DeferredSections = memo(function DeferredSections({
   // both. (BoardseshGradeSection gates its own by-angle query the same way.)
   const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
   // The peek may ask for what its collapsed line needs, once the climb has
-  // settled (a fast swipe asks for nothing). Any other section's line comes
-  // from what is already cached, or stays empty: no spinner in a header.
-  const peekLineFetches =
-    firstSectionId === 'betaVideos' ||
-    firstSectionId === 'community' ||
-    firstSectionId === 'similarClimbs' ||
-    (firstSectionId === 'boardseshGrade' && !noCrowdGrade);
+  // settled (a fast swipe asks for nothing), and only while it is collapsed: an
+  // open header draws no line. Its saved state must have loaded first, so a cold
+  // store never sends a request on the default's guess. Any other section's line
+  // comes from what is already cached, or stays empty: no spinner in a header.
+  const peekLineExpansion = isLineSection(firstSectionId) ? LINE_SECTION_EXPANSION[firstSectionId] : undefined;
+  const { expanded: peekSavedExpanded, loaded: expandStateLoaded } = useSectionExpanded(peekLineExpansion?.persistKey);
+  const peekCollapsed =
+    peekLineExpansion !== undefined && expandStateLoaded && !(peekSavedExpanded ?? peekLineExpansion.defaultExpanded);
+  const peekLineFetches = peekCollapsed && (firstSectionId !== 'boardseshGrade' || !noCrowdGrade);
 
   // The climber's ticks for this climb across every angle. Fed to the summary's
   // cross-angle clause below. Reading it here is eager (one fetch per climb on
@@ -257,7 +276,8 @@ export const DeferredSections = memo(function DeferredSections({
   // the drawer costs no followed-authors request and no SQLite write. A missing
   // one loads behind the same settle gate.
   const settled = useClimbSettled(enabled && (crewWanted || peekLineFetches), climb.uuid);
-  const peekMayFetch = (sectionId: BelowFoldSectionId) => enabled && firstSectionId === sectionId && settled;
+  const peekMayFetch = (sectionId: LineSectionId) =>
+    enabled && firstSectionId === sectionId && peekLineFetches && settled;
   // What a climber's own grade is compared against: only one that differs is worth a mention.
   const climbGradeId = getDifficultyIdForGradeName(climb.difficulty);
   const { data: followedAuthors, isError: followedAuthorsFailed } = useFollowedAuthorsSnapshot({
@@ -497,8 +517,8 @@ export const DeferredSections = memo(function DeferredSections({
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
             summary={betaVideosSummary}
-            defaultExpanded
-            persistKey={BETA_SHELF_SECTION_KEY}
+            defaultExpanded={LINE_SECTION_EXPANSION.betaVideos.defaultExpanded}
+            persistKey={LINE_SECTION_EXPANSION.betaVideos.persistKey}
             onHeaderLayout={onHeaderLayout}
             onToggle={onToggle}
             headerAction={
@@ -527,8 +547,8 @@ export const DeferredSections = memo(function DeferredSections({
           <CollapsibleSection
             title={tClimbs('boardseshGrade.title')}
             summary={boardseshSummary}
-            defaultExpanded
-            persistKey="boardseshGrade"
+            defaultExpanded={LINE_SECTION_EXPANSION.boardseshGrade.defaultExpanded}
+            persistKey={LINE_SECTION_EXPANSION.boardseshGrade.persistKey}
             onHeaderLayout={onHeaderLayout}
             onToggle={onToggle}
           >
@@ -541,8 +561,8 @@ export const DeferredSections = memo(function DeferredSections({
           <CollapsibleSection
             title={t('mobile.community.title')}
             summary={communitySummary}
-            defaultExpanded
-            persistKey="community"
+            defaultExpanded={LINE_SECTION_EXPANSION.community.defaultExpanded}
+            persistKey={LINE_SECTION_EXPANSION.community.persistKey}
             onHeaderLayout={onHeaderLayout}
             onToggle={onToggle}
           >
@@ -565,7 +585,8 @@ export const DeferredSections = memo(function DeferredSections({
           <CollapsibleSection
             title={t('mobile.similarClimbs.title')}
             summary={similarSummary}
-            persistKey="similarClimbs"
+            defaultExpanded={LINE_SECTION_EXPANSION.similarClimbs.defaultExpanded}
+            persistKey={LINE_SECTION_EXPANSION.similarClimbs.persistKey}
             onHeaderLayout={onHeaderLayout}
             onToggle={onToggle}
           >

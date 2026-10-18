@@ -134,20 +134,40 @@ vi.mock('../../../hooks/use-deferred-after-interactions', () => ({
   },
 }));
 
+// The saved expand state the peek's request gate reads, and the headers show.
+const expandState = vi.hoisted(() => ({ map: {} as Record<string, boolean>, loaded: true }));
+vi.mock('../../../lib/section-expand-store', () => ({
+  useSectionExpanded: (key: string | undefined) => ({
+    expanded: key === undefined ? undefined : expandState.map[key],
+    loaded: expandState.loaded,
+  }),
+}));
+
+// Draws the line only while collapsed, as the real header does. Children always
+// render, so the body tests can see what each section is handed.
 vi.mock('../../CollapsibleSection', () => ({
   CollapsibleSection: ({
     title,
     summary,
     children,
     onHeaderLayout,
+    persistKey,
+    defaultExpanded = false,
   }: {
     title: string;
     summary?: string | null;
     children?: ReactNode;
     onHeaderLayout?: (height: number) => void;
+    persistKey?: string;
+    defaultExpanded?: boolean;
   }) => {
     onHeaderLayout?.(44);
-    return createElement('section', { 'data-title': title, 'data-summary': summary ?? undefined }, children);
+    const expanded = (persistKey ? expandState.map[persistKey] : undefined) ?? defaultExpanded;
+    return createElement(
+      'section',
+      { 'data-title': title, 'data-summary': expanded ? undefined : (summary ?? undefined) },
+      children,
+    );
   },
 }));
 
@@ -317,6 +337,8 @@ describe('DeferredSections', () => {
     followedAuthors.result = { data: undefined, isError: false };
     followedAuthors.calls = [];
     climberLogsSection.props = null;
+    expandState.map = {};
+    expandState.loaded = true;
   });
 
   afterEach(() => {
@@ -684,6 +706,7 @@ describe('DeferredSections', () => {
     });
 
     it('summarises the collapsed card from the server counts', () => {
+      expandState.map = { climberLogs: false };
       i18n.locale = 'en-US';
       auth.isAuthenticated = true;
       deferred.ready = true;
@@ -957,7 +980,57 @@ describe('collapsed lines, and what each section may ask for', () => {
     lineQueries.history = { calls: [], data: undefined };
     lineQueries.beta = { calls: [], data: undefined };
     lineQueries.similar = { calls: [], data: undefined, source: 'local' };
+    crewQuery.gateCalls = [];
+    expandState.loaded = true;
+    expandState.map = {
+      betaVideos: false,
+      community: false,
+      boardseshGrade: false,
+      similarClimbs: false,
+      setterNotes: false,
+    };
   });
+
+  afterEach(() => {
+    expandState.map = {};
+  });
+
+  it.each([
+    ['Beta Videos', 'betaVideos' as const, () => lineQueries.beta.calls],
+    ['Community', 'community' as const, () => lineQueries.history.calls],
+  ])('%s as an open peek draws no line, so asks for none', (_label, sectionId, calls) => {
+    expandState.map = { ...expandState.map, [sectionId]: true };
+    renderSections({ order: first(sectionId) });
+    expect(calls().every(({ enabled }) => !enabled)).toBe(true);
+  });
+
+  it.each([
+    ['Beta Videos', 'betaVideos' as const, () => lineQueries.beta.calls],
+    ['Community', 'community' as const, () => lineQueries.history.calls],
+  ])('%s as a peek that has never been touched starts open, so asks for nothing', (_label, sectionId, calls) => {
+    expandState.map = {};
+    renderSections({ order: first(sectionId) });
+    expect(calls().every(({ enabled }) => !enabled)).toBe(true);
+  });
+
+  it('asks for nothing while the saved expand state is still loading', () => {
+    expandState.loaded = false;
+    renderSections({ order: first('community') });
+    expect(lineQueries.history.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(crewQuery.gateCalls.every(({ active }) => !active)).toBe(true);
+  });
+
+  it.each(['community', 'similarClimbs', 'boardseshGrade'] as const)(
+    'turns the settle gate on for a collapsed %s peek, and off for an open one',
+    (sectionId) => {
+      renderSections({ order: first(sectionId) });
+      expect(crewQuery.gateCalls.at(-1)?.active).toBe(true);
+      crewQuery.gateCalls = [];
+      expandState.map = { ...expandState.map, [sectionId]: true };
+      renderSections({ order: first(sectionId) });
+      expect(crewQuery.gateCalls.at(-1)?.active).toBe(false);
+    },
+  );
 
   it("Setter's notes show their first written line", () => {
     const { container } = renderSections({

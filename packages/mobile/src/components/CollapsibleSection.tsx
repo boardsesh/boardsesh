@@ -1,5 +1,5 @@
 import { PressableSurface } from './PressableSurface';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Text } from './Text';
@@ -25,7 +25,7 @@ type CollapsibleSectionProps = {
    * else (a row of coloured markers, say) is drawn as given in the same slot, which
    * clips it to the title's row; it brings its own colours and one-line layout.
    */
-  summary?: ReactNode;
+  summary?: string | ReactElement | null;
   /** When this value changes, expanded state resets to `defaultExpanded` without remounting the tree. */
   resetKey?: number;
   /** Optional trailing action rendered in the header (e.g. an Attach button). */
@@ -113,7 +113,7 @@ function CollapsibleSectionInternal({
 }: {
   title: string;
   defaultExpanded: boolean;
-  summary?: ReactNode;
+  summary?: string | ReactElement | null;
   resetKey?: number;
   headerAction?: ReactNode;
   // Internal prop takes the raw LayoutChangeEvent; the public `onHeaderLayout`
@@ -199,7 +199,7 @@ function CollapsibleSectionInternal({
           <Text variant="headline" style={styles.title}>
             {title}
           </Text>
-          {expanded || summary == null || summary === '' ? null : typeof summary === 'string' ? (
+          {expanded || !summary ? null : typeof summary === 'string' ? (
             <Text variant="footnote" style={styles.summary} numberOfLines={1}>
               {summary}
             </Text>
