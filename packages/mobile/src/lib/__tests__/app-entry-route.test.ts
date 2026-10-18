@@ -22,7 +22,10 @@ describe('ordinary app entry', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', undefined);
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    storedBytes.clear();
+    vi.unstubAllEnvs();
+  });
 
   it('opens the library without changing its tab position', () => {
     expect(getAppEntryTab()).toBe('climbs');

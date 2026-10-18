@@ -323,12 +323,15 @@ describe('TabLayout', () => {
     vi.resetModules();
     const { setSetting } = await import('../../../src/settings/hooks');
     setSetting('startupScreen', 'home');
+    try {
+      const nextLaunch = await import('../_layout');
 
-    const nextLaunch = await import('../_layout');
-
-    expect(nextLaunch.unstable_settings.initialRouteName).toBe('home');
-    // The module already loaded keeps what it read at its own launch.
-    expect(unstable_settings.initialRouteName).toBe('climbs');
+      expect(nextLaunch.unstable_settings.initialRouteName).toBe('home');
+      // The module already loaded keeps what it read at its own launch.
+      expect(unstable_settings.initialRouteName).toBe('climbs');
+    } finally {
+      setSetting('startupScreen', 'climbs');
+    }
   });
 
   it('renders Home as the leftmost native tab', () => {
