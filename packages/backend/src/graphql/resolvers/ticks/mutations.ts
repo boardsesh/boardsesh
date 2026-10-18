@@ -1450,18 +1450,41 @@ export const tickMutations = {
             : null;
         const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
         // Why the association was dropped, for the warning below. A missing
-        // canonical row is a concurrent delete or a dangling tombstone chain. A
-        // merge that landed on a board the climber cannot read without a link
-        // (the survivor has another owner, so the presented uuid is no longer
-        // its link) is a different case and needs a different follow-up.
-        const boardAssociationDropReason =
-          canonicalBoardId == null
-            ? 'canonical_missing'
-            : canonicalBoardId !== boardId && presentedUuidBoard !== null && !presentedLink
-              ? 'merged_into_unreadable_survivor'
-              : canonicalBoardId !== boardId
-                ? 'merged_board_unavailable'
-                : 'board_unavailable';
+        // canonical row is a concurrent delete or a dangling tombstone chain.
+        // After a merge into another owner's board the presented uuid is no
+        // longer its link, so the survivor is either unreadable without a link
+        // or readable but no longer fits the climb; one extra read, only on this
+        // already-failing path, tells them apart.
+        let boardAssociationDropReason:
+          | 'canonical_missing'
+          | 'merged_into_unreadable_survivor'
+          | 'merged_survivor_does_not_fit'
+          | 'merged_board_unavailable'
+          | 'board_unavailable' = 'board_unavailable';
+        if (boardAssociationBecameUnavailable) {
+          if (canonicalBoardId == null) {
+            boardAssociationDropReason = 'canonical_missing';
+          } else if (canonicalBoardId !== boardId) {
+            if (presentedUuidBoard !== null && !presentedLink) {
+              const [readableSurvivor] = await tx
+                .select({ id: dbSchema.userBoards.id })
+                .from(dbSchema.userBoards)
+                .where(
+                  and(
+                    eq(dbSchema.userBoards.id, canonicalBoardId),
+                    isNull(dbSchema.userBoards.deletedAt),
+                    resourceAccessCondition('board', dbSchema.userBoards.uuid, userId, { allowUnlistedLink: false }),
+                  ),
+                )
+                .limit(1);
+              boardAssociationDropReason = readableSurvivor
+                ? 'merged_survivor_does_not_fit'
+                : 'merged_into_unreadable_survivor';
+            } else {
+              boardAssociationDropReason = 'merged_board_unavailable';
+            }
+          }
+        }
         const [createdTick] = await tx
           .insert(dbSchema.boardseshTicks)
           .values({

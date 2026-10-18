@@ -2905,6 +2905,51 @@ describe('board-presence resolvers', () => {
       }
     });
 
+    it('logs merged_survivor_does_not_fit when a merge lands on a readable board the climb no longer fits', async () => {
+      const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      const canonicalUuid = uuidv4();
+      const loserUuid = uuidv4();
+      const tickUuid = uuidv4();
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number, is_public)
+        VALUES (${canonicalUuid}, ${`tick-unfit-canonical-${suffix}`}, ${SECOND_USER_ID},
+                'kilter', 2, 10, '1,2', 'Tick unfit survivor', ${`TICK-UNFIT-${suffix}`}, true)
+      `);
+      await db.execute(sql`
+        INSERT INTO user_boards
+          (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, serial_number,
+           is_public, deleted_at, merged_into_board_uuid)
+        VALUES (${loserUuid}, ${`tick-unfit-loser-${suffix}`}, ${TEST_USER_ID},
+                'kilter', 1, 10, '1,2', 'Tick unfit loser', ${`TICK-UNFIT-${suffix}`},
+                false, now(), ${canonicalUuid})
+      `);
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      try {
+        const saved = (await tickMutations.saveTick(
+          undefined,
+          { input: baseTickInput({ uuid: tickUuid, boardUuid: loserUuid }) },
+          authCtx(),
+        )) as { boardId: number | null };
+
+        expect(saved.boardId).toBeNull();
+        const [persistedTick] = await db.execute(sql`
+          SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+        `);
+        expect((persistedTick as { board_id: number | null }).board_id).toBeNull();
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[saveTick] Board association became unavailable; saving tick without board association',
+          expect.objectContaining({
+            tickUuid,
+            reason: 'merged_survivor_does_not_fit',
+            boardAssociationSource: 'boardUuid',
+          }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it('keeps an ordinary soft-deleted boardUuid unassociated without config fallback or warning', async () => {
       const ownBoardId = await createOwnConfigBoard();
       const staleBoardUuid = uuidv4();
