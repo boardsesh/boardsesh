@@ -517,6 +517,8 @@ describe('a report on your climb', () => {
       .select({ actorId: dbSchema.notifications.actorId })
       .from(dbSchema.notifications)
       .where(and(eq(dbSchema.notifications.entityId, tickUuid), eq(dbSchema.notifications.type, 'vote_on_tick')));
-    expect(likes.map((like) => like.actorId).sort()).toEqual([PUBLIC_COMMENTER, null].sort());
+    const likers = likes.map((like) => like.actorId);
+    expect(likers).toHaveLength(2);
+    expect(likers).toEqual(expect.arrayContaining([PUBLIC_COMMENTER, null]));
   });
 });
