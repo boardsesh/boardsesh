@@ -1047,6 +1047,14 @@ describe('collapsed lines, and what each section may ask for', () => {
     expect(summaryOf(container, 'Beta Videos')).toBe('3 videos');
   });
 
+  it('Beta Videos as the peek with no signal ask for nothing and show no line', () => {
+    everyoneQuery.offline = true;
+    const { container } = renderSections({ order: first('betaVideos') });
+    expect(lineQueries.beta.calls.length).toBeGreaterThan(0);
+    expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
+    expect(summaryOf(container, 'Beta Videos')).toBeNull();
+  });
+
   it('Beta Videos say when there are none, so the shelf is never opened for nothing', () => {
     lineQueries.beta.data = [];
     const { container } = renderSections({ order: first('betaVideos') });
@@ -1099,7 +1107,7 @@ describe('collapsed lines, and what each section may ask for', () => {
   it('Similar climbs say when nothing matched', () => {
     lineQueries.similar.data = [];
     const { container } = renderSections({ order: first('similarClimbs') });
-    expect(summaryOf(container, 'Similar Climbs')).toBe('No similar climbs found');
+    expect(summaryOf(container, 'Similar Climbs')).toBe('None found');
   });
 
   it('Boardsesh grade as the peek asks for its grade once settled, before any scroll', () => {

@@ -42,15 +42,19 @@ function isKnownSection<Id extends string>(spec: SectionLayoutSpec<Id>, candidat
  */
 export function sanitiseSectionOrder<Id extends string>(spec: SectionLayoutSpec<Id>, stored: unknown): Id[] {
   const order: Id[] = [];
+  const seen = new Set<Id>();
   if (Array.isArray(stored)) {
     for (const candidate of stored) {
-      if (isKnownSection(spec, candidate) && !order.includes(candidate)) order.push(candidate);
+      if (!isKnownSection(spec, candidate) || seen.has(candidate)) continue;
+      seen.add(candidate);
+      order.push(candidate);
     }
   }
   const listedDefaults = spec.defaults.order.filter((sectionId) => isKnownSection(spec, sectionId));
   const defaultOrder = [...listedDefaults, ...spec.ids.filter((sectionId) => !listedDefaults.includes(sectionId))];
   defaultOrder.forEach((sectionId, defaultIndex) => {
-    if (order.includes(sectionId)) return;
+    if (seen.has(sectionId)) return;
+    seen.add(sectionId);
     // Walking the defaults in order, the section before this one is always placed by now.
     const insertAt = defaultIndex === 0 ? 0 : order.indexOf(defaultOrder[defaultIndex - 1]) + 1;
     order.splice(insertAt, 0, sectionId);

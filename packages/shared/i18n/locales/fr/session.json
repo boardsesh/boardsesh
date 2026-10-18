@@ -318,7 +318,8 @@
       "waitingForDownload": "Les blocs similaires arrivent dès que {{name}} a fini de se télécharger.",
       "downloadToSee": "Télécharge cette board pour voir les blocs similaires",
       "collapsedSummary": "Le plus proche : {{name}}",
-      "collapsedDownload": "Télécharge-la pour les voir"
+      "collapsedDownload": "Télécharge-la pour les voir",
+      "collapsedEmpty": "Aucun"
     },
     "community": {
       "moderation": {

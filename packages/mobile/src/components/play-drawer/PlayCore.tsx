@@ -1754,7 +1754,7 @@ export function PlayCore({
                                   isMirrored={isMirrored}
                                   onToggleFavorite={handleToggleFavoriteFromMenu}
                                   onToggleMirror={handleMirror}
-                                  onOpenAngle={handleOpenAngleSelector}
+                                  onOpenAngle={isAngleAdjustable ? handleOpenAngleSelector : undefined}
                                   onTick={handleOpenTickForClimb}
                                   onAddBetaVideo={handleOpenAddBetaVideoForClimb}
                                   onReportClimb={handleOpenReportClimbForClimb}

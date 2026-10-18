@@ -149,7 +149,7 @@ const SimilarClimbsPeekRequest = memo(function SimilarClimbsPeekRequest({
   const line = similarClimbs
     ? closestName
       ? t('mobile.similarClimbs.collapsedSummary', { name: closestName })
-      : t('mobile.similarClimbs.empty')
+      : t('mobile.similarClimbs.collapsedEmpty')
     : source === 'download' && !isResolvingSource
       ? t('mobile.similarClimbs.collapsedDownload')
       : null;
@@ -193,14 +193,19 @@ export const DeferredSections = memo(function DeferredSections({
   const { brandColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const boardseshGradeEnabled = useBoardseshGradeEnabled();
-  const visibleSections = visiblePlayDrawerSections({
-    sections,
-    order,
-    isAuthenticated,
-    boardseshGradeEnabled,
-    description: climb.description,
-    screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
-  });
+  const visibleSections = useMemo(
+    () =>
+      visiblePlayDrawerSections({
+        sections,
+        order,
+        isAuthenticated,
+        boardseshGradeEnabled,
+        description: climb.description,
+        screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+      }),
+    [sections, order, isAuthenticated, boardseshGradeEnabled, climb.description],
+  );
+  const visibleSectionSet = useMemo(() => new Set(visibleSections), [visibleSections]);
   const firstSectionId = visibleSections[0];
 
   const handleAddBetaVideoPress = useCallback(() => {
@@ -227,7 +232,7 @@ export const DeferredSections = memo(function DeferredSections({
   // has scrolled to the sections. Only then may it read anything: a section
   // further down mounts nothing and asks for nothing until it can be seen.
   const isOnScreen = (sectionId: BelowFoldSectionId) =>
-    enabled && visibleSections.includes(sectionId) && (firstSectionId === sectionId || readyToRender);
+    enabled && visibleSectionSet.has(sectionId) && (firstSectionId === sectionId || readyToRender);
   const showLogbook = isOnScreen('logbook');
   // The Climber logs card straight under a Logbook peek (the default layout)
   // keeps the head start it has always had: the crew read behind the Logbook
@@ -396,7 +401,8 @@ export const DeferredSections = memo(function DeferredSections({
   // unmounts while collapsed — React Query dedupes this fetch with the
   // section's identical-key one once it expands, so this costs no extra request.
   const boardseshReady =
-    visibleSections.includes('boardseshGrade') &&
+    boardseshGradeEnabled &&
+    visibleSectionSet.has('boardseshGrade') &&
     !noCrowdGrade &&
     ((enabled && readyToRender) || peekMayFetch('boardseshGrade'));
   const { data: boardseshGrade } = useBoardseshGrade(boardName, climb.uuid, angle, {
@@ -440,182 +446,217 @@ export const DeferredSections = memo(function DeferredSections({
   const similarSummary =
     similarPeek && similarPeek.climbUuid === climb.uuid && similarPeek.angle === angle ? similarPeek.line : null;
 
-  if (!enabled || visibleSections.length === 0) {
-    return null;
-  }
-
   // One wrapper per section, in the climber's order. The first visible header
   // mounts at once so there is always a reachable scroll hint at the fold; every
   // other section, Logbook included when it is not first, waits for real
   // scrolling and the interaction defer. Heavy bodies wait for both.
-  const renderSection = (sectionId: BelowFoldSectionId) => {
-    const isFirst = firstSectionId === sectionId;
-    if (!readyToRender && !isFirst) return null;
-    const onHeaderLayout = isFirst ? onFirstSectionHeaderLayout : undefined;
-    const onToggle = isFirst ? onFirstSectionToggle : undefined;
-    let section: ReactNode;
-    switch (sectionId) {
-      case 'logbook':
-        section = (
-          <CollapsibleSection
-            title={t('mobile.logbook.title')}
-            summary={logbookSummary}
-            persistKey="logbook"
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          >
-            <LogbookSection
-              climbUuid={climb.uuid}
-              boardName={boardName}
-              layoutId={layoutId}
-              angle={angle}
-              userAscents={climb.userAscents}
-              userAttempts={climb.userAttempts}
-              onOpenFullLogbook={onOpenFullLogbook}
+  const renderSection = useCallback(
+    (sectionId: BelowFoldSectionId) => {
+      const isFirst = firstSectionId === sectionId;
+      if (!readyToRender && !isFirst) return null;
+      const onHeaderLayout = isFirst ? onFirstSectionHeaderLayout : undefined;
+      const onToggle = isFirst ? onFirstSectionToggle : undefined;
+      let section: ReactNode;
+      switch (sectionId) {
+        case 'logbook':
+          section = (
+            <CollapsibleSection
+              title={t('mobile.logbook.title')}
+              summary={logbookSummary}
+              persistKey="logbook"
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            >
+              <LogbookSection
+                climbUuid={climb.uuid}
+                boardName={boardName}
+                layoutId={layoutId}
+                angle={angle}
+                userAscents={climb.userAscents}
+                userAttempts={climb.userAttempts}
+                onOpenFullLogbook={onOpenFullLogbook}
+              />
+            </CollapsibleSection>
+          );
+          break;
+        case 'climberLogs':
+          section = (
+            <CollapsibleSection
+              title={t('mobile.climberLogs.title')}
+              summary={climberLogsSummary}
+              defaultExpanded
+              persistKey="climberLogs"
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            >
+              {readyToRender && followState !== 'none-yet' && (
+                <ClimberLogsSection
+                  climbUuid={climb.uuid}
+                  boardName={boardName}
+                  angle={angle}
+                  climbGradeId={climbGradeId}
+                  followState={followState}
+                  settled={settled}
+                  onSeeAll={onOpenClimberLogs ?? noop}
+                  onPressClimber={onOpenClimberProfile ?? noop}
+                  onFindClimbers={onFindClimbers ?? noop}
+                />
+              )}
+            </CollapsibleSection>
+          );
+          break;
+        case 'setterNotes':
+          section = (
+            <SetterNotesSection
+              description={climb.description}
+              contentEnabled={readyToRender}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
             />
-          </CollapsibleSection>
-        );
-        break;
-      case 'climberLogs':
-        section = (
-          <CollapsibleSection
-            title={t('mobile.climberLogs.title')}
-            summary={climberLogsSummary}
-            defaultExpanded
-            persistKey="climberLogs"
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          >
-            {readyToRender && followState !== 'none-yet' && (
-              <ClimberLogsSection
-                climbUuid={climb.uuid}
-                boardName={boardName}
-                angle={angle}
-                climbGradeId={climbGradeId}
-                followState={followState}
-                settled={settled}
-                onSeeAll={onOpenClimberLogs ?? noop}
-                onPressClimber={onOpenClimberProfile ?? noop}
-                onFindClimbers={onFindClimbers ?? noop}
-              />
-            )}
-          </CollapsibleSection>
-        );
-        break;
-      case 'setterNotes':
-        section = (
-          <SetterNotesSection
-            description={climb.description}
-            contentEnabled={readyToRender}
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          />
-        );
-        break;
-      case 'betaVideos':
-        section = (
-          <CollapsibleSection
-            title={t('mobile.betaVideos.title')}
-            summary={betaVideosSummary}
-            defaultExpanded={LINE_SECTION_EXPANSION.betaVideos.defaultExpanded}
-            persistKey={LINE_SECTION_EXPANSION.betaVideos.persistKey}
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-            headerAction={
-              isAuthenticated && onAddBetaVideo ? (
-                <PressableSurface
-                  onPress={handleAddBetaVideoPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.betaVideos.addButton')}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.addButton,
-                    pressed && { backgroundColor: `${brandColors.primary}1A` },
-                  ]}
-                >
-                  <Icon name="add" size={22} color={brandColors.primary} />
-                </PressableSurface>
-              ) : undefined
-            }
-          >
-            {readyToRender && <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />}
-          </CollapsibleSection>
-        );
-        break;
-      case 'boardseshGrade':
-        section = (
-          <CollapsibleSection
-            title={tClimbs('boardseshGrade.title')}
-            summary={boardseshSummary}
-            defaultExpanded={LINE_SECTION_EXPANSION.boardseshGrade.defaultExpanded}
-            persistKey={LINE_SECTION_EXPANSION.boardseshGrade.persistKey}
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          >
-            {readyToRender && <BoardseshGradeSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />}
-          </CollapsibleSection>
-        );
-        break;
-      case 'community':
-        section = (
-          <CollapsibleSection
-            title={t('mobile.community.title')}
-            summary={communitySummary}
-            defaultExpanded={LINE_SECTION_EXPANSION.community.defaultExpanded}
-            persistKey={LINE_SECTION_EXPANSION.community.persistKey}
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          >
-            {readyToRender && (
-              <CommunitySection
-                climbUuid={climb.uuid}
-                boardName={boardName}
-                layoutId={layoutId}
-                angle={angle}
-                qualityAverage={climb.quality_average}
-                ascensionistCount={climb.ascensionist_count}
-                isHidden={climb.is_hidden === true}
-              />
-            )}
-          </CollapsibleSection>
-        );
-        break;
-      case 'similarClimbs':
-        section = (
-          <CollapsibleSection
-            title={t('mobile.similarClimbs.title')}
-            summary={similarSummary}
-            defaultExpanded={LINE_SECTION_EXPANSION.similarClimbs.defaultExpanded}
-            persistKey={LINE_SECTION_EXPANSION.similarClimbs.persistKey}
-            onHeaderLayout={onHeaderLayout}
-            onToggle={onToggle}
-          >
-            {readyToRender && (
-              <SimilarClimbsSection
-                climbUuid={climb.uuid}
-                boardName={boardName}
-                layoutId={layoutId}
-                sizeId={sizeId}
-                setIds={setIds}
-                angle={angle}
-                onClimbPress={onSimilarClimbPress}
-              />
-            )}
-          </CollapsibleSection>
-        );
-        break;
-      default:
-        // A new id in BELOW_FOLD_SECTION_IDS stops compiling here until it gets a case,
-        // instead of drawing an empty wrapper. At run time it draws nothing.
-        sectionId satisfies never;
-        return null;
-    }
-    return (
-      <View key={sectionId} onLayout={isFirst ? handleFirstSectionLayout : undefined}>
-        {section}
-      </View>
-    );
-  };
+          );
+          break;
+        case 'betaVideos':
+          section = (
+            <CollapsibleSection
+              title={t('mobile.betaVideos.title')}
+              summary={betaVideosSummary}
+              defaultExpanded={LINE_SECTION_EXPANSION.betaVideos.defaultExpanded}
+              persistKey={LINE_SECTION_EXPANSION.betaVideos.persistKey}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+              headerAction={
+                isAuthenticated && onAddBetaVideo ? (
+                  <PressableSurface
+                    onPress={handleAddBetaVideoPress}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.betaVideos.addButton')}
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.addButton,
+                      pressed && { backgroundColor: `${brandColors.primary}1A` },
+                    ]}
+                  >
+                    <Icon name="add" size={22} color={brandColors.primary} />
+                  </PressableSurface>
+                ) : undefined
+              }
+            >
+              {readyToRender && <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />}
+            </CollapsibleSection>
+          );
+          break;
+        case 'boardseshGrade':
+          section = (
+            <CollapsibleSection
+              title={tClimbs('boardseshGrade.title')}
+              summary={boardseshSummary}
+              defaultExpanded={LINE_SECTION_EXPANSION.boardseshGrade.defaultExpanded}
+              persistKey={LINE_SECTION_EXPANSION.boardseshGrade.persistKey}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            >
+              {readyToRender && <BoardseshGradeSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />}
+            </CollapsibleSection>
+          );
+          break;
+        case 'community':
+          section = (
+            <CollapsibleSection
+              title={t('mobile.community.title')}
+              summary={communitySummary}
+              defaultExpanded={LINE_SECTION_EXPANSION.community.defaultExpanded}
+              persistKey={LINE_SECTION_EXPANSION.community.persistKey}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            >
+              {readyToRender && (
+                <CommunitySection
+                  climbUuid={climb.uuid}
+                  boardName={boardName}
+                  layoutId={layoutId}
+                  angle={angle}
+                  qualityAverage={climb.quality_average}
+                  ascensionistCount={climb.ascensionist_count}
+                  isHidden={climb.is_hidden === true}
+                />
+              )}
+            </CollapsibleSection>
+          );
+          break;
+        case 'similarClimbs':
+          section = (
+            <CollapsibleSection
+              title={t('mobile.similarClimbs.title')}
+              summary={similarSummary}
+              defaultExpanded={LINE_SECTION_EXPANSION.similarClimbs.defaultExpanded}
+              persistKey={LINE_SECTION_EXPANSION.similarClimbs.persistKey}
+              onHeaderLayout={onHeaderLayout}
+              onToggle={onToggle}
+            >
+              {readyToRender && (
+                <SimilarClimbsSection
+                  climbUuid={climb.uuid}
+                  boardName={boardName}
+                  layoutId={layoutId}
+                  sizeId={sizeId}
+                  setIds={setIds}
+                  angle={angle}
+                  onClimbPress={onSimilarClimbPress}
+                />
+              )}
+            </CollapsibleSection>
+          );
+          break;
+        default:
+          // A new id in BELOW_FOLD_SECTION_IDS stops compiling here until it gets a case,
+          // instead of drawing an empty wrapper. At run time it draws nothing.
+          sectionId satisfies never;
+          return null;
+      }
+      return (
+        <View key={sectionId} onLayout={isFirst ? handleFirstSectionLayout : undefined}>
+          {section}
+        </View>
+      );
+    },
+    [
+      firstSectionId,
+      readyToRender,
+      onFirstSectionHeaderLayout,
+      onFirstSectionToggle,
+      handleFirstSectionLayout,
+      t,
+      tClimbs,
+      climb,
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      logbookSummary,
+      climberLogsSummary,
+      betaVideosSummary,
+      boardseshSummary,
+      communitySummary,
+      similarSummary,
+      followState,
+      climbGradeId,
+      settled,
+      isAuthenticated,
+      brandColors.primary,
+      onAddBetaVideo,
+      handleAddBetaVideoPress,
+      onOpenFullLogbook,
+      onOpenClimberLogs,
+      onOpenClimberProfile,
+      onFindClimbers,
+      onSimilarClimbPress,
+    ],
+  );
+
+  if (!enabled || visibleSections.length === 0) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>

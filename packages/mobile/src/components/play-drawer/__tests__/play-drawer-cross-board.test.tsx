@@ -1048,6 +1048,25 @@ describe('PlayDrawer ⋯ menu', () => {
     expect(menuProps?.boardMismatch).toBe(true);
   });
 
+  it('offers Change angle in ⋯ only where the bar would show the angle pill', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const adjustable = renderDrawer();
+    expect(typeof recorded.actionsMenu.at(-1)?.onOpenAngle).toBe('function');
+    adjustable.unmount();
+    recorded.actionsMenu = [];
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+        isAngleAdjustable: false,
+      }),
+    );
+    expect(recorded.actionsMenu.at(-1)).toBeDefined();
+    expect(recorded.actionsMenu.at(-1)?.onOpenAngle).toBeUndefined();
+  });
+
   it('opens nothing ahead of a mismatch on the climber own board', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();

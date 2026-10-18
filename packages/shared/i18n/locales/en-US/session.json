@@ -318,7 +318,8 @@
       "waitingForDownload": "Similar climbs show up once {{name}} finishes downloading.",
       "downloadToSee": "Download this board to see similar climbs",
       "collapsedSummary": "Closest: {{name}}",
-      "collapsedDownload": "Download to see them"
+      "collapsedDownload": "Download to see them",
+      "collapsedEmpty": "None found"
     },
     "community": {
       "moderation": {

@@ -318,7 +318,8 @@
       "waitingForDownload": "Ähnliche Boulder erscheinen, sobald {{name}} fertig geladen ist.",
       "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen",
       "collapsedSummary": "Am ähnlichsten: {{name}}",
-      "collapsedDownload": "Zum Ansehen herunterladen"
+      "collapsedDownload": "Zum Ansehen herunterladen",
+      "collapsedEmpty": "Keine gefunden"
     },
     "community": {
       "moderation": {

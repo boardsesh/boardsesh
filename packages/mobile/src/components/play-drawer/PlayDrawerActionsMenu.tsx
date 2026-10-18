@@ -57,8 +57,12 @@ export type PlayDrawerActionsMenuProps = {
   onOpenViewOptions: () => void;
   /** The bar's mirror toggle, so the button and the row run the same thing. */
   onToggleMirror: () => void;
-  /** The player's own angle sheet, presented above `/play`. */
-  onOpenAngle: () => void;
+  /**
+   * The player's own angle sheet, presented above `/play`. Left out on a board
+   * whose angle is fixed, as the bar leaves out its angle pill there, so ⋯ never
+   * offers Change angle where there is nothing to change.
+   */
+  onOpenAngle?: () => void;
   /** Supplied only by the `/play` route; the persistent iPad pane has nothing to dismiss. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
 };
