@@ -83,7 +83,7 @@ JS-only changes go to `main` and reach climbers by OTA. A change that moves the 
 
 ## Test it
 
-Run `vp check`, `vp run typecheck:mobile`, `vp run test:mobile` and `vp run check:mobile-bundle`.
+Run `vp check`, `vp run typecheck:mobile`, `vp run test:mobile`, `vp run check:mobile-bundle` and `vp run check:mobile-simulator` (macOS only; it skips elsewhere).
 
 Then look at it:
 
@@ -104,7 +104,7 @@ Open it as a draft against the right branch. The description needs:
 - A Test plan of 1 to 5 steps, 12 words or fewer each: one tap, then what the tester sees.
 - A `Risk: N/5` line with the reason.
 
-Format and the tester loop: [docs/crowdsourced-qa.md](./crowdsourced-qa.md). Changes under `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/` or `packages/mobile/modules/live-activity/ios/` also need a maintainer review.
+Format and the tester loop: [docs/crowdsourced-qa.md](./crowdsourced-qa.md). Changes under `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/` or `packages/mobile/modules/live-activity/ios/` also need a Bluetooth review by Fable or Astra before merge. Ask a maintainer to arrange it; a normal maintainer review does not cover it.
 
 ## Getting reviewed
 
