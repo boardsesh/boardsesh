@@ -1,5 +1,7 @@
 ## Play View
 
+> **Legacy web spec.** The mobile app's lists, player and queue have moved on from this page. For how they behave today, and the model we are moving to, read [climb-lists-and-queue.md](../climb-lists-and-queue.md).
+
 The Play View is the primary interactive screen for viewing, navigating, and interacting with climbs. It is the most complex single screen in the app, combining board rendering, gesture navigation, tick logging, session management, queue control, and below-fold detail sections into a single cohesive experience.
 
 ---

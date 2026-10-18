@@ -1,5 +1,7 @@
 ## E. Global Persistent Queue Control Bar and Session Mini Bar
 
+> **Legacy web spec.** The mobile app's lists, player and queue have moved on from this page. For how they behave today, and the model we are moving to, read [climb-lists-and-queue.md](../climb-lists-and-queue.md).
+
 The Queue Control Bar is the most complex persistent UI element in the application. It sits between the main content area and the bottom tab bar on all board pages, provides swipe-based queue navigation, quick tick logging, session management, and serves as the primary surface users interact with throughout a climbing session. This section documents every layer, interaction, state transition, and visual behavior in the web implementation, then maps each to the React Native equivalent.
 
 ---

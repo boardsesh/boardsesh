@@ -1,5 +1,7 @@
 ## 7. Playlists / Library
 
+> **Legacy web spec.** The mobile app's lists, player and queue have moved on from this page. For how they behave today, and the model we are moving to, read [climb-lists-and-queue.md](../climb-lists-and-queue.md).
+
 ### 7.1 Library Main Page (`/playlists`)
 
 The library is the user's playlist hub, combining owned, pinned, smart, and community playlists into a scrollable discovery surface.

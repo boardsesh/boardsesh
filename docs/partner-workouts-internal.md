@@ -297,7 +297,7 @@ the workout to `started`. Then the blocks are turned into a queue:
 
 | Block type                                       | What runs it today                                                                                                                                   |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, `selectClimbsForPlan` fills it, `appendGeneratedSession` queues it |
+| `warmUp`, `volume`, `pyramid`, `ladder`, `gradeFocus` | The existing generator. Each maps onto a `GeneratorOptions` variant in `@boardsesh/playlist-generator`, `selectClimbsForPlan` fills it, `appendQueueItems` queues it |
 | `onTheMinute`                                    | One `gradeFocus` block for the climbs plus `armRestTimer('onTheMinute', ...)` with `intervalSeconds` as the target                                       |
 | `freeClimbing`, and any `freeform` block         | Nothing is queued. The block card stays visible in the in-session view with the instructions, and ticks land in the session as usual                    |
 | `fourByFour`, `limitBouldering`                  | Freeform until #5380. The card shows rounds and rests as text                                                                                            |
