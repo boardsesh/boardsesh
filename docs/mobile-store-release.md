@@ -456,10 +456,16 @@ Review submission and rollout are started by hand:
   the build after a successful commit: confirm it with **Mobile Store Android
   Audit** on the `production` track.
 
+Use the versionCode the store-draft workflow drafted: it is the current internal
+build. Play keeps only the newest completed internal release, so once a newer native
+build uploads, an older draft can no longer be released this way; release the newer
+build instead. After a build is released, the store-draft workflow's Android job
+reads the production track first (GET-only) and leaves it alone once that build is in
+review, rolling out or live, or when production carries a newer build.
+
 Until Android reaches production, the daily stable OTA controller has no Android
-devices to judge on that native runtime and holds its release at 50%
-(see `docs/mobile-ota-updates.md`, "Daily stable runbook"). Release Android
-promptly after its store draft appears.
+devices to judge on that native runtime. Release Android promptly after its store
+draft appears (see `docs/mobile-ota-updates.md`, "Daily stable runbook").
 
 Before submission, dispatch **Mobile Store Audit** (`mobile-store-audit.yml`) on
 `main` with the exact marketing version and iOS build number. It reads App Store
@@ -562,8 +568,11 @@ Connect before concluding that an items-only review slot is available.
 
 Android review remains a separate operation. Before sending a production release
 for review, verify managed publishing in Play Console and establish whether approval
-should publish immediately or wait. Existing metadata and draft lanes skip Android
-changelogs; deliver the reviewed notes explicitly. A release edit must coordinate
+should publish immediately or wait. The metadata and draft lanes do not upload
+Android changelogs. **Android Production Release** takes the release name and notes
+from the build's production draft when it has them (so notes edited by hand in Play
+Console survive), otherwise from its internal release, and lists the note languages
+in its receipt. A release edit must coordinate
 with every Play writer and commit with `changesInReviewBehavior=ERROR_IF_IN_REVIEW`
 so it cannot cancel an existing review by default.
 
@@ -585,7 +594,9 @@ after the shipped fingerprint moves on.
 4. Complete native QA against the exact uploaded candidates.
 5. Screenshots re-capture themselves after the native build (the probe decides
    whether to fan out); listing text pushes itself.
-6. Verify the store drafts select the tagged builds, then submit both manually.
+6. Verify the store drafts select the tagged builds. Submit the App Store version
+   for review by hand; release Android with **Android Production Release** (plan,
+   then `apply`).
 7. After approval, confirm both immutable release anchors were created, then
    if using a train, merge it into `main` as a **merge commit** and reset it.
 8. Re-record the homepage showcase video's app footage so the site shows the

@@ -531,8 +531,39 @@ jobs:
           assert_ref "tags/$EXPECTED_IOS_TAG" "$EXPECTED_IOS_SHA"
           assert_ref "tags/$EXPECTED_ANDROID_TAG" "$EXPECTED_ANDROID_SHA"
 
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      # fastlane's promote replaces the production track with this build as a
+      # draft. Once the build is in review, rolling out or live (Android
+      # Production Release), a later run must leave production alone. GET-only.
+      - name: Skip a build already released on production
+        id: guard
+        continue-on-error: true
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          ANDROID_VERSION_CODE: ${{ needs.release-candidate.outputs.android_version_code }}
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/mobile-store-android-draft-guard.ts ]; then
+            echo "::warning::This checkout predates the production draft guard; drafting as before."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          vp exec node --import tsx scripts/mobile-store-android-draft-guard.ts
+
+      - name: Warn if the production draft guard failed
+        if: steps.guard.outcome == 'failure'
+        run: echo "::warning::Could not read the Play production track, so the Play draft was not touched. Re-run after resolving."
+
       - name: Prepare Play Store draft release
         id: draft
+        if: steps.guard.outcome == 'success' && steps.guard.outputs.skip == 'false'
         continue-on-error: true
         working-directory: fastlane
         env:

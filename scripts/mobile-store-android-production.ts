@@ -45,9 +45,13 @@ function checkSummaries(internal: unknown, production: unknown, versionCode: num
  * supersedes the live one and drops any draft. Below 100% the build rolls out as
  * `inProgress` beside the current completed release, which keeps serving
  * everyone outside the fraction.
+ *
+ * The release name and notes come from the build's existing production release
+ * when it has them (the store-draft workflow's draft, perhaps edited by hand in
+ * Play Console), otherwise from its internal release.
  */
 function productionTrack(internalEdit: unknown, productionEdit: unknown, versionCode: number, rolloutPercent: number) {
-  const release = releaseFromInternalEdit(internalEdit, versionCode);
+  const internalRelease = releaseFromInternalEdit(internalEdit, versionCode);
   const current = editReleases(productionEdit, 'production');
   if (current.some((entry) => hasNewerVersionCode(entry, versionCode))) {
     throw new Error('Production edit contains a newer versionCode; refusing a downgrade');
@@ -55,6 +59,7 @@ function productionTrack(internalEdit: unknown, productionEdit: unknown, version
   const matches = current.filter((entry) => releaseVersionCodes(entry).includes(String(versionCode)));
   if (matches.length > 1) throw new Error('Production edit contains ambiguous releases for ANDROID_VERSION_CODE');
   const match = matches[0];
+  const release: JsonRecord = { ...internalRelease, ...(match ? releaseIdentity(match) : {}) };
 
   if (rolloutPercent === 100) {
     return { releases: [release], alreadyApplied: match?.['status'] === 'completed' };
@@ -64,6 +69,12 @@ function productionTrack(internalEdit: unknown, productionEdit: unknown, version
     throw new Error('ANDROID_VERSION_CODE is already completed on production; a staged rollout cannot shrink it');
   }
   const userFraction = rolloutPercent / 100;
+  const currentFraction = match?.['userFraction'];
+  if (typeof currentFraction === 'number' && userFraction < currentFraction) {
+    throw new Error(
+      `ANDROID_VERSION_CODE already rolls out to ${Math.round(currentFraction * 100)}%; a staged rollout cannot shrink it`,
+    );
+  }
   const fallback = current.filter(
     (entry) => entry['status'] === 'completed' && !releaseVersionCodes(entry).includes(String(versionCode)),
   );
@@ -109,6 +120,8 @@ export async function promoteAndroidProduction(options: {
   const internalEdit = await request(`${editPath}/tracks/internal`);
   const productionEdit = await request(`${editPath}/tracks/production`);
   const { releases, alreadyApplied } = productionTrack(internalEdit, productionEdit, versionCode, rolloutPercent);
+  const notes = releases[0]!['releaseNotes'];
+  const releaseNoteLanguages = Array.isArray(notes) ? notes.map((note) => (note as JsonRecord)['language']) : [];
   const alreadyPublished = productionReleases.some(
     (entry) =>
       entry.releaseLifecycleState === PUBLISHED &&
@@ -137,6 +150,7 @@ export async function promoteAndroidProduction(options: {
     versionCode,
     targetTrack: 'production',
     rolloutPercent,
+    releaseNoteLanguages,
     productionReleases: receipt,
     publicationVerified: matching.length === 1 && matching[0]!.releaseLifecycleState === PUBLISHED,
     message: 'Commit accepted; the release lifecycle receipt determines publication. Device delivery is not verified.',

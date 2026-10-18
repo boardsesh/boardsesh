@@ -264,6 +264,95 @@ describe('Android production release', () => {
     expect(fetchMock).toHaveBeenCalledTimes(8);
   });
 
+  it('plans against an empty production track (HTTP 204)', async () => {
+    mockResponses([summary(published()), new Response(null, { status: 204 })]);
+    expect(await promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION })).toMatchObject({
+      action: 'plan',
+      productionReleases: [],
+    });
+  });
+
+  it('keeps hand-edited draft notes and reports their languages', async () => {
+    const responses = applyResponses();
+    responses[4] = {
+      track: 'production',
+      releases: [
+        { status: 'completed', versionCodes: [String(LIVE)] },
+        {
+          name: '2.6.0 (Play)',
+          status: 'draft',
+          versionCodes: [String(VERSION)],
+          releaseNotes: [
+            { language: 'en-US', text: 'Reviewed notes' },
+            { language: 'de-DE', text: 'Geprüfte Notizen' },
+          ],
+        },
+      ],
+    };
+    const fetchMock = mockResponses(responses);
+    expect(await promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, apply: true })).toMatchObject({
+      releaseNoteLanguages: ['en-US', 'de-DE'],
+    });
+    expect(putBody(fetchMock).releases[0]).toEqual({
+      name: '2.6.0 (Play)',
+      status: 'completed',
+      versionCodes: [String(VERSION)],
+      releaseNotes: [
+        { language: 'en-US', text: 'Reviewed notes' },
+        { language: 'de-DE', text: 'Geprüfte Notizen' },
+      ],
+    });
+  });
+
+  it('completes a halted release of the same build at 100%', async () => {
+    const responses = applyResponses();
+    responses[4] = {
+      track: 'production',
+      releases: [
+        { status: 'halted', userFraction: 0.2, versionCodes: [String(VERSION)] },
+        { status: 'completed', versionCodes: [String(LIVE)] },
+      ],
+    };
+    const fetchMock = mockResponses(responses);
+    await promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, apply: true });
+    expect(putBody(fetchMock).releases).toEqual([
+      expect.objectContaining({ status: 'completed', versionCodes: [String(VERSION)] }),
+    ]);
+  });
+
+  it('refuses to lower a staged rollout', async () => {
+    const responses = applyResponses();
+    responses[4] = {
+      track: 'production',
+      releases: [
+        { status: 'inProgress', userFraction: 0.5, versionCodes: [String(VERSION)] },
+        { status: 'completed', versionCodes: [String(LIVE)] },
+      ],
+    };
+    const fetchMock = mockResponses(responses);
+    await expect(
+      promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, rolloutPercent: 20, apply: true }),
+    ).rejects.toThrow('already rolls out to 50%');
+    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false);
+  });
+
+  it('skips track writes when the same staged fraction is already PUBLISHED', async () => {
+    const responses = applyResponses().slice(0, 5);
+    responses[1] = summary(published(LIVE), published());
+    responses[4] = {
+      track: 'production',
+      releases: [
+        { status: 'inProgress', userFraction: 0.2, versionCodes: [String(VERSION)] },
+        { status: 'completed', versionCodes: [String(LIVE)] },
+      ],
+    };
+    const fetchMock = mockResponses(responses);
+    expect(
+      await promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION, rolloutPercent: 20, apply: true }),
+    ).toMatchObject({ action: 'already-released', rolloutStatus: 'inProgress' });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it('does not echo network errors containing credentials', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('secret-token')));
     await expect(promoteAndroidProduction({ accessToken: 'secret', versionCode: VERSION })).rejects.toThrow(

@@ -427,6 +427,7 @@ describe('native release workflow contracts', () => {
   // before (or instead of) the steps they name, so an indexOf/toContain version
   // of these checks reports on the comments rather than the pipeline.
   type WorkflowStep = {
+    id?: string;
     name?: string;
     run?: string;
     uses?: string;
@@ -666,5 +667,43 @@ describe('native release workflow contracts', () => {
       expect(podsCaches).toHaveLength(1);
       for (const cache of podsCaches) expect(cache.with).not.toHaveProperty('restore-keys');
     }
+  });
+
+  it('releases Android to production only from main, as a plan unless applied', () => {
+    const source = workflow('mobile-store-android-production.yml');
+    const parsed = parse(source) as {
+      on: { workflow_dispatch: { inputs: Record<string, { default?: unknown; required?: boolean }> } };
+      concurrency: { group: string };
+      jobs: Record<string, { if?: string; environment?: string }>;
+    };
+    expect(Object.keys(parsed.on)).toEqual(['workflow_dispatch']);
+    expect(parsed.on.workflow_dispatch.inputs['apply']?.default).toBe(false);
+    expect(parsed.on.workflow_dispatch.inputs['rollout_percent']?.default).toBe('100');
+    // Shares the native upload lock with the internal/beta uploads and the beta promotion.
+    expect(parsed.concurrency.group).toBe('android-apk-rn');
+    expect(parsed.jobs['release']?.if).toBe("github.ref == 'refs/heads/main'");
+    expect(parsed.jobs['release']?.environment).toBe('Production');
+    const submit = stepsOfJob(source, 'release').find(
+      (step) => step.name === 'Plan or submit the exact production build',
+    );
+    // Inputs reach the shell through env, never interpolated into the script.
+    expect(submit?.run).not.toContain('${{');
+    expect(submit?.env).toMatchObject({
+      VERSION_CODE: '${{ inputs.version_code }}',
+      ROLLOUT_PERCENT: '${{ inputs.rollout_percent }}',
+      APPLY: '${{ inputs.apply }}',
+    });
+  });
+
+  it('drafts Android on production only while the build has not been released there', () => {
+    const steps = stepsOfJob(draft, 'android');
+    const guard = steps.findIndex((step) => step.id === 'guard');
+    const prepare = steps.findIndex((step) => step.id === 'draft');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(prepare);
+    expect(steps[guard]?.run).toContain('scripts/mobile-store-android-draft-guard.ts');
+    // A guard that cannot read Play leaves the production track untouched.
+    expect(steps[guard]?.['continue-on-error']).toBe(true);
+    expect(steps[prepare]?.if).toBe("steps.guard.outcome == 'success' && steps.guard.outputs.skip == 'false'");
   });
 });

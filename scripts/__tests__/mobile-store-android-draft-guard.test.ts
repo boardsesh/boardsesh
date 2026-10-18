@@ -1,0 +1,57 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { checkProductionDraft, productionDraftDecision } from '../mobile-store-android-draft-guard';
+
+const VERSION = 2001310;
+const release = (versionCode: number, state: string) => ({
+  releaseLifecycleState: `RELEASE_LIFECYCLE_STATE_${state}`,
+  activeArtifacts: [{ versionCode }],
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('production draft guard', () => {
+  it('drafts while the build is only a draft beside the live release', () => {
+    expect(productionDraftDecision([release(2001108, 'PUBLISHED'), release(VERSION, 'DRAFT')], VERSION)).toMatchObject({
+      skip: false,
+    });
+    expect(productionDraftDecision([], VERSION).skip).toBe(false);
+  });
+
+  it.each(['NOT_SENT_FOR_REVIEW', 'IN_REVIEW', 'APPROVED_NOT_PUBLISHED', 'PUBLISHED'])(
+    'leaves production alone once the build is %s',
+    (state) => {
+      expect(productionDraftDecision([release(VERSION, state)], VERSION)).toMatchObject({
+        skip: true,
+        reason: expect.stringContaining(state),
+      });
+    },
+  );
+
+  it('refuses to draft over a newer released build', () => {
+    expect(productionDraftDecision([release(VERSION + 1, 'PUBLISHED')], VERSION)).toMatchObject({
+      skip: true,
+      reason: expect.stringContaining('downgrade'),
+    });
+  });
+
+  it('reads only the non-edit production summary', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ releases: [release(VERSION, 'IN_REVIEW')] })));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await checkProductionDraft({ accessToken: 'secret', versionCode: VERSION })).toMatchObject({ skip: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toMatch(/\/tracks\/production\/releases$/);
+    expect(fetchMock.mock.calls[0]![1]!.method).toBe('GET');
+  });
+
+  it('treats an empty production track (HTTP 204) as safe to draft', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 204 })));
+    expect(await checkProductionDraft({ accessToken: 'secret', versionCode: VERSION })).toMatchObject({ skip: false });
+  });
+
+  it('fails instead of guessing when Play errors', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('nope', { status: 500 })));
+    await expect(checkProductionDraft({ accessToken: 'secret', versionCode: VERSION })).rejects.toThrow('HTTP 500');
+  });
+});

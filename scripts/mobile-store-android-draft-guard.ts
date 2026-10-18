@@ -1,0 +1,64 @@
+/// <reference types="node" />
+
+// Decides whether the store-draft workflow may (re)draft an Android build on the
+// production track. fastlane's promote replaces the production track's releases
+// with the build as a draft, so once that build has been released (in review,
+// rolling out or live) a later store-draft run must leave production alone.
+// GET-only: reads the non-edit release summaries and never opens an edit.
+
+import { appendFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+import { createPlayRequest, trackSummaries } from './lib/google-play-tracks';
+import { createAuditAccessToken, parseExpectedVersionCode } from './mobile-store-android-audit';
+
+const DRAFT = 'RELEASE_LIFECYCLE_STATE_DRAFT';
+
+export function productionDraftDecision(
+  releases: ReturnType<typeof trackSummaries>,
+  versionCode: number,
+): { skip: boolean; reason: string } {
+  for (const release of releases) {
+    if (release.releaseLifecycleState === DRAFT) continue;
+    const codes = release.activeArtifacts.map((artifact) => artifact.versionCode);
+    if (codes.includes(versionCode)) {
+      return {
+        skip: true,
+        reason: `versionCode ${versionCode} is already past draft on production (${release.releaseLifecycleState}); leaving it alone.`,
+      };
+    }
+    if (codes.some((code) => code > versionCode)) {
+      return {
+        skip: true,
+        reason: `Production already carries a newer versionCode than ${versionCode}; refusing to draft a downgrade.`,
+      };
+    }
+  }
+  return { skip: false, reason: `versionCode ${versionCode} is not released on production yet; drafting is safe.` };
+}
+
+export async function checkProductionDraft(options: { accessToken: string; versionCode: number }) {
+  parseExpectedVersionCode(String(options.versionCode));
+  const request = createPlayRequest(options.accessToken, 'production draft guard');
+  const releases = trackSummaries(await request('/tracks/production/releases'), 'production');
+  return productionDraftDecision(releases, options.versionCode);
+}
+
+async function main() {
+  try {
+    const versionCode = parseExpectedVersionCode(process.env['ANDROID_VERSION_CODE'] ?? '');
+    const secret = process.env['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'];
+    if (!secret) throw new Error('Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON');
+    const decision = await checkProductionDraft({ accessToken: await createAuditAccessToken(secret), versionCode });
+    console.log(decision.reason);
+    if (process.env['GITHUB_OUTPUT']) appendFileSync(process.env['GITHUB_OUTPUT'], `skip=${decision.skip}\n`);
+    return 0;
+  } catch (error) {
+    console.error(`[mobile-store-android-draft-guard] ${error instanceof Error ? error.message : 'Operation failed'}`);
+    return 1;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main().then((exitCode) => process.exit(exitCode));
+}
