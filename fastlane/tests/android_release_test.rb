@@ -12,10 +12,10 @@ class AndroidReleaseTest < Minitest::Test
   end
 
   class FakePlay
-    attr_accessor :uploaded_code, :existing_codes, :fail_at, :fail_track, :fail_error
+    attr_accessor :uploaded_code, :existing_codes, :fail_at, :fail_track, :fail_error, :extra_tracks
     attr_reader :calls
     def initialize
-      @calls, @uploaded_code, @existing_codes = [], VERSION_CODE, [2_001_310]
+      @calls, @uploaded_code, @existing_codes, @extra_tracks = [], VERSION_CODE, [2_001_310], []
     end
     def invoke(name, *arguments)
       @calls << [name, *arguments]
@@ -29,7 +29,7 @@ class AndroidReleaseTest < Minitest::Test
       invoke(:list_edit_tracks, package, edit)
       AndroidReleaseTest.model(tracks: [AndroidReleaseTest.model(track: "production", releases: [
         AndroidReleaseTest.model(version_codes: @existing_codes)
-      ])])
+      ])] + @extra_tracks)
     end
     def upload_edit_bundle(package, edit, upload_source:, content_type:)
       invoke(:upload_edit_bundle, package, edit, upload_source, content_type)
@@ -127,6 +127,26 @@ class AndroidReleaseTest < Minitest::Test
       assert_includes error.message, "refusing a stale upload"
       assert_equal [:insert_edit, :list_edit_tracks], @play.calls.map(&:first)
     end
+  end
+
+  # Play lists releases that hold no build (a draft with no bundle, a release whose
+  # bundle moved to another track). They cannot make an upload stale.
+  def test_skips_releases_that_hold_no_build
+    @play.extra_tracks = [
+      self.class.model(track: "internal", releases: [self.class.model(version_codes: nil)]),
+      self.class.model(track: "beta", releases: [self.class.model(version_codes: [])])
+    ]
+    assert_equal "committed", runner.run["action"]
+    assert_includes @play.calls.map(&:first), :upload_edit_bundle
+  end
+
+  def test_still_refuses_a_newer_build_beside_a_release_without_one
+    @play.extra_tracks = [self.class.model(track: "beta", releases: [
+      self.class.model(version_codes: nil), self.class.model(version_codes: [VERSION_CODE + 1])
+    ])]
+    error = assert_raises(BoardseshAndroidRelease::Error) { runner.run }
+    assert_includes error.message, "on the beta track; refusing a stale upload"
+    assert_equal [:insert_edit, :list_edit_tracks], @play.calls.map(&:first)
   end
 
   def test_refuses_malformed_track_codes_before_upload

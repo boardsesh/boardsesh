@@ -103,15 +103,21 @@ module BoardseshAndroidRelease
       notes
     end
 
+    # Refuse a stale upload: any build Play already holds at this or a newer
+    # versionCode, on any track. A release with no versionCodes holds no build
+    # (Play returns those for a draft with no bundle yet, or a release whose
+    # bundle has moved to another track), so it cannot make this upload stale
+    # and is skipped. The first real tester upload (2026-10-18) aborted on one.
     def verify_track_ceilings(response)
       Array(response.tracks).each do |track|
+        name = track.track.to_s.match?(/\A[a-z0-9:_-]{1,64}\z/i) ? track.track : "unnamed"
         Array(track.releases).each do |release|
-          codes = Array(release.version_codes)
-          raise Error, "Google Play returned a release without versionCodes" if codes.empty?
-          codes.each do |code|
-            raise Error, "Google Play returned an invalid versionCode" unless code.to_s.match?(/\A[1-9]\d*\z/)
+          Array(release.version_codes).each do |code|
+            unless code.to_s.match?(/\A[1-9]\d*\z/)
+              raise Error, "Google Play returned an invalid versionCode on the #{name} track"
+            end
             if code.to_i >= @version_code
-              raise Error, "Google Play already contains this or a newer versionCode; refusing a stale upload"
+              raise Error, "Google Play already contains this or a newer versionCode on the #{name} track; refusing a stale upload"
             end
           end
         end
