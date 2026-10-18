@@ -4843,6 +4843,12 @@ describe('useBoardBluetooth serial recording', () => {
     mockBleManager.state.mockResolvedValue('PoweredOn');
   });
 
+  // clearAllMocks keeps return values. mockReset puts the file-level factory
+  // back, so a test added after this block never inherits a `request` spy.
+  afterEach(() => {
+    vi.mocked(getHttpClient).mockReset();
+  });
+
   async function connectAndCaptureRecording(boardUuid: string | undefined) {
     const request = vi.fn().mockResolvedValue({ recordBoardSerial: null });
     vi.mocked(getHttpClient).mockReturnValue({ request } as unknown as ReturnType<typeof getHttpClient>);

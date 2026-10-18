@@ -1727,8 +1727,9 @@ export function useBoardBluetooth({
               setIds,
               apiLevel: apiLevelRef.current,
               // A hidden board picked from a signed-out scan is geometry with
-              // uuid ''. The backend validates boardUuid as a UUID, so '' would
-              // fail the whole mutation and the serial mapping would never save.
+              // uuid ''. The backend's RecordBoardSerialInputSchema declares
+              // `boardUuid: UUIDSchema.optional()`, so '' would fail the whole
+              // mutation and the serial mapping would never save.
               boardUuid: boardUuid || undefined,
             });
           }
