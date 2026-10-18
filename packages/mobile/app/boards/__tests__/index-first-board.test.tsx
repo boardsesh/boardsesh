@@ -51,6 +51,7 @@ type ChoiceProps = {
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
+const quickstartHandle = vi.hoisted(() => ({ snapToIndex: vi.fn(), expand: vi.fn(), close: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn());
 const requestLocationMock = vi.hoisted(() => vi.fn());
 const refreshLocationMock = vi.hoisted(() => vi.fn());
@@ -274,12 +275,18 @@ vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
     );
   },
 }));
-vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
-  BluetoothQuickstartSheet: (props: QuickstartSheetProps) => {
-    quickstartProps.last = props;
-    return null;
-  },
-}));
+vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react');
+  return {
+    BluetoothQuickstartSheet: forwardRef<typeof quickstartHandle, QuickstartSheetProps>(
+      function QuickstartSheetMock(props, ref) {
+        useImperativeHandle(ref, () => quickstartHandle);
+        quickstartProps.last = props;
+        return null;
+      },
+    ),
+  };
+});
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
@@ -869,6 +876,20 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
       pathname: '/boards/create',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', preset: '1', presetBoardType: 'moonboard' },
     });
+  });
+
+  // `expand()` bypasses the sheet coordinator, so the hand-off wait would
+  // resolve at once and push the builder under a sheet that is still open.
+  it('opens the Bluetooth sheet through the coordinator, not expand()', () => {
+    state.params = {};
+    quickstartHandle.snapToIndex.mockClear();
+    quickstartHandle.expand.mockClear();
+    render(createElement(BoardSelection));
+    act(() => {
+      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
+    });
+    expect(quickstartHandle.snapToIndex).toHaveBeenCalledWith(0);
+    expect(quickstartHandle.expand).not.toHaveBeenCalled();
   });
 
   it("lands in the ordinary picker's nearby list too, filtered and labelled", () => {

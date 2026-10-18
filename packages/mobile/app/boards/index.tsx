@@ -739,7 +739,12 @@ export default function BoardSelection() {
 
   const onModeBluetooth = useCallback(() => {
     setBluetoothActive(true);
-    bluetoothSheetRef.current?.expand();
+    // Through the coordinator, not `expand()`: the managed handle passes
+    // `expand()` straight to the native sheet without recording it as
+    // presented, so a later `dismissSheetAndWait` would report "already
+    // dismissed" and hand off behind a sheet that is still open. The sheet has
+    // one detent, so index 0 is the same height `expand()` opened at.
+    bluetoothSheetRef.current?.snapToIndex(0);
   }, []);
 
   // Deliberate "create an owned board" flow: the full-screen builder (a home
