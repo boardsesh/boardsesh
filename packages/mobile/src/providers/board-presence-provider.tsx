@@ -226,6 +226,7 @@ async function uuidForResolvedBoard(
   resolveBoardForUuid: (args: { boardUuid: string }) => Promise<ResolvedBoard>,
   args: ResolveBoardUuidArgs,
   resolvedBoardId: number,
+  isStillCurrent: () => boolean,
 ): Promise<string | null> {
   // The seed transport answers every uuid with one sentinel id, so there is no
   // numeric id to compare against in a screenshot build.
@@ -237,9 +238,13 @@ async function uuidForResolvedBoard(
     // Unmerged: the stored numeric id was the stale half, and this uuid
     // resolved to its own row.
     if (canonicalUuid === args.boardUuid) return canonicalUuid;
+    // The second resolve stamps presence membership on the server, so it must
+    // not go out for a binding that a switch or a sign-out has retired.
+    if (!isStillCurrent()) return null;
     const canonical = await resolveBoardForUuid({ boardUuid: canonicalUuid });
     return canonical.boardId === resolvedBoardId ? canonicalUuid : null;
-  } catch {
+  } catch (error) {
+    console.warn('[board-presence] merged board uuid refresh failed; binding the numeric id alone', error);
     return null;
   }
 }
@@ -526,7 +531,17 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       const newResolution = beginResolution(resolutionKey, 'uuid');
       void resolveBoardForUuid({ boardUuid: args.boardUuid })
         .then(async (resolved) => {
-          const boardUuid = await uuidForResolvedBoard(resolveBoardForUuid, args, resolved.boardId);
+          // Same currency checks as the serial path: a retired binding sends no
+          // follow-up requests, and a credential change settles it empty.
+          const isStillCurrent = () =>
+            pendingBoardBindingResolutionRef.current === newResolution &&
+            isAuthCredentialGenerationCurrent(newResolution.credentialGeneration);
+          if (pendingBoardBindingResolutionRef.current !== newResolution) return;
+          if (!isAuthCredentialGenerationCurrent(newResolution.credentialGeneration)) {
+            settleActiveResolution(newResolution, null);
+            return;
+          }
+          const boardUuid = await uuidForResolvedBoard(resolveBoardForUuid, args, resolved.boardId, isStillCurrent);
           settleActiveResolution(newResolution, { boardId: resolved.boardId, ...(boardUuid ? { boardUuid } : {}) });
         })
         .catch((error: unknown) => {

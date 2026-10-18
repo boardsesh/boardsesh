@@ -1092,6 +1092,9 @@ describe('MobileBoardPresenceProvider', () => {
       renderProvider();
 
       expect(await bind({ boardUuid: LOSER, boardId: 12 })).toEqual({ boardId: 90, boardUuid: SURVIVOR });
+      // The refresh asks about the uuid the climber held; the survivor's uuid
+      // comes only from that answer.
+      expect(boardRead.fetchBoardByUuid.mock.calls).toEqual([[LOSER]]);
       expect(transport.resolveBoardForUuid).toHaveBeenLastCalledWith({ boardUuid: SURVIVOR });
       await waitFor(() => expect(sharedProvider.lastBoardUuid).toBe(SURVIVOR));
     });
@@ -1123,25 +1126,98 @@ describe('MobileBoardPresenceProvider', () => {
       expect(await bind({ boardUuid: LOSER, boardId: 12 })).toEqual({ boardId: 90 });
     });
 
-    it('never infers a uuid from a numeric id', async () => {
+    it('binds the numeric id alone, with a warning, when the refresh fails', async () => {
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       resolvedByUuid({ [LOSER]: 90 });
       boardRead.fetchBoardByUuid.mockRejectedValue(new Error('offline'));
       renderProvider();
 
-      expect(await bind({ boardUuid: LOSER, boardId: 12 })).toEqual({ boardId: 90 });
-      // The refresh asks about the uuid the climber held, never about a number.
-      expect(boardRead.fetchBoardByUuid.mock.calls).toEqual([[LOSER]]);
-      let configBinding: BoardBindingIdentity | null | undefined;
-      await act(async () => {
-        configBinding = await capturedControls?.resolveAndBindBoardByConfig({
-          boardType: 'moonboard',
-          layoutId: 1,
-          sizeId: 1,
-          setIds: '2019',
-        });
+      try {
+        expect(await bind({ boardUuid: LOSER, boardId: 12 })).toEqual({ boardId: 90 });
+        expect(consoleWarn).toHaveBeenCalledWith(
+          expect.stringContaining('[board-presence] merged board uuid refresh failed'),
+          expect.any(Error),
+        );
+      } finally {
+        consoleWarn.mockRestore();
+      }
+    });
+
+    // A switch or a sign-out during the first round trip retires the binding.
+    // Its follow-up reads must not go out: the second resolve stamps presence
+    // membership on the server under whoever is signed in by then.
+    function deferFirstResolve() {
+      let finish!: (board: ResolvedBoard) => void;
+      transport.resolveBoardForUuid.mockImplementationOnce(
+        () =>
+          new Promise<ResolvedBoard>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      return (boardId: number) => finish({ boardId, boardName: 'Wall' } as unknown as ResolvedBoard);
+    }
+
+    it('sends no board(uuid) read for a binding a sign-out retired mid-flight', async () => {
+      const finishFirstResolve = deferFirstResolve();
+      boardRead.fetchBoardByUuid.mockResolvedValue({ uuid: SURVIVOR });
+      renderProvider();
+
+      let binding: Promise<BoardBindingIdentity | null> | undefined;
+      act(() => {
+        binding = capturedControls?.resolveAndBindBoardByUuid({ boardUuid: LOSER, boardId: 12 });
       });
-      expect(configBinding).toEqual({ boardId: 43 });
-      expect(capturedControls?.boardUuid).toBeNull();
+      credentialScope.generation += 1;
+      await act(async () => {
+        finishFirstResolve(90);
+        expect(await binding).toBeNull();
+      });
+
+      expect(boardRead.fetchBoardByUuid).not.toHaveBeenCalled();
+      expect(transport.resolveBoardForUuid).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends no board(uuid) read for a binding a board switch retired mid-flight', async () => {
+      const finishFirstResolve = deferFirstResolve();
+      boardRead.fetchBoardByUuid.mockResolvedValue({ uuid: SURVIVOR });
+      renderProvider();
+
+      act(() => {
+        void capturedControls?.resolveAndBindBoardByUuid({ boardUuid: LOSER, boardId: 12 });
+      });
+      expect(await bind({ boardUuid: SURVIVOR })).toEqual({ boardId: 44, boardUuid: SURVIVOR });
+      await act(async () => {
+        finishFirstResolve(90);
+        await Promise.resolve();
+      });
+
+      expect(boardRead.fetchBoardByUuid).not.toHaveBeenCalled();
+      expect(sharedProvider.lastBoardId).toBe(44);
+    });
+
+    it('sends no second resolve when a sign-out lands during board(uuid)', async () => {
+      resolvedByUuid({ [LOSER]: 90, [SURVIVOR]: 90 });
+      let finishBoardRead!: (board: { uuid: string } | null) => void;
+      boardRead.fetchBoardByUuid.mockImplementationOnce(
+        () =>
+          new Promise<{ uuid: string } | null>((resolve) => {
+            finishBoardRead = resolve;
+          }),
+      );
+      renderProvider();
+
+      let binding: Promise<BoardBindingIdentity | null> | undefined;
+      act(() => {
+        binding = capturedControls?.resolveAndBindBoardByUuid({ boardUuid: LOSER, boardId: 12 });
+      });
+      await waitFor(() => expect(boardRead.fetchBoardByUuid).toHaveBeenCalledWith(LOSER));
+      credentialScope.generation += 1;
+      await act(async () => {
+        finishBoardRead({ uuid: SURVIVOR });
+        expect(await binding).toBeNull();
+      });
+
+      expect(transport.resolveBoardForUuid).not.toHaveBeenCalledWith({ boardUuid: SURVIVOR });
+      expect(sharedProvider.lastBoardUuid).toBeNull();
     });
   });
 });

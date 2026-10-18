@@ -86,6 +86,14 @@ describe('BoardOpenRecorder', () => {
     expect(recordMock).not.toHaveBeenCalled();
   });
 
+  // #6392: a hidden board kept through sign-in is geometry with uuid ''. The
+  // backend rejects '' as a UUID, so there is nothing to send.
+  it('records nothing for a hidden board kept as geometry', () => {
+    state.activeBoard = { uuid: '' };
+    render(createElement(BoardOpenRecorder));
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
   it('records nothing with no board', () => {
     state.activeBoard = undefined;
     render(createElement(BoardOpenRecorder));
