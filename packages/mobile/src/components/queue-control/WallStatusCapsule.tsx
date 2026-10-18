@@ -324,6 +324,7 @@ const styles = StyleSheet.create({
   },
   capsule: {
     flexShrink: 1,
+    minWidth: 0,
     maxWidth: '100%',
     height: CAPSULE_HEIGHT,
     borderRadius: CAPSULE_HEIGHT / 2,

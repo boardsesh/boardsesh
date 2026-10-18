@@ -178,12 +178,24 @@ vi.mock('../../../hooks/use-display-grade', () => ({
   }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+  Text: ({
+    children,
+    style,
+    numberOfLines,
+    ellipsizeMode,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    numberOfLines?: number;
+    ellipsizeMode?: string;
+  }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-lines': numberOfLines,
+        'data-ellipsize': ellipsizeMode,
       },
       children,
     ),
@@ -365,6 +377,9 @@ describe('WallStatusCapsule', () => {
     expect(avatarStyle.flexShrink).toBe(0);
     expect(gradeStyle.flexShrink).toBe(0);
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    // A capped title ends the name in an ellipsis instead of clipping it.
+    expect(getByText('Lightest Pair of Shorts').getAttribute('data-lines')).toBe('1');
+    expect(getByText('Lightest Pair of Shorts').getAttribute('data-ellipsize')).toBe('tail');
     fireEvent.click(getByText('Lightest Pair of Shorts'));
     expect(spies.openWallPreview).toHaveBeenCalledOnce();
   });

@@ -12,6 +12,9 @@ import { spacing } from '../../theme/tokens';
 
 import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './native-header-action-context';
 
+/** Widest the custom title gets, so a wide frame never shows a banner-length pill. */
+export const CENTER_CONTENT_MAX_WIDTH = 280;
+
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
 export function NativeRootHeader({
   title,
@@ -59,15 +62,18 @@ export function NativeRootHeader({
   // UIKit adds space around shared bar-item backgrounds that Yoga does not see.
   const frameWidth = useFrameSize((frame) => frame.width);
   const insets = useSafeAreaInsets();
+  // UIKit centres the title view, so it must clear the wider side on both
+  // sides: subtracting the two sides separately lets a long title slide under
+  // the bigger action group when the groups differ in size.
   const centerMaxWidth = centerActionWidths
-    ? Math.max(
-        0,
-        frameWidth -
-          insets.left -
-          insets.right -
-          centerActionWidths.leading -
-          centerActionWidths.trailing -
-          2 * (TOOLBAR_SIDE_MARGIN + TOOLBAR_GAP + 2 * spacing[1]),
+    ? Math.min(
+        CENTER_CONTENT_MAX_WIDTH,
+        Math.max(
+          0,
+          frameWidth -
+            2 * Math.max(insets.left + centerActionWidths.leading, insets.right + centerActionWidths.trailing) -
+            2 * (TOOLBAR_SIDE_MARGIN + TOOLBAR_GAP + 2 * spacing[1]),
+        ),
       )
     : undefined;
   const controlsHeight = useRef(0);

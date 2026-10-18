@@ -121,7 +121,7 @@ vi.mock('../../Avatar', () => ({
   Avatar: ({ size }: { size: number }) => createElement('span', { 'data-avatar-size': size }),
 }));
 
-import { NativeRootHeader } from '../NativeRootHeader';
+import { CENTER_CONTENT_MAX_WIDTH, NativeRootHeader } from '../NativeRootHeader';
 import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 import { GlassActionToolbar, GlassToolbarAction } from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
@@ -177,8 +177,12 @@ describe('NativeRootHeader', () => {
     // Raw action slots plus each side's gutter, native capsule outset and gap.
     const reservedLeading = 88 + 16 + 8 + 8;
     const reservedTrailing = 44 + 16 + 8 + 8;
-    expect(centerStyle.maxWidth).toBe(frameWidth - reservedLeading - reservedTrailing);
-    expect(Number(centerStyle.maxWidth) + reservedLeading + reservedTrailing).toBe(frameWidth);
+    const maxWidth = Number(centerStyle.maxWidth);
+    expect(maxWidth).toBe(Math.min(CENTER_CONTENT_MAX_WIDTH, frameWidth - 2 * reservedLeading));
+    // UIKit centres the title: its span must clear both action groups.
+    const titleStart = (frameWidth - maxWidth) / 2;
+    expect(titleStart).toBeGreaterThanOrEqual(reservedLeading);
+    expect(titleStart + maxWidth).toBeLessThanOrEqual(frameWidth - reservedTrailing);
     expect(centerStyle).toMatchObject({ minWidth: 0, flexShrink: 1 });
   });
 
@@ -198,7 +202,7 @@ describe('NativeRootHeader', () => {
       unmount();
       return width;
     };
-    expect(centerWidth()).toBe(194);
+    expect(centerWidth()).toBe(150);
     controls.frameWidth = 600;
     controls.horizontalInsets = { left: 59, right: 59 };
     rerender(
@@ -208,7 +212,7 @@ describe('NativeRootHeader', () => {
         onHeightChange={vi.fn()}
       />,
     );
-    expect(centerWidth()).toBe(286);
+    expect(centerWidth()).toBe(242);
   });
 
   it('retains the underlying route title when the climb drawer opens and closes', () => {
