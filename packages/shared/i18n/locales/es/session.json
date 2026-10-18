@@ -317,7 +317,8 @@
       "preparing": "Preparando bloques similares…",
       "waitingForDownload": "Los bloques similares aparecen en cuanto termine de descargarse {{name}}.",
       "downloadToSee": "Descarga este plafón para ver bloques similares",
-      "collapsedSummary": "El más parecido: {{name}}"
+      "collapsedSummary": "El más parecido: {{name}}",
+      "collapsedDownload": "Descárgalo para verlos"
     },
     "community": {
       "moderation": {

@@ -127,3 +127,30 @@ describe('CollapsibleSection collapsed header layout', () => {
     expect(cardStyle.backgroundColor).toBe('theme-tertiary-fill');
   });
 });
+
+describe('CollapsibleSection with a summary that draws itself', () => {
+  it('puts it in the summary slot as given, with the same share of the row as text', async () => {
+    const { CollapsibleSection } = await import('../CollapsibleSection');
+    const { container } = render(
+      <CollapsibleSection title={TITLE} summary={<b data-testid="marker-line">● I4 ● G8</b>}>
+        <div>SECTION_BODY</div>
+      </CollapsibleSection>,
+    );
+    const line = container.querySelector('[data-testid="marker-line"]');
+    expect(line?.textContent).toBe('● I4 ● G8');
+    // Not wrapped in the dimmed footnote: it brings its own colours.
+    expect(line?.closest('span')).toBeNull();
+    const slot = JSON.parse(line?.parentElement?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    expect(slot).toMatchObject({ flexGrow: 1, flexBasis: 0, flexShrink: 1, overflow: 'hidden' });
+  });
+
+  it('shows nothing for an empty summary', async () => {
+    const { CollapsibleSection } = await import('../CollapsibleSection');
+    const { container } = render(
+      <CollapsibleSection title={TITLE} summary="">
+        <div>SECTION_BODY</div>
+      </CollapsibleSection>,
+    );
+    expect(Array.from(container.querySelectorAll('span')).map((span) => span.textContent)).toEqual([TITLE]);
+  });
+});

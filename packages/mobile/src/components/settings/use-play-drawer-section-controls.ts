@@ -1,11 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  BELOW_FOLD_SECTION_IDS,
-  BOARD_SECTION_IDS,
   isDefaultPlayDrawerLayout,
   usePlayDrawerSectionsPreference,
-  type BelowFoldSectionId,
   type PlayDrawerSectionId,
 } from '../../lib/play-drawer-sections-preference';
 import type { SectionMoveDirection } from '../../lib/section-layout';
@@ -14,10 +11,6 @@ import type { MoreSection } from '../MoreForm.types';
 import type { SectionLayoutRowModel } from '../section-layout/SectionLayoutList';
 
 export type PlayDrawerSectionControl = SectionLayoutRowModel<PlayDrawerSectionId>;
-
-function isBelowFoldSection(sectionId: PlayDrawerSectionId): sectionId is BelowFoldSectionId {
-  return (BELOW_FOLD_SECTION_IDS as readonly PlayDrawerSectionId[]).includes(sectionId);
-}
 
 /** Shared order, labels and actions for Settings and the drawer's sheet. */
 export function usePlayDrawerSectionControls() {
@@ -53,12 +46,7 @@ export function usePlayDrawerSectionControls() {
       community: communityLabel,
       similarClimbs: similarClimbsLabel,
     };
-    // Board sections keep their place under the board: a switch and no arrows,
-    // ahead of the below-the-fold sections in the climber's order.
-    return [
-      ...BOARD_SECTION_IDS.map((id) => ({ id, label: labels[id], visible: sections[id], movable: false })),
-      ...order.map((id) => ({ id, label: labels[id], visible: sections[id], movable: true })),
-    ];
+    return order.map((id) => ({ id, label: labels[id], visible: sections[id], movable: true }));
   }, [
     sections,
     order,
@@ -79,7 +67,7 @@ export function usePlayDrawerSectionControls() {
   );
   const onMove = useCallback(
     (sectionId: PlayDrawerSectionId, direction: SectionMoveDirection): boolean => {
-      if (!ready || !isBelowFoldSection(sectionId)) return false;
+      if (!ready) return false;
       return move(sectionId, direction);
     },
     [ready, move],

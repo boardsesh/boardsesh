@@ -46,8 +46,6 @@ vi.mock('../../use-ios-sheet-background-style', () => ({
 vi.mock('../../../lib/play-drawer-sections-preference', () => {
   const order = ['logbook', 'climberLogs', 'setterNotes', 'betaVideos', 'boardseshGrade', 'community', 'similarClimbs'];
   return {
-    BOARD_SECTION_IDS: [],
-    BELOW_FOLD_SECTION_IDS: order,
     PLAY_DRAWER_SECTION_IDS: order,
     isDefaultPlayDrawerLayout: ({ sections, order: current }: { sections: Record<string, boolean>; order: string[] }) =>
       Object.values(sections).every(Boolean) && current.join() === order.join(),

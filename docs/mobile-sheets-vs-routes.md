@@ -291,14 +291,24 @@ bundle still reads the switches; if it writes the record, the order goes back to
 default and the switches survive. `order` is left out while it matches the default, so a
 later release's default order still reaches climbers who never moved anything. Writes keep
 fields, switches and ordered ids this bundle does not know (an unknown id goes back after
-the id it followed), so a newer bundle's sections survive an OTA rollback and an edit. Only the below-the-fold ids (`BELOW_FOLD_SECTION_IDS`) are ordered; the
-`BOARD_SECTION_IDS` group, empty today, is for switch-only rows that sit under the board
-and never move. The pure rules live in `src/lib/section-layout.ts` (a section the stored
+the id it followed), so a newer bundle's sections survive an OTA rollback and an edit.
+Every section with a switch is below the fold and ordered (`BELOW_FOLD_SECTION_IDS`). The
+pure rules live in `src/lib/section-layout.ts` (a section the stored
 order lacks slots in after the one it follows in the defaults);
 `src/lib/section-layout-store.ts` keeps the same layout in the synchronous settings store
 for surfaces that must know it before the first frame: one store per key, the only writer of
 that key, re-reading it on every settings change, and storing `null` for the defaults unless
 a later release's ids still need a home.
+
+Any section can be the peek at the fold, so each says something while collapsed: Logbook
+your ticks at this angle (plus crew and other angles), Climber logs the crew counts,
+Setter's notes their first line, Beta Videos a count or "None yet", Boardsesh grade its
+grade, Community the angle with the most sends, Similar climbs the closest match by name
+(or that the board needs downloading). `CollapsibleSection`'s `summary` also takes a React
+node for a line that draws itself. Only the on-screen peek may ask for what its line needs,
+once the climb has settled; a section further down shows a line only from what is cached
+and asks for nothing until the climber scrolls to it. The Climber logs card straight under
+a Logbook peek keeps its head start.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
