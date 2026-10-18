@@ -200,6 +200,9 @@ export const iconMap = {
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
   'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },
+  // Move a row one place up or down a list the climber orders.
+  'arrow.up': { ios: 'arrow.up', android: 'arrow-up' },
+  'arrow.down': { ios: 'arrow.down', android: 'arrow-down' },
 
   // Math
   minus: { ios: 'minus', android: 'minus' },

@@ -433,11 +433,12 @@
         "leaveDeferred": "Zurückwechseln geht noch nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
       },
       "climbDrawer": {
-        "description": "Wähle, was du unter dem Boulder siehst.",
-        "settingsFooter": "Wähle, was du unter dem Boulder siehst. Du kannst das auch im Menü ⋯ eines Boulders unter Ansichtsoptionen ändern.",
+        "description": "Wähle, was du unter dem Boulder siehst und in welcher Reihenfolge.",
+        "settingsFooter": "Wähle, was du unter dem Boulder siehst. Die Reihenfolge änderst du im Menü ⋯ eines Boulders unter Ansichtsoptionen.",
         "loading": "Ansichtsoptionen werden geladen…",
         "hideAll": "Alles ausblenden",
         "showAll": "Alles anzeigen",
+        "restoreDefaults": "Standard wiederherstellen",
         "sections": {
           "logbook": "Routenbuch",
           "climberLogs": "Einträge von Kletterer*innen",
@@ -450,6 +451,11 @@
         "sheetTitle": "Ansichtsoptionen",
         "groupTitle": "Unter dem Boulder",
         "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen."
+      },
+      "sectionLayout": {
+        "moveUp": "{{section}} nach oben verschieben",
+        "moveDown": "{{section}} nach unten verschieben",
+        "moved": "{{section}}, {{position}} von {{count}}"
       },
       "climbList": {
         "title": "Boulderliste",

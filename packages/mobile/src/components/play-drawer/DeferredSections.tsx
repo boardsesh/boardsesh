@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
@@ -37,7 +37,9 @@ import { useDeferredAfterInteractions } from '../../hooks/use-deferred-after-int
 import { useClimbSettled } from '../../hooks/use-climb-settled';
 import { BETA_SHELF_SECTION_KEY } from '../../lib/beta-shelf-collapse';
 import {
+  DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   DEFAULT_PLAY_DRAWER_SECTIONS,
+  type BelowFoldSectionId,
   type PlayDrawerSectionsVisibility,
 } from '../../lib/play-drawer-sections-preference';
 import { visiblePlayDrawerSections } from './play-drawer-sections';
@@ -52,6 +54,8 @@ type DeferredSectionsProps = {
   enabled: boolean;
   contentEnabled: boolean;
   sections?: PlayDrawerSectionsVisibility;
+  /** The climber's order for the sections below the fold. */
+  order?: readonly BelowFoldSectionId[];
   onSimilarClimbPress: (climb: Climb) => void;
   /** Reports the measured height of the first visible section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
@@ -110,6 +114,7 @@ export const DeferredSections = memo(function DeferredSections({
   enabled,
   contentEnabled,
   sections = DEFAULT_PLAY_DRAWER_SECTIONS,
+  order = DEFAULT_PLAY_DRAWER_SECTION_ORDER,
   onSimilarClimbPress,
   onFirstSectionHeaderLayout,
   onFirstSectionLayout,
@@ -128,6 +133,7 @@ export const DeferredSections = memo(function DeferredSections({
   const boardseshGradeEnabled = useBoardseshGradeEnabled();
   const visibleSections = visiblePlayDrawerSections({
     sections,
+    order,
     isAuthenticated,
     boardseshGradeEnabled,
     description: climb.description,
@@ -324,21 +330,25 @@ export const DeferredSections = memo(function DeferredSections({
     return null;
   }
 
-  // The first enabled header is eager so there is always a reachable scroll hint.
-  // Other headers and heavy bodies still wait for real scrolling / an explicit expand.
-  return (
-    <View style={styles.container}>
-      {showClimberLogs && (
-        <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
-      )}
-      {showLogbook && (
-        <View onLayout={firstSectionId === 'logbook' ? handleFirstSectionLayout : undefined}>
+  // One wrapper per section, in the climber's order. The first visible header
+  // mounts at once so there is always a reachable scroll hint at the fold; every
+  // other section, Logbook included when it is not first, waits for real
+  // scrolling and the interaction defer. Heavy bodies wait for both.
+  const renderSection = (sectionId: BelowFoldSectionId) => {
+    const isFirst = firstSectionId === sectionId;
+    if (!readyToRender && !isFirst) return null;
+    const onHeaderLayout = isFirst ? onFirstSectionHeaderLayout : undefined;
+    const onToggle = isFirst ? onFirstSectionToggle : undefined;
+    let section: ReactNode;
+    switch (sectionId) {
+      case 'logbook':
+        section = (
           <CollapsibleSection
             title={t('mobile.logbook.title')}
             summary={logbookSummary}
             persistKey="logbook"
-            onHeaderLayout={firstSectionId === 'logbook' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'logbook' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           >
             <LogbookSection
               climbUuid={climb.uuid}
@@ -350,17 +360,17 @@ export const DeferredSections = memo(function DeferredSections({
               onOpenFullLogbook={onOpenFullLogbook}
             />
           </CollapsibleSection>
-        </View>
-      )}
-      {showClimberLogs && (readyToRender || firstSectionId === 'climberLogs') && (
-        <View onLayout={firstSectionId === 'climberLogs' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'climberLogs':
+        section = (
           <CollapsibleSection
             title={t('mobile.climberLogs.title')}
             summary={climberLogsSummary}
             defaultExpanded
             persistKey="climberLogs"
-            onHeaderLayout={firstSectionId === 'climberLogs' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'climberLogs' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           >
             {readyToRender && followState !== 'none-yet' && (
               <ClimberLogsSection
@@ -376,26 +386,26 @@ export const DeferredSections = memo(function DeferredSections({
               />
             )}
           </CollapsibleSection>
-        </View>
-      )}
-      {visibleSections.includes('setterNotes') && (readyToRender || firstSectionId === 'setterNotes') && (
-        <View onLayout={firstSectionId === 'setterNotes' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'setterNotes':
+        section = (
           <SetterNotesSection
             description={climb.description}
             contentEnabled={readyToRender}
-            onHeaderLayout={firstSectionId === 'setterNotes' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'setterNotes' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           />
-        </View>
-      )}
-      {visibleSections.includes('betaVideos') && (readyToRender || firstSectionId === 'betaVideos') && (
-        <View onLayout={firstSectionId === 'betaVideos' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'betaVideos':
+        section = (
           <CollapsibleSection
             title={t('mobile.betaVideos.title')}
             defaultExpanded
             persistKey={BETA_SHELF_SECTION_KEY}
-            onHeaderLayout={firstSectionId === 'betaVideos' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'betaVideos' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
             headerAction={
               isAuthenticated && onAddBetaVideo ? (
                 <PressableSurface
@@ -415,30 +425,30 @@ export const DeferredSections = memo(function DeferredSections({
           >
             {readyToRender && <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />}
           </CollapsibleSection>
-        </View>
-      )}
-      {visibleSections.includes('boardseshGrade') && (readyToRender || firstSectionId === 'boardseshGrade') && (
-        <View onLayout={firstSectionId === 'boardseshGrade' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'boardseshGrade':
+        section = (
           <CollapsibleSection
             title={tClimbs('boardseshGrade.title')}
             summary={boardseshSummary}
             defaultExpanded
             persistKey="boardseshGrade"
-            onHeaderLayout={firstSectionId === 'boardseshGrade' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'boardseshGrade' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           >
             {readyToRender && <BoardseshGradeSection climbUuid={climb.uuid} boardName={boardName} angle={angle} />}
           </CollapsibleSection>
-        </View>
-      )}
-      {visibleSections.includes('community') && (readyToRender || firstSectionId === 'community') && (
-        <View onLayout={firstSectionId === 'community' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'community':
+        section = (
           <CollapsibleSection
             title={t('mobile.community.title')}
             defaultExpanded
             persistKey="community"
-            onHeaderLayout={firstSectionId === 'community' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'community' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           >
             {readyToRender && (
               <CommunitySection
@@ -452,15 +462,15 @@ export const DeferredSections = memo(function DeferredSections({
               />
             )}
           </CollapsibleSection>
-        </View>
-      )}
-      {visibleSections.includes('similarClimbs') && (readyToRender || firstSectionId === 'similarClimbs') && (
-        <View onLayout={firstSectionId === 'similarClimbs' ? handleFirstSectionLayout : undefined}>
+        );
+        break;
+      case 'similarClimbs':
+        section = (
           <CollapsibleSection
             title={t('mobile.similarClimbs.title')}
             persistKey="similarClimbs"
-            onHeaderLayout={firstSectionId === 'similarClimbs' ? onFirstSectionHeaderLayout : undefined}
-            onToggle={firstSectionId === 'similarClimbs' ? onFirstSectionToggle : undefined}
+            onHeaderLayout={onHeaderLayout}
+            onToggle={onToggle}
           >
             {readyToRender && (
               <SimilarClimbsSection
@@ -474,8 +484,22 @@ export const DeferredSections = memo(function DeferredSections({
               />
             )}
           </CollapsibleSection>
-        </View>
+        );
+        break;
+    }
+    return (
+      <View key={sectionId} onLayout={isFirst ? handleFirstSectionLayout : undefined}>
+        {section}
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      {showClimberLogs && (
+        <ClimbLogsPreviewRequest boardName={boardName} climbUuid={climb.uuid} enabled={everyoneLogsWanted} />
       )}
+      {visibleSections.map(renderSection)}
     </View>
   );
 });

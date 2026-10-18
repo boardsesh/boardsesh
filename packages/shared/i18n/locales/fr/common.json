@@ -433,11 +433,12 @@
         "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       },
       "climbDrawer": {
-        "description": "Choisis ce que tu vois sous le bloc.",
-        "settingsFooter": "Choisis ce que tu vois sous le bloc. Tu peux aussi le changer depuis le menu ⋯ d’un bloc, dans Options d’affichage.",
+        "description": "Choisis ce que tu vois sous le bloc, et dans quel ordre.",
+        "settingsFooter": "Choisis ce que tu vois sous le bloc. Pour changer l’ordre, ouvre le menu ⋯ d’un bloc et choisis Options d’affichage.",
         "loading": "Chargement des options d’affichage…",
         "hideAll": "Tout masquer",
         "showAll": "Tout afficher",
+        "restoreDefaults": "Rétablir les réglages par défaut",
         "sections": {
           "logbook": "Carnet",
           "climberLogs": "Entrées des grimpeurs",
@@ -450,6 +451,11 @@
         "sheetTitle": "Options d’affichage",
         "groupTitle": "Sous le bloc",
         "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical."
+      },
+      "sectionLayout": {
+        "moveUp": "Monter {{section}}",
+        "moveDown": "Descendre {{section}}",
+        "moved": "{{section}}, {{position}} sur {{count}}"
       },
       "climbList": {
         "title": "Liste des blocs",

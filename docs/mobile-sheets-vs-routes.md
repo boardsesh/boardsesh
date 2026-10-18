@@ -256,7 +256,7 @@ work and native QA before claiming that contract works on Android.
 ### Play drawer section controls
 
 Settings → Climbs & grades → Below the climb and the player's ⋯ → View options use the same seven visibility
-switches. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
+switches, listed in the climber's order. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
 `[⌄] ━━━ [rest timer][⋯]`, in the route, the iPad pane and the web pane alike. The top
@@ -277,7 +277,24 @@ ready at once (no read to wait for), so a member's Hide all left in the same bro
 can't strand them with nothing below the board. Every other viewer, a guest without an
 account included, keeps the stored choices, because ⋯ → View options and Settings →
 Climbs & grades → Below the climb both write them. These device-local choices use AsyncStorage (IndexedDB in
-the browser) and keep each section's existing expansion preference and order.
+the browser) and keep each section's existing expansion preference.
+
+The climber also orders the seven sections below the fold. Each sheet row carries ↑/↓
+arrows (44-point buttons named "Move Logbook up" and so on, disabled at the ends; a move
+announces the new place), drawn by the shared `SectionLayoutList`. A hidden section keeps
+its place, so showing it again puts it back. Restore defaults, under the list, brings back
+today's switches and order together. Settings lists the switches in the saved order and
+has Restore defaults too, but the order only changes in View options: Settings stays on
+the native form. Order and switches share the `playDrawerSections` record,
+`{ version: 1, sections, order }`. `order` came later under the same version, so an older
+bundle still reads the switches; if it writes the record, the order goes back to the
+default and the switches survive. Writes keep fields and section ids this bundle does not
+know. Only the below-the-fold ids (`BELOW_FOLD_SECTION_IDS`) are ordered; the
+`BOARD_SECTION_IDS` group, empty today, is for switch-only rows that sit under the board
+and never move. The pure rules live in `src/lib/section-layout.ts` (a section the stored
+order lacks slots in after the one it follows in the defaults);
+`src/lib/section-layout-store.ts` keeps the same layout in the synchronous settings store
+for surfaces that must know it before the first frame.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.

@@ -705,11 +705,12 @@
         "leaveDeferred": "Todavía no se puede volver. Lo intentaremos la próxima vez que abras la app."
       },
       "climbDrawer": {
-        "description": "Elige qué ves debajo del bloque.",
-        "settingsFooter": "Elige qué ves debajo del bloque. También puedes cambiarlo desde el menú ⋯ de un bloque, en Opciones de vista.",
+        "description": "Elige qué ves debajo del bloque y en qué orden.",
+        "settingsFooter": "Elige qué ves debajo del bloque. Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
         "loading": "Cargando opciones de vista…",
         "hideAll": "Ocultar todo",
         "showAll": "Mostrar todo",
+        "restoreDefaults": "Restablecer valores predeterminados",
         "sections": {
           "logbook": "Logbook",
           "climberLogs": "Registros de escaladores",
@@ -722,6 +723,11 @@
         "sheetTitle": "Opciones de vista",
         "groupTitle": "Debajo del bloque",
         "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical."
+      },
+      "sectionLayout": {
+        "moveUp": "Subir {{section}}",
+        "moveDown": "Bajar {{section}}",
+        "moved": "{{section}}, {{position}} de {{count}}"
       },
       "climbList": {
         "title": "Lista de bloques",
