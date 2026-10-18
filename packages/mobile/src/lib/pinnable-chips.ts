@@ -12,8 +12,14 @@
 // NOT in the defaults, so the row is unchanged until a user pins one). The
 // remaining sheet-only controls (setters, holds, zones) are a later fast-follow
 // because they open a full picker rather than switching a value in place.
+//
+// 'recent' is the saved-searches menu (#6288). It backs no filter, and it shows
+// only while there are saved searches, but it pins like any chip so a climber
+// who never uses it can hide it. It is pinned by default, and a list saved
+// before it was pinnable gains it on load (see fromStoredPinnedChips).
 
 export const PINNABLE_CHIP_KINDS = [
+  'recent',
   'grade',
   'accuracy',
   'progress',
@@ -30,14 +36,17 @@ export const PINNABLE_CHIP_KINDS = [
 export type PinnableChipKind = (typeof PINNABLE_CHIP_KINDS)[number];
 
 // Fixed canonical order the chips render in, regardless of pin/unpin sequence.
-// Grouped to mirror the sheet's section order: accuracy sits by grade, climbType
-// by Tall/Wide (all "The Climb"), beta after Wide, sort last.
+// Recent leads, right after the fixed Filters button, as it always has. The rest
+// mirror the sheet's section order: accuracy sits by grade, climbType by
+// Tall/Wide (all "The Climb"), beta after Wide, sort last.
 export const PINNABLE_CHIP_CATALOG: readonly PinnableChipKind[] = PINNABLE_CHIP_KINDS;
 
-// Default pins = exactly the Tier-1 chips, so existing users see the same row
-// they have today. The Tier-2 controls (accuracy, climbType, beta, sort) are
-// pinnable but opt-in — unpinned until a user turns them on in the sheet.
+// Default pins = Recent plus exactly the Tier-1 chips, so existing users see the
+// same row they have today. The Tier-2 controls (accuracy, climbType, beta,
+// sort) are pinnable but opt-in — unpinned until a user turns them on in the
+// sheet.
 export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
+  'recent',
   'grade',
   'progress',
   'collection',
@@ -80,6 +89,30 @@ export function normalizePinnedChips(kinds: readonly unknown[]): PinnableChipKin
 }
 
 /**
+ * Saved in place of 'recent' when the climber has unpinned Recent. A list saved
+ * before Recent was pinnable has neither, so the two cases stay apart: the
+ * marker means "hidden on purpose", no mention means "an older list, keep
+ * today's Recent". It is not a valid kind, so {@link normalizePinnedChips} and
+ * every older bundle drop it.
+ */
+export const RECENT_UNPINNED_MARKER = '!recent';
+
+/**
+ * Loads a stored pin payload. Same as {@link normalizePinnedChips}, plus one
+ * migration: a list saved before Recent was pinnable (it holds neither 'recent'
+ * nor {@link RECENT_UNPINNED_MARKER}) gains 'recent', so nobody loses the chip
+ * by updating. Nothing valid left returns `[]`, so the store still falls back to
+ * the full defaults instead of a row of Recent alone. Load-only: running it on
+ * a fresh pin change would re-add a Recent the climber just unpinned.
+ */
+export function fromStoredPinnedChips(stored: readonly unknown[]): PinnableChipKind[] {
+  const pins = normalizePinnedChips(stored);
+  if (pins.length === 0) return pins;
+  const savedBeforeRecentPin = !stored.includes('recent') && !stored.includes(RECENT_UNPINNED_MARKER);
+  return savedBeforeRecentPin ? normalizePinnedChips([...pins, 'recent']) : pins;
+}
+
+/**
  * The payload to persist for a pinned set. When BOTH Tall and Wide are pinned it
  * also carries the retired 'shape' kind right after 'wide', so an older bundle
  * that only knows the Shape menu chip (a tester switching back from a PR
@@ -87,10 +120,18 @@ export function normalizePinnedChips(kinds: readonly unknown[]): PinnableChipKin
  * it. {@link normalizePinnedChips} folds that 'shape' back into Tall + Wide, so
  * this bundle ignores the duplicate. With only one of them pinned there's no
  * 'shape': writing it would make this bundle re-add the one the user unpinned.
+ *
+ * With Recent unpinned it ends with {@link RECENT_UNPINNED_MARKER}, so the next
+ * load keeps Recent hidden instead of treating the list as one saved before
+ * Recent was pinnable.
  */
 export function toStoredPinnedChips(kinds: readonly PinnableChipKind[]): string[] {
-  if (!kinds.includes('tall') || !kinds.includes('wide')) return [...kinds];
-  return kinds.flatMap((kind) => (kind === 'wide' ? [kind, LEGACY_SHAPE_KIND] : [kind]));
+  const stored: string[] =
+    kinds.includes('tall') && kinds.includes('wide')
+      ? kinds.flatMap((kind) => (kind === 'wide' ? [kind, LEGACY_SHAPE_KIND] : [kind]))
+      : [...kinds];
+  if (!kinds.includes('recent')) stored.push(RECENT_UNPINNED_MARKER);
+  return stored;
 }
 
 /**
@@ -106,6 +147,9 @@ export function toStoredPinnedChips(kinds: readonly PinnableChipKind[]): string[
  */
 export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
   switch (kind) {
+    case 'recent':
+      // Saved searches, not a filter: there is no token to claim.
+      return [];
     case 'grade':
       return ['grade'];
     case 'accuracy':

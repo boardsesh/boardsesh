@@ -497,6 +497,7 @@
       },
       "pinChip": "{{name}} oben in der Leiste anpinnen",
       "unpinChip": "{{name}} aus der oberen Leiste entfernen",
+      "recentDescription": "Deine letzten 10 Suchen. Entfernen löscht sie nicht.",
       "established2plus": "Etabliert 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",

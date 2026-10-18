@@ -230,8 +230,45 @@ describe('buildClimbCapsules: Recent', () => {
     },
   ];
 
+  const keysOf = (overrides: Partial<FilterChipRowProps>) =>
+    buildClimbCapsules(makeProps(overrides), mockT).map(({ key }) => key);
+  const withoutRecent = DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent');
+
   it('is hidden with no saved searches', () => {
     expect(buildClimbCapsules(makeProps(), mockT).some(({ key }) => key === 'recent')).toBe(false);
+  });
+
+  it('shows right after Filters while pinned and there are saved searches', () => {
+    expect(keysOf({ recentFilters: recents })).toEqual([
+      'filters',
+      'recent',
+      'grade',
+      'progress',
+      'collection',
+      'popularity',
+      'rating',
+    ]);
+  });
+
+  it('is hidden while unpinned, saved searches or not, and every other chip stays put', () => {
+    const otherChips = ['filters', 'grade', 'progress', 'collection', 'popularity', 'rating'];
+    expect(keysOf({ pinnedChips: withoutRecent, recentFilters: recents })).toEqual(otherChips);
+    expect(keysOf({ pinnedChips: withoutRecent, recentFilters: [] })).toEqual(otherChips);
+    // Pinned with nothing saved: the row is the same as unpinned.
+    expect(keysOf({ recentFilters: [] })).toEqual(otherChips);
+  });
+
+  it('draws the other chips the same whether Recent is pinned or not', () => {
+    const others = (capsules: Capsule[]) => summarize(capsules.filter(({ key }) => key !== 'recent'));
+    const pinned = buildClimbCapsules(makeProps({ pinnedChips: PINNABLE_CHIP_CATALOG, recentFilters: recents }), mockT);
+    const unpinned = buildClimbCapsules(
+      makeProps({
+        pinnedChips: PINNABLE_CHIP_CATALOG.filter((kind) => kind !== 'recent'),
+        recentFilters: recents,
+      }),
+      mockT,
+    );
+    expect(others(unpinned)).toEqual(others(pinned));
   });
 
   it('checks the saved search in force and re-applies any tap, the checked one too', () => {

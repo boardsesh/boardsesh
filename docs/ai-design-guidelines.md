@@ -516,7 +516,7 @@ surface passes final, localised labels and bound handlers. Five kinds (`CapsuleR
 
 | Kind         | What a tap does                                          | Example              |
 | ------------ | -------------------------------------------------------- | -------------------- |
-| `sheet`      | Opens a sheet or picker the screen presents              | Filters · 2, Angle   |
+| `sheet`      | Opens a sheet or picker the screen presents              | Filters · 2, Setter  |
 | `rail`       | Shows or hides an inline rail under the row              | Grade                |
 | `menu`       | Single-select menu; extra commands after a divider       | Popularity, Recent   |
 | `toggle`     | Flips an on/off filter                                   | Beta videos          |
@@ -544,12 +544,21 @@ surface passes final, localised labels and bound handlers. Five kinds (`CapsuleR
   later.
 
 **Pins.** Which capsules show is the climber's choice, saved per surface by a store from
-`createPinnedChipsStore({ storageKey, catalog, defaults, normalize?, toStored? })`
+`createPinnedChipsStore({ storageKey, catalog, defaults, normalize?, fromStored?, toStored? })`
 (`src/lib/pinned-chips-store.ts`). Each store has its own key, state and listeners, and its hook
 returns `{ pinned, loaded, isPinned, togglePin }`. Climbs uses the key `pinnedFilterChips` and its
 catalog in `src/lib/pinnable-chips.ts`; `normalize` is where a retired kind migrates (a stored
-`shape` pin becomes Tall + Wide). An active filter whose capsule isn't pinned still shows as a
-removable token under the row, so a filtered list always says why.
+`shape` pin becomes Tall + Wide). `fromStored` runs on load only, for a migration that must not
+run when a pin changes. An active filter whose capsule isn't pinned still shows as a removable
+token under the row, so a filtered list always says why.
+
+Climbs' Recent menu (saved searches) is a pinnable kind too, first in the catalog and pinned by
+default, with its pin under Climb name in Filters. It still shows only while there are saved
+searches, and unpinning it never deletes them. Every list saved before Recent was pinnable lacks
+it, so the climbs `fromStored` adds `recent` to a list that holds neither `recent` nor the
+`!recent` marker, which is what `toStored` writes when Recent is unpinned. An empty list still loads
+the full defaults, and older bundles drop both values. The Filters capsule itself is never
+pinnable: it is the way back to every pin.
 
 **The Logbook is the second surface.** Its catalog is `src/lib/logbook-pinnable-chips.ts` (Grade,
 Status, Stars, When, Board, Angle, Setter, Benchmarks, Sort; Grade, Status, When, Angle and Sort

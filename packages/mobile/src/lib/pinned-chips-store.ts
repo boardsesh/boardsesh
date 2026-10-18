@@ -3,6 +3,7 @@ import { getPreference, setPreference } from './preference-store';
 import {
   DEFAULT_PINNED_CHIPS,
   PINNABLE_CHIP_CATALOG,
+  fromStoredPinnedChips,
   normalizePinnedChips,
   toStoredPinnedChips,
   type PinnableChipKind,
@@ -38,6 +39,13 @@ export type PinnedChipsStoreConfig<K extends string> = {
    * filtering the catalog by the payload.
    */
   normalize?: (stored: readonly unknown[]) => K[];
+  /**
+   * Stored payload → pins, on `load` only, for a migration that must not run on
+   * a fresh pin change (e.g. adding a newly pinnable kind to lists saved before
+   * it existed, which on `set` would re-add a kind the user just unpinned).
+   * Return `[]` to fall back to the defaults. Defaults to `normalize`.
+   */
+  fromStored?: (stored: readonly unknown[]) => K[];
   /** Pins → the payload to persist (e.g. a rollback-safe alias). Defaults to the pins as they are. */
   toStored?: (kinds: readonly K[]) => unknown[];
 };
@@ -79,6 +87,7 @@ function filterByCatalog<K extends string>(catalog: readonly K[]): (stored: read
 export function createPinnedChipsStore<K extends string>(config: PinnedChipsStoreConfig<K>): PinnedChipsStore<K> {
   const { storageKey, defaults } = config;
   const normalize = config.normalize ?? filterByCatalog(config.catalog);
+  const fromStored = config.fromStored ?? normalize;
   const toStored = config.toStored ?? ((kinds: readonly K[]): unknown[] => [...kinds]);
   const serverSnapshot: PinnedChipsSnapshot<K> = { pinned: defaults, loaded: false };
 
@@ -99,7 +108,7 @@ export function createPinnedChipsStore<K extends string>(config: PinnedChipsStor
     // A toggle may have raced in while we awaited storage: honour the user's
     // choice rather than clobbering it with the (now stale) persisted value.
     if (hasLoaded) return current;
-    const normalized = Array.isArray(stored) ? normalize(stored) : defaults;
+    const normalized = Array.isArray(stored) ? fromStored(stored) : defaults;
     // An empty/garbage payload falls back to defaults so the row is never blank.
     current = normalized.length > 0 ? normalized : defaults;
     hasLoaded = true;
@@ -175,13 +184,16 @@ export const STORAGE_KEY = 'pinnedFilterChips';
  * into Tall + Wide on every load (storage is never rewritten just to migrate),
  * and it persists the rollback-safe form (see toStoredPinnedChips): an older
  * bundle reading this key still finds the Shape chip it knows when Tall + Wide
- * are pinned.
+ * are pinned. Its fromStored also gives a list saved before Recent was pinnable
+ * the Recent pin, and keeps Recent off when the saved list carries the
+ * unpinned marker (see fromStoredPinnedChips).
  */
 export const climbPinnedChipsStore = createPinnedChipsStore<PinnableChipKind>({
   storageKey: STORAGE_KEY,
   catalog: PINNABLE_CHIP_CATALOG,
   defaults: DEFAULT_PINNED_CHIPS,
   normalize: normalizePinnedChips,
+  fromStored: fromStoredPinnedChips,
   toStored: toStoredPinnedChips,
 });
 

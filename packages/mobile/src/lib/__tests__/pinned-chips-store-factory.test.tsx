@@ -141,6 +141,44 @@ describe('createPinnedChipsStore', () => {
     expect(JSON.parse(storage.__getRaw('pinnedFruitChips') as string)).toEqual(['v2', 'banana', 'cherry']);
   });
 
+  it('runs fromStored on load only; set and toggle keep using normalize', async () => {
+    const storage = await getMockStorage();
+    storage.__setRaw('pinnedFruitChips', JSON.stringify(['apple']));
+    const { createPinnedChipsStore } = await import('../pinned-chips-store');
+    // A load-only migration: a payload without 'banana' gains it.
+    const fromStored = vi.fn((stored: readonly unknown[]): FruitKind[] => {
+      const storedKinds = new Set([...stored, 'banana']);
+      return FRUIT_CATALOG.filter((kind) => storedKinds.has(kind));
+    });
+    const store = createPinnedChipsStore<FruitKind>({
+      storageKey: 'pinnedFruitChips',
+      catalog: FRUIT_CATALOG,
+      defaults: ['cherry'],
+      fromStored,
+    });
+    expect(await store.load()).toEqual(['apple', 'banana']);
+    expect(fromStored).toHaveBeenCalledTimes(1);
+
+    // Unpinning 'banana' must stick: set and toggle never re-run the migration.
+    await store.toggle('banana');
+    expect(fromStored).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(storage.__getRaw('pinnedFruitChips') as string)).toEqual(['apple']);
+    const hook = renderHook(() => store.usePinnedChips());
+    expect(hook.result.current.pinned).toEqual(['apple']);
+  });
+
+  it('falls back to the defaults when fromStored returns nothing', async () => {
+    (await getMockStorage()).__setRaw('pinnedFruitChips', JSON.stringify(['apple']));
+    const { createPinnedChipsStore } = await import('../pinned-chips-store');
+    const store = createPinnedChipsStore<FruitKind>({
+      storageKey: 'pinnedFruitChips',
+      catalog: FRUIT_CATALOG,
+      defaults: ['cherry'],
+      fromStored: () => [],
+    });
+    expect(await store.load()).toEqual(['cherry']);
+  });
+
   it('keeps togglePin referentially stable across renders', async () => {
     const { fruit } = await makeStores();
     const hook = renderHook(() => fruit.usePinnedChips());
@@ -163,5 +201,14 @@ describe('climbPinnedChipsStore', () => {
     expect(module.STORAGE_KEY).toBe('pinnedFilterChips');
     expect(module.usePinnedChips).toBe(module.climbPinnedChipsStore.usePinnedChips);
     expect(module.setPinnedChips).toBe(module.climbPinnedChipsStore.set);
+  });
+
+  it('gives an older saved list Recent on load, but never re-adds it on a pin change', async () => {
+    const storage = await getMockStorage();
+    storage.__setRaw('pinnedFilterChips', JSON.stringify(['grade', 'rating']));
+    const { climbPinnedChipsStore } = await import('../pinned-chips-store');
+    expect(await climbPinnedChipsStore.load()).toEqual(['recent', 'grade', 'rating']);
+    await climbPinnedChipsStore.set(['grade', 'rating']);
+    expect(JSON.parse(storage.__getRaw('pinnedFilterChips') as string)).toEqual(['grade', 'rating', '!recent']);
   });
 });

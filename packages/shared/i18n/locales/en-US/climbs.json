@@ -497,6 +497,7 @@
       },
       "pinChip": "Pin {{name}} to the top row",
       "unpinChip": "Unpin {{name}} from the top row",
+      "recentDescription": "Your last 10 searches. Unpinning keeps them.",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",

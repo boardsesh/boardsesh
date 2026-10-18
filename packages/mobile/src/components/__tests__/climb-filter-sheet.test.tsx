@@ -1984,6 +1984,7 @@ describe('ClimbFilterSheet pins', () => {
   const homewall = { ...boardConfig, layoutId: 8, sizeId: 25 };
 
   it.each([
+    'recent',
     'grade',
     'accuracy',
     'progress',
@@ -2003,6 +2004,19 @@ describe('ClimbFilterSheet pins', () => {
     fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
     expect(pinStore.togglePin.mock.calls).toEqual([[kind]]);
     // Every other control still offers its own pin.
-    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(10);
+    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(11);
+  });
+
+  // The sheet never reads search history, so the pin is there before the chip
+  // has ever appeared, and signed out too.
+  it.each([true, false])('offers the Recent pin under Climb name (signed in: %s)', (isAuthenticated) => {
+    authMock.isAuthenticated = isAuthenticated;
+    pinStore.pinnedKind = 'recent';
+    const { getByText, getByLabelText } = renderFilterSheet();
+
+    expect(getByText('mobile.search.recentFilters')).toBeTruthy();
+    expect(getByText('mobile.filter.recentDescription')).toBeTruthy();
+    fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
+    expect(pinStore.togglePin.mock.calls).toEqual([['recent']]);
   });
 });

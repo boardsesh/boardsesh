@@ -21,6 +21,12 @@ Use the shared native menu and toolbar primitives so iPhone, Material and iPad s
 actions with their platform's presentation. The history sheet and iPad column continue to share
 their history content.
 
+### Recent chip
+
+The Recent chip (saved searches) has a pin under Climb name in Filters, like every other chip.
+Unpinning it hides the chip and keeps the last 10 searches; pinning it again brings them back.
+The iOS 26 empty search field still lists recent searches either way.
+
 ### Legacy Web Board Page Climb List
 
 The following describes the earlier web climbing surface. The current climbing UI lives in the

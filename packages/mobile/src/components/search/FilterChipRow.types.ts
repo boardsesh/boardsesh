@@ -21,10 +21,9 @@ export type { DimensionChip } from '../../lib/dimension-chips';
 
 export type FilterChipRowProps = {
   /**
-   * The filter chips the user has pinned, in render order (see
-   * lib/pinnable-chips.ts). Each pinnable chip renders only when its kind is
-   * present; the fixed chrome (Filters button, Recent, Android Angle) always
-   * renders. Defaults reproduce today's row.
+   * The chips the user has pinned, in render order (see lib/pinnable-chips.ts).
+   * Each pinnable chip, Recent included, renders only when its kind is present;
+   * the Filters button always renders. Defaults reproduce today's row.
    */
   pinnedChips: readonly PinnableChipKind[];
 

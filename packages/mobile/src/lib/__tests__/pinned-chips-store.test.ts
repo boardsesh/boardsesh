@@ -44,13 +44,13 @@ describe('pinned-chips-store', () => {
   });
 
   it('loads a stored set, normalized into canonical order', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'grade']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'recent', 'grade']));
     const { loadPinnedChips } = await import('../pinned-chips-store');
-    expect(await loadPinnedChips()).toEqual(['grade', 'rating']);
+    expect(await loadPinnedChips()).toEqual(['recent', 'grade', 'rating']);
   });
 
   it('drops unknown kinds from a stored payload', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'setters', 'collection']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'setters', 'collection', '!recent']));
     const { loadPinnedChips } = await import('../pinned-chips-store');
     expect(await loadPinnedChips()).toEqual(['grade', 'collection']);
   });
@@ -60,7 +60,9 @@ describe('pinned-chips-store', () => {
     const legacy = JSON.stringify(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']);
     storage.__setRaw(STORAGE_KEY, legacy);
     const { loadPinnedChips } = await import('../pinned-chips-store');
+    // Saved before Recent was pinnable too, so it gains Recent.
     expect(await loadPinnedChips()).toEqual([
+      'recent',
       'grade',
       'progress',
       'collection',
@@ -79,6 +81,7 @@ describe('pinned-chips-store', () => {
     await togglePinnedChip('rating');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
     expect(JSON.parse(raw as string)).toEqual([
+      'recent',
       'grade',
       'progress',
       'collection',
@@ -90,28 +93,35 @@ describe('pinned-chips-store', () => {
   });
 
   it('drops "shape" from storage once Tall or Wide is unpinned, so the unpinned one stays off', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'shape']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'shape', '!recent']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     expect(await loadPinnedChips()).toEqual(['tall', 'wide', 'rating']);
     // After the split, Tall and Wide unpin independently.
     await togglePinnedChip('tall');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['wide', 'rating']);
+    expect(JSON.parse(raw as string)).toEqual(['wide', 'rating', '!recent']);
   });
 
   it('round-trips a persisted set with the "shape" alias without duplicating Tall or Wide', async () => {
     const storage = await getMockStorage();
     const first = await import('../pinned-chips-store');
     await first.setPinnedChips(['grade', 'tall', 'wide']);
-    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(['grade', 'tall', 'wide', 'shape']);
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(['grade', 'tall', 'wide', 'shape', '!recent']);
     // A fresh module (next launch) reads it back as the plain set.
     vi.resetModules();
     const second = await import('../pinned-chips-store');
     expect(await second.loadPinnedChips()).toEqual(['grade', 'tall', 'wide']);
   });
 
-  it('falls back to defaults for an empty stored array (never a blank row)', async () => {
+  it('falls back to the full defaults for an empty stored array (never a blank row, never Recent alone)', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify([]));
+    const { loadPinnedChips } = await import('../pinned-chips-store');
+    expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
+    expect(DEFAULT_PINNED_CHIPS).toContain('recent');
+  });
+
+  it('falls back to the full defaults when every chip, Recent included, was unpinned', async () => {
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['!recent']));
     const { loadPinnedChips } = await import('../pinned-chips-store');
     expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
   });
@@ -121,17 +131,26 @@ describe('pinned-chips-store', () => {
     await loadPinnedChips();
     await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'tall', 'wide', 'shape', 'popularity', 'rating']);
+    expect(JSON.parse(raw as string)).toEqual([
+      'recent',
+      'grade',
+      'progress',
+      'tall',
+      'wide',
+      'shape',
+      'popularity',
+      'rating',
+    ]);
   });
 
   it('togglePin re-adds an unpinned kind back into canonical order', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'rating']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['recent', 'grade', 'rating']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     await loadPinnedChips();
     await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
     // collection slots between grade and rating per catalog order, not at the end.
-    expect(JSON.parse(raw as string)).toEqual(['grade', 'collection', 'rating']);
+    expect(JSON.parse(raw as string)).toEqual(['recent', 'grade', 'collection', 'rating']);
   });
 
   it('a set before load wins over the persisted value (no clobber on race)', async () => {
@@ -142,13 +161,73 @@ describe('pinned-chips-store', () => {
   });
 
   it('togglePin during the load window flips the PERSISTED set, not the DEFAULT snapshot', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'rating']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'rating', '!recent']));
     const { togglePinnedChip } = await import('../pinned-chips-store');
     // Toggle WITHOUT awaiting loadPinnedChips first — simulates an early pin tap on
     // cold start. It must load the saved set first, then remove 'rating' from it,
     // rather than computing DEFAULT − 'rating' and discarding the customization.
     await togglePinnedChip('rating');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['grade']);
+    expect(JSON.parse(raw as string)).toEqual(['grade', '!recent']);
+  });
+});
+
+// Recent became pinnable in #6288. Every saved list predates it, so the store
+// must tell "saved before Recent was pinnable" (keep it) from "unpinned" (hide it).
+describe('pinned-chips-store: the Recent pin', () => {
+  // What the defaults persisted as before #6288 (Tier-1 chips + the 'shape' alias).
+  const savedBeforeRecentPin = ['grade', 'progress', 'collection', 'tall', 'wide', 'shape', 'popularity', 'rating'];
+
+  beforeEach(async () => {
+    vi.resetModules();
+    (await getMockStorage()).__reset();
+  });
+
+  it('keeps Recent for a climber whose pins were saved before it was pinnable, without rewriting them', async () => {
+    const storage = await getMockStorage();
+    storage.__setRaw(STORAGE_KEY, JSON.stringify(savedBeforeRecentPin));
+    const { loadPinnedChips } = await import('../pinned-chips-store');
+    expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(savedBeforeRecentPin);
+  });
+
+  it('hides Recent, stays hidden after a restart, and comes back when pinned again', async () => {
+    const storage = await getMockStorage();
+    storage.__setRaw(STORAGE_KEY, JSON.stringify(savedBeforeRecentPin));
+    const { loadPinnedChips, togglePinnedChip, resetPinnedChipsStoreForTests } = await import('../pinned-chips-store');
+    await loadPinnedChips();
+
+    await togglePinnedChip('recent');
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual([
+      'grade',
+      'progress',
+      'collection',
+      'tall',
+      'wide',
+      'shape',
+      'popularity',
+      'rating',
+      '!recent',
+    ]);
+
+    // Restart: the store forgets its state and reads storage again.
+    resetPinnedChipsStoreForTests();
+    const afterRestart = await loadPinnedChips();
+    expect(afterRestart).not.toContain('recent');
+    expect(afterRestart).toEqual(DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent'));
+
+    await togglePinnedChip('recent');
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(['recent', ...savedBeforeRecentPin]);
+    resetPinnedChipsStoreForTests();
+    expect(await loadPinnedChips()).toEqual(DEFAULT_PINNED_CHIPS);
+  });
+
+  it('leaves every other pin alone when Recent is hidden', async () => {
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['sort', 'beta', 'grade']));
+    const { loadPinnedChips, togglePinnedChip, resetPinnedChipsStoreForTests } = await import('../pinned-chips-store');
+    expect(await loadPinnedChips()).toEqual(['recent', 'grade', 'beta', 'sort']);
+    await togglePinnedChip('recent');
+    resetPinnedChipsStoreForTests();
+    expect(await loadPinnedChips()).toEqual(['grade', 'beta', 'sort']);
   });
 });

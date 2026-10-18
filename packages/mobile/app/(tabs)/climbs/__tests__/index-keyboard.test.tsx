@@ -24,6 +24,8 @@ import { DEFAULT_FILTERS, type ClimbFilters } from '../../../../src/lib/climb-fi
 import type { LastSearch } from '../../../../src/lib/last-search-store';
 import type { BoardSearchConfig, ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import { hasActiveClimbFilters } from '@boardsesh/climb-filters';
+import type { FilterChipRowProps } from '../../../../src/components/search/FilterChipRow.types';
+import type { RecentFilter } from '../../../../src/lib/recent-filter-store';
 
 type FilterSheetProps = Parameters<typeof ClimbFilterSheet>[0];
 
@@ -111,6 +113,9 @@ const mocks = vi.hoisted(() => ({
   saveLastSearch: vi.fn(),
   getRecentFilters: vi.fn(),
   addRecentFilter: vi.fn(),
+  clearRecentFilters: vi.fn(),
+  // The props the filter chip row was last drawn with.
+  chipRowProps: undefined as FilterChipRowProps | undefined,
   tickBatch: vi.fn(),
   holdInteractions: false,
   track: vi.fn(),
@@ -565,15 +570,9 @@ vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
 // grade popover content, which regular-width iPad hands to the chip in place of
 // the inline rail. A real popover draws that content only while presented.
 vi.mock('../../../../src/components/search/FilterChipRow', () => ({
-  FilterChipRow: ({
-    gradeRailOpen,
-    gradePopoverContent,
-    onOpenFilters,
-  }: {
-    gradeRailOpen: boolean;
-    gradePopoverContent?: ReactNode;
-    onOpenFilters: () => void;
-  }) => {
+  FilterChipRow: (props: FilterChipRowProps) => {
+    const { gradeRailOpen, gradePopoverContent, onOpenFilters } = props;
+    mocks.chipRowProps = props;
     mocks.openFiltersFromChips = onOpenFilters;
     return createElement(
       'div',
@@ -789,7 +788,7 @@ vi.mock('../../../../src/lib/background-image-cache', () => ({
 vi.mock('../../../../src/lib/recent-filter-store', () => ({
   getRecentFilters: mocks.getRecentFilters,
   addRecentFilter: mocks.addRecentFilter,
-  clearRecentFilters: vi.fn(),
+  clearRecentFilters: mocks.clearRecentFilters,
 }));
 
 vi.mock('../../../../src/lib/last-search-store', () => ({
@@ -839,6 +838,8 @@ beforeEach(() => {
   mocks.saveLastSearch.mockReset();
   mocks.getRecentFilters.mockReset();
   mocks.addRecentFilter.mockReset();
+  mocks.clearRecentFilters.mockClear();
+  mocks.chipRowProps = undefined;
   mocks.getLastSearch.mockResolvedValue(null);
   mocks.saveLastSearch.mockResolvedValue(undefined);
   mocks.getRecentFilters.mockResolvedValue([]);
@@ -2194,6 +2195,76 @@ describe('ClimbList row highlight', () => {
 // The native header is a UIKit bar outside the screen's view tree, so nothing the
 // screen positions itself can sit above it. The grade rail has to be a row of the
 // chrome, which the header lays out below itself and the list insets by.
+// Recent is a pinnable chip (#6288). Unpinning it is a display choice: the saved
+// searches and the search in force are untouched, new searches still save, and
+// pinning it again shows the same history at once. Whether the row draws the
+// chip from these props is locked in climb-capsules.test.ts.
+describe('ClimbList with the Recent chip unpinned', () => {
+  const savedSearch: RecentFilter = {
+    id: 'crimp',
+    label: 'Crimpy',
+    filters: DEFAULT_FILTERS,
+    searchText: 'crimp',
+    timestamp: 1,
+  };
+  const chipRowProps = (): FilterChipRowProps => {
+    if (!mocks.chipRowProps) throw new Error('the filter chip row was not drawn');
+    return mocks.chipRowProps;
+  };
+  const recentPinned = () => chipRowProps().pinnedChips.includes('recent');
+  const unpinRecent = () => setPinnedChips(DEFAULT_PINNED_CHIPS.filter((kind) => kind !== 'recent'));
+
+  beforeEach(() => {
+    mocks.renderFilterChrome = true;
+    mocks.searchState = { filters: {}, boardFilters: {}, name: 'crimp' };
+    mocks.getRecentFilters.mockResolvedValue([savedSearch]);
+  });
+  afterEach(async () => {
+    await act(async () => {
+      await setPinnedChips(DEFAULT_PINNED_CHIPS);
+    });
+  });
+
+  it('hides the chip but keeps the saved searches and the search in force', async () => {
+    render(<ClimbList />);
+    await waitFor(() => expect(chipRowProps().recentFilters).toEqual([savedSearch]));
+    expect(recentPinned()).toBe(true);
+    const searchWritesBefore = mocks.replaceSearch.mock.calls.length + mocks.setName.mock.calls.length;
+    const historyReadsBefore = mocks.getRecentFilters.mock.calls.length;
+
+    await act(async () => {
+      await unpinRecent();
+    });
+    expect(recentPinned()).toBe(false);
+    expect(chipRowProps().recentFilters).toEqual([savedSearch]);
+    expect(chipRowProps().currentSearchText).toBe('crimp');
+    expect(mocks.replaceSearch.mock.calls.length + mocks.setName.mock.calls.length).toBe(searchWritesBefore);
+    expect(mocks.clearRecentFilters).not.toHaveBeenCalled();
+
+    // Pinned again: the same history, with no second read.
+    await act(async () => {
+      await setPinnedChips(DEFAULT_PINNED_CHIPS);
+    });
+    expect(recentPinned()).toBe(true);
+    expect(mocks.getRecentFilters.mock.calls.length).toBe(historyReadsBefore);
+  });
+
+  it('still saves a search finished while the chip is hidden', async () => {
+    await act(async () => {
+      await unpinRecent();
+    });
+    render(<ClimbList />);
+    await waitFor(() => expect(chipRowProps().recentFilters).toEqual([savedSearch]));
+    expect(recentPinned()).toBe(false);
+
+    act(() => mocks.openFiltersFromChips?.());
+    await waitFor(() => expect(mocks.filterSheetProps).toBeDefined());
+    act(() => mocks.filterSheetProps?.onDismiss());
+    await waitFor(() => expect(mocks.addRecentFilter).toHaveBeenCalledTimes(1));
+    expect(mocks.addRecentFilter.mock.calls[0]?.[2]).toBe('crimp');
+  });
+});
+
 describe('ClimbList grade row', () => {
   const gradeRowToggles = () => mocks.track.mock.calls.filter(([eventName]) => eventName === 'Grade Row Toggled');
 
