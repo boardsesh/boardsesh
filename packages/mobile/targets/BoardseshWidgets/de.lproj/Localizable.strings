@@ -1,29 +1,29 @@
 /* Lock Screen and Dynamic Island controls */
-"Prev" = "Prev";
-"Next" = "Next";
-"Previous climb" = "Previous climb";
-"Next climb" = "Next climb";
+"Prev" = "Zurück";
+"Next" = "Weiter";
+"Previous climb" = "Vorheriger Boulder";
+"Next climb" = "Nächster Boulder";
 "Mirror climb" = "Boulder spiegeln";
 "Unmirror climb" = "Spiegelung aufheben";
-"Wall lit, you are driving" = "Wall lit, you are driving";
-"Wall control" = "Wall control";
-"Tap to reconnect" = "Tap to reconnect";
-"Board disconnected. Tap to reconnect" = "Board disconnected. Tap to reconnect";
-"On the wall" = "On the wall";
-"%@ is on the wall" = "%@ is on the wall";
-"Wall held by another climber" = "Wall held by another climber";
+"Wall lit, you are driving" = "Wand leuchtet, du steuerst";
+"Wall control" = "Wandsteuerung";
+"Tap to reconnect" = "Zum Verbinden tippen";
+"Board disconnected. Tap to reconnect" = "Board getrennt. Zum Verbinden tippen";
+"On the wall" = "An der Wand";
+"%@ is on the wall" = "%@ ist an der Wand";
+"Wall held by another climber" = "Wand wird von jemand anderem gesteuert";
 
 /* Climb details: "3 of 12" is the queue position */
-"%lld of %lld" = "%lld of %lld";
-"Grade %@" = "Grade %@";
-"Session ended" = "Session ended";
+"%lld of %lld" = "%lld von %lld";
+"Grade %@" = "Grad %@";
+"Session ended" = "Session beendet";
 
 /* Rest timer (#6513) */
-"Rest timer" = "Rest timer";
-"Rest" = "Rest";
-"Over your rest" = "Over your rest";
-"Paused" = "Paused";
-"Every %@" = "Every %@";
-"Queue's empty" = "Queue's empty";
-"Since your last climb" = "Since your last climb";
-"Log a climb to start" = "Log a climb to start";
+"Rest timer" = "Pausen-Timer";
+"Rest" = "Pause";
+"Over your rest" = "Pause überzogen";
+"Paused" = "Angehalten";
+"Every %@" = "Alle %@";
+"Queue's empty" = "Warteschlange leer";
+"Since your last climb" = "Seit deinem letzten Boulder";
+"Log a climb to start" = "Trag eine Begehung ein";

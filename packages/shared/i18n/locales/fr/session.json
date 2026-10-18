@@ -454,8 +454,8 @@
       "autoAdvanceNeedsLength": "Choisis une durée de repos pour faire avancer la file automatiquement.",
       "lengthPillAria": "Durée du repos, {{value}}",
       "lengthPillHint": "Ajoute 30 secondes. Appui long pour choisir n’importe quelle durée.",
-      "showOnLockScreen": "Show on Lock Screen",
-      "showOnLockScreenHint": "See your rest count down without opening the app."
+      "showOnLockScreen": "Afficher sur l’écran verrouillé",
+      "showOnLockScreenHint": "Vois ton repos défiler sans ouvrir l’app."
     },
     "sessionVisibility": {
       "title": "Afficher cette session en direct",

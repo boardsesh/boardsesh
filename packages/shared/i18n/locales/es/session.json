@@ -454,8 +454,8 @@
       "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
       "lengthPillAria": "Duración del descanso, {{value}}",
       "lengthPillHint": "Añade 30 segundos. Mantén pulsado para elegir cualquier duración.",
-      "showOnLockScreen": "Show on Lock Screen",
-      "showOnLockScreenHint": "See your rest count down without opening the app."
+      "showOnLockScreen": "Mostrar en la pantalla de bloqueo",
+      "showOnLockScreenHint": "Mira cómo baja tu descanso sin abrir la app."
     },
     "sessionVisibility": {
       "title": "Mostrar esta sesión en directo",
