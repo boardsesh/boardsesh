@@ -2888,6 +2888,10 @@ describe('board-presence resolvers', () => {
         )) as { boardId: number | null };
 
         expect(saved.boardId).toBeNull();
+        const [persistedTick] = await db.execute(sql`
+          SELECT board_id FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+        `);
+        expect((persistedTick as { board_id: number | null }).board_id).toBeNull();
         expect(warnSpy).toHaveBeenCalledWith(
           '[saveTick] Board association became unavailable; saving tick without board association',
           expect.objectContaining({

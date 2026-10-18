@@ -1457,9 +1457,11 @@ export const tickMutations = {
         const boardAssociationDropReason =
           canonicalBoardId == null
             ? 'canonical_missing'
-            : canonicalBoardId !== boardId && !presentedLink
+            : canonicalBoardId !== boardId && presentedUuidBoard !== null && !presentedLink
               ? 'merged_into_unreadable_survivor'
-              : 'board_unreadable';
+              : canonicalBoardId !== boardId
+                ? 'merged_board_unavailable'
+                : 'board_unavailable';
         const [createdTick] = await tx
           .insert(dbSchema.boardseshTicks)
           .values({
@@ -1507,8 +1509,9 @@ export const tickMutations = {
           // The board was valid when we resolved it above, but it is no longer
           // one this climber may attach a tick to (see boardAssociationDropReason:
           // a concurrent delete or dangling tombstone chain, a merge into another
-          // owner's board they cannot read without a link, or a board they can no
-          // longer read). Keep the valid tick and deliberately leave its nullable
+          // owner's board they cannot read without a link, a merge reached by
+          // some other path, or a board the climber can no longer read or the
+          // climb no longer fits). Keep the valid tick and deliberately leave its nullable
           // association empty; falling back to config here could stamp it onto a
           // different wall.
           // Emit only after a new row was returned: a concurrent idempotent replay
