@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeHoldsLineCandidates, chooseActiveHoldsLine } from '../active-holds-line';
+import { activeHoldsLineCandidates, activeHoldsLineWidthKey, chooseActiveHoldsLine } from '../active-holds-line';
 
 const MOON = [
   { role: 'STARTING' as const, count: 2, labels: ['B5', 'E5'] },
@@ -89,5 +89,62 @@ describe('chooseActiveHoldsLine', () => {
       key: 'counts',
       handShrinks: false,
     });
+  });
+});
+
+describe('chooseActiveHoldsLine before the widths land', () => {
+  it('keeps the reading it drew last for this kind of board', () => {
+    expect(
+      chooseActiveHoldsLine({
+        hasLabels: false,
+        widths: {},
+        available: 300,
+        lastChoice: { key: 'words', handShrinks: false },
+      }),
+    ).toEqual({ key: 'words', handShrinks: false });
+    expect(
+      chooseActiveHoldsLine({
+        hasLabels: true,
+        widths: {},
+        available: 300,
+        lastChoice: { key: 'handCount', handShrinks: false },
+      }),
+    ).toEqual({ key: 'handCount', handShrinks: false });
+    // The title standing in stays until the new climb is measured.
+    expect(chooseActiveHoldsLine({ hasLabels: true, widths: {}, available: 300, lastChoice: null })).toBeNull();
+  });
+
+  it('lets Hand shrink when the last reading was every coordinate, and ignores the other kind of board', () => {
+    expect(
+      chooseActiveHoldsLine({
+        hasLabels: true,
+        widths: {},
+        available: 300,
+        lastChoice: { key: 'labels', handShrinks: false },
+      }),
+    ).toEqual({ key: 'labels', handShrinks: true });
+    expect(
+      chooseActiveHoldsLine({
+        hasLabels: true,
+        widths: {},
+        available: 300,
+        lastChoice: { key: 'words', handShrinks: false },
+      }),
+    ).toEqual({ key: 'labels', handShrinks: true });
+  });
+});
+
+describe('activeHoldsLineWidthKey', () => {
+  it('ignores which digits a reading has, since they are tabular, but not its letters or size', () => {
+    const segments = (texts: string[]) => texts.map((text) => ({ role: 'HAND' as const, text }));
+    expect(activeHoldsLineWidthKey(1, 18, 'words', segments(['Start 2', 'Hand 6']))).toBe(
+      activeHoldsLineWidthKey(1, 18, 'words', segments(['Start 9', 'Hand 4'])),
+    );
+    expect(activeHoldsLineWidthKey(1, 18, 'labels', segments(['B5']))).not.toBe(
+      activeHoldsLineWidthKey(1, 18, 'labels', segments(['K5'])),
+    );
+    expect(activeHoldsLineWidthKey(1, 18, 'counts', segments(['2']))).not.toBe(
+      activeHoldsLineWidthKey(1.12, 20, 'counts', segments(['2'])),
+    );
   });
 });
