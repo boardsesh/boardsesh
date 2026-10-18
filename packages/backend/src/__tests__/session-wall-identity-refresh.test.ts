@@ -12,7 +12,6 @@ const hooks = vi.hoisted(() => ({
   path: '/b/own/40',
   session: new Set<(event: SessionEvent) => void>(),
   queue: new Set<(event: QueueEvent) => void>(),
-  privacy: new Set<() => void>(),
   releases: [] as ReturnType<typeof vi.fn>[],
   subscribeQueue: vi.fn(),
   getQueueState: vi.fn(),
@@ -23,12 +22,6 @@ vi.mock('../pubsub', () => ({
     subscribeSession: async (_sessionId: string, callback: (event: SessionEvent) => void) => {
       hooks.session.add(callback);
       const release = vi.fn(() => hooks.session.delete(callback));
-      hooks.releases.push(release);
-      return release;
-    },
-    subscribePrivacy: async (callback: () => void) => {
-      hooks.privacy.add(callback);
-      const release = vi.fn(() => hooks.privacy.delete(callback));
       hooks.releases.push(release);
       return release;
     },
@@ -117,7 +110,6 @@ beforeEach(() => {
   hooks.path = '/b/own/40';
   hooks.session.clear();
   hooks.queue.clear();
-  hooks.privacy.clear();
   hooks.releases.length = 0;
   hooks.subscribeQueue
     .mockReset()
@@ -157,7 +149,6 @@ describe('targeted session wall identity refresh', () => {
       await stream.return();
     }
     expect(hooks.session.size).toBe(0);
-    expect(hooks.privacy.size).toBe(0);
     for (const release of hooks.releases) expect(release).toHaveBeenCalledOnce();
   });
 
@@ -216,7 +207,7 @@ describe('targeted session wall identity refresh', () => {
     }
   });
 
-  it('reprojects queue and current attribution at the unchanged sequence without a global event', async () => {
+  it('reprojects queue and current attribution at the unchanged sequence', async () => {
     const stream = queueSubscriptions.queueUpdates.subscribe(undefined, { sessionId: 'party' }, context);
     try {
       expect(payload(await stream.next()).queueUpdates).toMatchObject({
@@ -239,16 +230,14 @@ describe('targeted session wall identity refresh', () => {
     }
     expect(hooks.session.size).toBe(0);
     expect(hooks.queue.size).toBe(0);
-    expect(hooks.privacy.size).toBe(0);
     for (const release of hooks.releases) expect(release).toHaveBeenCalledOnce();
   });
 
-  it('releases the added session and privacy listeners if queue setup fails', async () => {
+  it('releases the added session listener if queue setup fails', async () => {
     hooks.subscribeQueue.mockRejectedValueOnce(new Error('queue channel unavailable'));
     const stream = queueSubscriptions.queueUpdates.subscribe(undefined, { sessionId: 'party' }, context);
     await expect(stream.next()).rejects.toThrow('queue channel unavailable');
     expect(hooks.session.size).toBe(0);
-    expect(hooks.privacy.size).toBe(0);
     for (const release of hooks.releases) expect(release).toHaveBeenCalledOnce();
   });
 
@@ -266,7 +255,6 @@ describe('targeted session wall identity refresh', () => {
     expect(await waiting).toEqual({ done: true, value: undefined });
     expect(hooks.session.size).toBe(0);
     expect(hooks.queue.size).toBe(0);
-    expect(hooks.privacy.size).toBe(0);
     finishSeed(state);
     expect(await stream.next()).toEqual({ done: true, value: undefined });
     for (const release of hooks.releases) expect(release).toHaveBeenCalledOnce();

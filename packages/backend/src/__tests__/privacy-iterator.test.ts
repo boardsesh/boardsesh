@@ -10,21 +10,7 @@ vi.mock('../pubsub', () => ({
     },
   },
 }));
-const { createPrivacyAwareIterator } = await import('../graphql/resolvers/shared/privacy-iterator');
 const { privacySubscriptions } = await import('../graphql/resolvers/privacy');
-
-describe('quiet subscription privacy invalidation', () => {
-  it('wakes a quiet iterator and releases both subscriptions when closed', async () => {
-    const unsubscribe = vi.fn();
-    const iterator = await createPrivacyAwareIterator<string>(async () => unsubscribe, 'privacy-test');
-    const waiting = iterator.next();
-    privacy.callback?.();
-    expect(await waiting).toEqual({ value: null, done: false });
-    await iterator.return();
-    expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(privacy.unsubscribe).toHaveBeenCalledOnce();
-  });
-});
 
 describe('privacyChanged subscription', () => {
   // Shipped apps stamp their offline catalogue viewer marker from this first

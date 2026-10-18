@@ -36,6 +36,7 @@ import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import * as boardQueuePreviewService from '../services/board-queue-preview';
 import { createBarrier } from './helpers/concurrency';
+import { notifyResourcePrivacyChanged } from '../services/board-session-privacy';
 
 const TEST_USER_ID = 'board-queue-preview-test-user';
 const TEST_BOARD_PATH = 'queue-preview-test/1/10/1,2/40';
@@ -615,14 +616,15 @@ describe('board-queue-preview privacy gates', () => {
     }
   });
 
-  it('sends an empty snapshot on quiet session revocation and ignores buffered public copies', async () => {
+  it('sends an empty snapshot when a session privacy change refreshes the kiosk, and ignores buffered public copies', async () => {
     const { boardId, sessionId } = await makePreviewableSession();
     const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
     try {
       const initial = await iterator.next();
       expect(initial.value?.boardQueuePreview.queueLength).toBe(2);
       await db.update(dbSchema.boardSessions).set({ isPublic: false }).where(eq(dbSchema.boardSessions.id, sessionId));
-      pubsub.publishPrivacyChanged();
+      // What updateResourcePrivacy and the share-link join run after their commit.
+      await notifyResourcePrivacyChanged('session', sessionId);
       const withdrawn = await iterator.next();
       expect(withdrawn.value?.boardQueuePreview).toMatchObject({ current: null, upNext: [], queueLength: 0 });
 

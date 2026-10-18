@@ -1,6 +1,6 @@
 import type { ConnectionContext, CommentEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { SocialEntityTypeSchema } from '../../../validation/schemas';
 import { canReadDeletedComment, canReadSocialEntity } from '../shared/activity-privacy';
@@ -36,14 +36,13 @@ export const socialCommentSubscriptions = {
       if (!(await canReadSocialEntity(entityType, entityId, viewerId))) return;
 
       const asyncIterator = await lifetime.own(
-        createPrivacyAwareIterator<CommentEvent>((push) => {
+        createEagerAsyncIterator<CommentEvent>((push) => {
           return pubsub.subscribeComments(entityKey, push);
         }, `commentUpdates:${entityKey}`),
       );
 
       for await (const event of asyncIterator) {
         if (!(await canReadSocialEntity(entityType, entityId, viewerId))) return;
-        if (!event) continue;
         if ('comment' in event && !(await canReadSocialEntity('comment', event.comment.uuid, viewerId))) continue;
         if (
           event.__typename === 'CommentDeleted' &&

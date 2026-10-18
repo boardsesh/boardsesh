@@ -2,7 +2,7 @@ import { redactBoardEvent } from '../../../services/board-session-privacy';
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { kilterLiveSync } from '../../../services/kilter-live-sync';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
@@ -64,7 +64,7 @@ export const boardPresenceSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterator = await lifetime.own(
-        createPrivacyAwareIterator<BoardPresenceEvent>(async (push) => {
+        createEagerAsyncIterator<BoardPresenceEvent>(async (push) => {
           const unsubscribe = await pubsub.subscribeBoardPresence(boardKey, push);
           // The managed lifetime closes late setup and idle subscriptions.
           // Keep the polling lease in the same owned source as its listener.
@@ -87,7 +87,7 @@ export const boardPresenceSubscriptions = {
       for await (const event of asyncIterator) {
         await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
-        if (event !== null) yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };
+        yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };
       }
     }),
   },

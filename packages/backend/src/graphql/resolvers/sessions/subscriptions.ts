@@ -15,7 +15,7 @@ import {
 } from '../../../services/session-wall-refresh';
 import { roomManager } from '../../../services/room-manager';
 import { requireSessionMember } from '../shared/helpers';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const sessionSubscriptions = {
@@ -48,7 +48,7 @@ export const sessionSubscriptions = {
       await requireSessionMember(ctx, sessionId);
 
       const asyncIterable = await lifetime.own(
-        createPrivacyAwareIterator<SessionEvent>(
+        createEagerAsyncIterator<SessionEvent>(
           (push) => pubsub.subscribeSession(sessionId, push),
           `sessionUpdates:${sessionId}`,
         ),
@@ -89,22 +89,6 @@ export const sessionSubscriptions = {
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
           if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
-          if (result.value === null) {
-            const roster = await redactSessionUsers(
-              await roomManager.getSessionUsers(sessionId),
-              ctx.userId,
-              sessionId,
-            );
-            const current = await roomManager.getSessionById(sessionId);
-            yield {
-              sessionUpdates: {
-                __typename: 'SessionRosterSnapshot' as const,
-                users: roster,
-                boardPath: await projectSessionBoardPath(current?.boardPath ?? '', ctx.userId),
-              },
-            };
-            continue;
-          }
           const event = result.value;
           if (event.__typename === 'UserJoined' || event.__typename === 'UserPresenceChanged') {
             protocolIds.set(

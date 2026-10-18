@@ -2,7 +2,7 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { db } from '../../../db/client';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireReadablePresenceBoard, isBoardAnonReadable } from './shared';
@@ -79,7 +79,7 @@ export const boardQueuePreviewSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterable = await lifetime.own(
-        createPrivacyAwareIterator<BoardQueuePreview>(
+        createEagerAsyncIterator<BoardQueuePreview>(
           (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
           `boardQueuePreview:${boardId}`,
         ),
@@ -98,8 +98,8 @@ export const boardQueuePreviewSubscriptions = {
         }
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
-          // Withdraw the last snapshot before closing: older kiosks do not
-          // subscribe to privacyChanged and retain their last rendered queue.
+          // Withdraw the last snapshot before closing, so the kiosk does not
+          // keep showing its last rendered queue.
           try {
             await requireReadablePresenceBoard(boardId, ctx.userId, boardUuid);
           } catch (error) {

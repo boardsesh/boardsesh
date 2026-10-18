@@ -5,7 +5,7 @@ import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { movesSessionWall } from '../../../services/session-wall-refresh';
 import { requireSessionMember } from '../shared/helpers';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const queueSubscriptions = {
@@ -32,10 +32,11 @@ export const queueSubscriptions = {
       // NOTE: We await here to ensure Redis subscription is established
       // before proceeding - this is critical for multi-instance sync.
       const asyncIterator = await lifetime.own(
-        createPrivacyAwareIterator<QueueEvent>(async (push) => {
+        // `null` asks for a fresh FullSync.
+        createEagerAsyncIterator<QueueEvent | null>(async (push) => {
           const unsubscribeSession = await pubsub.subscribeSession(sessionId, (event) => {
             // Attribution depends on the current wall even when both walls are
-            // public. Reuse the privacy FullSync path without a global refresh.
+            // public, so a wall move re-sends the redacted queue as a FullSync.
             // An angle change keeps the wall and needs no FullSync.
             if (movesSessionWall(event)) push(null);
           });

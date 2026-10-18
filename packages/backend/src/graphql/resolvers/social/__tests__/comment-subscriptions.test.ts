@@ -48,11 +48,12 @@ vi.mock('../../shared/activity-privacy', async (importOriginal) => {
   };
 });
 
-// createPrivacyAwareIterator resolves to an iterable over `harness.events` that
+// createEagerAsyncIterator resolves to an iterable over `harness.events` that
 // then completes, so with no events a subscription whose entityType passes
 // validation finishes on the first next().
-vi.mock('../../shared/privacy-iterator', () => ({
-  createPrivacyAwareIterator: vi.fn(async () => {
+vi.mock('../../shared/async-iterators', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../shared/async-iterators')>()),
+  createEagerAsyncIterator: vi.fn(async () => {
     const pending = [...harness.events];
     return {
       return: async () => ({ value: undefined, done: true }),
@@ -71,7 +72,7 @@ vi.mock('../../shared/privacy-iterator', () => ({
 import { db } from '../../../../db/client';
 import { socialCommentSubscriptions } from '../comment-subscriptions';
 import { socialCommentMutations } from '../comments';
-import { createPrivacyAwareIterator } from '../../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../../shared/async-iterators';
 import { SocialEntityTypeSchema } from '../../../../validation/schemas';
 
 function startSubscription(entityType: string, entityId: string, ctx = {} as ConnectionContext) {
@@ -93,7 +94,7 @@ describe('commentUpdates subscription — entityType validation', () => {
       // Passing validation lets the generator reach the (mocked, empty)
       // iterator and complete without throwing "Invalid entity type".
       await expect(subscription.next()).resolves.toEqual({ value: undefined, done: true });
-      expect(vi.mocked(createPrivacyAwareIterator)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createEagerAsyncIterator)).toHaveBeenCalledTimes(1);
       vi.clearAllMocks();
     }
   });
@@ -101,7 +102,7 @@ describe('commentUpdates subscription — entityType validation', () => {
   it('rejects an entityType outside the schema and never opens a channel', async () => {
     const subscription = startSubscription('user', 'entity-123');
     await expect(subscription.next()).rejects.toThrow('Invalid entity type: user');
-    expect(vi.mocked(createPrivacyAwareIterator)).not.toHaveBeenCalled();
+    expect(vi.mocked(createEagerAsyncIterator)).not.toHaveBeenCalled();
   });
 
   it('rejects an empty or over-long entityId before opening a channel', async () => {
@@ -111,7 +112,7 @@ describe('commentUpdates subscription — entityType validation', () => {
     const tooLong = startSubscription('session', 'x'.repeat(257));
     await expect(tooLong.next()).rejects.toThrow('Invalid entity ID');
 
-    expect(vi.mocked(createPrivacyAwareIterator)).not.toHaveBeenCalled();
+    expect(vi.mocked(createEagerAsyncIterator)).not.toHaveBeenCalled();
   });
 });
 
@@ -131,7 +132,7 @@ describe('commentUpdates subscription — deleted comments', () => {
     ({ connectionId: `comment-sub-${userId ?? 'anon'}`, isAuthenticated: !!userId, userId }) as ConnectionContext;
 
   async function deliveredDeletions(userId: string | null): Promise<string[]> {
-    const streamsBefore = vi.mocked(createPrivacyAwareIterator).mock.calls.length;
+    const streamsBefore = vi.mocked(createEagerAsyncIterator).mock.calls.length;
     const subscription = startSubscription('tick', TICK_UUID, viewer(userId));
     const delivered: string[] = [];
     for await (const { commentUpdates } of subscription) {
@@ -139,7 +140,7 @@ describe('commentUpdates subscription — deleted comments', () => {
     }
     // The tick is public, so every viewer's stream opens: an empty result is the
     // per-event check, not a refused subscription.
-    expect(vi.mocked(createPrivacyAwareIterator).mock.calls.length).toBe(streamsBefore + 1);
+    expect(vi.mocked(createEagerAsyncIterator).mock.calls.length).toBe(streamsBefore + 1);
     return delivered.sort();
   }
 

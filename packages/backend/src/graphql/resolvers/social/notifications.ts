@@ -7,7 +7,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { GroupedNotificationsInputSchema, NotificationActorsInputSchema } from '../../../validation/schemas';
 import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
-import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
+import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { enrichSprayNotificationTargets } from './spray-notification-targets';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { alias } from 'drizzle-orm/pg-core';
@@ -772,13 +772,12 @@ export const socialNotificationSubscriptions = {
       const userId = ctx.userId!;
 
       const asyncIterator = await lifetime.own(
-        createPrivacyAwareIterator<NotificationEvent>((push) => {
+        createEagerAsyncIterator<NotificationEvent>((push) => {
           return pubsub.subscribeNotifications(userId, push);
         }, `notificationReceived:${userId}`),
       );
 
       for await (const event of asyncIterator) {
-        if (!event) continue;
         const [visible] = await db
           .select({ id: dbSchema.notifications.id })
           .from(dbSchema.notifications)
