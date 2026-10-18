@@ -27,10 +27,10 @@ describe('production draft guard', () => {
     },
   );
 
-  it('refuses to draft over a newer released build', () => {
-    expect(productionDraftDecision([release(VERSION + 1, 'PUBLISHED')], VERSION)).toMatchObject({
+  it.each(['PUBLISHED', 'DRAFT', 'IN_REVIEW'])('refuses to draft over a newer build that is %s', (state) => {
+    expect(productionDraftDecision([release(VERSION + 1, state)], VERSION)).toMatchObject({
       skip: true,
-      reason: expect.stringContaining('downgrade'),
+      reason: expect.stringContaining('newer versionCode'),
     });
   });
 

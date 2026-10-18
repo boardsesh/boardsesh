@@ -461,7 +461,9 @@ build. Play keeps only the newest completed internal release, so once a newer na
 build uploads, an older draft can no longer be released this way; release the newer
 build instead. After a build is released, the store-draft workflow's Android job
 reads the production track first (GET-only) and leaves it alone once that build is in
-review, rolling out or live, or when production carries a newer build.
+review, rolling out or live, or when production carries a newer build (a newer draft
+included). A release-branch checkout that predates the guard skips the Play draft too:
+merge `main` into the train, or draft from `main`.
 
 Until Android reaches production, the daily stable OTA controller has no Android
 devices to judge on that native runtime. Release Android promptly after its store

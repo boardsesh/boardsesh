@@ -551,8 +551,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -f scripts/mobile-store-android-draft-guard.ts ]; then
-            echo "::warning::This checkout predates the production draft guard; drafting as before."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Fail closed: without the guard nothing proves production can take a draft.
+            echo "::warning::This checkout predates the production draft guard, so the Play draft was not touched. Merge main into the release branch, or draft from main."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           vp exec node --import tsx scripts/mobile-store-android-draft-guard.ts

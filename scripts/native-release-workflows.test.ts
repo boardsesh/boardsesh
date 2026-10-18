@@ -705,5 +705,8 @@ describe('native release workflow contracts', () => {
     // A guard that cannot read Play leaves the production track untouched.
     expect(steps[guard]?.['continue-on-error']).toBe(true);
     expect(steps[prepare]?.if).toBe("steps.guard.outcome == 'success' && steps.guard.outputs.skip == 'false'");
+    // A checkout that predates the guard fails closed instead of drafting blind.
+    expect(steps[guard]?.run).toContain('echo "skip=true" >> "$GITHUB_OUTPUT"');
+    expect(steps[guard]?.run).not.toContain('skip=false');
   });
 });

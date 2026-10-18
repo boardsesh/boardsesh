@@ -19,18 +19,18 @@ export function productionDraftDecision(
   versionCode: number,
 ): { skip: boolean; reason: string } {
   for (const release of releases) {
-    if (release.releaseLifecycleState === DRAFT) continue;
     const codes = release.activeArtifacts.map((artifact) => artifact.versionCode);
-    if (codes.includes(versionCode)) {
-      return {
-        skip: true,
-        reason: `versionCode ${versionCode} is already past draft on production (${release.releaseLifecycleState}); leaving it alone.`,
-      };
-    }
+    // A newer build in any state, its draft included, must survive: promoting replaces the whole track.
     if (codes.some((code) => code > versionCode)) {
       return {
         skip: true,
-        reason: `Production already carries a newer versionCode than ${versionCode}; refusing to draft a downgrade.`,
+        reason: `Production already carries a newer versionCode than ${versionCode} (${release.releaseLifecycleState}); refusing to draft over it.`,
+      };
+    }
+    if (codes.includes(versionCode) && release.releaseLifecycleState !== DRAFT) {
+      return {
+        skip: true,
+        reason: `versionCode ${versionCode} is already past draft on production (${release.releaseLifecycleState}); leaving it alone.`,
       };
     }
   }
