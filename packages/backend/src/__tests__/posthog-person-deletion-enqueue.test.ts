@@ -463,7 +463,7 @@ describe('the erasure worker', () => {
     },
   );
 
-  it('settles a pass whose error text carries a NUL, so pg-boss can store it and retry', async () => {
+  it('keeps the real error in the output of a retried pass when its text carries a NUL', async () => {
     const distinctId = randomUUID();
     const boss = requireJobQueue();
     const findJobs = boss.findJobs.bind(boss);

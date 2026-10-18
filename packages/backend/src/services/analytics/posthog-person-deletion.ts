@@ -718,9 +718,10 @@ const MAX_OUTPUT_ERROR_LENGTH = 1000;
 
 /**
  * Error text pg-boss can store as a job's output. A failed query's message
- * carries its parameters (drizzle), and a NUL or half a surrogate pair in the
- * output fails pg-boss's write, so the job would never settle. Cut first: the
- * cut can split a surrogate pair, and the replace then removes the stray half.
+ * carries its parameters (drizzle), and pg-boss cannot write a NUL or half a
+ * surrogate pair into the output: it records its own jsonb error instead, and
+ * the real error is lost. Cut first: the cut can split a surrogate pair, and
+ * the replace then removes the stray half.
  */
 function storableErrorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);

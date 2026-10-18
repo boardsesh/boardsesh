@@ -421,8 +421,9 @@ Retries back off from 60 to 120 seconds up to a 6-hour cap, 12 of them,
 26.5 to 32.5 hours in all; a job that runs out is `failed` and logs
 `posthog_person_deletion_exhausted`. A retried job's output keeps the first
 1,000 characters of the error, control characters and half surrogate pairs
-replaced with spaces: a failed query's message lists its parameters, and a NUL
-there would stop pg-boss storing the result, so the job would never settle. A queued job waits up to 14 days past its
+replaced with spaces: a failed query's message lists its parameters, and
+pg-boss cannot store a NUL or half a pair, so it would record its own jsonb
+error in place of the real one. A queued job waits up to 14 days past its
 start for a worker (`retentionSeconds`). A finished or failed job is kept 7
 days so a failed erasure can be replayed, then pg-boss deletes it.
 
