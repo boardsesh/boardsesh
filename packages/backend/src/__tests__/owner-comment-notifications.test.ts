@@ -66,6 +66,9 @@ const SYSTEM_OWNER = '00000000-0000-0000-0000-000000000000';
 const UNCLAIMED_GYM_UUID = `${PREFIX}-unclaimed-gym`;
 const SYSTEM_BOARD_UUID = `${PREFIX}-system-board`;
 const SPRAY_BOARD_UUID = `${PREFIX}-spray-board`;
+// The job account generated recommendation playlists belong to.
+const RECOMMENDATIONS_OWNER = 'system-recommendations';
+const RECOMMENDED_PLAYLIST_UUID = randomUUID();
 
 const viewer = (userId: string): ConnectionContext =>
   ({ connectionId: `${PREFIX}-${userId}`, isAuthenticated: true, userId }) as ConnectionContext;
@@ -182,6 +185,17 @@ beforeAll(async () => {
     .insert(dbSchema.playlistOwnership)
     .values({ playlistId: playlist.id, userId: PLAYLIST_OWNER, role: 'owner' });
   await db.insert(dbSchema.playlistClimbs).values({ playlistId: playlist.id, climbUuid: CLIMB_UUID, position: 0 });
+  await db
+    .insert(dbSchema.users)
+    .values({ id: RECOMMENDATIONS_OWNER, email: 'recommendations@boardsesh.com', name: 'Boardsesh' })
+    .onConflictDoNothing();
+  const [recommended] = await db
+    .insert(dbSchema.playlists)
+    .values({ uuid: RECOMMENDED_PLAYLIST_UUID, boardType: 'kilter', name: 'Popular this week', isPublic: true })
+    .returning();
+  await db
+    .insert(dbSchema.playlistOwnership)
+    .values({ playlistId: recommended.id, userId: RECOMMENDATIONS_OWNER, role: 'owner' });
   await db.insert(dbSchema.userBoards).values(
     [BOARD_UUID, DELETED_BOARD_UUID].map((uuid, index) => ({
       uuid,
@@ -358,6 +372,40 @@ describe('the owner of a commented item', () => {
         ['comment_on_board', SPRAY_BOARD_UUID, 'spray'],
       ].sort(([, first], [, second]) => String(first).localeCompare(String(second))),
     );
+  });
+
+  it('does not write into the recommendations account for a generated playlist', async () => {
+    const thread = `${RECOMMENDED_PLAYLIST_UUID}:_all`;
+    await commentThroughWorker({ entityType: 'playlist_climb', entityId: thread }, PRIVATE_COMMENTER);
+    expect(await notificationsAbout(thread)).toEqual([]);
+  });
+
+  it('writes one row when the broker delivers the same comment twice', async () => {
+    // The broker acknowledges only after the whole handler, feed fan-out
+    // included, and reclaims what it never acknowledged.
+    await seedSession();
+    const session: Commentable = { entityType: 'session', entityId: SESSION_ID };
+    const strangerRoot = await insertComment(session, STRANGER);
+    const replyUuid = await insertComment(session, PUBLIC_COMMENTER, strangerRoot);
+    const redelivered = commentEvent(session, PUBLIC_COMMENTER, replyUuid, strangerRoot);
+    const handleEvent = captureWorkerHandler();
+    await handleEvent(redelivered);
+    await handleEvent(redelivered);
+
+    // One row each for the host (owner) and the stranger (reply), not two.
+    expect(
+      (await notificationsAbout(SESSION_ID))
+        .map(({ recipientId, type }) => `${type}:${recipientId}`)
+        .sort((first, second) => first.localeCompare(second)),
+    ).toEqual([`comment_on_session:${HOST}`, `comment_reply:${STRANGER}`]);
+
+    // A second comment from the same person is still its own notification.
+    await commentThroughWorker(session, PUBLIC_COMMENTER);
+    expect(
+      (await notificationsAbout(SESSION_ID)).filter(
+        (row) => row.recipientId === HOST && row.type === 'comment_on_session',
+      ),
+    ).toHaveLength(2);
   });
 
   it('gives a deleted board no owner to tell', async () => {

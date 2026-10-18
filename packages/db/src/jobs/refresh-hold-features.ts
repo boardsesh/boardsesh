@@ -36,9 +36,10 @@ import {
   type HoldDifficulty,
 } from '../queries/hold-features';
 import { ensureSystemUser } from './system-user';
+import { HOLD_CLASSIFIER_USER_ID } from '../queries/system-accounts';
 import { defaultTransact, type JobDatabase, type JobLogger, type JobRunOptions, type JobTransact } from './types';
 
-const SYSTEM_USER_ID = 'system-hold-classifier';
+const SYSTEM_USER_ID = HOLD_CLASSIFIER_USER_ID;
 const SYSTEM_USER_EMAIL = 'hold-classifier@boardsesh.com';
 const FEATURE_VERSION = 'v1';
 const MIN_ASCENTS = 20;

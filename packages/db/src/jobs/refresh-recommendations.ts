@@ -35,9 +35,10 @@ import { rowsOf } from '../queries/util/rows';
 import { snapshotClimbStatsHistoryIfDue } from '../queries/climb-stats';
 import { refreshPlaylistGradeSummariesFor } from '../queries/playlists/grade-summaries';
 import { ensureSystemUser } from './system-user';
+import { RECOMMENDATIONS_USER_ID } from '../queries/system-accounts';
 import { defaultTransact, type JobDatabase, type JobLogger, type JobRunOptions, type JobTransact } from './types';
 
-const SYSTEM_USER_ID = 'system-recommendations';
+const SYSTEM_USER_ID = RECOMMENDATIONS_USER_ID;
 const SYSTEM_USER_EMAIL = 'recommendations@boardsesh.com';
 const COHORT_SIZE = 50;
 const FRESH_WINDOW_DAYS = 365;

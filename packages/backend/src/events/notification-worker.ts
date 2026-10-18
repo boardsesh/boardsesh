@@ -411,12 +411,19 @@ export class NotificationWorker {
     });
   }
 
+  /**
+   * Whether this notification was already written. With `intervalMinutes`, a
+   * matching row inside that window counts (votes, follows, proposals). With
+   * `commentId` instead, a row about the same comment counts whenever it was
+   * written: one comment is one notification per recipient and type.
+   */
   private async isDuplicate(
     actorId: string,
     recipientId: string,
     type: NotificationType,
     entityId: string,
-    intervalMinutes: number,
+    intervalMinutes: number | null,
+    commentId?: number,
   ): Promise<boolean> {
     // A type that can be stored without its actor also matches a row stored
     // that way: the actor was hidden from this recipient, so a NULL row is the
@@ -427,6 +434,9 @@ export class NotificationWorker {
     const sameActor = notifiesWithoutActor(type)
       ? sql`(actor_id = ${actorId} OR actor_id IS NULL)`
       : sql`actor_id = ${actorId}`;
+    const sameComment = commentId === undefined ? sql`` : sql` AND comment_id = ${commentId}`;
+    const recent =
+      intervalMinutes === null ? sql`` : sql` AND created_at > NOW() - make_interval(mins => ${intervalMinutes})`;
     const rows = await executeRows<unknown>(
       db,
       sql`
@@ -434,8 +444,7 @@ export class NotificationWorker {
       WHERE ${sameActor}
         AND recipient_id = ${recipientId}
         AND type = ${type}
-        AND entity_id = ${entityId}
-        AND created_at > NOW() - make_interval(mins => ${intervalMinutes})
+        AND entity_id = ${entityId}${sameComment}${recent}
       LIMIT 1
     `,
     );
@@ -495,6 +504,14 @@ export class NotificationWorker {
         .where(eq(dbSchema.comments.uuid, commentUuid))
         .limit(1);
       commentId = comment?.id;
+    }
+
+    // The broker acknowledges an event only after its whole handler, feed
+    // fan-out included, and redelivers it otherwise. A comment notification
+    // already written for this recipient means this is that redelivery.
+    // Comment types never store a hidden actor, so the actor matches as is.
+    if (commentId !== undefined && (await this.isDuplicate(actorId, recipientId, type, entityId, null, commentId))) {
+      return;
     }
 
     // Persist notification

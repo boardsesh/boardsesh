@@ -1,6 +1,6 @@
 import { eq, and, ne } from 'drizzle-orm';
 import { executeRows } from '@boardsesh/db/client';
-import { entityOwnerIdsQuery, SYSTEM_USER_ID, type OwnedEntityType } from '@boardsesh/db/queries';
+import { entityOwnerIdsQuery, NON_HUMAN_USER_IDS, type OwnedEntityType } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
@@ -34,16 +34,18 @@ const commentOnOwnedItemType = new Map<string, NotificationType>(Object.entries(
  * `setter_id` names no Boardsesh account here), the playlist's owner, the
  * live board's or gym's owner.
  *
- * The system catalogue account is dropped. It holds unclaimed synced gyms and
- * the walls a deleted account hands over, nobody reads its inbox, and a row
- * there would only keep other climbers' activity against an account. It stays
- * an owner for reads (`entityOwnerCondition`); it just gets no notifications.
+ * Accounts nobody signs in to are dropped (`NON_HUMAN_USER_IDS`): the system
+ * catalogue account, which holds unclaimed synced gyms and the walls a deleted
+ * account hands over, and the job account that owns generated recommendation
+ * playlists. Nobody reads their inbox, and a row there would only keep other
+ * climbers' activity against an account. They stay owners for reads
+ * (`entityOwnerCondition`); they just get no notifications.
  */
 async function resolveEntityOwnerIds(entityType: string, entityId: string): Promise<string[]> {
   const ownerQuery = entityOwnerIdsQuery(entityType, entityId);
   if (!ownerQuery) return [];
   const owners = await executeRows<{ owner_id: string }>(db, ownerQuery);
-  return owners.map((owner) => owner.owner_id).filter((ownerId) => ownerId !== SYSTEM_USER_ID);
+  return owners.map((owner) => owner.owner_id).filter((ownerId) => !NON_HUMAN_USER_IDS.has(ownerId));
 }
 
 /**
