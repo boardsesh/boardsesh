@@ -159,6 +159,33 @@ describe('useNotificationNavigation proposal rows', () => {
   });
 });
 
+describe('useNotificationNavigation owner comment rows', () => {
+  // The rows an item's owner gets for a comment on it (#6385) open that item's
+  // thread, never the climb, even when the row carries a climb to draw.
+  it.each([
+    { type: 'comment_on_session', threadEntityType: 'session', threadEntityId: 'session-1' },
+    { type: 'comment_on_climb', threadEntityType: 'climb', threadEntityId: 'climb-1' },
+    { type: 'comment_on_playlist', threadEntityType: 'playlist_climb', threadEntityId: 'playlist-1:climb-1' },
+    { type: 'comment_on_board', threadEntityType: 'board', threadEntityId: 'board-1' },
+    { type: 'comment_on_gym', threadEntityType: 'gym', threadEntityId: 'gym-1' },
+  ] as const)('opens the $threadEntityType thread for $type', ({ type, threadEntityType, threadEntityId }) => {
+    const notification = makeNotification({
+      type,
+      entityType: threadEntityType,
+      entityId: threadEntityId,
+      threadEntityType,
+      threadEntityId,
+      proposalUuid: null,
+      proposalType: null,
+    });
+    tap(notification);
+    expect(markGroupMutate).toHaveBeenCalledWith(notification);
+    expect(openCommentThread).toHaveBeenCalledWith(threadEntityType, threadEntityId);
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
+
 describe('useNotificationNavigation spray imports', () => {
   it.each([
     { resetOf: null, params: { wallUuid: 'wall-1', versionId: '123' } },

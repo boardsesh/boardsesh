@@ -52,7 +52,11 @@ describe('notificationCopy', () => {
     ['follow_request', 'items.followRequest'],
     ['comment_reply', 'items.commentReply'],
     ['comment_on_tick', 'items.commentOnTick'],
-    ['comment_on_climb', 'items.commentOnClimb'],
+    ['comment_on_climb', 'items.commentOnClimbGeneric'],
+    ['comment_on_session', 'items.commentOnSession'],
+    ['comment_on_playlist', 'items.commentOnPlaylist'],
+    ['comment_on_board', 'items.commentOnBoard'],
+    ['comment_on_gym', 'items.commentOnGymGeneric'],
     ['vote_on_tick', 'items.voteOnTick'],
     ['vote_on_comment', 'items.voteOnComment'],
     ['proposal_created', 'items.proposalCreated'],
@@ -182,12 +186,16 @@ describe('notificationCopy', () => {
     expect(copy).toEqual({ textI18nKey: 'items.proposalCreated', params: { actor: 'Alex' } });
   });
 
-  // The three comment types swap to a *WithBody key when the group carries a
-  // comment preview, and interpolate the body.
+  // Every comment type swaps to a *WithBody key when the group carries a
+  // comment preview, and interpolates the body.
   const withBodyCases: Array<[NotificationType, string]> = [
     ['comment_reply', 'items.commentReplyWithBody'],
     ['comment_on_tick', 'items.commentOnTickWithBody'],
     ['comment_on_climb', 'items.commentOnClimbWithBody'],
+    ['comment_on_session', 'items.commentOnSessionWithBody'],
+    ['comment_on_playlist', 'items.commentOnPlaylistWithBody'],
+    ['comment_on_board', 'items.commentOnBoardWithBody'],
+    ['comment_on_gym', 'items.commentOnGymWithBody'],
   ];
 
   it.each(withBodyCases)('maps %s with a commentBody to %s', (type, expectedKey) => {
@@ -213,6 +221,36 @@ describe('notificationCopy', () => {
       expect(notificationCopy(shown, 'Alex')).toEqual({ textI18nKey: 'items.newClimb', params: { actor: 'Alex' } });
     },
   );
+
+  // An owner row with no comment preview (the comment was deleted) names the
+  // climb or gym when the group carries it, and stays climb-free otherwise.
+  it('names your climb on a comment_on_climb row with no preview', () => {
+    const copy = notificationCopy(makeNotification({ type: 'comment_on_climb', climbName: 'Crimp line' }), 'Alex');
+    expect(copy).toEqual({ textI18nKey: 'items.commentOnClimb', params: { actor: 'Alex', climb: 'Crimp line' } });
+  });
+
+  it('names your gym on a comment_on_gym row with no preview', () => {
+    const copy = notificationCopy(makeNotification({ type: 'comment_on_gym', gymName: 'Boulder Barn' }), 'Alex');
+    expect(copy).toEqual({ textI18nKey: 'items.commentOnGym', params: { actor: 'Alex', gym: 'Boulder Barn' } });
+  });
+
+  it('reads an unnamed report on your climb as coming from someone', () => {
+    // A private reporter arrives with no actor; the screen resolves the actor
+    // summary to the fallback before calling notificationCopy.
+    const unnamed = makeNotification({
+      type: 'proposal_on_your_climb',
+      actors: [],
+      actorCount: 0,
+      proposalType: 'hide',
+      climbName: 'Crimp line',
+    });
+    const actor = actorSummary(unnamed, FALLBACKS);
+    expect(actor).toEqual({ kind: 'literal', text: 'Someone' });
+    expect(notificationCopy(unnamed, 'Someone')).toEqual({
+      textI18nKey: 'items.proposalOnYourClimbHide',
+      params: { actor: 'Someone', climb: 'Crimp line' },
+    });
+  });
 
   it('names the gym when gym_claim_approved carries one', () => {
     const copy = notificationCopy(makeNotification({ type: 'gym_claim_approved', gymName: 'Boulder Barn' }), 'Alex');

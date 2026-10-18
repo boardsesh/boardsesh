@@ -454,13 +454,18 @@ describe('NotificationsScreen row taps', () => {
 });
 
 describe('NotificationsScreen thread rows', () => {
-  // The regression this guards: these five types used to mark themselves read
+  // The regression this guards: the first five types used to mark themselves read
   // and go NOWHERE, because the resolver never gave them a climbUuid and the
   // climb branch was the only fallback.
   const threadCases = [
     { type: 'comment_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
     { type: 'comment_reply', threadEntityType: 'session', threadEntityId: 'session-2' },
     { type: 'comment_on_climb', threadEntityType: 'climb', threadEntityId: 'climb-4' },
+    // The owner rows (#6385) open the thread on the owner's item.
+    { type: 'comment_on_session', threadEntityType: 'session', threadEntityId: 'session-2' },
+    { type: 'comment_on_playlist', threadEntityType: 'playlist_climb', threadEntityId: 'playlist-1:_all' },
+    { type: 'comment_on_board', threadEntityType: 'board', threadEntityId: 'board-1' },
+    { type: 'comment_on_gym', threadEntityType: 'gym', threadEntityId: 'gym-1' },
     { type: 'vote_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
     // A vote names the COMMENT; the resolver walks it to the thread it sits in,
     // which is what the row must open.
