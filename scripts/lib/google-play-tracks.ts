@@ -108,12 +108,13 @@ export function releaseFromInternalEdit(internalEdit: unknown, versionCode: numb
   return { versionCodes: [String(versionCode)], status: 'completed', ...releaseIdentity(source[0]!) };
 }
 
-const PLAY_ERROR_MESSAGE_LIMIT = 300;
+/** Longest Google error message a Play request error quotes, before the `…`. */
+export const PLAY_ERROR_MESSAGE_LIMIT = 300;
 
 /**
  * Google's own error envelope (`{"error":{"status","message"}}`), scrubbed of
- * anything credential-shaped: the access token, OAuth tokens, PEM keys and
- * email addresses. Any other body text is never returned, so a non-JSON body
+ * anything credential-shaped: the access token, OAuth and JWT tokens, PEM keys
+ * and email addresses. Any other body text is never returned, so a non-JSON body
  * or an envelope without a message gives null.
  */
 export function playErrorDetail(body: string, accessToken: string): string | null {
@@ -133,6 +134,8 @@ export function playErrorDetail(body: string, accessToken: string): string | nul
     .replace(/-----BEGIN[\s\S]*?(-----END[^-]*-----|$)/g, '[redacted key]')
     .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
     .replace(/\bya29\.[\w.-]+/g, '[redacted token]')
+    // A JWT, such as a service-account assertion: base64url header (always `eyJ`), payload and signature.
+    .replace(/\beyJ[\w-]*\.[\w-]+(\.[\w-]*)?/g, '[redacted token]')
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]')
     .replace(/\s+/g, ' ')
     .trim();

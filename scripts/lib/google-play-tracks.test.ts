@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createPlayRequest, playErrorDetail } from './google-play-tracks';
+import { createPlayRequest, PLAY_ERROR_MESSAGE_LIMIT, playErrorDetail } from './google-play-tracks';
 
 const TOKEN = 'ya29.access-token-under-test';
 const envelope = (message: unknown, status: unknown = 'FAILED_PRECONDITION') =>
@@ -15,16 +15,16 @@ describe('playErrorDetail', () => {
     );
   });
 
-  it('scrubs the access token, OAuth tokens, bearer headers, keys and emails', () => {
+  it('scrubs the access token, OAuth and JWT tokens, bearer headers, keys and emails', () => {
     const detail = playErrorDetail(
       envelope(
-        `token ${TOKEN} other ya29.someone-elses Bearer abc.def ` +
+        `token ${TOKEN} other ya29.someone-elses jwt eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJwbGF5In0.c2lnbmF0dXJl Bearer abc.def ` +
           '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY----- for play@boardsesh.iam.gserviceaccount.com',
       ),
       TOKEN,
     );
     expect(detail).toBe(
-      'FAILED_PRECONDITION: token [redacted token] other [redacted token] Bearer [redacted] [redacted key] for [redacted email]',
+      'FAILED_PRECONDITION: token [redacted token] other [redacted token] jwt [redacted token] Bearer [redacted] [redacted key] for [redacted email]',
     );
   });
 
@@ -36,8 +36,10 @@ describe('playErrorDetail', () => {
 
   it('caps the message length and keeps it on one line', () => {
     const detail = playErrorDetail(envelope(`line one\n\nline two ${'x'.repeat(400)}`), TOKEN);
+    expect(detail).not.toBeNull();
     expect(detail).not.toContain('\n');
-    expect(detail!.length).toBeLessThanOrEqual('FAILED_PRECONDITION: '.length + 301);
+    // The status prefix, then at most the limit's worth of message and one `…`.
+    expect(detail!.length).toBe('FAILED_PRECONDITION: '.length + PLAY_ERROR_MESSAGE_LIMIT + '…'.length);
     expect(detail!.endsWith('…')).toBe(true);
   });
 
