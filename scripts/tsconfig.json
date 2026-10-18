@@ -16,8 +16,11 @@
   "include": [
     "mobile-store-android-audit.ts",
     "mobile-store-android-beta.ts",
+    "mobile-store-android-production.ts",
+    "lib/google-play-tracks.ts",
     "__tests__/mobile-store-android-audit.test.ts",
     "__tests__/mobile-store-android-beta.test.ts",
+    "__tests__/mobile-store-android-production.test.ts",
     "import-live-activity-capture.ts",
     "__tests__/screenshot-live-activity.test.ts",
     "record-ios-campaign-privacy.ts",

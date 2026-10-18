@@ -605,6 +605,24 @@ platform :android do
     Dir.chdir(REPO_ROOT) { sh(*command) }
   end
 
+  desc "Plan or release one exact published internal build to production (rollout 1-100, default 100)"
+  lane :production do |options|
+    version_code = (options[:version_code] || ENV["ANDROID_VERSION_CODE"]).to_s
+    unless version_code.match?(/\A[1-9]\d*\z/)
+      UI.user_error!("Provide version_code:<exact Android versionCode>")
+    end
+    rollout = (options[:rollout] || ENV["ANDROID_ROLLOUT_PERCENT"] || "100").to_s
+    unless rollout.match?(/\A(100|[1-9]\d?)\z/)
+      UI.user_error!("rollout must be a whole percent from 1 to 100")
+    end
+    ENV["ANDROID_VERSION_CODE"] = version_code
+    ENV["ANDROID_ROLLOUT_PERCENT"] = rollout
+    ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] ||= ENV["GOOGLE_PLAY_JSON_KEY"]
+    command = ["vp", "exec", "node", "--import", "tsx", File.join(REPO_ROOT, "scripts", "mobile-store-android-production.ts")]
+    command << "--apply" if options[:apply].to_s == "true"
+    Dir.chdir(REPO_ROOT) { sh(*command) }
+  end
+
   desc "Upload Play Store phone screenshots to Google Play (no binary, no text metadata)"
   lane :screenshots do
     unless Dir.exist?(GOOGLE_SCREENSHOTS_DIR)

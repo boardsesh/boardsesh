@@ -103,6 +103,21 @@ Google's `PUBLISHED` lifecycle includes partial and halted releases.
 This is the catch-up path for a build already uploaded internally; routine new
 native builds use `upload_beta` instead. Neither lane uploads production releases.
 
+## Production release — `android production`
+
+```bash
+cd fastlane
+bundle exec fastlane android production version_code:2001310
+bundle exec fastlane android production version_code:2001310 rollout:100 apply:true
+```
+
+The same exact-build rules as `android beta`, written to the production track.
+The default is a read-only plan. `rollout:` takes a whole percent from 1 to 100
+(default 100). At 100 the build becomes the only production release, replacing
+the live release and any draft. Below 100 it is written as `inProgress` beside
+the current completed release. A build already completed on production cannot be
+shrunk to a staged rollout. CI runs it through `mobile-store-android-production.yml`.
+
 `android audit` accepts `track:internal`, `track:beta`, or `track:production`
 and saves its lifecycle receipt to `output:` or a temporary file printed in the
 log. A `PUBLISHED` lifecycle state includes partial and halted releases; it does

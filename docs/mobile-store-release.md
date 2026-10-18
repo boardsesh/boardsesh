@@ -120,7 +120,7 @@ Fastlane owns tester-track assignment, release notes from
 The upload commits both tracks in one edit and fails if another package-wide
 review is already pending. It never cancels that review or retries the commit
 with relaxed flags. Let the existing review finish, then rerun the failed job.
-Production remains a separate draft/submission flow.
+Production is a separate draft and release flow (see "Review submission and rollout are started by hand" below).
 
 **Catch up open testing without rebuilding:** dispatch **Android Open Beta
 Promotion** (`mobile-store-android-beta.yml`) on `main` with the exact published
@@ -437,11 +437,29 @@ makes a repeat run replace rather than append. The Android lane promotes the
 internal-track release carrying the tagged versionCode to a production release
 in draft status.
 
-Review submission and rollout remain manual:
+Review submission and rollout are started by hand:
 
 - **App Store Connect:** confirm the attached TestFlight build, metadata and
   screenshots, then submit it for review.
-- **Play Console:** promote the verified internal release to production.
+- **Google Play:** dispatch **Android Production Release**
+  (`mobile-store-android-production.yml`) on `main` with the exact published
+  internal versionCode. Its default is a GET-only plan; select `apply` to
+  submit that build to production. `rollout_percent` (default `100`) sets the
+  share of production users: `100` completes the release and replaces both the
+  live release and the store-draft workflow's draft; anything lower writes an
+  `inProgress` release beside the current completed one. Dispatch again with a
+  higher percent to widen it. The workflow shares the native upload lock and
+  refuses a missing source, a downgrade, an ambiguous production track, shrinking
+  a completed release, or a pending package review. The equivalent Fastlane lane
+  is `android production version_code:<code> rollout:<percent>` (plan), with
+  `apply:true` for submission. Play review and managed publishing can still hold
+  the build after a successful commit: confirm it with **Mobile Store Android
+  Audit** on the `production` track.
+
+Until Android reaches production, the daily stable OTA controller has no Android
+devices to judge on that native runtime and holds its release at 50%
+(see `docs/mobile-ota-updates.md`, "Daily stable runbook"). Release Android
+promptly after its store draft appears.
 
 Before submission, dispatch **Mobile Store Audit** (`mobile-store-audit.yml`) on
 `main` with the exact marketing version and iOS build number. It reads App Store

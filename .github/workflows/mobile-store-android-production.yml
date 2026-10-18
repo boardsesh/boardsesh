@@ -1,0 +1,65 @@
+name: Android Production Release
+
+# Releases one exact build already on the Play internal track to production.
+# The default is a GET-only plan. With `apply` it writes the production track
+# and commits it for review; Play review and managed publishing still decide
+# when the build reaches phones. See docs/mobile-store-release.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Exact published internal versionCode to release to production'
+        required: true
+        type: string
+      rollout_percent:
+        description: 'Share of production users, 1-100 (100 completes the release)'
+        required: true
+        type: string
+        default: '100'
+      apply:
+        description: 'Submit the production release for review; otherwise inspect the plan only'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize with native uploads and beta promotion across both release branches.
+concurrency:
+  group: android-apk-rn
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Test production release guards
+        run: vp test run scripts/__tests__/mobile-store-android-production.test.ts --reporter=agent
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Plan or submit the exact production build
+        working-directory: fastlane
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          ROLLOUT_PERCENT: ${{ inputs.rollout_percent }}
+          APPLY: ${{ inputs.apply }}
+        run: >-
+          bundle exec fastlane android production
+          version_code:"$VERSION_CODE" rollout:"$ROLLOUT_PERCENT" apply:"$APPLY"
