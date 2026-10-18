@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const authority = vi.hoisted(() => ({ privacy: 0, credential: 0, revoke: undefined as (() => void) | undefined }));
+const authority = vi.hoisted(() => ({ credential: 0, revoke: undefined as (() => void) | undefined }));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({
-  getPrivacyRevocationGeneration: () => authority.privacy,
-  getPrivacyCredentialGeneration: () => authority.credential,
-  subscribeToPrivacyRevocations: (listener: () => void) => {
+  getCredentialGeneration: () => authority.credential,
+  subscribeToCredentialChanges: (listener: () => void) => {
     authority.revoke = listener;
     return () => {};
   },
@@ -50,7 +49,6 @@ const measurements = {
 describe('opening layout reuse', () => {
   beforeEach(() => {
     clearOpeningLayoutCache();
-    authority.privacy = 0;
     authority.credential = 0;
   });
   it('copies complete positive geometry and freezes it', () => {
@@ -104,18 +102,15 @@ describe('opening layout reuse', () => {
       }),
     ).toBe(true);
   });
-  it.each(['privacy', 'credential'] as const)(
-    'rejects an already captured key after %s withdrawal, before React updates',
-    (field) => {
-      const key = buildOpeningLayoutKey(identity);
-      rememberOpeningLayout(key, measurements);
-      authority[field] += 1;
-      expect(readOpeningLayout(key)).toBeUndefined();
-      expect(rememberOpeningLayout(key, measurements)).toBe(false);
-      expect(buildOpeningLayoutKey(identity)).not.toBe(key);
-    },
-  );
-  it('clears synchronously through the privacy listener', () => {
+  it('rejects an already captured key after a credential withdrawal, before React updates', () => {
+    const key = buildOpeningLayoutKey(identity);
+    rememberOpeningLayout(key, measurements);
+    authority.credential += 1;
+    expect(readOpeningLayout(key)).toBeUndefined();
+    expect(rememberOpeningLayout(key, measurements)).toBe(false);
+    expect(buildOpeningLayoutKey(identity)).not.toBe(key);
+  });
+  it('clears synchronously through the credential listener', () => {
     const key = buildOpeningLayoutKey(identity);
     rememberOpeningLayout(key, measurements);
     authority.revoke?.();

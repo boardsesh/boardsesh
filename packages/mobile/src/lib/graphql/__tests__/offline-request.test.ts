@@ -57,10 +57,10 @@ const {
   recordOfflineReadUnavailable: vi.fn(),
 }));
 
-// The sign-in generation: `invalidatePrivacySnapshots('credential')` moves it at
+// The sign-in generation: `invalidateCredentialSnapshots()` moves it at
 // every sign-in and sign-out. A token refresh does not.
 const privacy = vi.hoisted(() => ({ generation: 0 }));
-vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => privacy.generation }));
+vi.mock('../../privacy/privacy-cache', () => ({ getCredentialGeneration: () => privacy.generation }));
 vi.mock('../../../db', () => ({ getDatabaseHandle }));
 vi.mock('../../../db/queries/board-download-status', () => ({
   isBoardDownloadedLocally,

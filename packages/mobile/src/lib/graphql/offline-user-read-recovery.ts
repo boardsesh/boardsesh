@@ -1,5 +1,5 @@
 import { focusManager, hashKey, onlineManager, type QueryClient, type QueryKey } from '@tanstack/react-query';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 
 export type OfflineUserReadFamily = 'logbook' | 'playlists' | 'favorites';
 
@@ -17,7 +17,7 @@ export function beginPlaylistMembershipWrite(queryClient: QueryClient, queryKey:
     membershipWrites.set(queryClient, writes);
   }
   const queryHash = hashKey(queryKey);
-  const credentialGeneration = getPrivacyRevocationGeneration();
+  const credentialGeneration = getCredentialGeneration();
   let write = writes.get(queryHash);
   if (!write || write.credentialGeneration !== credentialGeneration) {
     write = { pending: 0, refreshRequested: false, credentialGeneration };
@@ -32,7 +32,7 @@ export function beginPlaylistMembershipWrite(queryClient: QueryClient, queryKey:
     activeWrite.pending -= 1;
     if (activeWrite.pending > 0 || writes.get(queryHash) !== activeWrite) return;
     writes.delete(queryHash);
-    if (activeWrite.refreshRequested && activeWrite.credentialGeneration === getPrivacyRevocationGeneration()) {
+    if (activeWrite.refreshRequested && activeWrite.credentialGeneration === getCredentialGeneration()) {
       void queryClient.invalidateQueries({ queryKey, exact: true });
     }
   };
@@ -40,12 +40,12 @@ export function beginPlaylistMembershipWrite(queryClient: QueryClient, queryKey:
 
 export function isPlaylistMembershipWritePending(queryClient: QueryClient, queryKey: QueryKey): boolean {
   const write = membershipWrites.get(queryClient)?.get(hashKey(queryKey));
-  return write?.credentialGeneration === getPrivacyRevocationGeneration();
+  return write?.credentialGeneration === getCredentialGeneration();
 }
 
 function refreshPlaylistMemberships(queryClient: QueryClient): void {
   const writes = membershipWrites.get(queryClient);
-  const credentialGeneration = getPrivacyRevocationGeneration();
+  const credentialGeneration = getCredentialGeneration();
   for (const write of writes?.values() ?? []) {
     if (write.credentialGeneration === credentialGeneration) write.refreshRequested = true;
   }
@@ -85,10 +85,10 @@ export function getUserReadRefreshEpoch(family: OfflineUserReadFamily): number {
 /** QueryClient cache invalidation cannot wake the list readers' fetched refs. */
 export function bindOfflineUserReadRecovery(queryClient: QueryClient): () => void {
   let wasOnline = onlineManager.isOnline();
-  let credentialGeneration = getPrivacyRevocationGeneration();
-  const unsubscribeCredentials = subscribeToPrivacyRevocations(() => {
-    if (getPrivacyRevocationGeneration() === credentialGeneration) return;
-    credentialGeneration = getPrivacyRevocationGeneration();
+  let credentialGeneration = getCredentialGeneration();
+  const unsubscribeCredentials = subscribeToCredentialChanges(() => {
+    if (getCredentialGeneration() === credentialGeneration) return;
+    credentialGeneration = getCredentialGeneration();
     servedLocally.clear();
   });
   const refresh = () => {

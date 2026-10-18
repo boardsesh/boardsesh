@@ -72,11 +72,7 @@ import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { nowMs } from '../lib/clock';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
-import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  subscribeToPrivacyRevocations,
-} from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import {
   GET_SESSION_QUEUE_STATE,
   GET_SESSION_QUEUE_STATE_NOW_SLOT,
@@ -641,8 +637,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           angle: activeBoard.angle,
         })
       : null;
-  const suggestionPrivacyEpoch = getPrivacyRevocationGeneration();
-  const suggestionCredentialEpoch = getPrivacyCredentialGeneration();
+  const suggestionCredentialEpoch = getCredentialGeneration();
   const playlistSuggestionSource = useMemo(() => {
     const anchored = anchoredSourceForBoard;
     if (!anchored || !activeBoard || activeBoardKey == null) return anchored;
@@ -651,7 +646,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     const normalized = boardSuggestionCompatibilityCache.normalize(
       anchored,
       suggestionCompatibilityTarget,
-      suggestionPrivacyEpoch,
       suggestionCredentialEpoch,
     );
     // Old mixed snapshots can also have a foreign current climb. Preserve its
@@ -679,7 +673,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     currentClimbForSource,
     boardSuggestionCompatibilityCache,
     suggestionCompatibilityTarget,
-    suggestionPrivacyEpoch,
     suggestionCredentialEpoch,
   ]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
@@ -763,7 +756,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   lastObservedAuthenticationRef.current = isAuthenticated;
   const subscribeToQueuePrivacy = useCallback(
     (notify: () => void) =>
-      subscribeToPrivacyRevocations(() => {
+      subscribeToCredentialChanges(() => {
         // Imperative readers and delayed mutation callbacks must lose the copied
         // payload before React's next commit. Keep list order and current selection.
         resetQueueMutationLane();
@@ -781,10 +774,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }),
     [resetQueueMutationLane, boardSuggestionCompatibilityCache],
   );
-  const privacyRevocationGeneration = useSyncExternalStore(
+  const credentialGeneration = useSyncExternalStore(
     subscribeToQueuePrivacy,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   const undoScopeIdentity = JSON.stringify([
     sessionId,
@@ -797,11 +790,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     undoScopeIdentityRef.current = { identity: undoScopeIdentity, revision: undoScopeIdentityRef.current.revision + 1 };
   }
   // A switch away and back still retires an already queued Undo.
-  const undoScope = JSON.stringify([
-    undoScopeIdentity,
-    undoScopeIdentityRef.current.revision,
-    privacyRevocationGeneration,
-  ]);
+  const undoScope = JSON.stringify([undoScopeIdentity, undoScopeIdentityRef.current.revision, credentialGeneration]);
   const undoScopeRef = useRef(undoScope);
   undoScopeRef.current = undoScope;
   const identityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined }>({
@@ -979,7 +968,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
-          const privacyGeneration = getPrivacyRevocationGeneration();
+          const privacyGeneration = getCredentialGeneration();
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
@@ -1029,7 +1018,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           } else {
             result = await runJoin(JOIN_SESSION);
           }
-          if (privacyGeneration !== getPrivacyRevocationGeneration()) throw new Error('Queue authorization changed');
+          if (privacyGeneration !== getCredentialGeneration()) throw new Error('Queue authorization changed');
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
           announcedIdentityRef.current = sentIdentity;
@@ -1287,7 +1276,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   useQueuePersistence({
     authenticatedUserId,
     identityReady: !isAuthenticated || !!authenticatedUserId,
-    privacyRevocationGeneration,
+    credentialGeneration,
     dispatch,
     sessionIdRef,
     setSessionId,
@@ -1489,7 +1478,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // angle-follow, and the 60s hash watchdog. See useSessionRealtime.
   useSessionRealtime({
     authTransportRevision,
-    privacyRevocationGeneration,
+    credentialGeneration,
     sessionId,
     dispatch,
     coordinator,
@@ -1573,12 +1562,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // handler — no need to set isSessionWallLit here.
   const reportWallDisconnect = useCallback(() => mutations.reportWallDisconnect(), [mutations]);
 
-  const climbReads = useQueueClimbReads({ activeBoard, privacyRevocationGeneration });
+  const climbReads = useQueueClimbReads({ activeBoard, credentialGeneration });
 
   // Self-healing re-grade: refetch angle-specific grades for queued climbs and
   // the displayed playlist peek whenever the active angle drifts. See useQueueRegrade.
   useQueueRegrade({
-    privacyRevocationGeneration,
+    credentialGeneration,
     activeBoard,
     queue: state.queue,
     historyCount: state.historyCount,
@@ -1601,7 +1590,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     queue: state.queue,
     historyCount: state.historyCount,
     currentClimbQueueItem: state.currentClimbQueueItem,
-    privacyRevocationGeneration,
+    credentialGeneration,
     dispatch,
     climbReads,
   });
@@ -1723,7 +1712,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    */
   const addToQueue = useCallback(
     async (rawItem: ClimbQueueItem, options?: { placement?: QueueAddPlacement }): Promise<'added' | 'cancelled'> => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return 'cancelled';
+      if (credentialGeneration !== getCredentialGeneration()) return 'cancelled';
       const activeBoard = activeBoardRef.current;
       const activeConfig = toActiveBoardCompatibilityConfig(activeBoard);
       // `stateRef.current` is reassigned during render, so between a dispatch
@@ -1750,8 +1739,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           climbLayoutId: decision.climbLayoutId,
           activeBoardName: activeBoard?.boardType,
         });
-        if (privacyRevocationGeneration !== getPrivacyRevocationGeneration() || result.outcome === 'cancel')
-          return 'cancelled';
+        if (credentialGeneration !== getCredentialGeneration() || result.outcome === 'cancel') return 'cancelled';
         if (result.outcome === 'switch') {
           // The queue followed them onto the new board, so peers must too — a
           // local-only switch would leave the session's board path (and every
@@ -1772,7 +1760,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       commitQueueAdd(rawItem, options?.placement ?? 'end');
       return 'added';
     },
-    [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath, privacyRevocationGeneration],
+    [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath, credentialGeneration],
   );
 
   const removeFromQueue = useCallback(
@@ -2147,7 +2135,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // re-seed push the live queue themselves and clamp it the same way.
   const setQueue = useCallback(
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       // A replace's payload is all Up next when nothing is current (line 0); the
       // clamp follows the server probe (now-slot mode keeps the climb on the
       // wall out of the count, legacy keeps 500 entries in all).
@@ -2161,13 +2149,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         syncable.historyCount,
       );
     },
-    [applyQueueSnapshot, captureQueueMutationOrigin, invalidateQueuedQueueMutations, privacyRevocationGeneration],
+    [applyQueueSnapshot, captureQueueMutationOrigin, invalidateQueuedQueueMutations, credentialGeneration],
   );
 
   const restoreQueueItems = useCallback(
     (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => {
-      const isCurrent = () =>
-        scope === undoScopeRef.current && privacyRevocationGeneration === getPrivacyRevocationGeneration();
+      const isCurrent = () => scope === undoScopeRef.current && credentialGeneration === getCredentialGeneration();
       if (!isCurrent()) return;
       const origin = captureQueueMutationOrigin();
       applyQueueSnapshot(before.queue, before.currentClimbQueueItem, origin, () => {
@@ -2186,7 +2173,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         });
       });
     },
-    [applyQueueSnapshot, captureQueueMutationOrigin, privacyRevocationGeneration],
+    [applyQueueSnapshot, captureQueueMutationOrigin, credentialGeneration],
   );
 
   // Stable live read of the queue + current climb and masked playlist source.
@@ -2223,7 +2210,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // can confirm an honest count.
   const appendQueueItems = useCallback(
     (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean; placement?: QueueAddPlacement }): number => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return 0;
+      if (credentialGeneration !== getCredentialGeneration()) return 0;
       // Nothing to append: don't broadcast a SET_QUEUE that changes nothing.
       if (items.length === 0) return 0;
       const { queue, currentClimbQueueItem } = stateRef.current;
@@ -2331,7 +2318,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       return appended.length;
     },
     [
-      privacyRevocationGeneration,
+      credentialGeneration,
       applyQueueSnapshot,
       attributeNewItem,
       captureQueueMutationOrigin,
@@ -2688,7 +2675,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       suppliedCorrelationId?: string,
       requestedPlacement?: CurrentClimbPlacement,
     ): NowSlotOpen | null => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return null;
+      if (credentialGeneration !== getCredentialGeneration()) return null;
       // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
       // playlist peek minted in nextClimb) introduces it — stamp it before the
       // dispatch so state and broadcast agree. Navigating onto an item already in
@@ -2767,7 +2754,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
       return nowSlotOpen;
     },
-    [privacyRevocationGeneration, attributeNewItem, captureQueueMutationOrigin, coordinator, sendCurrentClimb],
+    [credentialGeneration, attributeNewItem, captureQueueMutationOrigin, coordinator, sendCurrentClimb],
   );
 
   // Re-send a move whose send missed the session, once the reducer says the
@@ -2810,7 +2797,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       pending.correlationId !== correlationId ||
       pending.origin.sessionId !== moveAwaitingResend.sessionId ||
       !isQueueMutationOriginCurrent(pending.origin) ||
-      privacyRevocationGeneration !== getPrivacyRevocationGeneration() ||
+      credentialGeneration !== getCredentialGeneration() ||
       current?.uuid !== moveAwaitingResend.itemUuid
     ) {
       // The room, account or queue intent changed while it waited. The move
@@ -2835,7 +2822,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     moveAwaitingResend,
     forgetPendingResend,
     isQueueMutationOriginCurrent,
-    privacyRevocationGeneration,
+    credentialGeneration,
     releasePendingResend,
     sendCurrentClimb,
     showToast,
@@ -2910,17 +2897,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     (walkedSource: PlaylistSuggestionSource | null, trackResume: PlaylistTrackResume | null | undefined) => {
       if (trackResume === undefined || !walkedSource) return;
       if (samePlaylistTrackResume(walkedSource.resume, trackResume)) return;
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       setPlaylistSuggestionSourceState((held) =>
         held && playlistSuggestionSourceMatches(held, walkedSource) ? withPlaylistTrackResume(held, trackResume) : held,
       );
     },
-    [privacyRevocationGeneration],
+    [credentialGeneration],
   );
 
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       // Source is client-only provider state (see note above) — set it whenever
       // the caller passes options. Activation passes a source; a fresh
       // climb-list/search open passes null to clear playlist context; re-opening
@@ -2999,17 +2986,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         placement: nowSlotOpen?.placement ?? null,
       });
     },
-    [dispatchSetCurrent, privacyRevocationGeneration, seedCurrentChange, storeTrackResume],
+    [dispatchSetCurrent, credentialGeneration, seedCurrentChange, storeTrackResume],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
   // REFRESH_AUTHORED_CLIMB for why this is not folded into setCurrentClimb.
   const refreshAuthoredClimb = useCallback(
     (climbUuid: string, patch: ClimbAuthoredPatch) => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       dispatch({ type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
     },
-    [privacyRevocationGeneration],
+    [credentialGeneration],
   );
 
   // One skip run gets one notice. A held swipe can fire nextClimb twice for the
@@ -3326,11 +3313,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const suggestionSourceSelectedAtRef = useRef<number | null>(null);
   const setPlaylistSuggestionSource = useCallback(
     (source: PlaylistSuggestionSource | null) => {
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      if (credentialGeneration !== getCredentialGeneration()) return;
       suggestionSourceSelectedAtRef.current = source ? Date.now() : null;
       setPlaylistSuggestionSourceState(source);
     },
-    [privacyRevocationGeneration],
+    [credentialGeneration],
   );
 
   // No-op unless the incoming source matches the active one (same playlist +
@@ -3340,7 +3327,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // the climber walks (#6664).
   const refreshPlaylistSuggestionSource = useCallback(
     (source: PlaylistSuggestionSource): boolean => {
-      const sameAccount = privacyRevocationGeneration === getPrivacyRevocationGeneration();
+      const sameAccount = credentialGeneration === getCredentialGeneration();
       // The refresh is built from the list, not from the walk: it keeps the
       // held track's place in Up next and its last detour (#6777), or the list
       // would forget where to pick up while a queued climb plays, and Previous
@@ -3352,7 +3339,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       );
       return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);
     },
-    [privacyRevocationGeneration],
+    [credentialGeneration],
   );
 
   // Moving off the list hands swipes back to the queue. While the current climb

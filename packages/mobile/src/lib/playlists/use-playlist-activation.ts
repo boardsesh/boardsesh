@@ -63,7 +63,7 @@ import { climbToQueueItem } from '../climb-to-queue-item';
 import { reportHandledError } from '../error-reporting';
 import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { LoadedListTrackLoader } from './loaded-list-pages';
 import { getSetting } from '../../settings/hooks';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
@@ -390,9 +390,9 @@ export function usePlaylistActivation({
   // account checks it after every await, so a late page, prompt answer or
   // callback cannot write that account's playlist into the next one's queue.
   const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   const loadedClimbsByUuid = useMemo(() => {
     const climbsByUuid = new Map<string, Climb>();
@@ -442,7 +442,7 @@ export function usePlaylistActivation({
   const queueApi = useMemo(
     () => ({
       setCurrentClimb: async (climb: Climb, options: Parameters<typeof setCurrentClimb>[1]) => {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return null;
+        if (privacyGeneration !== getCredentialGeneration()) return null;
         const pendingItem = pendingQueueItemRef.current;
         pendingQueueItemRef.current = null;
         // The tapped climb is already the active climb (re-tapped from a list
@@ -473,7 +473,7 @@ export function usePlaylistActivation({
         return item;
       },
       refreshPlaylistSuggestionSource: (source: Parameters<typeof refreshPlaylistSuggestionSource>[0]) => {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return false;
+        if (privacyGeneration !== getCredentialGeneration()) return false;
         return refreshPlaylistSuggestionSource(source);
       },
     }),
@@ -734,7 +734,7 @@ export function usePlaylistActivation({
   );
 
   useEffect(() => {
-    const unsubscribe = subscribeToPrivacyRevocations(() => {
+    const unsubscribe = subscribeToCredentialChanges(() => {
       replacementAbortRef.current?.abort();
       appendAbortRef.current?.abort();
       pendingQueueItemRef.current = null;
@@ -782,7 +782,7 @@ export function usePlaylistActivation({
    */
   const promptQueueFork = useCallback(
     async (futureQueueCount: number): Promise<QueueForkDecision> => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return 'cancel';
+      if (privacyGeneration !== getCredentialGeneration()) return 'cancel';
       let warnedCount = futureQueueCount;
       for (;;) {
         const picked = await choose<QueueForkDecision>({
@@ -797,7 +797,7 @@ export function usePlaylistActivation({
           ],
           cancelValue: 'cancel',
         });
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return 'cancel';
+        if (privacyGeneration !== getCredentialGeneration()) return 'cancel';
         if (picked !== 'replace') return picked;
         const { queue, currentClimbQueueItem } = getQueueSnapshot();
         const latestFutureQueueCount = countFutureQueueItems(queue, currentClimbQueueItem);
@@ -839,7 +839,7 @@ export function usePlaylistActivation({
        */
       excludeClimbUuid?: string;
     }) => {
-      if (!activeBoard || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (!activeBoard || privacyGeneration !== getCredentialGeneration()) return;
       if (isAppendingRef.current) {
         // The row swallows its own press while appending (and shows a spinner),
         // so reaching this from `listHeader` means a double tap inside one frame
@@ -900,7 +900,7 @@ export function usePlaylistActivation({
             });
           }
         }
-        if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+        if (abortController.signal.aborted || privacyGeneration !== getCredentialGeneration()) return;
 
         if (fetchedClimbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
           reportEmptyBoardFetchOnce('append-queue-empty');
@@ -983,11 +983,7 @@ export function usePlaylistActivation({
         // where it landed: "Playing next" or "Playing last".
         showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added', count: appendedCount });
       } catch (error) {
-        if (
-          abortController.signal.aborted ||
-          privacyGeneration !== getPrivacyRevocationGeneration() ||
-          isAbortError(error)
-        )
+        if (abortController.signal.aborted || privacyGeneration !== getCredentialGeneration() || isAbortError(error))
           return;
         console.error('Playlist queue append failed:', error);
         reportHandledError(error, { tags: { source: 'playlist', op: 'append-queue' } });
@@ -1030,7 +1026,7 @@ export function usePlaylistActivation({
         onSettled?: (trackReplaced: boolean) => void;
       } = {},
     ) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) {
+      if (privacyGeneration !== getCredentialGeneration()) {
         options.onSettled?.(false);
         return;
       }
@@ -1069,7 +1065,7 @@ export function usePlaylistActivation({
           drainResult.droppedDuplicates || abortController.signal.aborted
             ? undefined
             : (drainResult.totalCount ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
-        if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+        if (abortController.signal.aborted || privacyGeneration !== getCredentialGeneration()) return;
         if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
           reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
             tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
@@ -1090,7 +1086,7 @@ export function usePlaylistActivation({
           // The prompt is modal, so nothing in the UI can abort underneath it —
           // but an unmount can, and the old sheet flow could not reach this at
           // all. Don't replace a queue on behalf of a screen that is gone.
-          if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
+          if (abortController.signal.aborted || privacyGeneration !== getCredentialGeneration()) return;
           if (decision === 'cancel') return;
           if (decision === 'append') {
             // The board-scoped list is already in hand — no second round trip.
@@ -1206,11 +1202,7 @@ export function usePlaylistActivation({
         // Ask the signal, not the error's `name` — see the drain's own catch.
         // A runtime whose abort does not carry `name: 'AbortError'` would
         // otherwise toast the climber for a cancellation they requested.
-        if (
-          abortController.signal.aborted ||
-          privacyGeneration !== getPrivacyRevocationGeneration() ||
-          isAbortError(error)
-        )
+        if (abortController.signal.aborted || privacyGeneration !== getCredentialGeneration() || isAbortError(error))
           return;
         console.error('Playlist queue replacement failed:', error);
         reportHandledError(error, {
@@ -1276,7 +1268,7 @@ export function usePlaylistActivation({
   // preview.
   const activatePlaylistClimb = useCallback(
     (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, activationOptions?: PlaylistActivationOptions) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
+      if (privacyGeneration !== getCredentialGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
       // the same climb at another angle or the other way round (mirrored): a
@@ -1492,7 +1484,7 @@ export function usePlaylistActivation({
             return promptQueueFork(futureQueueCount).then((decision) => {
               // The prompt answers `cancel` for an account change too: nothing
               // opens for an account that has gone.
-              if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+              if (privacyGeneration !== getCredentialGeneration()) return;
               // Backing out still shows the climb they tapped, as a preview that
               // walks the list. The queue stays as it was.
               if (decision === 'cancel') {

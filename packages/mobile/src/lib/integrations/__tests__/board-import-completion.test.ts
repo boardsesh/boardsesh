@@ -17,7 +17,7 @@ import {
   type BoardImportState,
 } from '../board-import-completion';
 import { AURORA_CREDENTIALS_QUERY_KEY, AURORA_UNSYNCED_QUERY_KEY } from '../board-account-query-keys';
-import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 import { PENDING_SYNC_REFRESH_MS, pendingSyncRefetchInterval } from '../use-board-account-credentials';
 
 const syncing = (boardType: string): BoardImportState => ({ boardType, pendingRunId: 'run-1', lastSyncAt: null });
@@ -127,7 +127,7 @@ describe('watchBoardImportCompletion', () => {
   it('treats the first read after a sign-out as a first observation', () => {
     const { queryClient, spy } = setup();
     write(queryClient, [syncing('kilter')]);
-    invalidatePrivacySnapshots('credential');
+    invalidateCredentialSnapshots();
     write(queryClient, [synced('kilter')]);
     expect(spy).not.toHaveBeenCalled();
   });

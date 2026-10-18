@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
@@ -141,7 +141,7 @@ function rosterStateSignature(state: MobileSessionRuntimeState): string {
 
 type UseSessionRealtimeParams = {
   authTransportRevision: number;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   sessionId: string | null;
   dispatch: React.Dispatch<QueueAction>;
   coordinator: { clientId: string };
@@ -211,7 +211,7 @@ type UseSessionRealtimeParams = {
  */
 export function useSessionRealtime({
   authTransportRevision,
-  privacyRevocationGeneration,
+  credentialGeneration,
   sessionId,
   dispatch,
   coordinator,
@@ -275,8 +275,8 @@ export function useSessionRealtime({
     const gate = createQueueSyncGate();
     queueSyncGateRef.current = gate;
     let disposed = false;
-    const privacyGeneration = getPrivacyRevocationGeneration();
-    const isCurrent = () => !disposed && privacyGeneration === getPrivacyRevocationGeneration();
+    const privacyGeneration = getCredentialGeneration();
+    const isCurrent = () => !disposed && privacyGeneration === getCredentialGeneration();
     let subscriptionStartToken = 0;
     let queueUpdatesCleanup: (() => void) | null = null;
     let sessionUpdatesCleanup: (() => void) | null = null;
@@ -1119,7 +1119,7 @@ export function useSessionRealtime({
       // ref would otherwise suppress every snapshot angle-follow in session B.
       pendingLocalBoardPathRef.current = null;
     };
-  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision, privacyRevocationGeneration]);
+  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision, credentialGeneration]);
 
   // Periodic local-vs-server hash watchdog (mirrors web's 60s interval in
   // use-session-subscriptions.ts, ported into the shared gate's

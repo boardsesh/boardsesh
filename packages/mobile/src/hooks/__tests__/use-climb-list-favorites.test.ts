@@ -33,7 +33,7 @@ vi.mock('../use-current-user-id', () => ({
 
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { useClimbListFavorites } from '../use-climb-list-favorites';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 // A promise the request resolves with, awaited via a microtask flush so the
 // hook's async batch completes before assertions.
@@ -173,7 +173,7 @@ describe('useClimbListFavorites', () => {
     renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
     await flush();
     expect(request).not.toHaveBeenCalled();
-    invalidatePrivacySnapshots('credential');
+    invalidateCredentialSnapshots();
     finishOverrides?.(new Map([['added', true]]));
     await flush();
     expect(request).not.toHaveBeenCalled();

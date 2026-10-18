@@ -10,7 +10,7 @@ type UseQueueResolveClimbsParams = {
   /** F3 now-slot mode: the line while nothing is current; null in legacy mode. */
   historyCount?: number | null;
   currentClimbQueueItem?: ClimbQueueItem | null;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   climbReads: QueueClimbReads;
   dispatch: React.Dispatch<QueueAction>;
 };
@@ -21,7 +21,7 @@ export function useQueueResolveClimbs({
   queue,
   historyCount = null,
   currentClimbQueueItem,
-  privacyRevocationGeneration,
+  credentialGeneration,
   climbReads,
   dispatch,
 }: UseQueueResolveClimbsParams): void {
@@ -67,5 +67,5 @@ export function useQueueResolveClimbs({
     }
     climbReads.register('resolve', demands);
     return () => climbReads.unregister('resolve');
-  }, [queue, historyCount, currentClimbQueueItem, activeBoard, dispatch, privacyRevocationGeneration, climbReads]);
+  }, [queue, historyCount, currentClimbQueueItem, activeBoard, dispatch, credentialGeneration, climbReads]);
 }

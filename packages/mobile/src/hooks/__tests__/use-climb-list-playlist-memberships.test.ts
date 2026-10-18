@@ -36,7 +36,7 @@ vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthentica
 vi.mock('../use-current-user-id', () => ({ useStoredUserId }));
 vi.mock('../use-user-read-refresh', () => ({ useUserReadRefresh }));
 vi.mock('../../lib/privacy/privacy-cache', () => ({
-  getPrivacyRevocationGeneration: () => device.credentialGeneration,
+  getCredentialGeneration: () => device.credentialGeneration,
 }));
 
 import { playlistMembershipStore } from '@boardsesh/climb-actions';

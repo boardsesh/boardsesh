@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration, invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
+import { getCredentialGeneration, invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -182,7 +182,7 @@ it('reschedules a pending solo save after a sign-in or sign-out', async () => {
       useQueuePersistence({
         authenticatedUserId: 'viewer',
         identityReady: true,
-        privacyRevocationGeneration: generation,
+        credentialGeneration: generation,
         dispatch: vi.fn(),
         sessionIdRef: { current: null },
         setSessionId: vi.fn(),
@@ -194,13 +194,13 @@ it('reschedules a pending solo save after a sign-in or sign-out', async () => {
         setPlaylistSuggestionSourceState: vi.fn(),
         activeBoardSettled: true,
       }),
-    { initialProps: { generation: getPrivacyRevocationGeneration() } },
+    { initialProps: { generation: getCredentialGeneration() } },
   );
   await waitFor(() => expect(snapshots.get).toHaveBeenCalled());
   act(() => {
-    invalidatePrivacySnapshots();
+    invalidateCredentialSnapshots();
   });
-  rerender({ generation: getPrivacyRevocationGeneration() });
+  rerender({ generation: getCredentialGeneration() });
   await waitFor(() => expect(snapshots.get).toHaveBeenCalledTimes(2));
   await waitFor(() =>
     expect(snapshots.set).toHaveBeenCalledWith(

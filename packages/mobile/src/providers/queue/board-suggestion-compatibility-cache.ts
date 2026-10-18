@@ -5,7 +5,6 @@ import { BOARD_FEED_SUGGESTION_SOURCE_ID } from '../../lib/playlists/board-feed-
 type CompatibilityRecord = {
   inputClimbs: Climb[];
   target: BoardCompatibilityTarget;
-  privacyEpoch: number;
   credentialEpoch: number;
   compatibleClimbs: Climb[];
   climbsWithFirstAnchor: Climb[];
@@ -20,14 +19,12 @@ export function createBoardSuggestionCompatibilityCache() {
     normalize(
       source: PlaylistSuggestionSource,
       target: BoardCompatibilityTarget,
-      privacyEpoch: number,
       credentialEpoch: number,
     ): PlaylistSuggestionSource {
       if (
         !cached ||
         cached.inputClimbs !== source.climbs ||
         cached.target !== target ||
-        cached.privacyEpoch !== privacyEpoch ||
         cached.credentialEpoch !== credentialEpoch
       ) {
         let firstClimbCompatible = false;
@@ -43,7 +40,6 @@ export function createBoardSuggestionCompatibilityCache() {
         cached = {
           inputClimbs: source.climbs,
           target,
-          privacyEpoch,
           credentialEpoch,
           compatibleClimbs,
           climbsWithFirstAnchor: withFirstAnchor.length === source.climbs.length ? source.climbs : withFirstAnchor,

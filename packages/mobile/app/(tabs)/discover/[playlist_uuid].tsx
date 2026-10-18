@@ -1,7 +1,7 @@
 import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePrivacyScopedState } from '../../../src/hooks/use-privacy-scoped-state';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../../../src/lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../../../src/lib/privacy/privacy-cache';
 import { View, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -103,9 +103,9 @@ const PLAIN_PLAYLIST_VIEW: SettledPlaylistView = { view: undefined, key: null, s
 
 export default function PlaylistDetail() {
   const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   const { playlist_uuid: playlistUuid } = useLocalSearchParams<DetailParams>();
   const { t } = useTranslation('playlists');
@@ -409,7 +409,7 @@ export default function PlaylistDetail() {
   const resumeFilterView = filterActions.resumeView;
   useEffect(
     () =>
-      subscribeToPrivacyRevocations(() => {
+      subscribeToCredentialChanges(() => {
         // Retire imperative callbacks before React and query cancellation settle.
         editClimbsRef.current = [];
         allClimbsRef.current = [];
@@ -423,7 +423,7 @@ export default function PlaylistDetail() {
 
   const setEditList = useCallback(
     (list: Climb[]) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (privacyGeneration !== getCredentialGeneration()) return;
       editClimbsRef.current = list;
       setEditClimbs(list);
     },
@@ -452,7 +452,7 @@ export default function PlaylistDetail() {
     [playlistUuid, activeBoardUuid, plainBoardInput],
   );
   const enterEditMode = useCallback(() => {
-    if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+    if (privacyGeneration !== getCredentialGeneration()) return;
     editTargetRowsRef.current = Math.min(allClimbsRef.current.length, MAX_EDIT_ROWS);
     if (viewActiveRef.current) {
       void queryClient.invalidateQueries({ queryKey: plainOrderQueryKey, exact: true, refetchType: 'none' });
@@ -484,7 +484,7 @@ export default function PlaylistDetail() {
   const { hasNextPage, isFetchNextPageError, fetchNextPage } = query;
   useEffect(() => {
     if (!pendingEdit) return;
-    if (privacyGeneration !== getPrivacyRevocationGeneration()) {
+    if (privacyGeneration !== getCredentialGeneration()) {
       cancelPendingEdit();
       return;
     }
@@ -530,7 +530,7 @@ export default function PlaylistDetail() {
 
   const handleReorderClimb = useCallback(
     async (climbUuid: string, newIndex: number) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (privacyGeneration !== getCredentialGeneration()) return;
       if (viewActiveRef.current) return;
       const current = editClimbsRef.current;
       const oldIndex = current.findIndex((climb) => climb.uuid === climbUuid);
@@ -545,7 +545,7 @@ export default function PlaylistDetail() {
       try {
         await reorderPlaylistClimb({ playlistId: playlistUuid, climbUuid, newIndex: target });
       } catch (err) {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+        if (privacyGeneration !== getCredentialGeneration()) return;
         console.error('Failed to reorder playlist climb:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'reorder-climb' } });
         // Only wholesale-restore the pre-move snapshot if no other edit landed in
@@ -564,7 +564,7 @@ export default function PlaylistDetail() {
 
   const handleRemoveClimb = useCallback(
     (climbUuid: string) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (privacyGeneration !== getCredentialGeneration()) return;
       const target = editClimbsRef.current.find((climb) => climb.uuid === climbUuid);
       Alert.alert(
         t('editClimbs.removeConfirm.title'),
@@ -575,7 +575,7 @@ export default function PlaylistDetail() {
             text: t('editClimbs.removeConfirm.confirm'),
             style: 'destructive',
             onPress: async () => {
-              if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+              if (privacyGeneration !== getCredentialGeneration()) return;
               const current = editClimbsRef.current;
               const next = current.filter((climb) => climb.uuid !== climbUuid);
               if (next.length === current.length) return;
@@ -587,7 +587,7 @@ export default function PlaylistDetail() {
               try {
                 await removeClimbFromPlaylist({ playlistId: playlistUuid, climbUuid });
               } catch (err) {
-                if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+                if (privacyGeneration !== getCredentialGeneration()) return;
                 console.error('Failed to remove playlist climb:', err);
                 reportHandledError(err, { tags: { source: 'playlist', op: 'remove-climb' } });
                 // Restore only if no concurrent edit landed since; otherwise

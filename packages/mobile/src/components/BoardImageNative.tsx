@@ -11,11 +11,7 @@ import { MoonBoardGridLabels } from './board/MoonBoardGridLabels';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
-import {
-  getPrivacyCredentialGeneration,
-  getPrivacyRevocationGeneration,
-  subscribeToPrivacyRevocations,
-} from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtIdentity,
@@ -278,17 +274,16 @@ const BoardImageNative = React.memo(function BoardImageNative({
 
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, frames);
 
-  // Every credential bump also bumps the revocation generation, so one
-  // subscription covers both. Reading through the store keeps the value stable
-  // for the whole render and re-renders this board when either moves, which is
+  // Reading the credential generation through the store keeps the value stable
+  // for the whole render and re-renders this board when it moves, which is
   // what drops a displayed overlay that belonged to the previous account.
-  const privacyGenerations = useSyncExternalStore(subscribeToPrivacyRevocations, readPrivacyGenerations);
+  const credentialGeneration = useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration);
   const retainedOverlayIdentity = useMemo(
     () =>
       retainDisplayedOverlay && frames
-        ? JSON.stringify([overlayRetainIdentity(boardName, layoutId, sizeId, setIds), frames, privacyGenerations])
+        ? JSON.stringify([overlayRetainIdentity(boardName, layoutId, sizeId, setIds), frames, credentialGeneration])
         : undefined,
-    [retainDisplayedOverlay, frames, boardName, layoutId, sizeId, setIds, privacyGenerations],
+    [retainDisplayedOverlay, frames, boardName, layoutId, sizeId, setIds, credentialGeneration],
   );
 
   // One element for both stacks (the bridge and the live board), memoised so
@@ -376,7 +371,5 @@ const BoardImageNative = React.memo(function BoardImageNative({
     </View>
   );
 });
-
-const readPrivacyGenerations = (): string => `${getPrivacyRevocationGeneration()}:${getPrivacyCredentialGeneration()}`;
 
 export { BoardImageNative };

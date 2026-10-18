@@ -518,7 +518,7 @@ vi.mock('../../../../src/components/playlist', () => ({
 
 import PlaylistDetail from '../[playlist_uuid]';
 import { Alert } from 'react-native';
-import { invalidatePrivacySnapshots } from '../../../../src/lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../../../src/lib/privacy/privacy-cache';
 
 function renderDetail(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return {
@@ -961,7 +961,7 @@ describe('PlaylistDetail privacy withdrawal', () => {
 
   it('withdraws the edit snapshot before stale query props change and accepts fresh authorized rows', async () => {
     const { rerender, queryClient } = await editProtectedClimbs();
-    act(() => invalidatePrivacySnapshots());
+    act(() => invalidateCredentialSnapshots());
     expect(detailViewProps.current?.editMode).toBe(false);
     expect(detailViewProps.current?.climbs).toEqual([]);
     playlistMocks.allClimbs = [makeClimb('authorized-climb', 'kilter', 1, 40)];
@@ -987,7 +987,7 @@ describe('PlaylistDetail privacy withdrawal', () => {
       pending = detailViewProps.current?.onReorderClimb?.('private-climb', 1);
     });
     expect(playlistMocks.reorderClimb).toHaveBeenCalledTimes(1);
-    act(() => invalidatePrivacySnapshots());
+    act(() => invalidateCredentialSnapshots());
     await act(async () => {
       rejectReorder?.(new Error('Access revoked'));
       await pending;
@@ -1006,7 +1006,7 @@ describe('PlaylistDetail privacy withdrawal', () => {
       .mock.calls.at(-1)?.[2]
       ?.find((button) => button.style === 'destructive');
     expect(confirmation).toBeDefined();
-    act(() => invalidatePrivacySnapshots('credential'));
+    act(() => invalidateCredentialSnapshots());
     await act(async () => {
       await Promise.resolve(confirmation?.onPress?.());
     });

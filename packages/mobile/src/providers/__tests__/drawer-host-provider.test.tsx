@@ -376,7 +376,7 @@ import {
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { setSetting } from '../../settings/hooks';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
@@ -428,7 +428,7 @@ function renderHost(onHost: (host: HostValue) => void, onRoute: (route: RouteVal
 }
 
 describe('drawer copied content withdrawal', () => {
-  it('preserves an unsaved tick note while hiding copied metadata, then isolates a credential change', async () => {
+  it('drops an unsaved tick note and its copied target when the credential changes', async () => {
     const hosts: HostValue[] = [];
     const view = renderHost((host) => hosts.push(host));
     const target = {
@@ -443,12 +443,7 @@ describe('drawer copied content withdrawal', () => {
     act(() => hosts.at(-1)!.openLogAscent(target));
     const input = view.container.querySelector('[data-log-ascent]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'My unsaved note' } });
-    act(() => invalidatePrivacySnapshots());
-    expect(view.container.querySelector('[data-log-ascent]')).toBe(input);
-    expect(input.value).toBe('My unsaved note');
-    expect(input.getAttribute('data-climb-uuid')).toBe('private');
-    expect(input.getAttribute('data-climb-name')).toBe('');
-    act(() => invalidatePrivacySnapshots('credential'));
+    act(() => invalidateCredentialSnapshots());
     expect(view.container.querySelector('[data-log-ascent]')).toBeNull();
     act(() => hosts.at(-1)!.openLogAscent(target));
     expect((view.container.querySelector('[data-log-ascent]') as HTMLInputElement).value).toBe('');
@@ -470,7 +465,7 @@ describe('drawer copied content withdrawal', () => {
       const staleOpen = hosts.at(-1)!.openPlayDrawer;
       act(() => staleOpen(climb));
       await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('private'));
-      act(() => invalidatePrivacySnapshots());
+      act(() => invalidateCredentialSnapshots());
       await waitFor(() => expect(currentTarget()).toBeNull());
       act(() => staleOpen(climb));
       expect(currentTarget()).toBeNull();
@@ -1467,17 +1462,14 @@ describe('DrawerHostProvider play drawer open target', () => {
       expect(routes.at(-1)?.playTarget?.nonce).toBe(pendingNonce);
     });
 
-    it.each(['privacy', 'credential'] as const)(
-      'rejects replay across a %s boundary before React rerenders',
-      (reason) => {
-        openPendingTarget();
-        act(() => {
-          invalidatePrivacySnapshots(reason);
-          flushReplay();
-        });
-        expect(routerNavigate).not.toHaveBeenCalled();
-      },
-    );
+    it('rejects replay across a credential boundary before React rerenders', () => {
+      openPendingTarget();
+      act(() => {
+        invalidateCredentialSnapshots();
+        flushReplay();
+      });
+      expect(routerNavigate).not.toHaveBeenCalled();
+    });
 
     it('cancels the replay when the host unmounts', () => {
       const { view } = openPendingTarget();

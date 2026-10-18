@@ -7,7 +7,7 @@ import {
 } from '@boardsesh/graphql/operations/playlists';
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
-import { getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { useAuth } from '../providers/auth-provider';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useStoredUserId } from './use-current-user-id';
@@ -73,7 +73,7 @@ export function useClimbListPlaylistMemberships({
 
     let cancelled = false;
     const fetchedForContext = fetchedRef.current;
-    const credentialGeneration = getPrivacyRevocationGeneration();
+    const credentialGeneration = getCredentialGeneration();
     let mergedCount = 0;
     const releaseUnmerged = () => {
       for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
@@ -94,7 +94,7 @@ export function useClimbListPlaylistMemberships({
           const response = await offlineAwareRequest<GetPlaylistsForClimbsQueryResponse>(GET_PLAYLISTS_FOR_CLIMBS, {
             input: { boardType: boardName, layoutId, climbUuids: chunk },
           });
-          if (cancelled || getPrivacyRevocationGeneration() !== credentialGeneration) return;
+          if (cancelled || getCredentialGeneration() !== credentialGeneration) return;
           const memberships = new Map(
             response.playlistsForClimbs.map((entry) => [entry.climbUuid, entry.playlistUuids]),
           );

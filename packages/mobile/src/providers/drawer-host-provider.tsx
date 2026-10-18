@@ -46,8 +46,7 @@ import type { WindowAnchorPoint } from '../components/navigation/AnchoredPopover
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-privacy-scoped-state';
-import { sanitizeClimbTarget } from '../lib/queue-privacy';
-import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
@@ -224,14 +223,14 @@ const DrawerHostContext = createContext<DrawerHostValue | null>(null);
  * re-opened — so the native Host never unmounts mid-animation (an iOS freeze
  * vector) and the content doesn't blank out while sliding away.
  */
-function useDeferredSheetData<T>(withdraw: (content: T) => T): {
+function useDeferredSheetData<T>(): {
   data: T | null;
   visible: boolean;
   open: (value: T) => void;
   close: () => void;
   clearIfClosed: () => void;
 } {
-  const [data, setData] = usePrivacyScopedState<T>(null, withdraw);
+  const [data, setData] = usePrivacyScopedState<T>(null);
   const [visible, setVisible] = useState(false);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -247,16 +246,6 @@ function useDeferredSheetData<T>(withdraw: (content: T) => T): {
     if (!visibleRef.current) setData(null);
   }, [setData]);
   return { data, visible: visible && data !== null, open, close, clearIfClosed };
-}
-
-function sanitizeTickTarget(target: LogAscentInput): LogAscentInput {
-  return {
-    ...target,
-    climbName: undefined,
-    consensusGradeName: undefined,
-    baseAscensionistCount: 0,
-    isBenchmark: false,
-  };
 }
 
 export function useDrawerHost(): DrawerHostValue {
@@ -335,7 +324,6 @@ export function usePlayDrawerRoute(): PlayDrawerRouteValue {
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
-  const openerPrivacyGeneration = getPrivacyRevocationGeneration();
   // The climb to show in the player route, with a per-open nonce so a re-tap
   // while `/play` is already up still re-applies (navigate is a no-op then). The
   // route consumes this via usePlayDrawerRoute and runs PlayDrawer's openDrawer.
@@ -345,7 +333,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   playTargetRef.current = playTarget;
   const navigationRequestedTargetRef = useRef<{
     nonce: number;
-    privacyGeneration: number;
     credentialGeneration: number;
   } | null>(null);
   const replayFrameRef = useRef<number | null>(null);
@@ -447,30 +434,28 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     open: openLogAscentSheet,
     close: closeLogAscentSheet,
     clearIfClosed: clearLogAscentSheet,
-  } = useDeferredSheetData<LogAscentInput>(sanitizeTickTarget);
+  } = useDeferredSheetData<LogAscentInput>();
   const {
     data: playlistData,
     visible: playlistVisible,
     open: openPlaylistSheet,
     close: closePlaylistSheet,
     clearIfClosed: clearPlaylistSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>(
-    sanitizeClimbTarget,
-  );
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>();
   const {
     data: betaVideoData,
     visible: betaVideoVisible,
     open: openBetaVideoSheet,
     close: closeBetaVideoSheet,
     clearIfClosed: clearBetaVideoSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>(sanitizeClimbTarget);
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const {
     data: reportClimbData,
     visible: reportClimbVisible,
     open: openReportClimbSheet,
     close: closeReportClimbSheet,
     clearIfClosed: clearReportClimbSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>(sanitizeClimbTarget);
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const [climbActions, setClimbActions] = usePrivacyScopedState<{
     climb: Climb;
     boardConfig: BoardConfig;
@@ -598,11 +583,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const openPlayDrawer = useCallback(
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
-      if (
-        openerPrivacyGeneration !== getPrivacyRevocationGeneration() ||
-        composerCredentialScope !== getPrivacyCredentialGeneration()
-      )
-        return;
+      if (composerCredentialScope !== getCredentialGeneration()) return;
       // Pull `boardConfig` out so it doesn't reach the open target.
       const { boardConfig: override, navigate = true, ...openOptions } = options ?? {};
       if (replayFrameRef.current != null) {
@@ -647,8 +628,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       if (navigate) {
         navigationRequestedTargetRef.current = {
           nonce: target.nonce,
-          privacyGeneration: getPrivacyRevocationGeneration(),
-          credentialGeneration: getPrivacyCredentialGeneration(),
+          credentialGeneration: getCredentialGeneration(),
         };
         // This is a known root-stack route. Dispatch it in the tap's batch:
         // Expo's imperative URL queue otherwise waits for a provider commit
@@ -656,7 +636,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         navigateToPlayer();
       }
     },
-    [navigateToPlayer, setPaneTarget, setPlayTarget, openerPrivacyGeneration, composerCredentialScope],
+    [navigateToPlayer, setPaneTarget, setPlayTarget, composerCredentialScope],
   );
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
@@ -717,8 +697,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           navigationRequestedTargetRef.current !== requested ||
           playTargetRef.current?.nonce !== requested.nonce ||
           consumedPlayTargetNonceRef.current === requested.nonce ||
-          requested.privacyGeneration !== getPrivacyRevocationGeneration() ||
-          requested.credentialGeneration !== getPrivacyCredentialGeneration()
+          requested.credentialGeneration !== getCredentialGeneration()
         )
           return;
         // The old /play has unmounted. Serve the pending tap without minting a

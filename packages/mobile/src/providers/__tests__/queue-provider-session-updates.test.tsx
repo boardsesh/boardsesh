@@ -7,7 +7,7 @@ import { getQueueBoardKey, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue'
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { QueueMutationsDeps } from '@boardsesh/queue-react';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { getRestTimerState, resetRestTimerStoreForTests } from '../../lib/rest-timer-store';
 import { resetCrewCadenceForTests } from '../../lib/crew-rest-cadence';
 
@@ -3825,7 +3825,7 @@ describe('QueueProvider mutation-failure resync', () => {
       );
     });
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       finishRemoval();
       await removal;
     });

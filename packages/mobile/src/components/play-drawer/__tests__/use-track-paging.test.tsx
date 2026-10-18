@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPlaylistSuggestionSource, type Climb, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => 0 }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
 
 import {
   _resetTrackPagerForTests,

@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { invalidateTickDependents } from '@boardsesh/board-react';
-import { subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { AuroraCredentialStatus } from '../aurora-credentials';
 import { AURORA_CREDENTIALS_QUERY_KEY } from './board-account-query-keys';
 
@@ -73,7 +73,7 @@ export function watchBoardImportCompletion(queryClient: QueryClient): () => void
     if (finished.length === 0) return;
     invalidateOwnDataAfterImport(queryClient);
   });
-  const unsubscribePrivacy = subscribeToPrivacyRevocations(() => {
+  const unsubscribePrivacy = subscribeToCredentialChanges(() => {
     previous = undefined;
   });
   return () => {

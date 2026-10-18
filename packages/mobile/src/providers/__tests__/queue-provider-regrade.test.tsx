@@ -1,4 +1,4 @@
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
@@ -211,7 +211,7 @@ describe('QueueProvider angle-change re-grade of the playlist suggestion peek', 
     act(() => snapshots.at(-1)?.setCurrentClimb(makeItem(current), { playlistSuggestionSource: source }));
     await waitFor(() => expect(resolveOld).toBeTruthy());
     await act(async () => {
-      invalidatePrivacySnapshots();
+      invalidateCredentialSnapshots();
       resolveOld({ climb: makeClimb('private-peek', 25, 'V9') });
     });
     expect(snapshots.at(-1)?.playlistSuggestionSource).toBeNull();

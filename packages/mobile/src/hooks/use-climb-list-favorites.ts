@@ -8,7 +8,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useStoredUserId } from './use-current-user-id';
 import { getDatabaseHandle } from '../db';
 import { getPendingFavoriteOverridesLocal } from '../db/queries/get-favorite-status-local';
-import { getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 
 async function pendingFavoriteOverrides(climbUuids: readonly string[], userId: string | undefined) {
   const db = getDatabaseHandle();
@@ -87,7 +87,7 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
     // in a fresh one, and the bookkeeping below belongs to THIS context. Writing
     // through the ref after that swap would edit the new context's set.
     const fetchedForContext = fetchedRef.current;
-    const credentialGeneration = getPrivacyRevocationGeneration();
+    const credentialGeneration = getCredentialGeneration();
     let mergedCount = 0;
     // Puts back every uuid whose chunk never merged, so a later run retries it.
     // Leaving them marked would wedge those climbs' hearts for the session.
@@ -107,13 +107,13 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
           // Capture BEFORE the network request: the drainer can acknowledge and
           // remove an outbox row while that request still holds pre-write truth.
           const overrides = await pendingFavoriteOverrides(chunk, userId);
-          if (cancelled || getPrivacyRevocationGeneration() !== credentialGeneration) return;
+          if (cancelled || getCredentialGeneration() !== credentialGeneration) return;
           const response = await offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
             boardName,
             climbUuids: chunk,
             angle,
           });
-          if (cancelled || getPrivacyRevocationGeneration() !== credentialGeneration) return;
+          if (cancelled || getCredentialGeneration() !== credentialGeneration) return;
           const favoriteUuids = new Set(response.favorites);
           for (const [climbUuid, favorited] of overrides) {
             if (favorited) favoriteUuids.add(climbUuid);

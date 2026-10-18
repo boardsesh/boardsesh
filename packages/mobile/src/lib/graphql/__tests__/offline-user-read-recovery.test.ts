@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { focusManager, onlineManager, QueryClient, QueryObserver } from '@tanstack/react-query';
-import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 import {
   bindOfflineUserReadRecovery,
   beginPlaylistMembershipWrite,
@@ -15,7 +15,7 @@ beforeEach(() => {
   focusManager.setFocused(false);
   client = new QueryClient();
   stop = bindOfflineUserReadRecovery(client);
-  invalidatePrivacySnapshots('credential');
+  invalidateCredentialSnapshots();
 });
 afterEach(() => {
   stop();
@@ -63,7 +63,7 @@ describe('offline user read recovery', () => {
 
   it("does not carry the previous account's recovery into the next account", () => {
     recordLocalUserRead('logbook', 'kilter');
-    invalidatePrivacySnapshots('credential');
+    invalidateCredentialSnapshots();
     client.setQueryData(['logbook', 'kilter', 'accumulated'], [{ uuid: 'next-account' }]);
     onlineManager.setOnline(true);
     expect(client.getQueryData(['logbook', 'kilter', 'accumulated'])).toEqual([{ uuid: 'next-account' }]);
@@ -161,7 +161,7 @@ describe('offline user read recovery', () => {
     try {
       recordLocalUserRead('playlists', 'kilter');
       focusManager.setFocused(true);
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
       client.setQueryData(membershipKey, ['new-account-playlist']);
       release();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

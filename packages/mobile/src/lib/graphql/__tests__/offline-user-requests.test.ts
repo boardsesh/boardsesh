@@ -42,7 +42,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../../../db', () => ({ getDatabaseHandle: transport.getDatabaseHandle }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request: transport.request }) }));
 vi.mock('../../local-user-id', () => ({ readLocalUserId: transport.readLocalUserId }));
-vi.mock('../../privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => state.privacyGeneration }));
+vi.mock('../../privacy/privacy-cache', () => ({ getCredentialGeneration: () => state.privacyGeneration }));
 vi.mock('../../connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => state.connectivity }));
 vi.mock('../../../offline/offline-usage-signal', () => ({
   recordOfflineRead: transport.recordOfflineRead,

@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { getCurrentUserStorageOwner } from '../../lib/user-storage-owner';
 import { useEffect, useState, useCallback } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
@@ -29,7 +29,7 @@ export const SOLO_QUEUE_SAVE_DEBOUNCE_MS = 500;
 type UseQueuePersistenceParams = {
   authenticatedUserId?: string | null;
   identityReady?: boolean;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   dispatch: React.Dispatch<QueueAction>;
   sessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -76,7 +76,7 @@ type UseQueuePersistenceParams = {
 export function useQueuePersistence({
   authenticatedUserId,
   identityReady = true,
-  privacyRevocationGeneration,
+  credentialGeneration,
   dispatch,
   sessionIdRef,
   setSessionId,
@@ -95,7 +95,7 @@ export function useQueuePersistence({
   useEffect(() => {
     if (identityReady) return;
     let cancelled = false;
-    const generation = getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
     void (async () => {
       // The profile has not answered (an offline cold start), so the owner comes
       // from the phone: the token's account, when the offline database is
@@ -109,13 +109,13 @@ export function useQueuePersistence({
         import('@boardsesh/offline-sync'),
         import('../../lib/local-user-id'),
       ]);
-      if (cancelled || generation !== getPrivacyRevocationGeneration()) return;
+      if (cancelled || generation !== getCredentialGeneration()) return;
       const database = getDatabaseHandle();
       const [stampedUserId, tokenUserId] = database
         ? await Promise.all([getLocalUserId(database), readLocalUserId()])
         : [null, undefined];
       const userId = stampedUserId && stampedUserId === tokenUserId ? stampedUserId : null;
-      if (!cancelled && generation === getPrivacyRevocationGeneration()) {
+      if (!cancelled && generation === getCredentialGeneration()) {
         setVerifiedOwner(userId ? { userId, generation } : null);
       }
     })().catch(() => {
@@ -124,16 +124,12 @@ export function useQueuePersistence({
     return () => {
       cancelled = true;
     };
-  }, [identityReady, privacyRevocationGeneration]);
+  }, [identityReady, credentialGeneration]);
   const ownerUserId =
     authenticatedUserId ??
-    (!identityReady && verifiedOwner?.generation === getPrivacyRevocationGeneration() ? verifiedOwner.userId : null);
+    (!identityReady && verifiedOwner?.generation === getCredentialGeneration() ? verifiedOwner.userId : null);
   const ownerReady = identityReady || !!ownerUserId;
-  const hydrationScope = JSON.stringify([
-    ownerReady,
-    ownerUserId,
-    privacyRevocationGeneration ?? getPrivacyRevocationGeneration(),
-  ]);
+  const hydrationScope = JSON.stringify([ownerReady, ownerUserId, credentialGeneration ?? getCredentialGeneration()]);
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
 
   const restoreQueueSnapshot = useCallback(
@@ -181,8 +177,8 @@ export function useQueuePersistence({
     // Leave the stored bytes untouched so normal launches still restore them.
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;
     let cancelled = false;
-    const generation = getPrivacyRevocationGeneration();
-    const isCurrent = () => !cancelled && generation === getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
+    const isCurrent = () => !cancelled && generation === getCredentialGeneration();
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const hydrateLocalSnapshot = async () => {
       const snapshotGeneration = getQueueSnapshotGeneration();
@@ -281,10 +277,10 @@ export function useQueuePersistence({
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
     if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
-    const generation = getPrivacyRevocationGeneration();
+    const generation = getCredentialGeneration();
     const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const persistTimeout = setTimeout(() => {
-      if (generation !== getPrivacyRevocationGeneration()) return;
+      if (generation !== getCredentialGeneration()) return;
       void setStoredQueueSnapshot(
         {
           queue,

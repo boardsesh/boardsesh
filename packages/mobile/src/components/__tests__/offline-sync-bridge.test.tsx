@@ -254,7 +254,7 @@ import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { LaunchReadyProvider } from '../../providers/launch-ready-context';
 import { resetLaunchReloadWindowForTests, setLaunchReloadRequested } from '../../lib/launch-reload-window';
 
@@ -413,7 +413,7 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
     await renderSignedIn();
     // `storeTokens` → `advanceCredentialGeneration` moves the generation.
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
     });
     expectNoCull();
   });

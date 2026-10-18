@@ -18,7 +18,7 @@ import { createBoardFeedSuggestionSource } from '../../../lib/playlists/board-fe
 
 const reads = vi.hoisted(() => ({ request: vi.fn(), generation: 0 }));
 vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: reads.request }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => reads.generation }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => reads.generation }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated' }));
 
 function board(overrides: Partial<UserBoard> = {}): UserBoard {
@@ -100,10 +100,10 @@ function harness(
       useLayoutEffect(() => {
         sourceRef.current = displayedSource;
       }, [displayedSource]);
-      const climbReads = useQueueClimbReads({ activeBoard, privacyRevocationGeneration: generation });
+      const climbReads = useQueueClimbReads({ activeBoard, credentialGeneration: generation });
       useQueueRegrade({
         activeBoard,
-        privacyRevocationGeneration: generation,
+        credentialGeneration: generation,
         queue: state.queue,
         currentClimbQueueItem: state.currentClimbQueueItem,
         playlistSuggestionSourceRef: sourceRef,
@@ -115,7 +115,7 @@ function harness(
       });
       useQueueResolveClimbs({
         activeBoard,
-        privacyRevocationGeneration: generation,
+        credentialGeneration: generation,
         queue: state.queue,
         currentClimbQueueItem: state.currentClimbQueueItem,
         dispatch,

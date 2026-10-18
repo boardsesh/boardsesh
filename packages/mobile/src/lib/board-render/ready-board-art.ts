@@ -1,6 +1,6 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getRenderedOverlay } from '../overlay-index';
-import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '../privacy/privacy-cache';
+import { getCredentialGeneration } from '../privacy/privacy-cache';
 import { sprayPrivacyGeneration } from '../spray/spray-privacy-generation';
 import { sprayCacheToken } from '../spray/spray-wall-registry';
 
@@ -28,7 +28,6 @@ export type ReadyBoardArtSnapshot = ReadyBoardArtIdentity &
     overlayLoadKey: string;
     backgroundPaths: readonly string[];
     backgroundBaseColor?: string;
-    privacyGeneration: number;
     credentialGeneration: number;
     sprayGeneration: string;
     sprayVersion: string;
@@ -38,16 +37,12 @@ export type ReadyBoardArtSnapshot = ReadyBoardArtIdentity &
 export type ReadyBoardArtSource = Readonly<{ read: () => ReadyBoardArtSnapshot | undefined }>;
 
 export function captureReadyBoardArt(
-  artwork: Omit<
-    ReadyBoardArtSnapshot,
-    'privacyGeneration' | 'credentialGeneration' | 'sprayGeneration' | 'sprayVersion'
-  >,
+  artwork: Omit<ReadyBoardArtSnapshot, 'credentialGeneration' | 'sprayGeneration' | 'sprayVersion'>,
 ): ReadyBoardArtSnapshot {
   return Object.freeze({
     ...artwork,
     backgroundPaths: Object.freeze([...artwork.backgroundPaths]),
-    privacyGeneration: getPrivacyRevocationGeneration(),
-    credentialGeneration: getPrivacyCredentialGeneration(),
+    credentialGeneration: getCredentialGeneration(),
     sprayGeneration: artwork.boardName === 'spray' ? sprayPrivacyGeneration(artwork.layoutId) : '',
     sprayVersion: sprayCacheToken(artwork.boardName, artwork.layoutId),
   });
@@ -72,8 +67,7 @@ export function isReadyBoardArtCurrent(
     (expected.climbUuid !== undefined && snapshot.climbUuid !== expected.climbUuid) ||
     (expected.renderSignature !== undefined && snapshot.renderSignature !== expected.renderSignature) ||
     (expected.colorScheme !== undefined && snapshot.colorScheme !== expected.colorScheme) ||
-    snapshot.privacyGeneration !== getPrivacyRevocationGeneration() ||
-    snapshot.credentialGeneration !== getPrivacyCredentialGeneration() ||
+    snapshot.credentialGeneration !== getCredentialGeneration() ||
     snapshot.sprayVersion !== sprayCacheToken(snapshot.boardName, snapshot.layoutId) ||
     (snapshot.boardName === 'spray' && snapshot.sprayGeneration !== sprayPrivacyGeneration(snapshot.layoutId))
   )

@@ -18,7 +18,7 @@ import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
-import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -247,7 +247,7 @@ describe('QueueSheet undo', () => {
     const undoButton = getByTestId('undo');
     // The mocked provider's scope stays unchanged: only the imperative privacy
     // generation can protect the callback captured by this rendered button.
-    invalidatePrivacySnapshots('credential');
+    invalidateCredentialSnapshots();
     fireEvent.click(undoButton);
 
     expect(actions.restoreQueueItems).not.toHaveBeenCalled();
