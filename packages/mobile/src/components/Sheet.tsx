@@ -38,7 +38,13 @@ import {
 } from './sheet-scroll-into-view';
 import { useDetentDragHaptic } from './sheet-detent-haptic';
 import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
-import { useManagedSheet, type PresenterGroup } from '../providers/sheet-presentation-provider';
+import {
+  dismissManagedSheetAndWait,
+  useManagedSheet,
+  type DismissAndWaitResult,
+  type ManagedSheetHandle,
+  type PresenterGroup,
+} from '../providers/sheet-presentation-provider';
 
 type SheetProps = {
   children: ReactNode;
@@ -97,6 +103,21 @@ type SheetProps = {
    * pass `enableDynamicSizing` instead. */
   androidContentSized?: boolean;
 };
+
+/**
+ * Close a `Sheet` through its ref and resolve once it has finished sliding
+ * away, straight away when it never reached the screen, or `aborted` when it
+ * was re-opened first. For a sheet that hands off to a route or a system
+ * prompt: `onFullyDismissed` alone never fires for a sheet the coordinator
+ * closed before presenting it.
+ *
+ * The ref is typed as the native methods so consumers keep their
+ * `useRef<BottomSheet>`, but the object behind it is the coordinator's managed
+ * handle (see `useImperativeHandle` below), which can wait.
+ */
+export function dismissSheetAndWait(sheet: BottomSheetMethods | null | undefined): Promise<DismissAndWaitResult> {
+  return dismissManagedSheetAndWait(sheet as unknown as ManagedSheetHandle | null | undefined);
+}
 
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   {

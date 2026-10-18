@@ -2,13 +2,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 import { useMyBoardSerialConfigs } from '../use-my-board-serial-configs';
 
-const harness = vi.hoisted(() => ({ request: vi.fn(), authToken: 'climber-token' as string | null | undefined }));
+const harness = vi.hoisted(() => ({
+  request: vi.fn(),
+  authToken: 'climber-token' as string | null | undefined,
+  authTokenError: false,
+}));
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request: harness.request }) }));
-vi.mock('../../graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: harness.authToken }) }));
+vi.mock('../../graphql/use-auth-token', () => ({
+  useAuthToken: () => ({
+    data: harness.authToken,
+    isError: harness.authTokenError,
+    fetchStatus: harness.authToken === undefined && !harness.authTokenError ? 'fetching' : 'idle',
+  }),
+}));
 
 const serialNumbers = ['751945'];
 const savedBoard = (boardUuid: string): BoardSerialConfig => ({
@@ -38,6 +48,7 @@ describe('useMyBoardSerialConfigs cached preference refresh', () => {
   beforeEach(() => {
     harness.request.mockReset();
     harness.authToken = 'climber-token';
+    harness.authTokenError = false;
   });
 
   it('keeps cached candidates untappable until the new board mapping arrives', async () => {
@@ -84,5 +95,55 @@ describe('useMyBoardSerialConfigs cached preference refresh', () => {
     expect(result.current.data).toEqual([]);
     expect(harness.request).not.toHaveBeenCalled();
     queryClient.clear();
+  });
+
+  // Offline the quickstart used to sit on "Loading boards…": a lookup that can't
+  // answer is done waiting, and the public candidates show.
+  it('stops waiting on a lookup paused for want of a network', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, networkMode: 'online' } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    onlineManager.setOnline(false);
+    try {
+      const { result } = renderHook(() => useMyBoardSerialConfigs(serialNumbers), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isResolving).toBe(false));
+      expect(result.current.data).toEqual([]);
+      expect(harness.request).not.toHaveBeenCalled();
+    } finally {
+      onlineManager.setOnline(true);
+      queryClient.clear();
+    }
+  });
+
+  it('stops waiting on a failed lookup, even while it tries again', async () => {
+    harness.request.mockRejectedValueOnce(new Error('offline'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const { result } = renderHook(() => useMyBoardSerialConfigs(serialNumbers), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.isResolving).toBe(false));
+
+    harness.request.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      void queryClient.refetchQueries({ queryKey: ['myBoardSerialConfigs'] });
+    });
+    expect(result.current.isResolving).toBe(false);
+    expect(result.current.data).toEqual([]);
+    queryClient.clear();
+  });
+
+  it('waits for the stored sign-in, but not on one that failed to load', () => {
+    harness.authToken = undefined;
+    const waiting = cachedHook();
+    expect(waiting.result.current.isResolving).toBe(true);
+    waiting.queryClient.clear();
+
+    harness.authTokenError = true;
+    const failed = cachedHook();
+    expect(failed.result.current.isResolving).toBe(false);
+    failed.queryClient.clear();
   });
 });

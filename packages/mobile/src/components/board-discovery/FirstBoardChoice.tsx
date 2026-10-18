@@ -8,6 +8,7 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
+import type { BoardName } from '@boardsesh/shared-schema';
 import type { FirstBoardGymState } from '../../lib/boards/first-board-gym-state';
 import { NearbySearchStatus } from './NearbySearchStatus';
 import { spacing } from '../../theme/tokens';
@@ -24,6 +25,10 @@ type FirstBoardChoiceProps = {
   onOpenSettings: () => void;
   /** Asks for the boards near the climber again, after `nearby_error`. */
   onRetryNearby: () => void;
+  /** The one board type the gym search is narrowed to, or null; see `NearbySearchStatus`. */
+  nearbyBoardType?: BoardName | null;
+  /** Drops `nearbyBoardType`. */
+  onShowAllNearby?: () => void;
   /**
    * "Add my spray wall", under My own board for the Climbs no-board entry.
    * The builder behind My own board cannot make a spray wall, so
@@ -57,6 +62,8 @@ export function FirstBoardChoice({
   onFindGymOnMap,
   onOpenSettings,
   onRetryNearby,
+  nearbyBoardType = null,
+  onShowAllNearby,
   onAddSprayWall,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
@@ -93,6 +100,8 @@ export function FirstBoardChoice({
           onFindGymOnMap={onFindGymOnMap}
           onOpenSettings={onOpenSettings}
           onRetryNearby={onRetryNearby}
+          boardType={nearbyBoardType}
+          onShowAll={onShowAllNearby}
         />
       )}
 

@@ -4,6 +4,8 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { canOpenAppSettings } from '../../lib/open-app-settings';
+import type { BoardName } from '@boardsesh/shared-schema';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { FirstBoardGymState } from '../../lib/boards/first-board-gym-state';
 import { spacing } from '../../theme/tokens';
 
@@ -14,6 +16,13 @@ type NearbySearchStatusProps = {
   onOpenSettings: () => void;
   /** Asks for the boards near the climber again, after `nearby_error`. */
   onRetryNearby: () => void;
+  /**
+   * The one board type the search is narrowed to (the Bluetooth quickstart's
+   * "Find it at my gym"), or null for every board.
+   */
+  boardType?: BoardName | null;
+  /** Drops `boardType` and shows every board near the climber. */
+  onShowAll?: () => void;
 };
 
 /**
@@ -27,7 +36,14 @@ type NearbySearchStatusProps = {
  * silently back to idle on an empty result. Renders nothing for `idle` and
  * `found`: the caller owns the list.
  */
-export function NearbySearchStatus({ state, onFindGymOnMap, onOpenSettings, onRetryNearby }: NearbySearchStatusProps) {
+export function NearbySearchStatus({
+  state,
+  onFindGymOnMap,
+  onOpenSettings,
+  onRetryNearby,
+  boardType = null,
+  onShowAll,
+}: NearbySearchStatusProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
 
@@ -43,10 +59,25 @@ export function NearbySearchStatus({ state, onFindGymOnMap, onOpenSettings, onRe
         </View>
       );
     case 'none_nearby':
+      // Narrowed to one type, "Nothing within 20 km" would be false in a gym
+      // full of other boards: say which type there's none of, and offer the rest.
       return (
         <View style={styles.panel} accessibilityLiveRegion="polite">
-          <Text variant="subheadline">{t('mobile.firstBoard.nearbyEmpty')}</Text>
-          {mapButton}
+          <Text variant="subheadline">
+            {!boardType
+              ? t('mobile.firstBoard.nearbyEmpty')
+              : boardType === 'moonboard'
+                ? t('mobile.firstBoard.nearbyEmptyMoonboard')
+                : t('mobile.firstBoard.nearbyEmptyType', { board: formatBoardDisplayName(boardType) })}
+          </Text>
+          {boardType && onShowAll ? (
+            <View style={styles.actions}>
+              <Button title={t('mobile.discovery.nearbyShowAll')} variant="tonal" size="small" onPress={onShowAll} />
+              {mapButton}
+            </View>
+          ) : (
+            mapButton
+          )}
         </View>
       );
     case 'nearby_error':

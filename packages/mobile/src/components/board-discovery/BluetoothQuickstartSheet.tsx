@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { forwardRef, memo, useCallback, useEffect, useMemo } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates'
 import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { Sheet } from '../Sheet';
+import { Sheet, dismissSheetAndWait } from '../Sheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -29,12 +29,18 @@ type BluetoothQuickstartSheetProps = {
   /** True while the sheet is open — drives when the scan kicks off. */
   active: boolean;
   onClose: () => void;
-  /** Fired once the sheet has finished sliding away, however it was closed. */
-  onFullyDismissed?: () => void;
   onSelect: (board: UserBoard) => void;
-  /** "Find it at my gym" on a board we couldn't name: the boards near the climber, of this type. */
+  /**
+   * "Find it at my gym" on a board we couldn't name: the boards near the
+   * climber, of this type. Called once the sheet has slid away, so the location
+   * prompt never lands on a dismissing sheet.
+   */
   onFindAtGym: (boardType: BoardName) => void;
-  /** "It's my own board" on a board we couldn't name: the builder, opened on this type. */
+  /**
+   * "It's my own board" on a board we couldn't name: the builder, opened on
+   * this type. Called once the sheet has slid away, so the push never starts
+   * under it.
+   */
   onOwnBoard: (boardType: BoardName) => void;
 };
 
@@ -49,7 +55,7 @@ type BluetoothQuickstartSheetProps = {
  * next step (see quickstart-scan-rows.ts).
  */
 export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickstartSheetProps>(
-  function BluetoothQuickstartSheet({ active, onClose, onFullyDismissed, onSelect, onFindAtGym, onOwnBoard }, ref) {
+  function BluetoothQuickstartSheet({ active, onClose, onSelect, onFindAtGym, onOwnBoard }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
     const { t: tSettings } = useTranslation('settings');
@@ -117,6 +123,38 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     const handleRetryLookup = useCallback(() => {
       void refetchBoards();
     }, [refetchBoards]);
+
+    // The sheet's own handle, beside the one forwarded to the screen, so the
+    // next-step actions can close it and wait.
+    const sheetRef = useRef<BottomSheet | null>(null);
+    const setSheetRef = useCallback(
+      (instance: BottomSheet | null) => {
+        sheetRef.current = instance;
+        if (typeof ref === 'function') ref(instance);
+        else if (ref) ref.current = instance;
+      },
+      [ref],
+    );
+    // Closes the sheet, then hands over once it has slid away (at once if it
+    // never reached the screen). A second tap while it slides is ignored, and
+    // a sheet re-opened before it settled hands over nothing.
+    const leavingRef = useRef(false);
+    const closeThen = useCallback((handOver: () => void) => {
+      if (leavingRef.current) return;
+      leavingRef.current = true;
+      void dismissSheetAndWait(sheetRef.current).then((result) => {
+        leavingRef.current = false;
+        if (result.status === 'dismissed') handOver();
+      });
+    }, []);
+    const handleFindAtGym = useCallback(
+      (boardType: BoardName) => closeThen(() => onFindAtGym(boardType)),
+      [closeThen, onFindAtGym],
+    );
+    const handleOwnBoard = useCallback(
+      (boardType: BoardName) => closeThen(() => onOwnBoard(boardType)),
+      [closeThen, onOwnBoard],
+    );
 
     // Start scanning when the sheet opens; reset back to idle when it closes so
     // the next open re-scans from scratch.
@@ -201,8 +239,8 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   key={row.key}
                   kind={row.kind}
                   boardType={row.kind === 'lookup_failed' ? null : row.boardType}
-                  onFindAtGym={onFindAtGym}
-                  onOwnBoard={onOwnBoard}
+                  onFindAtGym={handleFindAtGym}
+                  onOwnBoard={handleOwnBoard}
                   onRetryLookup={handleRetryLookup}
                 />
               ),
@@ -292,10 +330,9 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     // scroll the buttons at the bottom were the part that got cut off.
     return (
       <Sheet
-        ref={ref}
+        ref={setSheetRef}
         snapPoints={MEDIUM_SNAP_POINTS}
         onClose={onClose}
-        onFullyDismissed={onFullyDismissed}
         scrollable
         contentContainerStyle={styles.scrollContent}
       >

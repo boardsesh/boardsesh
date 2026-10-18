@@ -34,6 +34,17 @@
 // "no flag": a hint that turns out to be unnecessary costs a sentence, a missing
 // one costs a climber an empty scan with the blame on their board.
 //
+// Two builds the floor misreads, in opposite directions:
+// - Dev-client APKs (`com.boardsesh.app.dev`) take the workflow run number as
+//   their versionCode (android-apk-dev-client.yml, "Set version code"), far
+//   below the floor, so they read as "no flag" and keep the hint although they
+//   carry the flag. That is the safe direction.
+// - A native rebuild from a release anchor older than db21745fe7 would get a
+//   new, higher versionCode without the flag and lose a hint it needs. That
+//   can't happen today, because backports to an older fingerprint ship as OTAs
+//   only, never as new binaries. A native backport path would have to change
+//   this floor.
+//
 // (For the record, adding the flag is a one-line manifest edit, not a blocked
 // one. `packages/mobile/app.config.ts` says ble-plx would cap
 // ACCESS_FINE_LOCATION at `maxSdkVersion=30`; running `expo prebuild --platform

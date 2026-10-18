@@ -65,6 +65,26 @@ describe('classifyQuickstartDevice', () => {
     expect(heard('Tension Board')).toMatchObject({ kind: 'bare_name', boardType: 'tension' });
   });
 
+  it.each(['kilter board', 'KILTER BOARD', '  Kilter Board  ', 'Kilter Board@2', 'So iLL Board', 'Grasshopper Board'])(
+    'keeps a bare name that is exactly "<Type> Board": %s',
+    (name) => {
+      expect(heard(name)?.kind).toBe('bare_name');
+    },
+  );
+
+  // `isKilterBuiltBox` is a prefix match. These would have read "Found a board".
+  it.each(['Tensioner', 'Kilter-anything', 'Kilter Board Pro', 'Kilterboard Speaker', 'Decoy', 'Tension'])(
+    'drops a lookalike bare name: %s',
+    (name) => {
+      expect(heard(name)).toBeNull();
+    },
+  );
+
+  it('keeps a bare "<Type>" only when the device advertises the Aurora service', () => {
+    expect(heard('Decoy', [AURORA_ADVERTISED_SERVICE_UUID])).toMatchObject({ kind: 'bare_name', boardType: 'decoy' });
+    expect(heard('Decoy', [UART_SERVICE_UUID])).toBeNull();
+  });
+
   it('still drops peripherals whose "#serial" is not a board', () => {
     expect(heard('Printer #751737')).toBeNull();
     expect(heard("Marco's AirPods #1")).toBeNull();

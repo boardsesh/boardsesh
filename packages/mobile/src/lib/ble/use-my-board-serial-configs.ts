@@ -9,6 +9,11 @@ import { useAuthToken } from '../graphql/use-auth-token';
 
 const EMPTY_BOARD_SERIAL_CONFIGS: BoardSerialConfig[] = [];
 
+/** A query that has given up for now: it failed, or it is paused until the network returns. */
+function cannotAnswer(query: { isError: boolean; fetchStatus: 'fetching' | 'paused' | 'idle' }): boolean {
+  return query.isError || query.fetchStatus === 'paused';
+}
+
 /**
  * Returns the current climber's recorded serial-to-board choices for BLE
  * discovery. It lives beside BLE rather than the general GraphQL hook barrel:
@@ -36,6 +41,11 @@ export function useMyBoardSerialConfigs(serialNumbers: string[]) {
         : EMPTY_BOARD_SERIAL_CONFIGS,
     // Wait for auth hydration before declaring a scan empty; otherwise a saved
     // board can briefly appear as several public serial-collision candidates.
-    isResolving: authToken === undefined || (enabled && (query.isLoading || query.isFetching)),
+    // A lookup that can't answer (paused for want of a network, or failed) is
+    // done waiting: holding on it left the quickstart on "Loading boards…" with
+    // no signal. The public candidates show, as after a failed refetch above.
+    isResolving:
+      (authToken === undefined && !cannotAnswer(authTokenQuery)) ||
+      (enabled && !cannotAnswer(query) && (query.isLoading || query.isFetching)),
   };
 }

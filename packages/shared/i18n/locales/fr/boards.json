@@ -103,7 +103,9 @@
       "findGymOnMap": "Trouve ta salle sur la carte",
       "locationOff": "La localisation est désactivée",
       "openSettings": "Ouvrir Réglages",
-      "notNow": "Pas maintenant"
+      "notNow": "Pas maintenant",
+      "nearbyEmptyMoonboard": "Aucune MoonBoard à moins de 20 km",
+      "nearbyEmptyType": "Aucune board {{board}} à moins de 20 km"
     },
     "firstConnect": {
       "card": {
@@ -147,7 +149,10 @@
       "unpinAria": "Désépingler {{name}}",
       "pinnedBadgeAria": "Épinglée",
       "pinError": "Impossible de mettre à jour tes boards épinglées",
-      "addWallTile": "Spraywall"
+      "addWallTile": "Spraywall",
+      "nearbyTitleMoonboard": "Les MoonBoard près de toi",
+      "nearbyTitleType": "Les boards {{board}} près de toi",
+      "nearbyShowAll": "Tout afficher"
     },
     "create": {
       "screenTitle": "Configure ta board",

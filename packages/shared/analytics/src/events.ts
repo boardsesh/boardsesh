@@ -379,8 +379,10 @@ export const SHARED_EVENTS = {
   // resolves them to boards. It stays serials-only so its series doesn't break.
   // `serialless_count` (2026-10) counts boards heard with no serial, one per BLE
   // device: MoonBoards and Kilter-built boxes advertising a bare `Kilter Board`.
-  // `moonboard_count` is the MoonBoard part of it. A scan that heard nothing has
-  // all three at zero; older events have no `serialless_count`.
+  // `moonboard_count` is the MoonBoard part of it. Both count devices heard, so
+  // a controller rotating its private address mid-scan can count twice. A scan
+  // that heard nothing has all three at zero; older events have no
+  // `serialless_count`.
   BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial

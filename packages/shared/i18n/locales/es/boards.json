@@ -103,7 +103,9 @@
       "findGymOnMap": "Busca tu rocódromo en el mapa",
       "locationOff": "La ubicación está desactivada",
       "openSettings": "Abrir Ajustes",
-      "notNow": "Ahora no"
+      "notNow": "Ahora no",
+      "nearbyEmptyMoonboard": "Ningún MoonBoard a menos de 20 km",
+      "nearbyEmptyType": "Ningún plafón {{board}} a menos de 20 km"
     },
     "firstConnect": {
       "card": {
@@ -147,7 +149,10 @@
       "unpinAria": "Desfijar {{name}}",
       "pinnedBadgeAria": "Fijado",
       "pinError": "No se pudieron actualizar tus plafones fijados",
-      "addWallTile": "Spraywall"
+      "addWallTile": "Spraywall",
+      "nearbyTitleMoonboard": "Plafones MoonBoard cerca de ti",
+      "nearbyTitleType": "Plafones {{board}} cerca de ti",
+      "nearbyShowAll": "Ver todos"
     },
     "create": {
       "screenTitle": "Configura tu plafón",

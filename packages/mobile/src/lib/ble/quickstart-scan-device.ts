@@ -9,6 +9,7 @@
 // the sheet can say what it found and offer the next step.
 
 import type { BoardName } from '@boardsesh/shared-schema';
+import { AURORA_ADVERTISED_SERVICE_UUID } from '@boardsesh/ble-protocol';
 import { isKilterBuiltBox, parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
 import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import { MOONBOARD_BOARD_NAME, toBoardName } from '@boardsesh/board-config';
@@ -62,6 +63,32 @@ const RSSI_UNAVAILABLE = 127;
 
 function usableRssi(rssi: number | null | undefined): number | null {
   return typeof rssi === 'number' && Number.isFinite(rssi) && rssi < RSSI_UNAVAILABLE ? rssi : null;
+}
+
+const AURORA_SERVICE_UUID = AURORA_ADVERTISED_SERVICE_UUID.toLowerCase();
+// `Kilter Board@2`: the spec allows an API level with no serial.
+const API_LEVEL_SUFFIX = /@\d+$/;
+
+/**
+ * The board type of an Aurora box that advertises no serial, or null when the
+ * name only looks like one.
+ *
+ * `isKilterBuiltBox` is a prefix match (`Tensioner`, `Kilter-anything` and a
+ * gadget called `Decoy` all pass it), which is fine where it only picks a write
+ * mode for a box the climber chose, but not for telling a climber "Found a
+ * board". So the name, less any `@apiLevel`, has to be exactly `<Type> Board`
+ * (case, spaces and hyphens aside), the form every Aurora box advertises and
+ * the one the recon data saw (`Kilter Board`). A bare `<Type>` counts only when
+ * the device also advertises the Aurora service.
+ */
+function bareNameBoardType(name: string, serviceUuids: string[]): BoardName | null {
+  if (!isKilterBuiltBox(name)) return null;
+  const boardType = toBoardName(parseBoardTypeFromDeviceName(name));
+  if (!boardType) return null;
+  const displayName = name.trim().replace(API_LEVEL_SUFFIX, '').toLowerCase().replace(/[\s-]/g, '');
+  if (displayName === `${boardType}board`) return boardType;
+  const advertisesAuroraService = serviceUuids.some((serviceUuid) => serviceUuid.toLowerCase() === AURORA_SERVICE_UUID);
+  return displayName === boardType && advertisesAuroraService ? boardType : null;
 }
 
 /**
@@ -118,8 +145,7 @@ export function classifyQuickstartDevice({
     };
   }
 
-  if (!isKilterBuiltBox(name)) return null;
-  const boardType = toBoardName(parseBoardTypeFromDeviceName(name));
+  const boardType = bareNameBoardType(name, serviceUuids);
   if (!boardType) return null;
   return { key: `device:${deviceId}`, deviceId, name, kind: 'bare_name', boardType, serial: null, rssi: signal };
 }

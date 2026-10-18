@@ -22,14 +22,15 @@ vi.mock('react-native', () => ({
 // Resolves against the real en-US catalog, so the test reads the shipped words.
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, params?: Record<string, string>) => {
       const value = key
         .split('.')
         .reduce<unknown>(
           (node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined),
           boardsCatalog,
         );
-      return typeof value === 'string' ? value : key;
+      if (typeof value !== 'string') return key;
+      return value.replace(/\{\{(\w+)\}\}/g, (placeholder, name: string) => params?.[name] ?? placeholder);
     },
   }),
 }));
@@ -162,6 +163,40 @@ describe('FirstBoardChoice', () => {
     expect(screen.queryByTestId('nearby')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Find your gym on the map' }));
     expect(callbacks.onFindGymOnMap).toHaveBeenCalledTimes(1);
+  });
+
+  // The Bluetooth quickstart's "Find it at my gym" narrows the search to one
+  // type. "Nothing within 20 km" would then be false in a gym full of other
+  // boards, so the line names the type and offers every board.
+  it('names the type it found none of, and offers every board', () => {
+    const onShowAllNearby = vi.fn();
+    render(
+      <FirstBoardChoice
+        gymState="none_nearby"
+        nearbyResults={null}
+        {...callbacks}
+        nearbyBoardType="moonboard"
+        onShowAllNearby={onShowAllNearby}
+      />,
+    );
+    expect(screen.getByText('No MoonBoards within 20 km')).toBeTruthy();
+    expect(screen.queryByText('Nothing within 20 km')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
+    expect(onShowAllNearby).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Find your gym on the map' }));
+    expect(callbacks.onFindGymOnMap).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    render(
+      <FirstBoardChoice
+        gymState="none_nearby"
+        nearbyResults={null}
+        {...callbacks}
+        nearbyBoardType="tension"
+        onShowAllNearby={onShowAllNearby}
+      />,
+    );
+    expect(screen.getByText('No Tension boards within 20 km')).toBeTruthy();
   });
 
   // A failed lookup is not an empty one: a climber standing in a gym must not

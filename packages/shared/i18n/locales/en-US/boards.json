@@ -103,7 +103,9 @@
       "findGymOnMap": "Find your gym on the map",
       "locationOff": "Location is off",
       "openSettings": "Open Settings",
-      "notNow": "Not now"
+      "notNow": "Not now",
+      "nearbyEmptyMoonboard": "No MoonBoards within 20 km",
+      "nearbyEmptyType": "No {{board}} boards within 20 km"
     },
     "firstConnect": {
       "card": {
@@ -147,7 +149,10 @@
       "unpinAria": "Unpin {{name}}",
       "pinnedBadgeAria": "Pinned",
       "pinError": "Couldn't update your pinned boards",
-      "addWallTile": "Spraywall"
+      "addWallTile": "Spraywall",
+      "nearbyTitleMoonboard": "MoonBoards near you",
+      "nearbyTitleType": "{{board}} boards near you",
+      "nearbyShowAll": "Show all"
     },
     "create": {
       "screenTitle": "Set up your board",

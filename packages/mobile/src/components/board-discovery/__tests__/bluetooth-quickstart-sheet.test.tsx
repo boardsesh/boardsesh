@@ -133,11 +133,17 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 const sheetProps = vi.hoisted(() => ({ scrollable: undefined as boolean | undefined }));
+// The sheet closes itself before handing a next step to the screen; each test
+// decides when (and whether) that dismissal settles.
+const sheetDismiss = vi.hoisted(() => ({
+  wait: vi.fn(async (): Promise<{ status: 'dismissed' | 'aborted' }> => ({ status: 'dismissed' })),
+}));
 vi.mock('../../Sheet', () => ({
   Sheet: forwardRef(({ children, scrollable }: ChildrenProps & { scrollable?: boolean }, _ref: Ref<unknown>) => {
     sheetProps.scrollable = scrollable;
     return createElement('div', {}, children);
   }),
+  dismissSheetAndWait: sheetDismiss.wait,
 }));
 
 vi.mock('../../Text', () => ({
@@ -732,9 +738,10 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
     locationHint.lastActive = null;
     actions.onFindAtGym.mockClear();
     actions.onOwnBoard.mockClear();
+    sheetDismiss.wait.mockClear();
   });
 
-  it('says it found a MoonBoard, and offers the gym list and the builder for it', () => {
+  it('says it found a MoonBoard, and offers the gym list and the builder for it', async () => {
     scan.devices = [moonboard];
     const { container } = renderSheet();
 
@@ -744,9 +751,43 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
     expect(locationHint.lastActive).toBe(false);
 
     button(container, 'mobile.bluetooth.findAtGym')?.click();
-    expect(actions.onFindAtGym).toHaveBeenCalledWith('moonboard');
+    await waitFor(() => expect(actions.onFindAtGym).toHaveBeenCalledWith('moonboard'));
     button(container, 'mobile.bluetooth.ownBoard')?.click();
-    expect(actions.onOwnBoard).toHaveBeenCalledWith('moonboard');
+    await waitFor(() => expect(actions.onOwnBoard).toHaveBeenCalledWith('moonboard'));
+  });
+
+  // The location prompt or the builder push must not start under a sheet that
+  // is still sliding away.
+  it('hands a next step over only once the sheet has slid away', async () => {
+    scan.devices = [moonboard];
+    let settle: (result: { status: 'dismissed' | 'aborted' }) => void = () => {};
+    sheetDismiss.wait.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const { container } = renderSheet();
+
+    button(container, 'mobile.bluetooth.ownBoard')?.click();
+    // A second tap while it slides changes nothing.
+    button(container, 'mobile.bluetooth.findAtGym')?.click();
+    expect(sheetDismiss.wait).toHaveBeenCalledTimes(1);
+    expect(actions.onOwnBoard).not.toHaveBeenCalled();
+
+    settle({ status: 'dismissed' });
+    await waitFor(() => expect(actions.onOwnBoard).toHaveBeenCalledWith('moonboard'));
+    expect(actions.onFindAtGym).not.toHaveBeenCalled();
+  });
+
+  it('hands nothing over when the sheet was opened again before it settled', async () => {
+    scan.devices = [moonboard];
+    sheetDismiss.wait.mockResolvedValueOnce({ status: 'aborted' });
+    const { container } = renderSheet();
+
+    button(container, 'mobile.bluetooth.findAtGym')?.click();
+    await waitFor(() => expect(sheetDismiss.wait).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(actions.onFindAtGym).not.toHaveBeenCalled();
   });
 
   it('shows two MoonBoards in range as one row: both would say the same thing', () => {
@@ -756,7 +797,7 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
     expect(container.querySelectorAll('[data-button="mobile.bluetooth.findAtGym"]')).toHaveLength(1);
   });
 
-  it('says it found a Kilter box that does not say which board it is', () => {
+  it('says it found a Kilter box that does not say which board it is', async () => {
     scan.devices = [bareKilter];
     const { container } = renderSheet();
 
@@ -764,12 +805,12 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
     expect(hasText(container, 'mobile.bluetooth.bareNameBody')).toBe(true);
 
     button(container, 'mobile.bluetooth.findAtGym')?.click();
-    expect(actions.onFindAtGym).toHaveBeenCalledWith('kilter');
+    await waitFor(() => expect(actions.onFindAtGym).toHaveBeenCalledWith('kilter'));
     button(container, 'mobile.bluetooth.ownBoard')?.click();
-    expect(actions.onOwnBoard).toHaveBeenCalledWith('kilter');
+    await waitFor(() => expect(actions.onOwnBoard).toHaveBeenCalledWith('kilter'));
   });
 
-  it('names the type of a serial nobody has saved a board for', () => {
+  it('names the type of a serial nobody has saved a board for', async () => {
     scan.serials = ['12345'];
     scan.advertisedTypes = new Map([['12345', 'tension']]);
     scan.devices = [tensionSerial];
@@ -781,7 +822,7 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
     expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
 
     button(container, 'mobile.bluetooth.ownBoard')?.click();
-    expect(actions.onOwnBoard).toHaveBeenCalledWith('tension');
+    await waitFor(() => expect(actions.onOwnBoard).toHaveBeenCalledWith('tension'));
   });
 
   it('lists a saved board and an unknown serial side by side', () => {
@@ -844,6 +885,20 @@ describe('BluetoothQuickstartSheet boards it cannot name', () => {
 
     button(container, 'mobile.errorRetry')?.click();
     expect(boards.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  // With no answer from the lookup, the saved-choices lookup still loading
+  // must not hold the sheet on "Loading boards…".
+  it('says it needs signal while the saved-choices lookup is still waiting', () => {
+    scan.serials = ['751737'];
+    scan.devices = [kilterSerial];
+    boards.data = undefined;
+    boards.fetchStatus = 'paused';
+    serialConfigs.isResolving = true;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.needSignalTitle')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.resolving')).toBe(false);
   });
 
   it('keeps the MoonBoard row next to the need-signal row', () => {
