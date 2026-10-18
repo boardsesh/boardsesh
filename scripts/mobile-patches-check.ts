@@ -326,6 +326,20 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'react-native-screens@4.26.2',
   },
+  // `scrollEdgeEffects` on a native-stack screen reaches a FlashList only through
+  // this fallback: upstream walks first children, which stops at any leading
+  // sibling. Drop it and iOS 26 draws its top edge blur over full-bleed heroes
+  // again (the playlist hero band, #6525). The second sentinel keeps the search
+  // out of nested screens, so an outer screen can't overwrite an inner one.
+  {
+    package: 'react-native-screens',
+    file: 'ios/RNSScreen.mm',
+    sentinels: [
+      'scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);',
+      'if (view != screen && [view isKindOfClass:RNSScreenView.class]) {',
+    ],
+    patchedKey: 'react-native-screens@4.26.2',
+  },
   // The bottom-accessory relayout nudge. No single sentinel is enough, because
   // this hunk has TWO regressions to guard, in opposite directions.
   //

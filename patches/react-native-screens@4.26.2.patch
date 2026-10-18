@@ -1,3 +1,53 @@
+diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
+index 9b66012dc8db1e3af0cb5457f8dad86e7f2fe5e3..e63ce34ad0da635391676d6e89049b1f47addccb 100644
+--- a/ios/RNSScreen.mm
++++ b/ios/RNSScreen.mm
+@@ -1105,10 +1105,43 @@ RNS_IGNORE_SUPER_CALL_END
+   }
+ }
+ 
++// Depth-first search for this screen's own scroll view. It never descends into a
++// nested screen, so an outer screen's edge effects cannot overwrite an inner one's.
++static const NSInteger RNSEdgeEffectScrollViewSearchMaxDepth = 24;
++
++static UIScrollView *_Nullable rnscreens_findOwnEdgeEffectScrollView(UIView *_Nullable view, UIView *_Nonnull screen, NSInteger depth)
++{
++  if (view == nil || depth < 0) {
++    return nil;
++  }
++  if (view != screen && [view isKindOfClass:RNSScreenView.class]) {
++    return nil;
++  }
++  if ([view isKindOfClass:UIScrollView.class]) {
++    return static_cast<UIScrollView *>(view);
++  }
++  for (UIView *subview in view.subviews) {
++    UIScrollView *found = rnscreens_findOwnEdgeEffectScrollView(subview, screen, depth - 1);
++    if (found != nil) {
++      return found;
++    }
++  }
++  return nil;
++}
++
+ - (void)updateContentScrollViewEdgeEffectsIfExists
+ {
+-  [RNSScrollEdgeEffectApplicator applyToScrollView:[RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self]
+-                                      withProvider:self];
++  UIScrollView *scrollView = [RNSScrollViewFinder findScrollViewInFirstDescendantChainFrom:self];
++  if (scrollView == nil) {
++    // The first-child walk stops at any leading sibling, and FlashList nests its
++    // UIScrollView below wrappers, so `scrollEdgeEffects` never reached it and
++    // iOS 26 kept drawing its top edge effect over full-bleed heroes.
++    scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);
++  }
++  if (scrollView == nil) {
++    return;
++  }
++  [RNSScrollEdgeEffectApplicator applyToScrollView:scrollView withProvider:self];
+ }
+ 
+ #pragma mark - RNSSafeAreaProviding
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
 index 04d40b38bad73bedd79c6aa8b85125dc79093db7..3ae83feb969f4aba8ce05207669998f68b463e9a 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.h
