@@ -38,8 +38,15 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
     createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
-  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('button', { onClick: () => onPress?.() }, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: () => onPress?.(), 'aria-label': accessibilityLabel }, children),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: unknown) => styles,
@@ -152,5 +159,31 @@ describe('CollapsibleSection with a summary that draws itself', () => {
       </CollapsibleSection>,
     );
     expect(Array.from(container.querySelectorAll('span')).map((span) => span.textContent)).toEqual([TITLE]);
+  });
+});
+
+describe('CollapsibleSection spoken summary', () => {
+  it('reads the summary words after the title while collapsed, and only the title once open', async () => {
+    const { CollapsibleSection } = await import('../CollapsibleSection');
+    const { container } = render(
+      <CollapsibleSection title="Active holds" summary={<b>● B5</b>} summaryAccessibilityLabel="Start: B5.">
+        <div>SECTION_BODY</div>
+      </CollapsibleSection>,
+    );
+    const header = container.querySelector('button[aria-label]');
+    expect(header?.getAttribute('aria-label')).toBe('Active holds. Start: B5.');
+    (header as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(container.querySelector('button[aria-label]')?.getAttribute('aria-label')).toBe('Active holds');
+  });
+
+  it('reads just the title when the section gives no summary words', async () => {
+    const { CollapsibleSection } = await import('../CollapsibleSection');
+    const { container } = render(
+      <CollapsibleSection title={TITLE} summary={LONG_SUMMARY}>
+        <div>SECTION_BODY</div>
+      </CollapsibleSection>,
+    );
+    expect(container.querySelector('button[aria-label]')?.getAttribute('aria-label')).toBe(TITLE);
   });
 });

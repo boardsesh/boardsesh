@@ -33,6 +33,7 @@ const recorded = vi.hoisted(() => ({
   switchOverlay: [] as Props[],
   actionBar: [] as Props[],
   deferredSections: [] as Props[],
+  playbackFrames: [] as Array<string | null>,
   logAscent: [] as Props[],
   favoriteStatus: [] as Props[],
   playback: [] as Props[],
@@ -272,12 +273,18 @@ vi.mock('../PlayDrawerActionBar', () => ({
     return createElement('div', { 'data-testid': 'action-bar' });
   },
 }));
-vi.mock('../DeferredSections', () => ({
-  DeferredSections: (props: Props) => {
-    recorded.deferredSections.push(props);
-    return createElement('div', { 'data-testid': 'deferred-sections' });
-  },
-}));
+vi.mock('../DeferredSections', async () => {
+  const { useContext } = await import('react');
+  const { PlaybackFrameContext } = await import('../playback-frame-context');
+  return {
+    DeferredSections: (props: Props) => {
+      recorded.deferredSections.push(props);
+      // What Active holds would read: the playback frame comes by context, not props.
+      recorded.playbackFrames.push(useContext(PlaybackFrameContext));
+      return createElement('div', { 'data-testid': 'deferred-sections' });
+    },
+  };
+});
 vi.mock('../../LogAscentSheet', () => ({
   LogAscentSheet: (props: Props) => {
     recorded.logAscent.push(props);
@@ -506,6 +513,7 @@ beforeEach(() => {
   recorded.switchOverlay = [];
   recorded.actionBar = [];
   recorded.deferredSections = [];
+  recorded.playbackFrames = [];
   recorded.scrollGate = [];
   recorded.logAscent = [];
   recorded.favoriteStatus = [];
@@ -1065,17 +1073,11 @@ describe('PlayDrawer active holds section', () => {
       similarClimbs: false,
     };
   }
-  function lastActiveHoldsFrames(): unknown {
+  function lastSectionsClimb(): unknown {
     const props = recorded.deferredSections.at(-1);
     if (!props) throw new Error('DeferredSections never rendered');
-    return props.activeHoldsFrames;
+    return props.climb;
   }
-
-  it('hands the sections no frames for it while it is switched off', () => {
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    renderDrawer();
-    expect(lastActiveHoldsFrames()).toBeUndefined();
-  });
 
   it('is the peek on its own, so the drawer scrolls to it, and reads the climb it shows', () => {
     showOnlyActiveHolds();
@@ -1083,7 +1085,9 @@ describe('PlayDrawer active holds section', () => {
     renderDrawer();
     expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
     expect(recorded.deferredSections.at(-1)).toMatchObject({ boardName: 'kilter', layoutId: 8 });
-    expect(lastActiveHoldsFrames()).toBe(HOMEWALL_CLIMB.frames);
+    expect(lastSectionsClimb()).toBe(HOMEWALL_CLIMB);
+    // A static climb: no playback frame, so Active holds reads the climb's frames.
+    expect(recorded.playbackFrames.at(-1)).toBeNull();
   });
 
   it('follows the board to the next climb', () => {
@@ -1100,26 +1104,42 @@ describe('PlayDrawer active holds section', () => {
         onOpenQueue: vi.fn(),
       }),
     );
-    expect(lastActiveHoldsFrames()).toBe(nextClimb.frames);
+    expect(lastSectionsClimb()).toBe(nextClimb);
   });
 
-  it('reads the playback frame the board paints on an animated climb', () => {
+  it("hands Active holds the playback frame the board paints by context, keeping the sections' props", () => {
     showOnlyActiveHolds();
     playbackState.isAnimatable = true;
     playbackState.currentFrameString = 'p1145r12';
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    renderDrawer();
+    const rendered = renderDrawer();
     expect(lastBoardProps().currentFrameOverride).toBe('p1145r12');
-    expect(lastActiveHoldsFrames()).toBe('p1145r12');
+    expect(recorded.playbackFrames.at(-1)).toBe('p1145r12');
+    const before = recorded.deferredSections.at(-1) ?? {};
+    playbackState.currentFrameString = 'p1146r13';
+    rendered.rerender(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(recorded.playbackFrames.at(-1)).toBe('p1146r13');
+    const after = recorded.deferredSections.at(-1) ?? {};
+    // No prop carries the frame, so the memoised sections skip a playback tick.
+    expect(Object.values(after)).not.toContain('p1146r13');
+    expect(after.climb).toBe(before.climb);
+    expect(after.sections).toBe(before.sections);
   });
 
-  it('keeps the same frames when the climb is mirrored: the counts are the same either way', () => {
+  it('keeps the same climb when it is mirrored: the counts are the same either way', () => {
     showOnlyActiveHolds();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
     act(() => (recorded.actionBar.at(-1)?.onMirror as () => void)());
     expect(lastBoardProps().mirrored).toBe(true);
-    expect(lastActiveHoldsFrames()).toBe(TWELVE_CLIMB.frames);
+    expect(lastSectionsClimb()).toBe(TWELVE_CLIMB);
   });
 });
 

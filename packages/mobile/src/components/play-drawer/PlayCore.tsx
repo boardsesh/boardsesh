@@ -86,6 +86,7 @@ import {
   usePlayDrawerSectionsPreference,
 } from '../../lib/play-drawer-sections-preference';
 import { visiblePlayDrawerSections } from './play-drawer-sections';
+import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -1980,36 +1981,32 @@ export function PlayCore({
                       importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
                       pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
                     >
-                      <DeferredSections
-                        climb={displayedClimb}
-                        boardName={boardName as BoardName}
-                        layoutId={layoutId}
-                        sizeId={sizeId}
-                        setIds={setIds}
-                        angle={angle}
-                        enabled={isSheetOpen}
-                        contentEnabled={belowFoldContentRequested}
-                        sections={sections}
-                        order={sectionOrder}
-                        // Only while Active holds is on, so a playback frame
-                        // never re-renders the sections for nothing.
-                        activeHoldsFrames={
-                          sections.activeHolds
-                            ? playback.isAnimatable
-                              ? playback.currentFrameString
-                              : displayedClimb.frames
-                            : undefined
-                        }
-                        onSimilarClimbPress={handleSimilarClimbPress}
-                        onFirstSectionHeaderLayout={onSectionHeaderMeasured}
-                        onFirstSectionLayout={handleFirstSectionLayout}
-                        onFirstSectionToggle={handleFirstSectionToggle}
-                        onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                        onOpenFullLogbook={handleOpenFullLogbook}
-                        onOpenClimberLogs={handleOpenClimberLogs}
-                        onOpenClimberProfile={handleOpenClimberProfile}
-                        onFindClimbers={handleFindClimbers}
-                      />
+                      {/* The frame the board paints on an animated climb, for Active
+                          holds alone: the sections' own props stay the same between
+                          playback frames. */}
+                      <PlaybackFrameContext.Provider value={playback.isAnimatable ? playback.currentFrameString : null}>
+                        <DeferredSections
+                          climb={displayedClimb}
+                          boardName={boardName as BoardName}
+                          layoutId={layoutId}
+                          sizeId={sizeId}
+                          setIds={setIds}
+                          angle={angle}
+                          enabled={isSheetOpen}
+                          contentEnabled={belowFoldContentRequested}
+                          sections={sections}
+                          order={sectionOrder}
+                          onSimilarClimbPress={handleSimilarClimbPress}
+                          onFirstSectionHeaderLayout={onSectionHeaderMeasured}
+                          onFirstSectionLayout={handleFirstSectionLayout}
+                          onFirstSectionToggle={handleFirstSectionToggle}
+                          onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                          onOpenFullLogbook={handleOpenFullLogbook}
+                          onOpenClimberLogs={handleOpenClimberLogs}
+                          onOpenClimberProfile={handleOpenClimberProfile}
+                          onFindClimbers={handleFindClimbers}
+                        />
+                      </PlaybackFrameContext.Provider>
                     </View>
                   )}
                 </>

@@ -1,5 +1,5 @@
-import { memo, useMemo } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { memo, useCallback, useContext, useMemo, useState } from 'react';
+import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE, type BoardRenderMode } from '@boardsesh/board-constants/hold-states';
 import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
@@ -18,6 +18,15 @@ import {
 } from '../../lib/hold-color-overrides';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
+import {
+  COORDINATE_LINE_KEYS,
+  COUNT_LINE_KEYS,
+  activeHoldsLineCandidates,
+  chooseActiveHoldsLine,
+  type ActiveHoldsLineKey,
+  type ActiveHoldsLineSegment,
+} from './active-holds-line';
+import { PlaybackFrameContext } from './playback-frame-context';
 
 /**
  * Classic marker shapes as text glyphs. The octagon is a hexagon (⬢): no Apple
@@ -104,7 +113,11 @@ export type ActiveHoldsRow = ActiveHoldsGroup & {
 };
 
 /** The climb's holds by role, each with the marker the board draws for it. */
-function useActiveHoldsRows(boardName: BoardName, layoutId: number, frames: string): ActiveHoldsRow[] {
+function useActiveHoldsRows(
+  boardName: BoardName,
+  layoutId: number,
+  frames: string,
+): { rows: ActiveHoldsRow[]; hasLabels: boolean } {
   const { t } = useTranslation('climbs');
   const { overrides: colorOverrides, shapes: shapeOverrides } = useHoldColorOverrides();
   const look = useBoardRenderMode(boardName, layoutId);
@@ -120,12 +133,13 @@ function useActiveHoldsRows(boardName: BoardName, layoutId: number, frames: stri
       FINISH: finishLabel,
       FOOT: footLabel,
     };
-    return summary.groups.map((group) => ({
+    const rows = summary.groups.map((group) => ({
       ...group,
       roleName: roleNames[group.role],
       spokenHolds: group.labels ? group.labels.join(', ') : String(group.count),
       marker: roleMarker(boardName, group.role, look, colorOverrides, shapeOverrides),
     }));
+    return { rows, hasLabels: summary.hasLabels };
   }, [summary, boardName, look, colorOverrides, shapeOverrides, startLabel, handLabel, finishLabel, footLabel]);
 }
 
@@ -151,35 +165,147 @@ function useChipSize(): number {
   return Math.round((textStyles.footnote.lineHeight ?? textStyles.footnote.fontSize ?? 0) * fontScale);
 }
 
-/**
- * The collapsed line: each role's marker, then its coordinates or its count
- * (`● I4 ● G8 K10 G12 D14 F14 ● F18`, or `● 2 ● 7 ● 1 ● 5`). When the line runs
- * out of room, only the role with the most holds is cut short, so the start and
- * the finish stay in view.
- */
-export const ActiveHoldsLine = memo(function ActiveHoldsLine({ rows }: { rows: readonly ActiveHoldsRow[] }) {
+type LineRowProps = {
+  segments: readonly ActiveHoldsLineSegment[];
+  markers: ReadonlyMap<ActiveHoldRole, ActiveHoldMarker | null>;
+  chipSize: number;
+  /** Hand may be cut short with an ellipsis; nothing else ever is. */
+  handShrinks: boolean;
+  onLayout?: (event: LayoutChangeEvent) => void;
+  testID?: string;
+};
+
+/** One reading of the collapsed line: a marker per role, then what follows it. */
+function LineRow({ segments, markers, chipSize, handShrinks, onLayout, testID }: LineRowProps) {
   const { systemColors } = useTheme();
-  const chipSize = useChipSize();
-  const longestRole = rows.reduce<ActiveHoldsRow | null>(
-    (longest, row) => ((row.labels?.length ?? 0) > (longest?.labels?.length ?? 0) ? row : longest),
-    null,
-  )?.role;
+  // A shrinking Hand keeps its chip: it never collapses to nothing under Finish.
+  const handMinimum = { minWidth: chipSize + spacing[1] };
   return (
-    <View style={styles.line} testID="active-holds-line">
-      {rows.map((row) => (
-        <View key={row.role} style={[styles.lineGroup, row.role === longestRole && styles.lineGroupShrinks]}>
-          {row.marker ? <MarkerChip marker={row.marker} size={chipSize} /> : null}
-          <Text
-            variant="footnote"
-            numeric
-            numberOfLines={1}
-            color={systemColors.secondaryLabel}
-            style={styles.lineHolds}
+    <View style={styles.line} onLayout={onLayout} testID={testID}>
+      {segments.map((segment) => {
+        const marker = markers.get(segment.role) ?? null;
+        const shrinks = handShrinks && segment.role === 'HAND';
+        return (
+          <View
+            key={segment.role}
+            style={[styles.lineGroup, shrinks && styles.lineGroupShrinks, shrinks && handMinimum]}
           >
-            {row.labels ? row.labels.join(' ') : String(row.count)}
-          </Text>
-        </View>
-      ))}
+            {marker ? <MarkerChip marker={marker} size={chipSize} /> : null}
+            <Text
+              variant="footnote"
+              numeric
+              numberOfLines={1}
+              color={systemColors.secondaryLabel}
+              style={shrinks ? styles.lineHoldsShrinks : undefined}
+            >
+              {segment.text}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// Old readings stay measured for a while, so going back to a climb (or a
+// playback frame) needs no new measuring pass.
+const MEASURED_READINGS_KEPT = 24;
+
+/**
+ * The collapsed line: each role's marker, then its holds (`● I4 ● G8 K10 G12
+ * D14 F14 ● F18`, or `● Start 2 ● Hand 6 ● Finish 2 ● Foot 4`). It measures
+ * every reading off screen and draws the richest one that fits the room the
+ * header leaves at the climber's text size: only Hand is ever cut short, then
+ * Hand becomes a count (or the role words go), then there is no line.
+ */
+export const ActiveHoldsLine = memo(function ActiveHoldsLine({
+  rows,
+  hasLabels,
+}: {
+  rows: readonly ActiveHoldsRow[];
+  hasLabels: boolean;
+}) {
+  const { t } = useTranslation('climbs');
+  const chipSize = useChipSize();
+  const candidates = useMemo(
+    () =>
+      activeHoldsLineCandidates(rows, (group) =>
+        t('mobile.activeHolds.countGroup', {
+          role: rows.find((row) => row.role === group.role)?.roleName ?? '',
+          count: group.count,
+        }),
+      ),
+    [rows, t],
+  );
+  const markers = useMemo(() => new Map(rows.map((row) => [row.role, row.marker])), [rows]);
+  const keys: readonly ActiveHoldsLineKey[] = hasLabels ? COORDINATE_LINE_KEYS : COUNT_LINE_KEYS;
+  // A reading's width depends on its words and the chip size; both are in the key.
+  const signature = useMemo(
+    () => JSON.stringify([chipSize, keys.map((key) => candidates[key])]),
+    [chipSize, keys, candidates],
+  );
+  const [measuredWidths, setMeasuredWidths] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [available, setAvailable] = useState<number | null>(null);
+  const handleFrameLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width } = event.nativeEvent.layout;
+    setAvailable((previous) => (previous !== null && Math.abs(previous - width) < 0.5 ? previous : width));
+  }, []);
+  const measure = useCallback(
+    (key: ActiveHoldsLineKey, width: number) =>
+      setMeasuredWidths((previous) => {
+        const id = `${signature}|${key}`;
+        if (previous.get(id) === width) return previous;
+        const next = new Map(previous);
+        next.delete(id);
+        next.set(id, width);
+        while (next.size > MEASURED_READINGS_KEPT) {
+          const oldest = next.keys().next().value;
+          if (oldest === undefined) break;
+          next.delete(oldest);
+        }
+        return next;
+      }),
+    [signature],
+  );
+  const widths: Partial<Record<ActiveHoldsLineKey, number>> = {};
+  for (const key of keys) {
+    const width = measuredWidths.get(`${signature}|${key}`);
+    if (width !== undefined) widths[key] = width;
+  }
+  const choice = chooseActiveHoldsLine({ hasLabels, widths, available });
+  return (
+    <View style={styles.lineFrame} onLayout={handleFrameLayout} testID="active-holds-line-frame">
+      {/* Every reading at its natural width, unseen, keyed by its words so a
+          new climb remounts it and reports fresh widths. */}
+      <View
+        key={signature}
+        style={styles.measureLayer}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {keys.map((key) => (
+          <View key={key} style={styles.measureRow}>
+            <LineRow
+              segments={candidates[key]}
+              markers={markers}
+              chipSize={chipSize}
+              handShrinks={false}
+              onLayout={(event) => measure(key, event.nativeEvent.layout.width)}
+              testID={`active-holds-measure-${key}`}
+            />
+          </View>
+        ))}
+      </View>
+      {choice ? (
+        <LineRow
+          segments={candidates[choice.key]}
+          markers={markers}
+          chipSize={chipSize}
+          handShrinks={choice.handShrinks}
+          testID="active-holds-line"
+        />
+      ) : null}
     </View>
   );
 });
@@ -223,7 +349,7 @@ type ActiveHoldsSectionProps = {
   /** The board the displayed climb is drawn on. */
   boardName: BoardName;
   layoutId: number;
-  /** What the board paints: the playback frame for an animated climb, else the climb's frames. */
+  /** The climb's frames. On an animated climb the playback frame on screen wins (`PlaybackFrameContext`). */
   frames: string;
   onHeaderLayout?: (height: number) => void;
   onToggle?: (expanded: boolean) => void;
@@ -244,11 +370,23 @@ export const ActiveHoldsSection = memo(function ActiveHoldsSection({
   onToggle,
 }: ActiveHoldsSectionProps) {
   const { t } = useTranslation('climbs');
-  const rows = useActiveHoldsRows(boardName, layoutId, frames);
+  const playbackFrame = useContext(PlaybackFrameContext);
+  const { rows, hasLabels } = useActiveHoldsRows(boardName, layoutId, playbackFrame ?? frames);
+  // VoiceOver and TalkBack hear every hold on the collapsed header, past any cut.
+  const spokenSummary = useMemo(
+    () =>
+      rows.length === 0
+        ? undefined
+        : `${rows
+            .map((row) => t('mobile.activeHolds.a11yGroup', { role: row.roleName, holds: row.spokenHolds }))
+            .join('. ')}.`,
+    [rows, t],
+  );
   return (
     <CollapsibleSection
       title={t('mobile.activeHolds.title')}
-      summary={rows.length > 0 ? <ActiveHoldsLine rows={rows} /> : null}
+      summary={rows.length > 0 ? <ActiveHoldsLine rows={rows} hasLabels={hasLabels} /> : null}
+      summaryAccessibilityLabel={spokenSummary}
       persistKey="activeHolds"
       onHeaderLayout={onHeaderLayout}
       onToggle={onToggle}
@@ -268,13 +406,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
   },
-  // Shrinks to the slot; whatever still does not fit is clipped at the end.
+  // Takes the whole slot so it knows the room it has, and right-aligns the line in it.
+  lineFrame: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  // Wide enough that every reading lays out at its natural width; never seen.
+  measureLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 4096,
+    opacity: 0,
+  },
+  measureRow: {
+    alignSelf: 'flex-start',
+  },
   line: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
     flexShrink: 1,
-    maxWidth: '100%',
+    minWidth: 0,
     overflow: 'hidden',
   },
   lineGroup: {
@@ -285,8 +439,9 @@ const styles = StyleSheet.create({
   },
   lineGroupShrinks: {
     flexShrink: 1,
+    overflow: 'hidden',
   },
-  lineHolds: {
+  lineHoldsShrinks: {
     flexShrink: 1,
   },
   list: {

@@ -128,6 +128,26 @@ export function ensurePlayDrawerSectionsLoaded(): Promise<void> {
   return loadPromise;
 }
 
+/**
+ * The switches to store: those this bundle does not know, as they were read,
+ * and only the known ones that differ from their default. Like the order, a
+ * switch left at its default is not written, so a later release's new default
+ * (Active holds switched on, say) still reaches a climber who only changed
+ * another switch.
+ */
+function sectionsToWrite(): Record<string, unknown> {
+  const knownSectionIds: readonly string[] = PLAY_DRAWER_SECTION_IDS;
+  const sections: Record<string, unknown> = {};
+  for (const [sectionId, enabled] of Object.entries(storedSectionsMap(lastReadRecord))) {
+    if (!knownSectionIds.includes(sectionId)) sections[sectionId] = enabled;
+  }
+  for (const sectionId of PLAY_DRAWER_SECTION_IDS) {
+    const enabled = snapshot.sections[sectionId];
+    if (enabled !== DEFAULT_PLAY_DRAWER_SECTIONS[sectionId]) sections[sectionId] = enabled;
+  }
+  return sections;
+}
+
 function recordToWrite(): Record<string, unknown> {
   const otherFields = { ...lastReadRecord };
   delete otherFields.order;
@@ -135,7 +155,7 @@ function recordToWrite(): Record<string, unknown> {
   return {
     ...otherFields,
     version: 1,
-    sections: { ...storedSectionsMap(lastReadRecord), ...snapshot.sections },
+    sections: sectionsToWrite(),
     ...(isSameSectionOrder(order, DEFAULT_PLAY_DRAWER_SECTION_ORDER) ? {} : { order }),
   };
 }

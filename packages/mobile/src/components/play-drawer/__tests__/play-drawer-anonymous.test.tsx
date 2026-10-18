@@ -1558,13 +1558,13 @@ describe('PlayDrawer — the anonymous joins', () => {
     drawerSections.sections = { ...drawerSections.defaults, activeHolds: true };
     renderDrawer('anonymous');
     expect(recorded.deferredSections.at(-1)?.sections).toEqual(drawerSections.defaults);
-    expect(recorded.deferredSections.at(-1)?.activeHoldsFrames).toBeUndefined();
+    expect(drawerSections.defaults.activeHolds).toBe(false);
   });
 
   it('shows Active holds to a member who switched it on', () => {
     drawerSections.sections = { ...drawerSections.defaults, activeHolds: true };
     renderDrawer('member');
-    expect(recorded.deferredSections.at(-1)?.activeHoldsFrames).toEqual(expect.any(String));
+    expect(recorded.deferredSections.at(-1)?.sections).toMatchObject({ activeHolds: true });
   });
 
   it("keeps a signed-out member viewer's partial choices too", () => {

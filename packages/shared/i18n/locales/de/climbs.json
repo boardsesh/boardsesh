@@ -939,6 +939,7 @@
     "activeHolds": {
       "title": "Aktive Griffe",
       "a11yGroup": "{{role}}: {{holds}}",
+      "countGroup": "{{role}} {{count}}",
       "empty": "Dieser Boulder beleuchtet keine Griffe."
     }
   },

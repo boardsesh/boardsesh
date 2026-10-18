@@ -26,6 +26,12 @@ type CollapsibleSectionProps = {
    * clips it to the title's row; it brings its own colours and one-line layout.
    */
   summary?: string | ReactElement | null;
+  /**
+   * What a screen reader says for the summary while the section is collapsed,
+   * after the title. Text summaries are not read out today; a section whose
+   * line carries information (a list of holds, say) passes its words here.
+   */
+  summaryAccessibilityLabel?: string;
   /** When this value changes, expanded state resets to `defaultExpanded` without remounting the tree. */
   resetKey?: number;
   /** Optional trailing action rendered in the header (e.g. an Attach button). */
@@ -52,6 +58,7 @@ export function CollapsibleSection({
   defaultExpanded = false,
   keepExpanded = false,
   summary,
+  summaryAccessibilityLabel,
   resetKey,
   headerAction,
   onHeaderLayout,
@@ -87,6 +94,7 @@ export function CollapsibleSection({
       title={title}
       defaultExpanded={defaultExpanded}
       summary={summary}
+      summaryAccessibilityLabel={summaryAccessibilityLabel}
       resetKey={resetKey}
       headerAction={headerAction}
       onHeaderLayoutEvent={onHeaderLayout ? handleHeaderLayout : undefined}
@@ -103,6 +111,7 @@ function CollapsibleSectionInternal({
   title,
   defaultExpanded,
   summary,
+  summaryAccessibilityLabel,
   resetKey,
   headerAction,
   onHeaderLayoutEvent,
@@ -114,6 +123,7 @@ function CollapsibleSectionInternal({
   title: string;
   defaultExpanded: boolean;
   summary?: string | ReactElement | null;
+  summaryAccessibilityLabel?: string;
   resetKey?: number;
   headerAction?: ReactNode;
   // Internal prop takes the raw LayoutChangeEvent; the public `onHeaderLayout`
@@ -192,7 +202,7 @@ function CollapsibleSectionInternal({
         <PressableSurface
           onPress={toggleExpanded}
           accessibilityRole="button"
-          accessibilityLabel={title}
+          accessibilityLabel={!expanded && summaryAccessibilityLabel ? `${title}. ${summaryAccessibilityLabel}` : title}
           accessibilityState={{ expanded }}
           style={styles.headerPress}
         >

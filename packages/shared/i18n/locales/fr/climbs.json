@@ -939,6 +939,7 @@
     "activeHolds": {
       "title": "Prises actives",
       "a11yGroup": "{{role}} : {{holds}}",
+      "countGroup": "{{role}} {{count}}",
       "empty": "Ce bloc n’allume aucune prise."
     }
   },

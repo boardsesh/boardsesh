@@ -192,10 +192,25 @@ describe('play drawer section preferences', () => {
     expect(reportError).not.toHaveBeenCalled();
     act(() => result.current.setAll(true));
     await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    // Only the switch that differs from its default is stored.
+    expect(JSON.parse(storage.get('playDrawerSections') ?? '{}').sections).toEqual({ activeHolds: true });
+  });
+
+  it('stores only switches that differ from their defaults, so a later default still applies', async () => {
+    storage.set('playDrawerSections', JSON.stringify({ version: 1, sections: { logbook: true, laterSection: false } }));
+    const module = await import('../play-drawer-sections-preference');
+    const { result } = renderHook(module.usePlayDrawerSectionsPreference);
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.setSection('community', false));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    // A default-valued switch read from an older record is dropped; one this bundle does not know stays.
     expect(JSON.parse(storage.get('playDrawerSections') ?? '{}').sections).toEqual({
-      ...module.DEFAULT_PLAY_DRAWER_SECTIONS,
-      activeHolds: true,
+      laterSection: false,
+      community: false,
     });
+    act(() => result.current.setSection('community', true));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(storage.get('playDrawerSections') ?? '{}').sections).toEqual({ laterSection: false });
   });
 
   it('keeps Settings actions unavailable while loading and shares updates with drawer controls', async () => {
@@ -364,7 +379,8 @@ describe('play drawer section preferences', () => {
       expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
       expect(module.isDefaultPlayDrawerLayout(result.current)).toBe(true);
       // The default order is left out, so a later release's default order still applies.
-      await waitFor(() => expect(storedRecord().sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS));
+      // Neither the default switches nor the default order are stored, so later defaults still apply.
+      await waitFor(() => expect(storedRecord().sections).toEqual({}));
       expect(storedRecord()).not.toHaveProperty('order');
     });
 
@@ -420,7 +436,7 @@ describe('play drawer section preferences', () => {
       });
       // Back to this release's default order, the later release's section still holds its place.
       act(() => result.current.restoreDefaults());
-      await waitFor(() => expect(storedRecord().sections).toMatchObject({ community: true }));
+      await waitFor(() => expect(storedRecord().sections).toEqual({ crewNotes: true }));
       expect(storedRecord().order).toEqual([
         'activeHolds',
         'logbook',
@@ -448,7 +464,7 @@ describe('play drawer section preferences', () => {
       await waitFor(() => expect(write).toHaveBeenCalled());
       expect(result.current.sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
       expect(result.current.order).toEqual(module.DEFAULT_PLAY_DRAWER_SECTION_ORDER);
-      expect(storedRecord().sections).toEqual(module.DEFAULT_PLAY_DRAWER_SECTIONS);
+      expect(storedRecord().sections).toEqual({});
       expect(storedRecord()).not.toHaveProperty('order');
     });
 

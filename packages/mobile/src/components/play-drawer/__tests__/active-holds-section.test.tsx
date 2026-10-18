@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { HOLD_STATE_MAP, getHoldDisplayColor } from '@boardsesh/board-constants/hold-states';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { coordinateToHoldId, type MoonBoardCoordinate } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldColorOverrides, HoldShapeOverrides } from '../../../lib/hold-color-overrides';
@@ -11,6 +13,9 @@ const harness = vi.hoisted(() => ({
   look: { mode: 'aura' as 'aura' | 'classic', roleGlyphs: false },
   colors: {} as HoldColorOverrides,
   shapes: {} as HoldShapeOverrides,
+  // Each View's onLayout by testID, so a case can play the layout pass.
+  layouts: new Map<string, (event: { nativeEvent: { layout: { width: number } } }) => void>(),
+  spokenSummary: undefined as string | undefined,
 }));
 
 // The English copy, so labels read as a climber hears them.
@@ -18,6 +23,7 @@ const COPY: Record<string, string> = {
   'mobile.activeHolds.title': 'Active holds',
   'mobile.activeHolds.a11yGroup': '{{role}}: {{holds}}',
   'mobile.activeHolds.empty': 'This climb lights no holds.',
+  'mobile.activeHolds.countGroup': '{{role}} {{count}}',
   'mobile.create.brush.start': 'Start',
   'mobile.create.brush.hand': 'Hand',
   'mobile.create.brush.finish': 'Finish',
@@ -35,17 +41,21 @@ vi.mock('react-native', () => ({
     style,
     testID,
     accessibilityLabel,
+    onLayout,
   }: {
     children?: ReactNode;
     style?: unknown;
     testID?: string;
     accessibilityLabel?: string;
-  }) =>
-    createElement(
+    onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
+  }) => {
+    if (testID && onLayout) harness.layouts.set(testID, onLayout);
+    return createElement(
       'div',
       { 'data-testid': testID, 'data-style': JSON.stringify(style), 'aria-label': accessibilityLabel },
       children,
-    ),
+    );
+  },
   StyleSheet: { create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
 }));
@@ -54,8 +64,20 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../CollapsibleSection', () => ({
-  CollapsibleSection: ({ title, summary, children }: { title: string; summary?: ReactNode; children?: ReactNode }) =>
-    createElement('section', { 'data-title': title }, createElement('header', null, summary), children),
+  CollapsibleSection: ({
+    title,
+    summary,
+    summaryAccessibilityLabel,
+    children,
+  }: {
+    title: string;
+    summary?: ReactNode;
+    summaryAccessibilityLabel?: string;
+    children?: ReactNode;
+  }) => {
+    harness.spokenSummary = summaryAccessibilityLabel;
+    return createElement('section', { 'data-title': title }, createElement('header', null, summary), children);
+  },
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -72,6 +94,7 @@ vi.mock('../../../lib/hold-color-overrides', async (importOriginal) => ({
 }));
 
 const { ActiveHoldsSection, markerChipColor, markerGlyph } = await import('../ActiveHoldsSection');
+const { PlaybackFrameContext } = await import('../playback-frame-context');
 
 function moonHold(coordinate: MoonBoardCoordinate, roleCode: number): string {
   return `p${coordinateToHoldId(coordinate)}r${roleCode}`;
@@ -100,10 +123,25 @@ function markerOf(view: ReturnType<typeof renderSection>, role: string): Element
   return marker;
 }
 
+/** Plays the layout pass: the room the header leaves, and each reading's natural width. */
+function layOut(available: number, widths: Record<string, number>) {
+  act(() => {
+    harness.layouts.get('active-holds-line-frame')?.({ nativeEvent: { layout: { width: available } } });
+    for (const [key, width] of Object.entries(widths)) {
+      harness.layouts.get(`active-holds-measure-${key}`)?.({ nativeEvent: { layout: { width } } });
+    }
+  });
+}
+function lineText(view: ReturnType<typeof renderSection>): string | null {
+  return view.queryByTestId('active-holds-line')?.textContent ?? null;
+}
+
 beforeEach(() => {
   harness.look = { mode: 'aura', roleGlyphs: false };
   harness.colors = {};
   harness.shapes = {};
+  harness.layouts.clear();
+  harness.spokenSummary = undefined;
 });
 afterEach(cleanup);
 
@@ -116,20 +154,63 @@ describe('ActiveHoldsSection', () => {
     expect(rowText(view, 'FINISH')).toBe('●FinishJ18');
   });
 
-  it('draws the collapsed line as each marker followed by its holds', () => {
+  it('draws the collapsed line as each marker followed by every coordinate when they fit', () => {
     const moon = renderSection('moonboard', MOON_FRAMES);
-    expect(moon.getByTestId('active-holds-line').textContent).toBe('●B5●F8 K8 F10 H13 I14●J18');
-    cleanup();
-    const kilter = renderSection('kilter', KILTER_FRAMES);
-    expect(kilter.getByTestId('active-holds-line').textContent).toBe('●2●1●1●3');
+    layOut(260, { labels: 240, handFirst: 120, handCount: 100 });
+    expect(lineText(moon)).toBe('●B5●F8 K8 F10 H13 I14●J18');
+    const groups = [...moon.getByTestId('active-holds-line').children];
+    expect(groups.every((group) => !group.getAttribute('data-style')?.includes('"flexShrink":1'))).toBe(true);
   });
 
-  it('cuts only the role with the most holds short when the line runs out of room', () => {
+  it('cuts only Hand short, keeping its chip, when the coordinates do not all fit', () => {
     const view = renderSection('moonboard', MOON_FRAMES);
+    layOut(180, { labels: 240, handFirst: 120, handCount: 100 });
     const groups = [...view.getByTestId('active-holds-line').children];
     const shrinking = groups.filter((group) => group.getAttribute('data-style')?.includes('"flexShrink":1'));
-    expect(shrinking).toHaveLength(1);
-    expect(shrinking[0]?.textContent).toBe('●F8 K8 F10 H13 I14');
+    expect(shrinking.map((group) => group.textContent)).toEqual(['●F8 K8 F10 H13 I14']);
+    // Chip (18) plus its gap (4): Hand never shrinks to nothing under Finish.
+    expect(shrinking[0]?.getAttribute('data-style')).toContain('"minWidth":22');
+    expect(shrinking[0]?.getAttribute('data-style')).toContain('"overflow":"hidden"');
+  });
+
+  it('counts Hand when not even its first coordinate fits, and drops the line when nothing does', () => {
+    const view = renderSection('moonboard', MOON_FRAMES);
+    layOut(110, { labels: 240, handFirst: 120, handCount: 100 });
+    expect(lineText(view)).toBe('●B5●5●J18');
+    layOut(90, {});
+    expect(lineText(view)).toBeNull();
+  });
+
+  it('keeps the role words on a count board when they fit, else bare counts', () => {
+    const view = renderSection('kilter', KILTER_FRAMES);
+    // Before measuring: the bare counts, which never clip.
+    expect(lineText(view)).toBe('●2●1●1●3');
+    layOut(300, { words: 280, counts: 120 });
+    expect(lineText(view)).toBe('●Start 2●Hand 1●Finish 1●Foot 3');
+    layOut(200, {});
+    expect(lineText(view)).toBe('●2●1●1●3');
+    layOut(100, {});
+    expect(lineText(view)).toBeNull();
+  });
+
+  it('reads every hold on the collapsed header', () => {
+    renderSection('moonboard', MOON_FRAMES);
+    expect(harness.spokenSummary).toBe('Start: B5. Hand: F8, K8, F10, H13, I14. Finish: J18.');
+    cleanup();
+    renderSection('kilter', KILTER_FRAMES);
+    expect(harness.spokenSummary).toBe('Start: 2. Hand: 1. Finish: 1. Foot: 3.');
+  });
+
+  it("reads the playback frame on screen over the climb's frames", () => {
+    const view = render(
+      createElement(
+        PlaybackFrameContext.Provider,
+        { value: 'p9r12' },
+        createElement(ActiveHoldsSection, { boardName: 'kilter', layoutId: 1, frames: KILTER_FRAMES }),
+      ),
+    );
+    expect(view.getByTestId('active-holds-row-STARTING').textContent).toBe('●Start1');
+    expect(view.queryByTestId('active-holds-row-HAND')).toBeNull();
   });
 
   it('counts each role on a board without wall coordinates', () => {
@@ -204,6 +285,19 @@ describe('ActiveHoldsSection', () => {
   });
 
   describe('marker chips', () => {
+    it('gives every role colour of every board at least 3:1 on its chip, classic and Aura alike', () => {
+      for (const [boardName, stateMap] of Object.entries(HOLD_STATE_MAP)) {
+        for (const [code, stateInfo] of Object.entries(stateMap)) {
+          if (!['STARTING', 'HAND', 'FINISH', 'FOOT'].includes(stateInfo.name)) continue;
+          for (const mode of ['classic', 'aura'] as const) {
+            const color = getHoldDisplayColor(stateInfo, mode);
+            const ratio = contrastRatio(color, markerChipColor(color));
+            expect(ratio, `${boardName} ${code} ${mode} ${color}`).toBeGreaterThanOrEqual(3);
+          }
+        }
+      }
+    });
+
     it('sits every default role colour on the dark field, where it reaches 3:1', () => {
       for (const color of ['#44FF44', '#00DD00', '#4DF5FD', '#00FFFF', '#FF3333', '#FF0000', '#FF00FF', '#FFAA00']) {
         expect(markerChipColor(color)).toBe(BOARD_FIELD_COLORS.dark);

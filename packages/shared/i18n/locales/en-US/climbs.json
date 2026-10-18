@@ -939,6 +939,7 @@
     "activeHolds": {
       "title": "Active holds",
       "a11yGroup": "{{role}}: {{holds}}",
+      "countGroup": "{{role}} {{count}}",
       "empty": "This climb lights no holds."
     }
   },

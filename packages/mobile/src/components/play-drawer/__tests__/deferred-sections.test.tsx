@@ -274,6 +274,7 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 }));
 
 import { DeferredSections } from '../DeferredSections';
+import { PlaybackFrameContext } from '../playback-frame-context';
 import {
   DEFAULT_PLAY_DRAWER_SECTIONS,
   type BelowFoldSectionId,
@@ -293,7 +294,6 @@ type RenderOptions = {
   contentEnabled?: boolean;
   sections?: PlayDrawerSectionsVisibility;
   order?: readonly BelowFoldSectionId[];
-  activeHoldsFrames?: string;
   onFirstSectionHeaderLayout?: (height: number) => void;
   description?: string | null;
   climbOverrides?: Partial<Climb>;
@@ -319,7 +319,6 @@ function renderSections(options: RenderOptions = {}) {
       contentEnabled={options.contentEnabled ?? false}
       sections={options.sections}
       order={options.order}
-      activeHoldsFrames={options.activeHoldsFrames}
       onFirstSectionHeaderLayout={options.onFirstSectionHeaderLayout}
       onSimilarClimbPress={vi.fn()}
       onOpenFullLogbook={options.onOpenFullLogbook}
@@ -861,9 +860,33 @@ describe('DeferredSections visibility preferences', () => {
     expect(lineQueries.beta.calls.every(({ enabled }) => !enabled)).toBe(true);
     expect(crewQuery.calls.every(({ enabled }) => !enabled)).toBe(true);
   });
-  it('reads the frames the drawer hands it, such as the playback frame', () => {
-    renderSections({ sections: { ...hiddenSections, activeHolds: true }, activeHoldsFrames: 'p1r12' });
-    expect(activeHoldsSection.props).toMatchObject({ frames: 'p1r12' });
+  it('lets a playback frame reach Active holds without re-rendering the sections', () => {
+    deferred.ready = true;
+    const props = {
+      climb,
+      boardName: 'kilter' as const,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+      angle: 40,
+      enabled: true,
+      contentEnabled: true,
+      sections: { ...DEFAULT_PLAY_DRAWER_SECTIONS, activeHolds: true },
+      onSimilarClimbPress: vi.fn(),
+    };
+    const tree = (frame: string) => (
+      <PlaybackFrameContext.Provider value={frame}>
+        <DeferredSections {...props} />
+      </PlaybackFrameContext.Provider>
+    );
+    const view = render(tree('p1r12'));
+    expect(screen.getByTestId('logbook')).toBeDefined();
+    const sectionRenders = deferred.calls.length;
+    const logbookProps = logbookSection.props;
+    view.rerender(tree('p2r12'));
+    // Neither DeferredSections nor the Logbook below it ran again.
+    expect(deferred.calls.length).toBe(sectionRenders);
+    expect(logbookSection.props).toBe(logbookProps);
   });
   it('mounts Active holds further down only once the climber scrolls to it', () => {
     const order: BelowFoldSectionId[] = [

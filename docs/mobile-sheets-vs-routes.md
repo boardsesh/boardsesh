@@ -288,8 +288,9 @@ has Restore defaults too, but the order only changes in View options: Settings s
 the native form. Order and switches share the `playDrawerSections` record,
 `{ version: 1, sections, order }`. `order` came later under the same version, so an older
 bundle still reads the switches; if it writes the record, the order goes back to the
-default and the switches survive. `order` is left out while it matches the default, so a
-later release's default order still reaches climbers who never moved anything. Writes keep
+default and the switches survive. `order` is left out while it matches the default, and so
+is every switch left at its default, so a later release's default order or a new default
+switch still reaches climbers who never touched it. Writes keep
 fields, switches and ordered ids this bundle does not know (an unknown id goes back after
 the id it followed), so a newer bundle's sections survive an OTA rollback and an edit.
 Every section with a switch is below the fold and ordered (`BELOW_FOLD_SECTION_IDS`). The
@@ -318,20 +319,30 @@ stand-ins are described in [climb-view-options.md](climb-view-options.md).
 the default drawer is unchanged; a record saved before it existed has no key for it and
 reads as off, and an order saved before it slots it in first. Switched on, it is the peek at
 the fold. Collapsed, its line (`ActiveHoldsLine`, a summary node) is each role's marker
-followed by its holds; expanded (`ActiveHoldsSection`), it is a row a role. MoonBoard shows coordinates bottom to top
-(`B5`); boards without coordinates on the wall show a count per role. Each role's marker
-matches the board: its colour and the climber's override through `resolveHoldStateMarker`
-(the helper the renderer's hold-state map uses), and its glyph from the board's look
-(`useBoardRenderMode` in `src/hooks/use-board-render-look.ts`): classic draws the climber's
-marker shape, Aura a dot, or the role glyph (bar, bar, ✕, ring) when role glyphs are on.
-Each marker sits on a chip in the board's dark field colour (`BOARD_FIELD_COLORS.dark`) in
-both themes, or the light field for a colour that is under 3:1 on the dark one, so every
-marker clears 3:1 on a light or a dark sheet. The summary is `summarizeActiveHolds` in
-`@boardsesh/play-view`. It reads frames only: no queries, no Bluetooth, nothing to wait
-for, so it draws as the peek at once. `PlayCore` hands it the frames the board paints (the
-playback frame on an animated climb) only while it is on, so a playback frame never
-re-renders the sections for nothing. A spray climb whose wall lost a hold still counts that
-hold, while the board draws one fewer.
+followed by its holds; expanded (`ActiveHoldsSection`), it is a row a role. MoonBoard shows
+coordinates bottom to top (`B5`); boards without coordinates on the wall show a count per
+role, with the role word ("Start 2") when it fits.
+
+The line measures each of its readings off screen and draws the richest one that fits the
+room the header leaves at the climber's text size (`chooseActiveHoldsLine` in
+`active-holds-line.ts`): every coordinate; then only Hand cut short, never below its first
+coordinate and never collapsing under its chip; then Hand as a count; then no line. Count
+boards drop the role words before the line. Start and Finish are never cut. The header's
+`summaryAccessibilityLabel` reads every hold ("Start: B5. Hand: F8, K8. Finish: J18.") on the
+collapsed header, whatever the line shows.
+
+Each role's marker matches the board: its colour and the climber's override through
+`resolveHoldStateMarker` (the helper the renderer's hold-state map uses), and its glyph from
+the board's look (`useBoardRenderMode` in `src/hooks/use-board-render-look.ts`): classic
+draws the climber's marker shape, Aura a dot, or the role glyph (━ ┃ ✕ ○) when role glyphs
+are on. Each marker sits on a chip in the board's dark field colour (`BOARD_FIELD_COLORS.dark`)
+in both themes, or the light field for a colour that is under 3:1 on the dark one, so every
+role colour of every board clears 3:1 on a light or a dark sheet. The summary is
+`summarizeActiveHolds` in `@boardsesh/play-view`. It reads frames only: no queries, no
+Bluetooth, nothing to wait for, so it draws as the peek at once. On an animated climb the
+playback frame reaches it through `PlaybackFrameContext`, which only Active holds reads, so
+a playback frame never re-renders the other sections. A spray climb whose wall lost a hold
+still counts that hold, while the board draws one fewer.
 
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
