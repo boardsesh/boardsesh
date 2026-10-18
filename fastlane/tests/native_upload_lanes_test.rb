@@ -181,7 +181,7 @@ class NativeUploadLanesTest < Minitest::Test
         run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION"), app_store_version("2.7.0", state)])
       end
       assert_includes error.message, "unreleased iOS version 2.7.0 (#{state})"
-      assert_includes error.message, "would rename an editable version to 2.7.1"
+      assert_includes error.message, "An editable version would be renamed to 2.7.1 by deliver"
       assert_nil @dsl.app_store_uploads
     end
     assert_equal ["/v1/apps/app-1/appStoreVersions?filter[platform]=IOS&limit=200"], BoardseshASC::Client.listed_paths
