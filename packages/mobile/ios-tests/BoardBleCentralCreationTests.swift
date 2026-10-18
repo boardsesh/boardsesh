@@ -17,11 +17,14 @@ final class BoardBleCentralCreationTests: XCTestCase {
     private var manager: BoardBleManager!
     private var authorization: CBManagerAuthorization = .notDetermined
     private var centralCreations = 0
+    /// Service filters handed to each concrete `scanForPeripherals` call.
+    private var scanCalls: [[CBUUID]?] = []
 
     override func setUp() {
         super.setUp()
         authorization = .notDetermined
         centralCreations = 0
+        scanCalls = []
         scheduler = FakeBleTimerScheduler()
         manager = BoardBleManager(
             timerScheduler: scheduler,
@@ -33,12 +36,16 @@ final class BoardBleCentralCreationTests: XCTestCase {
             manager.testHooks.setCentralManagerCreationOverride { [weak self] in
                 self?.centralCreations += 1
             }
+            manager.testHooks.setScanForPeripheralsOverride { [weak self] services in
+                self?.scanCalls.append(services)
+            }
         }
     }
 
     override func tearDown() {
         manager.testHooks.sync {
             manager.testHooks.setCentralManagerCreationOverride(nil)
+            manager.testHooks.setScanForPeripheralsOverride(nil)
             manager.testHooks.setCentralState(nil)
         }
         manager = nil
@@ -84,6 +91,15 @@ final class BoardBleCentralCreationTests: XCTestCase {
         XCTAssertEqual(centralCreations, 0)
     }
 
+    func testANoGivenThroughAnotherManagerReadsAsUnavailableWithoutAsking() {
+        // An older JS bundle's ble-plx asks at launch, before this central
+        // exists. Its no must still close this manager's availability gate.
+        authorization = .denied
+
+        XCTAssertFalse(manager.testHooks.sync { manager.isAvailable })
+        XCTAssertEqual(centralCreations, 0)
+    }
+
     func testLiveActivityReconnectFailsWithoutAsking() {
         // An unanswered question means no board was ever connected, so there is
         // nothing to reconnect to, and a lightbulb tap must not raise the alert.
@@ -109,17 +125,86 @@ final class BoardBleCentralCreationTests: XCTestCase {
 
     // MARK: - Paths that ask
 
-    func testAScanCreatesTheCentralAndWaitsForTheAnswerToStart() {
+    func testAScanAsksThenStartsOnAllowWithoutASecondTap() {
         var results: [Result<Void, Error>] = []
         manager.testHooks.sync {
             manager.startScan(serviceUuids: []) { results.append($0) }
         }
 
         XCTAssertEqual(centralCreations, 1)
-        // Not powered on yet (the alert is up): the scan is remembered and
-        // starts from centralManagerDidUpdateState after an Allow.
+        // The alert is up: nothing is settled and nothing scans yet.
+        XCTAssertTrue(results.isEmpty)
+        XCTAssertTrue(scanCalls.isEmpty)
+
+        authorization = .allowedAlways
+        manager.testHooks.fireCentralStateUpdate(.poweredOn)
+
         XCTAssertEqual(results.count, 1)
         XCTAssertNil(failureDescription(results.first))
+        // Unfiltered, as requested. (The restart and the settled request may
+        // both issue it; a repeat only restarts the same scan.)
+        XCTAssertFalse(scanCalls.isEmpty)
+        XCTAssertTrue(scanCalls.allSatisfy { $0 == nil })
+    }
+
+    func testAScanRejectsOnDontAllowSoAnOlderBundleShowsItsUnavailablePath() {
+        // A JS bundle older than requestBluetoothAuthorization scans without
+        // asking. Resolving now would leave it on an empty picker after a no.
+        var results: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.startScan(serviceUuids: []) { results.append($0) }
+        }
+
+        authorization = .denied
+        manager.testHooks.fireCentralStateUpdate(.unauthorized)
+
+        XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.isScanRequested })
+        XCTAssertTrue(scanCalls.isEmpty)
+    }
+
+    func testARefusalDisarmsAParkedScan() {
+        var results: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.testHooks.setCentralState(.resetting)
+            manager.startScan(serviceUuids: []) { results.append($0) }
+        }
+        // Parked as available, as before.
+        XCTAssertNil(failureDescription(results.first))
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isScanRequested })
+
+        manager.testHooks.fireCentralStateUpdate(.unauthorized)
+
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.isScanRequested })
+        // A later power-on can't start a scan nobody is waiting for.
+        manager.testHooks.fireCentralStateUpdate(.poweredOn)
+        XCTAssertTrue(scanCalls.isEmpty)
+    }
+
+    func testPoweringOnStartsAParkedScanWithItsFilter() {
+        let auroraService = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
+        manager.testHooks.sync {
+            manager.testHooks.setCentralState(.resetting)
+            manager.startScan(serviceUuids: [auroraService.uuidString]) { _ in }
+        }
+        XCTAssertTrue(scanCalls.isEmpty)
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOn)
+
+        XCTAssertEqual(scanCalls, [[auroraService]])
+    }
+
+    func testARadioSwitchedOffKeepsTheParkedScanForWhenItComesBack() {
+        manager.testHooks.sync {
+            manager.testHooks.setCentralState(.resetting)
+            manager.startScan(serviceUuids: []) { _ in }
+        }
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOff)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isScanRequested })
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOn)
+        XCTAssertEqual(scanCalls.count, 1)
     }
 
     func testRequestAuthorizationWaitsForAnAllowThenReportsIt() {
@@ -184,6 +269,21 @@ final class BoardBleCentralCreationTests: XCTestCase {
 
         XCTAssertEqual(answers, [.notDetermined])
         XCTAssertEqual(scheduler.repeatingTimers.last?.cancelled, true)
+    }
+
+    func testRequestAuthorizationWaitsForAFreshCentralsFirstStateEvenWhenAnswered() {
+        // Answered already, but the central was created a moment ago and still
+        // reads .unknown, which JS isAvailable would count as available.
+        authorization = .allowedAlways
+        var answers: [CBManagerAuthorization] = []
+        manager.testHooks.sync {
+            manager.requestAuthorization { answers.append($0) }
+        }
+        XCTAssertEqual(answers, [])
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOff)
+
+        XCTAssertEqual(answers, [.allowedAlways])
     }
 
     func testRequestAuthorizationAnswersAtOnceWhenAlreadyAnswered() {
