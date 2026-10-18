@@ -99,6 +99,7 @@ vi.mock('../../../lib/hold-color-overrides', async (importOriginal) => ({
 
 const { ActiveHoldsSection, markerChipColor, markerGlyph } = await import('../ActiveHoldsSection');
 const { PlaybackFrameContext } = await import('../playback-frame-context');
+const { _resetActiveHoldsLineMemoryForTests } = await import('../active-holds-line');
 
 function moonHold(coordinate: MoonBoardCoordinate, roleCode: number): string {
   return `p${coordinateToHoldId(coordinate)}r${roleCode}`;
@@ -146,6 +147,7 @@ beforeEach(() => {
   harness.shapes = {};
   harness.layouts.clear();
   harness.spokenSummary = undefined;
+  _resetActiveHoldsLineMemoryForTests();
 });
 afterEach(cleanup);
 
@@ -197,6 +199,32 @@ describe('ActiveHoldsSection', () => {
     layOut(100, {});
     expect(lineText(view)).toBeNull();
     expect(view.getByTestId('active-holds-line-title').textContent).toBe('Active holds');
+  });
+
+  it('keeps the role words through a swipe to other counts, with no flash of the bare counts', () => {
+    const view = renderSection('kilter', KILTER_FRAMES);
+    layOut(300, { words: 280, counts: 120 });
+    expect(lineText(view)).toBe('●Start 2●Hand 1●Finish 1●Foot 3');
+    // Another climb: other counts, the same widths (tabular figures), so no new measuring.
+    view.rerender(
+      createElement(ActiveHoldsSection, { boardName: 'kilter', layoutId: 1, frames: 'p1r42p2r43p3r43p4r44p5r45' }),
+    );
+    expect(lineText(view)).toBe('●Start 1●Hand 2●Finish 1●Foot 1');
+  });
+
+  it('keeps the last reading while a new climb measures, and after the section folds open and shut', () => {
+    const view = renderSection('moonboard', MOON_FRAMES);
+    layOut(110, { labels: 240, handFirst: 120, handCount: 100 });
+    expect(lineText(view)).toBe('●B5●5●J18');
+    // New coordinates (new letters) are unmeasured: the last reading stands in, not every coordinate.
+    const otherFrames = [moonHold('A3', 42), moonHold('C7', 43), moonHold('D9', 43), moonHold('E18', 44)].join('');
+    view.rerender(createElement(ActiveHoldsSection, { boardName: 'moonboard', layoutId: 1, frames: otherFrames }));
+    expect(lineText(view)).toBe('●A3●2●E18');
+    // Unmounted and back (the summary unmounts while the section is open): widths and room are remembered.
+    view.unmount();
+    harness.layouts.clear();
+    const again = renderSection('moonboard', MOON_FRAMES);
+    expect(lineText(again)).toBe('●B5●5●J18');
   });
 
   it("reads every hold on the collapsed header, which shows the line in the title's place", () => {

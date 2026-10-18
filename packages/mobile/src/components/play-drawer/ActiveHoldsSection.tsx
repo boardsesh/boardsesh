@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useMemo, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { HOLD_STATE_MAP, STATE_TO_PRIMARY_CODE, type BoardRenderMode } from '@boardsesh/board-constants/hold-states';
@@ -22,7 +22,14 @@ import {
   COORDINATE_LINE_KEYS,
   COUNT_LINE_KEYS,
   activeHoldsLineCandidates,
+  activeHoldsLineWidthKey,
   chooseActiveHoldsLine,
+  rememberLineChoice,
+  rememberLineRoom,
+  rememberLineWidth,
+  rememberedLineChoice,
+  rememberedLineRoom,
+  rememberedLineWidth,
   type ActiveHoldsLineKey,
   type ActiveHoldsLineSegment,
 } from './active-holds-line';
@@ -207,10 +214,6 @@ function LineRow({ segments, markers, chipSize, handShrinks, onLayout, testID }:
   );
 }
 
-// Old readings stay measured for a while, so going back to a climb (or a
-// playback frame) needs no new measuring pass.
-const MEASURED_READINGS_KEPT = 24;
-
 /**
  * The collapsed header: each role's marker, then its holds (`● I4 ● G8 K10
  * G12 D14 F14 ● F18`, or `● Start 2 ● Hand 6 ● Finish 2 ● Foot 4`), in the
@@ -243,63 +246,73 @@ export const ActiveHoldsLine = memo(function ActiveHoldsLine({
   );
   const markers = useMemo(() => new Map(rows.map((row) => [row.role, row.marker])), [rows]);
   const keys: readonly ActiveHoldsLineKey[] = hasLabels ? COORDINATE_LINE_KEYS : COUNT_LINE_KEYS;
-  // A reading's width depends on its words and the chip size; both are in the key.
-  const signature = useMemo(
-    () => JSON.stringify([chipSize, keys.map((key) => candidates[key])]),
-    [chipSize, keys, candidates],
+  const { fontScale } = useWindowDimensions();
+  const widthKeys = useMemo(
+    () =>
+      Object.fromEntries(
+        keys.map((key) => [key, activeHoldsLineWidthKey(fontScale, chipSize, key, candidates[key])]),
+      ) as Partial<Record<ActiveHoldsLineKey, string>>,
+    [keys, fontScale, chipSize, candidates],
   );
-  const [measuredWidths, setMeasuredWidths] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const [available, setAvailable] = useState<number | null>(null);
+  // Widths and the room live beside the line's module, not in this component:
+  // folding the section shut unmounts the line, and a reading measured once
+  // stays measured. This only counts new measurements, to draw again.
+  const [, setMeasurements] = useState(0);
+  const [available, setAvailable] = useState<number | null>(rememberedLineRoom);
   const handleFrameLayout = useCallback((event: LayoutChangeEvent) => {
     const { width } = event.nativeEvent.layout;
+    rememberLineRoom(width);
     setAvailable((previous) => (previous !== null && Math.abs(previous - width) < 0.5 ? previous : width));
   }, []);
-  const measure = useCallback(
-    (key: ActiveHoldsLineKey, width: number) =>
-      setMeasuredWidths((previous) => {
-        const id = `${signature}|${key}`;
-        if (previous.get(id) === width) return previous;
-        const next = new Map(previous);
-        next.delete(id);
-        next.set(id, width);
-        while (next.size > MEASURED_READINGS_KEPT) {
-          const oldest = next.keys().next().value;
-          if (oldest === undefined) break;
-          next.delete(oldest);
-        }
-        return next;
-      }),
-    [signature],
-  );
+  const measure = useCallback((widthKey: string, width: number) => {
+    if (rememberLineWidth(widthKey, width)) setMeasurements((count) => count + 1);
+  }, []);
   const widths: Partial<Record<ActiveHoldsLineKey, number>> = {};
   for (const key of keys) {
-    const width = measuredWidths.get(`${signature}|${key}`);
+    const widthKey = widthKeys[key];
+    const width = widthKey === undefined ? undefined : rememberedLineWidth(widthKey);
     if (width !== undefined) widths[key] = width;
   }
-  const choice = chooseActiveHoldsLine({ hasLabels, widths, available });
+  const measured = available !== null && keys.every((key) => widths[key] !== undefined);
+  const choice = chooseActiveHoldsLine({
+    hasLabels,
+    widths,
+    available,
+    lastChoice: rememberedLineChoice(hasLabels),
+  });
+  const choiceKey = choice?.key ?? null;
+  const choiceShrinks = choice?.handShrinks ?? false;
+  // Only a measured reading is remembered, to stand in while the next climb measures.
+  useEffect(() => {
+    if (!measured) return;
+    rememberLineChoice(hasLabels, choiceKey === null ? null : { key: choiceKey, handShrinks: choiceShrinks });
+  }, [measured, hasLabels, choiceKey, choiceShrinks]);
   return (
     <View style={styles.lineFrame} onLayout={handleFrameLayout} testID="active-holds-line-frame">
-      {/* Every reading at its natural width, unseen, keyed by its words so a
-          new climb remounts it and reports fresh widths. */}
+      {/* Every reading at its natural width, unseen. Each row is keyed by what
+          its width depends on, so only a reading with new words remounts and
+          reports a fresh width. */}
       <View
-        key={signature}
         style={styles.measureLayer}
         pointerEvents="none"
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        {keys.map((key) => (
-          <View key={key} style={styles.measureRow}>
-            <LineRow
-              segments={candidates[key]}
-              markers={markers}
-              chipSize={chipSize}
-              handShrinks={false}
-              onLayout={(event) => measure(key, event.nativeEvent.layout.width)}
-              testID={`active-holds-measure-${key}`}
-            />
-          </View>
-        ))}
+        {keys.map((key) => {
+          const widthKey = widthKeys[key] ?? key;
+          return (
+            <View key={widthKey} style={styles.measureRow}>
+              <LineRow
+                segments={candidates[key]}
+                markers={markers}
+                chipSize={chipSize}
+                handShrinks={false}
+                onLayout={(event) => measure(widthKey, event.nativeEvent.layout.width)}
+                testID={`active-holds-measure-${key}`}
+              />
+            </View>
+          );
+        })}
       </View>
       {choice ? (
         <LineRow

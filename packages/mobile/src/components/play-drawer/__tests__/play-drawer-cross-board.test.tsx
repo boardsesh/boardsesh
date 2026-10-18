@@ -1133,6 +1133,15 @@ describe('PlayDrawer active holds section', () => {
     expect(after.sections).toBe(before.sections);
   });
 
+  it('provides no playback frame while Active holds is off, so a tick changes nothing for nobody', () => {
+    playbackState.isAnimatable = true;
+    playbackState.currentFrameString = 'p1145r12';
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(lastBoardProps().currentFrameOverride).toBe('p1145r12');
+    expect(recorded.playbackFrames.at(-1)).toBeNull();
+  });
+
   it('keeps the same climb when it is mirrored: the counts are the same either way', () => {
     showOnlyActiveHolds();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');

@@ -1982,9 +1982,11 @@ export function PlayCore({
                       pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
                     >
                       {/* The frame the board paints on an animated climb, for Active
-                          holds alone: the sections' own props stay the same between
-                          playback frames. */}
-                      <PlaybackFrameContext.Provider value={playback.isAnimatable ? playback.currentFrameString : null}>
+                          holds alone (and only while it is on): the sections' own
+                          props stay the same between playback frames. */}
+                      <PlaybackFrameContext.Provider
+                        value={sections.activeHolds && playback.isAnimatable ? playback.currentFrameString : null}
+                      >
                         <DeferredSections
                           climb={displayedClimb}
                           boardName={boardName as BoardName}
