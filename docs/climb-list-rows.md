@@ -48,3 +48,5 @@ Recency reads the clock inside a memo. It refreshes when the progress, locale or
 Analytics emit `Climb Row Display Changed` from controller interactions only, with `kind`, and either `field`/`value` or `preset`.
 
 Device QA covers each switch, Custom restoration, relaunch, legacy migration, small screens, large text, both themes, mirror boards and reorder rows. In particular inspect the current-climb pill at 375 pt and check reserved empty lines on mirror boards.
+
+Contributing a change: [docs/contributing-to-screens.md](./contributing-to-screens.md).

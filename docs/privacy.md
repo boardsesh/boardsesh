@@ -1,6 +1,6 @@
 # Account, activity, session and home-board privacy
 
-Implementation issue: [#6242](https://github.com/boardsesh/boardsesh/issues/6242), under the Boardz follow-up epic [#6238](https://github.com/boardsesh/boardsesh/issues/6238). Privacy applies independently of the Full/Minimal layout preference.
+Implementation issue: [#6242](https://github.com/boardsesh/boardsesh/issues/6242), under the Boardz follow-up epic [#6238](https://github.com/boardsesh/boardsesh/issues/6238). Privacy applies independently of any display preference (see [Make it configurable](./contributing-to-screens.md#make-it-configurable)).
 
 ## What a climber chooses
 

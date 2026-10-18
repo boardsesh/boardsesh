@@ -24,7 +24,7 @@ Boardsesh is a unified experience that works across different board types, helpi
 
 Boardsesh is completely open source under the Apache license. You can view the code, contribute features, report bugs, or fork it entirely to run your own instance, backend included.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup instructions and [ROADMAP.md](./ROADMAP.md) for what's coming next.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup instructions, [docs/contributing-to-screens.md](./docs/contributing-to-screens.md) for improving existing screens, and [ROADMAP.md](./ROADMAP.md) for what's coming next.
 
 ## API Documentation
 

@@ -103,7 +103,7 @@ After mobile changes, run the validation sequence:
 3. `vp run check:mobile-bundle` (a headless Metro bundle check that runs on Linux)
 4. `vp run check:mobile-simulator` (macOS only; skips elsewhere)
 
-Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
+Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet. To change an existing screen, start with [docs/contributing-to-screens.md](./docs/contributing-to-screens.md).
 
 ### JS changes land on `main`, native changes on `release/next`
 
@@ -331,6 +331,8 @@ This is a limitation of Aurora's API, not a choice on our side.
 2. Open a pull request against `main`. Fill in the Release Notes section from the template, written for climbers (what they get, not what the code does). Internal-only changes (refactor, CI, deps, tests) get `none`.
 3. Fill in the Test plan and Risk sections too. Testers read the plan word for word in the app, so keep it to 1–5 numbered steps, one action then what to see, 12 words or fewer each ("1. CI green." is fine for an internal change), and score the risk `Risk: N/5 — why` (1 docs/CI/deps … 5 BLE/OTA/migrations). CI fails without them.
 4. CI runs lint, typecheck, tests, and the mobile checks. Keep iterating until it's green.
+
+Changing an existing screen? See [docs/contributing-to-screens.md](./docs/contributing-to-screens.md) for how to propose it and what to include.
 
 The project rules and architecture agents follow are in `CLAUDE.md`, which is useful reading for humans too.
 

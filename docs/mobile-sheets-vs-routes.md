@@ -841,6 +841,7 @@ compete. Keep the lightbulb and tick controls outside the zoom source.
 
 ## See also
 
+- `docs/contributing-to-screens.md` — how to propose and ship a change to an existing screen.
 - `docs/react-native-performance.md` — list/provider/gesture performance rules.
 - `docs/mobile-ota-updates.md` — JS-only vs native-change distribution (a presentation change is
   JS-only and rides OTA; a new native module needs a build).
