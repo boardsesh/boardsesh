@@ -1146,8 +1146,10 @@ Only the exact checked item in the OTA release section counts; comments, quoted 
 blocks do not. The detector verifies that each PR was merged into this repository's `main` and that
 its merge commit is in the actual first-parent deployment range. It uses the same previous successful
 deployment baseline as change detection, so a replaced or cancelled pending run cannot lose an earlier
-critical merge. A failed or incomplete pull-request API read blocks detection and deployment. If no safe baseline
-exists, it checks only the deployment's HEAD and warns that inherited critical intent is unknown;
+critical merge. A failed or incomplete pull-request API read blocks detection and deployment. After
+the API recovers, dispatch a new **Production Deploy** run on `main`; detection checks the deployment
+range again, retaining critical intent from merges after the previous successful deployment.
+If no safe baseline exists, it checks only the deployment's HEAD and warns that inherited critical intent is unknown;
 it never replays arbitrary older critical PRs. Leave the item unchecked for normal canary releases.
 
 Critical publication holds the production lock and reads the trusted controller checkpoint before

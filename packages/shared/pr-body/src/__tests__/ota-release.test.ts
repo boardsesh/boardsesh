@@ -34,6 +34,13 @@ describe('critical OTA release opt-in', () => {
     }
   });
 
+  it('accepts an explicit checked item in either repeated OTA release section', () => {
+    const uncheckedSection = checkedSection.replace('[x]', '[ ]');
+    expect(hasCriticalOtaRelease(`${uncheckedSection}\n\n${checkedSection}`)).toBe(true);
+    expect(hasCriticalOtaRelease(`${checkedSection}\n\n${uncheckedSection}`)).toBe(true);
+    expect(hasCriticalOtaRelease(`${uncheckedSection}\n\n${uncheckedSection}`)).toBe(false);
+  });
+
   it('does not close a fence at a shorter or different delimiter', () => {
     expect(hasCriticalOtaRelease(`\`\`\`\`md\n\`\`\`\n${checkedSection}\n\`\`\`\``)).toBe(false);
     expect(hasCriticalOtaRelease(`~~~md\n\`\`\`\n${checkedSection}\n~~~`)).toBe(false);
