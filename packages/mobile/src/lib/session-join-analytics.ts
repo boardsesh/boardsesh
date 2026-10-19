@@ -17,7 +17,9 @@ export type SessionJoinOutcome = 'not_found' | 'ended' | 'host_away' | 'sign_in_
 export type SessionJoinStage = 'preview' | 'join';
 
 export function trackSessionJoinOutcome(sessionId: string, outcome: SessionJoinOutcome, stage: SessionJoinStage): void {
-  track(SHARED_EVENTS.SessionJoinOutcome, { sessionId, outcome, stage });
+  // Match SessionIdSchema: route parameters can contain arbitrary personal text.
+  const validSessionId = sessionId.length > 0 && sessionId.length <= 100 && !/[^a-zA-Z0-9-]/.test(sessionId);
+  track(SHARED_EVENTS.SessionJoinOutcome, { ...(validSessionId ? { sessionId } : {}), outcome, stage });
 }
 
 /** What the join screen knows when it renders. */

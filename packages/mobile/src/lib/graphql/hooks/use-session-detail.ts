@@ -113,8 +113,8 @@ export function sessionPreviewFromInvite(invite: SessionInvitePreview): JoinSess
  * never see a rebuilt preview.
  *
  * A backend that predates `sessionInvitePreview` rejects the second query; that
- * is swallowed and the answer stays null, which is what this hook returned
- * before.
+ * specific unknown-field error is swallowed and the answer stays null, which
+ * is what this hook returned before. Other failures reach the retry screen.
  */
 export function useSessionPreview(sessionId: string | undefined, options?: { inviteFallback?: boolean }) {
   const inviteFallback = options?.inviteFallback === true;
@@ -149,8 +149,11 @@ export async function fetchSessionPreview(
       if (retried?.session) return retried.session;
     }
     return sessionPreviewFromInvite(sessionInvitePreview);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof Error && /Cannot query field "sessionInvitePreview" on type "Query"/.test(error.message)) {
+      return null;
+    }
+    throw error;
   }
 }
 

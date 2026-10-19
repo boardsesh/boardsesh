@@ -189,6 +189,18 @@ describe('fetchSessionPreview', () => {
     expect(await fetchSessionPreview(SESSION_ID, true)).toBeNull();
   });
 
+  it.each([
+    new Error('Network request failed'),
+    new Error('GraphQL request timed out'),
+    Object.assign(new Error('Too many requests'), { response: { status: 429 } }),
+    Object.assign(new Error('Internal server error'), { response: { status: 500 } }),
+    new Error('Cannot query field "hostName" on type "SessionInvitePreview".'),
+  ])('propagates invite failures instead of reporting a missing session: %s', async (error) => {
+    requestMock.mockResolvedValueOnce({ session: null }).mockRejectedValueOnce(error);
+
+    await expect(fetchSessionPreview(SESSION_ID, true)).rejects.toBe(error);
+  });
+
   it('still throws when the session query itself fails, so the screen can offer a retry', async () => {
     requestMock.mockRejectedValueOnce(new Error('Network request failed'));
 

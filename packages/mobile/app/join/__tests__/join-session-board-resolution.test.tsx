@@ -276,7 +276,12 @@ describe('JoinSessionScreen board resolution', () => {
 
     expect(createBoardMutateAsync).not.toHaveBeenCalled();
     expect(queue.joinSession).not.toHaveBeenCalled();
-    expect(analytics.track).not.toHaveBeenCalled();
+    // Signing out records the sign-in screen, without a late join outcome.
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith('Session Join Outcome', {
+      sessionId: 'session-42',
+      outcome: 'sign_in_needed',
+      stage: 'preview',
+    });
     expect(router.replace).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -304,7 +309,12 @@ describe('JoinSessionScreen board resolution', () => {
     await flushJoinContinuation();
 
     expect(queue.joinSession).not.toHaveBeenCalled();
-    expect(analytics.track).not.toHaveBeenCalled();
+    // Signing out records the sign-in screen, without a late join outcome.
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith('Session Join Outcome', {
+      sessionId: 'session-42',
+      outcome: 'sign_in_needed',
+      stage: 'preview',
+    });
     expect(router.replace).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });
@@ -330,7 +340,12 @@ describe('JoinSessionScreen board resolution', () => {
     });
     await flushJoinContinuation();
 
-    expect(analytics.track).not.toHaveBeenCalled();
+    // Signing out records the sign-in screen, without a late join outcome.
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith('Session Join Outcome', {
+      sessionId: 'session-42',
+      outcome: 'sign_in_needed',
+      stage: 'preview',
+    });
     expect(router.replace).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
   });

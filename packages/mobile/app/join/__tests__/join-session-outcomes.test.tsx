@@ -16,12 +16,13 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { useQueueActions } from '../../../src/providers/queue-provider';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const auth = vi.hoisted(() => ({ isAuthenticated: true }));
 const queue = vi.hoisted(() => ({
   sessionId: null as string | null,
-  joinSession: vi.fn(async () => {}),
+  joinSession: vi.fn<ReturnType<typeof useQueueActions>['joinSession']>(async () => true),
   clearSession: vi.fn(async () => {}),
 }));
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
@@ -100,6 +101,13 @@ vi.mock('../../../src/providers/theme-provider', () => ({
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: auth.isAuthenticated }),
 }));
+vi.mock('../../../src/lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => 0,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === 0,
+}));
+vi.mock('../../../src/lib/graphql/hooks/fetch-all-my-owned-boards', () => ({
+  fetchAllMyOwnedBoards: vi.fn(async () => ({ viewerId: 'viewer-1', boards: [] })),
+}));
 vi.mock('../../../src/providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   useQueueActions: () => ({ joinSession: queue.joinSession, clearSession: queue.clearSession }),
@@ -110,7 +118,6 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     preview.calls.push(args);
     return preview;
   },
-  useMyBoards: () => ({ data: { boards: [] }, refetch: vi.fn(async () => ({ data: { boards: [] } })) }),
   useCreateBoard: () => ({ mutateAsync: vi.fn(async () => ({})) }),
   useBoardBySlug: () => ({ data: null }),
   fetchBoardBySlug: vi.fn(async () => null),
@@ -131,7 +138,7 @@ beforeEach(() => {
   auth.isAuthenticated = true;
   queue.sessionId = null;
   queue.joinSession.mockReset();
-  queue.joinSession.mockResolvedValue(undefined);
+  queue.joinSession.mockResolvedValue(true);
   router.replace.mockClear();
   buttons.presses = [];
   preview.data = liveSession();
@@ -141,6 +148,21 @@ beforeEach(() => {
 });
 
 describe('JoinSessionScreen: Session Joined', () => {
+  it('does not navigate or report a join when the provider declines the operation', async () => {
+    queue.joinSession.mockResolvedValueOnce(false);
+
+    render(createElement(JoinSessionScreen));
+    await act(async () => {
+      buttons.presses[0]?.();
+    });
+
+    expect(queue.joinSession).toHaveBeenCalledTimes(1);
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Joined', expect.anything());
+    expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
+    expect(outcomes()).toEqual([]);
+  });
+
   it('does not fire for someone already in the session', async () => {
     queue.sessionId = 'session-42';
 

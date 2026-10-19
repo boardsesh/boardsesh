@@ -209,7 +209,8 @@ Removed in #6004: the `JoinRedirect` spinner, the `/api/internal/join/{sessionId
   - **dormant**: the join card, with "nobody connected right now" in place of the climber count.
   - **host away**: the session is running, nobody is connected, and the backend withheld the board path (a spray wall that is not open to everyone). The screen says the host has to open Boardsesh and offers a retry. Once the host is connected, `session` answers with the path and the join card shows.
   - **ended**: "This session has ended".
-  - **not found**: neither query knows the id.
+  - **not found**: neither query knows the id, or an older backend lacks the fallback query.
+  - **lookup failed**: network, rate-limit or backend errors show the retry screen.
 - Dead ends fire `Session Join Outcome`; a join fires `Session Joined`. See `docs/growth-metrics.md`.
 
 ### Data Layer

@@ -5,7 +5,8 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { roomManager } from '../../../services/room-manager';
 import { dbRead } from '../../../db/client';
 import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
-import { canAccessResource, canViewActivityIdentity, canViewResourceLocation } from '../../../services/privacy';
+import { canAccessResource, visibleBoardIdentityUuids } from '../../../services/privacy';
+import { projectSessionBoardPath, sessionVisibleUserIds } from '../../../services/board-session-privacy';
 
 /**
  * The public face of a session invite link (#6004).
@@ -18,7 +19,7 @@ import { canAccessResource, canViewActivityIdentity, canViewResourceLocation } f
  * knows nothing about the gym.
  *
  * An anonymous visitor gets the lifecycle state and public host, board and
- * gym metadata only when the session and every referenced board permit it.
+ * gym metadata only when their current privacy policies permit it.
  * An invite-only URL never grants host approval; a denied resource returns
  * the same metadata-free shape as an unknown session. Host identity and gym
  * location use the current account and resource privacy policies too.
@@ -73,10 +74,6 @@ export async function resolveSessionInvitePreview(sessionId: string): Promise<Se
       boardUuid: userBoards.uuid,
       boardType: userBoards.boardType,
       boardLayoutId: userBoards.layoutId,
-      boardIsPublic: userBoards.isPublic,
-      boardIsUnlisted: userBoards.isUnlisted,
-      boardHidesLocation: userBoards.hideLocation,
-      boardDeletedAt: userBoards.deletedAt,
       gymName: gyms.name,
       gymIsPublic: gyms.isPublic,
       gymDeletedAt: gyms.deletedAt,
@@ -137,40 +134,40 @@ export async function resolveSessionInvitePreview(sessionId: string): Promise<Se
       isSprayBoardType(slugBoard.boardType) &&
       !(await sprayLayoutIsReadable(slugBoard.boardType, slugBoard.layoutId, null));
   }
-  const wallIsHidden = attachedWallIsHidden || pathWallIsHidden || namedWallIsHidden;
+  // Projection also resolves deleted named boards to geometry. Check that
+  // final path too, so a deleted spray slug cannot reveal its layout id.
+  const projectedPath = await projectSessionBoardPath(row.boardPath, null);
+  const projectedBoard = parseBoardPath(projectedPath);
+  const projectedWallIsHidden =
+    projectedBoard !== null &&
+    isSprayBoardType(projectedBoard.boardName) &&
+    !(await sprayLayoutIsReadable(projectedBoard.boardName, projectedBoard.layoutId, null));
+  const wallIsHidden = attachedWallIsHidden || pathWallIsHidden || namedWallIsHidden || projectedWallIsHidden;
 
-  // The board is named only when its own page is open to anyone: public,
-  // listed, not deleted, and not a hidden spray wall. `boardName` is null on
-  // the row when no board is attached.
+  // A session link does not grant access to its board's identity. Use the
+  // current audience policy, including overrides of the legacy public flags.
   const boardIsOpenToAnyone =
-    row.boardName !== null &&
-    row.boardIsPublic === true &&
-    row.boardIsUnlisted === false &&
-    row.boardDeletedAt === null &&
-    !wallIsHidden;
-
-  // A gym says where the wall stands, so it rides on the board's visibility
-  // and on the board not hiding its location, as well as on the gym's own.
-  const gymIsOpenToAnyone =
-    boardIsOpenToAnyone &&
-    row.boardHidesLocation === false &&
-    row.gymName !== null &&
-    row.gymIsPublic === true &&
-    row.gymDeletedAt === null &&
+    !wallIsHidden &&
     row.boardUuid !== null &&
-    (await canViewResourceLocation(row.boardUuid, null));
+    (await visibleBoardIdentityUuids([row.boardUuid], null)).has(row.boardUuid);
+
+  // Public gyms already publish their place, including when a board there
+  // hides its own location. This is the same fallback as live-session cards.
+  const gymIsOpenToAnyone =
+    boardIsOpenToAnyone && row.gymName !== null && row.gymIsPublic === true && row.gymDeletedAt === null;
 
   const hostIdentityIsPublic =
-    row.createdByUserId !== null && (await canViewActivityIdentity(row.createdByUserId, null, { sessionId }));
+    row.createdByUserId !== null &&
+    (await sessionVisibleUserIds([row.createdByUserId], null, sessionId)).has(row.createdByUserId);
+  const boardPath = wallIsHidden ? null : projectedPath || null;
 
   return {
     sessionId,
     state,
     hostName: hostIdentityIsPublic ? publicDisplayName(row.profileDisplayName, row.accountName) : null,
     boardName: boardIsOpenToAnyone ? row.boardName : null,
-    // The audience guard checks every referenced board. Retain the spray
-    // visibility check for its additional moderation rules.
-    boardPath: wallIsHidden ? null : row.boardPath,
+    // Hidden named boards become geometry; spray walls still need read access.
+    boardPath,
     gymName: gymIsOpenToAnyone ? row.gymName : null,
   };
 }

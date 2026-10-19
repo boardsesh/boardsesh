@@ -87,6 +87,18 @@ describe('isSessionPreviewEnded', () => {
 });
 
 describe('trackSessionJoinOutcome', () => {
+  it.each(['', 'climber@example.com', 'Alex Smith', 'session/secret', 'session\n', 'a'.repeat(101)])(
+    'omits a malformed session ID (%j) while preserving the outcome',
+    (sessionId) => {
+      trackSessionJoinOutcome(sessionId, 'not_found', 'preview');
+
+      expect(analytics.track).toHaveBeenCalledWith('Session Join Outcome', {
+        outcome: 'not_found',
+        stage: 'preview',
+      });
+    },
+  );
+
   it('sends the outcome with the session and the stage it stopped at', () => {
     trackSessionJoinOutcome('session-1', 'error', 'join');
 
