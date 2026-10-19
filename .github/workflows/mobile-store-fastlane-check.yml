@@ -70,6 +70,8 @@ jobs:
           vp exec ruby tests/store_audit_test.rb
           vp exec ruby tests/creative_assets_test.rb
           vp exec ruby tests/custom_product_pages_test.rb
+          vp exec ruby tests/creative_download_test.rb
+          vp exec ruby tests/prepare_creative_manifest_test.rb
       - name: Verify pinned Play API supports review protection
         working-directory: fastlane
         run: |
