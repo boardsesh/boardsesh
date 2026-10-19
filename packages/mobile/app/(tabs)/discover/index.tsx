@@ -380,7 +380,7 @@ export default function DiscoverLibrary() {
   }, []);
 
   const goToSetterPlaylist = useCallback((username: string) => {
-    router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } });
+    router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } }, { withAnchor: true });
   }, []);
 
   const renderForYouCard = useCallback(

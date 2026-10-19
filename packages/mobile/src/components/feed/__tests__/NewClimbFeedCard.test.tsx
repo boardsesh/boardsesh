@@ -257,10 +257,13 @@ describe('NewClimbFeedCard', () => {
   it('sends See all to the group board, not the board the viewer happens to be on', () => {
     const { getByRole } = render(<NewClimbFeedCard item={group([climb, second], 12)} />);
     fireEvent.click(getByRole('button', { name: 'authors.seeAllClimbs:12' }));
-    expect(mocks.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/setter/[username]',
-      params: { username: 'accountless', boardType: 'woods', layoutId: '1' },
-    });
+    expect(mocks.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/setter/[username]',
+        params: { username: 'accountless', boardType: 'woods', layoutId: '1' },
+      },
+      { withAnchor: true },
+    );
   });
 
   it('carries the setter notes and playback pace into the drawer', () => {

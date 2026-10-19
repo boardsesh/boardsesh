@@ -588,10 +588,13 @@ describe('DiscoverLibrary followed setter playlists', () => {
     expect(queryByText('Empty setter')).toBeNull();
     expect(container.querySelector('[aria-label="pin-Setter / One"]')).toBeNull();
     fireEvent.click(getByLabelText('open-Setter / One'));
-    expect(router.push).toHaveBeenLastCalledWith({
-      pathname: '/(tabs)/climbs/setter/[username]',
-      params: { username: 'Setter / One' },
-    });
+    expect(router.push).toHaveBeenLastCalledWith(
+      {
+        pathname: '/(tabs)/climbs/setter/[username]',
+        params: { username: 'Setter / One' },
+      },
+      { withAnchor: true },
+    );
   });
 
   it.each(['signed out', 'no board'] as const)('disables setters with %s', (scenario) => {

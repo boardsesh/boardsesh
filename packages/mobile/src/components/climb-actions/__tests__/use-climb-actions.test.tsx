@@ -710,22 +710,25 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
     result.current.find((action) => action.id === 'fork')?.run();
 
     expect(onAfterAction).toHaveBeenCalledTimes(1);
-    expect(openers.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        forkFrames: 'p1r12',
-        forkName: 'Test Climb',
-        forkDescription: '',
-        // No grade: a remix is graded by its own first ascent (#5971).
-        // The parent, so the editor can draw the holds it lost.
-        forkParentUuid: climb.uuid,
-        boardName: 'kilter',
-        layoutId: '1',
-        sizeId: '10',
-        setIds: '1,2',
-        angle: '40',
+    expect(openers.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: {
+          forkFrames: 'p1r12',
+          forkName: 'Test Climb',
+          forkDescription: '',
+          // No grade: a remix is graded by its own first ascent (#5971).
+          // The parent, so the editor can draw the holds it lost.
+          forkParentUuid: climb.uuid,
+          boardName: 'kilter',
+          layoutId: '1',
+          sizeId: '10',
+          setIds: '1,2',
+          angle: '40',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 
   it('edit.run pushes create with the climb uuid, not the fork frames', () => {
@@ -737,17 +740,20 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
     });
     result.current.find((action) => action.id === 'edit')?.run();
 
-    expect(openers.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        editClimbUuid: 'climb-1',
-        boardName: 'kilter',
-        layoutId: '1',
-        sizeId: '10',
-        setIds: '1,2',
-        angle: '40',
+    expect(openers.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: {
+          editClimbUuid: 'climb-1',
+          boardName: 'kilter',
+          layoutId: '1',
+          sizeId: '10',
+          setIds: '1,2',
+          angle: '40',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 
   it('awaits the injected player close before pushing create', async () => {

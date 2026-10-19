@@ -229,17 +229,20 @@ describe('navigateToSessionClimb', () => {
     });
     const push = vi.fn();
     navigateToSessionClimb({ push } as never, makeTick({ climbUuid: 'climb-9', angle: 50 }));
-    expect(push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/[climbUuid]',
-      params: {
-        climbUuid: 'climb-9',
-        boardName: 'kilter',
-        layoutId: '1',
-        sizeId: '10',
-        setIds: '1,20,33',
-        angle: '50',
+    expect(push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/[climbUuid]',
+        params: {
+          climbUuid: 'climb-9',
+          boardName: 'kilter',
+          layoutId: '1',
+          sizeId: '10',
+          setIds: '1,20,33',
+          angle: '50',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 
   it('does not navigate when the board config cannot resolve (e.g. MoonBoard)', () => {
