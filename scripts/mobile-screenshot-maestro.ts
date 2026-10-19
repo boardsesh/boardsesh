@@ -61,7 +61,7 @@ export async function runScreenshotMaestro(args: string[], options: MaestroProce
     stderrTail = combined.length > 256 ? ` ${combined.slice(-256)}` : combined;
   });
   const deadline = setTimeout(
-    () => fail(`Maestro exceeded its ${(options.timeoutMs ?? CPP_MAESTRO_TIMEOUT_MS) / 60_000}-minute capture limit`),
+    () => fail(`Maestro exceeded its capture limit (${(options.timeoutMs ?? CPP_MAESTRO_TIMEOUT_MS) / 1000}s)`),
     options.timeoutMs ?? CPP_MAESTRO_TIMEOUT_MS,
   );
   const interrupt = () => fail('Maestro capture was interrupted');

@@ -429,10 +429,8 @@ function writeNavigationFlow(
 }
 
 /** Confirm the dev-client link without launching again or navigating away. */
-function writeLauncherConfirmFlow(): string {
-  // Phone preparation and relaunches call this serially. Both roles use the
-  // same confirmation commands, so this scratch path carries no role state.
-  const file = resolve(FLOW_SCRATCH_DIR, 'confirm-launcher.yaml');
+function writeLauncherConfirmFlow(role: 'primary' | 'secondary'): string {
+  const file = resolve(FLOW_SCRATCH_DIR, `confirm-launcher-${role}.yaml`);
   mkdirSync(FLOW_SCRATCH_DIR, { recursive: true });
   writeFileSync(
     file,
@@ -711,7 +709,7 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
           throw new Error(`Opening dev-client on ${phone.device.name} failed: ${opened.stderr.trim()}`);
         const confirmed = await runMaestro({
           udid: phone.device.udid,
-          flowFile: writeLauncherConfirmFlow(),
+          flowFile: writeLauncherConfirmFlow(phone.role),
           label: `${phone.role}-confirm-launcher`,
           signalUrl: phone.signal.url,
           // The CI driver allows five minutes to start; this flow only taps Open.
