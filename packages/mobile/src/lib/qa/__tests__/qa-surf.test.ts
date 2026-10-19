@@ -528,6 +528,41 @@ describe('the pin the app was launched under', () => {
 });
 
 describe('leaving when there is nothing to download', () => {
+  it('reports a failed leave when production has nothing launchable', async () => {
+    const fresh = await relaunch({ record: 'pr-beta', embedded: true, os: 'ios' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(fresh.surfToProduction()).rejects.toThrow('preview pin is still active');
+
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(
+      expect.objectContaining({ 'xprem-branch': 'pr-beta' }),
+    );
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed leave when production serves an update stamped for the preview', async () => {
+    const fresh = await relaunch({ record: 'pr-beta' });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'running-update' } });
+
+    await expect(fresh.surfToProduction()).rejects.toThrow('preview pin is still active');
+
+    expect(settings.values.otaLeaveBlockedUpdateId).toBe('running-update');
+    expect(fresh.readOtaPinnedBranch()).toBe('pr-beta');
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps a no-op leave successful when the running bundle already needs no pin', async () => {
+    const fresh = await relaunch({ record: null });
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false, reason: 'noUpdateAvailableOnServer' });
+
+    await expect(fresh.surfToProduction()).resolves.toBe('nothing-to-load');
+
+    expect(fresh.readOtaPinnedBranch()).toBeNull();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
   it('the loader policy turning the check down proves the running bundle needs no pin', async () => {
     // Even against a record that still says pr-beta (stale after a kill
     // mid-leave on a build without the journal).

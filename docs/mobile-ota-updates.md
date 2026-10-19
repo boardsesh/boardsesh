@@ -615,6 +615,12 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
   pointed at V2, which no longer exists.
 
+A refused **Leave preview** keeps the existing preview pin and shows the localized
+failure message. This includes a production branch with no launchable update and an
+update already cached under the preview's stamp. The QA screens must not report
+that the device is back on production after either refusal. This does not provide
+an escape from a preview whose JavaScript thread is frozen.
+
 ### Managing xprem as code
 
 The channel mapping, Branch Surfing and branch protection used to exist only as dashboard state. They

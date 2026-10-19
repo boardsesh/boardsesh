@@ -590,7 +590,14 @@ async function surfOwningPin(branch: Pin, lease: OtaOperationLease): Promise<Sur
     fetched = result;
   });
   lease.assertActive();
-  if (outcome !== 'switched') return 'nothing-to-load';
+  if (outcome !== 'switched') {
+    // A refused switch restores the preview pin. Returning nothing-to-load
+    // would tell the QA screens the production pin was cleared successfully.
+    if (branch === null && pinnedBefore !== null) {
+      throw new Error('No safe production update is available; the preview pin is still active.');
+    }
+    return 'nothing-to-load';
+  }
   const receipt = await waitForOtaReloadReceipt(lease, fetched);
   if (receipt === null || !isOtaReloadReceiptCurrent(receipt)) return 'nothing-to-load';
   try {
