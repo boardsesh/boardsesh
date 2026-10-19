@@ -568,15 +568,20 @@ days ago, today or a malformed date is refused (`BAD_USER_INPUT`).
 `createConsentSyncCoordinator` in `@boardsesh/consent` owns the merge and retry
 rules for both clients. The platform injects transport and storage. Every server
 response belongs to an account epoch; a response from a previous sign-in cannot
-change the active account or device. Before an account request, the app requires
-a present authentication credential and a matching platform-aware local identity: native
-reads its JWT subject; Expo browser reads the account confirmed by the paired
-session and token-bridge responses, because its five-segment JWE is encrypted.
-The browser's remembered identity alone is insufficient after token clearing.
-Account epoch and credential generation checks surround the asynchronous reads,
-and an account/session change aborts in-flight work and rejects late responses.
-This is a local request fence; the backend still authenticates every request.
-A new decision changes the device choice immediately, then is persisted as a pending write under that account before the
+change the active account or device.
+
+Before an account request, the app requires an authentication credential and a
+matching local identity. Native reads the credential's JWT subject. Expo browser
+uses the account confirmed by the paired session and token-bridge responses,
+because its five-segment JWE is encrypted. The browser's remembered identity
+alone is insufficient after token clearing.
+
+Account epoch and credential generation checks surround the asynchronous reads.
+An account or session change aborts in-flight work and rejects late responses.
+These local checks fence the request; the backend still authenticates it.
+
+A new decision changes the device choice immediately, then is persisted as a
+pending write under that account before the
 network request. Offline withdrawals survive restart. Pending decisions are
 pushed before old account answers are merged, so changing No thanks to Allow
 is not immediately undone by the old account denial.
