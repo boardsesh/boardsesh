@@ -4,6 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hasCriticalOtaRelease } from '../packages/shared/pr-body/src/ota-release.ts';
+import { latestConsumedCriticalRelease } from './lib/ota-critical-history.ts';
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const MAX_COMMITS = 100;
@@ -14,8 +15,10 @@ interface CriticalOtaOptions {
   repository: string;
   headSha: string;
   deploymentBaseSha: string;
+  criticalConsumptionSha?: string | null;
   git: (argumentsList: string[]) => string;
   github: (endpoint: string) => Promise<unknown>;
+  graphql: (query: string) => Promise<unknown>;
 }
 
 interface PullIdentity {
@@ -62,7 +65,7 @@ function pullIdentity(payload: unknown): PullIdentity {
 
 /** Read-only: only merged PRs on the actual deployed first-parent range can opt in. */
 export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Promise<CriticalOtaDecision> {
-  const { repository, headSha, deploymentBaseSha, git, github } = options;
+  const { repository, headSha, deploymentBaseSha, git, github, graphql } = options;
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !FULL_SHA.test(headSha)) {
     throw new Error('Critical OTA detection requires the exact repository and full deployment SHA.');
   }
@@ -71,16 +74,28 @@ export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Pro
   }
   git(['merge-base', '--is-ancestor', headSha, 'refs/remotes/origin/main']);
 
+  let authorizationBaseSha = deploymentBaseSha;
+  if (options.criticalConsumptionSha) {
+    const consumedSha = options.criticalConsumptionSha;
+    if (!FULL_SHA.test(consumedSha)) throw new Error('Invalid critical consumption boundary SHA.');
+    git(['merge-base', '--is-ancestor', consumedSha, headSha]);
+    if (!authorizationBaseSha) authorizationBaseSha = consumedSha;
+    else {
+      const commonAncestor = git(['merge-base', authorizationBaseSha, consumedSha]).trim();
+      if (commonAncestor === authorizationBaseSha) authorizationBaseSha = consumedSha;
+      else if (commonAncestor !== consumedSha) throw new Error('Critical consumption boundaries diverge.');
+    }
+  }
   let commits: string[];
-  if (deploymentBaseSha) {
-    if (!FULL_SHA.test(deploymentBaseSha)) throw new Error('Invalid production deployment baseline SHA.');
-    git(['merge-base', '--is-ancestor', deploymentBaseSha, headSha]);
+  if (authorizationBaseSha) {
+    if (!FULL_SHA.test(authorizationBaseSha)) throw new Error('Invalid production deployment baseline SHA.');
+    git(['merge-base', '--is-ancestor', authorizationBaseSha, headSha]);
     commits = git([
       'rev-list',
       '--first-parent',
       '--reverse',
       `--max-count=${MAX_COMMITS + 1}`,
-      `${deploymentBaseSha}..${headSha}`,
+      `${authorizationBaseSha}..${headSha}`,
     ])
       .trim()
       .split('\n')
@@ -89,9 +104,9 @@ export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Pro
       throw new Error('Critical OTA deployment range is malformed or exceeds 100 commits; inspect it explicitly.');
     }
     if (
-      (commits.length === 0 && deploymentBaseSha !== headSha) ||
+      (commits.length === 0 && authorizationBaseSha !== headSha) ||
       (commits.length > 0 &&
-        (commits.at(-1) !== headSha || git(['rev-parse', `${commits[0]}^1`]).trim() !== deploymentBaseSha))
+        (commits.at(-1) !== headSha || git(['rev-parse', `${commits[0]}^1`]).trim() !== authorizationBaseSha))
     ) {
       throw new Error('Production baseline must bound the complete first-parent deployment range.');
     }
@@ -124,8 +139,33 @@ export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Pro
           continue;
         }
         checkedPullNumbers.add(identity.number);
-        const pull = record(await request(`repos/${repository}/pulls/${identity.number}`), 'merged pull request');
-        const verifiedIdentity = pullIdentity(pull);
+        // Read body and edit/merge timestamps atomically. A REST body followed by
+        // a separate timestamp read could authorize a concurrent post-merge edit.
+        const [owner, name] = repository.split('/');
+        apiRequests += 1;
+        if (apiRequests > MAX_API_REQUESTS) throw new Error('Critical OTA detection exceeded its bounded API budget.');
+        const response = record(
+          await graphql(`query { repository(owner: "${owner}", name: "${name}") {
+            pullRequest(number: ${identity.number}) {
+              number body merged mergedAt createdAt lastEditedAt
+              mergeCommit { oid } baseRepository { nameWithOwner } baseRefName
+            }
+          } }`),
+          'merged pull request response',
+        );
+        if (response.errors !== undefined) throw new Error('Incomplete merged pull request verification.');
+        const pull = record(
+          record(record(response.data, 'pull request data').repository, 'pull request repository').pullRequest,
+          'merged pull request',
+        );
+        const verifiedIdentity = pullIdentity({
+          number: pull.number,
+          merge_commit_sha: pull.mergeCommit === null ? null : record(pull.mergeCommit, 'merge commit').oid,
+          base: {
+            repo: { full_name: record(pull.baseRepository, 'base repository').nameWithOwner },
+            ref: pull.baseRefName,
+          },
+        });
         if (
           typeof pull.merged !== 'boolean' ||
           (pull.body !== null && typeof pull.body !== 'string') ||
@@ -140,6 +180,19 @@ export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Pro
           verifiedIdentity.baseRef === 'main' &&
           hasCriticalOtaRelease(pull.body)
         ) {
+          const mergedAt = typeof pull.mergedAt === 'string' ? Date.parse(pull.mergedAt) : NaN;
+          const bodyWrittenAt = pull.lastEditedAt === null ? pull.createdAt : pull.lastEditedAt;
+          const writtenAt = typeof bodyWrittenAt === 'string' ? Date.parse(bodyWrittenAt) : NaN;
+          if (!Number.isFinite(mergedAt) || !Number.isFinite(writtenAt))
+            throw new Error('Cannot prove critical OTA authorization existed before merge.');
+          // Equality is ambiguous at GitHub's timestamp precision. Never grant
+          // a bypass from an edit made during or after the merge second.
+          if (writtenAt >= mergedAt) {
+            console.warn(
+              `::warning::Ignoring critical OTA PR #${identity.number}: body edited at or after merge. Use a fresh reviewed PR.`,
+            );
+            continue;
+          }
           criticalPullNumbers.add(identity.number);
         }
       }
@@ -151,7 +204,7 @@ export async function detectCriticalOtaRelease(options: CriticalOtaOptions): Pro
     critical: criticalPullNumbers.size > 0,
     pullNumbers: [...criticalPullNumbers].sort((left, right) => left - right),
     inspectedCommits: commits.length,
-    headOnlyFallback: deploymentBaseSha === '',
+    headOnlyFallback: authorizationBaseSha === '',
   };
 }
 
@@ -161,19 +214,33 @@ async function main(): Promise<void> {
   }
   const execute = (program: string, argumentsList: string[]) =>
     execFileSync(program, argumentsList, { encoding: 'utf8', timeout: 20_000, maxBuffer: 10 * 1024 * 1024 });
-  const decision = await detectCriticalOtaRelease({
+  const context = {
     repository: process.env.GITHUB_REPOSITORY ?? '',
     headSha: process.env.GITHUB_SHA ?? '',
     deploymentBaseSha: process.env.DEPLOYMENT_BASE_SHA ?? '',
-    git: (argumentsList) => execute('git', argumentsList),
-    github: async (endpoint) => JSON.parse(execute('gh', ['api', '--method', 'GET', endpoint])) as unknown,
+    git: (argumentsList: string[]) => execute('git', argumentsList),
+    github: async (endpoint: string) => JSON.parse(execute('gh', ['api', '--method', 'GET', endpoint])) as unknown,
+  };
+  const criticalConsumptionSha = await latestConsumedCriticalRelease({
+    ...context,
+    currentRunId: process.env.GITHUB_RUN_ID ?? '',
+  });
+  const decision = await detectCriticalOtaRelease({
+    ...context,
+    criticalConsumptionSha,
+    graphql: async (query) => JSON.parse(execute('gh', ['api', 'graphql', '-f', `query=${query}`])) as unknown,
   });
   if (decision.headOnlyFallback) {
     console.warn('::warning::No safe deployment baseline; checking HEAD only. Inherited critical intent is unknown.');
   }
-  const description = decision.critical
-    ? `Critical OTA: PR ${decision.pullNumbers.map((pullNumber) => `#${pullNumber}`).join(', ')} requests immediate 100% stable release.`
-    : `Normal OTA cadence: no critical checkbox in ${decision.inspectedCommits} deployed first-parent commits.`;
+  const consumedDescription = criticalConsumptionSha
+    ? `Critical OTA authorization consumed through ${criticalConsumptionSha}; only later merges can request another bypass.\n`
+    : '';
+  const description =
+    consumedDescription +
+    (decision.critical
+      ? `Critical OTA: PR ${decision.pullNumbers.map((pullNumber) => `#${pullNumber}`).join(', ')} requests immediate 100% stable release.`
+      : `Normal OTA cadence: no critical checkbox in ${decision.inspectedCommits} deployed first-parent commits.`);
   console.log(description);
   if (!process.env.GITHUB_OUTPUT) throw new Error('Missing workflow output file.');
   appendFileSync(process.env.GITHUB_OUTPUT, `critical_ota=${decision.critical}\n`);

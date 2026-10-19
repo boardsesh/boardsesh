@@ -1143,10 +1143,23 @@ updates continue to receive the deployment too. The deployment summary identifie
 and reports the immediate stable release.
 
 Only the exact checked item in the OTA release section counts; comments, quoted examples and code
-blocks do not. The detector verifies that each PR was merged into this repository's `main` and that
+blocks do not. Set it before merging and leave the merged description unchanged. The detector reads
+the body, body-edit timestamp and merge timestamp in one GraphQL response, and accepts only a body
+last written strictly before merge. A post-merge edit, including a check made during the same timestamp
+second as merge, cannot authorize the bypass; detection warns and ignores that PR's checkbox. Use a
+fresh reviewed PR to request an urgent release after editing a merged description.
+The detector verifies that each PR was merged into this repository's `main` and that
 its merge commit is in the actual first-parent deployment range. It uses the same previous successful
 deployment baseline as change detection, so a replaced or cancelled pending run cannot lose an earlier
-critical merge. A failed or incomplete pull-request API read blocks detection and deployment. After
+critical merge. Manual recovery still builds every target and retains that validated merge range.
+Authorization is consumed separately from the overall deployment result: the detector reads the
+first attempt's critical-promotion step in prior trusted production runs. Once that step has attempted
+publication, critical intent through its SHA cannot authorize another rollout, even if another job
+failed afterward. A terminal failed or interrupted publication emits a warning and consumes its
+authorization too; inspect both production heads and retained evidence, then use a fresh reviewed PR
+with the checkbox set for another urgent attempt. A still-running writer or incomplete/untrusted
+history blocks detection. Later normal PRs retain normal release cadence.
+A failed or incomplete pull-request API read blocks detection and deployment. After
 the API recovers, dispatch a new **Production Deploy** run on `main`; detection checks the deployment
 range again, retaining critical intent from merges after the previous successful deployment.
 If no safe baseline exists, it checks only the deployment's HEAD and warns that inherited critical intent is unknown;
@@ -1157,6 +1170,11 @@ touching a live rollout. This read can use a newer completed controller checkpoi
 number follows the deployment. It skips only first-attempt controller jobs proven queued or blocked
 before any production write, as well as candidate-only preparation that cannot write production.
 An unknown running writer, incomplete job evidence or missing/corrupt checkpoint still holds publication.
+The job checks `OTA_ADMIN_EMAIL`, `OTA_ADMIN_PASSWORD` and `EOO_TOKEN` before any readiness waits,
+so a missing credential releases the production lock promptly. The admin credentials belong in
+the main-only `ota-stable-release` environment; the upload token may be a repository secret.
+When renaming or adding controller jobs, update `STABLE_CONTROLLER_JOBS` in
+`scripts/lib/ota-stable-github.ts` together with the workflow; their contract test catches drift.
 
 An active canary can be superseded only when its exact update IDs belong to that checkpoint and its
 control is the production baseline captured by both the controller and this staged export. Unknown

@@ -249,10 +249,9 @@ function createCliGit({ cwd = process.cwd() } = {}) {
 }
 
 function determineProductionDeployChanges({ eventName, headSha, currentRunId = '', runsPayload, git }) {
-  if (eventName === 'workflow_dispatch') return fullDeploy('workflow_dispatch');
-
   const priorRun = selectLatestSuccessfulPriorRun(runsPayload, { currentRunId });
-  if (!priorRun) return fullDeploy('missing-successful-baseline');
+  if (!priorRun)
+    return fullDeploy(eventName === 'workflow_dispatch' ? 'workflow_dispatch' : 'missing-successful-baseline');
 
   const deploymentBaseSha = priorRun.head_sha.trim();
   const normalizedHeadSha = typeof headSha === 'string' ? headSha.trim() : '';
@@ -267,6 +266,10 @@ function determineProductionDeployChanges({ eventName, headSha, currentRunId = '
     if (!git.isAncestor(deploymentBaseSha, normalizedHeadSha)) {
       return fullDeploy('baseline-is-not-an-ancestor');
     }
+
+    // Manual recovery still builds everything, but critical OTA detection needs
+    // the same validated merge range so a superseded urgent PR is not lost.
+    if (eventName === 'workflow_dispatch') return { ...fullDeploy('workflow_dispatch'), deploymentBaseSha };
 
     const changedFiles = git.changedFiles(deploymentBaseSha, normalizedHeadSha);
     const targets = classifyChangedFiles(changedFiles);

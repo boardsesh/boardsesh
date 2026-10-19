@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { desiredOtaState, STABLE_CANDIDATE_BRANCH } from '../../infra/ota/config';
+import { STABLE_CONTROLLER_JOBS } from '../lib/ota-stable-github';
 
 interface Step {
   name?: string;
@@ -88,6 +89,13 @@ function resolveCommand(command: string, enabled: string, candidateSha = '', sch
 }
 
 describe('daily stable workflow boundaries', () => {
+  it('keeps trusted checkpoint job identities aligned with the actual workflow', () => {
+    expect([...STABLE_CONTROLLER_JOBS].sort()).toEqual(Object.keys(workflow.jobs).sort());
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      // GitHub uses the job ID when no display name is configured.
+      expect((job as Job & { name?: string }).name ?? jobName).toBe(jobName);
+    }
+  });
   it('declares frozen protected candidate without altering the production channel', () => {
     expect(desiredOtaState.branches.find((branch) => branch.name === STABLE_CANDIDATE_BRANCH)?.protected).toBe(true);
     expect(desiredOtaState.channels.find((channel) => channel.name === 'production')?.branch).toBe('production');
@@ -302,5 +310,56 @@ describe('daily stable workflow boundaries', () => {
       true,
     );
     expect(pipeline.jobs['verify-mobile-ota'].needs).toContain('promote-early-mobile-ota');
+  });
+});
+
+describe('critical production release credentials', () => {
+  const pipeline = parse(
+    readFileSync(resolve(import.meta.dirname, '../../.github/workflows/production-deploy.yml'), 'utf8'),
+  ) as Workflow;
+  const promotion = pipeline.jobs['promote-mobile-ota'];
+  const steps = promotion.steps ?? [];
+  const preflight = steps.find((entry) => entry.name === 'Require critical release credentials before readiness waits');
+  const credentials = {
+    OTA_ADMIN_EMAIL: 'credential-test@example.invalid',
+    OTA_ADMIN_PASSWORD: 'credential-test-password',
+    EOO_TOKEN: 'credential-test-token',
+  };
+
+  it('checks all required secrets before acquiring external readiness evidence', () => {
+    expect(preflight?.if).toBe("needs.detect-changes.outputs.critical_ota == 'true'");
+    expect(preflight?.env).toEqual({
+      OTA_ADMIN_EMAIL: '${{ secrets.OTA_ADMIN_EMAIL }}',
+      OTA_ADMIN_PASSWORD: '${{ secrets.OTA_ADMIN_PASSWORD }}',
+      EOO_TOKEN: '${{ secrets.EOO_TOKEN }}',
+    });
+    const preflightIndex = steps.indexOf(preflight!);
+    expect(preflightIndex).toBeGreaterThanOrEqual(0);
+    for (const name of [
+      'Require live backend schema',
+      'Wait for the OTA server rollout on this commit',
+      'Restore trusted controller state before critical supersession',
+      'Release critical staged bytes to 100% stable',
+    ]) {
+      expect(
+        steps.findIndex((entry) => entry.name === name),
+        name,
+      ).toBeGreaterThan(preflightIndex);
+    }
+  });
+
+  it.each(Object.keys(credentials))('fails promptly for a missing %s without exposing secrets', (missingCredential) => {
+    expect(preflight?.run).toBeDefined();
+    const execution = executeStep(preflight!.run!, { ...credentials, [missingCredential]: '' });
+    expect(execution.status).toBe(1);
+    expect(execution.logs).toContain(`::error::Missing ${missingCredential}`);
+    for (const secret of Object.values(credentials)) expect(execution.logs + execution.error).not.toContain(secret);
+  });
+
+  it('passes when every release credential is available', () => {
+    expect(preflight?.run).toBeDefined();
+    const execution = executeStep(preflight!.run!, credentials);
+    expect(execution.status).toBe(0);
+    expect(execution.logs + execution.error).toBe('');
   });
 });

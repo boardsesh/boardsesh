@@ -768,6 +768,20 @@ jobs:
       - name: Refuse blind critical promotion retries
         if: needs.detect-changes.outputs.critical_ota == 'true' && github.run_attempt != 1
         run: exit 1
+      - name: Require critical release credentials before readiness waits
+        if: needs.detect-changes.outputs.critical_ota == 'true'
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+        run: |
+          set -euo pipefail
+          for credential in OTA_ADMIN_EMAIL OTA_ADMIN_PASSWORD EOO_TOKEN; do
+            if [ -z "${!credential:-}" ]; then
+              echo "::error::Missing $credential in ota-stable-release or repository secrets."
+              exit 1
+            fi
+          done
       - name: Mint changelog push token
         id: push_token
         if: needs.detect-changes.outputs.critical_ota != 'true' && vars.OTA_PUSH_APP_ID != ''
@@ -838,6 +852,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: critical-ota-release-evidence
+          # Only receipt.json is guaranteed on failure. upload-artifact fails
+          # for zero matches, not for individually absent optional evidence.
           path: |
             ota-stage/receipt.json
             ota-stage/critical-supersession.json

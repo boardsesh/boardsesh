@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { CRITICAL_OTA_RELEASE_CHECKBOX } from '../../packages/shared/pr-body/src/ota-release';
 import { detectCriticalOtaRelease } from '../mobile-ota-critical';
+import { latestConsumedCriticalRelease } from '../lib/ota-critical-history';
 
 const repository = 'boardsesh/boardsesh';
 const criticalBody = `## OTA release\n\n${CRITICAL_OTA_RELEASE_CHECKBOX}`;
@@ -54,6 +55,9 @@ function pull(number: number, mergeCommitSha: string, body = criticalBody) {
     merged: true,
     merge_commit_sha: mergeCommitSha,
     body,
+    createdAt: '2026-10-18T00:00:00Z',
+    lastEditedAt: null,
+    mergedAt: '2026-10-19T00:00:00Z',
     base: { repo: { full_name: repository }, ref: 'main' },
   };
 }
@@ -62,6 +66,25 @@ function githubFixture(responses: Record<string, unknown>) {
   const requests: string[] = [];
   return {
     requests,
+    graphql: async (query: string) => {
+      const pullNumber = /pullRequest\(number: (\d+)\)/.exec(query)?.[1];
+      const endpoint = pullEndpoint(Number(pullNumber));
+      requests.push(endpoint);
+      const snapshot = responses[endpoint] as ReturnType<typeof pull> | undefined;
+      if (!snapshot) throw new Error(`Unexpected pull request query: ${query}`);
+      return {
+        data: {
+          repository: {
+            pullRequest: {
+              ...snapshot,
+              mergeCommit: { oid: snapshot.merge_commit_sha },
+              baseRepository: { nameWithOwner: snapshot.base.repo.full_name },
+              baseRefName: snapshot.base.ref,
+            },
+          },
+        },
+      };
+    },
     github: async (endpoint: string) => {
       requests.push(endpoint);
       if (Object.hasOwn(responses, endpoint)) return responses[endpoint];
@@ -104,6 +127,121 @@ describe('critical OTA deployment detection', () => {
     expect(github.requests).not.toContain(associatedEndpoint(history.baseSha));
   });
 
+  it.each(['success', 'failure', 'cancelled', 'timed_out'])(
+    'returns later PRs to normal cadence after a critical attempt ended %s',
+    async (criticalConclusion) => {
+      const history = deploymentHistory();
+      const criticalPull = pull(101, history.supersededSha);
+      const github = githubFixture({
+        [associatedEndpoint(history.supersededSha)]: [criticalPull],
+        [pullEndpoint(101)]: criticalPull,
+      });
+      const criticalConsumptionSha = await latestConsumedCriticalRelease({
+        ...history,
+        repository,
+        deploymentBaseSha: history.baseSha,
+        currentRunId: '30',
+        github: async (endpoint) =>
+          endpoint.includes('/attempts/1/jobs')
+            ? {
+                total_count: 1,
+                jobs: [
+                  {
+                    id: 2500,
+                    run_id: 25,
+                    run_attempt: 1,
+                    head_sha: history.supersededSha,
+                    run_url: `https://api.github.com/repos/${repository}/actions/runs/25`,
+                    name: 'promote-mobile-ota',
+                    status: 'completed',
+                    conclusion: 'failure',
+                    steps: [
+                      {
+                        name: 'Release critical staged bytes to 100% stable',
+                        status: 'completed',
+                        conclusion: criticalConclusion,
+                      },
+                    ],
+                  },
+                ],
+              }
+            : {
+                workflow_runs: [
+                  {
+                    id: 25,
+                    run_attempt: 1,
+                    path: '.github/workflows/production-deploy.yml',
+                    head_sha: history.supersededSha,
+                    head_branch: 'main',
+                    repository: { full_name: repository },
+                    head_repository: { full_name: repository },
+                    event: 'push',
+                    status: 'completed',
+                    conclusion: 'failure',
+                  },
+                ],
+              },
+      });
+      const decision = await detectCriticalOtaRelease({
+        ...history,
+        ...github,
+        repository,
+        deploymentBaseSha: history.baseSha,
+        criticalConsumptionSha,
+      });
+      expect(decision).toEqual({ critical: false, pullNumbers: [], inspectedCommits: 1, headOnlyFallback: false });
+      expect(github.requests).toEqual([associatedEndpoint(history.headSha)]);
+      const freshCriticalPull = pull(102, history.headSha);
+      const freshGithub = githubFixture({
+        [associatedEndpoint(history.headSha)]: [freshCriticalPull],
+        [pullEndpoint(102)]: freshCriticalPull,
+      });
+      const recovery = await detectCriticalOtaRelease({
+        ...history,
+        ...freshGithub,
+        repository,
+        deploymentBaseSha: history.baseSha,
+        criticalConsumptionSha,
+      });
+      expect(recovery.pullNumbers).toEqual([102]);
+    },
+  );
+
+  it('does not replay a consumed publication when redispatching the same HEAD without a deployment baseline', async () => {
+    const history = deploymentHistory();
+    const github = githubFixture({});
+    expect(
+      await detectCriticalOtaRelease({
+        ...history,
+        ...github,
+        repository,
+        deploymentBaseSha: '',
+        criticalConsumptionSha: history.headSha,
+      }),
+    ).toEqual({ critical: false, pullNumbers: [], inspectedCommits: 0, headOnlyFallback: false });
+    expect(github.requests).toEqual([]);
+  });
+
+  it('allows a fresh critical merge after a previously consumed publication', async () => {
+    const history = deploymentHistory();
+    const criticalPull = pull(102, history.headSha);
+    const github = githubFixture({
+      [associatedEndpoint(history.headSha)]: [criticalPull],
+      [pullEndpoint(102)]: criticalPull,
+    });
+    expect(
+      (
+        await detectCriticalOtaRelease({
+          ...history,
+          ...github,
+          repository,
+          deploymentBaseSha: history.baseSha,
+          criticalConsumptionSha: history.supersededSha,
+        })
+      ).pullNumbers,
+    ).toEqual([102]);
+  });
+
   it('ignores unmerged, wrong-repository, wrong-target and non-merge commit associations', async () => {
     const history = deploymentHistory();
     const unmerged = { ...pull(1, history.headSha), merged: false };
@@ -122,6 +260,61 @@ describe('critical OTA deployment detection', () => {
     });
     expect(decision.critical).toBe(false);
     expect(github.requests).toEqual([associatedEndpoint(history.headSha), pullEndpoint(1)]);
+  });
+
+  it.each(['2026-10-19T00:00:00Z', '2026-10-19T00:00:01Z'])(
+    'cannot authorize an urgent release from a body edited at %s after merge',
+    async (lastEditedAt) => {
+      const history = deploymentHistory();
+      const criticalPull = { ...pull(101, history.headSha), lastEditedAt };
+      const github = githubFixture({
+        [associatedEndpoint(history.headSha)]: [criticalPull],
+        [pullEndpoint(101)]: criticalPull,
+      });
+      const decision = await detectCriticalOtaRelease({
+        ...history,
+        ...github,
+        repository,
+        deploymentBaseSha: history.supersededSha,
+      });
+      expect(decision.critical).toBe(false);
+    },
+  );
+
+  it('accepts a checkbox edited before merge from the same atomic GraphQL snapshot', async () => {
+    const history = deploymentHistory();
+    const criticalPull = { ...pull(101, history.headSha), lastEditedAt: '2026-10-18T23:59:59Z' };
+    const github = githubFixture({
+      [associatedEndpoint(history.headSha)]: [criticalPull],
+      [pullEndpoint(101)]: criticalPull,
+    });
+    expect(
+      (
+        await detectCriticalOtaRelease({
+          ...history,
+          ...github,
+          repository,
+          deploymentBaseSha: history.supersededSha,
+        })
+      ).critical,
+    ).toBe(true);
+  });
+
+  it('rejects incomplete GraphQL results and missing authorization timestamps', async () => {
+    const history = deploymentHistory();
+    const criticalPull = pull(101, history.headSha);
+    const github = githubFixture({
+      [associatedEndpoint(history.headSha)]: [criticalPull],
+      [pullEndpoint(101)]: { ...criticalPull, mergedAt: undefined },
+    });
+    const options = { ...history, ...github, repository, deploymentBaseSha: history.supersededSha };
+    await expect(detectCriticalOtaRelease(options)).rejects.toThrow('authorization existed before merge');
+    await expect(
+      detectCriticalOtaRelease({
+        ...options,
+        graphql: async () => ({ errors: [{ message: 'Resource inaccessible' }], data: {} }),
+      }),
+    ).rejects.toThrow('Incomplete merged pull request');
   });
 
   it('checks HEAD only when no safe baseline exists without replaying historical critical merges', async () => {
@@ -165,7 +358,7 @@ describe('critical OTA deployment detection', () => {
 
   it('fails closed on API failures and malformed verification payloads', async () => {
     const history = deploymentHistory();
-    const options = { ...history, repository, deploymentBaseSha: history.supersededSha };
+    const options = { ...history, ...githubFixture({}), repository, deploymentBaseSha: history.supersededSha };
     await expect(
       detectCriticalOtaRelease({
         ...options,
@@ -189,6 +382,7 @@ describe('critical OTA deployment detection', () => {
     await expect(
       detectCriticalOtaRelease({
         ...history,
+        ...githubFixture({}),
         repository,
         deploymentBaseSha: history.baseSha,
         github: async () => [],

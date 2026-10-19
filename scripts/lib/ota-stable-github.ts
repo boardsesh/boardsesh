@@ -3,6 +3,8 @@
 /** Trusted artifacts only: main's deployment and the stable controller's own checkpoints. */
 export const SOURCE_WORKFLOW = '.github/workflows/production-deploy.yml';
 export const STABLE_WORKFLOW = '.github/workflows/mobile-ota-stable-release.yml';
+/** Keep in sync with the workflow; unknown jobs cannot prove production ownership. */
+export const STABLE_CONTROLLER_JOBS = ['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'];
 
 export interface TrustedWorkflowRun {
   runId: number;
@@ -343,7 +345,7 @@ export function createStableGithubClient(options: {
               checked.head_sha !== run.headSha ||
               checked.run_attempt !== 1 ||
               checked.run_url !== `${apiBase}/actions/runs/${run.runId}` ||
-              !['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'].includes(String(checked.name)) ||
+              !STABLE_CONTROLLER_JOBS.includes(String(checked.name)) ||
               jobIds.has(id) ||
               jobNames.has(String(checked.name))
             )

@@ -1,6 +1,9 @@
 /// <reference types="node" />
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 import {
   createStableGithubClient,
   parseTrustedArtifact,
@@ -179,6 +182,34 @@ function failedJobs(runId: number, command = 'tick') {
 }
 
 describe('missing checkpoint recovery', () => {
+  it.each(['prepare', 'tick'])(
+    'accepts pre-write failure evidence built from the actual %s workflow steps',
+    async (command) => {
+      const workflow = parse(readFileSync(resolve(import.meta.dirname, '../../', STABLE_WORKFLOW), 'utf8')) as {
+        jobs: Record<string, { name?: string; steps?: { name?: string; uses?: string }[] }>;
+      };
+      const activeJobs = command === 'prepare' ? ['resolve', 'prepare', 'qualify'] : ['resolve', 'tick'];
+      const jobs = Object.entries(workflow.jobs).map(([jobName, job]) => {
+        const names = activeJobs.includes(jobName)
+          ? ['Set up job', ...(job.steps ?? []).map((step) => step.name ?? `Run ${step.uses}`), 'Complete job']
+          : [];
+        return jobInput(14, job.name ?? jobName, names);
+      });
+      const { client } = mockClient({
+        'mobile-ota-stable-release.yml/runs': {
+          workflow_runs: [
+            runInput(14, STABLE_WORKFLOW, { conclusion: 'failure', display_title: `OTA stable ${command}` }),
+            runInput(13),
+          ],
+        },
+        'runs/14/artifacts': { artifacts: [] },
+        'runs/14/attempts/1/jobs': { total_count: jobs.length, jobs },
+        'runs/13/artifacts': { artifacts: [artifactInput(13, 'mobile-ota-stable-state')] },
+      });
+      await expect(client.latestCheckpoint(15)).resolves.toMatchObject({ runId: 13 });
+    },
+  );
+
   it('bootstraps through the complete prepare/tick failure chain back to an empty startup failure', async () => {
     const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { client } = mockClient({

@@ -409,7 +409,7 @@ void test('keeps every backend build and runtime control path backend-affecting'
   }
 });
 
-void test('manual dispatch builds every target without consulting history or git', () => {
+void test('manual dispatch builds every target when history is unavailable', () => {
   const result = determineProductionDeployChanges({
     eventName: 'workflow_dispatch',
     headSha: '',
@@ -428,6 +428,28 @@ void test('manual dispatch builds every target without consulting history or git
     { web: true, backend: true, app: true, cloudflare: true, fullBuild: true },
   );
   assert.equal(result.reason, 'workflow_dispatch');
+});
+
+void test('manual recovery retains its validated deployment range while building every target', () => {
+  const result = determineProductionDeployChanges({
+    eventName: 'workflow_dispatch',
+    headSha: HEAD_SHA,
+    currentRunId: '30',
+    runsPayload: runsPayload([successfulRun(29)]),
+    git: {
+      ...validGit(),
+      changedFiles() {
+        assert.fail('a manual full build does not need a path diff');
+      },
+    },
+  });
+  assert.equal(result.deploymentBaseSha, BASE_SHA);
+  assert.equal(result.fullBuild, true);
+  assert.equal(result.reason, 'workflow_dispatch');
+  assert.deepEqual(
+    [result.web, result.backend, result.app, result.ota, result.cloudflare, result.staticAssets],
+    [true, true, true, true, true, true],
+  );
 });
 
 void test('missing or malformed Actions history falls back to a full build', () => {

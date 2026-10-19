@@ -171,6 +171,8 @@
     "mobile-ota-rollout.ts",
     "mobile-ota-stable.ts",
     "mobile-ota-critical.ts",
+    "lib/ota-critical-history.ts",
+    "lib/ota-critical-history.test.ts",
     "__tests__/mobile-ota-critical.test.ts",
     "mobile-ota-critical-promote.ts",
     "mobile-ota-critical-promote.test.ts",
