@@ -24,7 +24,8 @@ Nothing user-facing (refactor, CI, deps, tests)? Tick the checkbox below instead
 
 <!-- Leave unchecked for the normal canary soak. Check only for an urgent mobile fix:
 merging this PR releases the deployment's staged bytes to 100% stable immediately,
-after deployment checks, bypassing the daily canary soak and fleet-health gate. -->
+after deployment checks, bypassing the daily canary soak and fleet-health gate.
+Check before merging and leave the merged description unchanged; post-merge edits cannot authorize release. -->
 
 - [ ] Critical OTA release: roll out to 100% stable immediately
 

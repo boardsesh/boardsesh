@@ -1,11 +1,10 @@
 /// <reference types="node" />
 
 /** Critical intent is consumed by a trusted attempt, independently of other deployment jobs. */
-import { githubId, SOURCE_WORKFLOW } from './ota-stable-github.ts';
+import { githubId, MAX_GITHUB_JOB_PAGES, SOURCE_WORKFLOW } from './ota-stable-github.ts';
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const MAX_RUN_PAGES = 10;
-const MAX_JOB_PAGES = 10;
 const MAX_API_REQUESTS = 250;
 const PROMOTION_JOB = 'promote-mobile-ota';
 const CRITICAL_STEP = 'Release critical staged bytes to 100% stable';
@@ -94,13 +93,12 @@ export async function latestConsumedCriticalRelease(options: CriticalReleaseHist
       if (!isAncestor(publishedHead, headSha)) continue;
       if (deploymentBaseSha && isAncestor(publishedHead, deploymentBaseSha)) {
         // A successful whole deployment already bounds all intent at this SHA.
-        if (publishedHead === deploymentBaseSha && run.status === 'completed' && run.conclusion === 'success')
-          return consumedHead;
+        if (run.status === 'completed' && run.conclusion === 'success') return consumedHead;
         continue;
       }
       const jobs: Record<string, unknown>[] = [];
       let total: number | null = null;
-      for (let jobPage = 1; jobPage <= MAX_JOB_PAGES; jobPage += 1) {
+      for (let jobPage = 1; jobPage <= MAX_GITHUB_JOB_PAGES; jobPage += 1) {
         const response = object(
           await request(`repos/${repository}/actions/runs/${runId}/attempts/1/jobs?per_page=100&page=${jobPage}`),
           'job listing',
@@ -116,7 +114,7 @@ export async function latestConsumedCriticalRelease(options: CriticalReleaseHist
         total = Number(response.total_count);
         jobs.push(...response.jobs.map((job: unknown) => object(job, 'job')));
         if (jobs.length === total) break;
-        if (jobs.length > total || response.jobs.length !== 100 || jobPage === MAX_JOB_PAGES)
+        if (jobs.length > total || response.jobs.length !== 100 || jobPage === MAX_GITHUB_JOB_PAGES)
           throw new Error('Critical publication job pagination is incomplete.');
       }
       const seenJobs = new Set<number>();

@@ -123,6 +123,22 @@ describe('critical publication consumption boundary', () => {
     expect(test.github).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves consumed intent when an older successful ancestor bounds a full history page', async () => {
+    const history = [
+      run(199, 15),
+      run(198, 10, { conclusion: 'cancelled' }),
+      run(197, 9, { conclusion: 'success' }),
+      ...Array.from({ length: 97 }, (_, index) => run(196 - index, 8)),
+    ];
+    const test = fixture({
+      [workflowPath]: listing(history),
+      'runs/199/attempts/1/jobs?per_page=100&page=1': jobListing([promotion(199, 15)]),
+    });
+    test.options.currentRunId = '200';
+    await expect(latestConsumedCriticalRelease(test.options)).resolves.toBe(commit(15));
+    expect(test.github).toHaveBeenCalledTimes(2);
+  });
+
   it('bounds initial history at a proven successful noncritical deployment', async () => {
     const test = fixture({
       [workflowPath]: listing([run(25, 15, { conclusion: 'success' }), run(24, 14)]),

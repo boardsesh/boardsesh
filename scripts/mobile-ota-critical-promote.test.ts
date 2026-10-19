@@ -134,6 +134,26 @@ function fixture() {
 }
 
 describe('critical frozen publication', () => {
+  it('reports a concurrent evidence owner without overwriting its file or writing production', async () => {
+    const test = fixture();
+    test.live.length = 0;
+    const originalFetch = test.options.fetchImpl!;
+    const evidencePath = join(test.stage, 'critical-supersession.json');
+    let competingOwnerCreated = false;
+    test.options.fetchImpl = async (input, init) => {
+      if (!competingOwnerCreated) {
+        writeFileSync(evidencePath, 'competing owner evidence', { flag: 'wx' });
+        competingOwnerCreated = true;
+      }
+      return originalFetch(input, init);
+    };
+    await expect(promoteCriticalStagedOta(test.options)).rejects.toThrow(
+      'Critical publication evidence already exists',
+    );
+    expect(readFileSync(evidencePath, 'utf8')).toBe('competing owner evidence');
+    expect(test.revert).not.toHaveBeenCalled();
+    expect(test.promote).not.toHaveBeenCalled();
+  });
   it('uses the untouched original receipt when no rollout is live', async () => {
     const test = fixture();
     test.live.length = 0;

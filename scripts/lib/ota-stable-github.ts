@@ -3,6 +3,8 @@
 /** Trusted artifacts only: main's deployment and the stable controller's own checkpoints. */
 export const SOURCE_WORKFLOW = '.github/workflows/production-deploy.yml';
 export const STABLE_WORKFLOW = '.github/workflows/mobile-ota-stable-release.yml';
+/** Hard ceiling for complete job listings; each caller also bounds its total API work. */
+export const MAX_GITHUB_JOB_PAGES = 100;
 /** Keep in sync with the workflow; unknown jobs cannot prove production ownership. */
 export const STABLE_CONTROLLER_JOBS = ['resolve', 'prepare', 'qualify', 'tick', 'smokes', 'boot'];
 
@@ -181,7 +183,7 @@ export function createStableGithubClient(options: {
       return false;
     const jobs: unknown[] = [];
     let total: number | null = null;
-    for (let page = 1; page <= 100; page++) {
+    for (let page = 1; page <= MAX_GITHUB_JOB_PAGES; page++) {
       const response = object(
         await api(`/actions/runs/${run.runId}/attempts/1/jobs?per_page=100&page=${page}`),
         'Attempt jobs',
@@ -197,7 +199,8 @@ export function createStableGithubClient(options: {
       jobs.push(...response.jobs);
       if (jobs.length > total) throw new Error('GitHub attempt jobs exceed the reported total.');
       if (jobs.length === total) break;
-      if (response.jobs.length !== 100 || page === 100) throw new Error('GitHub attempt jobs are incomplete.');
+      if (response.jobs.length !== 100 || page === MAX_GITHUB_JOB_PAGES)
+        throw new Error('GitHub attempt jobs are incomplete.');
     }
     if (jobs.length === 0) return run.conclusion === 'startup_failure';
     const controllers: Record<string, string> = {
@@ -317,7 +320,7 @@ export function createStableGithubClient(options: {
           if (run.command === 'prepare') continue;
           const jobs: unknown[] = [];
           let total: number | null = null;
-          for (let page = 1; page <= 100; page++) {
+          for (let page = 1; page <= MAX_GITHUB_JOB_PAGES; page++) {
             const response = object(
               await api(`/actions/runs/${run.runId}/jobs?per_page=100&page=${page}`),
               'Locked writer jobs',
@@ -332,7 +335,7 @@ export function createStableGithubClient(options: {
             total = Number(response.total_count);
             jobs.push(...response.jobs);
             if (jobs.length === total) break;
-            if (jobs.length > total || response.jobs.length !== 100 || page === 100)
+            if (jobs.length > total || response.jobs.length !== 100 || page === MAX_GITHUB_JOB_PAGES)
               throw new Error('Locked writer job pagination is incomplete.');
           }
           const jobIds = new Set<number>();

@@ -196,7 +196,14 @@ export async function promoteCriticalStagedOta(options: CriticalPromotionOptions
     writeFileSync(pendingPath, `${JSON.stringify(evidence, null, 2)}\n`);
     renameSync(pendingPath, evidencePath);
   };
-  writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' });
+  try {
+    writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' });
+  } catch (error) {
+    // The early existence check is advisory; exclusive creation owns this run.
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+      throw new Error('Critical publication evidence already exists. Inspect both heads before operator recovery.');
+    throw error;
+  }
   try {
     for (const plan of planned) {
       await assertBaselines();
