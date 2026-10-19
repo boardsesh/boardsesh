@@ -568,8 +568,15 @@ days ago, today or a malformed date is refused (`BAD_USER_INPUT`).
 `createConsentSyncCoordinator` in `@boardsesh/consent` owns the merge and retry
 rules for both clients. The platform injects transport and storage. Every server
 response belongs to an account epoch; a response from a previous sign-in cannot
-change the active account or device. A new decision changes the device choice
-immediately, then is persisted as a pending write under that account before the
+change the active account or device. Before an account request, the app requires
+a present authentication credential and a matching platform-aware local identity: native
+reads its JWT subject; Expo browser reads the account confirmed by the paired
+session and token-bridge responses, because its five-segment JWE is encrypted.
+The browser's remembered identity alone is insufficient after token clearing.
+Account epoch and credential generation checks surround the asynchronous reads,
+and an account/session change aborts in-flight work and rejects late responses.
+This is a local request fence; the backend still authenticates every request.
+A new decision changes the device choice immediately, then is persisted as a pending write under that account before the
 network request. Offline withdrawals survive restart. Pending decisions are
 pushed before old account answers are merged, so changing No thanks to Allow
 is not immediately undone by the old account denial.
@@ -748,3 +755,136 @@ original timestamp. A withdrawal, kill switch or account replacement discards
 it; later Allow never replays a conversion taken without consent.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.
+
+## Verification ledger: 19 October 2026
+
+This is dated rollout evidence for [#2644](https://github.com/boardsesh/boardsesh/issues/2644),
+not a declaration that the remaining release checks passed. The Expo browser
+ownership regression uses the real session/token-bridge identity pair and a
+five-segment credential; the original provider fails six of its seven scenarios.
+The native JWT path is covered separately. A merged source fix alone does not
+establish delivery to the browser or a compatible store binary.
+
+### Production observations
+
+Read-only [PostHog project 412845](https://us.posthog.com/project/412845) inspection
+on 19 October found one aggregate event and one UUID per counted day, all with
+`distinct_id=system:active-users`, `environment=production` and
+`countSource=user_activity_days`:
+
+| Counted day | Ingestion time (UTC) | DAU | WAU | MAU |
+| --- | --- | ---: | ---: | ---: |
+| 2026-10-15 | 2026-10-16 22:50:24.770 | 531 | 1818 | 1818 |
+| 2026-10-16 | 2026-10-17 00:20:10.820 | 461 | 1963 | 1972 |
+| 2026-10-17 | 2026-10-18 00:20:10.478 | 416 | 1973 | 2106 |
+| 2026-10-18 | 2026-10-19 00:20:11.128 | 444 | 1972 | 2240 |
+
+Railway readback at 04:22–04:29 UTC confirmed all three scheduled runs succeeded,
+with zero failures. The latest ran 19 October 00:20:00.514–00:20:00.719 UTC.
+Scheduler health was HTTP 200, `ok`, not degraded, with one replica and its existing
+pinned image. Both backend replicas in deployment
+`03ac41cb-bf58-4624-bcdf-bbcd3288647a` had nonempty cron credentials matching the
+scheduler; no credential repair was needed.
+
+The original fifteen-job cohort was reconstructed from retained timestamps and
+the initial fifteen-minute delay, because the earlier audit did not record IDs.
+Fourteen discoveries and their matching deletion-request stages completed; one
+exhausted its budget. A second discovery failed later:
+
+| Failed discovery job | Failure time (UTC) | State |
+| --- | --- | --- |
+| `fc27456a-a996-430b-ae1e-60466d6d5616` | 17 October 15:10:59 | HTTP 504; 12/12 retries |
+| `805d7811-6cd7-4bcf-b617-41bbe38bee5f` | 18 October 13:02:56 | HTTP 504; 12/12 retries |
+
+Both are first-pass withdrawal requests with no saved anonymous IDs and no
+delete stage. Their exact read-only discovery calls now succeed, in 2,605 ms
+and 2,278 ms respectively. A reviewed two-job replay is prepared with expiry,
+owner, state and scope guards; explicit approval is still required. No replay
+has run. Preserve their retained evidence before the seven-day cleanup window.
+The queue also has 272 created late-pass discoveries, the earliest due
+19 October 17:24:45.895 UTC.
+
+The [person deletion status API](https://posthog.com/docs/api/persons) returned
+890 project-wide requests across nine pages: 595 completed and 295 pending.
+All 256 requests created since 16 October were pending, without
+`delete_verified_at`. These person-UUID records do not map directly to pg-boss
+job IDs. Completed delete jobs prove acceptance, not downstream event/recording
+erasure; that evidence remains open. PostHog's self-service event-deletion
+request table is not a substitute for the bulk-person worker's job linkage.
+
+The retention preview found 4,580 activity rows, oldest 9 October, and **zero**
+matching `day < 2026-08-20` (the current sixty-day cutoff). The 07:30 UTC
+`purge-user-activity` schedule is disabled and has no recorded run in the
+current scheduler readback. The pending
+approval removes only that job from `SCHEDULER_DISABLED_JOBS`, preserving
+`refresh-gym-activity-stats,purge-spray-wall-photos,export-spray-training` and
+the scheduler image pin. Approval covers ongoing retention, not only today's
+empty initial run.
+
+The [pipeline inventory](https://us.posthog.com/project/412845/pipeline) contained
+one enabled GeoIP transformation and no legacy-drop transformation. This does
+not inspect the separate pre-ingestion filter configuration. No production
+filter or setting was changed during this audit.
+
+### Store and native evidence
+
+The fresh [Android production audit](https://github.com/boardsesh/boardsesh/actions/runs/39198318753)
+at **2026-10-19 04:13:39.808 UTC** found exactly one release containing
+`2001310`, now `PUBLISHED`; the older ambiguous draft/in-review snapshot has
+been superseded. `2001365` was a production draft. This GET-only endpoint does
+not prove full rollout, managed-publishing state or tester delivery. The build
+tag `build-android-v2.6.0-2001310-8733a10cad03` independently points to
+`a988d35c03f29b46aba4bd090f7ced4d8af5f055`, the same source as the approved iOS
+build 18; its history contains the consent/erasure implementation. Record actual
+compatible store availability before starting Android's thirty-day grace
+period; its cutoff is still unestablished.
+
+Apple's public Australian lookup still returned **2.6.0**, available since
+**2026-10-15 00:26:59 UTC**. Keep the previously verified iOS grace deadline:
+**2026-11-14 00:26:59 UTC**. The fresh [exact-build iOS audit](https://github.com/boardsesh/boardsesh/actions/runs/39198339697)
+failed with `Apple review submission app or platform mismatch` and produced no
+readback artifact. Public availability does not replace native-device testing.
+
+[Native Sentry RQ](https://boardsesh.sentry.io/issues/BOARDSESH-RQ) remains
+unresolved: 49 Android events across five builds, latest 19 October 00:29:03 UTC.
+The sampled error combines account supersession and credential-owner mismatch,
+so it cannot distinguish their causes. The confirmed browser JWE defect does
+not establish a native cause or resolution. Reproduce on Android before making
+another source change or claiming this cohort is fixed.
+
+### Remaining closure evidence and approval packets
+
+1. **Production jobs:** obtain explicit approval for the two guarded replays,
+   then verify discovery/delete outcomes, late passes and downstream erasure.
+   Preserve existing cron credential references and image pins; current
+   authentication and scheduled snapshot health are verified above.
+2. **Activity retention:** obtain approval for the preview above; re-read the
+   configuration and row count before applying. Enable only
+   `purge-user-activity`, preserving unrelated disabled jobs and the image pin.
+   Verify the approved initial run and the next scheduled 07:30 UTC result.
+3. **Controlled QA:** existing testers use disposable accounts approved for
+   analytics erasure, with the release-device matrix in #2644. Record time,
+   platform, binary/build, runtime/source and sanitized evidence for account
+   read/write, withdrawal/relaunch across devices, regional/GPC defaults,
+   attribution, replay generations, iOS Foundation failure-closed behavior,
+   Sentry request/device redaction and account-free Observe. Include deployed
+   Expo browser auth/replay/US capture and cached public HTML. Observe the fixed
+   browser source cohort for 24 hours after deployment; do not substitute
+   anonymous checks or a preview OTA for a compatible native binary.
+4. **Sentry settings:** obtain organization and project IP-storage readback.
+   Existing event samples with no indexed identity do not establish these
+   settings. Present any required settings diff for approval before changing it.
+5. **Legacy cutoff:** preview exact confirmed platform/app-version/build/native
+   lineage cohorts, including iPadOS, against old/current traffic. iOS build
+   numbers reset across versions: a one-day preview includes build 13 under
+   both 2.4.0 and 2.6.0, and build 1 under 2.5.0. Never use a numeric build cutoff
+   alone or treat an OTA runtime as native-delivery proof. Exclude unknown
+   cohorts from automatic dropping. Preserve current explicit/regional consent,
+   flags, OTA health and permitted operational events. Verify product-event
+   filtering and replay-upload blocking independently: replay has a
+   [separate ingestion path](https://posthog.com/docs/how-posthog-works/recordings-ingestion),
+   so an event-rule preview does not prove recording rejection. Obtain explicit
+   approval only after the relevant platform deadline and a reviewed preview.
+
+Keep #2644 open until every remaining gate has dated evidence. Historical
+unmatched-person cleanup remains separate.

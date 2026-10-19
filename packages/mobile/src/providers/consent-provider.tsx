@@ -17,7 +17,7 @@ import {
 } from '../lib/consent-storage';
 import '../lib/consent-auth-invalidation';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
-import { userIdFromJwt } from '../lib/jwt-user-id';
+import { readLocalUserId } from '../lib/local-user-id';
 import { initializePosthogClient, applyPosthogConsent } from '../lib/posthog-client';
 import { getHttpClient } from '../lib/graphql/client';
 import {
@@ -63,7 +63,11 @@ async function withConsentAccount<T>(accountId: string, request: (signal: AbortS
     isAuthCredentialGenerationCurrent(credentialGeneration);
   if (!current()) throw new Error('Consent account was superseded');
   const token = await getAuthToken();
-  if (!current() || userIdFromJwt(token) !== accountId) throw new Error('Consent credential owner changed');
+  if (!current() || !token) throw new Error('Consent credential owner changed');
+  // Native JWT claims and the browser's session-confirmed JWE identity share
+  // this local request fence. The backend still authenticates the credential.
+  const credentialOwner = await readLocalUserId();
+  if (!current() || credentialOwner !== accountId) throw new Error('Consent credential owner changed');
   const controller = new AbortController();
   const unsubscribe = subscribeConsent(() => {
     if (!current()) controller.abort();
