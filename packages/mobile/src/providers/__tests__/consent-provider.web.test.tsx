@@ -56,8 +56,8 @@ async function loadBrowserConsent() {
   vi.doMock('../../lib/local-user-id', async () => {
     const browserIdentity = await import('../../lib/local-user-id.web');
     return {
-      readLocalUserId: async () => {
-        const userId = await browserIdentity.readLocalUserId();
+      readLocalUserId: async (token?: string) => {
+        const userId = await browserIdentity.readLocalUserId(token);
         fixtures.identityReadStarted();
         await fixtures.identityReadGate;
         return userId;
