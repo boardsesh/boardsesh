@@ -51,6 +51,7 @@ import sharp from 'sharp';
 import { formatBoardDisplayName } from '../packages/shared/board-config/src/board-name';
 import { resolveMediaBinary } from './lib/help-clips';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
+import { isIosBundledLine, metroDevClientUrl } from './lib/metro-dev-server';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   SHOWCASE_STAGE_DIR,
@@ -102,6 +103,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   crewPeerRowFallbackPoint,
@@ -413,6 +415,25 @@ function writeNavigationFlow(
   return file;
 }
 
+/** Confirm the dev-client link without launching again or navigating away. */
+function writeLauncherConfirmFlow(): string {
+  const file = resolve(FLOW_SCRATCH_DIR, 'confirm-launcher.yaml');
+  mkdirSync(FLOW_SCRATCH_DIR, { recursive: true });
+  writeFileSync(
+    file,
+    [
+      `appId: ${APP_ID}`,
+      '---',
+      '- tapOn:',
+      '    text: "Open"',
+      '    optional: true',
+      '- waitForAnimationToEnd',
+      '',
+    ].join('\n'),
+  );
+  return file;
+}
+
 /**
  * iOS asks "Open in 'Boardsesh'?" on the first custom-scheme links after an
  * install and blocks until tapped. Dismiss it on throwaway links first (the
@@ -644,10 +665,10 @@ async function preparePhone(
 /** Cold-start the app (fresh JS state, so one-shot deep-link params fire again) and wait for home. */
 async function relaunch(phone: Phone): Promise<LogWindow> {
   if (phone.platform === 'android') return relaunchAndroid(phone);
+  const launchStarted = Date.now();
   const window = new LogWindow(phone.metroLog);
-  // A brand-new simulator's first launch can sit on the dev-client launcher
-  // ("Searching for development servers") instead of loading the baked URL;
-  // the next launch loads it. So try a few times inside the overall budget.
+  // Fresh installs can stay on the Expo launcher despite a baked Metro URL.
+  // Open our port explicitly when this launch never requests a bundle.
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     simctl(['terminate', phone.device.udid, APP_ID]);
@@ -657,23 +678,38 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
     window.pull();
     const readyBaseline = phone.signal.homeReadyCount(phone.role);
     const logBaseline = countHomeReady(window.text);
+    const bundleOffset = window.text.length;
     // SIMCTL_CHILD_TZ pins the app to UTC, like every screenshot capture.
     const launch = simctl(['launch', phone.device.udid, APP_ID], { ...process.env, SIMCTL_CHILD_TZ: 'UTC' });
     if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
-    const deadline = Date.now() + HOME_READY_TIMEOUT_MS / attempts;
-    while (Date.now() < deadline) {
-      window.pull();
-      if (phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline) {
-        return window;
-      }
-      await sleep(1000);
-    }
+    const reachedHome = await waitForShowcaseHome({
+      timeoutMs: HOME_READY_TIMEOUT_MS / attempts,
+      hasReachedHome: () => {
+        window.pull();
+        return phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline;
+      },
+      hasLoadedBundle: () => window.text.slice(bundleOffset).split('\n').some(isIosBundledLine),
+      recoverLauncher: async () => {
+        console.log(`${LOG} ${phone.role}: no bundle requested; opening dev-client URL on ${phone.metroPort}.`);
+        const opened = simctl(['openurl', phone.device.udid, metroDevClientUrl(phone.metroPort, APP_SCHEME)]);
+        if (opened.status !== 0)
+          throw new Error(`Opening dev-client on ${phone.device.name} failed: ${opened.stderr.trim()}`);
+        const confirmed = await runMaestro({
+          udid: phone.device.udid,
+          flowFile: writeLauncherConfirmFlow(),
+          label: `${phone.role}-confirm-launcher`,
+          signalUrl: phone.signal.url,
+        });
+        if (confirmed !== 0) console.warn(`${LOG} ${phone.role}: launcher confirmation exited ${confirmed}.`);
+      },
+    });
+    if (reachedHome) return window;
     console.warn(`${LOG} ${phone.role}: app not home after launch ${attempt}/${attempts}.`);
   }
   const screenshot = resolve(LOG_DIR, `${phone.role}-not-home.png`);
   deviceScreenshot(phone, screenshot);
   throw new Error(
-    `${phone.role} never reached home within ${HOME_READY_TIMEOUT_MS / 1000}s (screen: ${relative(ROOT_DIR, screenshot)}). ` +
+    `${phone.role} never reached home after ${Math.round((Date.now() - launchStarted) / 1000)}s (screen: ${relative(ROOT_DIR, screenshot)}). ` +
       `Last Metro lines:\n${window.text.split('\n').slice(-25).join('\n')}`,
   );
 }

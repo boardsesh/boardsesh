@@ -546,7 +546,7 @@ function resolveShotsAppPath(options: ShotsOptions): string {
 
 /** The dev-client deep link that points the app at our Metro (the launcher-list escape). */
 function devClientOpenUrl(port: number): string {
-  return `${APP_SCHEME}://expo-development-client/?url=${encodeURIComponent(`http://localhost:${port}`)}`;
+  return metroDevClientUrl(port, APP_SCHEME);
 }
 
 /** Tap "Open" on the scheme confirmation if one is up. Best-effort. */

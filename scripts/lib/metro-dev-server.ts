@@ -55,8 +55,8 @@ function runCapture(command: string, args: string[]): { status: number; stdout: 
 }
 
 /** expo-development-client deep link that loads the JS bundle from our Metro. */
-export function metroDevClientUrl(metroPort = METRO_PORT): string {
-  return `${DEV_CLIENT_URL_SCHEME}://expo-development-client/?url=${encodeURIComponent(`http://localhost:${metroPort}`)}`;
+export function metroDevClientUrl(metroPort = METRO_PORT, scheme = DEV_CLIENT_URL_SCHEME): string {
+  return `${scheme}://expo-development-client/?url=${encodeURIComponent(`http://localhost:${metroPort}`)}`;
 }
 
 /** True if anything is already listening on the port (a foreign Metro). */

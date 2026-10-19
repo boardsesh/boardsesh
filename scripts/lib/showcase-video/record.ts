@@ -41,6 +41,36 @@ export type { ShowcaseBackend } from './takes';
  * signal server here also accepts consent-independent home readiness pings.
  */
 
+/** Keep HTTP readiness callbacks running while escaping an idle iOS dev launcher. */
+export async function waitForShowcaseHome(
+  options: Readonly<{
+    hasReachedHome: () => boolean;
+    hasLoadedBundle: () => boolean;
+    recoverLauncher: () => Promise<void>;
+    timeoutMs: number;
+    now?: () => number;
+    sleep?: (milliseconds: number) => Promise<void>;
+  }>,
+): Promise<boolean> {
+  const now = options.now ?? Date.now;
+  const sleep =
+    options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const started = now();
+  let recovered = false;
+  while (true) {
+    // Maestro startup can outlast the deadline. Honor home delivered during it.
+    if (options.hasReachedHome()) return true;
+    const elapsed = now() - started;
+    if (elapsed >= options.timeoutMs) return false;
+    if (!recovered && elapsed >= 20_000 && !options.hasLoadedBundle()) {
+      recovered = true;
+      await options.recoverLauncher();
+      continue;
+    }
+    await sleep(Math.min(1000, options.timeoutMs - elapsed));
+  }
+}
+
 export type ShowcaseDevice = Readonly<{
   name: string;
   typeId: string;

@@ -27,6 +27,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   crewPeerRowPattern,
@@ -68,6 +69,68 @@ import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 
 const anchorLine = (name: string, x: number): string =>
   ` LOG  [showcase-anchor] {"name":"${name}","x":${x},"y":118,"width":132,"height":32}`;
+
+describe('iOS recorder launcher recovery', () => {
+  function launchState() {
+    let elapsed = 0;
+    const recoverLauncher = vi.fn(async () => {});
+    return {
+      recoverLauncher,
+      now: () => elapsed,
+      sleep: async (milliseconds: number) => {
+        elapsed += milliseconds;
+      },
+      advance: (milliseconds: number) => {
+        elapsed += milliseconds;
+      },
+      timeoutMs: 60_000,
+      hasReachedHome: () => false,
+      hasLoadedBundle: () => false,
+    };
+  }
+
+  it('accepts home immediately without reopening the client', async () => {
+    const state = launchState();
+    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => true })).toBe(true);
+    expect(state.recoverLauncher).not.toHaveBeenCalled();
+  });
+
+  it('recovers once after 20 seconds without a fresh bundle', async () => {
+    const state = launchState();
+    let home = false;
+    state.recoverLauncher.mockImplementation(async () => {
+      expect(state.now()).toBe(20_000);
+      home = true;
+    });
+    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => home })).toBe(true);
+    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps waiting for a launched bundle without reloading it', async () => {
+    const state = launchState();
+    expect(
+      await waitForShowcaseHome({ ...state, hasLoadedBundle: () => true, hasReachedHome: () => state.now() >= 40_000 }),
+    ).toBe(true);
+    expect(state.recoverLauncher).not.toHaveBeenCalled();
+  });
+
+  it('honors home arriving during slow Maestro startup beyond the deadline', async () => {
+    const state = launchState();
+    let home = false;
+    state.recoverLauncher.mockImplementation(async () => {
+      state.advance(65_000);
+      home = true;
+    });
+    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => home })).toBe(true);
+  });
+
+  it('times out after one unsuccessful recovery', async () => {
+    const state = launchState();
+    expect(await waitForShowcaseHome(state)).toBe(false);
+    expect(state.now()).toBe(60_000);
+    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('parallel recording simulator names', () => {
   it('uses the existing device pair by default', () => {

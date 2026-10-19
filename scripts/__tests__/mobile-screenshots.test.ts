@@ -934,6 +934,12 @@ describe('writeCapturedScreenshots', () => {
 });
 
 describe('metroDevClientUrl', () => {
+  it('allows the registered iOS scheme while retaining the requested Metro port', () => {
+    expect(metroDevClientUrl(8092, 'com.boardsesh.app')).toBe(
+      'com.boardsesh.app://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8092',
+    );
+  });
+
   it('uses the Expo app scheme that iOS dev launcher accepts', () => {
     expect(metroDevClientUrl(8091)).toBe('exp+boardsesh://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8091');
   });
