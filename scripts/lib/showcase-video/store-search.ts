@@ -107,6 +107,7 @@ export function storeSearchRecordingProblems(
     captureSurface?: string;
     nativeFixtureSourcePngSha256?: string;
     boardKind?: string;
+    sharedNativeSource?: Readonly<{ sha256: string; sourceLocale: string; boardFamily: string }>;
   }>,
   takeId: ShowcaseTakeId,
   locale: StoreSearchLocale,
@@ -115,7 +116,17 @@ export function storeSearchRecordingProblems(
   const problems: string[] = [];
   if (metadata.validated !== true) problems.push('recording has not passed native validation');
   if (metadata.takeId !== takeId) problems.push(`recording take ${metadata.takeId ?? 'missing'}, expected ${takeId}`);
-  if (metadata.locale !== locale) problems.push(`recording locale ${metadata.locale ?? 'missing'}, expected ${locale}`);
+  const sharedNativeSource = takeId === 'lock-screen' ? metadata.sharedNativeSource : undefined;
+  const sharedFamily = variant === 'default' ? 'kilter' : variant;
+  const approvedSharedIdentity =
+    sharedNativeSource !== undefined &&
+    /^[a-f0-9]{64}$/.test(sharedNativeSource.sha256) &&
+    sharedNativeSource.boardFamily === sharedFamily &&
+    sharedNativeSource.sourceLocale === metadata.locale &&
+    STORE_SEARCH_LOCALES.includes(sharedNativeSource.sourceLocale as StoreSearchLocale);
+  if (metadata.sharedNativeSource && !approvedSharedIdentity) problems.push('Invalid shared native source identity');
+  if (metadata.locale !== locale && !approvedSharedIdentity)
+    problems.push(`recording locale ${metadata.locale ?? 'missing'}, expected ${locale}`);
   const sourceKind = variant === 'default' && takeId === 'lock-screen' ? 'kilter' : variant;
   if (metadata.kind !== sourceKind)
     problems.push(`recording variant ${metadata.kind ?? 'missing'}, expected ${sourceKind}`);

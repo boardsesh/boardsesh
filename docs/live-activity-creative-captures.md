@@ -59,10 +59,68 @@ capture for every output locale. Keep the source app/widget language recorded
 honestly and separate from the creative's output language. Never relabel a source
 capture as another app locale.
 
-This is the policy for the next recording run. The current run finishes its
-already planned separate locale takes. Before the next run, update the fixture
-selection and provenance contract to support shared source captures explicitly;
-the current renderer still requires a matching fixture for each app locale.
+Search-video CI now implements this policy explicitly. The manifest's `footage`
+map selects one retained source for Kilter (also used by the default creative)
+and one for Tension. It records the actual source app locale, the reviewed
+full-screen still's source hash, and the SHA-256 of a retained ZIP in
+`sources/live-activity/<sha256>.zip` in `boardsesh-store-creatives`.
+The map stays empty until a reviewer imports genuine physical footage; PNG
+fixtures alone cannot stand in for a video. Missing retained footage stops CI.
+
+## Retain and reuse physical video
+
+Import one reviewed contiguous MJPEG range per target. The original numbered
+JPEG files and their observed received timestamps must be available. The import
+preserves their bytes, including native transition blur, with the original marks
+in a deterministic ZIP. It validates dimensions and the reviewed full-phone
+fixture, uploads the ZIP, then writes the source hash into `manifest.json`.
+The retained source has no lifecycle expiry. Original timestamps and marks use
+the same recording clock, before editorial trimming.
+
+```bash
+vp exec tsx scripts/import-live-activity-footage.ts import \
+  --input /private/tmp/kilter-mjpeg \
+  --provenance /private/tmp/kilter-reviewed-footage.json
+```
+
+The provenance JSON has `version: 1`, `target: "kilter"` (or `"tension"`),
+`firstFrame` and `lastFrame` (inclusive numbered `.jpg` filenames), and `frames`:
+an ordered array of `{ "file": "00001.jpg", "receivedSeconds": 12.345 }`.
+Include every interior frame; the importer rejects numbering gaps, duplicate
+timestamps and ranges shorter than six seconds. `marks` is the original
+`ShowcaseMarksFile` with its actual `locale`, board family, native presentation,
+reviewed fixture source hash, and `activity-ready`, `next-tapped`, `next-changed`
+and `next-settled` timestamps. `editorialStartSeconds`, when supplied, uses the
+same original timeline. `review` contains the actual `reviewedAt`, `reviewedBy`,
+`contiguousRangeVerified: true` and `nativePixelsUnmodified: true`.
+Keep the reviewer's identity honest; schema checks do not prove visual review.
+
+The importer uses `STORE_CREATIVES_R2_AWS_ENDPOINT_URL`,
+`STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID` and
+`STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY`. Do not commit these values.
+
+Before rendering each localized Kilter/default/Tension cut, CI hydrates only
+that cut's empty lock-screen take. It downloads the retained ZIP over HTTPS,
+verifies SHA-256 before extraction, validates original JPEG hashes, and copies
+the nearest received timestamp to each 30 fps output frame without re-encoding.
+It fails if a destination ending already exists. An explicit `--work-dir` uses
+the same isolated directory as `video:render --work-dir`.
+
+```bash
+vp exec tsx scripts/import-live-activity-footage.ts hydrate \
+  --target kilter --kind kilter --locale fr
+vp run video:render -- --target store-search --variant kilter --locale fr
+```
+
+Use `--kind default --target kilter` for the default creative or
+`--kind tension --target tension` for Tension. `storage.baseUrl` in
+`creative-assets.json` supplies the public domain; `--base-url` can override it
+for an isolated test. Each take keeps the actual source locale and adds
+`sharedNativeSource` to identify the retained archive. The renderer checks it
+against the manifest and loads the still in the **source** locale. Only this
+explicit physical ending can be shared; ordinary app takes still require their
+exact variant and output locale. The final search provenance retains this
+shared source identity separately from its output language.
 
 ## Regenerate locally
 

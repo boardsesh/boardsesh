@@ -211,6 +211,8 @@ export type ShowcaseMarksFile = Readonly<{
   captureSurface?: 'lock-screen' | 'notification-center';
   /** Binds physical video to the reviewed, unchanged full-screen fixture source. */
   nativeFixtureSourcePngSha256?: string;
+  /** Explicit reviewed physical source reused across creative output languages. */
+  sharedNativeSource?: Readonly<{ sha256: string; sourceLocale: ShowcaseLocale; boardFamily: 'kilter' | 'tension' }>;
   /** Editorial selection in the original capture's timeline; it is not a native event. */
   editorialStartSeconds?: number;
   marks: Readonly<Record<string, number>>;

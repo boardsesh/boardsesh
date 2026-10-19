@@ -9,7 +9,10 @@ import {
   storeSearchTakeSegments,
   type StoreSearchCopy,
 } from '../../../scripts/lib/showcase-video/store-search';
-import { loadFullScreenLiveActivityFixture } from '../../../scripts/lib/screenshot-live-activity';
+import {
+  loadFullScreenLiveActivityFixture,
+  readLiveActivityManifest,
+} from '../../../scripts/lib/screenshot-live-activity';
 /**
  * Renders the homepage showcase video from the stage in marketing/showcase-video/.
  *
@@ -551,7 +554,7 @@ async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSourc
   return { source, copy, phone, takes, anchors };
 }
 
-/** Only native takes from this exact variant and locale may feed an Apple creative. */
+/** Native takes match the variant/locale; reviewed physical endings declare their shared source. */
 async function loadSearchFootage(source: FootageSource, target: ShowcaseTarget): Promise<Footage> {
   const search = target.storeSearch;
   if (!search) throw new Error('Missing store-search configuration');
@@ -566,6 +569,17 @@ async function loadSearchFootage(source: FootageSource, target: ShowcaseTarget):
     const marks = JSON.parse(readFileSync(marksFilePath(takeId, source.dirs), 'utf8')) as ShowcaseMarksFile;
     const problems = storeSearchRecordingProblems(marks, takeId, search.locale, search.variant);
     if (problems.length) throw new Error(`${takeId}: ${problems.join('; ')}. Re-record this locale and board.`);
+    if (marks.sharedNativeSource) {
+      const shared = marks.sharedNativeSource;
+      const retained = readLiveActivityManifest().footage?.[shared.boardFamily];
+      if (
+        !retained ||
+        retained.sha256 !== shared.sha256 ||
+        retained.sourceLocale !== shared.sourceLocale ||
+        retained.nativeFixtureSourcePngSha256 !== marks.nativeFixtureSourcePngSha256
+      )
+        throw new Error(`${takeId}: shared physical source does not match the reviewed retained manifest`);
+    }
     const { width, height } = await sharp(resolve(directory, '00001.jpg')).metadata();
     if (!width || !height) throw new Error(`${takeId}: unreadable first native frame`);
     if (
@@ -578,7 +592,7 @@ async function loadSearchFootage(source: FootageSource, target: ShowcaseTarget):
     const nativeFixture =
       ['native-lock-screen', 'native-notification-center'].includes(marks.presentation ?? '') &&
       (marks.boardKind === 'kilter' || marks.boardKind === 'tension' || marks.boardKind === 'moonboard')
-        ? loadFullScreenLiveActivityFixture(marks.boardKind, search.locale)
+        ? loadFullScreenLiveActivityFixture(marks.boardKind, marks.sharedNativeSource?.sourceLocale ?? search.locale)
         : undefined;
     if (nativeFixture) {
       const fixtureProblems = storeSearchNativeLockScreenProblems(marks, { width, height }, nativeFixture.provenance);
@@ -685,6 +699,7 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
         ...(sourceMarks.nativeFixtureSourcePngSha256
           ? { nativeFixtureSourcePngSha256: sourceMarks.nativeFixtureSourcePngSha256 }
           : {}),
+        ...(sourceMarks.sharedNativeSource ? { sharedNativeSource: sourceMarks.sharedNativeSource } : {}),
       };
     });
     const boards = planBoards(
@@ -1275,6 +1290,9 @@ async function encodeMaster(
       ? buildStoreSearchArgs(mezzanine, deliverable.video)
       : buildMasterArgs(mezzanine, deliverable.video, target.audio),
   );
+  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(deliverable.still);
   if (target.storeSearch) {
     const media = await probeStreams(deliverable.video);
     const problems = creativeVideoProblems(media);
@@ -1293,6 +1311,10 @@ async function encodeMaster(
             file: 'search-results.mp4',
             sha256: createHash('sha256').update(readFileSync(deliverable.video)).digest('hex'),
           },
+          poster: {
+            file: 'search-results-poster.jpg',
+            sha256: createHash('sha256').update(readFileSync(deliverable.still)).digest('hex'),
+          },
         },
         null,
         2,
@@ -1302,9 +1324,6 @@ async function encodeMaster(
   log(
     `${relative(REPO_ROOT, deliverable.video)}: ${kb(statSync(deliverable.video).size)} (${await probe(deliverable.video)})`,
   );
-  await sharp(await framePng(mezzanine, SHOWCASE_POSTER_FRAME))
-    .jpeg({ quality: 92, mozjpeg: true })
-    .toFile(deliverable.still);
   if (deliverable.shareCopy) copyFileSync(SHOWCASE_SHARE_COPY, deliverable.shareCopy);
 }
 

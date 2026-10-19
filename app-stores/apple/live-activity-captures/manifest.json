@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "footage": {},
   "fixtures": {
     "kilter/en-US": {
       "file": "kilter-en-US-notification-center.png",

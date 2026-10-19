@@ -22,6 +22,7 @@ import {
   type ShowcaseAnchorSample,
   type ShowcaseAnchorsFile,
   type ShowcaseCalloutName,
+  type ShowcaseMarksFile,
   type ShowcasePlatform,
   type ShowcaseTakeId,
   type ShowcaseWorkDirs,
@@ -1628,6 +1629,7 @@ export type ShowcaseStageData = Readonly<{
       framesSha256: string;
       marksSha256: string;
       nativeFixtureSourcePngSha256?: string;
+      sharedNativeSource?: ShowcaseMarksFile['sharedNativeSource'];
       presentation?: 'live-activity-card' | 'native-lock-screen' | 'native-notification-center';
       captureSurface?: 'lock-screen' | 'notification-center';
     }>[];

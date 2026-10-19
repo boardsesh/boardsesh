@@ -87,6 +87,19 @@ export interface LiveActivityFixture {
 export interface LiveActivityFixtureManifest {
   version: 1;
   fixtures: Record<string, LiveActivityFixture>;
+  /** Reviewed physical video sources, shared explicitly across output locales. */
+  footage?: Partial<Record<'kilter' | 'tension', LiveActivityFootageSource>>;
+}
+export interface LiveActivityFootageSource {
+  sha256: string;
+  key: string;
+  boardFamily: 'kilter' | 'tension';
+  sourceLocale: CaptionLocale;
+  nativeFixtureSourcePngSha256: string;
+  frameCount: number;
+  durationSeconds: number;
+  reviewedAt: string;
+  reviewedBy: string;
 }
 export interface LoadedLiveActivityFixture {
   pixels: Buffer;
@@ -342,7 +355,32 @@ export function readLiveActivityManifest(root = LIVE_ACTIVITY_FIXTURE_ROOT): Liv
       match[2] as CaptionLocale,
     );
   }
-  return { version: 1, fixtures };
+  const footage: LiveActivityFixtureManifest['footage'] = {};
+  if (parsed.footage !== undefined) {
+    if (!record(parsed.footage)) throw new Error('Invalid retained Live Activity footage');
+    for (const [family, candidate] of Object.entries(parsed.footage)) {
+      if (
+        !['kilter', 'tension'].includes(family) ||
+        !record(candidate) ||
+        candidate.boardFamily !== family ||
+        !hash(candidate.sha256) ||
+        candidate.key !== `sources/live-activity/${candidate.sha256}.zip` ||
+        !['en-US', 'es', 'fr', 'de'].includes(String(candidate.sourceLocale)) ||
+        !hash(candidate.nativeFixtureSourcePngSha256) ||
+        !positiveInteger(candidate.frameCount) ||
+        typeof candidate.durationSeconds !== 'number' ||
+        !Number.isFinite(candidate.durationSeconds) ||
+        candidate.durationSeconds < 6 ||
+        !timestamp(candidate.reviewedAt) ||
+        !text(candidate.reviewedBy) ||
+        fixtures[`${family}/${String(candidate.sourceLocale)}`]?.sourcePngSha256 !==
+          candidate.nativeFixtureSourcePngSha256
+      )
+        throw new Error(`Invalid retained Live Activity footage for ${family}`);
+      footage[family as 'kilter' | 'tension'] = candidate as unknown as LiveActivityFootageSource;
+    }
+  }
+  return { version: 1, fixtures, ...(parsed.footage !== undefined ? { footage } : {}) };
 }
 
 export function loadLiveActivityFixture(
