@@ -74,6 +74,11 @@ describe('trusted unlock receipt', () => {
     receipt.platforms.ios.mode = 'unchanged';
     expect(() => validateUnlockReceipt(receipt, unlockProof, unlockExpected)).toThrow('no-op');
   });
+  it('requires a reverted control to expose a new UUID', () => {
+    const receipt = unlockReceipt();
+    receipt.platforms.ios.restoredUpdateId = receipt.platforms.ios.originalUpdateId;
+    expect(() => validateUnlockReceipt(receipt, unlockProof, unlockExpected)).toThrow('no valid restoration');
+  });
   it('downloads only one unexpired artifact from the pinned main run', async () => {
     const { run, fetchImpl, receipt } = artifactFixture();
     expect(await run()).toEqual(receipt);

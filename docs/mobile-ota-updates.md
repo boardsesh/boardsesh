@@ -1094,6 +1094,9 @@ It verifies that each restored head has the same bundle hash, asset hashes and E
 issues a request-bound receipt naming the exact observed replacement UUIDs. The caller accepts
 only the artifact from its validated successful main run, first attempt, and checks its app,
 platforms, runtimes and original controls. The archived stage receipt is never rewritten.
+After a revert, a matching-content manifest that still names the old UUID is retried with a
+shared 15-second delay budget across both platforms. Every retry rechecks that no rollout is
+active; a missing head, changed content or exhausted budget refuses the receipt.
 
 Only immediate production promotion can use this authorization. The promoter uses the attested
 UUIDs consistently for its existing baseline checks, including a server response of “no changes,”

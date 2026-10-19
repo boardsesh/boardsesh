@@ -45,7 +45,8 @@ function fixture(active: OtaPlatform[] = ['ios', 'android'], sharedRuntime = fal
     }),
   };
   const readHead = vi.fn(async (platform: OtaPlatform) => ({ ...heads[platform] }));
-  const run = () => unlockStagedControls({ ...expected, proof: unlockProof, client, readHead });
+  const run = (verificationDelaysMs: readonly number[] = []) =>
+    unlockStagedControls({ ...expected, proof: unlockProof, client, readHead, verificationDelaysMs });
   return { expected, heads, rollouts, client, readHead, run };
 }
 
@@ -153,5 +154,74 @@ describe('staged control unlock', () => {
     const receipt = await run();
     expect(client.revertUpdateRollout).toHaveBeenCalledTimes(1);
     expect(receipt.platforms.android.restoredUpdateId).toBe(restoredIds.android);
+  });
+  it.each([false, true])('waits for both replacement UUIDs after revert, shared runtime=%s', async (sharedRuntime) => {
+    const { run, client, heads, expected, readHead } = fixture(['ios', 'android'], sharedRuntime);
+    const staleReads = { ios: 0, android: 0 };
+    readHead.mockImplementation(async (platform) => {
+      if (client.revertUpdateRollout.mock.calls.length > 0 && heads[platform].updateId === restoredIds[platform]) {
+        if (staleReads[platform]++ === 0) return { ...heads[platform], updateId: expected.baselines[platform] };
+      }
+      return { ...heads[platform] };
+    });
+    const receipt = await run([0, 0]);
+    expect(staleReads).toEqual({ ios: 2, android: 2 });
+    expect(client.revertUpdateRollout).toHaveBeenCalledTimes(sharedRuntime ? 1 : 2);
+    for (const platform of ['ios', 'android'] as const)
+      expect(receipt.platforms[platform].restoredUpdateId).toBe(restoredIds[platform]);
+  });
+  it('shares the bounded propagation budget and returns no receipt on exhaustion', async () => {
+    const { run, client, heads, expected, readHead } = fixture();
+    const staleReads = { ios: 0, android: 0 };
+    readHead.mockImplementation(async (platform) => {
+      if (heads[platform].updateId === restoredIds[platform]) {
+        if (platform === 'android' || staleReads.ios++ === 0) {
+          staleReads.android += platform === 'android' ? 1 : 0;
+          return { ...heads[platform], updateId: expected.baselines[platform] };
+        }
+      }
+      return { ...heads[platform] };
+    });
+    await expect(run([0, 0])).rejects.toThrow('android restored control UUID did not become visible');
+    expect(staleReads.android).toBe(2);
+    expect(client.revertUpdateRollout).toHaveBeenCalledTimes(2);
+  });
+  it('refuses changed content during propagation without waiting it out', async () => {
+    const { run, heads, readHead } = fixture();
+    let staleReads = 0;
+    readHead.mockImplementation(async (platform) => {
+      if (platform === 'ios' && heads.ios.updateId === restoredIds.ios) {
+        staleReads++;
+        if (staleReads === 1) return { ...heads.ios, updateId: unlockExpected.baselines.ios };
+        return { ...heads.ios, contentSha256: 'f'.repeat(64) };
+      }
+      return { ...heads[platform] };
+    });
+    await expect(run([0, 0])).rejects.toThrow('did not preserve the staged control');
+    expect(staleReads).toBe(2);
+  });
+  it('refuses a rollout that appears while waiting for propagation', async () => {
+    const { run, rollouts, heads, readHead } = fixture();
+    readHead.mockImplementation(async (platform) => {
+      if (platform === 'ios' && heads.ios.updateId === restoredIds.ios) {
+        rollouts.ios = { updateId: 99, controlUpdateId: 98, platform: 'ios', percentage: 10, createdAt: null };
+        return { ...heads.ios, updateId: unlockExpected.baselines.ios };
+      }
+      return { ...heads[platform] };
+    });
+    await expect(run([0])).rejects.toThrow('rollout remains active after unlock');
+  });
+  it('refuses a missing head immediately after revert', async () => {
+    const { run, heads, readHead } = fixture();
+    let missingReads = 0;
+    readHead.mockImplementation(async (platform) => {
+      if (platform === 'ios' && heads.ios.updateId === restoredIds.ios) {
+        missingReads++;
+        return { updateId: null, contentSha256: null };
+      }
+      return { ...heads[platform] };
+    });
+    await expect(run([0, 0])).rejects.toThrow('did not preserve the staged control');
+    expect(missingReads).toBe(1);
   });
 });

@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
 import type { XpremAdminClient, XpremRolloutUpdate } from './lib/xprem-admin.mts';
+import { sleep } from './lib/ota-publish-protocol.ts';
 import type { OtaPlatform } from './lib/ota-publish-protocol.ts';
 import {
   readControlHead,
@@ -20,6 +21,7 @@ export async function unlockStagedControls(
     proof: UnlockProof;
     client: Pick<XpremAdminClient, 'getUpdateRollout' | 'getUpdateDetails' | 'revertUpdateRollout'>;
     readHead: (platform: OtaPlatform) => Promise<ControlHead>;
+    verificationDelaysMs?: readonly number[];
   },
 ): Promise<UnlockReceipt> {
   validateUnlockExpectations(options);
@@ -78,15 +80,26 @@ export async function unlockStagedControls(
     writtenRuntimes.add(options.runtimes[platform]);
   }
   const platforms = {} as UnlockReceipt['platforms'];
+  // Share the bounded propagation wait across both platform attestations.
+  const verificationDelaysMs = options.verificationDelaysMs ?? [1_000, 2_000, 4_000, 8_000];
+  let propagationAttempt = 0;
   for (const platform of ['ios', 'android'] as const) {
-    if (await inspect(platform)) throw new Error(`${platform} rollout remains active after unlock.`);
-    const head = await options.readHead(platform);
     const plan = planned[platform];
-    if (
-      head.contentSha256 !== plan.head.contentSha256 ||
-      (plan.rollout === null && head.updateId !== plan.head.updateId)
-    )
-      throw new Error(`${platform} unlock did not preserve the staged control.`);
+    let head: ControlHead;
+    for (;;) {
+      if (await inspect(platform)) throw new Error(`${platform} rollout remains active after unlock.`);
+      head = await options.readHead(platform);
+      if (
+        head.contentSha256 !== plan.head.contentSha256 ||
+        (plan.rollout === null && head.updateId !== plan.head.updateId) ||
+        (plan.rollout !== null && head.updateId === null)
+      )
+        throw new Error(`${platform} unlock did not preserve the staged control.`);
+      if (plan.rollout === null || head.updateId !== plan.head.updateId) break;
+      if (propagationAttempt === verificationDelaysMs.length)
+        throw new Error(`${platform} restored control UUID did not become visible after unlock.`);
+      await sleep(verificationDelaysMs[propagationAttempt++]);
+    }
     platforms[platform] = {
       runtimeVersion: options.runtimes[platform],
       originalUpdateId: options.baselines[platform],

@@ -95,7 +95,12 @@ export function validateUnlockReceipt(input: unknown, proof: UnlockProof, expect
     if ((restored === null) !== (digest === null)) throw new Error(`${platform} control content is missing.`);
     if (entry.mode === 'unchanged') {
       if (restored !== entry.originalUpdateId) throw new Error(`${platform} no-op cannot authorize a changed update.`);
-    } else if (entry.mode !== 'reverted' || entry.originalUpdateId === null || restored === null) {
+    } else if (
+      entry.mode !== 'reverted' ||
+      entry.originalUpdateId === null ||
+      restored === null ||
+      restored === entry.originalUpdateId
+    ) {
       throw new Error(`${platform} unlock receipt has no valid restoration.`);
     }
     parsed[platform] = {
