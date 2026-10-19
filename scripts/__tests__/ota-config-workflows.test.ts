@@ -19,7 +19,7 @@ const ADMIN_WORKFLOWS = ['ota-apply.yml', 'ota-drift.yml', 'mobile-ota-unlock.ym
 
 /** The first command in a workflow that uses the admin login. */
 const FIRST_ADMIN_CALL =
-  /node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout|ota-rollout-proof)\.ts/;
+  /node --experimental-strip-types scripts\/(ota-apply|mobile-ota-rollout|mobile-ota-unlock-staged|ota-rollout-proof)\.ts/;
 
 const readWorkflow = (name: string): string => readFileSync(join(WORKFLOWS_DIR, name), 'utf8');
 
@@ -55,9 +55,13 @@ describe.each(ADMIN_WORKFLOWS)('%s', (name) => {
     expect(code.match(/^ {4}runs-on: ubuntu-latest$/gm)).toHaveLength(1);
   });
 
-  it('checks out main and nothing else', () => {
+  it('checks out trusted main source and nothing else', () => {
     expect(code.match(/uses: actions\/checkout@/g)).toHaveLength(1);
-    expect(code).toMatch(/uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n {8}with:\n {10}ref: main\n/);
+    if (name === 'mobile-ota-unlock.yml')
+      expect(code).toMatch(
+        /uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n {8}with:\n {10}ref: \$\{\{ github\.sha \}\}\n/,
+      );
+    else expect(code).toMatch(/uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n {8}with:\n {10}ref: main\n/);
     expect(code).not.toContain('github.head_ref');
     expect(code).not.toContain('github.event.pull_request');
   });
@@ -215,8 +219,12 @@ describe('mobile-ota-unlock.yml', () => {
     expect(code).toContain('for runtime_version in "$IOS_RUNTIME_VERSION" "$ANDROID_RUNTIME_VERSION"; do');
   });
 
-  it('has no concurrency group, so a third request cannot cancel a waiting second', () => {
+  it('queues unlock jobs separately from the production lane', () => {
     expect(code).not.toMatch(/^concurrency:/m);
+    expect(jobBlock(code, 'revert')).toContain(
+      'concurrency:\n      group: mobile-ota-unlock\n      cancel-in-progress: false\n      queue: max',
+    );
+    expect(code).not.toContain('group: mobile-ota-production');
   });
 
   it('reverts, tolerates an idle branch, and can never finish a rollout', () => {
@@ -271,7 +279,7 @@ describe('mobile-ota-unlock.yml', () => {
     expect(backport).toContain('mobile-ota-unlock-wait.mjs');
     expect(backport).not.toContain('secrets.OTA_ADMIN');
     const staged = withoutComments(readWorkflow('mobile-ota-promote-staged.yml'));
-    expect(staged).toContain('node scripts/mobile-ota-unlock-wait.mjs');
+    expect(staged).toContain('node --experimental-strip-types scripts/mobile-ota-unlock-wait.mjs');
     expect(staged).not.toContain('OTA_ADMIN');
   });
 });

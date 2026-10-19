@@ -285,8 +285,10 @@ describe('production OTA workflow reliability', () => {
 
   it('budgets direct unlock waiting without charging staging or previews', () => {
     const unlockScript = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-unlock-wait.mjs'), 'utf8');
-    const waitMinutes = Number(unlockScript.match(/UNLOCK_WAIT_MS = (\d+) \* 60_000/)?.[1]);
-    expect(waitMinutes).toBeGreaterThan(0);
+    const leaseScript = readFileSync(resolve(REPO_ROOT, 'scripts', 'lib', 'ota-unlock-lease.mjs'), 'utf8');
+    expect(unlockScript).toContain('UNLOCK_WAIT_MS = MAX_UNLOCK_LEASE_MS');
+    const waitMinutes = Number(leaseScript.match(/MAX_UNLOCK_LEASE_MS = (\d+) \* 60_000/)?.[1]);
+    expect(waitMinutes).toBe(20);
     for (const [workflow, stepName] of [
       [production, 'Await trusted main unlock before direct production publish'],
       [backport, 'Await trusted main unlock before the backport publish'],
