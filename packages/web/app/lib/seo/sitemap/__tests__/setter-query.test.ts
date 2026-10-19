@@ -141,17 +141,33 @@ describe('the setters shard query', () => {
     expect(normalised).toContain('from eligible');
     expect(normalised).toContain('where ubm.board_username = eligible.setter_username');
 
-    // The identity the page renders, from the builder the page's hero reads:
+    // The identity the page renders, from the builders the page's hero reads:
     // the account that set the setter's visible climbs first (a MoonBoard
     // setter has no linked login), then a public account's linked login on one
     // of the name's board types.
-    const authored = normalised.indexOf('select board_climbs.user_id, 0 as source_rank');
-    const linkedLogin = normalised.indexOf('select ubm.user_id, 1 as source_rank');
-    expect(authored).toBeGreaterThan(normalised.indexOf('from eligible'));
-    expect(linkedLogin).toBeGreaterThan(authored);
-    expect(normalised).toContain('"board_climbs"."setter_username" = eligible.setter_username');
-    expect(normalised).toContain('board_climbs.board_type = ubm.board_type');
-    expect(normalised.slice(linkedLogin)).toContain('is_private');
+    //
+    // The authored account is picked for EVERY name in one pass, materialised
+    // and joined on the name, never asked per name inside the lateral: per name
+    // it walked the partial `user_id` index once per eligible setter (~31k), a
+    // cost that grew with every Boardsesh-authored climb.
+    expect(normalised).toContain('authored_identity as materialized (');
+    expect(normalised).toContain(
+      'select distinct on (authored.setter_username) authored.setter_username, authored.user_id',
+    );
+    expect(normalised).toContain(
+      'left join authored_identity on authored_identity.setter_username = eligible.setter_username',
+    );
+    const lateral = normalised.slice(normalised.indexOf('left join lateral ( select greatest(u.updated_at'));
+    expect(lateral).toContain(
+      'select authored_identity.user_id, 0 as source_rank, 0 as climb_count where authored_identity.user_id is not null',
+    );
+    // No per-name aggregate over `board_climbs` by user inside the lateral.
+    expect(lateral).not.toContain('group by board_climbs.user_id');
+    const linkedLogin = lateral.indexOf('select ubm.user_id, 1 as source_rank');
+    expect(linkedLogin).toBeGreaterThan(-1);
+    expect(lateral).toContain('where ubm.board_username = eligible.setter_username');
+    expect(lateral).toContain('board_climbs.board_type = ubm.board_type');
+    expect(lateral.slice(linkedLogin)).toContain('is_private');
 
     // Deterministic, and the page's own order. The unique index is
     // (user_id, board_type), NOT board_username, so two different users can
