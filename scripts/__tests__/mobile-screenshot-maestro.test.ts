@@ -21,6 +21,30 @@ function runNode(script: string, options: Parameters<typeof runScreenshotMaestro
 }
 
 describe('CPP Maestro subprocess supervision', () => {
+  it('forwards recorder output and exposes the owned child without losing crash supervision', async () => {
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let childPid: number | undefined;
+    const started = Date.now();
+    const status = await runNode(
+      `process.stdout.write('recorder progress\\n');
+       process.stderr.write('Exception in thread "main" XCTestDeviceInfo500\\n');
+       setInterval(() => {}, 1000);`,
+      {
+        onStdout: (chunk) => stdout.push(chunk),
+        onStderr: (chunk) => stderr.push(chunk),
+        onSpawn: (child) => {
+          childPid = child.pid;
+        },
+      },
+    );
+    expect(childPid).toBeGreaterThan(0);
+    expect(Buffer.concat(stdout).toString()).toContain('recorder progress');
+    expect(Buffer.concat(stderr).toString()).toContain('XCTestDeviceInfo500');
+    expect(status).toBe(1);
+    expect(Date.now() - started).toBeLessThan(2500);
+  });
+
   it('keeps successful and unsuccessful actual process exit codes', async () => {
     expect(await runNode('process.exit(0)')).toBe(0);
     expect(await runNode('process.exit(7)')).toBe(7);

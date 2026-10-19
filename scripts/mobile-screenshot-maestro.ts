@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { CriticalChildProcessGroup, criticalChildProcessSpawnOptions } from './lib/dev-child-process-lifecycle';
 
@@ -13,6 +13,8 @@ interface MaestroProcessOptions {
   timeoutMs?: number;
   gracePeriodMs?: number;
   onStderr?: (chunk: Buffer) => void;
+  onStdout?: (chunk: Buffer) => void;
+  onSpawn?: (child: ChildProcess) => void;
 }
 
 /** Run separately: the screenshot orchestrator's synchronous calls block timers. */
@@ -39,9 +41,11 @@ export async function runScreenshotMaestro(args: string[], options: MaestroProce
     ...criticalChildProcessSpawnOptions,
     cwd: options.cwd,
     env: options.env ?? process.env,
-    stdio: ['inherit', 'inherit', 'pipe'],
+    stdio: ['inherit', options.onStdout ? 'pipe' : 'inherit', 'pipe'],
   });
   children.register('Maestro', maestro);
+  options.onSpawn?.(maestro);
+  maestro.stdout?.on('data', (chunk: Buffer) => options.onStdout?.(chunk));
 
   // The JVM can retain worker threads after its main thread crashes. Match only
   // its exact stderr exception prefix, including prefixes split across chunks.
@@ -57,7 +61,7 @@ export async function runScreenshotMaestro(args: string[], options: MaestroProce
     stderrTail = combined.length > 256 ? ` ${combined.slice(-256)}` : combined;
   });
   const deadline = setTimeout(
-    () => fail('Maestro exceeded its 30-minute capture limit'),
+    () => fail(`Maestro exceeded its ${(options.timeoutMs ?? CPP_MAESTRO_TIMEOUT_MS) / 60_000}-minute capture limit`),
     options.timeoutMs ?? CPP_MAESTRO_TIMEOUT_MS,
   );
   const interrupt = () => fail('Maestro capture was interrupted');

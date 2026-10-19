@@ -87,6 +87,7 @@ import {
   sdkmanagerPath,
 } from './lib/android-sdk';
 import { resolveAndroidApk } from './mobile-android-apk';
+import { runScreenshotMaestro } from './mobile-screenshot-maestro';
 import {
   FLOW_START_MARK,
   REFERENCE_CHANNEL_TOLERANCE,
@@ -362,9 +363,6 @@ async function runMaestro(
     ...Object.entries(variables).flatMap(([key, variable]) => ['-e', `${key}=${variable}`]),
   ];
   const logFile: WriteStream = createWriteStream(resolve(debugDir, 'console.log'));
-  const child = spawn('maestro', args, { env: toolEnv(), cwd: debugDir, stdio: ['ignore', 'pipe', 'pipe'] });
-  liveChildren.add(child);
-  options.child?.(child);
   // Maestro prints a step's name, then its outcome once it returns; hold the
   // partial line so the console shows them together.
   let pending = '';
@@ -376,16 +374,30 @@ async function runMaestro(
       if (line.trim()) console.log(`${LOG}   [${options.label}] ${line}`);
     }
   };
-  child.stdout?.on('data', forward);
-  child.stderr?.on('data', forward);
-  const [code] = (await once(child, 'exit')) as [number | null];
-  liveChildren.delete(child);
-  logFile.end();
+  let supervisedChild: ChildProcess | undefined;
+  let code: number;
+  try {
+    code = await runScreenshotMaestro(args, {
+      env: toolEnv(),
+      cwd: debugDir,
+      timeoutMs: 15 * 60 * 1000,
+      onStdout: forward,
+      onStderr: forward,
+      onSpawn: (child) => {
+        supervisedChild = child;
+        liveChildren.add(child);
+        options.child?.(child);
+      },
+    });
+  } finally {
+    if (supervisedChild) liveChildren.delete(supervisedChild);
+    logFile.end();
+  }
   if (pending.trim()) console.log(`${LOG}   [${options.label}] ${pending}`);
   // Maestro's debug output is a screenshot per step, ~10 MB a run: keep it only
   // for a failure, where it is the evidence.
   if (code === 0) rmSync(debugDir, { recursive: true, force: true });
-  return code ?? 1;
+  return code;
 }
 
 function writeNavigationFlow(
