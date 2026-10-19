@@ -41,6 +41,7 @@ export const iconMap = {
   profile: { ios: 'person.crop.circle', android: 'account-circle-outline' },
   'profile.fill': { ios: 'person.crop.circle.fill', android: 'account-circle' },
   more: { ios: 'ellipsis', android: 'dots-horizontal' },
+  accessibility: { ios: 'accessibility', android: 'human' },
   settings: { ios: 'gearshape', android: 'cog-outline' },
   'settings.fill': { ios: 'gearshape.fill', android: 'cog' },
   server: { ios: 'server.rack', android: 'server-network' },

@@ -942,3 +942,12 @@ content are separate layout contracts. The production source guard follows multi
 ## Climb list display settings
 
 Settings → Climbs & grades → Climb list opens `/settings/climb-list`; the Climbs tab has no shortcut of its own (#6397). This is a persistent preferences screen with several grouped switches, a staged row preview and preset chips; use a route, following Custom look. Like the rest of Settings, it has mirrors in each tab and the account navigator, and the root Settings stack registers the same route for its main navigation row. See [Climb list rows](climb-list-rows.md).
+
+### Android settings previews
+
+Board look and Climb view use `MoreFormRN` on Android. Their RN carousel and
+live preview stay in the RN view tree: a Compose `RNHostView` custom row has
+measured correctly while drawing blank on Android. iOS keeps its native form.
+The RN form owns the screen's single scroll surface. Select rows use standalone
+native menus so the eight Bluetooth timeout choices remain reachable; disabled
+select rows expose their current value without an interactive menu.

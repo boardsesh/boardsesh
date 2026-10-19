@@ -4,6 +4,7 @@ import { isMoonboardBoardName, toBoardName } from '@boardsesh/board-config';
 import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
+import { MoreFormRN } from '../../MoreForm.rn';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
 import { boardLookCardHeight } from '../../board-look/board-look-card-metrics';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
@@ -210,5 +211,7 @@ export function BoardLookScreen() {
     ],
   );
 
-  return <MoreForm model={model} />;
+  // Compose RNHostView custom rows can measure correctly without drawing.
+  // Keep preview content in the RN tree on Android.
+  return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
 }

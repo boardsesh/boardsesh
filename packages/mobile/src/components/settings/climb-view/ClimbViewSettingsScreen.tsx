@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
+import { Platform } from 'react-native';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { MoreForm } from '../../MoreForm';
+import { MoreFormRN } from '../../MoreForm.rn';
 import {
   FALLBACK_PREVIEW_BOARD,
   PLAYER_BUTTONS_PREVIEW_HEIGHT,
@@ -82,5 +84,7 @@ export function ClimbViewSettingsScreen() {
     [playerButtons, preview, belowTheClimb],
   );
 
-  return <MoreForm model={model} />;
+  // Compose RNHostView custom rows can measure correctly without drawing.
+  // Keep preview content in the RN tree on Android.
+  return Platform.OS === 'android' ? <MoreFormRN model={model} /> : <MoreForm model={model} />;
 }

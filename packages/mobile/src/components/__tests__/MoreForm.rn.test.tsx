@@ -2,11 +2,14 @@
 import { createElement, type ReactNode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MoreFormModel } from '../MoreForm.types';
+import type { MoreFormModel, MoreSelectRow } from '../MoreForm.types';
+import type { AppMenuProps } from '../AppMenu.types';
+import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../lib/ble/auto-disconnect-controller';
 
 const controls = vi.hoisted(() => ({
   contentLayout: null as null | ((event: { nativeEvent: { layout: { height: number } } }) => void),
   slider: null as null | { accessibilityLabel: string; showLabel?: boolean },
+  menu: null as AppMenuProps | null,
 }));
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
@@ -27,8 +30,18 @@ vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../PressableSurface', () => ({ PressableSurface: () => null }));
-vi.mock('../Icon', () => ({ Icon: () => null }));
-vi.mock('../ListRow', () => ({ ListRow: () => null }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name }: { name: string }) => createElement('span', { 'data-testid': `icon-${name}` }),
+}));
+vi.mock('../ListRow', () => ({
+  ListRow: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
+}));
+vi.mock('../AppMenu', () => ({
+  AppMenu: (props: AppMenuProps) => {
+    controls.menu = props;
+    return createElement('button', null, props.label);
+  },
+}));
 vi.mock('../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../SegmentedControl', () => ({ SegmentedControl: () => null }));
 vi.mock('../SwitchRow', () => ({ SwitchRow: () => null }));
@@ -45,7 +58,8 @@ vi.mock('../MoreForm.logic', () => ({
   disabledOptionKeys: () => new Set(),
   guardedButtonPress: () => undefined,
   isButtonRowPressable: () => false,
-  selectedOptionLabel: () => '',
+  selectedOptionLabel: (options: { key: string; label: string }[], selectedKey: string) =>
+    options.find((option) => option.key === selectedKey)?.label ?? '',
   useOpensOutsideAppHint: () => '',
 }));
 
@@ -82,6 +96,7 @@ afterEach(() => {
   cleanup();
   controls.contentLayout = null;
   controls.slider = null;
+  controls.menu = null;
 });
 
 describe('MoreFormRN fitted preview', () => {
@@ -100,5 +115,83 @@ describe('MoreFormRN fitted preview', () => {
     expect(onReservedHeightChange).toHaveBeenLastCalledWith(210);
     view.rerender(<MoreFormRN model={model} fitted scrollable onReservedHeightChange={onReservedHeightChange} />);
     expect(view.getByTestId('form-scroll')).toBeTruthy();
+  });
+});
+
+describe('MoreFormRN menu selects', () => {
+  function selectModel(row: MoreSelectRow): MoreFormModel {
+    return { sections: [{ key: 'settings', rows: [row] }] };
+  }
+  function timeoutRow(): MoreSelectRow {
+    return {
+      kind: 'select',
+      key: 'timeout',
+      label: 'Disconnect timeout',
+      options: AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
+        key: String(seconds),
+        label: `${seconds} seconds`,
+      })),
+      selectedKey: '30',
+      onSelect: vi.fn(),
+    };
+  }
+
+  it('keeps all eight timeout choices in a menu and selects their exact keys', () => {
+    const row = timeoutRow();
+    const view = render(<MoreFormRN model={selectModel(row)} />);
+    expect(view.getByRole('button').textContent).toBe('30 seconds');
+    expect(controls.menu?.actions).toHaveLength(8);
+    expect(controls.menu?.actions[2].selected).toBe(true);
+    for (let index = 0; index < row.options.length; index++) {
+      act(() => controls.menu?.onSelectIndex(index));
+      expect(row.onSelect).toHaveBeenLastCalledWith(row.options[index].key);
+    }
+    act(() => controls.menu?.onSelectIndex(-1));
+    act(() => controls.menu?.onSelectIndex(99));
+    expect(row.onSelect).toHaveBeenCalledTimes(8);
+  });
+
+  it('renders disabled selects as noninteractive values and guards a disabled callback', () => {
+    const row = timeoutRow();
+    const view = render(<MoreFormRN model={selectModel(row)} />);
+    const previousMenu = controls.menu;
+    view.rerender(<MoreFormRN model={selectModel({ ...row, disabled: true })} />);
+    expect(view.queryByRole('button')).toBeNull();
+    expect(view.getByText('30 seconds')).toBeTruthy();
+    act(() => previousMenu?.onSelectIndex(1));
+    expect(row.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('rejects queued menu selections after option replacement or unmount', () => {
+    const row = timeoutRow();
+    const view = render(<MoreFormRN model={selectModel(row)} />);
+    const previousMenu = controls.menu;
+    view.rerender(<MoreFormRN model={selectModel({ ...row, options: [...row.options].reverse() })} />);
+    act(() => previousMenu?.onSelectIndex(0));
+    expect(row.onSelect).not.toHaveBeenCalled();
+    const currentMenu = controls.menu;
+    view.unmount();
+    act(() => currentMenu?.onSelectIndex(0));
+    expect(row.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('retains the Board look and Accessibility navigation icons', () => {
+    const view = render(
+      <MoreFormRN
+        model={{
+          sections: [
+            {
+              key: 'destinations',
+              rows: [
+                { kind: 'nav', key: 'custom', label: 'Custom look', icon: 'boardLook', onPress: vi.fn() },
+                { kind: 'nav', key: 'accessibility', label: 'Accessibility', icon: 'accessibility', onPress: vi.fn() },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(view.getByTestId('icon-view.options')).toBeTruthy();
+    expect(view.getByTestId('icon-accessibility')).toBeTruthy();
   });
 });

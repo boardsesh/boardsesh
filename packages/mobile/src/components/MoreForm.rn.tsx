@@ -14,11 +14,13 @@ import { PressableSurface } from './PressableSurface';
 // files is one Host per control rather than one Host for the whole form — which
 // is exactly what every settings screen in the app did before MoreForm existed.
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
 import { Icon } from './Icon';
+import { AppMenu } from './AppMenu';
+import type { IconName } from './icon-map';
 import { Text } from './Text';
 import { ListRow } from './ListRow';
 import { SectionHeader } from './SectionHeader';
@@ -33,7 +35,54 @@ import {
   selectedOptionLabel,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
-import type { MoreFormProps, MoreRow, MoreSection } from './MoreForm.types';
+import type { MoreFormProps, MoreRow, MoreSection, MoreSelectRow, MoreIconName } from './MoreForm.types';
+
+// These are the leading icons on the Board settings preview screen.
+const NAV_ICONS: Partial<Record<MoreIconName, IconName>> = {
+  boardLook: 'view.options',
+  accessibility: 'accessibility',
+};
+
+function SelectRow({ row }: { row: MoreSelectRow }) {
+  const currentRowRef = useRef(row);
+  currentRowRef.current = row;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const { systemColors } = useTheme();
+  const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
+  return (
+    <View style={styles.padded}>
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
+        {row.label}
+      </Text>
+      {row.disabled ? (
+        <Text variant="subheadline" color={systemColors.tertiaryLabel} accessibilityState={{ disabled: true }}>
+          {currentLabel}
+        </Text>
+      ) : (
+        <AppMenu
+          // Native menus retain their action indices while open. Changed options
+          // must remount the menu rather than let an old tap pick a moved row.
+          key={JSON.stringify(row.options)}
+          label={currentLabel}
+          accessibilityLabel={`${row.label}, ${currentLabel}`}
+          actions={row.options.map((option) => ({ label: option.label, selected: option.key === row.selectedKey }))}
+          onSelectIndex={(index) => {
+            const currentRow = currentRowRef.current;
+            if (!mountedRef.current || currentRow.disabled || currentRow.options !== row.options) return;
+            const option = currentRow.options[index];
+            if (option) currentRow.onSelect(option.key);
+          }}
+        />
+      )}
+    </View>
+  );
+}
 
 function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: boolean }) {
   const { systemColors } = useTheme();
@@ -41,6 +90,7 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
 
   switch (row.kind) {
     case 'nav': {
+      const leadingIcon = row.icon ? NAV_ICONS[row.icon] : undefined;
       // Badge, then the current value, then (for a row that leaves the app) the
       // outward arrow that replaces the chevron.
       const hasTrailing = Boolean(row.badge || row.value || row.external);
@@ -48,6 +98,9 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
         <ListRow
           title={row.label}
           subtitle={row.subtitle}
+          leading={
+            leadingIcon ? <Icon name={leadingIcon} size={spacing[6]} color={systemColors.secondaryLabel} /> : undefined
+          }
           trailing={
             hasTrailing ? (
               <View style={styles.trailingGroup}>
@@ -117,24 +170,8 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
           />
         </View>
       );
-    // No RN menu primitive worth the weight here: a select is a short, flat list
-    // of options, which is what a segmented control already is. The native files
-    // render a real menu Picker; this fallback trades that for one fewer control.
     case 'select':
-      return (
-        <View style={styles.padded}>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {row.label}
-          </Text>
-          <SegmentedControl
-            options={row.options}
-            selectedKey={row.selectedKey}
-            onSelect={row.onSelect}
-            disabledKeys={disabledOptionKeys(row.options, row.disabled)}
-            accessibilityLabel={`${row.label}, ${selectedOptionLabel(row.options, row.selectedKey)}`}
-          />
-        </View>
-      );
+      return <SelectRow row={row} />;
     case 'info':
       return (
         <View style={[styles.padded, styles.infoRow]}>
