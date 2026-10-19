@@ -1108,6 +1108,24 @@ retain their original guards.
 Unlock jobs check out their run’s exact main SHA and share a separate queued lane, so overlapping
 manual/workflow unlocks cannot interleave. They never acquire the publisher’s production lane.
 GitHub’s `queue: max` allows up to 100 pending unlock jobs; requests beyond that limit are cancelled.
+Automatic requests carry a caller lease bound to the request, repository, workflow ref, exact run,
+attempt, head, numeric job, known unlock wait step, branch and runtimes. The waiter discovers that
+job from a complete attempt listing before dispatching. The main-only receiver checks the caller
+is still in its wait step immediately before each protected revert, and requires 30 seconds of
+remaining lifetime after those API reads for the existing write timeout. Leases expire with the
+caller’s 20-minute wait budget. Production callers retain `main` and `release/next`; staged and
+backport callers are `main` only. Manual unlocks require both request and lease to be empty.
+
+Older automatic requests without a lease fail closed, including already queued or in-flight
+publishers that dispatch the new receiver. Already-dispatched unlock jobs retain their pinned
+receiver SHA and do not gain these guards retroactively; operators must inspect old requests
+before switching callers. Update the caller through the normal branch sync or trusted
+backport tooling, then dispatch a fresh run. Never retry an old unlock with missing lease evidence.
+Actions job status is observed state, not an atomic lock shared with xprem: cancellation can race
+an API response. The write keeps the update ID selected before the lifetime check, so the server’s
+compare-and-swap refuses a replacement after that selection; this is not perfect cancellation
+atomicity or a guarantee against arbitrary out-of-lane writes.
+
 If only one platform was restored before unlock failed, no receipt is issued. Do not rerun that
 attempt: inspect both controls and coordinate recovery, since the saved baseline may now be stale.
 The revert API does not return a replacement UUID: the receipt attests matching control content

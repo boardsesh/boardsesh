@@ -15,6 +15,7 @@ import {
   validateUnlockReceipt,
 } from './lib/ota-unlock-receipt.ts';
 import type { ControlHead, UnlockExpectations, UnlockProof, UnlockReceipt } from './lib/ota-unlock-receipt.ts';
+import { createUnlockLeaseGuard, protectUnlockWrites } from './lib/ota-unlock-lease.mjs';
 
 export async function unlockStagedControls(
   options: UnlockExpectations & {
@@ -134,6 +135,16 @@ async function main(): Promise<void> {
     },
   };
   validateUnlockExpectations(expected);
+  const assertCallerActive = createUnlockLeaseGuard({
+    requestId: process.env.REQUEST_ID,
+    serializedLease: process.env.OTA_UNLOCK_CALLER_LEASE,
+    repository: process.env.GITHUB_REPOSITORY,
+    token: process.env.GITHUB_TOKEN,
+    branch: process.env.OTA_BRANCH,
+    iosRuntime: process.env.IOS_RUNTIME_VERSION ?? '',
+    androidRuntime: process.env.ANDROID_RUNTIME_VERSION ?? '',
+  });
+  await assertCallerActive();
   const manifestUrl = process.env.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest';
   const client = await adminClientFromEnvironment({
     appId: expected.appId,
@@ -142,7 +153,7 @@ async function main(): Promise<void> {
   });
   const receipt = await unlockStagedControls({
     ...expected,
-    client,
+    client: protectUnlockWrites(client, assertCallerActive),
     proof: {
       repository: process.env.GITHUB_REPOSITORY ?? '',
       requestId: process.env.REQUEST_ID ?? '',
@@ -152,6 +163,7 @@ async function main(): Promise<void> {
     readHead: (platform) =>
       readControlHead({ manifestUrl, appId: expected.appId, platform, runtimeVersion: expected.runtimes[platform] }),
   });
+  await assertCallerActive();
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(receipt)}\n`, { flag: 'wx' });
   console.log('Both staged controls restored and attested; no source receipt was changed.');

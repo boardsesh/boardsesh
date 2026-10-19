@@ -31,6 +31,10 @@ on:
         description: 'Automatic caller correlation id; leave empty for a manual unlock'
         type: string
         default: ''
+      caller_lease:
+        description: 'Automatic caller lease JSON; leave empty for a manual unlock'
+        type: string
+        default: ''
       branch:
         description: 'xprem branch holding the rollout'
         type: string
@@ -58,6 +62,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 # Unlocks have a separate queued lane below, never the parent's production lane.
 # GitHub supports up to 100 pending unlock jobs with queue:max; keep older waiters.
@@ -101,6 +106,8 @@ jobs:
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           OTA_BRANCH: ${{ inputs.branch }}
           REQUEST_ID: ${{ inputs.request_id }}
+          OTA_UNLOCK_CALLER_LEASE: ${{ inputs.caller_lease }}
+          GITHUB_TOKEN: ${{ github.token }}
           IOS_RUNTIME_VERSION: ${{ inputs.ios_runtime_version }}
           ANDROID_RUNTIME_VERSION: ${{ inputs.android_runtime_version }}
           STAGED_APP_ID: ${{ inputs.staged_app_id }}

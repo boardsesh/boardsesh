@@ -4,9 +4,14 @@
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import {
+  discoverUnlockCallerLease,
+  MAX_UNLOCK_LEASE_MS,
+  unlockCallerFromEnvironment,
+} from './lib/ota-unlock-lease.mjs';
 
 export const UNLOCK_WORKFLOW_PATH = '.github/workflows/mobile-ota-unlock.yml';
-export const UNLOCK_WAIT_MS = 20 * 60_000;
+export const UNLOCK_WAIT_MS = MAX_UNLOCK_LEASE_MS;
 const REQUEST_TIMEOUT_MS = 30_000;
 const POLL_INTERVAL_MS = 10_000;
 const MAX_READ_FAILURES = 5;
@@ -111,7 +116,8 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const requestId = dependencies.requestId ?? randomUUID();
   const title = unlockRunTitle(requestId);
-  const deadline = now() + waitBudgetMs;
+  const issuedAtMs = now();
+  const deadline = issuedAtMs + waitBudgetMs;
   const apiBase = `https://api.github.com/repos/${repository}`;
   const headers = {
     Accept: 'application/vnd.github+json',
@@ -161,6 +167,19 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
     workflow.state !== 'active'
   )
     throw new Error('The trusted OTA unlock workflow is unavailable.');
+  const callerLease = await discoverUnlockCallerLease(
+    {
+      caller: options.caller,
+      repository,
+      requestId,
+      issuedAtMs,
+      expiresAtMs: deadline,
+      branch,
+      iosRuntime,
+      androidRuntime,
+    },
+    { api, now, sleep },
+  );
   // Never retry this POST: a timeout can mean GitHub accepted it. A caller must
   // fail closed rather than dispatch an ambiguous second revert.
   await api(`/actions/workflows/${workflow.id}/dispatches`, 'POST', {
@@ -170,6 +189,7 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
       ios_runtime_version: iosRuntime,
       android_runtime_version: androidRuntime,
       request_id: requestId,
+      caller_lease: JSON.stringify(callerLease),
       ...(expected
         ? {
             staged_app_id: expected.appId,
@@ -247,6 +267,7 @@ export async function main(environment = process.env) {
     branch: environment.OTA_BRANCH || 'production',
     iosRuntime: environment.IOS_RUNTIME_VERSION || '',
     androidRuntime: environment.ANDROID_RUNTIME_VERSION || '',
+    caller: unlockCallerFromEnvironment(environment, environment.GITHUB_REPOSITORY),
     ...(appId
       ? {
           staged: {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
+import { callerLeaseFixture, unlockCaller } from './__tests__/helpers/ota-unlock-lease-fixtures.ts';
 import {
   dispatchAndWaitForUnlock,
   requireUnlockJobSuccess,
@@ -15,7 +16,13 @@ import {
 const repository = 'boardsesh/boardsesh';
 const requestId = '01234567-0123-4567-89ab-0123456789ab';
 const headSha = 'a'.repeat(40);
-const options = { repository, token: 'test-token', iosRuntime: headSha, androidRuntime: 'b'.repeat(40) };
+const options = {
+  repository,
+  token: 'test-token',
+  iosRuntime: headSha,
+  androidRuntime: 'b'.repeat(40),
+  caller: unlockCaller,
+};
 const workflow = { id: 9, path: UNLOCK_WORKFLOW_PATH, state: 'active' };
 const completedRun = {
   id: 25,
@@ -41,10 +48,13 @@ const completedJob = {
 };
 
 function harness(responses, extra = {}) {
+  const callerFixture = callerLeaseFixture();
+  const callerJobs = [callerFixture.job];
   let milliseconds = 0;
   const calls = [];
   return {
     calls,
+    callerJobs,
     dependencies: {
       requestId,
       now: () => milliseconds,
@@ -54,6 +64,9 @@ function harness(responses, extra = {}) {
       log: () => {},
       fetchImpl: async (url, init) => {
         calls.push({ url, init });
+        if (url.endsWith('/actions/runs/15')) return json(callerFixture.run);
+        if (url.includes('/actions/runs/15/attempts/1/jobs?'))
+          return json({ total_count: callerJobs.length, jobs: callerJobs });
         const next = responses.shift();
         if (next instanceof Error) throw next;
         if (next === undefined) throw new Error('Unexpected fetch');
@@ -75,8 +88,13 @@ void test('dispatches only main with unique request correlation and both exact r
     json({ jobs: [completedJob] }),
   ]);
   assert.deepEqual(await dispatchAndWaitForUnlock(options, dependencies), { requestId, runId: 25, headSha });
-  assert.equal(calls[1].init.method, 'POST');
-  assert.deepEqual(JSON.parse(calls[1].init.body), {
+  const dispatched = JSON.parse(calls.find((call) => call.init.method === 'POST').init.body);
+  const lease = JSON.parse(dispatched.inputs.caller_lease);
+  assert.equal(lease.jobId, 51);
+  assert.equal(lease.stepNumber, 7);
+  assert.equal(lease.expiresAtMs, 20 * 60_000);
+  delete dispatched.inputs.caller_lease;
+  assert.deepEqual(dispatched, {
     ref: 'main',
     inputs: {
       branch: 'production',
@@ -100,7 +118,7 @@ void test('ignores unrelated successful dispatches and waits for its exact run a
     json({ jobs: [completedJob] }),
   ]);
   await dispatchAndWaitForUnlock(options, dependencies);
-  assert.match(calls[4].url, /\/actions\/runs\/25$/);
+  assert.match(calls[6].url, /\/actions\/runs\/25$/);
   assert.equal(calls.filter((call) => call.init.method === 'POST').length, 1);
 });
 
@@ -191,15 +209,28 @@ void test('persistent unreadable status and duplicate correlation fail closed', 
 
 void test('an accepted-but-stalled dispatch request times out and is never repeated', async () => {
   let calls = 0;
+  const callerFixture = callerLeaseFixture();
   const { dependencies } = harness([], {
     requestTimeoutMs: 5,
-    fetchImpl: async () => {
+    fetchImpl: async (url) => {
+      if (url.endsWith('/actions/runs/15')) return json(callerFixture.run);
+      if (url.includes('/actions/runs/15/attempts/1/jobs?')) return json({ total_count: 1, jobs: [callerFixture.job] });
       calls += 1;
       return calls === 1 ? json(workflow) : new Promise(() => {});
     },
   });
   await assert.rejects(dispatchAndWaitForUnlock(options, dependencies), /request timed out/);
   assert.equal(calls, 2);
+});
+
+void test('missing or ambiguous callers never dispatch an automatic unlock', async () => {
+  for (const ambiguous of [false, true]) {
+    const { calls, callerJobs, dependencies } = harness([json(workflow)]);
+    if (ambiguous) callerJobs.push({ ...callerJobs[0], id: 52 });
+    else callerJobs.length = 0;
+    await assert.rejects(dispatchAndWaitForUnlock(options, dependencies), /caller|Multiple active/);
+    assert.equal(calls.filter((call) => call.init.method === 'POST').length, 0);
+  }
 });
 
 void test('requires full runtime fingerprints and rejects empty or unsafe dispatch inputs', () => {
@@ -226,6 +257,7 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   assert.equal(production.jobs.publish.permissions.actions, 'write');
   assert.equal(backport.jobs.backport.permissions.actions, 'write');
   assert.equal(unlock.permissions.contents, 'read');
+  assert.equal(unlock.permissions.actions, 'read');
   assert.equal(unlock.concurrency, undefined);
   assert.equal(unlock.jobs.revert.environment, 'ota-stable-release');
   assert.equal(unlock.jobs.revert.steps.find((step) => step.name === 'Checkout main').with.ref, '${{ github.sha }}');
@@ -236,6 +268,8 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   });
   assert.ok(unlock['run-name'].includes('inputs.request_id'));
   const revert = unlock.jobs.revert.steps.find((step) => step.name === 'Revert the live rollouts');
+  assert.equal(revert.env.OTA_UNLOCK_CALLER_LEASE, '${{ inputs.caller_lease }}');
+  assert.equal(revert.env.GITHUB_TOKEN, '${{ github.token }}');
   assert.ok(revert.run.includes('Automatic unlock requires OTA_ADMIN_EMAIL'));
   assert.ok(revert.run.includes('--platform "$platform"'));
   assert.ok(!revert.run.includes(' rollout.ts finish '));
@@ -254,6 +288,7 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   assert.ok(publish.if.includes("steps.unlock.outcome == 'success'"));
   const snapshot = backportSteps.find((step) => step.name === 'Snapshot trusted OTA publish tooling');
   assert.ok(snapshot.run.includes('scripts/mobile-ota-unlock-wait.mjs'));
+  assert.ok(snapshot.run.includes('scripts/lib/ota-unlock-lease.mjs'));
   assert.ok(backportSteps.find((step) => step.id === 'unlock').run.includes('$RUNNER_TEMP/ota-publish-tooling'));
 });
 
@@ -289,7 +324,10 @@ void test('staged unlock dispatch binds saved controls and requires the exact su
     dependencies,
   );
   assert.deepEqual(result.receipt, receipt);
-  assert.deepEqual(JSON.parse(calls[1].init.body).inputs, {
+  const dispatchInputs = JSON.parse(calls.find((call) => call.init.method === 'POST').init.body).inputs;
+  assert.ok(JSON.parse(dispatchInputs.caller_lease).jobId > 0);
+  delete dispatchInputs.caller_lease;
+  assert.deepEqual(dispatchInputs, {
     branch: 'production',
     ios_runtime_version: options.iosRuntime,
     android_runtime_version: options.androidRuntime,

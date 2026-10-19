@@ -161,6 +161,7 @@ jobs:
           for source_path in \
             scripts/mobile-publish.ts \
             scripts/mobile-ota-unlock-wait.mjs \
+            scripts/lib/ota-unlock-lease.mjs \
             scripts/lib/eoas.ts \
             scripts/lib/mobile-publish-retry.ts \
             scripts/lib/ota-branch-probe.ts \

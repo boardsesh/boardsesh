@@ -47,6 +47,7 @@ import {
 } from './lib/ota-rollout.ts';
 import type { ActiveRollout, RolloutPlatform } from './lib/ota-rollout.ts';
 import { adminClientFromEnvironment } from './lib/xprem-admin.mts';
+import { createUnlockLeaseGuard, protectUnlockWrites } from './lib/ota-unlock-lease.mjs';
 import type { XpremAdminClient } from './lib/xprem-admin.mts';
 
 const LOG = '[ota-rollout]';
@@ -212,12 +213,23 @@ export async function runRolloutCommand(
 
 async function main(): Promise<void> {
   const args = parseRolloutArgs(process.argv.slice(2));
+  const assertCallerActive = createUnlockLeaseGuard({
+    requestId: process.env.REQUEST_ID,
+    serializedLease: process.env.OTA_UNLOCK_CALLER_LEASE,
+    repository: process.env.GITHUB_REPOSITORY,
+    token: process.env.GITHUB_TOKEN,
+    branch: args.branch,
+    iosRuntime: process.env.IOS_RUNTIME_VERSION ?? '',
+    androidRuntime: process.env.ANDROID_RUNTIME_VERSION ?? '',
+  });
+  await assertCallerActive();
   const client = await adminClientFromEnvironment({
     appId: desiredOtaState.appId,
     defaultBaseUrl: desiredOtaState.baseUrl,
     environment: process.env,
   });
-  for (const line of await runRolloutCommand(client, args, otaReleasePolicy.health)) console.log(line);
+  const protectedClient = args.command === 'revert' ? protectUnlockWrites(client, assertCallerActive) : client;
+  for (const line of await runRolloutCommand(protectedClient, args, otaReleasePolicy.health)) console.log(line);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

@@ -4,6 +4,8 @@ import type { OtaPlatform } from './lib/ota-publish-protocol';
 import type { ControlHead } from './lib/ota-unlock-receipt';
 import type { XpremRolloutUpdate } from './lib/xprem-admin.mts';
 import { restoredIds, unlockExpected, unlockProof } from './__tests__/helpers/ota-unlock-fixtures';
+import { callerLeaseFixture } from './__tests__/helpers/ota-unlock-lease-fixtures';
+import { protectUnlockWrites } from './lib/ota-unlock-lease.mjs';
 
 function fixture(active: OtaPlatform[] = ['ios', 'android'], sharedRuntime = false) {
   const expected = structuredClone(unlockExpected);
@@ -51,6 +53,27 @@ function fixture(active: OtaPlatform[] = ['ios', 'android'], sharedRuntime = fal
 }
 
 describe('staged control unlock', () => {
+  it.each(['step-ended', 'expired'])('blocks the second staged write when caller %s', async (failure) => {
+    const staged = fixture();
+    const lifetime = callerLeaseFixture();
+    const revert = staged.client.revertUpdateRollout.getMockImplementation()!;
+    staged.client.revertUpdateRollout.mockImplementation(async (...args) => {
+      await revert(...args);
+      if (failure === 'expired') lifetime.clock.nowMs = lifetime.lease.expiresAtMs;
+      else lifetime.job.steps[0].status = 'completed';
+    });
+    await expect(
+      unlockStagedControls({
+        ...staged.expected,
+        proof: unlockProof,
+        readHead: staged.readHead,
+        client: protectUnlockWrites(staged.client, lifetime.guard),
+        verificationDelaysMs: [],
+      }),
+    ).rejects.toThrow(/wait step|expired/);
+    expect(staged.client.revertUpdateRollout).toHaveBeenCalledTimes(1);
+    expect(staged.rollouts.android).not.toBeNull();
+  });
   it.each([{ selected: ['ios', 'android'] }, { selected: ['ios'] }, { selected: [] }] as { selected: OtaPlatform[] }[])(
     'attests exactly the requested controls with live platforms $selected',
     async ({ selected }) => {
