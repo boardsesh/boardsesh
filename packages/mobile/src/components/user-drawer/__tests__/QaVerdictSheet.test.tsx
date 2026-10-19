@@ -298,6 +298,8 @@ describe('QaVerdictSheet approve path', () => {
 
     sheet.fullyDismissed?.();
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Left', expect.anything());
   });
 
   it('moves an early-updates member back to early updates once their verdict is in', async () => {
@@ -314,6 +316,7 @@ describe('QaVerdictSheet approve path', () => {
     expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Left', expect.anything());
   });
 
   it('stays on the sheet when the verdict does not reach the backend', async () => {
@@ -376,16 +379,71 @@ describe('QaVerdictSheet leaving without a verdict', () => {
     expect(qa.surfToProduction).not.toHaveBeenCalled();
   });
 
-  it('surfs back only after the dismissal settles', () => {
+  it('surfs back only after the dismissal settles', async () => {
     const { container } = renderSheet();
     fireEvent.click(container.querySelector('[data-button="Leave preview without feedback"]')!);
 
-    expect(trackMock).toHaveBeenCalledWith('QA Preview Left', { prNumber: 4792 });
+    expect(trackMock).not.toHaveBeenCalled();
     expect(sheet.dismiss).toHaveBeenCalled();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
 
     sheet.fullyDismissed?.();
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 }));
+    sheet.fullyDismissed?.();
+    expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count a leave while its dismissed return is still pending', async () => {
+    let settleReturn!: (outcome: string) => void;
+    qa.surfToProduction.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        settleReturn = resolve;
+      }),
+    );
+    const { container } = renderSheet();
+    fireEvent.click(container.querySelector('[data-button="Leave preview without feedback"]')!);
+    sheet.fullyDismissed?.();
+
+    await vi.waitFor(() => expect(qa.surfToProduction).toHaveBeenCalledOnce());
+    expect(trackMock).not.toHaveBeenCalled();
+
+    settleReturn('reloading');
+    await vi.waitFor(() => expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 }));
+  });
+
+  it('counts a refused leave only as failure, even when a verdict follows', async () => {
+    const reason = 'No safe production update is available; the preview pin is still active.';
+    qa.surfToProduction.mockRejectedValueOnce(new Error(reason));
+    const { container } = renderSheet();
+    fireEvent.click(container.querySelector('[data-button="Leave preview without feedback"]')!);
+    sheet.fullyDismissed?.();
+
+    await vi.waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error'),
+    );
+    expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Surf Failed', { prNumber: null, reason });
+
+    // The sheet persists across opens; a refused no-feedback attempt must not
+    // classify the next successful verdict as leaving without feedback.
+    fireEvent.click(submitButton(container));
+    await vi.waitFor(() => expect(trackMock).toHaveBeenCalledWith('QA Verdict Submitted', expect.anything()));
+    sheet.fullyDismissed?.();
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Left', expect.anything());
+  });
+
+  it('counts a successful no-feedback return to early updates', async () => {
+    earlyUpdates.member = true;
+    const { container } = renderSheet();
+    fireEvent.click(container.querySelector('[data-button="Leave preview without feedback"]')!);
+    expect(trackMock).not.toHaveBeenCalled();
+    sheet.fullyDismissed?.();
+
+    await vi.waitFor(() => expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 }));
+    expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
   });
 
   it('disables both surf actions on a build that cannot surf', () => {

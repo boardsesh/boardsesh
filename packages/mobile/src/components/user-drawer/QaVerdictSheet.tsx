@@ -105,32 +105,37 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
     runningPrNumber !== null && userId !== undefined && (verdict === 'approved' || remainingDeclineChars === 0);
 
   // Set before dismissing, read after the dismissal has really settled.
-  const leaveAfterDismissRef = useRef(false);
+  const leaveAfterDismissRef = useRef<'submitted' | 'without-feedback' | null>(null);
 
-  const leavePreview = useCallback(() => {
-    if (!surfingAvailable) return;
-    void returnToOwnTrack(earlyUpdatesMember)
-      .then((outcome) => {
-        // nothing-to-load confirms production is the selected track. A refused
-        // exit rejects into the failure handler instead of reporting success.
-        if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
-        if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
-      })
-      .catch((error: unknown) => {
-        reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
-        track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
-        // Only the surf back failed; on the submit path the verdict has already
-        // landed and been toasted, so saying "could not send that verdict" here
-        // would be a lie about which half broke. The thrown message itself goes
-        // to Sentry and to the event's `reason` rather than into the tester's face.
-        showToast(t('qa.shared.leaveFailed'), 'error');
-      });
-  }, [earlyUpdatesMember, showToast, surfingAvailable, t]);
+  const leavePreview = useCallback(
+    (withoutFeedback: boolean) => {
+      if (!surfingAvailable) return;
+      void returnToOwnTrack(earlyUpdatesMember)
+        .then((outcome) => {
+          if (withoutFeedback) track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
+          // nothing-to-load confirms production is the selected track. A refused
+          // exit rejects into the failure handler instead of reporting success.
+          if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
+          if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
+        })
+        .catch((error: unknown) => {
+          reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
+          track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
+          // Only the surf back failed; on the submit path the verdict has already
+          // landed and been toasted, so saying "could not send that verdict" here
+          // would be a lie about which half broke. The thrown message itself goes
+          // to Sentry and to the event's `reason` rather than into the tester's face.
+          showToast(t('qa.shared.leaveFailed'), 'error');
+        });
+    },
+    [earlyUpdatesMember, runningPrNumber, showToast, surfingAvailable, t],
+  );
 
   const handleFullyDismissed = useCallback(() => {
-    if (!leaveAfterDismissRef.current) return;
-    leaveAfterDismissRef.current = false;
-    leavePreview();
+    const reason = leaveAfterDismissRef.current;
+    if (reason === null) return;
+    leaveAfterDismissRef.current = null;
+    leavePreview(reason === 'without-feedback');
   }, [leavePreview]);
 
   const handleSubmit = async () => {
@@ -170,7 +175,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       setSetting('qaVerdictSubmittedKey', qaSessionKey(userId, branch, Updates.updateId));
       track(QA_VERDICT_SUBMITTED_EVENT, { prNumber: runningPrNumber, verdict, risk: preview?.risk ?? null });
       showToast(t('qa.verdict.verdictSentToast', { prNumber: runningPrNumber }), 'success');
-      leaveAfterDismissRef.current = true;
+      leaveAfterDismissRef.current = 'submitted';
       sheetRef.current?.dismiss();
       // The sheet lives at the provider root for the whole app session, so it is
       // never remounted — clearing here is what stops the next verdict opening
@@ -188,8 +193,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   };
 
   const handleLeaveWithoutFeedback = () => {
-    track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
-    leaveAfterDismissRef.current = true;
+    leaveAfterDismissRef.current = 'without-feedback';
     sheetRef.current?.dismiss();
   };
 

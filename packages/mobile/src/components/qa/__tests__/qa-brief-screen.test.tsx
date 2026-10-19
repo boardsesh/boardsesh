@@ -236,8 +236,39 @@ describe('QaBriefScreen', () => {
 
     fireEvent.click(screen.getByText('Leave preview'));
 
-    expect(trackMock).toHaveBeenCalledWith('QA Preview Left', { prNumber: 4792 });
+    expect(trackMock).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
+    expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 });
+  });
+
+  it('does not count a leave while the return is still pending', async () => {
+    let settleReturn!: (outcome: string) => void;
+    qa.surfToProduction.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        settleReturn = resolve;
+      }),
+    );
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+    await vi.waitFor(() => expect(qa.surfToProduction).toHaveBeenCalledOnce());
+    expect(trackMock).not.toHaveBeenCalled();
+
+    settleReturn('nothing-to-load');
+    await vi.waitFor(() => expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 }));
+  });
+
+  it('counts a refused production return only as a surf failure', async () => {
+    const reason = 'No safe production update is available; the preview pin is still active.';
+    qa.surfToProduction.mockRejectedValueOnce(new Error(reason));
+    render(<QaBriefScreen />);
+
+    fireEvent.click(screen.getByText('Leave preview'));
+
+    await vi.waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error'),
+    );
+    expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Surf Failed', { prNumber: null, reason });
   });
 
   it('puts an early-updates member back on early updates, not on production', async () => {
@@ -247,6 +278,7 @@ describe('QaBriefScreen', () => {
     fireEvent.click(screen.getByText('Leave preview'));
 
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
+    expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 });
     expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
   });
@@ -286,7 +318,7 @@ describe('QaBriefScreen', () => {
     await vi.waitFor(() =>
       expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error'),
     );
-    expect(trackMock).toHaveBeenCalledWith('QA Surf Failed', {
+    expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Surf Failed', {
       prNumber: null,
       reason: 'Could not reach the update server (502).',
     });

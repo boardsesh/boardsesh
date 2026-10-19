@@ -63,7 +63,12 @@ export function surfFailureReason(error: unknown): string {
   return message.slice(0, 200);
 }
 
-/** The tester left a preview without filing a verdict. Properties: `prNumber`. */
+/**
+ * A return to the tester's own track resolved without filing a verdict.
+ * Properties: `prNumber`. Rejected returns emit only `QA_SURF_FAILED_EVENT`.
+ * Best-effort after a reload: Expo may tear down JS before its promise handlers
+ * run. Missing successful exits are preferable to counting refused attempts.
+ */
 export const QA_PREVIEW_LEFT_EVENT = 'QA Preview Left';
 
 /**

@@ -79,9 +79,9 @@ export function QaBriefScreen() {
   const handleLeavePreview = useCallback(() => {
     if (!surfingAvailable || leaving) return;
     setLeaving(true);
-    track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
     void returnToOwnTrack(earlyUpdatesMember)
       .then((outcome) => {
+        track(QA_PREVIEW_LEFT_EVENT, { prNumber: runningPrNumber });
         // The app is restarting onto the other bundle; this screen is about to
         // be torn down and has nothing left to show.
         if (outcome === 'reloading') return;
