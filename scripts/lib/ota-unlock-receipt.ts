@@ -205,7 +205,7 @@ export async function downloadUnlockReceipt(
   const listing = object((await response.json()) as unknown, 'Unlock artifact listing');
   if (
     !Array.isArray(listing.artifacts) ||
-    listing.artifacts.length >= 100 ||
+    listing.artifacts.length > 100 ||
     listing.total_count !== listing.artifacts.length
   )
     throw new Error('Ambiguous unlock artifact listing.');

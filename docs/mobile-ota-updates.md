@@ -1104,6 +1104,9 @@ retain their original guards.
 
 Unlock jobs check out their run’s exact main SHA and share a separate queued lane, so overlapping
 manual/workflow unlocks cannot interleave. They never acquire the publisher’s production lane.
+GitHub’s `queue: max` allows up to 100 pending unlock jobs; requests beyond that limit are cancelled.
+If only one platform was restored before unlock failed, no receipt is issued. Do not rerun that
+attempt: inspect both controls and coordinate recovery, since the saved baseline may now be stale.
 The revert API does not return a replacement UUID: the receipt attests matching control content
 and the UUID observed after the protected revert, rather than proving causality against arbitrary
 external dashboard writes. External writes still require operator coordination. The daily cadence

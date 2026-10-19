@@ -82,6 +82,14 @@ describe('trusted unlock receipt', () => {
       'https://api.github.com/repos/boardsesh/boardsesh/actions/artifacts/71/zip',
     ]);
   });
+  it('accepts a complete 100-artifact page with one matching receipt', async () => {
+    const { run, listing, artifact, receipt } = artifactFixture();
+    listing.artifacts.push(
+      ...Array.from({ length: 99 }, (_, index) => ({ ...artifact, id: index + 100, name: `unrelated-${index}` })),
+    );
+    listing.total_count = 100;
+    expect(await run()).toEqual(receipt);
+  });
   it.each([
     'missing',
     'duplicate',
@@ -91,6 +99,7 @@ describe('trusted unlock receipt', () => {
     'foreign-branch',
     'oversized',
     'incomplete',
+    'too-many',
   ])('fails closed for %s artifacts before downloading', async (failure) => {
     const { run, listing, artifact, fetchImpl } = artifactFixture();
     if (failure === 'missing') {
@@ -107,6 +116,12 @@ describe('trusted unlock receipt', () => {
     if (failure === 'foreign-branch') artifact.workflow_run.head_branch = 'release/next';
     if (failure === 'oversized') artifact.size_in_bytes = 65_537;
     if (failure === 'incomplete') listing.total_count = 2;
+    if (failure === 'too-many') {
+      listing.artifacts.push(
+        ...Array.from({ length: 100 }, (_, index) => ({ ...artifact, id: index + 100, name: `unrelated-${index}` })),
+      );
+      listing.total_count = 101;
+    }
     await expect(run()).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
