@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   captureProductionBaseline,
@@ -185,6 +187,53 @@ function restoredControlServer(fixture: ReturnType<typeof stageFixture>, unchang
 }
 
 describe('attested control replacements for immediate production', () => {
+  it.each([
+    ['GITHUB_REPOSITORY', 'Invalid unlock repository'],
+    ['OTA_UNLOCK_REQUEST_ID', 'Invalid unlock receipt request id'],
+    ['OTA_UNLOCK_RUN_ID', 'Unlock run ID'],
+    ['OTA_UNLOCK_HEAD_SHA', 'Invalid unlock head SHA'],
+  ])('rejects a receipt when proof environment %s is missing or empty', (variable, expectedError) => {
+    const fixture = stageFixture();
+    const unlockPath = join(fixture.root, 'unlock.json');
+    writeFileSync(
+      unlockPath,
+      JSON.stringify(
+        unlockReceipt({ appId: APP_ID, runtimes: { ios: RUNTIME, android: RUNTIME }, baselines: BASELINE_IDS }),
+      ),
+    );
+    for (const missing of [undefined, '']) {
+      const environment: NodeJS.ProcessEnv = {
+        ...process.env,
+        GITHUB_REF: 'refs/heads/main',
+        GITHUB_REPOSITORY: unlockProof.repository,
+        OTA_UNLOCK_RECEIPT: unlockPath,
+        OTA_UNLOCK_REQUEST_ID: unlockProof.requestId,
+        OTA_UNLOCK_RUN_ID: String(unlockProof.runId),
+        OTA_UNLOCK_HEAD_SHA: unlockProof.headSha,
+        EXPO_UPDATES_URL: 'http://127.0.0.1:1/manifest',
+        EOO_TOKEN: 'test-token',
+      };
+      if (missing === undefined) delete environment[variable];
+      else environment[variable] = missing;
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--experimental-strip-types',
+          fileURLToPath(new URL('./mobile-ota-promote.ts', import.meta.url)),
+          '--receipt',
+          fixture.receiptPath,
+          '--ios-export',
+          fixture.iosExport,
+          '--android-export',
+          fixture.androidExport,
+        ],
+        { env: environment, encoding: 'utf8', timeout: 10_000 },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(expectedError);
+    }
+  });
   it.each([false, true])(
     'accepts only attested heads, including unchanged iOS=%s, without modifying the stage',
     async (unchangedIos) => {
