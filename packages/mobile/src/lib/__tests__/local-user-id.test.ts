@@ -24,6 +24,12 @@ describe('readLocalUserId (native)', () => {
     await expect(readLocalUserId()).resolves.toBe('user-42');
   });
 
+  it('reuses the supplied credential without reading SecureStore again', async () => {
+    getAuthToken.mockResolvedValue(nativeJwt('different-user'));
+    await expect(readLocalUserId(nativeJwt('user-42'))).resolves.toBe('user-42');
+    expect(getAuthToken).not.toHaveBeenCalled();
+  });
+
   it('answers undefined when the keychain has no token', async () => {
     getAuthToken.mockResolvedValue(null);
     await expect(readLocalUserId()).resolves.toBeUndefined();

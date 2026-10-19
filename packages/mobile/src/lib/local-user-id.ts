@@ -20,10 +20,11 @@ import { userIdFromJwt } from './jwt-user-id';
  * request. The browser identity can outlive its token, so it cannot replace
  * either check.
  */
-export type LocalUserIdReader = () => Promise<string | undefined>;
+export type LocalUserIdReader = (token?: string) => Promise<string | undefined>;
 
 /**
  * Native: the backend signs `SignJWT({ sub: userId })`, so the id is already in
- * the token SecureStore holds and no request has to be made for it.
+ * the token SecureStore holds and no request has to be made for it. Callers
+ * that already read a credential can reuse it without another SecureStore read.
  */
-export const readLocalUserId: LocalUserIdReader = async () => userIdFromJwt(await getAuthToken());
+export const readLocalUserId: LocalUserIdReader = async (token) => userIdFromJwt(token ?? (await getAuthToken()));

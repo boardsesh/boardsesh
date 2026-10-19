@@ -63,10 +63,11 @@ async function withConsentAccount<T>(accountId: string, request: (signal: AbortS
     isAuthCredentialGenerationCurrent(credentialGeneration);
   if (!current()) throw new Error('Consent account was superseded');
   const token = await getAuthToken();
-  if (!current() || !token) throw new Error('Consent credential owner changed');
+  if (!current()) throw new Error('Consent account was superseded');
+  if (!token) throw new Error('Consent credential is missing');
   // Native JWT claims and the browser's session-confirmed JWE identity share
   // this local request fence. The backend still authenticates the credential.
-  const credentialOwner = await readLocalUserId();
+  const credentialOwner = await readLocalUserId(token);
   if (!current() || credentialOwner !== accountId) throw new Error('Consent credential owner changed');
   const controller = new AbortController();
   const unsubscribe = subscribeConsent(() => {
