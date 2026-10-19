@@ -80,7 +80,8 @@ export function useSessionPresenceUpdates(refs: SessionRefs) {
           currentRefs.generationRef.current === generation &&
           currentRefs.sessionIdRef.current === sessionId &&
           requestRef.current === request &&
-          displayItem?.uuid === update.options.queueItemUuid
+          displayItem?.uuid === update.options.queueItemUuid &&
+          currentRefs.queueRef.current.some((item) => item.uuid === update.options.queueItemUuid)
         );
       };
       const attemptUpdate = async (retry: boolean): Promise<void> => {

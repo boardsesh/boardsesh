@@ -122,7 +122,7 @@ describe('session-presence update recovery', () => {
     expect(updateLiveActivityClimb).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['generation', 'session', 'climb', 'inactive'] as const)(
+  it.each(['generation', 'session', 'climb', 'inactive', 'queue'] as const)(
     'does not retry after the %s changes',
     async (change) => {
       vi.mocked(updateLiveActivity).mockRejectedValue(new Error('rejected'));
@@ -132,6 +132,7 @@ describe('session-presence update recovery', () => {
       if (change === 'session') refs.sessionIdRef.current = 'new-session';
       if (change === 'climb') refs.currentClimbRef.current = { uuid: 'new-item' } as ClimbQueueItem;
       if (change === 'inactive') refs.isActiveRef.current = false;
+      if (change === 'queue') refs.queueRef.current = [];
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000);
       });
