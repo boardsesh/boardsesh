@@ -130,6 +130,15 @@ describe('iOS recorder launcher recovery', () => {
     expect(state.now()).toBe(60_000);
     expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
   });
+
+  it('propagates a failed recovery instead of hiding it as a readiness timeout', async () => {
+    const state = launchState();
+    const failure = new Error('simctl could not open the dev client');
+    state.recoverLauncher.mockRejectedValue(failure);
+    await expect(waitForShowcaseHome(state)).rejects.toBe(failure);
+    expect(state.now()).toBe(20_000);
+    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('parallel recording simulator names', () => {

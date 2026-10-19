@@ -47,6 +47,7 @@ export async function waitForShowcaseHome(
     hasReachedHome: () => boolean;
     hasLoadedBundle: () => boolean;
     recoverLauncher: () => Promise<void>;
+    /** Polling budget; recovery may overrun it under its own startup deadline. */
     timeoutMs: number;
     now?: () => number;
     sleep?: (milliseconds: number) => Promise<void>;

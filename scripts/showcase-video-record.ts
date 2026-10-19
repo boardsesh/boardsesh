@@ -343,6 +343,7 @@ async function runMaestro(
     flowFile: string;
     label: string;
     signalUrl: string;
+    timeoutMs?: number;
     env?: Readonly<Record<string, string>>;
     child?: (process: ChildProcess) => void;
   }>,
@@ -380,7 +381,7 @@ async function runMaestro(
     code = await runScreenshotMaestro(args, {
       env: toolEnv(),
       cwd: debugDir,
-      timeoutMs: 15 * 60 * 1000,
+      timeoutMs: options.timeoutMs ?? 15 * 60 * 1000,
       onStdout: forward,
       onStderr: forward,
       onSpawn: (child) => {
@@ -711,6 +712,8 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
           flowFile: writeLauncherConfirmFlow(),
           label: `${phone.role}-confirm-launcher`,
           signalUrl: phone.signal.url,
+          // The CI driver allows five minutes to start; this flow only taps Open.
+          timeoutMs: 6 * 60 * 1000,
         });
         if (confirmed !== 0) console.warn(`${LOG} ${phone.role}: launcher confirmation exited ${confirmed}.`);
       },
