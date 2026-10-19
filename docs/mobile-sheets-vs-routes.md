@@ -946,8 +946,8 @@ Settings → Climbs & grades → Climb list opens `/settings/climb-list`; the Cl
 ### Android settings previews
 
 Board look and Climb view use `MoreFormRN` on Android. Their RN carousel and
-live preview stay in the RN view tree: a Compose `RNHostView` custom row has
-measured correctly while drawing blank on Android. iOS keeps its native form.
+live preview stay in the RN view tree: a Compose `RNHostView` custom row can
+report the expected height while drawing blank on Android. iOS keeps its native form.
 The RN form owns the screen's single scroll surface. Select rows use standalone
 native menus so the eight Bluetooth timeout choices remain reachable; disabled
 select rows expose their current value without an interactive menu.
