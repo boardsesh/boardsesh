@@ -130,9 +130,8 @@ describe('the setters shard query', () => {
     // the identity clock has to be in the aggregate or <lastmod> goes stale on
     // exactly the edit a reader would notice first.
     expect(normalised).toContain('left join lateral');
-    expect(normalised).toContain('from user_board_mappings ubm');
-    expect(normalised).toContain('join users u on u.id = ubm.user_id');
-    expect(normalised).toContain('left join user_profiles p on p.user_id = ubm.user_id');
+    expect(normalised).toContain('join users u on u.id = candidate.user_id');
+    expect(normalised).toContain('left join user_profiles p on p.user_id = candidate.user_id');
     expect(normalised).toContain(
       'greatest(eligible.content_clock, coalesce(identity.updated_at, eligible.content_clock))',
     );
@@ -142,11 +141,41 @@ describe('the setters shard query', () => {
     expect(normalised).toContain('from eligible');
     expect(normalised).toContain('where ubm.board_username = eligible.setter_username');
 
-    // Deterministic, and byte-identical to the page's own lookup. The unique
-    // index is (user_id, board_type), NOT board_username, so two different
-    // users can carry one setter name — a bare LIMIT 1 then picks either, their
+    // The identity the page renders, from the builders the page's hero reads:
+    // the account that set the setter's visible climbs first (a MoonBoard
+    // setter has no linked login), then a public account's linked login on one
+    // of the name's board types.
+    //
+    // The authored account is picked for EVERY name in one pass, materialised
+    // and joined on the name, never asked per name inside the lateral: per name
+    // it walked the partial `user_id` index once per eligible setter (~31k), a
+    // cost that grew with every Boardsesh-authored climb.
+    expect(normalised).toContain('authored_identity as materialized (');
+    expect(normalised).toContain(
+      'select distinct on (authored.setter_username) authored.setter_username, authored.user_id',
+    );
+    expect(normalised).toContain(
+      'left join authored_identity on authored_identity.setter_username = eligible.setter_username',
+    );
+    const lateral = normalised.slice(normalised.indexOf('left join lateral ( select greatest(u.updated_at'));
+    expect(lateral).toContain(
+      'select authored_identity.user_id, 0 as source_rank, 0 as climb_count where authored_identity.user_id is not null',
+    );
+    // No per-name aggregate over `board_climbs` by user inside the lateral.
+    expect(lateral).not.toContain('group by board_climbs.user_id');
+    const linkedLogin = lateral.indexOf('select ubm.user_id, 1 as source_rank');
+    expect(linkedLogin).toBeGreaterThan(-1);
+    expect(lateral).toContain('where ubm.board_username = eligible.setter_username');
+    expect(lateral).toContain('board_climbs.board_type = ubm.board_type');
+    expect(lateral.slice(linkedLogin)).toContain('is_private');
+
+    // Deterministic, and the page's own order. The unique index is
+    // (user_id, board_type), NOT board_username, so two different users can
+    // carry one setter name — a bare LIMIT 1 then picks either, their
     // `users.updated_at` differ, and <lastmod> drifts between refreshes.
-    expect(normalised).toContain('order by p.user_id is null, u.id limit 1');
+    expect(normalised).toContain(
+      'order by candidate.source_rank, candidate.climb_count desc, p.user_id is null, candidate.user_id limit 1',
+    );
 
     // `linked_at` is the only clock that moves when an account is newly linked
     // to a setter name — the moment the rendered identity flips from the raw
@@ -157,8 +186,13 @@ describe('the setters shard query', () => {
     // ORDER BY cannot separate those rows, and picking `linked_at` off whichever
     // one `LIMIT 1` reached would let <lastmod> move or REGRESS after a mere
     // plan change.
-    expect(normalised).toContain('greatest(u.updated_at, max(ubm.linked_at), coalesce(p.updated_at, u.updated_at))');
-    expect(normalised).toContain('group by u.id, u.updated_at, p.user_id, p.updated_at');
+    expect(normalised).toContain(
+      'greatest(u.updated_at, coalesce(linked.linked_at, u.updated_at), coalesce(p.updated_at, u.updated_at))',
+    );
+    expect(normalised).toContain(
+      'select max(ubm.linked_at) as linked_at from user_board_mappings ubm ' +
+        'where ubm.user_id = candidate.user_id and ubm.board_username = eligible.setter_username',
+    );
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 

@@ -94,9 +94,10 @@ async function fetchClimbFromDb(
             )
           END AS uuid
         )
-        -- No author account id: this page has no viewer and a shared cache, and
-        -- the link from a climb to a private account is that account's to give.
-        -- Nothing on www reads it; the app gets it from the backend per viewer.
+        -- No author account id. Nothing on www reads it, and this read also opens
+        -- an unlisted climb by its link, whose author is named only under the
+        -- account rule. The app gets it from the backend's Climb.userId, which
+        -- names the author of a published, listed climb to everyone.
         SELECT climbs.uuid, climbs.setter_username, NULL::text as "userId", climbs.name, climbs.description,
         climbs.layout_id as "layoutId", climbs.board_type as "boardType",
         climbs.frames, climbs.frames_count as "framesCount", climbs.frames_pace as "framesPace",

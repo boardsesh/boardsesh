@@ -264,10 +264,11 @@ export const resolvers = {
     lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
       resolveClimbLostHolds(climb, ctx),
 
-    // The author's account id goes only to a viewer who may see that account's
-    // activity — see resolveClimbAuthorId. Every Climb producer passes through
-    // here, after any shared cache.
-    userId: (climb: { userId?: string | null }, _args: unknown, ctx: ConnectionContext) =>
+    // The author's account id: public with a published, listed climb, and
+    // otherwise only for a viewer who may see that account's activity — see
+    // resolveClimbAuthorId. Every Climb producer passes through here, after any
+    // shared cache.
+    userId: (climb: { uuid?: string | null; userId?: string | null }, _args: unknown, ctx: ConnectionContext) =>
       resolveClimbAuthorId(climb, ctx),
   },
 

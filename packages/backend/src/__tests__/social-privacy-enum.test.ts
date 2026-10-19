@@ -11,6 +11,8 @@ const owner = 'social-enum-owner';
 const publicOwner = 'social-enum-public-owner';
 const approved = 'social-enum-approved';
 const stranger = 'social-enum-stranger';
+/** A private account that did not set any of the climbs. */
+const otherPrivate = 'social-enum-other-private';
 const publicClimb = 'social-enum-public-climb';
 const privateClimb = 'social-enum-private-climb';
 const draftClimb = 'social-enum-draft-climb';
@@ -30,8 +32,13 @@ function context(userId: string | null): ConnectionContext {
 beforeAll(async () => {
   await db
     .insert(schema.users)
-    .values([owner, publicOwner, approved, stranger].map((id) => ({ id, email: `${id}@test.com`, name: id })));
-  await db.insert(schema.userProfiles).values({ userId: owner, isPrivate: true });
+    .values(
+      [owner, publicOwner, approved, stranger, otherPrivate].map((id) => ({ id, email: `${id}@test.com`, name: id })),
+    );
+  await db.insert(schema.userProfiles).values([
+    { userId: owner, isPrivate: true },
+    { userId: otherPrivate, isPrivate: true },
+  ]);
   await db.insert(schema.userFollows).values({ followerId: approved, followingId: owner });
   await db.insert(schema.userFollowRequests).values({ requesterId: stranger, recipientId: owner });
   await db.insert(schema.boardClimbs).values(
@@ -67,6 +74,24 @@ beforeAll(async () => {
       },
     ]),
   );
+  // Only a climb's own author is public with it. A row about the private
+  // account's published climb that names a different private account is that
+  // account's activity, so the stranger never sees it.
+  await db.insert(schema.notifications).values({
+    uuid: `${stranger}-other-private-actor`,
+    recipientId: stranger,
+    actorId: otherPrivate,
+    type: 'new_climb',
+    entityType: 'climb',
+    entityId: privateClimb,
+  });
+  await db.insert(schema.feedItems).values({
+    recipientId: stranger,
+    actorId: otherPrivate,
+    type: 'new_climb',
+    entityType: 'climb',
+    entityId: privateClimb,
+  });
   await db.insert(schema.feedItems).values(
     recipients.flatMap((recipientId) =>
       climbs.map((climb) => ({
@@ -140,10 +165,11 @@ describe('social privacy queries with production PostgreSQL enum types', () => {
   it.each([
     { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    // The private account's published climb is public, but each row names the
-    // account as its actor, so a stranger (whose follow request is pending)
-    // gets neither the notification nor the feed row.
-    { viewer: stranger, visible: [publicClimb] },
+    // Who set a published, listed climb is public with it (#6418), so a
+    // stranger (whose follow request is pending) gets the private account's
+    // new-climb row, naming it. The row naming another private account on the
+    // same climb stays hidden, and the draft stays with its owner.
+    { viewer: stranger, visible: [publicClimb, privateClimb] },
   ])('counts unread notifications within $viewer privacy access', async ({ viewer, visible }) => {
     expect(await socialNotificationQueries.unreadNotificationCount(null, {}, context(viewer))).toBe(visible.length);
   });
@@ -151,10 +177,12 @@ describe('social privacy queries with production PostgreSQL enum types', () => {
   it.each([
     { viewer: owner, visible: [publicClimb, privateClimb, draftClimb] },
     { viewer: approved, visible: [publicClimb, privateClimb] },
-    { viewer: stranger, visible: [publicClimb] },
+    { viewer: stranger, visible: [publicClimb, privateClimb] },
   ])('filters materialized feed rows within $viewer privacy access', async ({ viewer, visible }) => {
     const feed = await activityFeedQueries.activityFeed(null, {}, context(viewer));
     expect(feed.items.map((item) => item.entityId).sort()).toEqual([...visible].sort());
+    // Every row names the climb's own author, never the other private account.
+    expect(feed.items.map((item) => item.actorId)).not.toContain(otherPrivate);
     expect(feed.hasMore).toBe(false);
   });
 

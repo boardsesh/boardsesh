@@ -34,20 +34,16 @@ import crypto from 'crypto';
 import { canViewUserActivity } from '../services/privacy';
 import { canReadSocialEntity, canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
 
-/** A new-climb notification: about a published climb, announced to followers or layout watchers. */
-export function isNewClimbNotification(type: string): boolean {
-  return type === 'new_climb' || type === 'new_climb_global';
-}
-
 /**
  * A notification that still goes out, stored with no actor, when the recipient
- * may not see who acted. A new climb is announced under its public setter name.
- * A report on the recipient's own climb reads "Someone reported your climb": a
- * proposal has no owner, so a private reporter stays unnamed to the setter, but
- * the setter still hears that their climb was reported (#6385).
+ * may not see who acted. A report on the recipient's own climb reads "Someone
+ * reported your climb": a proposal has no owner, so a private reporter stays
+ * unnamed to the setter, but the setter still hears that their climb was
+ * reported (#6385). A new climb is not one: who set a published, listed climb
+ * is public with it, so it always names its setter (#6418).
  */
 export function notifiesWithoutActor(type: string): boolean {
-  return isNewClimbNotification(type) || type === 'proposal_on_your_climb';
+  return type === 'proposal_on_your_climb';
 }
 
 /**
@@ -428,8 +424,7 @@ export class NotificationWorker {
     // A type that can be stored without its actor also matches a row stored
     // that way: the actor was hidden from this recipient, so a NULL row is the
     // same notification. Every such type names one actor per entity (a
-    // proposal has one proposer, a climb one setter), so this cannot swallow a
-    // second person. Other types never match NULL: a NULL there is a deleted
+    // proposal has one proposer), so this cannot swallow a second person. Other types never match NULL: a NULL there is a deleted
     // account, not this actor.
     const sameActor = notifiesWithoutActor(type)
       ? sql`(actor_id = ${actorId} OR actor_id IS NULL)`
@@ -462,8 +457,8 @@ export class NotificationWorker {
     // Guard: don't notify yourself
     if (recipientId === actorId) return;
 
-    // Who the stored notification names. A new climb whose setter's account the
-    // recipient may not see is still announced, under its setter name alone.
+    // Who the stored notification names: the actor, or nobody for a report the
+    // recipient may not see the reporter of (`notifiesWithoutActor`).
     let storedActorId: string | null = actorId;
     // A follower is telling the recipient about themselves, so the recipient
     // seeing their name is the point, whatever the actor's own activity privacy
@@ -472,22 +467,21 @@ export class NotificationWorker {
       // The owner of the item hears about every comment and like on it, private
       // commenters included: `canReadSocialEntity` admits the owner of a
       // commented item, and `canSeeActorOnEntity` the owner of a liked one.
-      // On a climb, every actor keeps their own account privacy, its author
-      // included.
+      // On a published, listed climb its author is public with it, so a new
+      // climb names its setter's account to every recipient. Any other row about
+      // a climb is activity and keeps its actor's account privacy, the author's
+      // own included.
       const canSeeActor = commentUuid
         ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
         : entityType
-          ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId)
+          ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId, type)
           : await canViewUserActivity(recipientId, actorId);
       // An inbox is a list: nothing about an unlisted climb reaches anyone but
       // its owner, the same test notificationPrivacyCondition reads with.
       if (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed'))) return;
       if (!canSeeActor) {
-        // A published climb is public, and so is its setter name: a stranger
-        // watching the layout hears about it with no account id or avatar, the
-        // way the board's new-climb feed shows it. A report on the
-        // recipient's own climb goes out unnamed too. Anything else about a
-        // hidden actor is not sent.
+        // A report on the recipient's own climb goes out unnamed. Anything
+        // else about a hidden actor is not sent.
         if (!notifiesWithoutActor(type)) return;
         storedActorId = null;
       }
@@ -540,7 +534,7 @@ export class NotificationWorker {
     entityId: string,
     commentUuid?: string,
   ) {
-    // Fetch actor profile. No actor: a new climb announced under its setter name.
+    // Fetch actor profile. No actor: a report whose reporter stays unnamed.
     const [actor] = actorId
       ? await db
           .select({
@@ -571,7 +565,6 @@ export class NotificationWorker {
     let climbName: string | undefined;
     let climbUuid: string | undefined;
     let climbBoardType: string | undefined;
-    let climbSetterUsername: string | undefined;
     let proposalUuid: string | undefined;
     let proposalType: dbSchema.ClimbProposal['type'] | undefined;
     // 'true'/'false' for a hide proposal: a hide asking for 'false' is an
@@ -583,7 +576,6 @@ export class NotificationWorker {
         .select({
           name: dbSchema.boardClimbs.name,
           boardType: dbSchema.boardClimbs.boardType,
-          setterUsername: dbSchema.boardClimbs.setterUsername,
         })
         .from(dbSchema.boardClimbs)
         .where(eq(dbSchema.boardClimbs.uuid, entityId))
@@ -592,7 +584,6 @@ export class NotificationWorker {
         climbName = climb.name ?? undefined;
         climbUuid = entityId;
         climbBoardType = climb.boardType;
-        climbSetterUsername = climb.setterUsername ?? undefined;
       }
     } else if (
       type === 'proposal_created' ||
@@ -632,7 +623,7 @@ export class NotificationWorker {
       uuid,
       type,
       actorId,
-      actorDisplayName: actorId ? actor?.displayName || actor?.name || undefined : climbSetterUsername,
+      actorDisplayName: actor?.displayName || actor?.name || undefined,
       actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
       entityType: entityType as dbSchema.SocialEntityType | null,
       entityId,
