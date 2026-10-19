@@ -202,8 +202,9 @@ describe('staged control unlock', () => {
   });
   it('refuses a rollout that appears while waiting for propagation', async () => {
     const { run, rollouts, heads, readHead } = fixture();
+    let postRevertReads = 0;
     readHead.mockImplementation(async (platform) => {
-      if (platform === 'ios' && heads.ios.updateId === restoredIds.ios) {
+      if (platform === 'ios' && heads.ios.updateId === restoredIds.ios && postRevertReads++ === 0) {
         rollouts.ios = { updateId: 99, controlUpdateId: 98, platform: 'ios', percentage: 10, createdAt: null };
         return { ...heads.ios, updateId: unlockExpected.baselines.ios };
       }
