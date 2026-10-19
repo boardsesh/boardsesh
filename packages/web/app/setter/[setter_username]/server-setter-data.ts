@@ -1,18 +1,16 @@
 import 'server-only';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import {
-  getClimbStars,
-  getGradeLabel,
-  sprayClimbVisibilityCondition,
-  userActivityVisibilityCondition,
-  withSerialPlan,
-  type SerialPlanDb,
-} from '@boardsesh/db/queries';
+import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbz, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
 import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
+import {
+  SETTER_IDENTITY_ORDER,
+  setterIdentityCandidates,
+  visibleSetterClimbsWhere,
+} from '@/app/lib/seo/sitemap/setter-identity';
 import type { Climb } from '@/app/lib/types';
 
 /**
@@ -58,40 +56,6 @@ export type SetterPageData = {
   climbs: SetterClimbRow[];
   hasMore: boolean;
 };
-
-/**
- * The single visibility predicate. Both builders below call it, so the count
- * that decides "does this page exist" and the list that decides "what does it
- * show" can never describe different sets of climbs — a divergence that would
- * render a 200 with an empty list, or 404 a setter whose climbs are right there.
- *
- * `server-setter-data.test.ts` byte-compares the two rendered WHERE clauses
- * rather than trusting this comment.
- */
-function visibleSetterClimbsWhere(username: string): SQL | undefined {
-  // `SQL | undefined` rather than a cast: drizzle types `and()` that way for the
-  // zero-argument case, `.where()` accepts it, and asserting it away would only
-  // silence the compiler about a shape it is describing correctly.
-  //
-  // `is_hidden` belongs here for the same reason as the sitemap's copy: this is
-  // an indexable page publishing crawlable links, and a climb the community
-  // voted out of browse must not come back through a setter's front door — nor
-  // count towards the number that decides the page exists at all. The setter's
-  // own "My climbs" list is the surface that deliberately keeps showing it.
-  //
-  // No account privacy, item audience or follow relation: a published, listed
-  // climb is public to everyone, so a private account's published climbs list
-  // here too. Whether the hero names the account behind them is
-  // `fetchSetterIdentity`'s rule. The spray predicate is the wall's own rule,
-  // not the climb's.
-  return and(
-    eq(boardClimbs.setterUsername, username),
-    eq(boardClimbs.isListed, true),
-    sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, null),
-    eq(boardClimbs.isDraft, false),
-    eq(boardClimbs.isHidden, false),
-  );
-}
 
 /**
  * Board types and visible-climb count for one setter.
@@ -209,20 +173,15 @@ type SetterIdentity = { displayName: string; avatarUrl: string | null; followerC
 /**
  * Display name, avatar and follower count for the hero.
  *
- * First the account that set this page's climbs (`board_climbs.user_id` on the
- * page's own visible climbs): who set a published, listed climb is public with
- * it, a private account included, and a MoonBoard or other Boardsesh climb has
- * no linked login to find it by. Most climbs first, then the id.
+ * The account is the first of `setterIdentityCandidates` in
+ * `SETTER_IDENTITY_ORDER`: the account that set this page's climbs, else a
+ * public account linked to the name by a Kilter or Tension login on one of its
+ * board types. The setters shard dates `<lastmod>` from the same candidate.
+ * Exported for its test.
  *
- * Otherwise a Kilter or Tension login linked under this name
- * (`user_board_mappings`), on a board type the page lists climbs for. That
- * login is on no climb, so a private account's stays private: this page has no
- * viewer, and the hero falls back to the setter name. Exported for its test.
- *
- * Raw `sql` rather than Drizzle builders because the two candidate sources are
- * one UNION for at most one row and the follower count is a scalar subquery;
- * expressing it as a join chain buys nothing. Falls back to the raw username,
- * which is what the setter is called on every climb row anyway.
+ * Raw `sql` because the follower count is a scalar subquery beside a lookup for
+ * at most one row. Falls back to the raw username, which is what the setter is
+ * called on every climb row anyway.
  */
 export async function fetchSetterIdentity(username: string): Promise<SetterIdentity> {
   const rows = await executeRows<{
@@ -242,29 +201,10 @@ export async function fetchSetterIdentity(username: string): Promise<SetterIdent
     FROM (SELECT 1) AS seed
     LEFT JOIN (
       SELECT u.name, p.display_name, p.avatar_url
-      FROM (
-        SELECT board_climbs.user_id, 0 AS source_rank, count(*) AS climb_count
-        FROM board_climbs
-        WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.user_id IS NOT NULL
-        GROUP BY board_climbs.user_id
-        UNION ALL
-        SELECT ubm.user_id, 1 AS source_rank, 0 AS climb_count
-        FROM user_board_mappings ubm
-        WHERE ubm.board_username = ${username}
-          AND EXISTS (
-            SELECT 1 FROM board_climbs
-            WHERE ${visibleSetterClimbsWhere(username)} AND board_climbs.board_type = ubm.board_type
-          )
-          AND ${userActivityVisibilityCondition(sql`ubm.user_id`, null)}
-      ) AS candidate
+      FROM (${setterIdentityCandidates(username)}) AS candidate
       JOIN users u ON u.id = candidate.user_id
       LEFT JOIN user_profiles p ON p.user_id = candidate.user_id
-      -- Deterministic: the setter's own climbs first, then a linked login. The
-      -- unique index is (user_id, board_type), so two different users can share
-      -- a setter name; a bare LIMIT 1 renders whichever the planner happened to
-      -- reach. The setters shard's <lastmod> reads the linked login alone
-      -- (setter-query.ts), so it can describe another account than this one.
-      ORDER BY candidate.source_rank, candidate.climb_count DESC, p.user_id IS NULL, candidate.user_id
+      ORDER BY ${SETTER_IDENTITY_ORDER}
       LIMIT 1
     ) AS profile ON true
   `,

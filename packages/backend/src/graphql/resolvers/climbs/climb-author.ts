@@ -1,12 +1,19 @@
 import { and, inArray } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
-import { publicClimbCondition, userActivityVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  publicClimbCondition,
+  sprayClimbVisibilityCondition,
+  userActivityVisibilityCondition,
+} from '@boardsesh/db/queries';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 
 type AuthorClaim = { climbUuid: string | null; claimedAuthorId: string | null };
 type Resolution = {
-  /** Published, listed climbs in the batch, by uuid: the author their own row names (null for none). */
+  /**
+   * Published, listed climbs in the batch the viewer may read, by uuid: the
+   * author their own row names (null for none).
+   */
   publicAuthors: Map<string, string | null>;
   /** Claimed authors this viewer may see under the account rule, for the claims no public row settled. */
   visibleAuthors: Set<string>;
@@ -27,7 +34,9 @@ const pendingByViewer = new Map<string | null, Batch>();
  * First the climbs: a published, listed climb names the account in its own
  * `user_id`, for everyone. Read from the row, never from the parent, which can
  * omit the field (`userClimbs`, `setterClimbsFull`) or be a `ClimbInput` a
- * session member sent back through the queue. Then, only for the claims that
+ * session member sent back through the queue. A climb on a spray wall the
+ * viewer may not read is not public to them: the wall's rule still applies to
+ * its climbs, so such a parent falls through to the account rule below. Then, only for the claims that
  * did not settle there (an unlisted climb opened by link, a draft in a queue, a
  * parent with no row), the claimed author's account privacy, as before.
  *
@@ -42,7 +51,16 @@ async function resolveClaims(claims: AuthorClaim[], viewerId: string | null): Pr
     const publicClimbs = await db
       .select({ uuid: schema.boardClimbs.uuid, userId: schema.boardClimbs.userId })
       .from(schema.boardClimbs)
-      .where(and(inArray(schema.boardClimbs.uuid, climbUuids), publicClimbCondition(schema.boardClimbs)));
+      .where(
+        and(
+          inArray(schema.boardClimbs.uuid, climbUuids),
+          publicClimbCondition(schema.boardClimbs),
+          sprayClimbVisibilityCondition(
+            { boardType: schema.boardClimbs.boardType, layoutId: schema.boardClimbs.layoutId },
+            viewerId,
+          ),
+        ),
+      );
     for (const climb of publicClimbs) publicAuthors.set(climb.uuid, climb.userId);
   }
 

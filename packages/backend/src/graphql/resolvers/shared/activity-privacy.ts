@@ -465,7 +465,8 @@ const CLIMB_AUTHORSHIP_ROW_TYPES = ['new_climb', 'new_climb_global'] as const;
  * author's own included: a comment reply stored with no `comment_id` (the
  * inline writer, or a reply deleted since) names a private commenter only to
  * who may see them. The author of a draft or an unlisted climb keeps their
- * account privacy too. Every other entity type keeps its item audience.
+ * account privacy too, and so does the author of a climb on a spray wall the
+ * viewer may not read. Every other entity type keeps its item audience.
  *
  * Whether the row may be shown at all is a separate test: an inbox or feed
  * pairs this with {@link socialEntityPrivacyCondition}, which keeps a draft
@@ -486,7 +487,14 @@ export function entityActorVisibilityCondition(
     queryBuilder
       .select({ uuid: climb.uuid })
       .from(climb)
-      .where(and(eq(climb.uuid, entityId), eq(climb.userId, actorId), publicClimbCondition(climb))),
+      .where(
+        and(
+          eq(climb.uuid, entityId),
+          eq(climb.userId, actorId),
+          publicClimbCondition(climb),
+          sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
+        ),
+      ),
   )})`;
   return sql`(CASE WHEN ${entityType}::text = 'climb'
     THEN (${announcesActorsPublicClimb} OR ${userActivityVisibilityCondition(actorId, viewerId)})

@@ -9,6 +9,7 @@ import { resolveClimbSitemapGroups, type ClimbConfigGroup } from './climb-entrie
 import { latestLastModified, type SitemapItem } from './entries';
 import { publishableAngleWhere } from './published-angle';
 import { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
+import { SETTER_IDENTITY_ORDER, setterIdentityCandidates } from './setter-identity';
 
 /**
  * How many publicly visible climbs a setter needs before their page is worth a
@@ -158,11 +159,10 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // (~31k lookups) rather than once per visible climb (~10x that). It has to be
   // in here at all because the page's `<h1>`, summary, avatar and `ProfilePage`
   // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
-  // rename a mapped setter and every one of those changes while the climb rows
-  // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s linked-login lookup.
-  // The hero names the account that set the page's climbs before a linked
-  // login, and this clock does not read that account yet, so for such a setter
-  // `<lastmod>` can trail a rename.
+  // rename the setter's account and every one of those changes while the climb
+  // rows sit still. The account is the one `fetchSetterIdentity` renders: the
+  // first of `setterIdentityCandidates` in `SETTER_IDENTITY_ORDER`, the shared
+  // builder both read, so the clock cannot describe another account.
   //
   // `linked_at` is in the fold because it is the only clock that moves when an
   // account is newly linked to a setter name — the moment the rendered identity
@@ -176,7 +176,8 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // `LIMIT 1` happened to reach would let `<lastmod>` move, or go BACKWARDS, on
   // a page nothing changed about, after nothing worse than a plan change.
   // `max()` over that user's mappings is the honest clock: any relink rebinds
-  // the identity the page renders.
+  // the identity the page renders. An account named by its own climbs and
+  // never linked has no mapping, and its user clocks stand alone.
   //
   // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
   // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
@@ -237,13 +238,17 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
       ) AS last_modified
     FROM eligible
     LEFT JOIN LATERAL (
-      SELECT GREATEST(u.updated_at, max(ubm.linked_at), COALESCE(p.updated_at, u.updated_at)) AS updated_at
-      FROM user_board_mappings ubm
-      JOIN users u ON u.id = ubm.user_id
-      LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
-      WHERE ubm.board_username = eligible.setter_username
-      GROUP BY u.id, u.updated_at, p.user_id, p.updated_at
-      ORDER BY p.user_id IS NULL, u.id
+      SELECT GREATEST(u.updated_at, COALESCE(linked.linked_at, u.updated_at), COALESCE(p.updated_at, u.updated_at))
+        AS updated_at
+      FROM (${setterIdentityCandidates(sql`eligible.setter_username`)}) AS candidate
+      JOIN users u ON u.id = candidate.user_id
+      LEFT JOIN user_profiles p ON p.user_id = candidate.user_id
+      LEFT JOIN LATERAL (
+        SELECT max(ubm.linked_at) AS linked_at
+        FROM user_board_mappings ubm
+        WHERE ubm.user_id = candidate.user_id AND ubm.board_username = eligible.setter_username
+      ) AS linked ON true
+      ORDER BY ${SETTER_IDENTITY_ORDER}
       LIMIT 1
     ) AS identity ON true
     ORDER BY eligible.setter_username ASC

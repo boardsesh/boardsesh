@@ -100,6 +100,10 @@ const CROSS_BOARD_SETTER_NAME = 'matrix-cross-board-setter';
 const CROSS_BOARD = 'matrix-cross-board';
 const UNLINKED_SETTER_NAME = 'matrix-unlinked-setter';
 const UNLINKED_AUTHORED = 'matrix-unlinked-authored';
+/** The unlinked author's PRIVATE spray wall, and a published, listed climb on it. */
+const PRIVATE_WALL = 'matrix-private-wall';
+const PRIVATE_WALL_LAYOUT_ID = 99_785;
+const PRIVATE_WALL_CLIMB = 'matrix-private-wall-climb';
 
 // `graphql` resolves to two module instances under the test transform. The
 // schema was built with the CJS copy, so `execute` has to come from the same
@@ -121,6 +125,7 @@ async function removeFixtures(): Promise<void> {
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE 'matrix-%'`);
+  await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM user_boards WHERE uuid LIKE 'matrix-%'`);
   await db.execute(sql`DELETE FROM users WHERE id IN (${sql.join(USERS, sql`, `)})`);
 }
@@ -194,6 +199,31 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
     await insertClimb(MAPPED_HIDDEN, MAPPED_PRIVATE, { setterUsername: MAPPED_SETTER_NAME, isHidden: true });
     await insertClimb(CROSS_BOARD, null, { setterUsername: CROSS_BOARD_SETTER_NAME });
     await insertClimb(UNLINKED_AUTHORED, UNLINKED_AUTHOR, { setterUsername: UNLINKED_SETTER_NAME });
+    await db.insert(schema.userBoards).values({
+      uuid: PRIVATE_WALL,
+      slug: PRIVATE_WALL,
+      ownerId: UNLINKED_AUTHOR,
+      boardType: 'spray',
+      layoutId: PRIVATE_WALL_LAYOUT_ID,
+      sizeId: PRIVATE_WALL_LAYOUT_ID,
+      setIds: '1',
+      name: 'Matrix private wall',
+      isPublic: false,
+    });
+    await db.insert(schema.sprayWalls).values({ boardUuid: PRIVATE_WALL, layoutId: PRIVATE_WALL_LAYOUT_ID });
+    await db.insert(schema.boardClimbs).values({
+      uuid: PRIVATE_WALL_CLIMB,
+      boardType: 'spray',
+      layoutId: PRIVATE_WALL_LAYOUT_ID,
+      userId: UNLINKED_AUTHOR,
+      name: 'Climb on a private wall',
+      setterUsername: 'matrix-wall-setter',
+      frames: 'p1r12',
+      framesCount: 1,
+      isDraft: false,
+      isListed: true,
+      isHidden: false,
+    });
     await insertClimb(DELETED_DRAFT, DELETED_AUTHOR, {
       isDraft: true,
       isListed: false,
@@ -916,6 +946,21 @@ describeWithDatabase('a published climb is public everywhere (real DB)', () => {
       expect(await resolveClimbAuthorId(draft, anonymous)).toBeNull();
       expect(await resolveClimbAuthorId(draft, ctxFor(FOLLOWER))).toBe(PRIVATE_AUTHOR);
       expect(await resolveClimbAuthorId(draft, ctxFor(PRIVATE_AUTHOR))).toBe(PRIVATE_AUTHOR);
+    });
+
+    it("keeps the private author of a climb on a spray wall the viewer can't read, from any claim", async () => {
+      // The wall's own rule still applies to its climbs: a queued or synthetic
+      // parent naming that climb's uuid gets the account rule, not the row.
+      for (const ctx of [ctxFor(STRANGER), anonymous]) {
+        expect(await resolveClimbAuthorId({ uuid: PRIVATE_WALL_CLIMB, userId: UNLINKED_AUTHOR }, ctx)).toBeNull();
+        expect(await resolveClimbAuthorId({ uuid: PRIVATE_WALL_CLIMB }, ctx)).toBeNull();
+      }
+      // The wall's owner reads it, so the row names them.
+      expect(await resolveClimbAuthorId({ uuid: PRIVATE_WALL_CLIMB }, ctxFor(UNLINKED_AUTHOR))).toBe(UNLINKED_AUTHOR);
+      // Nor does a new-climb row about it name the author to a stranger.
+      expect(await canSeeActorOnEntity('climb', PRIVATE_WALL_CLIMB, UNLINKED_AUTHOR, STRANGER, 'new_climb')).toBe(
+        false,
+      );
     });
 
     it('takes the author of a published, listed climb from its row, whatever the parent claims', async () => {
