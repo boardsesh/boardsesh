@@ -29,6 +29,8 @@
     "__tests__/mobile-store-android-review-pending.test.ts",
     "__tests__/push-run-superseded.test.ts",
     "import-live-activity-capture.ts",
+    "store-video-measure.ts",
+    "__tests__/store-video-measure.test.ts",
     "__tests__/screenshot-live-activity.test.ts",
     "record-ios-campaign-privacy.ts",
     "__tests__/record-ios-campaign-privacy.test.ts",

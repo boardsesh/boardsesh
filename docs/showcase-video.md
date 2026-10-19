@@ -20,6 +20,27 @@ the moment the app changes.
 
 ## Prerequisites (macOS only)
 
+### CI measurement (Phase 0)
+
+Dispatch **Mobile Store Videos** to record MoonBoard in en-US, es, fr and de
+on one macOS 26 runner, then render on Ubuntu. It reuses the screenshot
+dev-client cache and checksum-pinned Maestro. Set `SCREENSHOT_USER_EMAIL` and
+`SCREENSHOT_USER_PASSWORD` in the same scope as the screenshot workflow.
+MoonBoard needs neither a crew account nor physical Live Activity footage.
+
+The `store-videos-moonboard` artifact contains four MP4s, posters and
+`search-results.manifest.json` files. Every encode passes
+`creativeVideoProblems` before upload. Frames are an Actions handoff artifact
+with one-day retention; no frames go to R2. Metrics include per-step minutes,
+sampled process-tree RSS, total runner memory usage, and simulator boot-state
+transitions. The recorder tears down its simulator in every locale child;
+use the transitions and recorder logs to verify that behavior in CI. Memory
+samples are every five seconds, so brief peaks may be higher.
+
+Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
+green dispatch. Those measurements decide Phase 5 optimizations; estimates
+are not recorded as measurements. This dispatch does not write to R2 or Apple.
+
 - Xcode with an iOS 26 simulator runtime.
 - Maestro (`curl -Ls "https://get.maestro.mobile.dev" | bash`) and a JDK 21 at
   `~/.cache/boardsesh/jdk-21` (the recorder sets `JAVA_HOME` to it when it
