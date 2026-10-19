@@ -14,7 +14,7 @@ import { PressableSurface } from './PressableSurface';
 // files is one Host per control rather than one Host for the whole form — which
 // is exactly what every settings screen in the app did before MoreForm existed.
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
@@ -37,7 +37,8 @@ import {
 } from './MoreForm.logic';
 import type { MoreFormProps, MoreRow, MoreSection, MoreSelectRow, MoreIconName } from './MoreForm.types';
 
-// These are the leading icons on the Board settings preview screen.
+// Intentionally partial: these are the Board settings preview icons. Add a
+// mapping when another native-form nav icon reaches an RN-rendered screen.
 const NAV_ICONS: Partial<Record<MoreIconName, IconName>> = {
   boardLook: 'view.options',
   accessibility: 'accessibility',
@@ -48,6 +49,8 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   currentRowRef.current = row;
   const mountedRef = useRef(true);
   useEffect(() => {
+    // StrictMode replays setup after cleanup on the same ref during development.
+    // Reset it so replayed mounts can still select menu options.
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -55,6 +58,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   }, []);
   const { systemColors } = useTheme();
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
+  const optionsKey = useMemo(() => JSON.stringify(row.options), [row.options]);
   return (
     <View style={styles.padded}>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -68,7 +72,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
         <AppMenu
           // Native menus retain their action indices while open. Changed options
           // must remount the menu rather than let an old tap pick a moved row.
-          key={JSON.stringify(row.options)}
+          key={optionsKey}
           label={currentLabel}
           accessibilityLabel={`${row.label}, ${currentLabel}`}
           actions={row.options.map((option) => ({ label: option.label, selected: option.key === row.selectedKey }))}

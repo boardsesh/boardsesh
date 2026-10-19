@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, type ReactNode } from 'react';
+import { createElement, StrictMode, type ReactNode } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MoreFormModel, MoreSelectRow } from '../MoreForm.types';
@@ -149,6 +149,17 @@ describe('MoreFormRN menu selects', () => {
     act(() => controls.menu?.onSelectIndex(-1));
     act(() => controls.menu?.onSelectIndex(99));
     expect(row.onSelect).toHaveBeenCalledTimes(8);
+  });
+
+  it('keeps selections enabled after StrictMode replays the mount effect', () => {
+    const row = timeoutRow();
+    render(
+      <StrictMode>
+        <MoreFormRN model={selectModel(row)} />
+      </StrictMode>,
+    );
+    act(() => controls.menu?.onSelectIndex(2));
+    expect(row.onSelect).toHaveBeenCalledWith('30');
   });
 
   it('renders disabled selects as noninteractive values and guards a disabled callback', () => {
