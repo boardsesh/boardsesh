@@ -780,6 +780,31 @@ describe('stable controller execution', () => {
       expect(mocks.promote).not.toHaveBeenCalled();
     },
   );
+  it.each(['ios', 'android'] as const)(
+    'manual start immediately aborts the sibling when the %s head was externally replaced',
+    async (replacedPlatform) => {
+      const { options, root, live, client, baselineIds } = fixture();
+      options.state.active!.phase = 'starting';
+      options.operation = 'start';
+      options.expectedSha = options.state.active!.candidate.receipt.commitHash;
+      const externalHead = '77777777-7777-7777-7777-777777777777';
+      baselineIds[replacedPlatform] = externalHead;
+      live.splice(
+        live.findIndex((entry) => entry.platform === replacedPlatform),
+        1,
+      );
+      const siblingId = replacedPlatform === 'ios' ? '32' : '31';
+      options.save = () => saveState(join(root, 'state.json'), options.state, '201');
+      await tickStable(options);
+      expect(options.state.active).toBeNull();
+      expect(readState(join(root, 'state.json')).active).toBeNull();
+      expect(live).toEqual([]);
+      expect(baselineIds[replacedPlatform]).toBe(externalHead);
+      expect(client.revertUpdateRollout).toHaveBeenCalledExactlyOnceWith('production', expect.any(String), siblingId);
+      expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+      expect(mocks.promote).not.toHaveBeenCalled();
+    },
+  );
   it('full finish refreshes only the baseline the owned release replaced', async () => {
     const { options, live } = fixture();
     options.now = new Date('2026-10-09T22:00:00Z');

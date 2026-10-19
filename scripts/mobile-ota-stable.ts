@@ -331,7 +331,9 @@ export async function abortStable(options: ControllerOptions): Promise<void> {
   options.state.candidate = null;
   options.save();
   options.log('Abort: preserving observed external heads and reverting remaining owned canaries.');
-  await tickStable(options);
+  // Recovery must finish as a tick, even when a manual start detected the
+  // external replacement. A start cannot operate on the reverting checkpoint.
+  await tickStable({ ...options, operation: 'tick' });
 }
 export async function tickStable(options: ControllerOptions): Promise<void> {
   const { state, now } = options;
