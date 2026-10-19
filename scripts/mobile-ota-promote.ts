@@ -60,6 +60,9 @@ import type { OtaPlatform, PublishTarget, UploadLease, ValidatedExport } from '.
 import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
 import type { XpremAdminClient, XpremId } from './lib/xprem-admin.mts';
 
+import { validateUnlockReceipt } from './lib/ota-unlock-receipt.ts';
+import type { UnlockProof } from './lib/ota-unlock-receipt.ts';
+
 export { validateExport };
 
 export interface StageReceipt {
@@ -492,6 +495,8 @@ export async function promoteArchivedOta(options: {
   androidExport: string;
   manifestUrl: string;
   token: string;
+  /** Only the trusted staged-unlock waiter supplies this proof; never a rollout. */
+  unlockAuthorization?: { receipt: unknown; proof: UnlockProof };
   /** The branch to promote to. Defaults to `production`. */
   branch?: string;
   emptyBranchReader?: EmptyBranchReader;
@@ -514,6 +519,8 @@ export async function promoteArchivedOta(options: {
 }): Promise<void> {
   if (!options.token) throw new Error('EOO_TOKEN is required.');
   const branch = branchName(options.branch ?? DEFAULT_BRANCH);
+  if (options.unlockAuthorization && (branch !== DEFAULT_BRANCH || options.rollout || options.emptyBranchReader))
+    throw new Error('Unlock authorization is only valid for immediate production promotion.');
   const rolloutPercentage = options.rollout?.percentage ?? null;
   if (
     rolloutPercentage !== null &&
@@ -521,7 +528,8 @@ export async function promoteArchivedOta(options: {
   ) {
     throw new Error('A rollout percentage must be a whole number from 1 to 99.');
   }
-  const receipt = parseStageReceipt(JSON.parse(readFileSync(options.receiptPath, 'utf8')) as unknown);
+  const stagedReceipt = parseStageReceipt(JSON.parse(readFileSync(options.receiptPath, 'utf8')) as unknown);
+  let receipt = stagedReceipt;
   const exports = {
     ios: validateExport(options.iosExport, 'ios', receipt.platforms.ios.bundleSha256),
     android: validateExport(options.androidExport, 'android', receipt.platforms.android.bundleSha256),
@@ -529,6 +537,29 @@ export async function promoteArchivedOta(options: {
   if (exports.ios.appId !== exports.android.appId)
     throw new Error('iOS and Android exports have different expo-app-id values.');
   const appId = exports.ios.appId;
+  if (options.unlockAuthorization) {
+    const authorization = validateUnlockReceipt(
+      options.unlockAuthorization.receipt,
+      options.unlockAuthorization.proof,
+      {
+        appId,
+        runtimes: {
+          ios: stagedReceipt.platforms.ios.runtimeVersion,
+          android: stagedReceipt.platforms.android.runtimeVersion,
+        },
+        baselines: stagedReceipt.baselineProductionUpdateIds,
+      },
+    );
+    // Keep the archived stage immutable. Every baseline/no-change check below
+    // uses this one effective view of the attested replacement heads.
+    receipt = {
+      ...stagedReceipt,
+      baselineProductionUpdateIds: {
+        ios: authorization.platforms.ios.restoredUpdateId,
+        android: authorization.platforms.android.restoredUpdateId,
+      },
+    };
+  }
   const base = uploadServerBase(options.manifestUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
   const target: PublishTarget = { base, appId, branch, token: options.token, fetchImpl };
@@ -739,7 +770,7 @@ export async function promoteArchivedOta(options: {
     }
     if (response.status === 406) {
       await response.body?.cancel();
-      if (rolloutReader) {
+      if (rolloutReader || options.unlockAuthorization) {
         const uuid = receipt.baselineProductionUpdateIds[platform];
         if (uuid === null) throw new Error(`${platform} unchanged platform has no stable baseline.`);
         if (rolloutRecord.updateIds[platform]) throw new Error(`${platform} leased update cannot become unchanged.`);
@@ -752,7 +783,7 @@ export async function promoteArchivedOta(options: {
           uuid,
         );
         // An unowned rollout starting after the first read must never be classified as unchanged.
-        await ownRolloutIsLive(rolloutReader, platform, null);
+        if (rolloutReader) await ownRolloutIsLive(rolloutReader, platform, null);
         rolloutRecord.unchangedPlatforms[platform] = uuid;
         saveRolloutRecord();
       }
@@ -777,7 +808,7 @@ export async function promoteArchivedOta(options: {
   }
 
   for (const platform of ['ios', 'android'] as const) {
-    if (rolloutReader) {
+    if (rolloutReader || options.unlockAuthorization) {
       // Revalidate every unchanged side before either platform's upload/finalize.
       await verifyUnchangedPlatforms({
         receipt,
@@ -865,7 +896,23 @@ async function main(): Promise<void> {
         validateExport(args.iosExport, 'ios', receipt.platforms.ios.bundleSha256).appId,
       )
     : undefined;
+  const unlockPath = process.env.OTA_UNLOCK_RECEIPT;
+  if (unlockPath && process.env.GITHUB_REF !== 'refs/heads/main')
+    throw new Error('Unlock receipt publication requires the trusted main workflow.');
   await promoteArchivedOta({
+    ...(unlockPath
+      ? {
+          unlockAuthorization: {
+            receipt: JSON.parse(readFileSync(unlockPath, 'utf8')) as unknown,
+            proof: {
+              repository: process.env.GITHUB_REPOSITORY ?? '',
+              requestId: process.env.OTA_UNLOCK_REQUEST_ID ?? '',
+              runId: Number(process.env.OTA_UNLOCK_RUN_ID),
+              headSha: process.env.OTA_UNLOCK_HEAD_SHA ?? '',
+            },
+          },
+        }
+      : {}),
     receiptPath: args.receipt,
     iosExport: args.iosExport,
     androidExport: args.androidExport,

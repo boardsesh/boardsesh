@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { parse } from 'yaml';
 import {
   dispatchAndWaitForUnlock,
@@ -227,7 +228,12 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   assert.equal(unlock.permissions.contents, 'read');
   assert.equal(unlock.concurrency, undefined);
   assert.equal(unlock.jobs.revert.environment, 'ota-stable-release');
-  assert.equal(unlock.jobs.revert.steps.find((step) => step.name === 'Checkout main').with.ref, 'main');
+  assert.equal(unlock.jobs.revert.steps.find((step) => step.name === 'Checkout main').with.ref, '${{ github.sha }}');
+  assert.deepEqual(unlock.jobs.revert.concurrency, {
+    group: 'mobile-ota-unlock',
+    'cancel-in-progress': false,
+    queue: 'max',
+  });
   assert.ok(unlock['run-name'].includes('inputs.request_id'));
   const revert = unlock.jobs.revert.steps.find((step) => step.name === 'Revert the live rollouts');
   assert.ok(revert.run.includes('Automatic unlock requires OTA_ADMIN_EMAIL'));
@@ -249,4 +255,67 @@ void test('publisher workflows hold the lane, await unlock, and never unlock sta
   const snapshot = backportSteps.find((step) => step.name === 'Snapshot trusted OTA publish tooling');
   assert.ok(snapshot.run.includes('scripts/mobile-ota-unlock-wait.mjs'));
   assert.ok(backportSteps.find((step) => step.id === 'unlock').run.includes('$RUNNER_TEMP/ota-publish-tooling'));
+});
+
+void test('staged unlock dispatch binds saved controls and requires the exact successful run artifact', async () => {
+  const { unlockExpected, unlockReceipt } = await import('./__tests__/helpers/ota-unlock-fixtures.ts');
+  const receipt = { ...unlockReceipt(), runId: completedRun.id };
+  const zip = spawnSync(
+    'python3',
+    [
+      '-c',
+      'import io,sys,zipfile; output=io.BytesIO(); archive=zipfile.ZipFile(output,"w"); archive.writestr("receipt.json",sys.stdin.buffer.read()); archive.close(); sys.stdout.buffer.write(output.getvalue())',
+    ],
+    { input: JSON.stringify(receipt) },
+  ).stdout;
+  const artifact = {
+    id: 71,
+    name: `ota-unlock-${requestId}`,
+    size_in_bytes: zip.length,
+    expired: false,
+    expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    workflow_run: { id: completedRun.id, head_sha: headSha, head_branch: 'main' },
+  };
+  const { calls, dependencies } = harness([
+    json(workflow),
+    dispatchAccepted(),
+    runList([completedRun]),
+    json({ jobs: [completedJob] }),
+    json({ total_count: 1, artifacts: [artifact] }),
+    new Response(zip),
+  ]);
+  const result = await dispatchAndWaitForUnlock(
+    { ...options, staged: { appId: unlockExpected.appId, baselines: unlockExpected.baselines } },
+    dependencies,
+  );
+  assert.deepEqual(result.receipt, receipt);
+  assert.deepEqual(JSON.parse(calls[1].init.body).inputs, {
+    branch: 'production',
+    ios_runtime_version: options.iosRuntime,
+    android_runtime_version: options.androidRuntime,
+    request_id: requestId,
+    staged_app_id: unlockExpected.appId,
+    ios_baseline_update_id: unlockExpected.baselines.ios,
+    android_baseline_update_id: unlockExpected.baselines.android,
+  });
+  assert.match(calls.at(-1).url, /\/actions\/artifacts\/71\/zip$/);
+});
+
+void test('a green staged unlock without its receipt fails closed and never redispatches', async () => {
+  const { unlockExpected } = await import('./__tests__/helpers/ota-unlock-fixtures.ts');
+  const { calls, dependencies } = harness([
+    json(workflow),
+    dispatchAccepted(),
+    runList([completedRun]),
+    json({ jobs: [completedJob] }),
+    json({ total_count: 0, artifacts: [] }),
+  ]);
+  await assert.rejects(
+    dispatchAndWaitForUnlock(
+      { ...options, staged: { appId: unlockExpected.appId, baselines: unlockExpected.baselines } },
+      dependencies,
+    ),
+    /exactly one trusted unlock receipt/,
+  );
+  assert.equal(calls.filter((call) => call.init.method === 'POST').length, 1);
 });

@@ -43,16 +43,24 @@ on:
         description: 'Android runtime version (40-character fingerprint); leave empty to skip Android'
         type: string
         default: ''
+      staged_app_id:
+        description: 'Staged promotion only: app whose saved controls must be preserved'
+        type: string
+        default: ''
+      ios_baseline_update_id:
+        description: 'Staged iOS control UUID, or null for an empty runtime'
+        type: string
+        default: ''
+      android_baseline_update_id:
+        description: 'Staged Android control UUID, or null for an empty runtime'
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
-# No concurrency group, deliberately. GitHub keeps at most one run waiting per
-# group and cancels an older waiting run when a newer one arrives, so with a group
-# a third request would silently cancel the second, and that caller's publish
-# would then be refused. Runs may overlap instead, which is safe: every revert
-# names the update it expects (`expectedUpdateId`), the server refuses a write
-# against a rollout that has already changed, and "already reverted" is success.
+# Unlocks have a separate queued lane below, never the parent's production lane.
+# Keep every waiter: cancelling an older queued unlock would strand its publisher.
 
 jobs:
   revert:
@@ -62,6 +70,10 @@ jobs:
     # deployment-branch policy of `main` BEFORE adding its secrets; see the docs
     # for the list. The first step below refuses any other ref regardless.
     environment: ota-stable-release
+    concurrency:
+      group: mobile-ota-unlock
+      cancel-in-progress: false
+      queue: max
     steps:
       # Before anything reads a secret.
       - name: Refuse any ref but main
@@ -73,7 +85,7 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       # No dependency install: the script uses node built-ins only.
@@ -90,6 +102,10 @@ jobs:
           REQUEST_ID: ${{ inputs.request_id }}
           IOS_RUNTIME_VERSION: ${{ inputs.ios_runtime_version }}
           ANDROID_RUNTIME_VERSION: ${{ inputs.android_runtime_version }}
+          STAGED_APP_ID: ${{ inputs.staged_app_id }}
+          EXPECTED_IOS_UPDATE_ID: ${{ inputs.ios_baseline_update_id }}
+          EXPECTED_ANDROID_UPDATE_ID: ${{ inputs.android_baseline_update_id }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
           NODE_NO_WARNINGS: '1'
         run: |
           set -euo pipefail
@@ -133,6 +149,11 @@ jobs:
             exit 0
           fi
 
+          if [ -n "$STAGED_APP_ID" ]; then
+            node --experimental-strip-types scripts/mobile-ota-unlock-staged.ts "$RUNNER_TEMP/ota-unlock-receipt/receipt.json"
+            exit 0
+          fi
+
           # Revert only the requested platform on its exact runtime. Both are
           # attempted even when the first fails; the job still ends red.
           status=0
@@ -154,3 +175,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      - name: Retain verified staged unlock receipt
+        if: success() && inputs.staged_app_id != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ota-unlock-${{ inputs.request_id }}
+          path: ${{ runner.temp }}/ota-unlock-receipt/receipt.json
+          if-no-files-found: error
+          retention-days: 1

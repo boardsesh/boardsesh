@@ -63,17 +63,26 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mobile-ota-server-ready.mjs
       - name: Await trusted main-only production unlock
+        id: unlock
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OTA_BRANCH: production
           IOS_RUNTIME_VERSION: ${{ steps.preflight.outputs.ios_runtime }}
           ANDROID_RUNTIME_VERSION: ${{ steps.preflight.outputs.android_runtime }}
-        run: node scripts/mobile-ota-unlock-wait.mjs
+          STAGED_APP_ID: ${{ steps.preflight.outputs.app_id }}
+          EXPECTED_IOS_UPDATE_ID: ${{ steps.preflight.outputs.ios_baseline }}
+          EXPECTED_ANDROID_UPDATE_ID: ${{ steps.preflight.outputs.android_baseline }}
+          OTA_UNLOCK_RECEIPT: ${{ runner.temp }}/ota-unlock-receipt.json
+        run: node --experimental-strip-types scripts/mobile-ota-unlock-wait.mjs
       - name: Promote exact staged iOS and Android exports to production
         id: promote
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+          OTA_UNLOCK_RECEIPT: ${{ runner.temp }}/ota-unlock-receipt.json
+          OTA_UNLOCK_RUN_ID: ${{ steps.unlock.outputs.run_id }}
+          OTA_UNLOCK_REQUEST_ID: ${{ steps.unlock.outputs.request_id }}
+          OTA_UNLOCK_HEAD_SHA: ${{ steps.unlock.outputs.head_sha }}
         run: >-
           node --experimental-strip-types scripts/mobile-ota-promote.ts
           --receipt ota-stage/receipt.json

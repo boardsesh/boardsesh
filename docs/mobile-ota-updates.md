@@ -1089,8 +1089,25 @@ It verifies source-run provenance and receipt SHA, validates both archived expor
 fingerprints, and checks both immutable saved production baselines before any unlock. It checks
 the live backend schema against the archived SHA and OTA-server readiness against the controller
 commit, awaits the trusted main-only unlock, then publishes the archived bytes without exporting
-again. The existing promoter checks the saved baselines again after unlock; a changed baseline
-blocks publication rather than being regenerated. The daily cadence and activation switch remain unchanged.
+again. A staged unlock checks both live controls against the saved baselines before any revert.
+It verifies that each restored head has the same bundle hash, asset hashes and Expo config, then
+issues a request-bound receipt naming the exact observed replacement UUIDs. The caller accepts
+only the artifact from its validated successful main run, first attempt, and checks its app,
+platforms, runtimes and original controls. The archived stage receipt is never rewritten.
+
+Only immediate production promotion can use this authorization. The promoter uses the attested
+UUIDs consistently for its existing baseline checks, including a server response of “no changes,”
+before upload leases and before each upload. A no-op unlock authorizes only the original UUID;
+an unrelated replacement is refused even when it serves identical bytes. Partial unlock failure,
+missing evidence or a later head change blocks publication. Rollout and other-branch promotions
+retain their original guards.
+
+Unlock jobs check out their run’s exact main SHA and share a separate queued lane, so overlapping
+manual/workflow unlocks cannot interleave. They never acquire the publisher’s production lane.
+The revert API does not return a replacement UUID: the receipt attests matching control content
+and the UUID observed after the protected revert, rather than proving causality against arbitrary
+external dashboard writes. External writes still require operator coordination. The daily cadence
+and activation switch remain unchanged.
 
 The final summary checks each platform independently for the archived bundle, assets and Expo config,
 including after a partial failure. A failed publication remains failed even if later probes find the

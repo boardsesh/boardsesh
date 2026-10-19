@@ -133,7 +133,8 @@ async function main(): Promise<void> {
     if (process.env.GITHUB_OUTPUT)
       appendFileSync(
         process.env.GITHUB_OUTPUT,
-        `ios_runtime=${preflight.receipt.platforms.ios.runtimeVersion}\nandroid_runtime=${preflight.receipt.platforms.android.runtimeVersion}\n`,
+        `ios_runtime=${preflight.receipt.platforms.ios.runtimeVersion}\nandroid_runtime=${preflight.receipt.platforms.android.runtimeVersion}\n` +
+          `app_id=${preflight.exports.ios.appId}\nios_baseline=${preflight.receipt.baselineProductionUpdateIds.ios}\nandroid_baseline=${preflight.receipt.baselineProductionUpdateIds.android}\n`,
       );
     console.log(`Validated both archived exports for ${sourceSha}; production baselines remain unchanged.`);
     return;

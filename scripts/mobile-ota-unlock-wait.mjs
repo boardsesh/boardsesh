@@ -2,7 +2,7 @@
 // Publishers retain the production lane while a main-only workflow reverts the
 // matching live canary. The unlock itself must never acquire that same lane.
 import { randomUUID } from 'node:crypto';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const UNLOCK_WORKFLOW_PATH = '.github/workflows/mobile-ota-unlock.yml';
@@ -91,7 +91,17 @@ export function requireUnlockJobSuccess(jobs, runId) {
 /** One dispatch, then bounded reads of only its unique request/run. No publish here. */
 export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
   validateUnlockInputs(options);
-  const { repository, token, branch = 'production', iosRuntime = '', androidRuntime = '' } = options;
+  const { repository, token, branch = 'production', iosRuntime = '', androidRuntime = '', staged } = options;
+  // Backport snapshots copy this waiter alone. Load new receipt tooling only
+  // for the staged path, preserving ordinary callers without that module.
+  const receiptTools = staged ? await import('./lib/ota-unlock-receipt.ts') : null;
+  const expected = staged
+    ? { appId: staged.appId, baselines: staged.baselines, runtimes: { ios: iosRuntime, android: androidRuntime } }
+    : null;
+  if (expected) {
+    if (branch !== 'production') throw new Error('Staged unlock receipts only authorize production.');
+    receiptTools.validateUnlockExpectations(expected);
+  }
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const now = dependencies.now ?? Date.now;
   const sleep =
@@ -160,6 +170,13 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
       ios_runtime_version: iosRuntime,
       android_runtime_version: androidRuntime,
       request_id: requestId,
+      ...(expected
+        ? {
+            staged_app_id: expected.appId,
+            ios_baseline_update_id: String(expected.baselines.ios),
+            android_baseline_update_id: String(expected.baselines.android),
+          }
+        : {}),
     },
   });
   log(`Waiting for ${title} on main before publishing to ${branch}.`);
@@ -201,10 +218,19 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
       });
       selectedRun ??= run;
       if (run.status === 'completed') {
-        const result = await api(`/actions/runs/${run.id}/attempts/1/jobs?per_page=100`);
-        requireUnlockJobSuccess(result?.jobs, run.id);
+        const unlockJobs = await api(`/actions/runs/${run.id}/attempts/1/jobs?per_page=100`);
+        requireUnlockJobSuccess(unlockJobs?.jobs, run.id);
         log(`Main-only OTA unlock succeeded: ${run.html_url ?? `run ${run.id}`}.`);
-        return { requestId, runId: run.id, headSha: run.head_sha };
+        const result = { requestId, runId: run.id, headSha: run.head_sha };
+        if (receiptTools)
+          result.receipt = await receiptTools.downloadUnlockReceipt({
+            ...expected,
+            token,
+            fetchImpl,
+            nowMs: now,
+            proof: { repository, ...result },
+          });
+        return result;
       }
     }
     await sleep(Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - now())));
@@ -212,15 +238,35 @@ export async function dispatchAndWaitForUnlock(options, dependencies = {}) {
 }
 
 export async function main(environment = process.env) {
+  const appId = environment.STAGED_APP_ID;
+  if (Boolean(appId) !== Boolean(environment.OTA_UNLOCK_RECEIPT))
+    throw new Error('Staged app and unlock receipt output must be supplied together.');
   const result = await dispatchAndWaitForUnlock({
     repository: environment.GITHUB_REPOSITORY,
     token: environment.GITHUB_TOKEN ?? environment.GH_TOKEN,
     branch: environment.OTA_BRANCH || 'production',
     iosRuntime: environment.IOS_RUNTIME_VERSION || '',
     androidRuntime: environment.ANDROID_RUNTIME_VERSION || '',
+    ...(appId
+      ? {
+          staged: {
+            appId,
+            baselines: {
+              ios: environment.EXPECTED_IOS_UPDATE_ID === 'null' ? null : environment.EXPECTED_IOS_UPDATE_ID,
+              android:
+                environment.EXPECTED_ANDROID_UPDATE_ID === 'null' ? null : environment.EXPECTED_ANDROID_UPDATE_ID,
+            },
+          },
+        }
+      : {}),
   });
+  if (result.receipt)
+    writeFileSync(environment.OTA_UNLOCK_RECEIPT, `${JSON.stringify(result.receipt)}\n`, { flag: 'wx' });
   if (environment.GITHUB_OUTPUT)
-    appendFileSync(environment.GITHUB_OUTPUT, `run_id=${result.runId}\nrequest_id=${result.requestId}\n`);
+    appendFileSync(
+      environment.GITHUB_OUTPUT,
+      `run_id=${result.runId}\nrequest_id=${result.requestId}\nhead_sha=${result.headSha}\n`,
+    );
   return result;
 }
 

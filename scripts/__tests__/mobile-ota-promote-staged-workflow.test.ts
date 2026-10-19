@@ -71,11 +71,21 @@ it('checks source schema but controller server rollout and unlocks validated run
     OTA_BRANCH: 'production',
     IOS_RUNTIME_VERSION: '${{ steps.preflight.outputs.ios_runtime }}',
     ANDROID_RUNTIME_VERSION: '${{ steps.preflight.outputs.android_runtime }}',
+    STAGED_APP_ID: '${{ steps.preflight.outputs.app_id }}',
+    EXPECTED_IOS_UPDATE_ID: '${{ steps.preflight.outputs.ios_baseline }}',
+    EXPECTED_ANDROID_UPDATE_ID: '${{ steps.preflight.outputs.android_baseline }}',
+    OTA_UNLOCK_RECEIPT: '${{ runner.temp }}/ota-unlock-receipt.json',
   });
 });
 it('scopes the token to the archived full production publisher and reports partial failures', () => {
   const publishing = step('Promote exact staged iOS and Android exports to production');
   expect(publishing.env?.EOO_TOKEN).toBe('${{ secrets.EOO_TOKEN }}');
+  expect(publishing.env).toMatchObject({
+    OTA_UNLOCK_RECEIPT: '${{ runner.temp }}/ota-unlock-receipt.json',
+    OTA_UNLOCK_RUN_ID: '${{ steps.unlock.outputs.run_id }}',
+    OTA_UNLOCK_REQUEST_ID: '${{ steps.unlock.outputs.request_id }}',
+    OTA_UNLOCK_HEAD_SHA: '${{ steps.unlock.outputs.head_sha }}',
+  });
   for (const entry of job.steps) if (entry !== publishing) expect(entry.env?.EOO_TOKEN).toBeUndefined();
   expect(publishing.run).toContain('--receipt ota-stage/receipt.json');
   expect(publishing.run).not.toMatch(/--rollout|--branch|--capture-baseline|expo export/);
