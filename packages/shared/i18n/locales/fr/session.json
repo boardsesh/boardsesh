@@ -773,7 +773,7 @@
     "retry": "Réessayer",
     "confirmTitle": "Rejoindre la session de {{host}} ?",
     "boardLabel": "{{board}} · {{count}} en train de grimper",
-    "namesVisible": "Tout le monde dans cette session voit ton nom et tes croix.",
+    "namesVisible": "Tout le monde dans cette session voit ton nom et tes croix. Les sessions permanentes d’une salle suivent tes réglages de confidentialité.",
     "join": "Rejoindre la session",
     "cancel": "Annuler",
     "switchTitle": "Quitter votre session actuelle ?",

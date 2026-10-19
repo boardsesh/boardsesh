@@ -773,7 +773,7 @@
     "retry": "Reintentar",
     "confirmTitle": "¿Unirte a la sesión de {{host}}?",
     "boardLabel": "{{board}} · {{count}} escalando",
-    "namesVisible": "Todos en esta sesión ven tu nombre y tus encadenes.",
+    "namesVisible": "Todos en esta sesión ven tu nombre y tus encadenes. Las sesiones permanentes de un rocódromo siguen tus ajustes de privacidad.",
     "join": "Unirse a la sesión",
     "cancel": "Cancelar",
     "switchTitle": "¿Salir de tu sesión actual?",

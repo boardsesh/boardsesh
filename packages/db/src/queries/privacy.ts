@@ -442,7 +442,10 @@ const SESSION_TICK_CLOCK_GRACE = sql.raw(`interval '10 minutes'`);
  *   or the session's start for its host) and the session's end (now while it is
  *   still open), give or take `SESSION_TICK_CLOCK_GRACE` for a phone's clock;
  * - a session on a config path with no board row has only the time window to go
- *   on, so it gets no grace;
+ *   on, so it gets no grace, and the tick must be on a board of that path's
+ *   board type and layout: `saveTick` files a config-path send under a board of
+ *   that config (the climber's own, the connected wall or the shared feed), so
+ *   a boardless or imported tick, or one from another board model, is not it;
  * - a tick with no board, or on a board the session never named, fails closed.
  *
  * A tick its climber kept to themselves (`only_me`) is never released. Never
@@ -473,13 +476,23 @@ export function sessionCoMemberTickCondition(
           WHERE co_tick_board.session_id = co_tick_session.id AND co_tick_board.board_id = ${ticks.boardId}), false)
           AS on_session_board,
         co_tick_session.board_id IS NULL AND NOT EXISTS (SELECT 1 FROM session_boards co_tick_any_board
-          WHERE co_tick_any_board.session_id = co_tick_session.id) AS config_path_only
+          WHERE co_tick_any_board.session_id = co_tick_session.id) AS config_path_only,
+        -- The path's board type and layout, normalised the way sessionBoardReferences
+        -- reads a path (slashes, an optional locale), against the tick's own board.
+        EXISTS (SELECT 1 FROM user_boards co_tick_config_board
+          WHERE co_tick_config_board.id = ${ticks.boardId}
+            AND co_tick_config_board.board_type
+              = split_part(regexp_replace(regexp_replace(trim(both '/' from co_tick_session.board_path), '/+', '/', 'g'), '^[a-z]{2}/', ''), '/', 1)
+            AND co_tick_config_board.layout_id::text
+              = split_part(regexp_replace(regexp_replace(trim(both '/' from co_tick_session.board_path), '/+', '/', 'g'), '^[a-z]{2}/', ''), '/', 2))
+          AS on_path_config
       ) co_tick_window
       WHERE co_tick_session.id = ${ticks.sessionId}
         AND ((co_tick_window.on_session_board
             AND ${ticks.climbedAt} >= co_tick_window.joined_at - ${SESSION_TICK_CLOCK_GRACE}
             AND ${ticks.climbedAt} <= co_tick_window.ended_at + ${SESSION_TICK_CLOCK_GRACE})
           OR (co_tick_window.config_path_only
+            AND co_tick_window.on_path_config
             AND ${ticks.climbedAt} >= co_tick_window.joined_at
             AND ${ticks.climbedAt} <= co_tick_window.ended_at))))`;
 }

@@ -42,6 +42,8 @@ const IN_SESSION = '2026-10-10T10:30:00Z';
 type TestBoard = { id: number; uuid: string; slug: string };
 let gymBoard: TestBoard;
 let otherWall: TestBoard;
+/** Another board model (layout 8): not the config a `kilter/1/...` path names. */
+let otherModel: TestBoard;
 
 const viewer = (userId: string | null, sessionId?: string): ConnectionContext =>
   ({
@@ -51,7 +53,12 @@ const viewer = (userId: string | null, sessionId?: string): ConnectionContext =>
     sessionId,
   }) as ConnectionContext;
 
-async function insertBoard(ownerId: string, name: string, gymId: number | null = null): Promise<TestBoard> {
+async function insertBoard(
+  ownerId: string,
+  name: string,
+  gymId: number | null = null,
+  layoutId = 1,
+): Promise<TestBoard> {
   const uuid = randomUUID();
   const [board] = await db
     .insert(dbSchema.userBoards)
@@ -61,7 +68,7 @@ async function insertBoard(ownerId: string, name: string, gymId: number | null =
       ownerId,
       name,
       boardType: 'kilter',
-      layoutId: 1,
+      layoutId,
       sizeId: 10,
       setIds: '1',
       gymId,
@@ -111,7 +118,7 @@ async function join(sessionId: string, userId = MEMBER, joinedAt = JOINED_AT): P
 
 async function logTick(
   sessionId: string,
-  options: { userId?: string; boardId?: number; climbedAt?: string; difficulty?: number } = {},
+  options: { userId?: string; boardId?: number | null; climbedAt?: string; difficulty?: number } = {},
 ): Promise<string> {
   const userId = options.userId ?? CLIMBER;
   const uuid = `co-members-tick-${randomUUID()}`;
@@ -125,7 +132,7 @@ async function logTick(
     difficulty: options.difficulty ?? (userId === CLIMBER ? 20 : 16),
     comment: `${userId} note`,
     climbedAt: options.climbedAt ?? IN_SESSION,
-    boardId: options.boardId ?? gymBoard.id,
+    boardId: options.boardId === undefined ? gymBoard.id : options.boardId,
     sessionId,
   });
   return uuid;
@@ -251,6 +258,7 @@ beforeAll(async () => {
     .returning({ id: dbSchema.gyms.id });
   gymBoard = await insertBoard(SYSTEM_BOARD_OWNER_ID, 'Gym wall', Number(gym.id));
   otherWall = await insertBoard(STRANGER, 'Another wall');
+  otherModel = await insertBoard(STRANGER, 'Another model', null, 8);
 });
 
 beforeEach(async () => {
@@ -400,6 +408,25 @@ describe('a fellow member of the session', () => {
         (tick) => tick.uuid,
       ),
     ).toEqual([inWindow]);
+  });
+
+  it('releases a config-path session’s ticks only from a board of that config', async () => {
+    await setAccount(CLIMBER, { isPrivate: true });
+    const configPath = await hostSession({ boardId: null });
+    await join(configPath);
+    const onThatConfig = await logTick(configPath, { boardId: otherWall.id });
+    // Reconciliation can stamp the session id on a boardless or imported tick,
+    // and on a send from another board model, inside the same window.
+    const boardless = await logTick(configPath, { boardId: null });
+    const otherConfig = await logTick(configPath, { boardId: otherModel.id });
+
+    const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: configPath }, viewer(MEMBER));
+    expect(detail?.ticks.map((tick) => tick.uuid)).toEqual([onThatConfig]);
+    expect(JSON.stringify(detail)).not.toContain(boardless);
+    expect(JSON.stringify(detail)).not.toContain(otherConfig);
+    expect((await generateSessionSummary(configPath, MEMBER))?.participants).toEqual([
+      expect.objectContaining({ userId: CLIMBER, attempts: 1 }),
+    ]);
   });
 
   it('counts every board the session was on, and only the time window on a config path with no board', async () => {

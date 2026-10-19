@@ -773,7 +773,7 @@
     "retry": "Try again",
     "confirmTitle": "Join {{host}}'s session?",
     "boardLabel": "{{board}} · {{count}} climbing",
-    "namesVisible": "Everyone in this session sees your name and sends.",
+    "namesVisible": "Everyone in this session sees your name and sends. Always-on gym sessions follow your privacy settings instead.",
     "join": "Join session",
     "cancel": "Cancel",
     "switchTitle": "Leave your current session?",
