@@ -960,6 +960,55 @@ describe('RNBleAdapter', () => {
   });
 
   describe('requestAndConnect — failure modes', () => {
+    it.each(['aurora', 'moonboard'] as const)('releases the pending %s link when discovery fails', async (family) => {
+      const deviceId = `failed-discovery-${family}`;
+      const discoveryError = new Error('GATT discovery failed');
+      const adapter = setupConnectableAdapter(family, deviceId, vi.fn());
+      mockBleManager.connectToDevice.mockResolvedValueOnce({
+        id: deviceId,
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockRejectedValue(discoveryError),
+      });
+
+      await expect(adapter.requestAndConnect()).rejects.toBe(discoveryError);
+      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledExactlyOnceWith(deviceId);
+      expect(mockBleManager.onDeviceDisconnected).not.toHaveBeenCalled();
+      await expect(adapter.write(new Uint8Array([1]))).rejects.toThrow('Not connected');
+    });
+
+    it('preserves the discovery error when releasing the pending link also fails', async () => {
+      const discoveryError = new Error('Original discovery failure');
+      const adapter = setupConnectableAdapter('aurora', 'failed-cleanup', vi.fn());
+      mockBleManager.connectToDevice.mockResolvedValueOnce({
+        id: 'failed-cleanup',
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockRejectedValue(discoveryError),
+      });
+      mockBleManager.cancelDeviceConnection.mockRejectedValueOnce(new Error('Already disconnected'));
+
+      await expect(adapter.requestAndConnect()).rejects.toBe(discoveryError);
+      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledExactlyOnceWith('failed-cleanup');
+    });
+
+    it('can connect successfully after a failed discovery without retaining partial state', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const adapter = setupConnectableAdapter('aurora', 'retry-discovery', vi.fn().mockResolvedValue([characteristic]));
+      mockBleManager.connectToDevice.mockResolvedValueOnce({
+        id: 'retry-discovery',
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockRejectedValue(new Error('First discovery failed')),
+      });
+
+      await expect(adapter.requestAndConnect()).rejects.toThrow('First discovery failed');
+      await expect(adapter.requestAndConnect()).resolves.toMatchObject({ deviceId: 'retry-discovery' });
+      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledExactlyOnceWith('retry-discovery');
+      expect(mockBleManager.onDeviceDisconnected).toHaveBeenCalledOnce();
+      await adapter.disconnect();
+    });
+
     it('times out and rejects if connectToDevice hangs past CONNECTION_TIMEOUT_MS', async () => {
       vi.useFakeTimers();
       try {
@@ -1407,7 +1456,7 @@ describe('RNBleAdapter', () => {
       expect(characteristicsForService).toHaveBeenCalledWith('uart-uuid');
       expect(characteristicsForService).not.toHaveBeenCalledWith('redbearlab-uuid');
       // The dead connection is torn down before the error surfaces.
-      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledWith('aurora-no-fallback-device');
+      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledExactlyOnceWith('aurora-no-fallback-device');
     });
   });
 

@@ -276,48 +276,60 @@ export class RNBleAdapter implements BluetoothAdapter {
       if (connectionTimeoutId != null) clearTimeout(connectionTimeoutId);
     });
 
-    // Negotiate MTU before service discovery (Android requires this order
-    // for best results; iOS handles MTU automatically but the call is safe).
-    // The negotiated value sizes write chunks below — fewer, larger writes
-    // per climb, mirroring the native iOS path and the official Kilter app
-    // (#3230). Skipped for the moonboard family: chunks stay at 20 there
-    // regardless, and the original RedBearLab box is old enough that the
-    // fewer GATT ops we throw at it, the better.
-    // `||` (not `??`) is deliberate: ble-plx types mtu as number, so the only
-    // bad runtime values are falsy ones (0/NaN), which must also fall back.
-    if (this.scanFamily === 'moonboard') {
-      this.negotiatedMtu = DEFAULT_ATT_MTU;
-    } else {
-      try {
-        const negotiated = await connected.requestMTU(REQUESTED_ATT_MTU);
-        this.negotiatedMtu = negotiated.mtu || DEFAULT_ATT_MTU;
-      } catch {
-        // Negotiation failed — fall back to the default ATT 23 (20 usable).
-        this.negotiatedMtu = connected.mtu || DEFAULT_ATT_MTU;
+    let deviceWithServices: Device;
+    let writeCharacteristic: Characteristic;
+    // The OS link already exists, but disconnect() cannot see it until setup
+    // succeeds. Failed discovery must release this attempt's selected device.
+    try {
+      // Negotiate MTU before service discovery (Android requires this order
+      // for best results; iOS handles MTU automatically but the call is safe).
+      // The negotiated value sizes write chunks below — fewer, larger writes
+      // per climb, mirroring the native iOS path and the official Kilter app
+      // (#3230). Skipped for the moonboard family: chunks stay at 20 there
+      // regardless, and the original RedBearLab box is old enough that the
+      // fewer GATT ops we throw at it, the better.
+      // `||` (not `??`) is deliberate: ble-plx types mtu as number, so the only
+      // bad runtime values are falsy ones (0/NaN), which must also fall back.
+      if (this.scanFamily === 'moonboard') {
+        this.negotiatedMtu = DEFAULT_ATT_MTU;
+      } else {
+        try {
+          const negotiated = await connected.requestMTU(REQUESTED_ATT_MTU);
+          this.negotiatedMtu = negotiated.mtu || DEFAULT_ATT_MTU;
+        } catch {
+          // Negotiation failed — fall back to the default ATT 23 (20 usable).
+          this.negotiatedMtu = connected.mtu || DEFAULT_ATT_MTU;
+        }
       }
-    }
 
-    const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
+      const discoveredDevice = await connected.discoverAllServicesAndCharacteristics();
 
-    // Newer controllers expose the write characteristic on the Nordic UART
-    // service. The original MoonBoard (RedBearLab) LED box uses a different
-    // service, so fall back to it for the moonboard family.
-    let writeCharacteristic = await findWriteCharacteristic(
-      deviceWithServices,
-      UART_SERVICE_UUID,
-      UART_WRITE_CHARACTERISTIC_UUID,
-    );
-    if (!writeCharacteristic && this.scanFamily === 'moonboard') {
-      writeCharacteristic = await findWriteCharacteristic(
-        deviceWithServices,
-        REDBEARLAB_SERVICE_UUID,
-        REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
+      // Newer controllers expose the write characteristic on the Nordic UART
+      // service. The original MoonBoard (RedBearLab) LED box uses a different
+      // service, so fall back to it for the moonboard family.
+      let discoveredWriteCharacteristic = await findWriteCharacteristic(
+        discoveredDevice,
+        UART_SERVICE_UUID,
+        UART_WRITE_CHARACTERISTIC_UUID,
       );
-    }
+      if (!discoveredWriteCharacteristic && this.scanFamily === 'moonboard') {
+        discoveredWriteCharacteristic = await findWriteCharacteristic(
+          discoveredDevice,
+          REDBEARLAB_SERVICE_UUID,
+          REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
+        );
+      }
 
-    if (!writeCharacteristic) {
-      await bleManager.cancelDeviceConnection(selectedDeviceId);
-      throw new Error('UART write characteristic not found');
+      if (!discoveredWriteCharacteristic) {
+        throw new Error('UART write characteristic not found');
+      }
+
+      deviceWithServices = discoveredDevice;
+      writeCharacteristic = discoveredWriteCharacteristic;
+    } catch (error) {
+      // A failed cancellation must not replace the original setup error.
+      await bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+      throw error;
     }
 
     this.connectedDevice = deviceWithServices;

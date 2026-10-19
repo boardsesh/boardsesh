@@ -107,6 +107,14 @@ Long-pressing the lightbulb opens the `LightControlDrawer` (`light-control-drawe
 - Light shows stop automatically when the board disconnects (`useEffect` watches `isConnected`).
 - When a light show stops, the wall is cleared once via `clearBoard()`, then the auto-sender resumes and repaints the current climb.
 
+The Android/fallback-iOS adapter owns an established link while it negotiates
+MTU and discovers services. If setup fails before the adapter publishes that
+link, it cancels the selected peripheral directly and preserves the original
+error even if cancellation fails. A retry can scan the board again without
+waiting for an untracked OS connection to disappear. Missing UART/RedBearLab
+write characteristics use the same cleanup path; MTU negotiation remains
+non-fatal.
+
 ### Disconnect Handling
 
 **User-initiated disconnect (`disconnect` callback):**
