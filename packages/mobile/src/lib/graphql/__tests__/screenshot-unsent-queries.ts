@@ -71,6 +71,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetPlaylistsForClimbs',
   'GetPopularBoardConfigs',
   'GetSessionHealthExport',
+  // Captures join recorded live sessions; invite fallback runs only for a null GetSession.
+  'GetSessionInvitePreview',
   'GetSprayWallArchive',
   'GetSprayWallArt',
   'GetSprayWallByLayout',

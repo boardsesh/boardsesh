@@ -7,6 +7,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../src/lib/analytics';
+import {
+  isSessionPreviewEnded,
+  isSessionPreviewHostAway,
+  trackSessionJoinOutcome,
+} from '../../src/lib/session-join-analytics';
+import { useSessionJoinOutcomeTracking } from '../../src/hooks/use-session-join-outcome-tracking';
 import { Text } from '../../src/components/Text';
 import { Button } from '../../src/components/Button';
 import { Card } from '../../src/components/Card';
@@ -57,6 +63,9 @@ function JoinSessionScreen() {
   const { sessionId, source } = useLocalSearchParams<{ sessionId: string; source?: string }>();
   const liveSessionSource = parseLiveSessionJoinSource(source);
   const { t } = useTranslation('session');
+  // Counts the invites that dead-end here (not found, ended, sign-in needed,
+  // failed to load). Reads the same preview query as below.
+  useSessionJoinOutcomeTracking(sessionId);
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -72,7 +81,7 @@ function JoinSessionScreen() {
   activeSessionIdRef.current = activeSessionId;
   const { joinSession, clearSession } = useQueueActions();
 
-  const preview = useSessionPreview(sessionId);
+  const preview = useSessionPreview(sessionId, { inviteFallback: true });
   const createBoard = useCreateBoard();
 
   const [isJoining, setIsJoining] = useState(false);
@@ -174,11 +183,14 @@ function JoinSessionScreen() {
         // board so the event still fires for named-board (`/b/{slug}`) sessions,
         // whose path can't be parsed.
         const parsedBoard = parseBoardPath(operation.boardPath);
-        track(SHARED_EVENTS.SessionJoined, {
-          session_id: operation.sessionId,
-          board_name: parsedBoard?.boardName ?? userBoard.boardType,
-          layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
-        });
+        if (!operation.wasAlreadyInSession) {
+          track(SHARED_EVENTS.SessionJoined, {
+            session_id: operation.sessionId,
+            sessionId: operation.sessionId,
+            board_name: parsedBoard?.boardName ?? userBoard.boardType,
+            layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
+          });
+        }
         // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
         // Live Session Joined). Only joins that started on a live-session card
         // carry a source; invite links don't.
@@ -190,6 +202,7 @@ function JoinSessionScreen() {
       } catch (error) {
         if (!isCurrent()) return;
         if (__DEV__) console.warn('[join] failed to join session', error);
+        trackSessionJoinOutcome(operation.sessionId, 'error', 'join');
         // Resolving the session's board needs the network, so a join attempted with
         // no signal fails on the transport rather than on anything the climber did.
         // Saying so is the difference between "move to where you have bars" and a
@@ -296,7 +309,9 @@ function JoinSessionScreen() {
     );
   }
 
-  // Not found (session query resolved to null).
+  // Not found: neither the live session query nor the invite preview knows
+  // this id. A running session with nobody connected is NOT this branch; the
+  // invite fallback turns it into a joinable preview.
   if (!session) {
     return (
       <View style={containerStyle}>
@@ -312,8 +327,30 @@ function JoinSessionScreen() {
     );
   }
 
+  // Running, nobody connected, and no wall to join on: the invite is good, so
+  // say what will fix it instead of "not found".
+  if (isSessionPreviewHostAway(session)) {
+    return (
+      <View style={containerStyle}>
+        <View style={styles.centered}>
+          <Icon name="clock" size={40} color={systemColors.secondaryLabel} />
+          <Text variant="title3" style={styles.centeredTitle}>
+            {t('mobileJoin.hostAway')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredTitle}>
+            {session.invite?.hostName
+              ? t('mobileJoin.hostAwayBody', { host: session.invite.hostName })
+              : t('mobileJoin.hostAwayBodyNoHost')}
+          </Text>
+          <Button title={t('mobileJoin.retry')} variant="filled" size="large" onPress={() => void preview.refetch()} />
+          <Button title={t('mobileJoin.cancel')} variant="text" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
   // Ended.
-  if (session.endedAt != null) {
+  if (isSessionPreviewEnded(session)) {
     return (
       <View style={containerStyle}>
         <View style={styles.centered}>
@@ -327,15 +364,23 @@ function JoinSessionScreen() {
     );
   }
 
+  // The line under the card's title. A preview rebuilt from the invite has no
+  // roster: `dormant` says nobody is connected, and `live` (the host came back
+  // mid-load) names the board alone instead of counting an empty list as "0".
+  let boardLine: string;
+  if (session.invite?.state === 'dormant') boardLine = t('mobileJoin.boardLabelDormant', { board: boardLabel });
+  else if (session.invite?.state === 'live') boardLine = boardLabel;
+  else boardLine = t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length });
+
   // Loaded + active — confirmation card.
   return (
     <View style={[containerStyle, styles.confirmContainer]}>
       <Card style={styles.card}>
         <Text variant="title2" style={styles.cardTitle}>
-          {t('mobileJoin.confirmTitle', { host: hostName })}
+          {t('mobileJoin.confirmTitle', { host: session.invite?.hostName ?? hostName })}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.boardLabel}>
-          {t('mobileJoin.boardLabel', { board: boardLabel, count: session.users.length })}
+          {boardLine}
         </Text>
 
         <View style={styles.avatarRow}>

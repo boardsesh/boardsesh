@@ -159,3 +159,24 @@ export type SessionHealthExport = {
  * any such legacy row to 'active'.
  */
 export type SessionStatus = 'active' | 'ended';
+
+/**
+ * What a session invite link resolves to. `dormant` is a running session with
+ * nobody connected (the host's phone is asleep or offline); it is still
+ * joinable, which is why it is its own value and not `not_found`.
+ */
+export type SessionInviteState = 'live' | 'dormant' | 'ended' | 'not_found';
+
+/**
+ * The public face of a session invite, from the unauthenticated
+ * `sessionInvitePreview` query. Deliberately small: no roster, no user ids, no
+ * email. Every detail field is null unless the state is `live` or `dormant`.
+ */
+export type SessionInvitePreview = {
+  sessionId: string;
+  state: SessionInviteState;
+  hostName: string | null;
+  boardName: string | null;
+  boardPath: string | null;
+  gymName: string | null;
+};

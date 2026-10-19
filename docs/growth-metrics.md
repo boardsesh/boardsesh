@@ -891,15 +891,13 @@ before it reads the source or campaign. A gym that tags its Google Business
 Profile link `utm_medium=organic` would otherwise move every install from our
 button out of the `campaign` count. Its source and campaign still carry.
 
-Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`, and since the
+Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`, `join-page.<session id>`, and since the
 store buttons of #6027 `climb-view` (a climb page, in both the config-tuple and
 the `/b/{slug}` tree), `climb-list` (a board's climb list), `spray-climb` (a
 climb on a spray wall) and `gyms-directory` (`/gyms` and its three board
 pages). `help` covers the /help index and its seven sub-pages; tell them apart
 by `$pathname` on the click. `site-banner` is the iOS Smart App
-Banner, which has a campaign token and no click event (below). Reserved for a
-button still to come (`AppInstallPlacement` in
-`packages/web/app/lib/app-install-event.ts`): `join-page`. The link id equals
+Banner, which has a campaign token and no click event (below). The link id equals
 the `placement` on the matching `App Install Click`, so clicks and installs
 join on it: event `placement` on one side, the `utm_content` inside
 `install_referrer_raw` on the other. Do not use the event's own `utm_content`
@@ -911,6 +909,17 @@ desktop. The HTML itself always has both store links. Those pages are stored at
 the Cloudflare edge for 24 hours with no user-agent split (`docs/cloudflare.md`),
 so the HTML cannot be about whoever asked for it first. A crawler, and a reader
 with JavaScript off, gets both.
+
+**A session invite link names its session.** The invite page
+(`/join/{sessionId}`, #6004) sends `utm_campaign=session-invite` and
+`utm_content=join-page.<session id>` to Google Play, so an Android install can
+be traced to the invite behind it; the click carries the same `sessionId`. Split
+the link id on the first `.` to get the placement back. The App Store token is
+`join-page` for every invite: one session never reaches the 5 downloads App
+Analytics needs, and its id would not fit in 30 characters. Nothing in the app
+acts on the session id yet. Bringing an Android invitee back to the session
+after install is a follow-up, and only a new store binary's first launch can do
+it.
 
 **`utm_medium=qr` changed meaning with #6027.** Before it, every gym-page Play
 link said `qr`, whether or not a code was scanned. After it, `qr` means the page
@@ -980,6 +989,56 @@ reaches the app, so nothing reaches PostHog.
   Setting it needs a rebuild of the web service, like every `NEXT_PUBLIC_`
   variable.
 
+## Session invites
+
+The invite funnel, host to joiner (#6004). Before it only `Session Joined`
+existed, and it over-counted.
+
+| Step | Event | Where | Properties |
+| ---- | ----- | ----- | ---------- |
+| Host opens the invite sheet | `Session Invite Sheet Opened` | app | `sessionId` |
+| Host sends the link | `Session Invite Shared` | app | `sessionId`, `method` (`copy_link`, `system_share`), `shareTarget` (iOS only) |
+| Invitee without the app lands on www | `Session Invite Page Viewed` | www | `sessionId` (absent for `not_found`), `state` (`live`, `dormant`, `ended`, `not_found`, `unavailable`), `hasHost`, `hasGym` |
+| Invitee taps a store button | `App Install Click` | www | `placement: 'join-page'`, `sessionId`, `platform` |
+| Invitee with the app taps "Open in the app" on www | `Session Invite Open In App Clicked` | www | `sessionId` |
+| Invitee joins | `Session Joined` | app | `sessionId` (and the older `session_id`, same value), `board_name`, `layout_id` |
+| Invitee hits a dead end | `Session Join Outcome` | app | `sessionId`, `outcome` (`not_found`, `ended`, `host_away`, `sign_in_needed`, `error`), `stage` (`preview`, `join`) |
+
+Read it with these limits:
+
+- **`system_share` means different things per platform.** iOS reports a
+  dismissed share sheet (nothing fires) and the app that was picked
+  (`shareTarget`). Android reports neither, so there the event means the chooser
+  was opened. Break the step down by `$os`; do not add the two.
+- **A QR scan is invisible.** The invite sheet shows the code as soon as it
+  opens. A scan happens on someone else's phone, so the host's side records
+  `Sheet Opened` and nothing more.
+- **www mostly sees invitees without the app.** An installed phone opens the
+  app directly and never loads the page, so `Session Invite Page Viewed` is not
+  "invites opened". It is "invites opened by someone who needs the app", plus
+  the people whose link opened inside another app's built-in browser, which
+  skips the app. `Session Invite Open In App Clicked` counts those who then
+  asked for the app; it is a click, not proof the app opened.
+- **Tie the funnel together on `sessionId`.** Every step carries it, `Session
+  Joined` included from the #6004 deploy on. Joins before that deploy only have
+  `session_id`. A landing on a link that names no session (`state: not_found`)
+  has no `sessionId` at all: the text in such a URL is arbitrary and is kept
+  out of analytics.
+- **`host_away` is a good invite that cannot be joined yet.** The session is
+  running, nobody is connected, and its wall is a spray wall that is not open
+  to everyone, so the backend does not hand the board path to a link holder.
+  The screen asks for the host to open the app. Count it apart from
+  `not_found`.
+- **`Session Joined` changed meaning.** It used to fire again for someone
+  already in the session who opened the invite. It now fires once per genuine
+  entry. Do not compare counts across the deploy.
+- **`Session Started`** carries `sessionId` and `isPublic` (the "show this
+  session live" switch). It no longer sends `isDiscoverable`, which was `false`
+  on every event ever sent because no screen sets the field behind it.
+- **`sign_in_needed` is rare by design.** The auth gate sends a signed-out
+  invitee to login and replays the link afterwards, so this outcome only counts
+  the cases that reach the join screen signed out.
+
 ## Retention
 
 Weekly or monthly, with the start and return events named on the tile, the
@@ -1000,6 +1059,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6027 mobile OTA | `Login Account Age Resolved` starts; login events carry `provider` and `account_age_read`; `Tick Logged`, `Set Active Climb` and `Climb Created` carry `boardType`; `Set Active Climb` carries `trigger` (`climb_saved` on a save); `Onboarding Gate Evaluated` gains the skip reason `replayed_board_link` |
 | #6078 OTA (fill in the date when it ships) | The app stops sending `$create_alias` and stops identifying signed-out installs. Native `$identify` volume drops by most of its total, upgraded signed-out installs each start one new anonymous person, and the identity split is expected to fall from this date (see "Identity-split pitfall") |
 | #6027 web deploy | www events carry `utm_*` and `gclid`; every Play link carries a link id (`utm_content`); `utm_medium=qr` on a gym install starts meaning a scan; `App Install Click` on /help starts sending `placement: 'help'` |
+| #6004 web and OTA deploy | `Session Joined` stops firing for someone already in the session; `Session Started` sends `isPublic` and `sessionId` and drops `isDiscoverable`; the four invite events start; www `/join` pageviews become countable (the page no longer redirects on mount) |
 | `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` set | App Store campaign links start counting in App Analytics |
 | #2644 PR A backend deploy | `Active Users Snapshot` starts (first event the morning after). Backend events stop carrying a user: Live Activity events and `Tick Climb Not In Catalog` get a random distinct id each, so distinct-person counts on them stop meaning anything |
 | #2644 PRs B and C ship | PostHog capture needs consent: people-based counts drop to the consenting subset (see "Active users") |
