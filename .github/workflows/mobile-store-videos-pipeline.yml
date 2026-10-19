@@ -1,0 +1,357 @@
+name: Mobile Store Videos Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: store-videos-v${{ inputs.version }}
+  cancel-in-progress: true
+
+env:
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+  SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+  MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Require reviewed physical sources and both recording accounts
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
+          SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in SCREENSHOT_USER_EMAIL SCREENSHOT_USER_PASSWORD SHOWCASE_SECONDARY_EMAIL SHOWCASE_SECONDARY_PASSWORD; do
+            [ -n "${!name:-}" ] || { echo "::error::Missing $name; configure the dedicated recording accounts before dispatch."; exit 1; }
+          done
+          node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync("app-stores/apple/live-activity-captures/manifest.json","utf8")); for(const target of ["kilter","tension"]) { const source=manifest.footage?.[target]; if(!source || source.boardFamily!==target || !/^[a-f0-9]{64}$/.test(source.sha256) || source.key!==`sources/live-activity/${source.sha256}.zip`) throw new Error(`Missing reviewed retained ${target} footage; import one physical take before recording.`); }'
+
+  app:
+    needs: preflight
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      cache-key: ${{ steps.appkey.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Compute screenshot app cache key
+        id: appkey
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: app-cache
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+          lookup-only: true
+      - uses: voidzero-dev/setup-vp@v1
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        with:
+          node-version: '22.x'
+          cache: true
+      - if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp install --frozen-lockfile
+      - name: Build dev-client on cache miss
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+      - uses: actions/cache/save@v4
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+      - name: Retain native build measurements
+        if: always() && steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-app-metrics
+          path: metrics/
+          retention-days: 7
+
+  record:
+    needs: app
+    runs-on: macos-26
+    timeout-minutes: 120
+    environment: Production
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        kind: [default, kilter, tension, spray, moonboard]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ios-store-video-tools
+        with:
+          app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Record ordinary app takes in all four locales
+        env:
+          KIND: ${{ matrix.kind }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          only="$(vp exec tsx scripts/store-videos-gate.ts takes "$KIND")"
+          vp exec tsx scripts/store-video-measure.ts "record-$KIND" "metrics/record-$KIND.json" -- vp run video:record -- --kind "$KIND" --only "$only" --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
+      - name: Hand off original simulator frames for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-frames-${{ matrix.kind }}
+          path: .boardsesh/showcase-video/work/boards/${{ matrix.kind }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Retain record measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-record-metrics-${{ matrix.kind }}
+          path: metrics/
+          retention-days: 7
+
+  crew:
+    # Finish ordinary recordings first. Each crew kind and locale is serial so
+    # the shared recording account participates in only one live session.
+    needs: [app, record]
+    runs-on: macos-26
+    timeout-minutes: 240
+    environment: Production
+    concurrency:
+      group: store-videos-crew
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/ios-store-video-tools
+        with:
+          app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Record the three crew stories serially
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
+          SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for kind in default kilter tension; do
+            vp exec tsx scripts/store-video-measure.ts "crew-$kind" "metrics/crew-$kind.json" -- vp run video:record -- --kind "$kind" --only crew --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
+          done
+      - name: Hand off crew frames for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-frames-crew
+          path: .boardsesh/showcase-video/work/boards
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Retain crew measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-crew-metrics
+          path: metrics/
+          retention-days: 7
+
+  render:
+    needs: [record, crew]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [default, kilter, tension, spray, moonboard]
+        locale: [en-US, es, fr, de]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Install Chromium and ffmpeg
+        working-directory: packages/web
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          vp exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: store-video-frames-${{ matrix.kind }}
+          path: .boardsesh/showcase-video/work/boards/${{ matrix.kind }}
+      - uses: actions/download-artifact@v4
+        if: matrix.kind == 'default' || matrix.kind == 'kilter' || matrix.kind == 'tension'
+        with:
+          name: store-video-frames-crew
+          path: .boardsesh/showcase-video/work/boards
+      - name: Hydrate the retained ending in its actual source language
+        if: matrix.kind == 'default' || matrix.kind == 'kilter' || matrix.kind == 'tension'
+        env:
+          KIND: ${{ matrix.kind }}
+          LOCALE: ${{ matrix.locale }}
+        run: |
+          set -euo pipefail
+          target="$KIND"
+          if [ "$target" = default ]; then target=kilter; fi
+          vp exec tsx scripts/import-live-activity-footage.ts hydrate --target "$target" --kind "$KIND" --locale "$LOCALE"
+      - name: Render and validate the Apple search video
+        env:
+          KIND: ${{ matrix.kind }}
+          LOCALE: ${{ matrix.locale }}
+        run: vp exec tsx scripts/store-video-measure.ts "render-$KIND-$LOCALE" "metrics/render-$KIND-$LOCALE.json" -- vp run video:render -- --target store-search --variant "$KIND" --locale "$LOCALE"
+      - name: Retain only final video, poster and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-${{ matrix.kind }}-${{ matrix.locale }}
+          path: .boardsesh/app-store-creatives/${{ matrix.kind }}/${{ matrix.locale }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain render measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-render-metrics-${{ matrix.kind }}-${{ matrix.locale }}
+          path: metrics/
+          retention-days: 7
+
+  publish:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Production
+    steps:
+      - name: Checkout current main to preserve header entries
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Recheck the open train immediately before publishing
+        id: final-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/final-video-gate"
+          GITHUB_OUTPUT="$result" node --experimental-strip-types scripts/store-videos-gate.ts gate --pinned-sha "$EXPECTED_SOURCE_SHA" --pinned-version "$EXPECTED_VERSION"
+          cat "$result" >> "$GITHUB_OUTPUT"
+          source_sha="$(sed -n 's/^source_sha=//p' "$result")"
+          version="$(sed -n 's/^version=//p' "$result")"
+          if [ "$source_sha" != "$EXPECTED_SOURCE_SHA" ] || [ "$version" != "$EXPECTED_VERSION" ]; then
+            echo 'open=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::The train moved while videos rendered; skipping superseded candidates.'
+          fi
+      - if: steps.final-gate.outputs.open == 'true'
+        run: vp install --frozen-lockfile
+      - uses: ruby/setup-ruby@v1
+        if: steps.final-gate.outputs.open == 'true'
+        with:
+          ruby-version: '3.4'
+      - name: Collect the twenty rendered exports
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for kind in default kilter tension spray moonboard; do
+            for locale in en-US es fr de; do
+              gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "store-video-$kind-$locale" --dir ".boardsesh/app-store-creatives/$kind/$locale"
+            done
+          done
+      - name: Read current Apple placement specifications
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: vp exec tsx scripts/store-videos-gate.ts refdata "$RUNNER_TEMP/store-creative-refdata.json"
+      - name: Finalize search entries while retaining reviewed headers
+        if: steps.final-gate.outputs.open == 'true'
+        run: vp exec ruby fastlane/prepare_creative_manifest.rb --placement search --refdata "$RUNNER_TEMP/store-creative-refdata.json"
+      - name: Upload immutable review candidates
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+        run: vp exec tsx scripts/store-creatives-r2.ts upload-candidates --placement search
+      - name: Mint the review PR token
+        if: steps.final-gate.outputs.open == 'true'
+        id: bot
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Refresh the train's review PR with public posters and video links
+        if: steps.final-gate.outputs.open == 'true'
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VIDEO_VERSION: ${{ inputs.version }}
+          VIDEO_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: vp exec tsx scripts/store-videos-publish.ts "$VIDEO_VERSION" "$VIDEO_SOURCE_SHA"
+
+  timings:
+    if: always()
+    needs: [preflight, app, record, crew, render, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Collect per-step minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > steps.json
+          jq -r '["| Job | Step | Minutes | Result |", "| --- | --- | ---: | --- |"], (.[] .jobs[] | .name as $job | .steps[] | select(.started_at != null and .completed_at != null) | ["| \($job) | \(.name) | \((((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) / 60 * 100 | round) / 100) | \(.conclusion) |"] ) | .[]' steps.json | tee timings.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-video-step-timings
+          path: |
+            timings.md
+            steps.json
+          retention-days: 14
