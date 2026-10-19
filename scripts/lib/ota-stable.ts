@@ -28,6 +28,8 @@ export interface StableRelease {
   stepSince: string;
   percentage: number;
   pendingPercentage: number | null;
+  /** Explicit operator intent: finish these exact owned bytes without soak or fleet-health gates. */
+  forceRelease?: boolean;
 }
 export interface StableState {
   version: 1;
@@ -120,6 +122,8 @@ export function parseStableState(input: unknown): StableState {
     }
     const percentage = rawActive.percentage;
     const pendingPercentage = rawActive.pendingPercentage;
+    if (rawActive.forceRelease !== undefined && typeof rawActive.forceRelease !== 'boolean')
+      throw new Error('Forced release intent must be an explicit boolean.');
     if (typeof percentage !== 'number' || !otaReleasePolicy.canarySteps.includes(percentage))
       throw new Error('Invalid saved rollout percentage.');
     if (
@@ -138,6 +142,7 @@ export function parseStableState(input: unknown): StableState {
       stepSince: timestamp(rawActive.stepSince),
       percentage: percentage as number,
       pendingPercentage: pendingPercentage as number | null,
+      ...(rawActive.forceRelease === undefined ? {} : { forceRelease: rawActive.forceRelease as boolean }),
     };
     if (!active.candidate.qaPassed) throw new Error('An active release must have passed QA.');
     if (
@@ -159,7 +164,8 @@ export function parseStableState(input: unknown): StableState {
       throw new Error('A ramping release cannot have completed platforms.');
     if (['ramping', 'finishing'].includes(String(phase)) && PLATFORMS.every((platform) => unchangedPlatforms[platform]))
       throw new Error('An entirely unchanged release cannot ramp or finish.');
-    if (phase !== 'ramping' && pendingPercentage !== null) throw new Error('Only a ramp can have a pending step.');
+    if (phase !== 'ramping' && !(phase === 'finishing' && active.forceRelease) && pendingPercentage !== null)
+      throw new Error('Only a ramp or forced finish can retain a pending step.');
   }
   const lastStartedDate = parsed.lastStartedDate;
   if (
@@ -216,6 +222,13 @@ export type StableDecision =
   | { action: 'start' | 'resume' | 'revert' | 'finish'; reason: string }
   | { action: 'raise'; percentage: number; reason: string };
 
+export type StableOperation = 'tick' | 'start' | 'force-release';
+
+/** A release day rolls over at the daily UTC boundary; late jobs retain the same cycle. */
+export function releaseCycleDate(now: Date): string {
+  return new Date(now.getTime() - otaReleasePolicy.dailyWindowUtcHour * 3600_000).toISOString().slice(0, 10);
+}
+
 /**
  * Whether every changed platform may finish: each is healthy or has no fleet to
  * judge (`fleetlessReason`), and at least one is healthy, so all-zero counts
@@ -241,13 +254,20 @@ function withFleetless(reason: string, fleetless: string[]): string {
 }
 
 /** Pure decision: delayed ticks advance one step; an empty health answer never means healthy. */
-export function decideStable(state: StableState, now: Date, health: RolloutHealth[]): StableDecision {
+export function decideStable(
+  state: StableState,
+  now: Date,
+  health: RolloutHealth[],
+  operation: StableOperation = 'tick',
+): StableDecision {
   const active = state.active;
-  const dailyWindow = now.getUTCHours() === otaReleasePolicy.dailyWindowUtcHour;
+  if (operation === 'start' && active && active.phase !== 'starting')
+    return { action: 'hold', reason: 'A release is already active; use tick, force-release or abort.' };
+  if (operation === 'force-release' && active?.phase === 'reverting')
+    return { action: 'hold', reason: 'A reverting release must finish recovery before forcing another release.' };
   if (!active) {
-    if (!dailyWindow) return { action: 'hold', reason: 'Outside the daily 22:00 UTC window.' };
-    if (state.lastStartedDate === now.toISOString().slice(0, 10))
-      return { action: 'hold', reason: 'Already started a release today.' };
+    if (operation === 'tick' && state.lastStartedDate === releaseCycleDate(now))
+      return { action: 'hold', reason: 'Already started a release in this daily cycle.' };
     const candidate = state.candidate;
     if (!candidate?.qaPassed) return { action: 'hold', reason: 'No frozen candidate with successful blocking QA.' };
     if (
@@ -264,6 +284,11 @@ export function decideStable(state: StableState, now: Date, health: RolloutHealt
   if (active.phase === 'starting')
     return { action: 'resume', reason: 'Resume only the update IDs recorded before upload.' };
   if (active.phase === 'reverting') return { action: 'revert', reason: 'Finish the recorded revert.' };
+  if (operation === 'force-release' || active.forceRelease)
+    return {
+      action: 'finish',
+      reason: 'Explicit forced release: finish the qualified owned candidate without soak or fleet-health gates.',
+    };
   // Unchanged heads are byte attestations, never fabricated canary/control cohorts.
   const participants = PLATFORMS.filter((platform) => !active.unchangedPlatforms[platform]);
   const hasAll =
@@ -323,8 +348,8 @@ export function decideStable(state: StableState, now: Date, health: RolloutHealt
     };
   }
   const totalHours = (now.getTime() - Date.parse(active.startedAt)) / 3600_000;
-  if (!dailyWindow || totalHours < otaReleasePolicy.minimumSoakHours || stepHours < 8) {
-    return { action: 'hold', reason: 'Finish needs the daily window, twenty total hours and eight hours at 50%.' };
+  if (totalHours < otaReleasePolicy.minimumSoakHours || stepHours < 8) {
+    return { action: 'hold', reason: 'Finish needs twenty total hours and eight hours at 50%.' };
   }
   const evidence = finishEvidence(health);
   if (!evidence.ready)

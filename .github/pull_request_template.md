@@ -20,6 +20,14 @@ Nothing user-facing (refactor, CI, deps, tests)? Tick the checkbox below instead
 
 - [ ] No release note needed (internal / technical change)
 
+## OTA release
+
+<!-- Leave unchecked for the normal canary soak. Check only for an urgent mobile fix:
+merging this PR releases the deployment's staged bytes to 100% stable immediately,
+after deployment checks, bypassing the daily canary soak and fleet-health gate. -->
+
+- [ ] Critical OTA release: roll out to 100% stable immediately
+
 ## Test plan
 
 <!--

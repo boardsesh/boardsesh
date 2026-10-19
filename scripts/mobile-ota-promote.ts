@@ -235,7 +235,7 @@ async function assertEmptyTargetRuntime(
   }
 }
 
-async function readProductionManifest(
+export async function readProductionManifest(
   manifestUrl: string,
   platform: OtaPlatform,
   runtimeVersion: string,

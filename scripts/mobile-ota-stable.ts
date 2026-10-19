@@ -25,9 +25,10 @@ import {
   parseStableState,
   PLATFORMS,
   qualifyCandidate,
+  releaseCycleDate,
   refreshAfterOwnFinish,
 } from './lib/ota-stable.ts';
-import type { StableCandidate, StableRelease, StableState } from './lib/ota-stable.ts';
+import type { StableCandidate, StableOperation, StableRelease, StableState } from './lib/ota-stable.ts';
 
 export function readState(path: string): StableState {
   return existsSync(path) ? parseStableState(JSON.parse(readFileSync(path, 'utf8')) as unknown) : initialStableState();
@@ -52,6 +53,8 @@ interface ControllerOptions {
   clock?: () => Date;
   save: () => void;
   log: (message: string) => void;
+  operation?: StableOperation;
+  expectedSha?: string;
 }
 const runtimes = (receipt: StageReceipt) => ({
   ios: receipt.platforms.ios.runtimeVersion,
@@ -69,6 +72,20 @@ function validateArchive(stagePath: string, receipt: StageReceipt): void {
   for (const platform of PLATFORMS) {
     validateExport(join(stagePath, platform), platform, receipt.platforms[platform].bundleSha256);
   }
+}
+function validateFrozenCandidate(options: ControllerOptions, candidate: StableCandidate): void {
+  const archived = parseCandidate(
+    JSON.parse(readFileSync(join(options.stagePath, 'candidate.json'), 'utf8')) as unknown,
+  );
+  // Production baselines may differ only after this controller's own recorded finish.
+  if (
+    archived.sourceRunId !== candidate.sourceRunId ||
+    archived.preparationRunId !== candidate.preparationRunId ||
+    archived.receipt.commitHash !== candidate.receipt.commitHash ||
+    JSON.stringify(archived.receipt.platforms) !== JSON.stringify(candidate.receipt.platforms)
+  )
+    throw new Error('Frozen artifact differs from checkpoint.');
+  validateArchive(options.stagePath, candidate.receipt);
 }
 const verifyUnchanged = (options: ControllerOptions, active: StableRelease) =>
   verifyUnchangedPlatforms({
@@ -163,6 +180,7 @@ async function ownedHealth(
   options: ControllerOptions,
   active: StableRelease,
   live: ActiveRollout[],
+  includeHealth = true,
 ): Promise<RolloutHealth[]> {
   const health: RolloutHealth[] = [];
   for (const platform of PLATFORMS) {
@@ -200,6 +218,7 @@ async function ownedHealth(
         );
       }
     }
+    if (!includeHealth) continue;
     const reported = await readUpdateHealth(
       options.client,
       details.updateUUID,
@@ -316,6 +335,28 @@ export async function abortStable(options: ControllerOptions): Promise<void> {
 }
 export async function tickStable(options: ControllerOptions): Promise<void> {
   const { state, now } = options;
+  const operation = options.operation ?? 'tick';
+  const selected = state.active?.candidate ?? state.candidate;
+  if (operation === 'force-release' && !options.expectedSha)
+    throw new Error('force-release requires --expected-sha naming the full qualified candidate commit.');
+  if (
+    options.expectedSha &&
+    (!/^[a-f0-9]{40}$/.test(options.expectedSha) || selected?.receipt.commitHash !== options.expectedSha)
+  )
+    throw new Error('Expected SHA does not match the selected active or waiting candidate.');
+  if (operation === 'start' && state.active && state.active.phase !== 'starting')
+    throw new Error('A release is already active; use tick, force-release or abort.');
+  if (operation === 'force-release' && state.active?.phase === 'reverting')
+    throw new Error('A reverting release must finish recovery before forcing another release.');
+  const forced = operation === 'force-release' || state.active?.forceRelease === true;
+  if (forced && state.active?.phase !== 'reverting') {
+    if (!selected?.qaPassed) throw new Error('Force release requires successful frozen candidate QA.');
+    if (selected.receipt.commitHash === state.rejectedCommit)
+      throw new Error('The selected candidate was rejected; prepare a new candidate.');
+    const age = now.getTime() - Date.parse(selected.preparedAt);
+    if (age < 0 || age > 30 * 24 * 3600_000) throw new Error('Candidate receipt is expired or from the future.');
+    validateFrozenCandidate(options, selected);
+  }
   // Reconcile durable leases before classifying live rows as owned or foreign.
   recoverStartingRecord(options);
   const live = await listActiveRollouts(options.client, STABLE_BRANCH);
@@ -329,53 +370,73 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
           current[platform] !== state.active!.unchangedPlatforms[platform],
       )
     ) {
+      if (operation === 'force-release')
+        throw new Error('An unchanged production head changed; reconcile it before forcing release.');
       // Preserve an external replacement and revert only our changed sibling.
       await abortStable(options);
       return;
     }
     await verifyUnchanged(options, state.active);
   }
-  if (
-    state.active?.phase === 'ramping' &&
-    PLATFORMS.some(
+  if (state.active && state.active.phase !== 'reverting') {
+    const active = state.active;
+    const missing = PLATFORMS.filter(
       (platform) =>
-        !state.active!.unchangedPlatforms[platform] &&
+        !active.unchangedPlatforms[platform] &&
         !live.some(
           (entry) =>
             entry.platform === platform &&
-            entry.runtimeVersion === state.active!.candidate.receipt.platforms[platform].runtimeVersion &&
-            sameId(entry.updateId, state.active!.updateIds[platform] ?? ''),
+            entry.runtimeVersion === active.candidate.receipt.platforms[platform].runtimeVersion &&
+            sameId(entry.updateId, active.updateIds[platform] ?? ''),
         ),
-    )
-  ) {
-    // A trusted native/hotfix publication may unlock one or both platforms.
-    // Never resume that candidate over its replacement or leave its sibling live.
-    await abortStable(options);
-    return;
+    );
+    let interrupted = active.phase === 'ramping' && missing.length > 0;
+    if (missing.length > 0 && active.phase !== 'ramping') {
+      const current = await baseline(options, active.candidate.receipt);
+      let externalFinishes = 0;
+      for (const platform of missing) {
+        if (active.phase === 'starting') {
+          // An absent lease with the original head is still a resumable partial start.
+          interrupted ||= current[platform] !== active.candidate.receipt.baselineProductionUpdateIds[platform];
+        } else {
+          const id = active.updateIds[platform];
+          if (!id) throw new Error(`${platform} has no owned update ID.`);
+          const owned = await options.client.getUpdateDetails(
+            STABLE_BRANCH,
+            active.candidate.receipt.platforms[platform].runtimeVersion,
+            id,
+          );
+          // A completed owned UUID is normal partial-finish recovery. A different
+          // stable head belongs to an external publication, including a critical release.
+          if (current[platform] !== owned.updateUUID) externalFinishes += 1;
+        }
+      }
+      if (active.phase === 'finishing')
+        interrupted =
+          missing.length === PLATFORMS.filter((platform) => !active.unchangedPlatforms[platform]).length &&
+          externalFinishes === missing.length;
+    }
+    if (interrupted) {
+      if (operation === 'force-release')
+        throw new Error('An owned rollout disappeared; reconcile production before forcing release.');
+      await abortStable(options);
+      return;
+    }
   }
   const health =
     state.active && state.active.phase !== 'starting' && state.active.phase !== 'reverting'
-      ? await ownedHealth(options, state.active, live)
+      ? await ownedHealth(options, state.active, live, !forced)
       : [];
-  const decision = decideStable(state, now, health);
+  const decision = decideStable(state, now, health, operation);
   options.log(`${options.apply ? 'Apply' : 'Plan'}: ${decision.action}. ${decision.reason}`);
   if (options.apply && decision.action === 'hold' && decision.reason.includes('manual recovery'))
     throw new Error(decision.reason);
+  if (options.apply && operation !== 'tick' && decision.action === 'hold') throw new Error(decision.reason);
   if (!options.apply || decision.action === 'hold') return;
   if (decision.action === 'start' || decision.action === 'resume') {
     const candidate = state.active?.candidate ?? state.candidate;
     if (!candidate) throw new Error('No recorded candidate.');
-    const archived = parseCandidate(
-      JSON.parse(readFileSync(join(options.stagePath, 'candidate.json'), 'utf8')) as unknown,
-    );
-    // Production baselines can differ only after this controller's own recorded finish.
-    if (
-      archived.sourceRunId !== candidate.sourceRunId ||
-      archived.preparationRunId !== candidate.preparationRunId ||
-      archived.receipt.commitHash !== candidate.receipt.commitHash ||
-      JSON.stringify(archived.receipt.platforms) !== JSON.stringify(candidate.receipt.platforms)
-    )
-      throw new Error('Frozen artifact differs from checkpoint.');
+    validateFrozenCandidate(options, candidate);
     if (PLATFORMS.some((platform) => candidate.receipt.baselineProductionUpdateIds[platform] === null)) {
       throw new Error('A native runtime has no stable baseline. Wait for its post-build publication.');
     }
@@ -386,6 +447,7 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
         state.candidate = null;
         options.save();
         options.log('Candidate invalidated: production changed after preparation. No leases or bytes created.');
+        if (operation !== 'tick') throw new Error('Production changed after candidate preparation; prepare again.');
         return;
       }
       state.active = {
@@ -398,9 +460,14 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
         stepSince: now.toISOString(),
         percentage: otaReleasePolicy.canarySteps[0],
         pendingPercentage: null,
+        ...(forced ? { forceRelease: true } : {}),
       };
       state.candidate = null;
-      state.lastStartedDate = now.toISOString().slice(0, 10);
+      state.lastStartedDate = releaseCycleDate(now);
+      options.save();
+    }
+    if (forced) {
+      state.active!.forceRelease = true;
       options.save();
     }
     recoverStartingRecord(options);
@@ -447,13 +514,19 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
     active.startedAt = completedAt;
     active.stepSince = completedAt;
     options.save();
+    if (active.forceRelease) await tickStable({ ...options, operation: 'tick' });
     return;
   }
   const active = state.active;
   if (!active) throw new Error('No active release.');
   const recoveryRevert = active.phase === 'reverting';
   if (decision.action === 'raise') active.pendingPercentage = decision.percentage;
-  if (decision.action === 'finish') active.phase = 'finishing';
+  if (decision.action === 'finish') {
+    if (forced) active.forceRelease = true;
+    active.phase = 'finishing';
+    // A forced finish retains a partial ramp's exact admitted percentages for recovery.
+    if (!active.forceRelease) active.pendingPercentage = null;
+  }
   if (decision.action === 'revert') {
     active.phase = 'reverting';
     active.pendingPercentage = null;
@@ -524,8 +597,8 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
 
 export function parseStableArgs(argv: string[]): { command: string; apply: boolean; flags: Record<string, string> } {
   const [command = 'tick', ...rest] = argv;
-  if (!['prepare', 'qualify', 'tick', 'abort'].includes(command))
-    throw new Error('Use prepare, qualify, tick or abort; default mode is a read-only plan.');
+  if (!['prepare', 'qualify', 'tick', 'start', 'force-release', 'abort'].includes(command))
+    throw new Error('Use prepare, qualify, tick, start, force-release or abort; writes require --apply.');
   let apply = false;
   const flags: Record<string, string> = {};
   const allowed = [
@@ -542,6 +615,7 @@ export function parseStableArgs(argv: string[]): { command: string; apply: boole
     '--boot-result',
     '--smoke-passed',
     '--boot-passed',
+    '--expected-sha',
   ];
   for (let index = 0; index < rest.length; index++) {
     const flag = rest[index];
@@ -555,6 +629,12 @@ export function parseStableArgs(argv: string[]): { command: string; apply: boole
     flags[flag] = argument;
   }
   if (!flags['--state'] || !flags['--stage']) throw new Error('Provide --state and --stage paths.');
+  if (flags['--expected-sha'] && !/^[a-f0-9]{40}$/.test(flags['--expected-sha']))
+    throw new Error('--expected-sha must be a full lowercase commit SHA.');
+  if (command === 'force-release' && !flags['--expected-sha'])
+    throw new Error('force-release requires --expected-sha.');
+  if (flags['--expected-sha'] && command !== 'start' && command !== 'force-release')
+    throw new Error('--expected-sha is only supported by start and force-release.');
   return { command, apply, flags };
 }
 async function main(): Promise<void> {
@@ -590,6 +670,13 @@ async function main(): Promise<void> {
     });
     save();
     console.log(`Frozen candidate QA: ${state.candidate.qaPassed ? 'passed' : 'rejected'}`);
+    console.log(`Candidate SHA: ${state.candidate.receipt.commitHash}`);
+    if (process.env.GITHUB_STEP_SUMMARY)
+      writeFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        `Frozen candidate QA: ${state.candidate.qaPassed ? 'passed' : 'rejected'}\n\nCandidate SHA: \`${state.candidate.receipt.commitHash}\`\n`,
+        { flag: 'a' },
+      );
     if (!state.candidate.qaPassed) process.exitCode = 1;
     return;
   }
@@ -611,6 +698,8 @@ async function main(): Promise<void> {
       now: new Date(),
       save,
       log: console.log,
+      ...(command === 'start' || command === 'force-release' ? { operation: command } : {}),
+      ...(flags['--expected-sha'] ? { expectedSha: flags['--expected-sha'] } : {}),
     };
     if (command === 'prepare') {
       const candidate = await prepareStable(options, flags['--source-run-id'], flags['--source-sha'], runId);

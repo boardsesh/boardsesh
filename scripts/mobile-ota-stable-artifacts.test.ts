@@ -5,7 +5,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { downloadStableArtifact, extractArtifactZip, parseArtifactArgs } from './mobile-ota-stable-artifacts';
+import {
+  assertProductionLockContext,
+  downloadStableArtifact,
+  extractArtifactZip,
+  parseArtifactArgs,
+} from './mobile-ota-stable-artifacts';
 import type { StableGithubClient } from './lib/ota-stable-github';
 
 const scratchDirs: string[] = [];
@@ -87,6 +92,27 @@ describe('artifact ZIP preflight', () => {
 });
 
 describe('artifact commands', () => {
+  it('restricts production-lock state reads to the main deploy job that owns the shared lock', () => {
+    const environment = {
+      GITHUB_ACTIONS: 'true',
+      GITHUB_REF: 'refs/heads/main',
+      GITHUB_JOB: 'promote-mobile-ota',
+      GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+      GITHUB_EVENT_NAME: 'push',
+      GITHUB_WORKFLOW_REF: 'boardsesh/boardsesh/.github/workflows/production-deploy.yml@refs/heads/main',
+    };
+    expect(() => assertProductionLockContext(environment)).not.toThrow();
+    for (const patch of [
+      { GITHUB_JOB: 'tick' },
+      { GITHUB_ACTIONS: 'false' },
+      { GITHUB_REF: 'refs/heads/topic' },
+      { GITHUB_EVENT_NAME: 'pull_request' },
+      { GITHUB_WORKFLOW_REF: 'boardsesh/boardsesh/.github/workflows/other.yml@refs/heads/main' },
+    ])
+      expect(() => assertProductionLockContext({ ...environment, ...patch })).toThrow('trusted main production');
+    expect(parseArtifactArgs(['state', '--out', 'out', '--production-locked'], '14').productionLocked).toBe(true);
+    expect(() => parseArtifactArgs(['source', '--out', 'out', '--production-locked'])).toThrow('only to state');
+  });
   it('requires a current run exclusion for state and a numeric preparation run for candidates', () => {
     expect(parseArtifactArgs(['state', '--out', 'out'], '14')).toMatchObject({ command: 'state', excludeRunId: 14 });
     expect(parseArtifactArgs(['candidate', '--run-id', '13', '--out', 'out'])).toMatchObject({

@@ -1,5 +1,5 @@
 name: Daily Stable OTA
-run-name: OTA stable ${{ inputs.command == 'abort' && 'abort' || (inputs.command == 'prepare' || github.event.schedule == '17 19 * * *') && 'prepare' || (inputs.command != 'plan' && vars.OTA_STABLE_RELEASE_ENABLED == 'true' && 'tick') || 'plan' }}
+run-name: OTA stable ${{ inputs.command == 'abort' && 'abort' || inputs.command == 'start' && 'start' || inputs.command == 'force-release' && 'force-release' || (inputs.command == 'prepare' || github.event.schedule == '17 19 * * *') && 'prepare' || (inputs.command != 'plan' && vars.OTA_STABLE_RELEASE_ENABLED == 'true' && 'tick') || 'plan' }}
 
 # Main-only admin code. Set the environment deployment-branch policy to main.
 # Repository switch stays off until fresh green/red native proofs and store QA.
@@ -11,10 +11,14 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: Prepare frozen bytes, tick enabled production, or read-only plan.
+        description: Prepare and test bytes, check automatic rollout, start a canary, force stable, abort, or plan.
         type: choice
         default: plan
-        options: [plan, prepare, tick, abort]
+        options: [plan, prepare, tick, start, force-release, abort]
+      candidate_sha:
+        description: Full lowercase candidate SHA; required for force-release, optional for start.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -42,9 +46,16 @@ jobs:
           INPUT_COMMAND: ${{ inputs.command }}
           SCHEDULE: ${{ github.event.schedule }}
           ENABLED: ${{ vars.OTA_STABLE_RELEASE_ENABLED }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           command="${INPUT_COMMAND:-tick}"
           if [ -z "$INPUT_COMMAND" ] && [ "$SCHEDULE" = '17 19 * * *' ]; then command=prepare; fi
+          case "$command" in plan|prepare|tick|start|force-release|abort) ;; *) echo 'Unknown stable command.' >&2; exit 1 ;; esac
+          if [ -n "$CANDIDATE_SHA" ]; then
+            if [[ ! "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]; then echo 'candidate_sha must be a full lowercase commit SHA.' >&2; exit 1; fi
+            case "$command" in start|force-release) ;; *) echo 'candidate_sha is only valid for start or force-release.' >&2; exit 1 ;; esac
+          fi
+          if [ "$command" = force-release ] && [ -z "$CANDIDATE_SHA" ]; then echo 'force-release requires candidate_sha.' >&2; exit 1; fi
           if [ "$command" = tick ] && [ "$ENABLED" != true ]; then command=plan; fi
           echo "command=$command" >> "$GITHUB_OUTPUT"
 
@@ -135,6 +146,9 @@ jobs:
     if: always() && needs.resolve.outputs.command == 'prepare'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -153,6 +167,7 @@ jobs:
           name: mobile-ota-stable-candidate
           path: ota-stage
       - name: Record blocking QA verdict
+        id: verdict
         if: needs.prepare.result == 'success'
         env:
           SMOKE_SHA: ${{ needs.smokes.outputs.sha || 'missing' }}
@@ -167,6 +182,7 @@ jobs:
             --branch pr-stable-candidate --smoke-result "$SMOKE_RESULT" --boot-result "$BOOT_RESULT" \
             --smoke-passed "$SMOKE_PASSED" --boot-passed "$BOOT_PASSED"
       - name: Retain final checkpoint even when QA fails
+        id: checkpoint
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -174,6 +190,15 @@ jobs:
           path: controller-state/state.json
           retention-days: 30
           if-no-files-found: error
+      - name: Check qualified candidate without waiting for cron
+        if: success() && steps.verdict.outcome == 'success' && steps.checkpoint.outcome == 'success' && vars.OTA_STABLE_RELEASE_ENABLED == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh workflow run mobile-ota-stable-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f command=tick; then
+            echo '::warning::Qualified candidate retained; the next scheduled controller check will retry progression.'
+          fi
 
   tick:
     needs: resolve
@@ -218,10 +243,12 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
           COMMAND: ${{ needs.resolve.outputs.command }}
           LOADED_RUN: ${{ steps.artifacts.outputs.loaded_run }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
           flags=()
           if [ "$COMMAND" != plan ]; then flags+=(--apply); fi
+          if [ -n "$CANDIDATE_SHA" ]; then flags+=(--expected-sha "$CANDIDATE_SHA"); fi
           operation="$COMMAND"
           if [ "$operation" = plan ]; then operation=tick; fi
           node --experimental-strip-types scripts/mobile-ota-stable.ts "$operation" "${flags[@]}" \

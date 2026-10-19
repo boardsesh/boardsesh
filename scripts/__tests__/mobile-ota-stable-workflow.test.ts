@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { desiredOtaState, STABLE_CANDIDATE_BRANCH } from '../../infra/ota/config';
@@ -9,6 +11,7 @@ interface Step {
   id?: string;
   uses?: string;
   if?: string;
+  'continue-on-error'?: boolean;
   run?: string;
   env?: Record<string, string>;
   with?: Record<string, unknown>;
@@ -24,7 +27,10 @@ interface Job {
   with?: Record<string, string>;
 }
 interface Workflow {
-  on: { schedule: { cron: string }[]; workflow_dispatch: unknown };
+  on: {
+    schedule: { cron: string }[];
+    workflow_dispatch: { inputs: Record<string, { type: string; options?: string[]; required?: boolean }> };
+  };
   jobs: Record<string, Job>;
   concurrency: Record<string, unknown>;
   'run-name': string;
@@ -40,12 +46,53 @@ const step = (job: string, name: string): Step => {
   if (!found) throw new Error(`Missing ${job} step ${name}`);
   return found;
 };
+
+function executeStep(script: string, environment: Record<string, string>) {
+  const scratchDirectory = mkdtempSync(join(tmpdir(), 'ota-stable-workflow-'));
+  const outputPath = join(scratchDirectory, 'output');
+  const argumentsPath = join(scratchDirectory, 'arguments');
+  writeFileSync(outputPath, '');
+  writeFileSync(argumentsPath, '');
+  try {
+    const execution = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputPath,
+        GITHUB_STEP_SUMMARY: join(scratchDirectory, 'summary'),
+        CAPTURE_ARGS: argumentsPath,
+        RUNNER_TEMP: scratchDirectory,
+        ...environment,
+      },
+    });
+    if (execution.error) throw execution.error;
+    return {
+      status: execution.status,
+      output: readFileSync(outputPath, 'utf8'),
+      arguments: readFileSync(argumentsPath, 'utf8').trim().split('\n'),
+      error: execution.stderr,
+      logs: execution.stdout,
+    };
+  } finally {
+    rmSync(scratchDirectory, { recursive: true, force: true });
+  }
+}
+
+function resolveCommand(command: string, enabled: string, candidateSha = '', schedule = '') {
+  return executeStep(step('resolve', 'Resolve command').run ?? '', {
+    INPUT_COMMAND: command,
+    ENABLED: enabled,
+    CANDIDATE_SHA: candidateSha,
+    SCHEDULE: schedule,
+  });
+}
+
 describe('daily stable workflow boundaries', () => {
   it('declares frozen protected candidate without altering the production channel', () => {
     expect(desiredOtaState.branches.find((branch) => branch.name === STABLE_CANDIDATE_BRANCH)?.protected).toBe(true);
     expect(desiredOtaState.channels.find((channel) => channel.name === 'production')?.branch).toBe('production');
   });
-  it('prepares once daily, judges hourly, and has the fixed daily finish window', () => {
+  it('prepares once daily and checks at the release-cycle boundary and hourly', () => {
     expect(workflow.on.schedule.map((schedule) => schedule.cron)).toEqual(['17 19 * * *', '0 22 * * *', '37 * * * *']);
     expect(Object.keys(workflow.on)).not.toContain('pull_request');
     expect(workflow.concurrency).toEqual({
@@ -81,7 +128,7 @@ describe('daily stable workflow boundaries', () => {
       queue: 'max',
     });
   });
-  it('allows the reusable boot resolver read permissions without expanding controller scopes', () => {
+  it('limits extra permissions to reusable boot reads and qualification dispatch', () => {
     const bootWorkflow = parse(
       readFileSync(resolve(import.meta.dirname, '../../.github/workflows/mobile-ota-boot-check.yml'), 'utf8'),
     ) as Workflow;
@@ -101,9 +148,10 @@ describe('daily stable workflow boundaries', () => {
       }
     }
     expect(workflow.permissions).toEqual({ contents: 'read', actions: 'read' });
-    for (const controller of ['prepare', 'qualify', 'tick']) {
+    for (const controller of ['prepare', 'tick']) {
       expect(workflow.jobs[controller].permissions).toBeUndefined();
     }
+    expect(workflow.jobs.qualify.permissions).toEqual({ contents: 'read', actions: 'write' });
     expect(workflow.jobs.smokes.permissions).toBeUndefined();
   });
   it('qualification records both actual output SHAs and strict job outcomes', () => {
@@ -113,6 +161,101 @@ describe('daily stable workflow boundaries', () => {
     expect(verdict.env?.SMOKE_RESULT).toBe('${{ needs.smokes.result }}');
     expect(verdict.env?.BOOT_RESULT).toBe('${{ needs.boot.result }}');
     expect(verdict.run).toContain('--smoke-passed "$SMOKE_PASSED" --boot-passed "$BOOT_PASSED"');
+  });
+  it('dispatches enabled automatic progression only after successful QA and durable final state', () => {
+    const qualificationSteps = workflow.jobs.qualify.steps ?? [];
+    const verdict = step('qualify', 'Record blocking QA verdict');
+    const checkpoint = step('qualify', 'Retain final checkpoint even when QA fails');
+    const dispatch = step('qualify', 'Check qualified candidate without waiting for cron');
+    expect(qualificationSteps.indexOf(verdict)).toBeLessThan(qualificationSteps.indexOf(checkpoint));
+    expect(qualificationSteps.indexOf(checkpoint)).toBeLessThan(qualificationSteps.indexOf(dispatch));
+    expect(dispatch.if).toBe(
+      "success() && steps.verdict.outcome == 'success' && steps.checkpoint.outcome == 'success' && vars.OTA_STABLE_RELEASE_ENABLED == 'true'",
+    );
+    expect(verdict.id).toBe('verdict');
+    expect(checkpoint.id).toBe('checkpoint');
+    expect(checkpoint.with?.name).toBe('mobile-ota-stable-state');
+    expect(checkpoint.with?.['if-no-files-found']).toBe('error');
+    expect(dispatch.env).toEqual({ GH_TOKEN: '${{ github.token }}' });
+    expect(dispatch.run).toContain(
+      'gh workflow run mobile-ota-stable-release.yml --repo "$GITHUB_REPOSITORY" --ref main -f command=tick',
+    );
+    expect(dispatch['continue-on-error']).toBe(true);
+    expect(workflow.concurrency['cancel-in-progress']).toBe(false);
+  });
+  it('keeps qualified archive provenance successful when immediate dispatch fails', () => {
+    const dispatch = step('qualify', 'Check qualified candidate without waiting for cron');
+    const execution = executeStep(`gh() { return 1; }\n${dispatch.run ?? ''}`, {
+      GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+    });
+    expect(execution.status).toBe(0);
+    expect(execution.logs).toContain('::warning::Qualified candidate retained');
+    expect(execution.logs).toContain('next scheduled controller check');
+  });
+  it('offers explicit start and SHA-pinned force-release commands', () => {
+    expect(workflow.on.workflow_dispatch.inputs.command.options).toEqual([
+      'plan',
+      'prepare',
+      'tick',
+      'start',
+      'force-release',
+      'abort',
+    ]);
+    expect(workflow.on.workflow_dispatch.inputs.candidate_sha).toMatchObject({ type: 'string', required: false });
+    expect(workflow['run-name']).toContain("inputs.command == 'start' && 'start'");
+    expect(workflow['run-name']).toContain("inputs.command == 'force-release' && 'force-release'");
+    const candidateSha = 'a'.repeat(40);
+    for (const enabled of ['true', 'false']) {
+      expect(resolveCommand('start', enabled).output).toBe('command=start\n');
+      expect(resolveCommand('start', enabled, candidateSha).output).toBe('command=start\n');
+      expect(resolveCommand('force-release', enabled, candidateSha).output).toBe('command=force-release\n');
+    }
+    for (const invalidSha of ['', 'a'.repeat(39), 'A'.repeat(40), `${candidateSha}; echo injected`]) {
+      const resolution = resolveCommand('force-release', 'true', invalidSha);
+      expect(resolution.status).not.toBe(0);
+      expect(resolution.output).toBe('');
+    }
+    expect(resolveCommand('start', 'true', 'short-sha').status).not.toBe(0);
+    expect(resolveCommand('tick', 'true', candidateSha).status).not.toBe(0);
+    expect(resolveCommand('unknown', 'true').status).not.toBe(0);
+  });
+  it('preserves automatic activation control without disabling explicit manual operations', () => {
+    expect(resolveCommand('tick', 'false').output).toBe('command=plan\n');
+    expect(resolveCommand('tick', 'true').output).toBe('command=tick\n');
+    expect(resolveCommand('', 'true', '', '17 19 * * *').output).toBe('command=prepare\n');
+    expect(resolveCommand('', 'true', '', '0 22 * * *').output).toBe('command=tick\n');
+    expect(resolveCommand('', 'false', '', '37 * * * *').output).toBe('command=plan\n');
+    expect(resolveCommand('prepare', 'false').output).toBe('command=prepare\n');
+    expect(resolveCommand('abort', 'false').output).toBe('command=abort\n');
+  });
+  it('passes manual commands and optional pins as discrete CLI arguments', () => {
+    const controller = step('tick', 'Judge and apply at most one timed step');
+    expect(controller.env?.CANDIDATE_SHA).toBe('${{ inputs.candidate_sha }}');
+    expect(controller.id).toBe('controller');
+    const candidateSha = 'b'.repeat(40);
+    for (const [command, pinned] of [
+      ['plan', false],
+      ['tick', false],
+      ['start', false],
+      ['start', true],
+      ['force-release', true],
+      ['abort', false],
+    ] as const) {
+      const execution = executeStep(`node() { printf '%s\\n' "$@" > "$CAPTURE_ARGS"; }\n${controller.run ?? ''}`, {
+        COMMAND: command,
+        CANDIDATE_SHA: pinned ? candidateSha : '',
+        LOADED_RUN: '123',
+      });
+      expect(execution.status, execution.error).toBe(0);
+      expect(execution.arguments.slice(0, 3)).toEqual([
+        '--experimental-strip-types',
+        'scripts/mobile-ota-stable.ts',
+        command === 'plan' ? 'tick' : command,
+      ]);
+      expect(execution.arguments.includes('--apply')).toBe(command !== 'plan');
+      expect(execution.arguments.includes('--expected-sha')).toBe(pinned);
+      if (pinned) expect(execution.arguments.slice(4, 6)).toEqual(['--expected-sha', candidateSha]);
+    }
   });
   it('disabled tick is named plan and records no fake write checkpoint', () => {
     expect(workflow['run-name']).toContain("vars.OTA_STABLE_RELEASE_ENABLED == 'true'");

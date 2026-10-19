@@ -647,10 +647,10 @@ leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing
 run and those branches. Protection is the second lock.
 
 The same file declares the daily controller's release policy: canary steps 5, 10, 25, 50,
-four hours per step, at least 20 hours overall and eight hours at 50%, then a finish in the
-22:00 UTC daily window once every changed platform is healthy or has no fleet yet (see the daily
-stable runbook). The controller stays read-only for production until
-`OTA_STABLE_RELEASE_ENABLED=true`. Health thresholds remain provisional until the fleet's normal
+four hours per step, at least 20 hours overall and eight hours at 50%, then completion
+at the next check once every changed platform is healthy or has no fleet yet (see the daily
+stable runbook). Automatic production writes require `OTA_STABLE_RELEASE_ENABLED=true`;
+explicit manual start and force-release commands operate independently. Health thresholds remain provisional until the fleet's normal
 faulty-device rate has been measured; see the daily stable runbook below.
 
 What the tool will not do, whatever the declaration says:
@@ -944,7 +944,7 @@ Relevant `main` pushes always publish to staging, wait for deployment and backen
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
 per-merge production promotion. Once enabled, production receives the daily qualified canary instead.
-The activation switch controls production cadence, not staging or beta publication. Native builds,
+The activation switch controls automatic production cadence, not explicit manual commands, staging or beta publication. Native builds,
 release trains, manual hotfixes and backports retain
 their existing publish routes, with the trusted unlock before a production write.
 
@@ -968,16 +968,26 @@ the second platform stops rather than assuming its platform-specific baseline is
 
 The daily controller's reusable boot job explicitly allows read access to Actions, repository
 contents, deployments and pull requests. GitHub validates those nested permissions even for a
-read-only plan that skips boot execution; the controller's other jobs retain their original scopes.
+read-only plan that skips boot execution. Qualification alone adds Actions write permission to
+dispatch a new controller check after its final checkpoint has been uploaded; other controller
+jobs retain their read scopes.
 
 | Time, UTC | Controller work |
 | --- | --- |
 | 19:17 daily | Prepare the newest successful `main` push deployment with a complete stage artifact. Copy its exports to `pr-stable-candidate`; pin SHA, runtimes, hashes and source run; run all navigation smokes and both native boot checks against that frozen receipt. |
-| 22:00 daily | Start one qualified candidate at 5%, or finish an eligible healthy canary. This is 9am Sydney during daylight saving, 8am during standard time. |
+| After successful qualification | Upload the final checkpoint, then dispatch a new `tick` on `main` when automatic releases are enabled. The shared controller lane queues it after preparation. |
+| 22:00 daily | Check again at the release-cycle boundary. This is 9am Sydney during daylight saving, 8am during standard time. |
 | Minute 37 hourly | Recheck health and apply at most one timed step. Delays do not skip soak periods. |
 
+The release cycle runs from 22:00 UTC to the next day's 22:00 UTC. Automatic checks may start
+one candidate anywhere in that cycle; 22:00 is a cycle boundary, not a one-hour start or finish
+window. A candidate that finishes QA after the scheduled check starts on the post-QA check,
+provided the cycle has no previous start and no canary is active. The hourly check retries a missed
+or failed post-QA dispatch. An eligible active canary can finish at any hour. When a canary finishes,
+a later check can start a waiting candidate if that cycle has not already started one.
+
 Each of 5%, 10%, 25% and 50% must soak for at least four hours. Completion additionally needs at
-least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on every changed platform.
+least 20 hours overall, eight hours at 50%, and healthy evidence on every changed platform.
 Insufficient samples with valid counts may progress through 50%, then hold.
 One exception keeps a store lag from freezing both platforms. A changed platform has **no fleet yet**
 when its store binary has not reached people: Android 2.6.0 sat as a Play draft while iOS 2.6.0 was live,
@@ -1068,15 +1078,99 @@ through the trusted publisher/unlock route, then dispatch `command=abort` to pre
 and revert the remaining owned canary. The controller never guesses a rollback bundle or overwrites
 an independent recovery publication.
 
-For a read-only inspection, dispatch `mobile-ota-stable-release.yml` with `command=plan`. Dispatch
-`command=prepare` to freeze and test a candidate without enabling production writes. `command=tick` writes
-only when the repository activation variable is true. Planning does not publish a replacement checkpoint.
+For a read-only inspection, dispatch `mobile-ota-stable-release.yml` with `command=plan`.
+`command=tick` writes only when the repository activation variable is true. Planning does not
+publish a replacement checkpoint. Freeze and test a fresh candidate with:
+
+```bash
+gh workflow run mobile-ota-stable-release.yml --ref main -f command=prepare
+```
+
+With automatic releases enabled, successful qualification dispatches a controller check and may
+start its canary. With automatic releases disabled, preparation only freezes and tests the bytes.
+
+**Start the qualified canary manually.** `start` bypasses the daily cadence and activation switch.
+It still requires the frozen native and navigation QA, valid archived bytes and unchanged production
+baselines. It starts at 5%, then the normal soak periods and health checks apply. Pin the intended
+candidate using its full lowercase 40-character SHA from the preparation summary:
+
+```bash
+CANDIDATE_SHA=0123456789abcdef0123456789abcdef01234567 # Replace with the qualified candidate SHA.
+gh workflow run mobile-ota-stable-release.yml --ref main -f command=start -f candidate_sha="$CANDIDATE_SHA"
+```
+
+The SHA is optional for `start`; supplying it refuses a different candidate. `start` resumes an
+interrupted start using the same candidate and leases, but cannot replace an active canary or advance
+its timed steps. When automatic releases are disabled, later automatic progression waits for the
+activation switch; enable automatic checks or explicitly force the qualified release as below.
+
+**Release the qualified candidate to stable immediately.** `force-release` requires that same full
+candidate SHA. It selects the active candidate first; only when there is no active canary does it
+select the waiting qualified candidate. A SHA naming the waiting candidate cannot replace an active one.
+
+```bash
+gh workflow run mobile-ota-stable-release.yml --ref main -f command=force-release -f candidate_sha="$CANDIDATE_SHA"
+```
+
+This explicit command sends the selected candidate to 100% without waiting for cadence, soak time
+or fleet health reporting, even when automatic releases are disabled. This operator override also
+allows missing or unhealthy fleet evidence. It does **not** bypass frozen
+native/navigation QA, archive hashes, production baselines, unchanged-platform checks or ownership.
+Writes use the exact recorded update IDs; independent production updates remain protected.
+It refuses reverting, rejected, expired or stale candidates. The force intent is saved in the
+checkpoint before writes, so an interrupted force-release resumes that intent on a new matching
+`force-release` dispatch or an enabled `tick`; recovery cannot silently fall back to timed soaking.
+
 Retry with a **new dispatch**, rather than GitHub's Re-run button: mutating run attempts other than one are
 refused so a previous attempt's artifact IDs and ownership evidence are never replaced. Dispatch a new
 `command=tick` to resume recorded work, or a new `command=abort` for explicit recovery.
 
+**Mark an urgent PR for immediate stable release on merge.** The PR template includes an unchecked
+item under `## OTA release`:
+
+```markdown
+- [ ] Critical OTA release: roll out to 100% stable immediately
+```
+
+Check that item when the merge must reach everyone immediately. The production deployment stages
+the merged bytes, waits for its build, backend-schema and OTA-server checks, then publishes those
+exact archived bytes to 100% stable. This bypasses frozen daily native/navigation qualification,
+canary soak periods and the fleet-health gate, including when daily stable releases are enabled.
+The normal `main` deployment validation, archive hashes, native fingerprints, schema and server checks
+still apply. It also requests an OTA export
+when the PR would otherwise contain only backend, documentation or other non-OTA paths. Early
+updates continue to receive the deployment too. The deployment summary identifies the critical PRs
+and reports the immediate stable release.
+
+Only the exact checked item in the OTA release section counts; comments, quoted examples and code
+blocks do not. The detector verifies that each PR was merged into this repository's `main` and that
+its merge commit is in the actual first-parent deployment range. It uses the same previous successful
+deployment baseline as change detection, so a replaced or cancelled pending run cannot lose an earlier
+critical merge. A failed or incomplete pull-request API read blocks detection and deployment. If no safe baseline
+exists, it checks only the deployment's HEAD and warns that inherited critical intent is unknown;
+it never replays arbitrary older critical PRs. Leave the item unchecked for normal canary releases.
+
+Critical publication holds the production lock and reads the trusted controller checkpoint before
+touching a live rollout. This read can use a newer completed controller checkpoint even when its run
+number follows the deployment. It skips only first-attempt controller jobs proven queued or blocked
+before any production write, as well as candidate-only preparation that cannot write production.
+An unknown running writer, incomplete job evidence or missing/corrupt checkpoint still holds publication.
+
+An active canary can be superseded only when its exact update IDs belong to that checkpoint and its
+control is the production baseline captured by both the controller and this staged export. Unknown
+rollouts, stale production heads or a controller already reverting stop all critical writes. After each
+owned canary is reverted, the publisher proves the served bundle, assets and Expo config match the
+captured control. Only then may the resulting UUID enter a derived receipt for the critical publish.
+The original staging receipt stays immutable. The workflow retains it, the derived receipt when one is
+needed, and supersession evidence for 30 days, including after a partial failure.
+
+GitHub's Re-run button cannot retry a critical publication. Inspect both production heads and retained
+evidence first, then use a fresh reviewed production deployment for recovery. Critical publication does
+not mint or push the changelog using Production-only app credentials; its admin login comes from the
+main-only `ota-stable-release` environment.
+
 **Promote a pinned staging export immediately.** To ship approved main bytes at 100% on both
-platforms without waiting for the daily qualification window, select a successful main push
+platforms through the separate existing emergency publisher, select a successful main push
 deployment with its retained `mobile-ota-stage` artifact, then dispatch:
 
 ```bash

@@ -12,6 +12,7 @@ export {
   stripHtmlComments,
 } from './sections';
 export { TEST_PLAN_HEADING, parseTestPlan, type TestPlan } from './test-plan';
+export { CRITICAL_OTA_RELEASE_CHECKBOX, CRITICAL_OTA_RELEASE_LABEL, hasCriticalOtaRelease } from './ota-release';
 export { describeDeveloperVoice, findDeveloperVoice, type StepVoiceProblem } from './tester-voice';
 export {
   OFFLINE_MIGRATIONS_PATH,

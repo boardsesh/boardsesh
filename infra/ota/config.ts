@@ -180,7 +180,7 @@ export interface OtaReleasePolicy {
   stepHours: number;
   /** Hours since the canary started before it may be finished to 100%. */
   minimumSoakHours: number;
-  /** The UTC hour of the tick that finishes yesterday's canary and cuts today's. */
+  /** UTC hour when the daily start allowance resets. Late jobs can act throughout the cycle. */
   dailyWindowUtcHour: number;
   health: OtaHealthPolicy;
 }
@@ -200,11 +200,11 @@ export const otaReleasePolicy: OtaReleasePolicy = {
   canarySteps: [5, 10, 25, 50],
   // 5% at the start, 10% at 4 h, 25% at 8 h and 50% at 12 h.
   stepHours: 4,
-  // Under a day, so a canary cut at one daily tick can be finished at the next
-  // even when that tick starts a few minutes early; over 12 h, so it has spent at
-  // least 8 h on the 50% step.
+  // The earliest automatic finish; the final 50% step must also soak for eight
+  // hours. Late controller jobs recheck these clocks without an hour-only gate.
   minimumSoakHours: 20,
-  // One fixed tick a day, so there is one canary a day and never two at once.
+  // One automatic start per cycle, turning over at 22:00 UTC. Qualification can
+  // trigger a check at any hour; there is still only one active canary at once.
   dailyWindowUtcHour: 22,
   // Every number below is provisional. Nobody has measured the fleet's normal
   // faulty-device rate yet; set them from a week of real control cohorts.

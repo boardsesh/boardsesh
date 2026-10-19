@@ -98,18 +98,25 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       web_changed: ${{ steps.changes.outputs.web }}
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
-      ota_changed: ${{ steps.changes.outputs.ota }}
+      ota_changed: ${{ steps.critical-ota.outputs.critical_ota == 'true' && 'true' || steps.changes.outputs.ota }}
       deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
+      critical_ota: ${{ steps.critical-ota.outputs.critical_ota }}
       cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
       static_assets_changed: ${{ steps.changes.outputs.static_assets }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
 
       - name: Read the latest successful production deploy
         id: deploy-history
@@ -131,6 +138,13 @@ jobs:
         env:
           RUNS_JSON: ${{ steps.deploy-history.outputs.runs_json }}
         run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"
+
+      - name: Detect critical OTA opt-in across the deployment range
+        id: critical-ota
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_BASE_SHA: ${{ steps.changes.outputs.deployment_base_sha }}
+        run: node --experimental-strip-types scripts/mobile-ota-critical.ts
 
   # Export and upload to the tester-only staging branch while web/backend build.
   # A staging failure is recorded in this run but never holds service deploys.
@@ -730,7 +744,8 @@ jobs:
     needs: [detect-changes, stage-mobile-ota, build-web, build-backend, migrate, deploy-production-backend]
     if: >-
       always()
-      && vars.OTA_STABLE_RELEASE_ENABLED != 'true'
+      && needs.detect-changes.result == 'success'
+      && (vars.OTA_STABLE_RELEASE_ENABLED != 'true' || needs.detect-changes.outputs.critical_ota == 'true')
       && needs.detect-changes.outputs.ota_changed == 'true'
       && needs.stage-mobile-ota.result == 'success'
       && (needs.build-web.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.build-web.result == 'skipped'))
@@ -740,7 +755,7 @@ jobs:
     runs-on: ubuntu-latest
     # 45 minutes for the promotion itself, plus up to 85 for the server-rollout wait.
     timeout-minutes: 130
-    environment: Production
+    environment: ${{ needs.detect-changes.outputs.critical_ota == 'true' && 'ota-stable-release' || 'Production' }}
     permissions:
       contents: read
       # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
@@ -750,9 +765,12 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
+      - name: Refuse blind critical promotion retries
+        if: needs.detect-changes.outputs.critical_ota == 'true' && github.run_attempt != 1
+        run: exit 1
       - name: Mint changelog push token
         id: push_token
-        if: vars.OTA_PUSH_APP_ID != ''
+        if: needs.detect-changes.outputs.critical_ota != 'true' && vars.OTA_PUSH_APP_ID != ''
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
@@ -789,8 +807,47 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mobile-ota-server-ready.mjs
 
+      - name: Restore trusted controller state before critical supersession
+        id: critical-state
+        if: needs.detect-changes.outputs.critical_ota == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p controller-state
+          state="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts state \
+            --out controller-state --exclude-run-id "$GITHUB_RUN_ID" --production-locked)"
+          echo "loaded_run=$(jq -r '.runId // "0"' <<< "$state")" >> "$GITHUB_OUTPUT"
+
+      - name: Release critical staged bytes to 100% stable
+        id: critical-promote
+        if: needs.detect-changes.outputs.critical_ota == 'true'
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+          LOADED_STATE_RUN_ID: ${{ steps.critical-state.outputs.loaded_run }}
+        run: |
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          node --experimental-strip-types scripts/mobile-ota-critical-promote.ts \
+            --stage ota-stage --source-sha "$GITHUB_SHA" --state controller-state/state.json \
+            --loaded-state-run-id "$LOADED_STATE_RUN_ID"
+
+      - name: Retain critical supersession evidence
+        if: always() && needs.detect-changes.outputs.critical_ota == 'true' && steps.critical-promote.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-ota-release-evidence
+          path: |
+            ota-stage/receipt.json
+            ota-stage/critical-supersession.json
+            ota-stage/critical-receipt.json
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Promote exact staged iOS and Android exports
         id: promote
+        if: needs.detect-changes.outputs.critical_ota != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
@@ -832,7 +889,7 @@ jobs:
 
       - name: OTA health check (non-blocking)
         id: health
-        if: always() && steps.promote.outcome == 'success'
+        if: always() && (steps.promote.outcome == 'success' || steps.critical-promote.outcome == 'success')
         continue-on-error: true
         env:
           POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
@@ -841,18 +898,21 @@ jobs:
           node --experimental-strip-types scripts/mobile-ota-health-check.ts --hours 6 --out "$RUNNER_TEMP/ota-health.md"
 
       - name: Report promoted OTA
-        if: always() && steps.promote.outcome == 'success'
+        if: always() && (steps.promote.outcome == 'success' || steps.critical-promote.outcome == 'success')
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           OTA_TRACK: production
+          CRITICAL_OTA: ${{ needs.detect-changes.outputs.critical_ota }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          echo "### Mobile OTA promoted to $OTA_TRACK" >> "$GITHUB_STEP_SUMMARY"
+          release_description="$OTA_TRACK"
+          if [ "$CRITICAL_OTA" = true ]; then release_description='production (critical, 100% stable)'; fi
+          echo "### Mobile OTA promoted to $release_description" >> "$GITHUB_STEP_SUMMARY"
           jq -r '.platforms | to_entries[] | "- \(.key): \(.value.runtimeVersion)"' ota-stage/receipt.json >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$DISCORD_DEPLOY_WEBHOOK" ]; then
             summary="$(cat ota-stage/discord-changelog.md)"
             [ -n "$summary" ] || summary="$(git log -1 --format=%s "$GITHUB_SHA")"
-            content="$(printf '📱 **%s OTA promoted** on `%s`\n%s\n<%s>' "$OTA_TRACK" "${GITHUB_SHA:0:7}" "$summary" "$RUN_URL")"
+            content="$(printf '📱 **%s OTA promoted** on `%s`\n%s\n<%s>' "$release_description" "${GITHUB_SHA:0:7}" "$summary" "$RUN_URL")"
             jq -n --arg content "$content" '{content:$content,allowed_mentions:{parse:[]}}' \
               | curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_DEPLOY_WEBHOOK" \
               || echo '::warning::Could not post OTA notification.'
@@ -932,11 +992,12 @@ jobs:
           PROMOTE_RESULT: ${{ needs.promote-mobile-ota.result }}
           EARLY_RESULT: ${{ needs.promote-early-mobile-ota.result }}
           DAILY_ENABLED: ${{ vars.OTA_STABLE_RELEASE_ENABLED }}
+          CRITICAL_OTA: ${{ needs.detect-changes.outputs.critical_ota }}
         run: |
           expected_production=success
-          if [ "$DAILY_ENABLED" = true ]; then expected_production=skipped; fi
+          if [ "$DAILY_ENABLED" = true ] && [ "$CRITICAL_OTA" != true ]; then expected_production=skipped; fi
           if [ "$STAGE_RESULT" != success ] || [ "$EARLY_RESULT" != success ] || [ "$PROMOTE_RESULT" != "$expected_production" ]; then
-            echo "::error::Main OTA not promoted (stage=$STAGE_RESULT, early=$EARLY_RESULT, production=$PROMOTE_RESULT)."
+            echo "::error::Main OTA not promoted (critical=$CRITICAL_OTA, stage=$STAGE_RESULT, early=$EARLY_RESULT, production=$PROMOTE_RESULT)."
             exit 1
           fi
 
@@ -1629,6 +1690,7 @@ jobs:
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
           OTA_RESULT: ${{ needs.promote-mobile-ota.result }}
           EARLY_OTA_RESULT: ${{ needs.promote-early-mobile-ota.result }}
+          CRITICAL_OTA: ${{ needs.detect-changes.outputs.critical_ota }}
           # A held deploy is a skip, which would otherwise print as "unchanged" —
           # the exact invisibility notify-app-web-held exists to prevent.
           #
@@ -1683,7 +1745,13 @@ jobs:
           fi
           OTA_LINE="unchanged"
           if [ "$EARLY_OTA_RESULT" = "success" ]; then OTA_LINE="early updates promoted"; fi
-          if [ "$OTA_RESULT" = "success" ]; then OTA_LINE="$OTA_LINE; production promoted (before daily cutover)"; fi
+          if [ "$OTA_RESULT" = "success" ]; then
+            if [ "$CRITICAL_OTA" = true ]; then
+              OTA_LINE="$OTA_LINE; critical release promoted to 100% stable"
+            else
+              OTA_LINE="$OTA_LINE; production promoted (before daily cutover)"
+            fi
+          fi
 
           # Pull PR numbers from merge-commit subjects in the exact cumulative
           # range used by change detection. Skip when a safe baseline was not

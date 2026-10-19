@@ -4,6 +4,7 @@ import {
   initialStableState,
   parseStableState,
   qualifyCandidate,
+  releaseCycleDate,
   refreshAfterOwnFinish,
 } from './ota-stable';
 import type { StableRelease } from './ota-stable';
@@ -11,12 +12,36 @@ import type { StableRelease } from './ota-stable';
 import { candidateFixture, activeFixture, healthFixture, baselineIds } from '../__tests__/helpers/ota-stable-fixtures';
 
 describe('daily release decisions', () => {
-  it('starts only qualified candidates inside the daily window, once per day', () => {
+  it('catches up after qualification at any hour, once per 22:00 UTC release cycle', () => {
     const state = { ...initialStableState(), candidate: candidateFixture() };
+    expect(decideStable(state, new Date('2026-10-08T21:59:59Z'), []).action).toBe('start');
+    state.lastStartedDate = '2026-10-07';
     expect(decideStable(state, new Date('2026-10-08T21:59:59Z'), []).action).toBe('hold');
     expect(decideStable(state, new Date('2026-10-08T22:00:00Z'), []).action).toBe('start');
     state.lastStartedDate = '2026-10-08';
     expect(decideStable(state, new Date('2026-10-08T22:37:00Z'), []).action).toBe('hold');
+    expect(decideStable(state, new Date('2026-10-09T00:01:00Z'), []).action).toBe('hold');
+    expect(decideStable(state, new Date('2026-10-09T21:59:59Z'), []).action).toBe('hold');
+    expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), []).action).toBe('start');
+    expect(releaseCycleDate(new Date('2026-10-09T00:01:00Z'))).toBe('2026-10-08');
+  });
+  it('manual start bypasses cadence without bypassing qualification', () => {
+    const state = { ...initialStableState(), candidate: candidateFixture(), lastStartedDate: '2026-10-08' };
+    const now = new Date('2026-10-09T09:31:00Z');
+    expect(decideStable(state, now, [], 'start').action).toBe('start');
+    state.candidate.qaPassed = false;
+    expect(decideStable(state, now, [], 'start').action).toBe('hold');
+  });
+  it('forced completion bypasses timers and health only for an explicit or recorded force', () => {
+    const state = { ...initialStableState(), active: activeFixture() };
+    const now = new Date('2026-10-08T22:01:00Z');
+    expect(decideStable(state, now, []).action).toBe('hold');
+    expect(decideStable(state, now, [], 'force-release').action).toBe('finish');
+    state.active.forceRelease = true;
+    expect(decideStable(state, now, []).action).toBe('finish');
+    state.active.phase = 'reverting';
+    expect(decideStable(state, now, [], 'force-release').action).toBe('hold');
+    expect(decideStable(state, now, []).action).toBe('revert');
   });
   it.each(['missing', 'failed', 'cancelled', 'skipped'])(
     'rejects a %s blocking gate even with passed output',
@@ -102,11 +127,12 @@ describe('daily release decisions', () => {
       percentage: 10,
     });
   });
-  it('finishes only in the daily window with twenty total and eight final-step hours', () => {
+  it('finishes at any hour after twenty total and eight final-step hours', () => {
     const active = { ...activeFixture(), percentage: 50, stepSince: '2026-10-09T14:00:00Z' };
     const state = { ...initialStableState(), active };
     expect(decideStable(state, new Date('2026-10-09T21:59:59Z'), healthFixture()).action).toBe('hold');
     expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), healthFixture()).action).toBe('finish');
+    expect(decideStable(state, new Date('2026-10-10T01:00:00Z'), healthFixture()).action).toBe('finish');
     active.stepSince = '2026-10-09T14:01:00Z';
     expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), healthFixture()).action).toBe('hold');
     active.stepSince = '2026-10-09T10:00:00Z';
@@ -170,9 +196,9 @@ describe('daily release decisions', () => {
       expect(decision.reason).toContain('1 device(s) on its canary and control');
     });
 
-    it('still needs the daily window and the full soak', () => {
+    it('still needs the full soak while tolerating delayed checks', () => {
       const state = { ...initialStableState(), active: soaked() };
-      expect(decideStable(state, new Date('2026-10-09T21:00:00Z'), fleetlessAndroid()).action).toBe('hold');
+      expect(decideStable(state, new Date('2026-10-09T21:00:00Z'), fleetlessAndroid()).action).toBe('finish');
       state.active.stepSince = '2026-10-09T15:00:00Z';
       expect(decideStable(state, window, fleetlessAndroid()).action).toBe('hold');
     });
@@ -315,9 +341,20 @@ describe('checkpoint validation and baseline refresh', () => {
       { updateIds: { ios: '31' } },
       { pendingPercentage: 100 },
       { completedPlatforms: { ios: baselineIds.ios } },
+      { forceRelease: 'true' },
     ]) {
       expect(() => parseStableState({ ...state, active: { ...state.active, ...patch } })).toThrow();
     }
+  });
+  it('retains exact partial-ramp percentages only for a recorded forced finish', () => {
+    const state = {
+      ...initialStableState(),
+      active: { ...activeFixture(), phase: 'finishing' as const, pendingPercentage: 10, forceRelease: true },
+    };
+    expect(parseStableState(state)).toEqual(state);
+    expect(() => parseStableState({ ...state, active: { ...state.active, forceRelease: false } })).toThrow(
+      'Only a ramp or forced finish',
+    );
   });
   it('refreshes only the baseline this controller just replaced', () => {
     const candidate = candidateFixture();

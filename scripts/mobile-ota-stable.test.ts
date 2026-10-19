@@ -599,6 +599,147 @@ describe('stable controller execution', () => {
     saveState(path, options.state, '201');
     expect(readState(path).active?.updateIds).toEqual({ ios: '31', android: '32' });
   });
+  it('manually starts a qualified candidate outside cadence without skipping its soak', async () => {
+    const { options, root, live, client } = fixture();
+    live.splice(0);
+    options.state.active = null;
+    options.state.candidate = candidateFixture();
+    options.operation = 'start';
+    options.now = new Date('2026-10-09T09:31:00Z');
+    options.clock = () => options.now;
+    options.state.lastStartedDate = '2026-10-08';
+    writeFileSync(join(root, 'candidate.json'), JSON.stringify(candidateFixture()));
+    mocks.promote.mockImplementationOnce(async (input: { rollout: { receiptPath: string } }) => {
+      writePromotionRecord(input.rollout.receiptPath, { updateIds: { ios: '31', android: '32' } });
+    });
+    await tickStable(options);
+    expect(options.state.active).toMatchObject({ percentage: 5, phase: 'ramping' });
+    expect(options.state.active).not.toHaveProperty('forceRelease');
+    expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+    expect(options.state.lastStartedDate).toBe('2026-10-08');
+  });
+  it('forces fresh archived bytes through leased canaries to 100% in the same invocation', async () => {
+    const { options, root, live, client, save } = fixture();
+    live.splice(0);
+    options.state.active = null;
+    options.state.candidate = candidateFixture();
+    options.operation = 'force-release';
+    options.expectedSha = candidateFixture().receipt.commitHash;
+    options.now = new Date('2026-10-09T09:31:00Z');
+    options.clock = () => options.now;
+    writeFileSync(join(root, 'candidate.json'), JSON.stringify(candidateFixture()));
+    client.getUpdateHealth.mockRejectedValue(new Error('Health unavailable'));
+    mocks.promote.mockImplementationOnce(async (input: { rollout: { receiptPath: string } }) => {
+      expect(options.state.active?.forceRelease).toBe(true);
+      expect(save).toHaveBeenCalled();
+      writePromotionRecord(input.rollout.receiptPath, { updateIds: { ios: '31', android: '32' } });
+      live.push(
+        { updateId: '31', platform: 'ios', percentage: 5, controlUpdateId: '1', createdAt: options.now.toISOString() },
+        {
+          updateId: '32',
+          platform: 'android',
+          percentage: 5,
+          controlUpdateId: '2',
+          createdAt: options.now.toISOString(),
+        },
+      );
+    });
+    await tickStable(options);
+    expect(mocks.promote).toHaveBeenCalledOnce();
+    expect(client.setUpdateRolloutPercentage.mock.calls.map((call) => [call[2], call[3]])).toEqual([
+      [100, '31'],
+      [100, '32'],
+    ]);
+    expect(client.getUpdateHealth).not.toHaveBeenCalled();
+    expect(client.getUpdateHealthHistory).not.toHaveBeenCalled();
+    expect(options.state.active).toBeNull();
+    expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
+  });
+  it.each(['first', 'second'])(
+    'recovers a forced finish interrupted at the %s platform without health',
+    async (failureAt) => {
+      const { options, root, client, live } = fixture();
+      options.operation = 'force-release';
+      options.expectedSha = candidateFixture().receipt.commitHash;
+      options.state.active!.pendingPercentage = 10;
+      live[0].percentage = 10;
+      const path = join(root, 'state.json');
+      options.save = () => saveState(path, options.state, '201');
+      writeFileSync(join(root, 'candidate.json'), JSON.stringify(candidateFixture()));
+      const write = client.setUpdateRolloutPercentage.getMockImplementation()!;
+      if (failureAt === 'second') client.setUpdateRolloutPercentage.mockImplementationOnce(write);
+      client.setUpdateRolloutPercentage.mockRejectedValueOnce(new Error('Interrupted forced finish'));
+      await expect(tickStable(options)).rejects.toThrow('Interrupted forced finish');
+      expect(readState(path).active).toMatchObject({ phase: 'finishing', forceRelease: true, pendingPercentage: 10 });
+      if (failureAt === 'second') expect(readState(path).active?.completedPlatforms.ios).toBe(nativeUUIDs.ios);
+      options.operation = 'tick';
+      options.expectedSha = undefined;
+      client.getUpdateHealth.mockRejectedValue(new Error('Health unavailable'));
+      await tickStable(options);
+      expect(client.getUpdateHealth).not.toHaveBeenCalled();
+      expect(options.state.active).toBeNull();
+      expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
+      expect(readState(path).lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
+    },
+  );
+  it('pins a forced release to the active candidate rather than the newer waiting candidate', async () => {
+    const { options, root, client } = fixture();
+    options.state.candidate = {
+      ...candidateFixture(),
+      receipt: { ...candidateFixture().receipt, commitHash: 'f'.repeat(40) },
+    };
+    options.operation = 'force-release';
+    options.expectedSha = options.state.candidate.receipt.commitHash;
+    await expect(tickStable(options)).rejects.toThrow('Expected SHA');
+    expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+    options.expectedSha = options.state.active!.candidate.receipt.commitHash;
+    writeFileSync(join(root, 'candidate.json'), JSON.stringify(candidateFixture()));
+    await tickStable(options);
+    expect(options.state.lastCompletedCommit).toBe(candidateFixture().receipt.commitHash);
+    expect(options.state.candidate?.receipt.commitHash).toBe('f'.repeat(40));
+  });
+  it.each(['unqualified', 'expired', 'rejected', 'archive', 'control', 'percentage', 'foreign', 'missing'])(
+    'force cannot bypass %s candidate safeguards',
+    async (failure) => {
+      const { options, root, client, live } = fixture();
+      options.operation = 'force-release';
+      options.expectedSha = candidateFixture().receipt.commitHash;
+      const selected = options.state.active!.candidate;
+      if (failure === 'unqualified') selected.qaPassed = false;
+      if (failure === 'expired') options.now = new Date('2026-12-01T09:00:00Z');
+      if (failure === 'rejected') options.state.rejectedCommit = selected.receipt.commitHash;
+      if (failure === 'archive')
+        mocks.validate.mockImplementationOnce(() => {
+          throw new Error('Archive hash differs');
+        });
+      if (failure === 'control') {
+        const getDetails = client.getUpdateDetails.getMockImplementation()!;
+        client.getUpdateDetails.mockImplementation(async (branch, runtime, id) => {
+          const details = await getDetails(branch, runtime, id);
+          return id === '1' ? { ...details, updateUUID: nativeUUIDs.ios } : details;
+        });
+      }
+      if (failure === 'percentage') live[0].percentage = 25;
+      if (failure === 'foreign') live[0].updateId = '99';
+      if (failure === 'missing') live.splice(0, 1);
+      writeFileSync(join(root, 'candidate.json'), JSON.stringify(candidateFixture()));
+      await expect(tickStable(options)).rejects.toThrow();
+      expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+      expect(client.revertUpdateRollout).not.toHaveBeenCalled();
+      expect(mocks.promote).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses a manual start over an active canary and a force over a reverting release', async () => {
+    const { options, client } = fixture();
+    options.operation = 'start';
+    await expect(tickStable(options)).rejects.toThrow('already active');
+    options.operation = 'force-release';
+    options.expectedSha = candidateFixture().receipt.commitHash;
+    options.state.active!.phase = 'reverting';
+    await expect(tickStable(options)).rejects.toThrow('reverting release');
+    expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+    expect(client.revertUpdateRollout).not.toHaveBeenCalled();
+  });
   it('failed starts retain partial leases and can be explicitly aborted', async () => {
     const { options, root, live } = fixture();
     live.splice(0);
@@ -620,6 +761,25 @@ describe('stable controller execution', () => {
     expect(options.state.active).toBeNull();
     expect(readState(path).active).toBeNull();
   });
+  it.each(['starting', 'ramping', 'finishing'] as const)(
+    'clears a %s checkpoint after both heads are superseded by a critical release',
+    async (phase) => {
+      const { options, root, live, client, baselineIds } = fixture();
+      options.state.active!.phase = phase;
+      live.splice(0);
+      baselineIds.ios = '77777777-7777-7777-7777-777777777777';
+      baselineIds.android = '88888888-8888-8888-8888-888888888888';
+      const criticalHeads = { ...baselineIds };
+      options.save = () => saveState(join(root, 'state.json'), options.state, '201');
+      await tickStable(options);
+      expect(options.state.active).toBeNull();
+      expect(options.state.candidate).toBeNull();
+      expect(baselineIds).toEqual(criticalHeads);
+      expect(client.setUpdateRolloutPercentage).not.toHaveBeenCalled();
+      expect(client.revertUpdateRollout).not.toHaveBeenCalled();
+      expect(mocks.promote).not.toHaveBeenCalled();
+    },
+  );
   it('full finish refreshes only the baseline the owned release replaced', async () => {
     const { options, live } = fixture();
     options.now = new Date('2026-10-09T22:00:00Z');
@@ -918,6 +1078,14 @@ describe('checkpoint file and command safety', () => {
     expect(parseStableArgs(['tick', '--state', 'state.json', '--stage', 'stage']).apply).toBe(false);
     expect(() => parseStableArgs(['tick', '--state', 'state.json', '--stage', 'stage', '--force'])).toThrow();
     expect(() => parseStableArgs(['tick', '--state', 'one', '--state', 'two', '--stage', 'stage'])).toThrow();
+  });
+  it('requires an explicit full commit pin for force and refuses pins on unrelated commands', () => {
+    const paths = ['--state', 'state.json', '--stage', 'stage'];
+    expect(() => parseStableArgs(['force-release', ...paths])).toThrow('--expected-sha');
+    expect(() => parseStableArgs(['force-release', ...paths, '--expected-sha', 'abc123'])).toThrow('full lowercase');
+    expect(() => parseStableArgs(['tick', ...paths, '--expected-sha', 'a'.repeat(40)])).toThrow('only supported');
+    expect(parseStableArgs(['force-release', ...paths, '--expected-sha', 'a'.repeat(40)]).apply).toBe(false);
+    expect(parseStableArgs(['start', ...paths, '--apply']).command).toBe('start');
   });
   it('atomically round-trips a validated checkpoint and rejects corrupt files', () => {
     const { root } = fixture();
