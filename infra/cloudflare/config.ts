@@ -1075,6 +1075,13 @@ export const OTA_SOURCEMAP_LIFECYCLE_RULE: R2LifecycleRule = {
   deleteObjectsTransition: { condition: { type: 'Age', maxAge: 35 * 24 * 60 * 60 } },
 };
 
+export const STORE_CREATIVES_CANDIDATE_LIFECYCLE_RULE: R2LifecycleRule = {
+  id: 'boardsesh-store-creatives-candidates-30d',
+  enabled: true,
+  conditions: { prefix: 'candidates/' },
+  deleteObjectsTransition: { condition: { type: 'Age', maxAge: 30 * 24 * 60 * 60 } },
+};
+
 export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
@@ -1097,6 +1104,13 @@ export interface R2BucketDesired {
 }
 
 export const desiredR2Buckets: readonly R2BucketDesired[] = [
+  // Public review media; approved creatives and reviewed physical footage never expire.
+  {
+    name: 'boardsesh-store-creatives',
+    customDomain: 'store-creatives.boardsesh.com',
+    r2DevDomainEnabled: false,
+    lifecycleRule: STORE_CREATIVES_CANDIDATE_LIFECYCLE_RULE,
+  },
   // Avatars, gym images, beta-link thumbnails and every resize variant.
   { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME, r2DevDomainEnabled: false },
   // User data exports and MoonBoard OCR submissions. MUST stay domain-less.

@@ -1,6 +1,9 @@
 {
   "schemaVersion": 1,
-  "release": "app-store-creatives",
+  "storage": {
+    "bucket": "boardsesh-store-creatives",
+    "baseUrl": "https://store-creatives.boardsesh.com"
+  },
   "locales": {
     "en-US": ["en-US"],
     "es": ["es-ES", "es-MX"],

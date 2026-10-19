@@ -26,20 +26,22 @@ module BoardseshCreatives
       end
     end
 
-    def run(action: "plan", variant: "all", allow_live: false, allow_replace: false)
+    def run(action: "plan", variant: "all", allow_live: false, allow_replace: false, placement: ENV.fetch("CREATIVE_PLACEMENT", "all"))
       raise Error, "Creative action must be refdata, plan, upload, or place" unless %w[refdata plan upload place].include?(action)
+      raise Error, "Creative placement must be all or search" unless %w[all search].include?(placement)
+      @selected_placements = placement == "search" ? %w[search-results] : PLACEMENTS.keys
       refdata = @client.list("/v1/appAssetLibraryRefData")
       return refdata if action == "refdata"
       selected = variant == "all" ? @manifest.fetch("variants").keys : [variant]
       raise Error, "Unknown creative variant" unless selected.all? { |name| @manifest.fetch("variants").key?(name) }
       placement_types = refdata.flat_map { |datum| datum.dig("attributes", "placementTypes") || [] }
-      PLACEMENTS.each_value do |placement_type|
+      @selected_placements.map { |selected| PLACEMENTS.fetch(selected) }.each do |placement_type|
         raise Error, "Apple refdata does not advertise #{placement_type}; no writes performed" unless placement_types.any? { |entry| entry["placementTypeId"] == placement_type }
       end
       entries = selected.flat_map { |name| local_assets(name, placement_types) }
       return [{ "action" => "pending", "variants" => selected, "diagnostics" => ["Generate and review fresh assets for every locale, then finalize creative-assets.json"] }] if action == "plan" && entries.empty?
       raise Error, "No finalized creative assets; generate the locale matrix first" if entries.empty?
-      pending = selected.select { |name| @manifest.fetch("variants").fetch(name).fetch("assets").empty? }
+      pending = selected.select { |name| @manifest.fetch("variants").fetch(name).fetch("assets").none? { |asset| @selected_placements.include?(asset.fetch("placement")) } }
       raise Error, "Unfinalized creative variants: #{pending.join(', ')}" unless pending.empty?
       library = @client.request("GET", "/v1/apps/#{@app_id}/assetLibrary").fetch("data")
       raise Error, "Unexpected asset library identity" unless library.fetch("type") == "appAssetLibraries"
@@ -118,11 +120,11 @@ module BoardseshCreatives
 
     def local_assets(variant, placement_types)
       config = @manifest.fetch("variants").fetch(variant)
-      assets = config.fetch("assets")
+      assets = config.fetch("assets").select { |asset| @selected_placements.include?(asset.fetch("placement")) }
       return [] if assets.empty?
-      required = @manifest.fetch("locales").keys.product(PLACEMENTS.keys)
+      required = @manifest.fetch("locales").keys.product(@selected_placements)
       actual = assets.map { |asset| [asset.fetch("locale"), asset.fetch("placement")] }
-      raise Error, "#{variant} needs exactly one header and search video in every app locale" unless actual.sort == required.sort
+      raise Error, "#{variant} needs exactly one selected placement in every app locale" unless actual.sort == required.sort
       assets.flat_map do |asset|
         locale, placement, sha = asset.fetch("locale"), asset.fetch("placement"), asset.fetch("sha256")
         raise Error, "Creative SHA256 is invalid" unless sha.match?(/\A[a-f0-9]{64}\z/)

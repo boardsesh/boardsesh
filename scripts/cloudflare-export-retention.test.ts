@@ -306,3 +306,32 @@ describe('generated export retention', () => {
     }
   });
 });
+
+describe('store creative candidate retention', () => {
+  it('publishes one purpose-built bucket and expires only candidate objects', () => {
+    const bucket = desiredR2Buckets.find((entry) => entry.name === 'boardsesh-store-creatives')!;
+    expect(bucket.customDomain).toBe('store-creatives.boardsesh.com');
+    expect(bucket.r2DevDomainEnabled).toBe(false);
+    expect(bucket.lifecycleRule).toEqual({
+      id: 'boardsesh-store-creatives-candidates-30d',
+      enabled: true,
+      conditions: { prefix: 'candidates/' },
+      deleteObjectsTransition: { condition: { type: 'Age', maxAge: 2_592_000 } },
+    });
+    const live: LiveR2Bucket = {
+      name: bucket.name,
+      exists: true,
+      customDomains: [{ domain: bucket.customDomain!, enabled: true }],
+      r2DevDomainEnabled: false,
+      cors: null,
+      lifecycleRules: [],
+    };
+    expect(diffR2Bucket(bucket, live)).toEqual([
+      expect.objectContaining({
+        blocked: false,
+        detail: 'Delete objects under candidates/ after 30 days; preserve other lifecycle rules.',
+      }),
+    ]);
+    expect(diffR2Bucket(bucket, { ...live, lifecycleRules: [bucket.lifecycleRule!] })).toEqual([]);
+  });
+});

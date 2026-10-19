@@ -130,6 +130,38 @@ class CreativeAssetsTest < Minitest::Test
     end
   end
 
+  def test_search_only_update_preserves_header_placements
+    upload_processed_assets
+    runner.run(action: "place")
+    headers = @client.placements.select { |entry| entry.dig("attributes", "placementType") == "PRODUCT_PAGE_HEADER_ASSET" }
+    @client.writes.clear
+    @manifest["variants"]["default"]["assets"].select! { |entry| entry["placement"] == "search-results" }
+    assert_equal 5, runner.run(action: "place", placement: "search").length
+    assert_empty @client.writes
+    assert_equal headers, @client.placements.select { |entry| entry.dig("attributes", "placementType") == "PRODUCT_PAGE_HEADER_ASSET" }
+  end
+
+  def test_search_only_rejects_a_header_only_variant_before_writes
+    header_only = Marshal.load(Marshal.dump(@manifest.fetch("variants").fetch("default")))
+    header_only.fetch("assets").select! { |asset| asset["placement"] == "header" }
+    @manifest.fetch("variants")["kilter"] = header_only
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload", placement: "search") }
+    assert_match(/Unfinalized creative variants: kilter/, error.message)
+    assert_empty @client.writes
+  end
+
+  def test_search_only_places_new_search_videos_without_touching_headers
+    upload_processed_assets
+    runner.run(action: "place")
+    headers = @client.placements.select { |entry| entry.dig("attributes", "placementType") == "PRODUCT_PAGE_HEADER_ASSET" }
+    @client.placements.reject! { |entry| entry.dig("attributes", "placementType") == "APP_STORE_SEARCH_RESULTS_ASSET" }
+    @client.writes.clear
+    assert_equal 5, runner.run(action: "place", placement: "search").length
+    assert_equal 5, @client.writes.length
+    assert @client.writes.all? { |method, _path, body| method == "POST" && body.dig("data", "attributes", "placementType") == "APP_STORE_SEARCH_RESULTS_ASSET" }
+    assert_equal headers, @client.placements.select { |entry| entry.dig("attributes", "placementType") == "PRODUCT_PAGE_HEADER_ASSET" }
+  end
+
   def test_plan_is_read_only_and_spanish_maps_to_both_storefronts
     results = runner.run
     assert_equal 10, results.length

@@ -191,12 +191,33 @@ exports for each selected variant; it hashes the real files and their provenance
 reports. Empty asset arrays in `app-stores/apple/creative-assets.json` mean capture
 and review are pending, never a successfully published placement.
 
-Retain the files in the GitHub release `app-store-creatives`. Asset names are
-`<variant>-<placement>-<app-locale>-<sha12>.png|mp4`; the committed manifest carries
-the complete SHA256 and the original export path. Retain each provenance report as
-`<variant>-<placement>-<app-locale>-<provenanceSha12>.json` in the same release;
-CI downloads and verifies these reports alongside the media. `fastlane/download_creative_assets.rb`
-retrieves and verifies those files before CI runs the lane.
+Retain the files in the purpose-built R2 bucket `boardsesh-store-creatives`,
+served at `https://store-creatives.boardsesh.com`. The committed manifest's
+`storage` declares this bucket and base URL. Media, poster JPEGs and provenance
+use complete SHA256 keys: `candidates/<sha256>.<ext>` during review and
+`approved/<sha256>.<ext>` after promotion. Candidate objects expire after 30 days;
+approved objects and `sources/live-activity/<sha256>.zip` are retained. Public
+review URLs expose only reviewed store media, never credentials or recorder logs.
+
+```sh
+vp exec ruby fastlane/prepare_creative_manifest.rb --refdata /tmp/creative-refdata.json --placement search
+vp exec tsx scripts/store-creatives-r2.ts upload-candidates --placement search
+vp exec tsx scripts/store-creatives-r2.ts promote --placement search --dry-run
+vp exec tsx scripts/store-creatives-r2.ts promote --placement search
+vp exec tsx scripts/store-creatives-r2.ts fetch --placement search
+```
+
+`--placement search` preserves committed Header entries, so the video pipeline
+does not regenerate the manually maintained PNGs. Set `CREATIVE_PLACEMENT=search`
+for the downloader and `ios creatives` lane to upload/place just the selected
+search videos; existing Header assignments stay untouched. The search finalizer
+requires each locale's native source hashes. The upload command verifies local
+hashes before writing and skips existing immutable objects. Promotion is a
+server-side copy and reports an expired candidate clearly. Fetch downloads only
+approved objects, verifies every SHA256 and removes the output tree on failure.
+`fastlane/download_creative_assets.rb` uses the same approved HTTPS objects and
+verification contract. The TS fetch output defaults to `.boardsesh/app-store-creatives`;
+`--output` chooses another dedicated export tree.
 
 The **App Store Creative Assets** workflow is dispatch-only, runs from `main`,
 and uses the Production environment. Its actions are `refdata`, `plan`, `upload`

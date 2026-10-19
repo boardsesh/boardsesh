@@ -38,6 +38,8 @@
     "__tests__/mobile-store-android-merge-back-hold.test.ts",
     "__tests__/push-run-superseded.test.ts",
     "import-live-activity-capture.ts",
+    "store-creatives-r2.ts",
+    "__tests__/store-creatives-r2.test.ts",
     "store-video-measure.ts",
     "__tests__/store-video-measure.test.ts",
     "__tests__/screenshot-live-activity.test.ts",

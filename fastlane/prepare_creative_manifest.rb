@@ -7,9 +7,10 @@ require "optparse"
 
 # Finalize reviewed local exports against real Apple refdata. Never mint hashes
 # or invent placement group IDs while the native captures are still pending.
-options = { variant: "all" }
+options = { variant: "all", placement: "all" }
 OptionParser.new do |parser|
   parser.on("--refdata FILE") { |path| options[:refdata] = path }
+  parser.on("--placement PLACEMENT") { |placement| options[:placement] = placement }
   parser.on("--variant VARIANT") { |variant| options[:variant] = variant }
   parser.on("--header-group GROUP") { |group| options[:header_group] = group }
   parser.on("--search-group GROUP") { |group| options[:search_group] = group }
@@ -22,9 +23,10 @@ refdata = JSON.parse(File.read(options.fetch(:refdata)))
 attributes = refdata.map { |datum| datum.fetch("attributes") }
 selected = options[:variant] == "all" ? manifest.fetch("variants").keys : [options[:variant]]
 abort "Unknown creative variant" unless selected.all? { |variant| manifest.fetch("variants").key?(variant) }
+abort "Placement must be all or search" unless %w[all search].include?(options[:placement])
 selected.each do |variant|
   assets = manifest.fetch("locales").keys.flat_map do |locale|
-    %w[header search-results].map do |placement|
+    (options[:placement] == "search" ? %w[search-results] : %w[header search-results]).map do |placement|
       extension = placement == "header" ? "png" : "mp4"
       file = ".boardsesh/app-store-creatives/#{variant}/#{locale}/#{placement}.#{extension}"
       path = File.join(root, file)
@@ -56,8 +58,21 @@ selected.each do |variant|
         groups.select { |group| group.fetch("specs").include?(spec.fetch("specId")) && (!explicit_group || group["placementGroupId"] == explicit_group) }.map { |group| [spec.fetch("specId"), group.fetch("placementGroupId")] }
       end.uniq
       abort "Ambiguous or unsupported #{placement}; specify --#{placement == 'header' ? 'header' : 'search'}-group from Apple refdata" unless combinations.length == 1
-      { "locale" => locale, "placement" => placement, "file" => file, "sha256" => sha, "specId" => combinations.first[0], "placementGroup" => combinations.first[1], "provenance" => report_path.delete_prefix("#{root}/"), "provenanceSha256" => Digest::SHA256.file(report_path).hexdigest }
+      entry = { "locale" => locale, "placement" => placement, "file" => file, "sha256" => sha, "specId" => combinations.first[0], "placementGroup" => combinations.first[1], "provenance" => report_path.delete_prefix("#{root}/"), "provenanceSha256" => Digest::SHA256.file(report_path).hexdigest }
+      if placement == "search-results"
+        poster = report["poster"]
+        if poster
+          poster_path = File.join(File.dirname(path), File.basename(poster.fetch("file")))
+          abort "Poster bytes do not match provenance" unless File.file?(poster_path) && Digest::SHA256.file(poster_path).hexdigest == poster.fetch("sha256")
+          entry["poster"] = poster_path.delete_prefix("#{root}/")
+          entry["posterSha256"] = poster.fetch("sha256")
+        end
+      end
+      entry
     end
+  end
+  if options[:placement] == "search"
+    assets = manifest.fetch("variants").fetch(variant).fetch("assets").select { |asset| asset["placement"] == "header" } + assets
   end
   manifest.fetch("variants").fetch(variant)["assets"] = assets
 end

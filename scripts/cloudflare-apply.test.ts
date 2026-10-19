@@ -2066,7 +2066,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       const lifecyclePuts = requests
         .filter((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))
         .map((request) => request.pathname.split('/').at(-2));
-      expect(lifecyclePuts).toEqual(['boardsesh-ota-sourcemaps']);
+      expect(lifecyclePuts).toEqual(['boardsesh-store-creatives', 'boardsesh-ota-sourcemaps']);
       expect(
         requests.some((request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom')),
       ).toBe(true);
@@ -2108,7 +2108,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       const lifecyclePuts = requests
         .filter((request) => request.method === 'PUT' && request.pathname.endsWith('/lifecycle'))
         .map((request) => request.pathname.split('/').at(-2));
-      expect(lifecyclePuts).toEqual(['boardsesh-ota-sourcemaps']);
+      expect(lifecyclePuts).toEqual(['boardsesh-store-creatives', 'boardsesh-ota-sourcemaps']);
     },
   );
 

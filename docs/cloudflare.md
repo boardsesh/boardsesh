@@ -68,6 +68,32 @@ symbolicate Observe errors.
   its policies, so name both buckets in the same edit.
 - **A new bucket takes two converges.** The first creates it, the second installs the lifecycle rule.
 
+### Store creative media
+
+`boardsesh-store-creatives` is public through `store-creatives.boardsesh.com`,
+with `r2.dev` disabled. It holds only App Store review media and approved
+physical-iPhone footage. The bucket is the privacy boundary; no user media or
+credentials belong here. Lifecycle rule `boardsesh-store-creatives-candidates-30d`
+expires `candidates/` after 30 days. `approved/` and `sources/live-activity/` are
+kept. A new bucket needs two converges: creation/domain attachment, then lifecycle.
+
+Marco creates an R2 Object Read & Write token restricted to this bucket. Store
+its S3 credentials in the Production environment; do not reuse the infrastructure
+token. Run these commands locally and paste each requested value at its prompt:
+
+```sh
+gh secret set STORE_CREATIVES_R2_AWS_ENDPOINT_URL --env Production
+gh secret set STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID --env Production
+gh secret set STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY --env Production
+```
+
+The endpoint is `https://<32-hex-account-id>.r2.cloudflarestorage.com`;
+region is always `auto`, and the bucket comes from `creative-assets.json`.
+`vp run cf:apply` previews the bucket/domain change; `vp run cf:apply -- --apply`
+converges it. Run each twice for a new bucket, then verify there is no remaining
+diff. See [the media contract](app-store-creative-assets.md) for upload, promotion
+and verified downloads. No GitHub release is used for creative media.
+
 **R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
 publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets
 use only their custom domain. `boardsesh-user-private` also declares `customDomain: null`.
