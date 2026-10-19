@@ -8,6 +8,8 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
+vi.mock('../../sentry', () => ({ captureToSentry: vi.fn() }));
+
 vi.mock('../../auth-store', () => ({
   getAuthToken: vi.fn().mockResolvedValue('token-abc'),
 }));

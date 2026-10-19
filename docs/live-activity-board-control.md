@@ -43,6 +43,14 @@ killed-process network path. Native buffered navigation still identifies a queue
 index rather than a session and queue-item UUID, so stale buffered events retain
 the existing identity limitations.
 
+Session-presence updates from JavaScript catch native rejections and retry once
+after one second. A newer update, session change, queue-item change, or teardown
+cancels the retry. Update failures keep the session active so a later queue or
+climb change can recover. Diagnostics contain only a fixed error message and
+option field names, presence, and types; they exclude payload contents. This
+contains rejected updates without claiming to fix Android's unconfirmed native
+Record-decoding failure (#6595).
+
 ## Mirroring from the Lock Screen and Android notification
 
 On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holder

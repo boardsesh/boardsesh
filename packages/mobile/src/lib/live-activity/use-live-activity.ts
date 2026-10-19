@@ -8,13 +8,8 @@ import type { BoardConnection } from '../../components/play-drawer/lightbulb-con
 import type { LiveActivityBoardRenderMode } from '../../../modules/live-activity/src/index';
 import { getAuthToken } from '../auth-store';
 import { BACKEND_URL } from '../env';
-import {
-  startLiveActivitySession,
-  endLiveActivitySession,
-  updateLiveActivity,
-  updateLiveActivityClimb,
-  isLiveActivityAvailable,
-} from './live-activity-plugin';
+import { startLiveActivitySession, endLiveActivitySession, isLiveActivityAvailable } from './live-activity-plugin';
+import { useSessionPresenceUpdates } from './use-session-presence-updates';
 
 type BoardConfig = {
   boardName: string;
@@ -214,6 +209,13 @@ export function useLiveActivity({
   queueRef.current = queue;
   const currentClimbRef = useRef(currentClimbQueueItem);
   currentClimbRef.current = currentClimbQueueItem;
+  const { sendUpdate, cancelUpdateRetry } = useSessionPresenceUpdates({
+    isActiveRef,
+    generationRef,
+    sessionIdRef,
+    currentClimbRef,
+    queueRef,
+  });
   const getCurrentAndroidOverlayPath = useCallback(() => {
     const path = overlayPathRef.current ?? null;
     const validator = overlayValidatorRef.current;
@@ -364,28 +366,31 @@ export function useLiveActivity({
           if (!displayItem) return;
           const idx = q.findIndex((item) => item.uuid === displayItem.uuid);
           if (idx === -1) return;
-          void updateLiveActivity({
-            climbName: displayItem.climb.name,
-            climbDifficulty: displayItem.climb.difficulty,
-            angle: displayItem.climb.angle,
-            currentIndex: idx,
-            totalClimbs: q.length,
-            hasNext: idx < q.length - 1,
-            hasPrevious: idx > 0,
-            climbUuid: displayItem.climb.uuid,
-            sessionId: sessionIdRef.current ?? undefined,
-            queueSequence: queueSequenceRef.current,
-            queueItemUuid: displayItem.uuid,
-            mirrored: displayItem.climb.mirrored === true,
-            queue: serializedQueueRef.current,
-            supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
-            widgetNavigationAllowed: widgetNavigationAllowedRef.current,
-            isPartySession: isPartySessionRef.current,
-            boardConnection: boardConnectionRef.current,
-            holderDisplayName: holderDisplayNameRef.current,
-            renderMode: renderModeRef.current,
-            androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-            androidThumbnailBackgroundPaths: backgroundPathsRef.current,
+          sendUpdate({
+            method: 'full',
+            options: {
+              climbName: displayItem.climb.name,
+              climbDifficulty: displayItem.climb.difficulty,
+              angle: displayItem.climb.angle,
+              currentIndex: idx,
+              totalClimbs: q.length,
+              hasNext: idx < q.length - 1,
+              hasPrevious: idx > 0,
+              climbUuid: displayItem.climb.uuid,
+              sessionId: sessionIdRef.current ?? undefined,
+              queueSequence: queueSequenceRef.current,
+              queueItemUuid: displayItem.uuid,
+              mirrored: displayItem.climb.mirrored === true,
+              queue: serializedQueueRef.current,
+              supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
+              widgetNavigationAllowed: widgetNavigationAllowedRef.current,
+              isPartySession: isPartySessionRef.current,
+              boardConnection: boardConnectionRef.current,
+              holderDisplayName: holderDisplayNameRef.current,
+              renderMode: renderModeRef.current,
+              androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
+              androidThumbnailBackgroundPaths: backgroundPathsRef.current,
+            },
           });
         })
         .catch((error) => {
@@ -425,6 +430,7 @@ export function useLiveActivity({
     }
 
     return () => {
+      cancelUpdateRetry();
       clearStartRetry();
       if (isActiveRef.current) {
         void endLiveActivitySession();
@@ -432,7 +438,7 @@ export function useLiveActivity({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- startRetryNonce re-fires the start after a failed attempt
-  }, [shouldBeActive, stableBoard, available, startRetryNonce]);
+  }, [shouldBeActive, stableBoard, available, startRetryNonce, cancelUpdateRetry, sendUpdate]);
 
   // Stable scalar trigger for the on-device thumbnail backgrounds: the paths array
   // has a fresh identity each render, so depending on it directly would churn the
@@ -467,28 +473,31 @@ export function useLiveActivity({
       queueSyncedRef.current = false;
     });
 
-    void updateLiveActivity({
-      climbName: displayItem.climb.name,
-      climbDifficulty: displayItem.climb.difficulty,
-      angle: displayItem.climb.angle,
-      currentIndex,
-      totalClimbs: queueRef.current.length,
-      hasNext: currentIndex < queueRef.current.length - 1,
-      hasPrevious: currentIndex > 0,
-      climbUuid: displayItem.climb.uuid,
-      sessionId: sessionIdRef.current ?? undefined,
-      queueSequence: queueSequenceRef.current,
-      queueItemUuid: displayItem.uuid,
-      mirrored: displayItem.climb.mirrored === true,
-      queue: serializedQueue,
-      supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
-      widgetNavigationAllowed,
-      isPartySession,
-      boardConnection,
-      holderDisplayName,
-      renderMode,
-      androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-      androidThumbnailBackgroundPaths,
+    sendUpdate({
+      method: 'full',
+      options: {
+        climbName: displayItem.climb.name,
+        climbDifficulty: displayItem.climb.difficulty,
+        angle: displayItem.climb.angle,
+        currentIndex,
+        totalClimbs: queueRef.current.length,
+        hasNext: currentIndex < queueRef.current.length - 1,
+        hasPrevious: currentIndex > 0,
+        climbUuid: displayItem.climb.uuid,
+        sessionId: sessionIdRef.current ?? undefined,
+        queueSequence: queueSequenceRef.current,
+        queueItemUuid: displayItem.uuid,
+        mirrored: displayItem.climb.mirrored === true,
+        queue: serializedQueue,
+        supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
+        widgetNavigationAllowed,
+        isPartySession,
+        boardConnection,
+        holderDisplayName,
+        renderMode,
+        androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
+        androidThumbnailBackgroundPaths,
+      },
     });
   }, [
     androidThumbnailOverlayLoadKey,
@@ -505,6 +514,7 @@ export function useLiveActivity({
     // its thumbnail in the new mode.
     renderMode,
     serializedQueue,
+    sendUpdate,
     queueSequence,
     stableBoard,
     widgetNavigationAllowed,
@@ -521,27 +531,30 @@ export function useLiveActivity({
     const currentIndex = queue.findIndex((q) => q.uuid === displayItem.uuid);
     if (currentIndex === -1) return;
 
-    void updateLiveActivityClimb({
-      climbName: displayItem.climb.name,
-      climbDifficulty: displayItem.climb.difficulty,
-      angle: displayItem.climb.angle,
-      currentIndex,
-      totalClimbs: queue.length,
-      hasNext: currentIndex < queue.length - 1,
-      hasPrevious: currentIndex > 0,
-      climbUuid: displayItem.climb.uuid,
-      sessionId: sessionIdRef.current ?? undefined,
-      queueSequence: queueSequenceRef.current,
-      queueItemUuid: displayItem.uuid,
-      mirrored: displayItem.climb.mirrored === true,
-      supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
-      widgetNavigationAllowed,
-      isPartySession,
-      boardConnection,
-      holderDisplayName,
-      renderMode,
-      androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-      androidThumbnailBackgroundPaths,
+    sendUpdate({
+      method: 'climb',
+      options: {
+        climbName: displayItem.climb.name,
+        climbDifficulty: displayItem.climb.difficulty,
+        angle: displayItem.climb.angle,
+        currentIndex,
+        totalClimbs: queue.length,
+        hasNext: currentIndex < queue.length - 1,
+        hasPrevious: currentIndex > 0,
+        climbUuid: displayItem.climb.uuid,
+        sessionId: sessionIdRef.current ?? undefined,
+        queueSequence: queueSequenceRef.current,
+        queueItemUuid: displayItem.uuid,
+        mirrored: displayItem.climb.mirrored === true,
+        supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
+        widgetNavigationAllowed,
+        isPartySession,
+        boardConnection,
+        holderDisplayName,
+        renderMode,
+        androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
+        androidThumbnailBackgroundPaths,
+      },
     });
   }, [
     androidThumbnailOverlayLoadKey,
@@ -550,6 +563,7 @@ export function useLiveActivity({
     backgroundsKey,
     boardConnection,
     currentClimbQueueItem,
+    sendUpdate,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
     isPartySession,

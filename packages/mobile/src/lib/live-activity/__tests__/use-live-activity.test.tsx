@@ -7,6 +7,8 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 // vitest's node/jsdom env (untransformed RN-native source), so stub it.
 vi.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
+vi.mock('../../sentry', () => ({ captureToSentry: vi.fn() }));
+
 vi.mock('../../auth-store', () => ({
   getAuthToken: vi.fn().mockResolvedValue('token-123'),
 }));
@@ -124,6 +126,62 @@ describe('useLiveActivity start-failure contract', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it.each(['initial', 'queue', 'climb'] as const)('contains a rejected %s update', async (source) => {
+    vi.useFakeTimers();
+    try {
+      plugin.startLiveActivitySession.mockResolvedValue(undefined);
+      const props = activeProps({ queue: [queueItem, nextQueueItem] });
+      if (source === 'initial') plugin.updateLiveActivity.mockRejectedValueOnce(new Error('native decoder'));
+      const { rerender, unmount } = render(<Harness {...props} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      if (source === 'queue') {
+        plugin.updateLiveActivity.mockRejectedValueOnce(new Error('native decoder'));
+        rerender(<Harness {...props} boardConnection="heldByPeer" />);
+      }
+      if (source === 'climb') {
+        plugin.updateLiveActivityClimb.mockRejectedValueOnce(new Error('native decoder'));
+        rerender(<Harness {...props} currentClimbQueueItem={nextQueueItem} />);
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
+      const nativeUpdate = source === 'climb' ? plugin.updateLiveActivityClimb : plugin.updateLiveActivity;
+      const attempts = nativeUpdate.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(nativeUpdate).toHaveBeenCalledTimes(attempts + 1);
+      // Unmount must cancel update retries as well as the existing start retry.
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending notification retry when the session unmounts', async () => {
+    vi.useFakeTimers();
+    try {
+      plugin.startLiveActivitySession.mockResolvedValue(undefined);
+      plugin.updateLiveActivity.mockRejectedValue(new Error('native decoder'));
+      const { unmount } = render(<Harness {...activeProps()} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sends the initial update once the session starts', async () => {
