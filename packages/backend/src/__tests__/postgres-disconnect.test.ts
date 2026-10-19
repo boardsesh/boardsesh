@@ -9,7 +9,7 @@ const fixturePath = fileURLToPath(new URL('./helpers/postgres-disconnect-process
 const startupFatalFixturePath = fileURLToPath(new URL('./helpers/startup-fatal-process.ts', import.meta.url));
 
 describe.each(['esm', 'cjs'])('postgres disconnect recovery (%s)', (entryPoint) => {
-  it.each(['clean', 'error', 'fatal', 'startup', 'delayed', 'live'])(
+  it.each(['clean', 'error', 'fatal', 'startup', 'delayed', 'live', 'row-error', 'row-disconnect'])(
     'survives %s disconnects and reuses the pool without replaying statements',
     async (scenario) => {
       const { stdout, stderr } = await executeFile(

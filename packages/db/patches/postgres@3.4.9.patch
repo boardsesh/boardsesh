@@ -1,6 +1,8 @@
---- a/src/connection.js
-+++ b/src/connection.js
-@@ -252,7 +252,7 @@
+diff --git a/cjs/src/connection.js b/cjs/src/connection.js
+index 07f6716702ac888215c86ad6e0071aaf55ae519c..7991d3ab4b7d0fa50397333cd1c9b0ca9aa6ab7e 100644
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -252,7 +252,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
    }
  
    function nextWrite(fn) {
@@ -9,7 +11,7 @@
      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
      chunk = nextWriteTimer = null
      return x
-@@ -425,6 +425,7 @@
+@@ -425,6 +425,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
        error(Errors.connection('CONNECTION_DESTROYED', options))
  
      clearImmediate(nextWriteTimer)
@@ -17,7 +19,7 @@
      if (socket) {
        socket.removeListener('data', data)
        socket.removeListener('connect', connected)
-@@ -438,6 +439,7 @@
+@@ -438,6 +439,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
      remaining = 0
      incomings = null
      clearImmediate(nextWriteTimer)
@@ -25,7 +27,7 @@
      socket.removeListener('data', data)
      socket.removeListener('connect', connected)
      idleTimer.cancel()
-@@ -447,10 +449,24 @@
+@@ -447,10 +449,26 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
      socket.removeAllListeners()
      socket = null
  
@@ -40,6 +42,7 @@
 +        errored(errorResponse)
 +      else {
 +        query = results = errorResponse = null
++        rows = 0
 +        result = new Result()
 +        return reconnect()
 +      }
@@ -48,11 +51,20 @@
      !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
 +    // A replacement socket must not inherit a failed result or fatal error.
 +    query = results = errorResponse = null
++    rows = 0
 +    result = new Result()
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
-@@ -561,7 +577,8 @@
+@@ -548,6 +566,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     }
+ 
+     query = results = errorResponse = null
++    rows = 0
+     result = new Result()
+     connectTimer.cancel()
+ 
+@@ -561,7 +580,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
  
        if (needsTypes) {
          initial.reserve && (initial = null)
@@ -62,9 +74,11 @@
        }
  
        initial && !initial.reserve && execute(initial)
---- a/src/index.js
-+++ b/src/index.js
-@@ -236,13 +236,21 @@
+diff --git a/cjs/src/index.js b/cjs/src/index.js
+index f09c61c7e998f411560b95c9a8e1ed6a97972c11..3e7b9980855f66f612447567ea7bf88c1c3b1b1c 100644
+--- a/cjs/src/index.js
++++ b/cjs/src/index.js
+@@ -236,13 +236,21 @@ function Postgres(a, b) {
      const queries = Queue()
      let savepoints = 0
        , connection
@@ -87,7 +101,7 @@
        ])
      } catch (error) {
        throw error
-@@ -290,6 +298,9 @@
+@@ -290,6 +298,9 @@ function Postgres(a, b) {
  
        function handler(q) {
          q.catch(e => uncaughtError || (uncaughtError = e))
@@ -97,9 +111,11 @@
          c.queue === full
            ? queries.push(q)
            : c.execute(q) || move(c, full)
---- a/cjs/src/connection.js
-+++ b/cjs/src/connection.js
-@@ -252,7 +252,7 @@
+diff --git a/src/connection.js b/src/connection.js
+index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..a73ec14737713567a158eee57fe349d9dd7f2a81 100644
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -252,7 +252,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
    }
  
    function nextWrite(fn) {
@@ -108,7 +124,7 @@
      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
      chunk = nextWriteTimer = null
      return x
-@@ -425,6 +425,7 @@
+@@ -425,6 +425,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
        error(Errors.connection('CONNECTION_DESTROYED', options))
  
      clearImmediate(nextWriteTimer)
@@ -116,7 +132,7 @@
      if (socket) {
        socket.removeListener('data', data)
        socket.removeListener('connect', connected)
-@@ -438,6 +439,7 @@
+@@ -438,6 +439,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
      remaining = 0
      incomings = null
      clearImmediate(nextWriteTimer)
@@ -124,7 +140,7 @@
      socket.removeListener('data', data)
      socket.removeListener('connect', connected)
      idleTimer.cancel()
-@@ -447,10 +449,24 @@
+@@ -447,10 +449,26 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
      socket.removeAllListeners()
      socket = null
  
@@ -139,6 +155,7 @@
 +        errored(errorResponse)
 +      else {
 +        query = results = errorResponse = null
++        rows = 0
 +        result = new Result()
 +        return reconnect()
 +      }
@@ -147,11 +164,20 @@
      !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
 +    // A replacement socket must not inherit a failed result or fatal error.
 +    query = results = errorResponse = null
++    rows = 0
 +    result = new Result()
      closedTime = performance.now()
      hadError && options.shared.retries++
      delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
-@@ -561,7 +577,8 @@
+@@ -548,6 +566,7 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     }
+ 
+     query = results = errorResponse = null
++    rows = 0
+     result = new Result()
+     connectTimer.cancel()
+ 
+@@ -561,7 +580,8 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
  
        if (needsTypes) {
          initial.reserve && (initial = null)
@@ -161,9 +187,11 @@
        }
  
        initial && !initial.reserve && execute(initial)
---- a/cjs/src/index.js
-+++ b/cjs/src/index.js
-@@ -236,13 +236,21 @@
+diff --git a/src/index.js b/src/index.js
+index c7fba3dace20173f4cb13f3f138bb6d213b43683..52b2f2cab652a888e82ddf404df739efcc24c20b 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -236,13 +236,21 @@ function Postgres(a, b) {
      const queries = Queue()
      let savepoints = 0
        , connection
@@ -186,7 +214,7 @@
        ])
      } catch (error) {
        throw error
-@@ -290,6 +298,9 @@
+@@ -290,6 +298,9 @@ function Postgres(a, b) {
  
        function handler(q) {
          q.catch(e => uncaughtError || (uncaughtError = e))

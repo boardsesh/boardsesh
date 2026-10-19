@@ -16,6 +16,17 @@ function frame(type: string, payload = Buffer.alloc(0)): Buffer {
   return Buffer.concat([header, payload]);
 }
 
+/** One int4 column and row, using the actual PostgreSQL wire format. */
+function answerRowFrames(): Buffer[] {
+  const column = Buffer.alloc(18);
+  column.writeInt32BE(23, 6);
+  column.writeInt16BE(4, 10);
+  column.writeInt32BE(-1, 12);
+  const description = frame('T', Buffer.concat([Buffer.from([0, 1]), Buffer.from('answer\0'), column]));
+  const row = frame('D', Buffer.from([0, 1, 0, 0, 0, 2, 52, 50]));
+  return [description, row];
+}
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((settle) => {
@@ -61,6 +72,15 @@ async function simulatedDisconnect(): Promise<void> {
 
     private executeStatement(statement: string): Buffer[] {
       statements.push({ socket: this.socketNumber, statement });
+      if (statement === 'select partial_rows') {
+        if (scenario === 'row-disconnect') {
+          this.push(Buffer.concat(answerRowFrames()));
+          this.closing = true;
+          setImmediate(() => this.destroy());
+          return [];
+        }
+        return [...answerRowFrames(), frame('E', Buffer.from('SERROR\0C22012\0Mdivision by zero\0\0'))];
+      }
       if (statement === 'select disconnect' && !didDisconnect) {
         didDisconnect = this.closing = true;
         if (scenario === 'fatal') {
@@ -76,7 +96,7 @@ async function simulatedDisconnect(): Promise<void> {
       if (statement.startsWith('begin')) this.transactionState = 'T';
       if (statement === 'commit' || statement === 'rollback') this.transactionState = 'I';
       const command = statement.startsWith('select') ? 'SELECT 1' : statement.trim().toUpperCase();
-      return [frame('C', Buffer.from(`${command}\0`))];
+      return [...(scenario?.startsWith('row-') ? answerRowFrames() : []), frame('C', Buffer.from(`${command}\0`))];
     }
 
     override _write(bytes: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
@@ -131,6 +151,20 @@ async function simulatedDisconnect(): Promise<void> {
   };
   const pool = postgres('postgres://test:test@localhost/test', poolOptions);
   try {
+    if (scenario === 'row-error' || scenario === 'row-disconnect') {
+      await assert.rejects(pool.unsafe('select partial_rows'), {
+        code: scenario === 'row-error' ? '22012' : 'CONNECTION_CLOSED',
+      });
+      for (let index = 0; index < 3; index++) {
+        const recovered = await pool.unsafe<{ answer: number }[]>(`select recovered_${index}`);
+        // A stale row counter puts the answer at index 1, leaving a leading hole.
+        assert.equal(recovered.length, 1);
+        assert.equal(recovered[0]?.answer, 42);
+        assert.deepEqual(JSON.parse(JSON.stringify(recovered)), [{ answer: 42 }]);
+      }
+      assert.equal(sockets.length, scenario === 'row-disconnect' ? 2 : 1);
+      return;
+    }
     if (scenario === 'startup') {
       await pool.unsafe('select startup_recovered');
       assert.equal(sockets.length, 2);

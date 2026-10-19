@@ -97,6 +97,16 @@ reject the first query on a replacement socket. A transaction
 callback resuming after pool reconnection still fails against its original
 transaction; it cannot write through the replacement connection.
 
+A streamed query can deliver rows before failing or losing its socket. The
+connection must reset its row offset whenever it discards that result, including
+`ReadyForQuery` after an error and both reconnect paths. Otherwise the next
+successful query starts at the old offset and returns a sparse array. JSON
+caching turns its holes into `null`, which caused climb-page metadata consumers
+to fail (#6112). The recovery suite sends a partial row followed by an error or
+disconnect, then verifies dense results on the reused or replacement connection
+through both entry points. The climb stats reader also removes nullish entries
+after its cache boundary so previously stored results remain readable.
+
 The existing connect retry policy is unchanged. An interrupted transaction
 fails; its statements are never replayed. Ordinary application errors still
 roll back normally, including savepoints. Sentry retains its normal fatal-error

@@ -302,11 +302,20 @@ async function fetchClimbStatsForAllAnglesFromDb(
  * revalidate.
  */
 export const getClimbStatsForAllAngles = cache(
-  async (boardName: BoardName, climbUuid: string): Promise<ClimbStatsForAngle[]> =>
-    unstable_cache(fetchClimbStatsForAllAnglesFromDb, ['climb-stats-all-angles', boardName, climbUuid], {
-      revalidate: 3600,
-      tags: [`climb-${climbUuid}`],
-    })(boardName, climbUuid),
+  async (boardName: BoardName, climbUuid: string): Promise<ClimbStatsForAngle[]> => {
+    const angleStats: readonly (ClimbStatsForAngle | null | undefined)[] = await unstable_cache(
+      fetchClimbStatsForAllAnglesFromDb,
+      ['climb-stats-all-angles', boardName, climbUuid],
+      {
+        revalidate: 3600,
+        tags: [`climb-${climbUuid}`],
+      },
+    )(boardName, climbUuid);
+    // A failed streamed read used to leave holes in the driver's next result.
+    // JSON caching turns those holes into null. Normalize AFTER the cache so
+    // already-stored entries cannot crash canonical selection or the page.
+    return angleStats.filter((stats) => stats != null);
+  },
 );
 
 export type LayoutRow = {
