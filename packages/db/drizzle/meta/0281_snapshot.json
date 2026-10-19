@@ -1,5 +1,5 @@
 {
-  "id": "37eba630-e541-4db2-8561-29201bc3193c",
+  "id": "0fe79d71-56e4-494b-9744-74b86aeb7845",
   "prevId": "bcdd80bf-b449-4ea3-938d-d5d404f71525",
   "version": "7",
   "dialect": "postgresql",
@@ -17168,7 +17168,11 @@
         "gym_claim_approved",
         "proposal_on_your_climb",
         "spray_wall_detection_completed",
-        "follow_request"
+        "follow_request",
+        "comment_on_session",
+        "comment_on_playlist",
+        "comment_on_board",
+        "comment_on_gym"
       ]
     },
     "public.feed_item_type": {
