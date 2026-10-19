@@ -219,8 +219,8 @@ approved objects, verifies every SHA256 and removes the output tree on failure.
 verification contract. The TS fetch output defaults to `.boardsesh/app-store-creatives`;
 `--output` chooses another dedicated export tree.
 
-The **App Store Creative Assets** workflow is dispatch-only, runs from `main`,
-and uses the Production environment. Its actions are `refdata`, `plan`, `upload`
+The **App Store Creative Assets** workflow runs from `main` and uses the
+Production environment. Its actions are `refdata`, `plan`, `upload`
 and `place`, with `variant:all` or one page name. `upload` reserves, transfers and
 commits assets without submitting review or requiring a version, CPP, or destination
 localization. `place` attaches processed assets to an existing version or CPP
@@ -228,6 +228,31 @@ localization. Apple must move every selected asset beyond `UPLOAD_COMPLETE` and
 `COMPLETE` to `PREPARE_FOR_SUBMISSION` or a later review state first. Until then,
 the lane reports the pending state and makes no placement writes. Neither action creates a CPP, edits
 screenshot slots, submits asset review, or publishes a version.
+
+Merging a PR that changes `app-stores/apple/creative-assets.json` starts the
+automatic video path at that exact merge commit. The manifest's `marketingVersion`
+binds placement to the reviewed train: a later train is refused, including for
+CPP-only retries. It requires all 20 search
+videos and posters, promotes their immutable candidate objects to `approved/`,
+then downloads and verifies every SHA256 before exposing ASC credentials to the
+upload lane. It uploads search videos, waits up to 7.5 minutes for Apple's
+processing precondition, and places them on the editable version. Header PNGs
+and their assignments stay on the manual path. A Production environment reviewer
+gate, if configured, requires one approval before the job starts.
+
+The workflow retains separate promotion, fetch, upload and placement reports.
+Its summary counts 20 unique videos, while the transfer reports count all
+media/poster/provenance objects. Spanish storefront duplication counts as one
+source video. Asset-review submission remains manual; inspect ASC Preview for
+every locale after placement.
+
+Automatic runs keep `allow_live:false` and `allow_replace:false`. If merge-back
+has already submitted the train and no editable version remains, dispatch
+`action:place`, `placement:search` with `allow_live:true` after checking the destination. Replacing
+existing owned assignments additionally requires `allow_replace:true`;
+merging a video PR does not grant either override. A missing or expired candidate
+stops before upload: regenerate the train's candidate PR. Apple-processing
+guards retry automatically; other lane errors stop immediately for review.
 
 Planning or placing on live versions requires `allow_live:true`; standalone
 uploads do not. When no editable iOS version exists, the lane selects the latest

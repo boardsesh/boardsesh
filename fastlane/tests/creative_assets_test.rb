@@ -217,6 +217,49 @@ class CreativeAssetsTest < Minitest::Test
     assert_empty @client.writes
   end
 
+  def test_bound_marketing_version_refuses_a_newer_train_before_any_placement
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "newer", "attributes" => { "versionString" => "2.7.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", placement: "search") }
+    assert_includes error.message, "marketing version 2.6.0"
+    assert_empty @client.writes
+  end
+
+  def test_bound_marketing_version_places_only_matching_editable_version
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "matching", "attributes" => { "versionString" => "2.6.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }, { "id" => "other", "attributes" => { "versionString" => "2.7.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    assert_equal 5, runner.run(action: "place", placement: "search").length
+    assert_includes @client.reads, "/v1/appStoreVersions/matching/appStoreVersionLocalizations?limit=200"
+    refute_includes @client.reads, "/v1/appStoreVersions/other/appStoreVersionLocalizations?limit=200"
+  end
+
+  def test_bound_live_version_needs_approval_and_does_not_choose_newer_editable_train
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "matching-live", "attributes" => { "versionString" => "2.6.0", "appStoreState" => "READY_FOR_DISTRIBUTION", "createdDate" => "2026-10-01T00:00:00Z" } }, { "id" => "newer", "attributes" => { "versionString" => "2.7.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", placement: "search") }
+    assert_empty @client.writes
+    assert_equal 5, runner.run(action: "place", placement: "search", allow_live: true).length
+    assert_includes @client.reads, "/v1/appStoreVersions/matching-live/appStoreVersionLocalizations?limit=200"
+  end
+
+  def test_cpp_only_bound_manifest_checks_app_train_before_placement
+    use_kilter_manifest
+    runner.run(action: "upload", placement: "search")
+    @client.assets.each { |asset| asset["attributes"]["state"] = "PREPARE_FOR_SUBMISSION" }
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "newer", "attributes" => { "versionString" => "2.7.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", variant: "kilter", placement: "search") }
+    assert_includes error.message, "marketing version 2.6.0"
+    assert_empty @client.writes
+  end
+
   def test_live_version_requires_explicit_option
     @client.live = true
     upload_processed_assets
