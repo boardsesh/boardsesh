@@ -59,6 +59,8 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   const { systemColors } = useTheme();
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
   const optionsKey = useMemo(() => JSON.stringify(row.options), [row.options]);
+  const currentOptionsKeyRef = useRef(optionsKey);
+  currentOptionsKeyRef.current = optionsKey;
   return (
     <View style={styles.padded}>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -72,13 +74,14 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
         <AppMenu
           // Native menus retain their action indices while open. Changed options
           // must remount the menu rather than let an old tap pick a moved row.
+          // Equivalent option rebuilds keep the same mapping for queued taps.
           key={optionsKey}
           label={currentLabel}
           accessibilityLabel={`${row.label}, ${currentLabel}`}
           actions={row.options.map((option) => ({ label: option.label, selected: option.key === row.selectedKey }))}
           onSelectIndex={(index) => {
             const currentRow = currentRowRef.current;
-            if (!mountedRef.current || currentRow.disabled || currentRow.options !== row.options) return;
+            if (!mountedRef.current || currentRow.disabled || currentOptionsKeyRef.current !== optionsKey) return;
             const option = currentRow.options[index];
             if (option) currentRow.onSelect(option.key);
           }}
