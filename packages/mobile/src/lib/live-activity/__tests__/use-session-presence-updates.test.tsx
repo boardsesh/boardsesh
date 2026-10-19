@@ -91,24 +91,28 @@ describe('session-presence update recovery', () => {
     },
   );
 
-  it('reports fixed field names and types without payload contents or raw rejection text', async () => {
-    vi.mocked(updateLiveActivity).mockRejectedValue('private-native-rejection');
-    const { result } = setup();
-    await flushUpdate(() => result.current.sendUpdate({ method: 'full', options }));
-    const [error, context] = vi.mocked(captureToSentry).mock.calls[0];
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('Session presence update rejected');
-    expect(context?.extra?.optionShape).toEqual(
-      expect.objectContaining({
-        sessionId: 'string',
-        supportsMirroring: 'missing',
-        holderDisplayName: 'null',
-        androidThumbnailOverlayPath: 'string',
-        androidThumbnailBackgroundPaths: 'undefined',
-      }),
-    );
-    expect(JSON.stringify(context)).not.toMatch(/private|Private|file:\/\//);
-  });
+  it.each(['full', 'climb'] as const)(
+    'reports fixed %s field names and types without payload contents or raw rejection text',
+    async (method) => {
+      const nativeUpdate = method === 'full' ? updateLiveActivity : updateLiveActivityClimb;
+      vi.mocked(nativeUpdate).mockRejectedValue('private-native-rejection');
+      const { result } = setup();
+      await flushUpdate(() => result.current.sendUpdate({ method, options }));
+      const [error, context] = vi.mocked(captureToSentry).mock.calls[0];
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('Session presence update rejected');
+      expect(context?.extra?.optionShape).toEqual(
+        expect.objectContaining({
+          sessionId: 'string',
+          supportsMirroring: 'missing',
+          holderDisplayName: 'null',
+          androidThumbnailOverlayPath: 'string',
+          androidThumbnailBackgroundPaths: 'undefined',
+        }),
+      );
+      expect(JSON.stringify(context)).not.toMatch(/private|Private|file:\/\//);
+    },
+  );
 
   it('cancels a scheduled retry when a newer update supersedes it', async () => {
     vi.mocked(updateLiveActivity).mockRejectedValueOnce(new Error('rejected'));
