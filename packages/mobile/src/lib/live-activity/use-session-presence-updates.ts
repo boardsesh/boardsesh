@@ -39,7 +39,7 @@ const OPTION_FIELDS = [
   'androidThumbnailBackgroundPaths',
 ] as const;
 
-function optionShape(options: LiveActivityClimbUpdateOptions): Record<string, string> {
+function optionShape(options: SessionUpdate['options']): Record<string, string> {
   return Object.fromEntries(
     OPTION_FIELDS.map((field) => {
       if (!Object.hasOwn(options, field)) return [field, 'missing'];

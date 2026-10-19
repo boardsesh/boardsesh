@@ -156,7 +156,6 @@ describe('useLiveActivity start-failure contract', () => {
         await vi.advanceTimersByTimeAsync(1000);
       });
       expect(nativeUpdate).toHaveBeenCalledTimes(attempts + 1);
-      // Unmount must cancel update retries as well as the existing start retry.
       unmount();
     } finally {
       vi.useRealTimers();
