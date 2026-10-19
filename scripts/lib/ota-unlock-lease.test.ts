@@ -14,6 +14,15 @@ import {
 type Revert = (branch: string, runtime: string, expectedId: string | number) => Promise<void>;
 
 describe('automatic unlock caller lease', () => {
+  it('never writes an automatic request without its lease', async () => {
+    const client = { revertUpdateRollout: vi.fn<Revert>(async () => {}) };
+    const attempt = async () => {
+      const guard = createUnlockLeaseGuard({ requestId: callerRequestId });
+      await protectUnlockWrites(client, guard).revertUpdateRollout('production', unlockCaller.headSha, 11);
+    };
+    await expect(attempt()).rejects.toThrow('requires its bounded caller lease');
+    expect(client.revertUpdateRollout).not.toHaveBeenCalled();
+  });
   it('preserves exactly empty manual requests and never falls back from an automatic lease', async () => {
     await expect(createUnlockLeaseGuard({})()).resolves.toBeUndefined();
     for (const options of [
@@ -217,6 +226,18 @@ describe('caller discovery before dispatch', () => {
       .mockResolvedValueOnce({ total_count: 101, jobs: [fixture.job] });
     expect(await fixture.discover()).toEqual(fixture.lease);
     expect(fixture.api.mock.calls[2][0]).toContain('page=2');
+  });
+  it('never accepts a first-page match without checking remaining jobs', async () => {
+    const fixture = discoveryFixture();
+    const firstPage = [
+      fixture.job,
+      ...Array.from({ length: 99 }, (_, index) => ({ ...fixture.job, id: index + 100, status: 'completed' })),
+    ];
+    fixture.api
+      .mockResolvedValueOnce(fixture.run)
+      .mockResolvedValueOnce({ total_count: 101, jobs: firstPage })
+      .mockResolvedValueOnce({ total_count: 101, jobs: [{ ...fixture.job, id: 52 }] });
+    await expect(fixture.discover()).rejects.toThrow('Multiple active jobs');
   });
   it('preserves production main/release callers and both backport matrix job names', async () => {
     for (const [path, branch, jobKey] of [
