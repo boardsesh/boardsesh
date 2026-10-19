@@ -376,7 +376,7 @@ async function runMaestro(
     }
   };
   let supervisedChild: ChildProcess | undefined;
-  let code: number;
+  let code = 1;
   try {
     code = await runScreenshotMaestro(args, {
       env: toolEnv(),
@@ -430,6 +430,8 @@ function writeNavigationFlow(
 
 /** Confirm the dev-client link without launching again or navigating away. */
 function writeLauncherConfirmFlow(): string {
+  // Phone preparation and relaunches call this serially. Both roles use the
+  // same confirmation commands, so this scratch path carries no role state.
   const file = resolve(FLOW_SCRATCH_DIR, 'confirm-launcher.yaml');
   mkdirSync(FLOW_SCRATCH_DIR, { recursive: true });
   writeFileSync(

@@ -131,6 +131,13 @@ describe('iOS recorder launcher recovery', () => {
     expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
   });
 
+  it('times out an already loaded bundle without restarting it', async () => {
+    const state = launchState();
+    expect(await waitForShowcaseHome({ ...state, hasLoadedBundle: () => true })).toBe(false);
+    expect(state.now()).toBe(60_000);
+    expect(state.recoverLauncher).not.toHaveBeenCalled();
+  });
+
   it('propagates a failed recovery instead of hiding it as a readiness timeout', async () => {
     const state = launchState();
     const failure = new Error('simctl could not open the dev client');
