@@ -111,9 +111,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
     if (!surfingAvailable) return;
     void returnToOwnTrack(earlyUpdatesMember)
       .then((outcome) => {
-        // Production is not *newer* than a fresh pr-N bundle, so the running JS
-        // usually stays put until production publishes again. The branch pin is
-        // gone either way, which is the part that matters.
+        // nothing-to-load confirms production is the selected track. A refused
+        // exit rejects into the failure handler instead of reporting success.
         if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
         if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
       })

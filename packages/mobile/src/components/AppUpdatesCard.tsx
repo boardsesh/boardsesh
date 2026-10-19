@@ -88,7 +88,7 @@ export function AppUpdatesCard({
           inFlight.current = false;
           setBusy(false);
           reportHandledError(error, { tags: { source: 'qa', op: `surf-to-${channel}` } });
-          showToast(error instanceof Error && error.message ? error.message : t('qa.pick.unreachableTitle'), 'error');
+          showToast(t(channel === 'production' ? 'qa.shared.leaveFailed' : 'qa.pick.unreachableTitle'), 'error');
         });
     },
     [available, fixture, earlyUpdatesMember, showToast, t],

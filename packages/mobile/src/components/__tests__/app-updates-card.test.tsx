@@ -230,6 +230,19 @@ describe('App updates card', () => {
     expandOptions();
     expect(screen.queryByText('qa.pick.stagingTitle')).toBeNull();
   });
+  it('localizes a refused preview exit without exposing its internal error', async () => {
+    state.context.branch = 'pr-123';
+    state.prNumber = 123;
+    const internalFailureMessage = 'No safe production update is available; the preview pin is still active.';
+    state.returnToOwnTrack.mockRejectedValue(new Error(internalFailureMessage));
+    renderCard();
+    expandOptions();
+    fireEvent.click(screen.getByText('qa.pick.productionTitle'));
+
+    await waitFor(() => expect(state.showToast).toHaveBeenCalledWith('qa.shared.leaveFailed', 'error'));
+    expect(state.showToast).not.toHaveBeenCalledWith(internalFailureMessage, 'error');
+    expect(state.showToast).not.toHaveBeenCalledWith('qa.pick.productionNextLaunch', 'info');
+  });
   it('locks release operations while a switch is in flight and recovers after failure', async () => {
     let rejectSwitch: (error: Error) => void = () => undefined;
     state.surfToStaging.mockImplementation(
@@ -245,7 +258,7 @@ describe('App updates card', () => {
     expect(state.surfToStaging).toHaveBeenCalledOnce();
     expect(state.returnToOwnTrack).not.toHaveBeenCalled();
     rejectSwitch(new Error('Connection lost'));
-    await waitFor(() => expect(state.showToast).toHaveBeenCalledWith('Connection lost', 'error'));
+    await waitFor(() => expect(state.showToast).toHaveBeenCalledWith('qa.pick.unreachableTitle', 'error'));
     fireEvent.click(screen.getByText('qa.pick.productionTitle'));
     expect(state.returnToOwnTrack).toHaveBeenCalledOnce();
   });

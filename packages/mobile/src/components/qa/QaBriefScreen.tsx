@@ -86,9 +86,8 @@ export function QaBriefScreen() {
         // be torn down and has nothing left to show.
         if (outcome === 'reloading') return;
         setLeaving(false);
-        // Production is not *newer* than a fresh pr-N bundle, so the running JS
-        // usually stays until production publishes again. The pin is gone either
-        // way, which is what actually matters.
+        // nothing-to-load confirms production is the selected track. A refused
+        // exit rejects into the failure handler instead of reporting success.
         if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
         if (outcome === 'early-updates-next-launch') showToast(t('qa.shared.backOnEarlyUpdates'), 'info');
       })
