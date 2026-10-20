@@ -73,7 +73,7 @@ const anchorLine = (name: string, x: number): string =>
 
 describe('iOS recorder launcher recovery', () => {
   const urlTimeout = {
-    status: 60,
+    status: 1,
     stderr:
       'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=60):\n' +
       'Simulator device failed to open com.boardsesh.app://expo-development-client/.\nOperation timed out',
