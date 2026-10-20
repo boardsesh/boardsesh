@@ -84,7 +84,7 @@ export function editableVersion(versions: AppleResource[], marketingVersion: str
   const matches = versions.filter(
     (version) =>
       version.attributes.versionString === marketingVersion &&
-      editableStates.includes(String(version.attributes.appStoreState)),
+      editableStates.includes(String(version.attributes.appVersionState || version.attributes.appStoreState)),
   );
   if (matches.length > 1) throw new Error('Multiple editable iOS versions match this train');
   return matches[0];

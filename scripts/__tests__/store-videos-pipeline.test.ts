@@ -50,6 +50,28 @@ describe('store video train gate', () => {
     expect(editableVersion(versions, '2.6.0')?.id).toBe('2.6.0');
     expect(() => editableVersion([...versions, version('2.6.0', 'REJECTED')], '2.6.0')).toThrow('Multiple');
   });
+  it('prefers the modern Apple version state and falls back to the legacy field', () => {
+    const modern = { id: 'draft', attributes: { versionString: '2.6.0', appVersionState: 'PREPARE_FOR_SUBMISSION' } };
+    expect(editableVersion([modern], '2.6.0')).toEqual(modern);
+    const legacy = { id: 'legacy', attributes: { versionString: '2.6.0', appStoreState: 'REJECTED' } };
+    expect(editableVersion([legacy], '2.6.0')).toEqual(legacy);
+    expect(
+      editableVersion(
+        [
+          {
+            ...modern,
+            attributes: {
+              ...modern.attributes,
+              appVersionState: 'WAITING_FOR_REVIEW',
+              appStoreState: 'PREPARE_FOR_SUBMISSION',
+            },
+          },
+        ],
+        '2.6.0',
+      ),
+    ).toBeUndefined();
+    expect(editableVersion([{ id: 'missing', attributes: { versionString: '2.6.0' } }], '2.6.0')).toBeUndefined();
+  });
   it('signs Apple JWTs with the required audience and ES256 JOSE signature', () => {
     const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
     const token = appleToken(
