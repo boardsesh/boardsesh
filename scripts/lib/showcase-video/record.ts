@@ -41,6 +41,9 @@ export type { ShowcaseBackend } from './takes';
  * signal server here also accepts consent-independent home readiness pings.
  */
 
+/** Match mobile-ios-shots' home allowance, including cold auth/keychain startup. */
+export const SHOWCASE_IOS_HOME_READY_TIMEOUT_MS = 240_000;
+
 /** Expo consumes this argument before starting its last/default-server autoload. */
 export function showcaseIosLaunchArgs(udid: string, appId: string, metroPort: number): string[] {
   return ['launch', udid, appId, '--initialUrl', `http://localhost:${metroPort}`];

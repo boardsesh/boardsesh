@@ -91,6 +91,7 @@ import {
   FLOW_START_MARK,
   REFERENCE_CHANNEL_TOLERANCE,
   SHOWCASE_DEFAULT_BOARDS,
+  SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
   showcaseDevice,
   showcaseCalendarPattern,
   showcaseBoardHistoryPattern,
@@ -679,7 +680,7 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
     });
     if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
     const reachedHome = await waitForShowcaseHome({
-      timeoutMs: HOME_READY_TIMEOUT_MS / attempts,
+      timeoutMs: SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
       hasReachedHome: () => {
         window.pull();
         return phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline;

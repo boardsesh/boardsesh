@@ -134,7 +134,8 @@ fallback. It:
 
 The iOS recorder passes `--initialUrl http://localhost:<port>` directly to
 Expo's native launch, before its last/default-server autoload. It waits for a
-fresh home signal and cold-starts again if needed, up to three attempts. It
+fresh home signal for up to four minutes per cold start, matching the screenshot
+runner's allowance for authentication and keychain startup, with three attempts. It
 does not open a second development-client URL while the first load is pending:
 a late timeout from that request can otherwise cover a working app with Expo's
 error screen. Navigation links still use the primed custom-scheme dialog.

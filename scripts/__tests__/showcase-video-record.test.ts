@@ -13,6 +13,7 @@ import {
   BLANK_FRAME_MAX_STDEV,
   REFERENCE_MAX_DIFF_RATIO,
   SHOWCASE_DEFAULT_BOARDS,
+  SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
   SHOWCASE_DEFAULT_ENV_FILE,
   SHOWCASE_DEVICES,
   showcaseDevice,
@@ -89,7 +90,7 @@ describe('iOS recorder startup', () => {
       sleep: async (milliseconds: number) => {
         elapsed += milliseconds;
       },
-      timeoutMs: 60_000,
+      timeoutMs: SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
       hasReachedHome: () => false,
     };
   }
@@ -107,7 +108,13 @@ describe('iOS recorder startup', () => {
   it('times out without home so the caller can cold-start another attempt', async () => {
     const state = launchState();
     expect(await waitForShowcaseHome(state)).toBe(false);
-    expect(state.now()).toBe(60_000);
+    expect(state.now()).toBe(240_000);
+  });
+
+  it('allows cold auth startup to finish after the previous one-minute limit', async () => {
+    const state = launchState();
+    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => state.now() >= 180_000 })).toBe(true);
+    expect(state.now()).toBe(180_000);
   });
 });
 
