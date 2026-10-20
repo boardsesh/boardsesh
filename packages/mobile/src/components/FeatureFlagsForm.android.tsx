@@ -32,6 +32,11 @@ import { segmentedBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
+// The gap above every item after the title. A padding modifier rather than the
+// LazyColumn's `spacedBy` arrangement, which never reached the device (see
+// MoreForm.android.tsx).
+const ITEM_GAP = padding(0, spacing[3], 0, 0);
+
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
   const { brandColors, colorScheme } = useTheme();
   const segmentColors = segmentedBrandColors(brandColors);
@@ -41,56 +46,57 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
     // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
     // cards stay dark when the user picks "Light" in-app.
     <Host style={styles.host} colorScheme={colorScheme}>
-      <LazyColumn
-        contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
-        verticalArrangement={{ spacedBy: spacing[3] }}
-      >
+      <LazyColumn contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}>
         {/* i18n-ignore-next-line — tester-only screen */}
         <Text style={{ typography: 'titleLarge' }}>{title}</Text>
-        <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+        <Text style={{ typography: 'bodySmall' }} modifiers={[ITEM_GAP, alpha(0.6)]}>
           {noticeText}
         </Text>
 
         {rows.map((row) => (
-          <Card key={row.key} modifiers={[fillMaxWidth()]}>
-            <Column
-              modifiers={[padding(spacing[4], spacing[3], spacing[4], spacing[3])]}
-              verticalArrangement={{ spacedBy: spacing[2] }}
-            >
-              <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
-              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
-                {row.description}
-              </Text>
-              <SingleChoiceSegmentedButtonRow modifiers={[fillMaxWidth()]}>
-                {row.options.map((option) => (
-                  <SegmentedButton
-                    key={option.key}
-                    selected={option.key === row.choice}
-                    onClick={() => onSelect(row.key, option.key)}
-                    colors={segmentColors}
-                  >
-                    {/* The label slot is a native composable SLOT — its child must be
+          <Column key={row.key} modifiers={[fillMaxWidth(), ITEM_GAP]}>
+            <Card modifiers={[fillMaxWidth()]}>
+              <Column
+                modifiers={[padding(spacing[4], spacing[3], spacing[4], spacing[3])]}
+                verticalArrangement={{ spacedBy: spacing[2] }}
+              >
+                <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+                <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+                  {row.description}
+                </Text>
+                <SingleChoiceSegmentedButtonRow modifiers={[fillMaxWidth()]}>
+                  {row.options.map((option) => (
+                    <SegmentedButton
+                      key={option.key}
+                      selected={option.key === row.choice}
+                      onClick={() => onSelect(row.key, option.key)}
+                      colors={segmentColors}
+                    >
+                      {/* The label slot is a native composable SLOT — its child must be
                         a Compose `Text`, not a raw string, or it doesn't render and
                         isn't exposed to the a11y tree. */}
-                    <SegmentedButton.Label>
-                      <Text>{option.label}</Text>
-                    </SegmentedButton.Label>
-                  </SegmentedButton>
-                ))}
-              </SingleChoiceSegmentedButtonRow>
-              <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
-                {row.effectiveLabel}
-              </Text>
-            </Column>
-          </Card>
+                      <SegmentedButton.Label>
+                        <Text>{option.label}</Text>
+                      </SegmentedButton.Label>
+                    </SegmentedButton>
+                  ))}
+                </SingleChoiceSegmentedButtonRow>
+                <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
+                  {row.effectiveLabel}
+                </Text>
+              </Column>
+            </Card>
+          </Column>
         ))}
 
         {/* `enabled={canReset}` greys the button and blocks the tap when there's
             nothing to reset. The label is a Text child (Button content is a slot). */}
-        <Button onClick={onReset} enabled={canReset} modifiers={[fillMaxWidth()]}>
-          {/* i18n-ignore-next-line — tester-only screen */}
-          <Text>Reset all overrides</Text>
-        </Button>
+        <Column modifiers={[fillMaxWidth(), ITEM_GAP]}>
+          <Button onClick={onReset} enabled={canReset} modifiers={[fillMaxWidth()]}>
+            {/* i18n-ignore-next-line — tester-only screen */}
+            <Text>Reset all overrides</Text>
+          </Button>
+        </Column>
       </LazyColumn>
     </Host>
   );

@@ -533,7 +533,7 @@ export function MoreForm({ model }: MoreFormProps) {
           <Text
             style={{ typography: 'bodySmall' }}
             color={colors.sectionTextColor}
-            modifiers={[padding(spacing[1], spacing[2], spacing[1], 0)]}
+            modifiers={[padding(spacing[1], spacing[3], spacing[1], 0)]}
           >
             {section.footer}
           </Text>
