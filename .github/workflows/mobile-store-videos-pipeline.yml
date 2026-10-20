@@ -135,7 +135,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: store-video-record-metrics-${{ matrix.kind }}
-          path: metrics/
+          path: |
+            metrics/
+            .boardsesh/showcase-video/work/logs/
+          include-hidden-files: true
           retention-days: 7
 
   crew:
@@ -181,7 +184,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: store-video-crew-metrics
-          path: metrics/
+          path: |
+            metrics/
+            .boardsesh/showcase-video/work/logs/
+          include-hidden-files: true
           retention-days: 7
 
   render:
