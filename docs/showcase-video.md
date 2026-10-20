@@ -132,11 +132,12 @@ fallback. It:
    the crew take's live session is ended, Metro, the backend it started and the
    simulators are stopped. Ctrl-C does the same.
 
-If iOS times out handing off the development-client URL (`NSPOSIXErrorDomain`
-code 60), the recorder logs the error and continues through optional dialog
-confirmation and fresh home readiness. The URL command's exit status alone is
-not readiness. Other URL errors fail immediately; missing home readiness still
-uses the three-launch limit. Maestro confirmation has its own six-minute cap.
+The iOS recorder passes `--initialUrl http://localhost:<port>` directly to
+Expo's native launch, before its last/default-server autoload. It waits for a
+fresh home signal and cold-starts again if needed, up to three attempts. It
+does not open a second development-client URL while the first load is pending:
+a late timeout from that request can otherwise cover a working app with Expo's
+error screen. Navigation links still use the primed custom-scheme dialog.
 
 Crew setup uses the existing localized Start, Invite climbers, and Copy link
 accessibility labels across all four locales. The second phone waits for the

@@ -51,7 +51,6 @@ import sharp from 'sharp';
 import { formatBoardDisplayName } from '../packages/shared/board-config/src/board-name';
 import { resolveMediaBinary } from './lib/help-clips';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
-import { isIosBundledLine, metroDevClientUrl } from './lib/metro-dev-server';
 import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   SHOWCASE_STAGE_DIR,
@@ -104,7 +103,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
-  isShowcaseDevClientOpenTimeout,
+  showcaseIosLaunchArgs,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -429,25 +428,6 @@ function writeNavigationFlow(
   return file;
 }
 
-/** Confirm the dev-client link without launching again or navigating away. */
-function writeLauncherConfirmFlow(role: 'primary' | 'secondary'): string {
-  const file = resolve(FLOW_SCRATCH_DIR, `confirm-launcher-${role}.yaml`);
-  mkdirSync(FLOW_SCRATCH_DIR, { recursive: true });
-  writeFileSync(
-    file,
-    [
-      `appId: ${APP_ID}`,
-      '---',
-      '- tapOn:',
-      '    text: "Open"',
-      '    optional: true',
-      '- waitForAnimationToEnd',
-      '',
-    ].join('\n'),
-  );
-  return file;
-}
-
 /**
  * iOS asks "Open in 'Boardsesh'?" on the first custom-scheme links after an
  * install and blocks until tapped. Dismiss it on throwaway links first (the
@@ -681,8 +661,8 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
   if (phone.platform === 'android') return relaunchAndroid(phone);
   const launchStarted = Date.now();
   const window = new LogWindow(phone.metroLog);
-  // Fresh installs can stay on the Expo launcher despite a baked Metro URL.
-  // Open our port explicitly when this launch never requests a bundle.
+  // Give Expo one explicit startup URL. A second openurl load can time out
+  // later and overlay its error on a successfully started app.
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     simctl(['terminate', phone.device.udid, APP_ID]);
@@ -692,39 +672,17 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
     window.pull();
     const readyBaseline = phone.signal.homeReadyCount(phone.role);
     const logBaseline = countHomeReady(window.text);
-    const bundleOffset = window.text.length;
     // SIMCTL_CHILD_TZ pins the app to UTC, like every screenshot capture.
-    const launch = simctl(['launch', phone.device.udid, APP_ID], { ...process.env, SIMCTL_CHILD_TZ: 'UTC' });
+    const launch = simctl(showcaseIosLaunchArgs(phone.device.udid, APP_ID, phone.metroPort), {
+      ...process.env,
+      SIMCTL_CHILD_TZ: 'UTC',
+    });
     if (launch.status !== 0) throw new Error(`simctl launch on ${phone.device.name} failed: ${launch.stderr.trim()}`);
     const reachedHome = await waitForShowcaseHome({
       timeoutMs: HOME_READY_TIMEOUT_MS / attempts,
       hasReachedHome: () => {
         window.pull();
         return phone.signal.homeReadyCount(phone.role) > readyBaseline || countHomeReady(window.text) > logBaseline;
-      },
-      hasLoadedBundle: () => window.text.slice(bundleOffset).split('\n').some(isIosBundledLine),
-      recoverLauncher: async () => {
-        console.log(`${LOG} ${phone.role}: no bundle requested; opening dev-client URL on ${phone.metroPort}.`);
-        const opened = simctl(['openurl', phone.device.udid, metroDevClientUrl(phone.metroPort, APP_SCHEME)]);
-        if (opened.status !== 0) {
-          if (!isShowcaseDevClientOpenTimeout(opened))
-            throw new Error(`Opening dev-client on ${phone.device.name} failed: ${opened.stderr.trim()}`);
-          // A timed-out URL handoff does not prove the app failed to open. Keep
-          // the optional dialog confirmation and fresh home check authoritative.
-          console.warn(
-            `${LOG} ${phone.role}: dev-client URL handoff timed out on launch ${attempt}/${attempts}; ` +
-              `checking dialog and home readiness. ${opened.stderr.trim()}`,
-          );
-        }
-        const confirmed = await runMaestro({
-          udid: phone.device.udid,
-          flowFile: writeLauncherConfirmFlow(phone.role),
-          label: `${phone.role}-confirm-launcher`,
-          signalUrl: phone.signal.url,
-          // The CI driver allows five minutes to start; this flow only taps Open.
-          timeoutMs: 6 * 60 * 1000,
-        });
-        if (confirmed !== 0) console.warn(`${LOG} ${phone.role}: launcher confirmation exited ${confirmed}.`);
       },
     });
     if (reachedHome) return window;

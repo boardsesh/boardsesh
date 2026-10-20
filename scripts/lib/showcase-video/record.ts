@@ -41,18 +41,15 @@ export type { ShowcaseBackend } from './takes';
  * signal server here also accepts consent-independent home readiness pings.
  */
 
-/** simctl can time out handing off a URL even when the app opens it. */
-export function isShowcaseDevClientOpenTimeout(result: Readonly<{ status: number; stderr: string }>): boolean {
-  return result.status !== 0 && /\bdomain=NSPOSIXErrorDomain,\s*code=60\b/.test(result.stderr);
+/** Expo consumes this argument before starting its last/default-server autoload. */
+export function showcaseIosLaunchArgs(udid: string, appId: string, metroPort: number): string[] {
+  return ['launch', udid, appId, '--initialUrl', `http://localhost:${metroPort}`];
 }
 
-/** Keep HTTP readiness callbacks running while escaping an idle iOS dev launcher. */
+/** Keep HTTP readiness callbacks running while waiting for this launch's home. */
 export async function waitForShowcaseHome(
   options: Readonly<{
     hasReachedHome: () => boolean;
-    hasLoadedBundle: () => boolean;
-    recoverLauncher: () => Promise<void>;
-    /** Polling budget; recovery may overrun it under its own startup deadline. */
     timeoutMs: number;
     now?: () => number;
     sleep?: (milliseconds: number) => Promise<void>;
@@ -62,17 +59,10 @@ export async function waitForShowcaseHome(
   const sleep =
     options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const started = now();
-  let recovered = false;
   while (true) {
-    // Maestro startup can outlast the deadline. Honor home delivered during it.
     if (options.hasReachedHome()) return true;
     const elapsed = now() - started;
     if (elapsed >= options.timeoutMs) return false;
-    if (!recovered && elapsed >= 20_000 && !options.hasLoadedBundle()) {
-      recovered = true;
-      await options.recoverLauncher();
-      continue;
-    }
     await sleep(Math.min(1000, options.timeoutMs - elapsed));
   }
 }

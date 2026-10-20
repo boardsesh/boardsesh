@@ -27,7 +27,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
-  isShowcaseDevClientOpenTimeout,
+  showcaseIosLaunchArgs,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -71,101 +71,43 @@ import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 const anchorLine = (name: string, x: number): string =>
   ` LOG  [showcase-anchor] {"name":"${name}","x":${x},"y":118,"width":132,"height":32}`;
 
-describe('iOS recorder launcher recovery', () => {
-  const urlTimeout = {
-    status: 1,
-    stderr:
-      'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=60):\n' +
-      'Simulator device failed to open com.boardsesh.app://expo-development-client/.\nOperation timed out',
-  };
-
-  it('recognizes the observed URL handoff timeout without accepting other failures', () => {
-    expect(isShowcaseDevClientOpenTimeout(urlTimeout)).toBe(true);
-    expect(isShowcaseDevClientOpenTimeout({ ...urlTimeout, status: 0 })).toBe(false);
-    for (const stderr of [
-      '(domain=NSOSStatusErrorDomain, code=-10814): No application knows how to open the URL',
-      '(domain=NSPOSIXErrorDomain, code=2): No such file or directory',
-      '(domain=NSPOSIXErrorDomain, code=600): Another error',
-      'Operation timed out',
-    ]) {
-      expect(isShowcaseDevClientOpenTimeout({ status: 1, stderr })).toBe(false);
-    }
+describe('iOS recorder startup', () => {
+  it.each([8081, 8090, 8082])('selects one native startup URL on the phone port %i', (port) => {
+    expect(showcaseIosLaunchArgs('phone-udid', 'com.boardsesh.app', port)).toEqual([
+      'launch',
+      'phone-udid',
+      'com.boardsesh.app',
+      '--initialUrl',
+      `http://localhost:${port}`,
+    ]);
   });
 
   function launchState() {
     let elapsed = 0;
-    const recoverLauncher = vi.fn(async () => {});
     return {
-      recoverLauncher,
       now: () => elapsed,
       sleep: async (milliseconds: number) => {
         elapsed += milliseconds;
       },
-      advance: (milliseconds: number) => {
-        elapsed += milliseconds;
-      },
       timeoutMs: 60_000,
       hasReachedHome: () => false,
-      hasLoadedBundle: () => false,
     };
   }
 
-  it('accepts home immediately without reopening the client', async () => {
-    const state = launchState();
-    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => true })).toBe(true);
-    expect(state.recoverLauncher).not.toHaveBeenCalled();
+  it('accepts fresh home immediately', async () => {
+    expect(await waitForShowcaseHome({ ...launchState(), hasReachedHome: () => true })).toBe(true);
   });
 
-  it('recovers once after 20 seconds without a fresh bundle', async () => {
+  it('waits for delayed fresh home without starting another project load', async () => {
     const state = launchState();
-    let home = false;
-    state.recoverLauncher.mockImplementation(async () => {
-      expect(state.now()).toBe(20_000);
-      home = true;
-    });
-    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => home })).toBe(true);
-    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
+    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => state.now() >= 40_000 })).toBe(true);
+    expect(state.now()).toBe(40_000);
   });
 
-  it('keeps waiting for a launched bundle without reloading it', async () => {
-    const state = launchState();
-    expect(
-      await waitForShowcaseHome({ ...state, hasLoadedBundle: () => true, hasReachedHome: () => state.now() >= 40_000 }),
-    ).toBe(true);
-    expect(state.recoverLauncher).not.toHaveBeenCalled();
-  });
-
-  it('honors home arriving during slow Maestro startup beyond the deadline', async () => {
-    const state = launchState();
-    let home = false;
-    state.recoverLauncher.mockImplementation(async () => {
-      state.advance(65_000);
-      home = true;
-    });
-    expect(await waitForShowcaseHome({ ...state, hasReachedHome: () => home })).toBe(true);
-  });
-
-  it('times out after one unsuccessful recovery', async () => {
+  it('times out without home so the caller can cold-start another attempt', async () => {
     const state = launchState();
     expect(await waitForShowcaseHome(state)).toBe(false);
     expect(state.now()).toBe(60_000);
-    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
-  });
-
-  it('times out an already loaded bundle without restarting it', async () => {
-    const state = launchState();
-    expect(await waitForShowcaseHome({ ...state, hasLoadedBundle: () => true })).toBe(false);
-    expect(state.now()).toBe(60_000);
-    expect(state.recoverLauncher).not.toHaveBeenCalled();
-  });
-
-  it('propagates a failed recovery instead of hiding it as a readiness timeout', async () => {
-    const state = launchState();
-    const failure = new Error('simctl could not open the dev client');
-    state.recoverLauncher.mockRejectedValue(failure);
-    await expect(waitForShowcaseHome(state)).rejects.toBe(failure);
-    expect(state.now()).toBe(20_000);
-    expect(state.recoverLauncher).toHaveBeenCalledTimes(1);
   });
 });
 
