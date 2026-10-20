@@ -171,6 +171,10 @@ Dispatch mode `record-profile` verifies one real English MoonBoard progress take
 with the existing frame, mark and anchor checks. It hands off that take's frames
 for one day and skips rendering. Use the default `measure` mode only after this
 focused recording passes to produce the full four-locale measurement.
+The full measurement has a 180-minute job ceiling; both focused modes retain
+45 minutes. Three locale children already took 91 minutes in CI, so a fourth
+at the observed pace plus setup would exceed the old 120-minute ceiling.
+Individual startup and Maestro command limits remain unchanged.
 
 Crew setup uses the existing localized Start, Invite climbers, and Copy link
 accessibility labels across all four locales. The second phone waits for the
