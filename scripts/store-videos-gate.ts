@@ -167,7 +167,7 @@ export async function gate(
           '--json',
           'state',
         ],
-        { encoding: 'utf8' },
+        { encoding: 'utf8', timeout: 15_000 },
       ),
     ) as { state: string }[];
     if (reviews.some((review) => review.state === 'MERGED')) reason = `v${version} already has approved videos`;
