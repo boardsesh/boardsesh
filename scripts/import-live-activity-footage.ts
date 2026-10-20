@@ -3,14 +3,19 @@ import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
+  rmdirSync,
   statSync,
+  unlinkSync,
   writeFileSync,
+  type Stats,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -93,17 +98,25 @@ export function reviewedFootageFrames(source: ReviewedFootage): OriginalFrame[] 
   if (frames.length > MAX_SOURCE_FRAMES) throw new Error(`Reviewed source exceeds ${MAX_SOURCE_FRAMES} JPEGs`);
   if (frames.at(-1)!.receivedSeconds - frames[0].receivedSeconds < 6)
     throw new Error('Reviewed native range must contain at least six seconds');
+  resampledFrameCount(frames);
   return frames;
+}
+
+function resampledFrameCount(frames: readonly OriginalFrame[]): number {
+  const count = Math.floor((frames.at(-1)!.receivedSeconds - frames[0].receivedSeconds) * SHOWCASE_FPS);
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_SOURCE_FRAMES)
+    throw new Error(`Physical footage exceeds ${MAX_SOURCE_FRAMES} resampled frames`);
+  return count;
 }
 
 /** Nearest received timestamp preserves observed timing, including native transition blur. */
 export function resampledFrameIndices(frames: readonly OriginalFrame[]): number[] {
   if (frames.length < 2) throw new Error('No physical source frames');
   const start = frames[0].receivedSeconds;
-  const duration = frames.at(-1)!.receivedSeconds - start;
+  const frameCount = resampledFrameCount(frames);
   const indices: number[] = [];
   let sourceIndex = 0;
-  for (let outputIndex = 0; outputIndex < Math.floor(duration * SHOWCASE_FPS); outputIndex++) {
+  for (let outputIndex = 0; outputIndex < frameCount; outputIndex++) {
     const timestamp = start + outputIndex / SHOWCASE_FPS;
     while (
       sourceIndex + 1 < frames.length &&
@@ -289,6 +302,15 @@ async function uploadSource(key: string, bytes: Buffer): Promise<void> {
   );
 }
 
+function ownsPath(path: string, expected: Stats): boolean {
+  try {
+    const actual = lstatSync(path);
+    return actual.dev === expected.dev && actual.ino === expected.ino;
+  } catch {
+    return false;
+  }
+}
+
 export async function hydrateLiveActivityFootage(
   target: Target,
   kind: 'default' | Target,
@@ -311,7 +333,16 @@ export async function hydrateLiveActivityFootage(
     );
   const url = new URL(`${baseUrl.replace(/\/$/, '')}/${retained.key}`);
   if (url.protocol !== 'https:') throw new Error('Physical source base URL must use HTTPS');
+  const dirs = workDir ? renderWorkDirs('ios', workDir) : showcaseVariantWorkDirs(kind, locale);
+  const output = join(dirs.footage, 'lock-screen');
+  const marksPath = join(dirs.marks, 'lock-screen.json');
+  if (existsSync(output) || existsSync(marksPath))
+    throw new Error(`Native ending already exists: ${output}; use an empty recording work directory.`);
   const temporary = mkdtempSync(join(tmpdir(), 'store-live-hydrate-'));
+  let stagedFrames: string | undefined;
+  let stagedMarks: string | undefined;
+  let reservedOutput: Stats | undefined;
+  let publishedMarks: Stats | undefined;
   try {
     const bytes = await download(url.href);
     if (nativeCaptureSha256(bytes) !== retained.sha256)
@@ -327,23 +358,45 @@ export async function hydrateLiveActivityFootage(
     )
       throw new Error('Retained footage identity differs from the reviewed manifest');
     const frames = await validateSource(source, temporary, root);
-    const dirs = workDir ? renderWorkDirs('ios', workDir) : showcaseVariantWorkDirs(kind, locale);
-    const output = join(dirs.footage, 'lock-screen');
-    if (existsSync(output))
-      throw new Error(`Native ending already exists: ${output}; use an empty recording work directory.`);
-    const staged = join(temporary, 'resampled');
-    mkdirSync(staged);
+    mkdirSync(dirs.footage, { recursive: true });
+    mkdirSync(dirs.marks, { recursive: true });
+    stagedFrames = mkdtempSync(join(dirs.footage, '.lock-screen-staging-'));
+    stagedMarks = mkdtempSync(join(dirs.marks, '.lock-screen-staging-'));
     for (const [index, frameIndex] of resampledFrameIndices(frames).entries())
-      copyFileSync(join(temporary, frames[frameIndex].file), join(staged, `${String(index + 1).padStart(5, '0')}.jpg`));
-    mkdirSync(output, { recursive: true });
-    for (const name of readdirSync(staged)) copyFileSync(join(staged, name), join(output, name));
+      copyFileSync(
+        join(temporary, frames[frameIndex].file),
+        join(stagedFrames, `${String(index + 1).padStart(5, '0')}.jpg`),
+      );
     const marks: ShowcaseMarksFile = {
       ...adjustedMarks(source, frames),
       sharedNativeSource: { sha256: retained.sha256, sourceLocale: retained.sourceLocale, boardFamily: target },
     };
-    mkdirSync(dirs.marks, { recursive: true });
-    writeFileSync(join(dirs.marks, 'lock-screen.json'), `${JSON.stringify(marks, null, 2)}\n`);
+    const stagedMarksPath = join(stagedMarks, 'marks.json');
+    writeFileSync(stagedMarksPath, `${JSON.stringify(marks, null, 2)}\n`);
+    // Reserve exclusively: rename alone would overwrite an existing empty directory.
+    mkdirSync(output);
+    reservedOutput = lstatSync(output);
+    const stagedMarksIdentity = lstatSync(stagedMarksPath);
+    linkSync(stagedMarksPath, marksPath);
+    publishedMarks = stagedMarksIdentity;
+    if (!ownsPath(output, reservedOutput)) throw new Error('Native ending changed during hydration');
+    renameSync(stagedFrames, output);
+    reservedOutput = undefined;
+    publishedMarks = undefined;
+  } catch (error) {
+    if (publishedMarks && ownsPath(marksPath, publishedMarks)) unlinkSync(marksPath);
+    if (reservedOutput && ownsPath(output, reservedOutput)) {
+      // rmdir removes only our empty reservation, never files added by another writer.
+      try {
+        rmdirSync(output);
+      } catch {
+        /* Preserve concurrent contents. */
+      }
+    }
+    throw error;
   } finally {
+    if (stagedFrames) rmSync(stagedFrames, { recursive: true, force: true });
+    if (stagedMarks) rmSync(stagedMarks, { recursive: true, force: true });
     rmSync(temporary, { recursive: true, force: true });
   }
 }

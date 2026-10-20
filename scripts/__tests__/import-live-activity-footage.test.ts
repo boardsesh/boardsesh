@@ -1,8 +1,20 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   hydrateLiveActivityFootage,
   importLiveActivityFootage,
@@ -13,6 +25,11 @@ import {
 import { LIVE_ACTIVITY_FIXTURE_ROOT, readLiveActivityManifest } from '../lib/screenshot-live-activity';
 import { storeSearchRecordingProblems } from '../lib/showcase-video/store-search';
 
+vi.mock('node:fs', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs')>();
+  return { ...original, renameSync: vi.fn(original.renameSync) };
+});
+
 const directories: string[] = [];
 function temporary(): string {
   const directory = mkdtempSync(join(tmpdir(), 'live-footage-test-'));
@@ -20,6 +37,7 @@ function temporary(): string {
   return directory;
 }
 afterEach(() => {
+  vi.mocked(renameSync).mockReset();
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -125,6 +143,24 @@ describe('retained physical Live Activity footage', () => {
     expect(sampled).toEqual([0, 0, 1, 1]);
   });
 
+  it('rejects long timestamp gaps before allocating resampled output', () => {
+    expect(
+      resampledFrameIndices([
+        { file: '1.jpg', receivedSeconds: 0 },
+        { file: '2.jpg', receivedSeconds: 1000 },
+      ]),
+    ).toHaveLength(30_000);
+    expect(() =>
+      resampledFrameIndices([
+        { file: '1.jpg', receivedSeconds: 0 },
+        { file: '2.jpg', receivedSeconds: 1001 },
+      ]),
+    ).toThrow('30000 resampled frames');
+    const source = provenance();
+    source.frames.at(-1)!.receivedSeconds = 10_000;
+    expect(() => reviewedFootageFrames(source)).toThrow('30000 resampled frames');
+  });
+
   it('retains original JPEGs and reuses one source honestly in all four output locales', async () => {
     const root = temporary();
     const input = temporary();
@@ -172,6 +208,69 @@ describe('retained physical Live Activity footage', () => {
       expect(marks.marks['next-tapped']).toBeCloseTo(1.2);
       expect(storeSearchRecordingProblems(marks, 'lock-screen', locale, 'kilter')).toEqual([]);
     }
+    const failedPublication = temporary();
+    vi.mocked(renameSync).mockImplementationOnce(() => {
+      throw Object.assign(new Error('No space left on device'), { code: 'ENOSPC' });
+    });
+    await expect(
+      hydrateLiveActivityFootage(
+        'kilter',
+        'kilter',
+        'fr',
+        'https://creatives.example',
+        failedPublication,
+        root,
+        async () => archive!,
+      ),
+    ).rejects.toThrow('No space left');
+    expect(existsSync(join(failedPublication, 'footage/lock-screen'))).toBe(false);
+    expect(existsSync(join(failedPublication, 'marks/lock-screen.json'))).toBe(false);
+    expect(readdirSync(join(failedPublication, 'footage'))).toEqual([]);
+    expect(readdirSync(join(failedPublication, 'marks'))).toEqual([]);
+    await hydrateLiveActivityFootage(
+      'kilter',
+      'kilter',
+      'fr',
+      'https://creatives.example',
+      failedPublication,
+      root,
+      async () => archive!,
+    );
+    expect(readFileSync(join(failedPublication, 'footage/lock-screen/00001.jpg'))).toEqual(original);
+
+    const existingOutput = temporary();
+    const existingDirectory = join(existingOutput, 'footage/lock-screen');
+    mkdirSync(existingDirectory, { recursive: true });
+    const existingInode = statSync(existingDirectory).ino;
+    await expect(
+      hydrateLiveActivityFootage(
+        'kilter',
+        'kilter',
+        'fr',
+        'https://creatives.example',
+        existingOutput,
+        root,
+        async () => archive!,
+      ),
+    ).rejects.toThrow('Native ending already exists');
+    expect(statSync(existingDirectory).ino).toBe(existingInode);
+    expect(readdirSync(existingDirectory)).toEqual([]);
+    const existingMarks = temporary();
+    mkdirSync(join(existingMarks, 'marks'));
+    writeFileSync(join(existingMarks, 'marks/lock-screen.json'), 'preserve existing marks');
+    await expect(
+      hydrateLiveActivityFootage(
+        'kilter',
+        'kilter',
+        'fr',
+        'https://creatives.example',
+        existingMarks,
+        root,
+        async () => archive!,
+      ),
+    ).rejects.toThrow('Native ending already exists');
+    expect(readFileSync(join(existingMarks, 'marks/lock-screen.json'), 'utf8')).toBe('preserve existing marks');
+
     const corruptedOutput = temporary();
     await expect(
       hydrateLiveActivityFootage(
