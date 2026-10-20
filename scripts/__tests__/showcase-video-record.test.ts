@@ -304,7 +304,9 @@ describe('parseRecordArgs', () => {
     expect(
       steps.slice(tapIndex + 1).some((step) => hasCommand(step, 'scrollUntilVisible') || hasCommand(step, 'swipe')),
     ).toBe(false);
-    expect(steps.slice(tapIndex + 1)).toContainEqual({ assertVisible: '${SHOWCASE_ALL_BOARDS_LABEL}' });
+    expect(steps.slice(tapIndex + 1)).toContainEqual({
+      extendedWaitUntil: { visible: '${SHOWCASE_ALL_BOARDS_LABEL}', timeout: 30000 },
+    });
   });
 
   it.each(['log.yaml', 'log-kilter.yaml', 'log-tension.yaml', 'log-moonboard.yaml', 'log-spray.yaml'])(

@@ -149,8 +149,9 @@ on macOS, or dispatch **Mobile Store Videos** with mode
 `diagnose-profile-filter`. This diagnostic requires the MoonBoard variant. It
 uses one iOS simulator and one locale, primes the
 profile as the progress take does, taps its filter once, and saves a screenshot
-immediately after the tap. It asserts the filter sheet's localized All boards
-row before any further scroll. A separate `maestro hierarchy` dump observes
+immediately after the tap. It requires the filter sheet's localized All boards
+row within 30 seconds, matching the recording's per-attempt visibility budget,
+before any further scroll. A separate `maestro hierarchy` dump observes
 the later state; its timestamp is retained because attaching the CLI takes time.
 Both successful and failed diagnostic Maestro output stays in the debug artifact.
 No footage, take provenance, rendering, R2 upload, or App Store write occurs.
