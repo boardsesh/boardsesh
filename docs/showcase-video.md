@@ -161,6 +161,17 @@ the screenshot and hierarchy to establish that the sheet is actually visible.
 The dismissal callback can also follow the coordinator's timeout fallback; its
 associated warning distinguishes that from a native dismissal acknowledgment.
 
+Progress flows require the localized All boards row to become visible after
+each filter-button tap, before any sheet-row tap or scroll. This is a required
+30-second visibility check: a completed tap or an idle animation alone does not
+establish native sheet presentation. If the sheet never appears, the flow fails
+before it can scroll the profile behind it.
+
+Dispatch mode `record-profile` verifies one real English MoonBoard progress take
+with the existing frame, mark and anchor checks. It hands off that take's frames
+for one day and skips rendering. Use the default `measure` mode only after this
+focused recording passes to produce the full four-locale measurement.
+
 Crew setup uses the existing localized Start, Invite climbers, and Copy link
 accessibility labels across all four locales. The second phone waits for the
 localized Join session button on the join card. The invitation closes through its

@@ -11,6 +11,9 @@ name: showcase take - kilter progress
 - tapOn:
     id: 'profile-progress-filter'
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+    timeout: 30000
 - scrollUntilVisible:
     element: Kilter
     direction: DOWN

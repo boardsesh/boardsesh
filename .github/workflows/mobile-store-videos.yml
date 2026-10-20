@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Four-locale measurement or one profile-filter diagnostic
+        description: Four-locale measurement, one filter diagnostic, or one progress recording
         type: choice
-        options: [measure, diagnose-profile-filter]
+        options: [measure, diagnose-profile-filter, record-profile]
         default: measure
 
 permissions:
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   record:
     runs-on: macos-26
-    timeout-minutes: ${{ inputs.mode == 'diagnose-profile-filter' && 45 || 120 }}
+    timeout-minutes: ${{ (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile') && 45 || 120 }}
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -71,7 +71,7 @@ jobs:
           echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
           brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
       - name: Record MoonBoard in four locales
-        if: inputs.mode != 'diagnose-profile-filter'
+        if: inputs.mode != 'diagnose-profile-filter' && inputs.mode != 'record-profile'
         env:
           SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
@@ -86,6 +86,14 @@ jobs:
         run: |
           set -euo pipefail
           vp exec tsx scripts/store-video-measure.ts diagnose-profile-filter metrics/diagnose-profile-filter.json -- vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path packages/mobile/.app-cache/Boardsesh.app
+      - name: Record one English profile progress take
+        if: inputs.mode == 'record-profile'
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          vp exec tsx scripts/store-video-measure.ts record-profile metrics/record-profile.json -- vp run video:record -- --kind moonboard --locale en-US --only log --app-path packages/mobile/.app-cache/Boardsesh.app
       - name: Hand off frames for one day
         if: inputs.mode != 'diagnose-profile-filter'
         uses: actions/upload-artifact@v4
@@ -109,7 +117,7 @@ jobs:
 
   render:
     needs: record
-    if: inputs.mode != 'diagnose-profile-filter'
+    if: inputs.mode != 'diagnose-profile-filter' && inputs.mode != 'record-profile'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

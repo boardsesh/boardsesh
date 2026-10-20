@@ -43,6 +43,9 @@ name: showcase take - the logbook fills itself
 - tapOn:
     id: 'profile-progress-filter'
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+    timeout: 30000
 - tapOn: Kilter
 - tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd
@@ -56,6 +59,9 @@ name: showcase take - the logbook fills itself
 - tapOn:
     id: 'profile-progress-filter'
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+    timeout: 30000
 - tapOn: Tension
 - tapOn: '${SHOWCASE_CLOSE_LABEL}'
 - waitForAnimationToEnd

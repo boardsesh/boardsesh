@@ -306,6 +306,31 @@ describe('parseRecordArgs', () => {
     ).toBe(false);
     expect(steps.slice(tapIndex + 1)).toContainEqual({ assertVisible: '${SHOWCASE_ALL_BOARDS_LABEL}' });
   });
+
+  it.each(['log.yaml', 'log-kilter.yaml', 'log-tension.yaml', 'log-moonboard.yaml', 'log-spray.yaml'])(
+    '%s waits for the actual filter sheet before interacting with its rows',
+    (filename) => {
+      const documents = parseAllDocuments(readFileSync(showcaseFlowPath(filename), 'utf8'));
+      expect(documents.flatMap((document) => document.errors)).toEqual([]);
+      const steps = documents[1].toJSON() as (Record<string, unknown> | string)[];
+      const filterTaps = steps.flatMap((step, index) => {
+        if (typeof step === 'string') return [];
+        const target = step.tapOn as { id?: string } | undefined;
+        return target?.id === 'profile-progress-filter' ? [index] : [];
+      });
+      expect(filterTaps.length).toBeGreaterThan(0);
+      for (const tapIndex of filterTaps) {
+        const following = steps.slice(tapIndex + 1);
+        const nextGesture = following.findIndex(
+          (step) => typeof step !== 'string' && ['tapOn', 'scrollUntilVisible', 'swipe'].some((key) => key in step),
+        );
+        expect(nextGesture).toBeGreaterThan(0);
+        expect(following.slice(0, nextGesture)).toContainEqual({
+          extendedWaitUntil: { visible: '${SHOWCASE_ALL_BOARDS_LABEL}', timeout: 30000 },
+        });
+      }
+    },
+  );
 });
 
 describe('native locale and board recordings', () => {
