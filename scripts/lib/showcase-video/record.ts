@@ -177,6 +177,8 @@ export type ShowcaseRecordArgs = Readonly<{
   locales: readonly ShowcaseLocale[];
   /** Set the devices up, then hold them (and Metro) until Ctrl-C, recording nothing: for calibrating flows. */
   hold: boolean;
+  /** Inspect one profile filter tap without recording or writing take provenance. */
+  diagnoseProfileFilter: boolean;
   only: readonly ShowcaseTakeId[] | null;
   dryRun: boolean;
   keepRaw: boolean;
@@ -240,6 +242,7 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   let localeFlagSeen = false;
   let kindFlagSeen = false;
   let hold = false;
+  let diagnoseProfileFilter = false;
   let dryRun = false;
   let keepRaw = false;
   let appPath: string | null = null;
@@ -293,6 +296,9 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
       case '--hold':
         hold = true;
         break;
+      case '--diagnose-profile-filter':
+        diagnoseProfileFilter = true;
+        break;
       case '--keep-raw':
         keepRaw = true;
         break;
@@ -332,12 +338,28 @@ export function parseRecordArgs(argv: readonly string[]): ShowcaseRecordArgs {
   }
   if (only && only.length === 0) throw new Error('--only needs at least one take');
   if ((hold || endSession) && locales.length > 1) throw new Error('--hold and --end-session require one locale');
+  if (diagnoseProfileFilter) {
+    if (
+      platform !== 'ios' ||
+      kind !== 'moonboard' ||
+      locales.length !== 1 ||
+      hold ||
+      endSession ||
+      (only && (only.length !== 1 || only[0] !== 'log'))
+    ) {
+      throw new Error(
+        '--diagnose-profile-filter requires iOS, --kind moonboard, one locale, and only the log interaction',
+      );
+    }
+    only = ['log'];
+  }
   return {
     platform,
     kind,
     nativeLocaleCapture: kindFlagSeen || localeFlagSeen,
     locales,
     hold,
+    diagnoseProfileFilter,
     only: only ? [...new Set(only)] : null,
     dryRun,
     keepRaw,

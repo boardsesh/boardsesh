@@ -213,6 +213,7 @@ describe('parseRecordArgs', () => {
       nativeLocaleCapture: false,
       locales: ['en-US'],
       hold: false,
+      diagnoseProfileFilter: false,
     });
   });
 
@@ -255,6 +256,7 @@ describe('parseRecordArgs', () => {
       nativeLocaleCapture: false,
       locales: ['en-US'],
       hold: true,
+      diagnoseProfileFilter: false,
     });
   });
 
@@ -268,6 +270,41 @@ describe('parseRecordArgs', () => {
     expect(() => parseRecordArgs(['--only'])).toThrow(/requires a value/);
     expect(() => parseRecordArgs(['--end-session', 'abc'])).toThrow(/UUID/);
     expect(() => parseRecordArgs(['--platform', 'windows'])).toThrow(/--platform must be one of ios, android/);
+  });
+
+  it('limits the profile diagnostic to one iOS profile interaction', () => {
+    const args = parseRecordArgs(['--kind', 'moonboard', '--diagnose-profile-filter']);
+    expect(args.diagnoseProfileFilter).toBe(true);
+    expect(args.only).toEqual(['log']);
+    expect(recordingTakes(args).map((take) => take.id)).toEqual(['log']);
+    for (const incompatible of [
+      ['--platform', 'android'],
+      ['--locales', 'all'],
+      ['--hold'],
+      ['--only', 'crew'],
+      ['--end-session', '667186b5-f0e5-4f56-92bf-8646f87d3f81'],
+    ]) {
+      expect(() => parseRecordArgs(['--kind', 'moonboard', '--diagnose-profile-filter', ...incompatible])).toThrow(
+        '--diagnose-profile-filter requires',
+      );
+    }
+    expect(() => parseRecordArgs(['--diagnose-profile-filter'])).toThrow('--diagnose-profile-filter requires');
+  });
+
+  it('observes one filter tap before any subsequent scrolling', () => {
+    const documents = parseAllDocuments(readFileSync(showcaseFlowPath('diagnose-profile-filter.yaml'), 'utf8'));
+    expect(documents.flatMap((document) => document.errors)).toEqual([]);
+    const steps = documents[1].toJSON() as (Record<string, unknown> | string)[];
+    const hasCommand = (step: Record<string, unknown> | string, command: string): boolean =>
+      typeof step !== 'string' && command in step;
+    const tapIndex = steps.findIndex((step) => hasCommand(step, 'tapOn'));
+    expect(tapIndex).toBeGreaterThan(0);
+    expect(steps.filter((step) => hasCommand(step, 'tapOn'))).toHaveLength(1);
+    expect(steps[tapIndex + 1]).toEqual({ takeScreenshot: 'profile-filter-immediately-after-tap' });
+    expect(
+      steps.slice(tapIndex + 1).some((step) => hasCommand(step, 'scrollUntilVisible') || hasCommand(step, 'swipe')),
+    ).toBe(false);
+    expect(steps.slice(tapIndex + 1)).toContainEqual({ assertVisible: '${SHOWCASE_ALL_BOARDS_LABEL}' });
   });
 });
 

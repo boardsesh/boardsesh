@@ -85,6 +85,11 @@ export default function YouScreen() {
   const scrollEdge = useScrollEdgeBackdrop();
 
   const openFilters = useCallback(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+      console.log(
+        `[showcase-profile-filter] ${JSON.stringify({ event: 'press', refAvailable: filterSheetRef.current !== null, timestampMs: Date.now() })}`,
+      );
+    }
     filterSheetRef.current?.snapToIndex(0);
   }, []);
 

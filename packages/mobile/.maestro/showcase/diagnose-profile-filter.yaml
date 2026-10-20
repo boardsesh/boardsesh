@@ -1,0 +1,17 @@
+appId: com.boardsesh.app
+name: diagnose one profile filter tap
+---
+- scrollUntilVisible:
+    element:
+      id: 'profile-progress-filter'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- takeScreenshot: profile-filter-before-tap
+- tapOn:
+    id: 'profile-progress-filter'
+- takeScreenshot: profile-filter-immediately-after-tap
+- waitForAnimationToEnd
+# Assert sheet content before any gesture can move or dismiss it.
+- assertVisible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+- takeScreenshot: profile-filter-after-animation

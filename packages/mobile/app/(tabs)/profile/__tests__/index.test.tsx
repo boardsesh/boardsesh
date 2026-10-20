@@ -6,7 +6,7 @@
 // screen, so a climber's own created climbs never appeared here even though
 // they showed up fine when viewing someone else's profile. This test fails
 // on a revert of that wiring.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -17,6 +17,8 @@ const ctrl = vi.hoisted(() => ({
   measureProfile: undefined as ((height: number) => void) | undefined,
   measureLogbook: undefined as ((height: number) => void) | undefined,
   logbookHeightChange: vi.fn(),
+  filterSheetAvailable: true,
+  snapToIndex: vi.fn(),
   // The scroll-edge store the mounted top chrome was handed, and the one each
   // mounted sub-tab's list was handed.
   chromeScrollEdge: undefined as ScrollEdgeBackdrop | undefined,
@@ -89,21 +91,26 @@ vi.mock('../../../../src/components/you/ProfileTopChrome', () => ({
   },
 }));
 vi.mock('../../../../src/components/you/YouFilterSheet', () => ({
-  YouFilterSheet: () => createElement('div', { 'data-filter-sheet': 'true' }),
+  YouFilterSheet: ({ sheetRef }: { sheetRef: { current: { snapToIndex: (index: number) => void } | null } }) => {
+    sheetRef.current = ctrl.filterSheetAvailable ? { snapToIndex: ctrl.snapToIndex } : null;
+    return createElement('div', { 'data-filter-sheet': 'true' });
+  },
 }));
 vi.mock('../../../../src/components/you/ProgressTab', () => ({
   ProgressTab: ({
     userId,
     topInset,
     scrollEdge,
+    onOpenFilters,
   }: {
     userId: string | undefined;
     topInset: number;
     scrollEdge?: ScrollEdgeBackdrop;
+    onOpenFilters: () => void;
   }) => {
     ctrl.listScrollEdge.progress = scrollEdge;
     rendered.progress.push({ userId, topInset });
-    return createElement('div', { 'data-tab': 'progress' });
+    return createElement('button', { 'data-tab': 'progress', onClick: onOpenFilters });
   },
 }));
 vi.mock('../../../../src/components/you/SessionsTab', () => ({
@@ -155,6 +162,8 @@ describe('YouScreen (own profile)', () => {
     ctrl.measureProfile = undefined;
     ctrl.measureLogbook = undefined;
     ctrl.logbookHeightChange.mockClear();
+    ctrl.filterSheetAvailable = true;
+    ctrl.snapToIndex.mockClear();
     ctrl.chromeScrollEdge = undefined;
     ctrl.listScrollEdge = {};
     rendered.progress = [];
@@ -162,6 +171,34 @@ describe('YouScreen (own profile)', () => {
     rendered.logbook = [];
     rendered.climbs = [];
     rendered.social = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('opens filters without telemetry outside screenshot mode', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { container } = render(<YouScreen />);
+    fireEvent.click(container.querySelector('[data-tab="progress"]')!);
+    expect(ctrl.snapToIndex).toHaveBeenCalledExactlyOnceWith(0);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('logs a screenshot filter press with ref available=%s', (available) => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.spyOn(Date, 'now').mockReturnValue(1234);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    ctrl.filterSheetAvailable = available;
+    const { container } = render(<YouScreen />);
+    fireEvent.click(container.querySelector('[data-tab="progress"]')!);
+    expect(log).toHaveBeenCalledExactlyOnceWith(
+      `[showcase-profile-filter] ${JSON.stringify({ event: 'press', refAvailable: available, timestampMs: 1234 })}`,
+    );
+    expect(ctrl.snapToIndex).toHaveBeenCalledTimes(available ? 1 : 0);
+    if (available) expect(ctrl.snapToIndex).toHaveBeenCalledWith(0);
   });
 
   it('offers a Climbs tab alongside progress/sessions/logbook/social', () => {

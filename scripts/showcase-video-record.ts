@@ -345,6 +345,7 @@ async function runMaestro(
     label: string;
     signalUrl: string;
     timeoutMs?: number;
+    retainDebug?: boolean;
     env?: Readonly<Record<string, string>>;
     child?: (process: ChildProcess) => void;
   }>,
@@ -398,7 +399,7 @@ async function runMaestro(
   if (pending.trim()) console.log(`${LOG}   [${options.label}] ${pending}`);
   // Maestro's debug output is a screenshot per step, ~10 MB a run: keep it only
   // for a failure, where it is the evidence.
-  if (code === 0) rmSync(debugDir, { recursive: true, force: true });
+  if (code === 0 && !options.retainDebug) rmSync(debugDir, { recursive: true, force: true });
   return code;
 }
 
@@ -1306,6 +1307,76 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
   });
 }
 
+/** One observed tap, with no recording, source invalidation, or take provenance. */
+async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): Promise<number> {
+  const { primary, signal } = context;
+  await relaunch(primary);
+  const primeStatus = await runMaestro({
+    udid: primary.device.udid,
+    flowFile: writeNavigationFlow('diagnose-profile-prime', take.primeLinks, take.primeSettleMs, primary.platform),
+    label: 'diagnose-profile-prime',
+    signalUrl: signal.url,
+    retainDebug: true,
+  });
+  if (primeStatus !== 0) return primeStatus;
+  const flowStatus = await runMaestro({
+    udid: primary.device.udid,
+    flowFile: showcaseFlowPathFor('diagnose-profile-filter.yaml', primary.platform),
+    label: 'diagnose-profile-filter',
+    signalUrl: signal.url,
+    retainDebug: true,
+    env: { SHOWCASE_ALL_BOARDS_LABEL: showcaseProgressLabels(context.args.locales[0]).allBoards },
+  });
+  // No UI interaction occurs between the tap/visibility check and this dump.
+  // The flow's screenshot captures the immediate state; CLI startup means the
+  // separate hierarchy is a later observation, with its own timestamp.
+  const hierarchyPath = resolve(LOG_DIR, 'profile-filter-hierarchy.txt');
+  const hierarchyErrors = resolve(LOG_DIR, 'profile-filter-hierarchy.stderr.log');
+  const hierarchyOutput = createWriteStream(hierarchyPath);
+  const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
+  const hierarchyStartedAt = new Date().toISOString();
+  let hierarchyChild: ChildProcess | undefined;
+  let hierarchyStatus: number;
+  try {
+    guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
+    hierarchyStatus = await runScreenshotMaestro(
+      ['--device', primary.device.udid, 'hierarchy', '--no-reinstall-driver'],
+      {
+        env: toolEnv(),
+        cwd: LOG_DIR,
+        timeoutMs: 5 * 60 * 1000,
+        onStdout: (chunk) => {
+          hierarchyOutput.write(chunk);
+        },
+        onStderr: (chunk) => {
+          hierarchyErrorOutput.write(chunk);
+        },
+        onSpawn: (child) => {
+          hierarchyChild = child;
+          liveChildren.add(child);
+        },
+      },
+    );
+  } finally {
+    if (hierarchyChild) liveChildren.delete(hierarchyChild);
+    await Promise.all([
+      new Promise<void>((resolveClosed) => hierarchyOutput.end(resolveClosed)),
+      new Promise<void>((resolveClosed) => hierarchyErrorOutput.end(resolveClosed)),
+    ]);
+  }
+  deviceScreenshot(primary, resolve(LOG_DIR, 'profile-filter-after-hierarchy.png'));
+  const report = {
+    flowStatus,
+    hierarchyStatus,
+    hierarchyStartedAt,
+    completedAt: new Date().toISOString(),
+    hierarchyPath: relative(ROOT_DIR, hierarchyPath),
+  };
+  writeFileSync(resolve(LOG_DIR, 'profile-filter-diagnostic.json'), JSON.stringify(report, null, 2));
+  console.log(`${LOG} profile filter diagnostic: ${JSON.stringify(report)}`);
+  return flowStatus || hierarchyStatus;
+}
+
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
   const { primary, signal } = context;
   console.log(`\n${LOG} === ${take.id}: ${take.summary}`);
@@ -1761,6 +1832,10 @@ function printPlan(args: ShowcaseRecordArgs, takes: readonly ShowcaseTake[], env
   console.log(
     `${LOG} devices: ${primaryName}${takes.some((take) => take.secondary) ? `, ${showcaseDevice('secondary', process.env.SHOWCASE_SIMULATOR_NAME_SUFFIX).name} (iOS)` : ''}`,
   );
+  if (args.diagnoseProfileFilter) {
+    console.log(`${LOG} diagnostic: one profile filter tap; screenshots, hierarchy, and logs -> ${LOG_DIR}`);
+    return;
+  }
   for (const take of takes) {
     const flows = [
       ...take.deviceSetupFlows,
@@ -1949,6 +2024,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       signal,
       session: { open: false, cleanupRegistered: false },
     };
+    if (args.diagnoseProfileFilter) {
+      const status = await diagnoseProfileFilter(context, takes[0]);
+      await teardown();
+      return status;
+    }
     for (const flow of new Set(takes.flatMap((take) => take.deviceSetupFlows))) {
       console.log(`${LOG} device setup: ${flow}`);
       const status = await runFlow(context, flow, 'device-setup');

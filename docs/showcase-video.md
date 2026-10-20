@@ -140,6 +140,24 @@ does not open a second development-client URL while the first load is pending:
 a late timeout from that request can otherwise cover a working app with Expo's
 error screen. Navigation links still use the primed custom-scheme dialog.
 
+To inspect the profile filter without recording any takes, run
+`vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path <Boardsesh.app>`
+on macOS, or dispatch **Mobile Store Videos** with mode
+`diagnose-profile-filter`. It uses one iOS simulator and one locale, primes the
+profile as the progress take does, taps its filter once, and saves a screenshot
+immediately after the tap. It asserts the filter sheet's localized All boards
+row before any further scroll. A separate `maestro hierarchy` dump observes
+the later state; its timestamp is retained because attaching the CLI takes time.
+Both successful and failed diagnostic Maestro output stays in the debug artifact.
+No footage, take provenance, rendering, R2 upload, or App Store write occurs.
+
+Screenshot mode logs profile filter presses, whether the sheet ref is available,
+sheet change callbacks, and dismissal callbacks under `[showcase-profile-filter]`.
+A change callback reports the requested detent before native presentation; use
+the screenshot and hierarchy to establish that the sheet is actually visible.
+The dismissal callback can also follow the coordinator's timeout fallback; its
+associated warning distinguishes that from a native dismissal acknowledgment.
+
 Crew setup uses the existing localized Start, Invite climbers, and Copy link
 accessibility labels across all four locales. The second phone waits for the
 localized Join session button on the join card. The invitation closes through its
