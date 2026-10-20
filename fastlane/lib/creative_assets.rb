@@ -199,8 +199,8 @@ module BoardseshCreatives
         versions = versions.select { |version| version.dig("attributes", "versionString") == expected }
         raise Error, "No iOS version matches creative marketing version #{expected}; refusing placement on another train" if versions.empty?
       end
-      editable = versions.select { |version| EDITABLE.include?(version.dig("attributes", "appStoreState")) }
-      live = versions.select { |version| LIVE.include?(version.dig("attributes", "appStoreState")) }
+      editable = versions.select { |version| EDITABLE.include?(version.dig("attributes", "appVersionState") || version.dig("attributes", "appStoreState")) }
+      live = versions.select { |version| LIVE.include?(version.dig("attributes", "appVersionState") || version.dig("attributes", "appStoreState")) }
       return latest_live_version(live) if editable.empty? && allow_live
       raise Error, "Need exactly one editable iOS version (live requires allow_live:true)" unless editable.length == 1
       editable.first

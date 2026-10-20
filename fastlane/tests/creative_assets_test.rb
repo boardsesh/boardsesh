@@ -260,6 +260,26 @@ class CreativeAssetsTest < Minitest::Test
     assert_empty @client.writes
   end
 
+  def test_modern_app_version_state_places_the_matching_editable_train
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "modern-draft", "attributes" => { "versionString" => "2.6.0", "appVersionState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    assert_equal 5, runner.run(action: "place", placement: "search").length
+    assert_includes @client.reads, "/v1/appStoreVersions/modern-draft/appStoreVersionLocalizations?limit=200"
+  end
+
+  def test_modern_live_state_keeps_live_approval_required_when_legacy_state_differs
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "modern-live", "attributes" => { "versionString" => "2.6.0", "appVersionState" => "READY_FOR_DISTRIBUTION", "appStoreState" => "PREPARE_FOR_SUBMISSION", "createdDate" => "2026-10-01T00:00:00Z" } }]
+    @client.writes.clear
+    assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", placement: "search") }
+    assert_empty @client.writes
+    assert_equal 5, runner.run(action: "place", placement: "search", allow_live: true).length
+    assert_includes @client.reads, "/v1/appStoreVersions/modern-live/appStoreVersionLocalizations?limit=200"
+  end
+
   def test_live_version_requires_explicit_option
     @client.live = true
     upload_processed_assets
