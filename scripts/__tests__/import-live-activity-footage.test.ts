@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -58,6 +58,48 @@ function provenance(): ReviewedFootage {
 }
 
 describe('retained physical Live Activity footage', () => {
+  it('rejects more than 30,000 reviewed JPEGs before reading or uploading them', async () => {
+    const source = provenance();
+    source.frames = Array.from({ length: 30_001 }, (_, index) => ({
+      file: `${String(index + 1).padStart(5, '0')}.jpg`,
+      receivedSeconds: 10 + index / 30,
+    }));
+    source.lastFrame = '30000.jpg';
+    expect(reviewedFootageFrames(source)).toHaveLength(30_000);
+    source.lastFrame = '30001.jpg';
+    const input = temporary();
+    const root = temporary();
+    const provenancePath = join(input, 'reviewed.json');
+    writeFileSync(provenancePath, JSON.stringify(source));
+    let uploaded = false;
+    await expect(
+      importLiveActivityFootage(input, provenancePath, root, async () => {
+        uploaded = true;
+      }),
+    ).rejects.toThrow('30000 JPEGs');
+    expect(uploaded).toBe(false);
+    expect(existsSync(join(root, 'manifest.json'))).toBe(false);
+  });
+
+  it('rejects an oversized source before loading JPEG bytes or uploading an unusable archive', async () => {
+    const input = temporary();
+    const root = temporary();
+    const source = provenance();
+    const frame = join(input, source.firstFrame);
+    writeFileSync(frame, '');
+    truncateSync(frame, 1024 ** 3 + 1);
+    const provenancePath = join(input, 'reviewed.json');
+    writeFileSync(provenancePath, JSON.stringify(source));
+    let uploaded = false;
+    await expect(
+      importLiveActivityFootage(input, provenancePath, root, async () => {
+        uploaded = true;
+      }),
+    ).rejects.toThrow('exceeds 1 GiB');
+    expect(uploaded).toBe(false);
+    expect(existsSync(join(root, 'manifest.json'))).toBe(false);
+  });
+
   it('requires one contiguous range, observed timing and explicit review', () => {
     const source = provenance();
     expect(reviewedFootageFrames(source)).toHaveLength(15);

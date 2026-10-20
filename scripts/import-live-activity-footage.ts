@@ -9,6 +9,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,9 @@ import {
   storeSearchRecordingProblems,
   storeSearchTakeSegments,
 } from './lib/showcase-video/store-search';
+
+const MAX_SOURCE_FRAMES = 30_000;
+const MAX_SOURCE_UNCOMPRESSED_BYTES = 1024 ** 3;
 
 type Target = 'kilter' | 'tension';
 interface OriginalFrame {
@@ -86,6 +90,7 @@ export function reviewedFootageFrames(source: ReviewedFootage): OriginalFrame[] 
   const lastIndex = source.frames.findIndex((frame) => frame.file === source.lastFrame);
   if (firstIndex < 0 || lastIndex <= firstIndex) throw new Error('Reviewed MJPEG range is unavailable');
   const frames = source.frames.slice(firstIndex, lastIndex + 1);
+  if (frames.length > MAX_SOURCE_FRAMES) throw new Error(`Reviewed source exceeds ${MAX_SOURCE_FRAMES} JPEGs`);
   if (frames.at(-1)!.receivedSeconds - frames[0].receivedSeconds < 6)
     throw new Error('Reviewed native range must contain at least six seconds');
   return frames;
@@ -124,6 +129,11 @@ function adjustedMarks(source: ReviewedFootage, frames: readonly OriginalFrame[]
 
 async function validateSource(source: ReviewedFootage, directory: string, root: string): Promise<OriginalFrame[]> {
   const frames = reviewedFootageFrames(source);
+  let frameBytes = 0;
+  for (const frame of frames) {
+    frameBytes += statSync(join(directory, frame.file)).size;
+    if (frameBytes > MAX_SOURCE_UNCOMPRESSED_BYTES) throw new Error('Source archive exceeds 1 GiB');
+  }
   const marks = adjustedMarks(source, frames);
   const problems = storeSearchRecordingProblems(marks, 'lock-screen', marks.locale!, source.target);
   if (problems.length) throw new Error(`Physical source: ${problems.join('; ')}`);
@@ -155,8 +165,11 @@ async function validateSource(source: ReviewedFootage, directory: string, root: 
 
 const packPython = `import sys,zipfile,pathlib,json
 root=pathlib.Path(sys.argv[1]); metadata=json.loads((root/'source.json').read_text())
+names=['source.json']+[frame['file'] for frame in metadata['frames']]
+if len(names)>${MAX_SOURCE_FRAMES + 1}: raise ValueError('Invalid source archive entries')
+if sum((root/name).stat().st_size for name in names)>${MAX_SOURCE_UNCOMPRESSED_BYTES}: raise ValueError('Source archive exceeds 1 GiB')
 with zipfile.ZipFile(sys.argv[2],'w',compression=zipfile.ZIP_STORED) as archive:
- for name in ['source.json']+[frame['file'] for frame in metadata['frames']]:
+ for name in names:
   entry=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0)); entry.external_attr=0o100644 << 16
   archive.writestr(entry,(root/name).read_bytes())
 `;
@@ -164,9 +177,9 @@ const unpackPython = `import sys,zipfile,pathlib,re
 root=pathlib.Path(sys.argv[2])
 with zipfile.ZipFile(sys.argv[1]) as archive:
  names=archive.namelist()
- if len(names)!=len(set(names)) or 'source.json' not in names or len(names)>30001: raise ValueError('Invalid source archive entries')
+ if len(names)!=len(set(names)) or 'source.json' not in names or len(names)>${MAX_SOURCE_FRAMES + 1}: raise ValueError('Invalid source archive entries')
  if any(name!='source.json' and not re.fullmatch(r'[0-9]+[.]jpg',name) for name in names): raise ValueError('Unsafe source archive entry')
- if sum(entry.file_size for entry in archive.infolist())>1073741824: raise ValueError('Source archive exceeds 1 GiB')
+ if sum(entry.file_size for entry in archive.infolist())>${MAX_SOURCE_UNCOMPRESSED_BYTES}: raise ValueError('Source archive exceeds 1 GiB')
  for name in names: (root/name).write_bytes(archive.read(name))
 `;
 
