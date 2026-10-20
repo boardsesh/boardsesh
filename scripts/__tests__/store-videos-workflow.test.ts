@@ -13,6 +13,7 @@ interface Step {
   with?: Record<string, unknown>;
 }
 interface Job {
+  'timeout-minutes'?: number | string;
   if?: string;
   needs?: string | string[];
   environment?: string;
@@ -21,6 +22,7 @@ interface Job {
   strategy?: { 'max-parallel'?: number; matrix: { kind: string[]; locale?: string[] } };
 }
 interface Workflow {
+  name: string;
   on: Record<string, Record<string, unknown>>;
   jobs: Record<string, Job>;
   concurrency?: { group: string; 'cancel-in-progress': boolean };
@@ -28,6 +30,28 @@ interface Workflow {
 const workflow = (name: string): Workflow => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8')) as Workflow;
 
 describe('store video workflow handoff', () => {
+  it('preserves measurement and diagnostic dispatch modes beside the train entry', () => {
+    const measure = workflow('mobile-store-videos-measure');
+    expect(measure.name).toBe('Mobile Store Videos (Measure)');
+    expect(measure.on).not.toHaveProperty('workflow_run');
+    expect(measure.on.workflow_dispatch.inputs).toMatchObject({
+      mode: { options: ['measure', 'diagnose-profile-filter', 'record-profile', 'record-english'], default: 'measure' },
+    });
+    expect(measure.jobs.record['timeout-minutes']).toContain("inputs.mode == 'record-english' && 60");
+    expect(measure.jobs.record['timeout-minutes']).toContain('&& 45 || 180');
+    const commands = measure.jobs.record.steps?.filter((step) => step.run?.includes('vp run video:record')) ?? [];
+    expect(commands.map((step) => step.if)).toEqual([
+      "inputs.mode == 'measure'",
+      "inputs.mode == 'diagnose-profile-filter'",
+      "inputs.mode == 'record-profile'",
+      "inputs.mode == 'record-english'",
+    ]);
+    expect(commands[1].run).toContain('--diagnose-profile-filter');
+    expect(commands[2].run).toContain('--only log');
+    expect(commands[3].run).toContain('--kind moonboard --locale en-US --app-path');
+    expect(measure.jobs.render.if).toBe("inputs.mode == 'measure'");
+  });
+
   it('admits successful release-train drafts without filtering their reported main branch', () => {
     const entry = workflow('mobile-store-videos');
     expect(entry.on.workflow_run.workflows).toEqual(['Mobile Store Draft Submission']);

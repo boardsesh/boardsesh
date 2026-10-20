@@ -194,7 +194,7 @@ error screen. Navigation links still use the primed custom-scheme dialog.
 
 To inspect the profile filter without recording any takes, run
 `vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path <Boardsesh.app>`
-on macOS, or dispatch **Mobile Store Videos** with mode
+on macOS, or dispatch **Mobile Store Videos (Measure)** with mode
 `diagnose-profile-filter`. This diagnostic requires the MoonBoard variant. It
 uses one iOS simulator and one locale, primes the
 profile as the progress take does, taps its filter once, and saves a screenshot
