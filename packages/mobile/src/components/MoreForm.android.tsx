@@ -127,6 +127,8 @@ const CHEVRON = '›';
 // M3's disabled-content opacity, for a select row that cannot open.
 const DISABLED_ROW = alpha(material.disabledContentOpacity);
 const ROW_PADDING = padding(spacing[4], spacing[3], spacing[4], spacing[3]);
+// Vertical gap between sections, so each section's card reads as its own group.
+const SECTION_GAP = spacing[5];
 
 type RowColors = {
   brandColors: BrandControlColors & { error: string };
@@ -498,46 +500,54 @@ export function MoreForm({ model }: MoreFormProps) {
     sectionTextColor: systemColors.secondaryLabel as string,
   };
 
-  // Flatten sections into LazyColumn items: title Text, the rows (carded unless
-  // the section is all buttons), then footer Text.
-  const items: ReactNode[] = [];
-  for (const section of model.sections) {
-    if (section.title) {
-      items.push(
-        <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} color={colors.sectionTextColor}>
-          {section.title}
-        </Text>,
-      );
-    }
+  // One LazyColumn item per section: title Text, the rows (carded unless the
+  // section is all buttons), then footer Text. The gaps are padding modifiers,
+  // not the LazyColumn's `spacedBy`: that arrangement never reached the device,
+  // so adjacent section cards rendered flush against each other.
+  const items = model.sections.map((section, index) => {
     const allButtons = section.rows.every((row) => row.kind === 'button');
-    if (allButtons) {
-      // Standalone full-width buttons (e.g. Sign Out / Delete Account), no card.
-      for (const row of section.rows) items.push(renderRow(row, colors));
-    } else {
-      items.push(
-        <Card key={`${section.key}-card`} modifiers={[fillMaxWidth()]}>
-          <Column modifiers={[fillMaxWidth()]}>{section.rows.map((row) => renderRow(row, colors))}</Column>
-        </Card>,
-      );
-    }
-    if (section.footer) {
-      items.push(
-        <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} color={colors.sectionTextColor}>
-          {section.footer}
-        </Text>,
-      );
-    }
-  }
+    return (
+      <Column key={section.key} modifiers={[fillMaxWidth(), padding(0, index === 0 ? 0 : SECTION_GAP, 0, 0)]}>
+        {section.title ? (
+          <Text
+            style={{ typography: 'titleSmall' }}
+            color={colors.sectionTextColor}
+            modifiers={[padding(spacing[1], 0, spacing[1], spacing[2])]}
+          >
+            {section.title}
+          </Text>
+        ) : null}
+        {allButtons ? (
+          // Standalone full-width buttons (e.g. Sign Out / Delete Account), no card.
+          section.rows.map((row, rowIndex) => (
+            <Column key={row.key} modifiers={[fillMaxWidth(), padding(0, rowIndex === 0 ? 0 : spacing[2], 0, 0)]}>
+              {renderRow(row, colors)}
+            </Column>
+          ))
+        ) : (
+          <Card modifiers={[fillMaxWidth()]}>
+            <Column modifiers={[fillMaxWidth()]}>{section.rows.map((row) => renderRow(row, colors))}</Column>
+          </Card>
+        )}
+        {section.footer ? (
+          <Text
+            style={{ typography: 'bodySmall' }}
+            color={colors.sectionTextColor}
+            modifiers={[padding(spacing[1], spacing[2], spacing[1], 0)]}
+          >
+            {section.footer}
+          </Text>
+        ) : null}
+      </Column>
+    );
+  });
 
   return (
     // `colorScheme` forces the Compose MaterialTheme to follow our in-app
     // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
     // cards stay dark when the user picks "Light" in-app.
     <Host style={styles.host} colorScheme={colorScheme}>
-      <LazyColumn
-        contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
-        verticalArrangement={{ spacedBy: spacing[3] }}
-      >
+      <LazyColumn contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}>
         {items}
       </LazyColumn>
     </Host>
