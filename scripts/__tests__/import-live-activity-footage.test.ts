@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -102,6 +103,7 @@ function manifestWriter(root: string, target: 'kilter' | 'tension', hold = false
     import fs from 'node:fs';
     import { join } from 'node:path';
     import { syncBuiltinESMExports } from 'node:module';
+    // --eval has no script filename: the first user argument is argv[1].
     const [root, target, payload, mode] = process.argv.slice(1);
     const importer = await import(${JSON.stringify(new URL('../import-live-activity-footage.ts', import.meta.url).href)});
     const { updateLiveActivityFootageManifest } = importer.default ?? importer;
@@ -472,4 +474,3 @@ describe('retained physical Live Activity footage', () => {
     );
   });
 });
-import { spawn } from 'node:child_process';
