@@ -8,12 +8,20 @@ name: showcase take - moonboard progress
     direction: DOWN
     timeout: 30000
     centerElement: true
-- tapOn:
-    id: 'profile-progress-filter'
-- waitForAnimationToEnd
-- extendedWaitUntil:
-    visible: '${SHOWCASE_ALL_BOARDS_LABEL}'
-    timeout: 30000
+# Retry only the idempotent open; a completed native tap can miss activation.
+- retry:
+    maxRetries: 1
+    commands:
+      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            notVisible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+          commands:
+            - tapOn:
+                id: 'profile-progress-filter'
+      - extendedWaitUntil:
+          visible: '${SHOWCASE_ALL_BOARDS_LABEL}'
+          timeout: 30000
 - scrollUntilVisible:
     element: MoonBoard
     direction: DOWN

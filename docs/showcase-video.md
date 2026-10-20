@@ -164,18 +164,23 @@ associated warning distinguishes that from a native dismissal acknowledgment.
 A change with index `-1` followed by a dismissal callback records two stages
 of the same close, not two separate closes.
 
-Progress flows require the localized All boards row to become visible after
-each filter-button tap, before any sheet-row tap or scroll. This is a required
-30-second visibility check: a completed tap or an idle animation alone does not
-establish native sheet presentation. If the sheet never appears, the flow fails
-before it can scroll the profile behind it.
+Progress flows require the localized All boards row before any sheet-row tap or
+scroll. Opening an absent sheet has one retry, with a required 30-second visibility
+check per attempt. A completed tap or an idle animation alone does not establish
+native sheet presentation: CI has observed a tap inside the button without an app
+press event. An already-visible sheet is not tapped again. Selection, close and
+scrolling are not retried; a sheet that never appears fails the take before it can
+scroll the profile behind it. Native marks, anchors and frame checks still apply.
 
 Dispatch mode `record-profile` verifies one real English MoonBoard progress take
 with the existing frame, mark and anchor checks. It hands off that take's frames
-for one day and skips rendering. Use the default `measure` mode only after this
-focused recording passes to produce the full four-locale measurement.
-The full measurement has a 180-minute job ceiling; both focused modes retain
-45 minutes. Three locale children already took 91 minutes in CI, so a fourth
+for one day and skips rendering. Mode `record-english` runs all three English
+MoonBoard takes in their full measurement order, including progress after board
+and grade-filter takes, with a 60-minute ceiling and the same one-day frame handoff.
+It skips rendering. Use the default `measure` mode after this sequence passes to
+produce the full four-locale measurement.
+The full measurement has a 180-minute job ceiling; the diagnostic and single-take
+modes retain 45 minutes. Three locale children already took 91 minutes in CI, so a fourth
 at the observed pace plus setup would exceed the old 120-minute ceiling.
 Individual startup and Maestro command limits remain unchanged.
 

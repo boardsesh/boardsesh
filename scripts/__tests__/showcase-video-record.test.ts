@@ -313,21 +313,30 @@ describe('parseRecordArgs', () => {
       const documents = parseAllDocuments(readFileSync(showcaseFlowPath(filename), 'utf8'));
       expect(documents.flatMap((document) => document.errors)).toEqual([]);
       const steps = documents[1].toJSON() as (Record<string, unknown> | string)[];
-      const filterTaps = steps.flatMap((step, index) => {
+      const opens = steps.flatMap((step, index) => {
         if (typeof step === 'string') return [];
-        const target = step.tapOn as { id?: string } | undefined;
-        return target?.id === 'profile-progress-filter' ? [index] : [];
+        const retry = step.retry as { maxRetries: number; commands: Record<string, unknown>[] } | undefined;
+        return retry ? [{ index, retry }] : [];
       });
-      expect(filterTaps.length).toBeGreaterThan(0);
-      for (const tapIndex of filterTaps) {
-        const following = steps.slice(tapIndex + 1);
+      expect(opens).toHaveLength(filename === 'log.yaml' ? 2 : 1);
+      for (const { index, retry } of opens) {
+        expect(retry.maxRetries).toBe(1);
+        // Retry only opening an absent sheet, never selection, close or scrolling.
+        expect(retry.commands).toEqual([
+          'waitForAnimationToEnd',
+          {
+            runFlow: {
+              when: { notVisible: '${SHOWCASE_ALL_BOARDS_LABEL}' },
+              commands: [{ tapOn: { id: 'profile-progress-filter' } }],
+            },
+          },
+          { extendedWaitUntil: { visible: '${SHOWCASE_ALL_BOARDS_LABEL}', timeout: 30000 } },
+        ]);
+        const following = steps.slice(index + 1);
         const nextGesture = following.findIndex(
           (step) => typeof step !== 'string' && ['tapOn', 'scrollUntilVisible', 'swipe'].some((key) => key in step),
         );
-        expect(nextGesture).toBeGreaterThan(0);
-        expect(following.slice(0, nextGesture)).toContainEqual({
-          extendedWaitUntil: { visible: '${SHOWCASE_ALL_BOARDS_LABEL}', timeout: 30000 },
-        });
+        expect(nextGesture).toBeGreaterThanOrEqual(0);
       }
     },
   );
