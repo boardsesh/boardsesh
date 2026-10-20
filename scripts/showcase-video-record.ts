@@ -1374,7 +1374,7 @@ async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): P
   };
   writeFileSync(resolve(LOG_DIR, 'profile-filter-diagnostic.json'), JSON.stringify(report, null, 2));
   console.log(`${LOG} profile filter diagnostic: ${JSON.stringify(report)}`);
-  return flowStatus || hierarchyStatus;
+  return flowStatus !== 0 ? flowStatus : hierarchyStatus;
 }
 
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
@@ -1916,6 +1916,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return 1;
   }
   const takes = wanted.filter((take) => !take.unavailable[args.backend]);
+  const diagnosticTake = args.diagnoseProfileFilter ? takes.find((take) => take.id === 'log') : null;
+  if (args.diagnoseProfileFilter && !diagnosticTake) {
+    console.error(`${LOG} Profile filter diagnostic requires an available log take on ${args.backend}.`);
+    return 1;
+  }
   for (const take of wanted) {
     const reason = take.unavailable[args.backend];
     if (reason) console.warn(`${LOG} skipping ${take.id} on ${args.backend}: ${reason}`);
@@ -2024,8 +2029,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       signal,
       session: { open: false, cleanupRegistered: false },
     };
-    if (args.diagnoseProfileFilter) {
-      const status = await diagnoseProfileFilter(context, takes[0]);
+    if (diagnosticTake) {
+      const status = await diagnoseProfileFilter(context, diagnosticTake);
       await teardown();
       return status;
     }

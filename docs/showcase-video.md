@@ -146,7 +146,8 @@ error screen. Navigation links still use the primed custom-scheme dialog.
 To inspect the profile filter without recording any takes, run
 `vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path <Boardsesh.app>`
 on macOS, or dispatch **Mobile Store Videos** with mode
-`diagnose-profile-filter`. It uses one iOS simulator and one locale, primes the
+`diagnose-profile-filter`. This diagnostic requires the MoonBoard variant. It
+uses one iOS simulator and one locale, primes the
 profile as the progress take does, taps its filter once, and saves a screenshot
 immediately after the tap. It asserts the filter sheet's localized All boards
 row before any further scroll. A separate `maestro hierarchy` dump observes
@@ -160,6 +161,8 @@ A change callback reports the requested detent before native presentation; use
 the screenshot and hierarchy to establish that the sheet is actually visible.
 The dismissal callback can also follow the coordinator's timeout fallback; its
 associated warning distinguishes that from a native dismissal acknowledgment.
+A change with index `-1` followed by a dismissal callback records two stages
+of the same close, not two separate closes.
 
 Progress flows require the localized All boards row to become visible after
 each filter-button tap, before any sheet-row tap or scroll. This is a required
