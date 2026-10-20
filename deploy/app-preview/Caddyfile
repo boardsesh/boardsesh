@@ -1,0 +1,30 @@
+# Caddyfile for the per-PR standalone Expo-web preview (https://{N}.app.boardsesh.com).
+#
+# Serves the static SPA export produced by
+# `scripts/build-expo-web-export.sh --subdomain` (baseUrl /, root-served).
+# TLS terminates upstream at the homelab Traefik, so this server is plain :80
+# behind the branch-deploys network. See .github/workflows/branch-deploy.yml and
+# Dockerfile.app-web.
+
+:80 {
+	root * /srv
+	encode gzip zstd
+
+	# Long-lived, content-hashed bundles and static assets. Expo emits
+	# fingerprinted filenames under /_expo/ and /assets/, so they are safe to
+	# cache forever.
+	header /_expo/* Cache-Control "public, max-age=31536000, immutable"
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+	# Previews must never be indexed; harden the response globally.
+	header X-Robots-Tag "noindex"
+	header X-Content-Type-Options "nosniff"
+
+	# NO Content-Security-Policy. The board-renderer WASM glue needs
+	# 'unsafe-eval', and a strict CSP breaks it. Do not add a CSP header here.
+
+	# SPA fallback: serve index.html for any path that isn't a real file so
+	# Expo Router deep links resolve client-side.
+	try_files {path} /index.html
+	file_server
+}
