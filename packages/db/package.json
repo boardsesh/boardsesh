@@ -90,6 +90,11 @@
       "types": "./src/testing/moonboard-residual-dedup-replay.ts",
       "import": "./src/testing/moonboard-residual-dedup-replay.ts",
       "default": "./src/testing/moonboard-residual-dedup-replay.ts"
+    },
+    "./moonboard": {
+      "types": "./src/moonboard/index.ts",
+      "import": "./src/moonboard/index.ts",
+      "default": "./src/moonboard/index.ts"
     }
   },
   "scripts": {
