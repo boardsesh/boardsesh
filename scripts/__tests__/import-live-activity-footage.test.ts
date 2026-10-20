@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,9 +21,14 @@ import {
   importLiveActivityFootage,
   resampledFrameIndices,
   reviewedFootageFrames,
+  updateLiveActivityFootageManifest,
   type ReviewedFootage,
 } from '../import-live-activity-footage';
-import { LIVE_ACTIVITY_FIXTURE_ROOT, readLiveActivityManifest } from '../lib/screenshot-live-activity';
+import {
+  LIVE_ACTIVITY_FIXTURE_ROOT,
+  readLiveActivityManifest,
+  type LiveActivityFootageSource,
+} from '../lib/screenshot-live-activity';
 import { storeSearchRecordingProblems } from '../lib/showcase-video/store-search';
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -75,7 +81,135 @@ function provenance(): ReviewedFootage {
   };
 }
 
+function retainedSource(target: 'kilter' | 'tension'): LiveActivityFootageSource {
+  const fixture = readLiveActivityManifest().fixtures[`${target}/en-US`];
+  const sha256 = (target === 'kilter' ? 'a' : 'b').repeat(64);
+  return {
+    sha256,
+    key: `sources/live-activity/${sha256}.zip`,
+    boardFamily: target,
+    sourceLocale: 'en-US',
+    nativeFixtureSourcePngSha256: fixture.sourcePngSha256,
+    frameCount: 15,
+    durationSeconds: 7,
+    reviewedAt: fixture.review.reviewedAt,
+    reviewedBy: 'Synthetic concurrent-writer regression',
+  };
+}
+
+function manifestWriter(root: string, target: 'kilter' | 'tension', hold = false) {
+  const script = `
+    import fs from 'node:fs';
+    import { join } from 'node:path';
+    import { syncBuiltinESMExports } from 'node:module';
+    const [root, target, payload, mode] = process.argv.slice(1);
+    const importer = await import(${JSON.stringify(new URL('../import-live-activity-footage.ts', import.meta.url).href)});
+    const { updateLiveActivityFootageManifest } = importer.default ?? importer;
+    if (mode === 'hold') {
+      const originalRead = fs.readFileSync;
+      fs.readFileSync = (path, ...options) => {
+        if (path === join(root, 'manifest.json')) {
+          fs.writeFileSync(join(root, 'writer-ready'), 'lock acquired');
+          const deadline = Date.now() + 20_000;
+          while (!fs.existsSync(join(root, 'writer-release'))) {
+            if (Date.now() > deadline) throw new Error('Timed out waiting for writer release');
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+          }
+        }
+        return originalRead(path, ...options);
+      };
+      syncBuiltinESMExports();
+    }
+    try { updateLiveActivityFootageManifest(root, target, JSON.parse(payload)); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+  `;
+  const child = spawn(
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      '--input-type=module',
+      '--eval',
+      script,
+      root,
+      target,
+      JSON.stringify(retainedSource(target)),
+      hold ? 'hold' : 'publish',
+    ],
+    {
+      cwd: fileURLToPath(new URL('../../', import.meta.url)),
+      stdio: ['ignore', 'ignore', 'pipe'],
+    },
+  );
+  let stderr = '';
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  const finished = new Promise<{ code: number | null; stderr: string }>((resolveResult) => {
+    child.once('error', (error) => resolveResult({ code: -1, stderr: error.message }));
+    child.once('close', (code) => resolveResult({ code, stderr }));
+  });
+  return { child, finished };
+}
+
 describe('retained physical Live Activity footage', () => {
+  it('excludes another process from the manifest update and merges both entries on retry', async () => {
+    const root = temporary();
+    const manifest = readLiveActivityManifest();
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ version: 1, fixtures: manifest.fixtures }));
+    const before = readFileSync(join(root, 'manifest.json'));
+    const first = manifestWriter(root, 'kilter', true);
+    try {
+      await Promise.race([
+        vi.waitFor(() => expect(existsSync(join(root, 'writer-ready'))).toBe(true), {
+          timeout: 10_000,
+          interval: 20,
+        }),
+        first.finished.then((result) => {
+          throw new Error(`Manifest writer exited before the lock barrier: ${JSON.stringify(result)}`);
+        }),
+      ]);
+      const lockInode = statSync(join(root, 'manifest.json.lock')).ino;
+      const competing = await manifestWriter(root, 'tension').finished;
+      expect(competing.code).toBe(1);
+      expect(competing.stderr).toContain('manifest is locked');
+      expect(statSync(join(root, 'manifest.json.lock')).ino).toBe(lockInode);
+      expect(readFileSync(join(root, 'manifest.json'))).toEqual(before);
+      writeFileSync(join(root, 'writer-release'), 'continue');
+      expect(await first.finished).toEqual({ code: 0, stderr: '' });
+      expect(readLiveActivityManifest(root).footage).toEqual({ kilter: retainedSource('kilter') });
+      expect(await manifestWriter(root, 'tension').finished).toEqual({ code: 0, stderr: '' });
+      expect(readLiveActivityManifest(root).footage).toEqual({
+        kilter: retainedSource('kilter'),
+        tension: retainedSource('tension'),
+      });
+      expect(readdirSync(root).filter((name) => name.includes('.pending-') || name.endsWith('.lock'))).toEqual([]);
+    } finally {
+      if (first.child.exitCode === null) first.child.kill();
+      await first.finished;
+    }
+  }, 30_000);
+
+  it('cleans only owned staging and releases its lock after a manifest publication failure', () => {
+    const root = temporary();
+    const manifest = readLiveActivityManifest();
+    writeFileSync(join(root, 'manifest.json'), JSON.stringify({ version: 1, fixtures: manifest.fixtures }));
+    const before = readFileSync(join(root, 'manifest.json'));
+    const foreignPending = join(root, 'manifest.json.pending-another-writer');
+    writeFileSync(foreignPending, 'preserve existing staging');
+    vi.mocked(renameSync).mockImplementationOnce(() => {
+      throw new Error('simulated manifest publication failure');
+    });
+    expect(() => updateLiveActivityFootageManifest(root, 'kilter', retainedSource('kilter'))).toThrow(
+      'simulated manifest publication failure',
+    );
+    expect(readFileSync(join(root, 'manifest.json'))).toEqual(before);
+    expect(readFileSync(foreignPending, 'utf8')).toBe('preserve existing staging');
+    expect(readdirSync(root).sort()).toEqual(['manifest.json', 'manifest.json.pending-another-writer']);
+    updateLiveActivityFootageManifest(root, 'kilter', retainedSource('kilter'));
+    expect(readLiveActivityManifest(root).footage).toEqual({ kilter: retainedSource('kilter') });
+  });
+
   it('rejects more than 30,000 reviewed JPEGs before reading or uploading them', async () => {
     const source = provenance();
     source.frames = Array.from({ length: 30_001 }, (_, index) => ({
@@ -338,3 +472,4 @@ describe('retained physical Live Activity footage', () => {
     );
   });
 });
+import { spawn } from 'node:child_process';

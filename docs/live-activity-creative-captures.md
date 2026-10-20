@@ -69,6 +69,8 @@ fixtures alone cannot stand in for a video. Missing retained footage stops CI.
 
 ## Retain and reuse physical video
 
+`python3` must be on `PATH` to pack and unpack the retained ZIP archives.
+
 Import one reviewed contiguous MJPEG range per target. The original numbered
 JPEG files and their observed received timestamps must be available. The import
 preserves their bytes, including native transition blur, with the original marks
@@ -98,6 +100,12 @@ Keep the reviewer's identity honest; schema checks do not prove visual review.
 The importer uses `STORE_CREATIVES_R2_AWS_ENDPOINT_URL`,
 `STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID` and
 `STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY`. Do not commit these values.
+
+After uploading, the importer holds a short exclusive `manifest.json.lock` while
+it reads, merges and atomically publishes the latest manifest. A competing or
+leftover lock fails clearly with its path and is never removed automatically.
+Retry after the active writer finishes; inspect a leftover lock before retrying.
+The immutable archive remains available, and a retry reuses it.
 
 Before rendering each localized Kilter/default/Tension cut, CI hydrates only
 that cut's empty lock-screen take. It downloads the retained ZIP over HTTPS,

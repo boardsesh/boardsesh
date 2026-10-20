@@ -1,12 +1,16 @@
 /// <reference types="node" />
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
+  closeSync,
   copyFileSync,
   existsSync,
+  fstatSync,
   linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -273,14 +277,51 @@ export async function importLiveActivityFootage(
       reviewedBy: source.review.reviewedBy,
     };
     await upload(retained.key, bytes);
-    const manifest = readLiveActivityManifest(root);
-    manifest.footage = { ...manifest.footage, [source.target]: retained };
-    const manifestPath = join(root, LIVE_ACTIVITY_MANIFEST);
-    writeFileSync(`${manifestPath}.pending`, `${JSON.stringify(manifest, null, 2)}\n`);
-    renameSync(`${manifestPath}.pending`, manifestPath);
+    updateLiveActivityFootageManifest(root, source.target, retained);
     return retained;
   } finally {
     rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+/** Serialize the short manifest commit across independent importer processes. */
+export function updateLiveActivityFootageManifest(
+  root: string,
+  target: Target,
+  retained: LiveActivityFootageSource,
+): void {
+  const manifestPath = join(root, LIVE_ACTIVITY_MANIFEST);
+  const lockPath = `${manifestPath}.lock`;
+  try {
+    mkdirSync(lockPath);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+      throw new Error(
+        `Live Activity manifest is locked at ${lockPath}; retry after the active importer finishes. Inspect a leftover lock before retrying; it is never removed automatically.`,
+      );
+    throw error;
+  }
+  const lockIdentity = lstatSync(lockPath);
+  const pendingPath = `${manifestPath}.pending-${randomUUID()}`;
+  let pendingIdentity: Stats | undefined;
+  try {
+    const manifest = readLiveActivityManifest(root);
+    manifest.footage = { ...manifest.footage, [target]: retained };
+    const descriptor = openSync(pendingPath, 'wx');
+    try {
+      pendingIdentity = fstatSync(descriptor);
+      writeFileSync(descriptor, `${JSON.stringify(manifest, null, 2)}\n`);
+    } finally {
+      closeSync(descriptor);
+    }
+    renameSync(pendingPath, manifestPath);
+    pendingIdentity = undefined;
+  } finally {
+    try {
+      if (pendingIdentity && ownsPath(pendingPath, pendingIdentity)) unlinkSync(pendingPath);
+    } finally {
+      if (ownsPath(lockPath, lockIdentity)) rmdirSync(lockPath);
+    }
   }
 }
 
