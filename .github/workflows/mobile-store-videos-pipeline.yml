@@ -96,7 +96,8 @@ jobs:
   record:
     needs: app
     runs-on: macos-26
-    timeout-minutes: 120
+    # Measured English MoonBoard recording: 38.45 min x 4 locales + setup exceeds 120 min.
+    timeout-minutes: 180
     environment: Production
     strategy:
       fail-fast: false
