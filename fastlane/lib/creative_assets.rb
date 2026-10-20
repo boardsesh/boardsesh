@@ -44,7 +44,13 @@ module BoardseshCreatives
       pending = selected.select { |name| @manifest.fetch("variants").fetch(name).fetch("assets").none? { |asset| @selected_placements.include?(asset.fetch("placement")) } }
       raise Error, "Unfinalized creative variants: #{pending.join(', ')}" unless pending.empty?
       @bound_app_version = nil
-      @bound_app_version = app_version(allow_live) if action == "place" && @manifest["marketingVersion"]
+      if action == "place" && @manifest["marketingVersion"]
+        if variant == "all" || selected.include?("default")
+          @bound_app_version = app_version(allow_live)
+        else
+          matching_app_versions
+        end
+      end
       library = @client.request("GET", "/v1/apps/#{@app_id}/assetLibrary").fetch("data")
       raise Error, "Unexpected asset library identity" unless library.fetch("type") == "appAssetLibraries"
       library_id = library.fetch("id")
@@ -191,7 +197,7 @@ module BoardseshCreatives
       { "type" => type, "relationship" => relationship, "id" => matches.first.fetch("id") }
     end
 
-    def app_version(allow_live)
+    def matching_app_versions
       versions = @client.list("/v1/apps/#{@app_id}/appStoreVersions?filter[platform]=IOS&limit=200")
       expected = @manifest["marketingVersion"]
       if expected
@@ -199,6 +205,11 @@ module BoardseshCreatives
         versions = versions.select { |version| version.dig("attributes", "versionString") == expected }
         raise Error, "No iOS version matches creative marketing version #{expected}; refusing placement on another train" if versions.empty?
       end
+      versions
+    end
+
+    def app_version(allow_live)
+      versions = matching_app_versions
       editable = versions.select { |version| EDITABLE.include?(version.dig("attributes", "appVersionState") || version.dig("attributes", "appStoreState")) }
       live = versions.select { |version| LIVE.include?(version.dig("attributes", "appVersionState") || version.dig("attributes", "appStoreState")) }
       return latest_live_version(live) if editable.empty? && allow_live

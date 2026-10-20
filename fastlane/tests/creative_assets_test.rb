@@ -70,12 +70,14 @@ class CreativeAssetsTest < Minitest::Test
   end
 
   class FakeCppApple < FakeApple
+    attr_accessor :cpp_state
+
     def list(path)
       case path
       when %r{\A/v1/apps/app/appCustomProductPages\?}
         [{ "id" => "kilter-page", "attributes" => { "name" => "Boardsesh Kilter" } }]
       when %r{\A/v1/appCustomProductPages/kilter-page/appCustomProductPageVersions\?}
-        [{ "id" => "kilter-version", "attributes" => { "state" => "PREPARE_FOR_SUBMISSION" } }]
+        [{ "id" => "kilter-version", "attributes" => { "state" => @cpp_state || "PREPARE_FOR_SUBMISSION" } }]
       when %r{\A/v1/appCustomProductPageVersions/kilter-version/appCustomProductPageLocalizations\?}
         %w[en-US es-ES es-MX fr-FR de-DE].map { |locale| { "id" => "cpp-#{locale}", "attributes" => { "locale" => locale } } }
       else
@@ -267,6 +269,51 @@ class CreativeAssetsTest < Minitest::Test
     @client.writes.clear
     assert_equal 5, runner.run(action: "place", placement: "search").length
     assert_includes @client.reads, "/v1/appStoreVersions/modern-draft/appStoreVersionLocalizations?limit=200"
+  end
+
+  def test_cpp_only_bound_manifest_places_while_matching_app_waits_for_review
+    @client = FakeCppApple.new
+    use_kilter_manifest
+    cpp = { "targets" => { "kilter" => { "referenceName" => "Boardsesh Kilter" } } }
+    cpp_runner = BoardseshCreatives::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app", cpp_manifest: cpp, probe: @probe)
+    cpp_runner.run(action: "upload", placement: "search")
+    @client.assets.each { |asset| asset["attributes"]["state"] = "PREPARE_FOR_SUBMISSION" }
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "matching-waiting", "attributes" => { "versionString" => "2.6.0", "appVersionState" => "WAITING_FOR_REVIEW" } }]
+    @client.writes.clear
+
+    result = cpp_runner.run(action: "place", variant: "kilter", placement: "search")
+    assert_equal 5, result.length
+    assert_equal 5, @client.placements.length
+    assert @client.placements.all? { |placement| placement.dig("relationships", "appCustomProductPageLocalization", "data", "type") == "appCustomProductPageLocalizations" }
+    refute @client.reads.any? { |path| path.include?("/appStoreVersionLocalizations?") }
+
+    @client.writes.clear
+    @client.versions = [{ "id" => "newer", "attributes" => { "versionString" => "2.7.0", "appVersionState" => "PREPARE_FOR_SUBMISSION" } }]
+    error = assert_raises(BoardseshCreatives::Error) { cpp_runner.run(action: "place", variant: "kilter", placement: "search") }
+    assert_includes error.message, "marketing version 2.6.0"
+    assert_empty @client.writes
+
+    @client.versions = [{ "id" => "matching-waiting", "attributes" => { "versionString" => "2.6.0", "appVersionState" => "WAITING_FOR_REVIEW" } }]
+    @client.cpp_state = "APPROVED"
+    error = assert_raises(BoardseshCreatives::Error) { cpp_runner.run(action: "place", variant: "kilter", placement: "search") }
+    assert_includes error.message, "editable CPP version"
+    assert_empty @client.writes
+    assert_equal 5, cpp_runner.run(action: "place", variant: "kilter", placement: "search", allow_live: true).length
+  end
+
+  def test_default_and_all_bound_placements_reject_submitted_app_even_with_live_approval
+    upload_processed_assets
+    @manifest["marketingVersion"] = "2.6.0"
+    %w[WAITING_FOR_REVIEW IN_REVIEW].each do |state|
+      @client.versions = [{ "id" => "matching-submitted", "attributes" => { "versionString" => "2.6.0", "appVersionState" => state, "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+      %w[default all].each do |variant|
+        @client.writes.clear
+        assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", variant: variant, placement: "search", allow_live: true) }
+        assert_empty @client.writes
+        assert_empty @client.placements
+      end
+    end
   end
 
   def test_modern_live_state_keeps_live_approval_required_when_legacy_state_differs

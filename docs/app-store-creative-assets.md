@@ -232,7 +232,11 @@ screenshot slots, submits asset review, or publishes a version.
 Merging a PR that changes `app-stores/apple/creative-assets.json` starts the
 automatic video path at that exact merge commit. The manifest's `marketingVersion`
 binds placement to the reviewed train: a later train is refused, including for
-CPP-only retries. It requires all 20 search
+CPP-only retries. A CPP-only retry verifies that the matching iOS version exists,
+then uses the CPP's own editable version (or approved version with `allow_live:true`).
+The matching app version may be waiting for Apple review. Default/all placement
+still requires that app version to be editable or live with explicit approval.
+The automatic path requires all 20 search
 videos and posters, promotes their immutable candidate objects to `approved/`,
 then downloads and verifies every SHA256 before exposing ASC credentials to the
 upload lane. It uploads search videos, waits up to 7.5 minutes for Apple's
@@ -246,9 +250,11 @@ media/poster/provenance objects. Spanish storefront duplication counts as one
 source video. Asset-review submission remains manual; inspect ASC Preview for
 every locale after placement.
 
-Automatic runs keep `allow_live:false` and `allow_replace:false`. If merge-back
-has already submitted the train and no editable version remains, dispatch
-`action:place`, `placement:search` with `allow_live:true` after checking the destination. Replacing
+Automatic runs keep `allow_live:false` and `allow_replace:false`. For `variant:default`
+or `variant:all`, a submitted train in `WAITING_FOR_REVIEW` or `IN_REVIEW` remains
+blocked even with `allow_live:true`. Once the same reviewed `marketingVersion`
+is live, dispatch `action:place`, `placement:search` with `allow_live:true` after
+checking the destination. The override does not select a newer train. Replacing
 existing owned assignments additionally requires `allow_replace:true`;
 merging a video PR does not grant either override. A missing or expired candidate
 stops before upload: regenerate the train's candidate PR. Apple-processing
