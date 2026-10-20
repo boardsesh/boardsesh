@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -270,6 +270,41 @@ describe('retained physical Live Activity footage', () => {
       ),
     ).rejects.toThrow('Native ending already exists');
     expect(readFileSync(join(existingMarks, 'marks/lock-screen.json'), 'utf8')).toBe('preserve existing marks');
+
+    for (const concurrentDestination of ['frames', 'marks'] as const) {
+      const concurrentWork = temporary();
+      const concurrentPath = join(
+        concurrentWork,
+        concurrentDestination === 'frames' ? 'footage/lock-screen' : 'marks/lock-screen.json',
+      );
+      let concurrentInode: number | undefined;
+      await expect(
+        hydrateLiveActivityFootage(
+          'kilter',
+          'kilter',
+          'fr',
+          'https://creatives.example',
+          concurrentWork,
+          root,
+          async () => {
+            mkdirSync(dirname(concurrentPath), { recursive: true });
+            if (concurrentDestination === 'frames') mkdirSync(concurrentPath);
+            else writeFileSync(concurrentPath, 'preserve concurrent marks');
+            concurrentInode = statSync(concurrentPath).ino;
+            return archive!;
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'EEXIST' });
+      expect(statSync(concurrentPath).ino).toBe(concurrentInode);
+      expect(readdirSync(join(concurrentWork, 'footage'))).toEqual(
+        concurrentDestination === 'frames' ? ['lock-screen'] : [],
+      );
+      expect(readdirSync(join(concurrentWork, 'marks'))).toEqual(
+        concurrentDestination === 'marks' ? ['lock-screen.json'] : [],
+      );
+      if (concurrentDestination === 'marks')
+        expect(readFileSync(concurrentPath, 'utf8')).toBe('preserve concurrent marks');
+    }
 
     const corruptedOutput = temporary();
     await expect(
