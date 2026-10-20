@@ -27,6 +27,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  isShowcaseDevClientOpenTimeout,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -71,6 +72,26 @@ const anchorLine = (name: string, x: number): string =>
   ` LOG  [showcase-anchor] {"name":"${name}","x":${x},"y":118,"width":132,"height":32}`;
 
 describe('iOS recorder launcher recovery', () => {
+  const urlTimeout = {
+    status: 60,
+    stderr:
+      'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=60):\n' +
+      'Simulator device failed to open com.boardsesh.app://expo-development-client/.\nOperation timed out',
+  };
+
+  it('recognizes the observed URL handoff timeout without accepting other failures', () => {
+    expect(isShowcaseDevClientOpenTimeout(urlTimeout)).toBe(true);
+    expect(isShowcaseDevClientOpenTimeout({ ...urlTimeout, status: 0 })).toBe(false);
+    for (const stderr of [
+      '(domain=NSOSStatusErrorDomain, code=-10814): No application knows how to open the URL',
+      '(domain=NSPOSIXErrorDomain, code=2): No such file or directory',
+      '(domain=NSPOSIXErrorDomain, code=600): Another error',
+      'Operation timed out',
+    ]) {
+      expect(isShowcaseDevClientOpenTimeout({ status: 1, stderr })).toBe(false);
+    }
+  });
+
   function launchState() {
     let elapsed = 0;
     const recoverLauncher = vi.fn(async () => {});

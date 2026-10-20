@@ -104,6 +104,7 @@ import {
   buildMarksFile,
   checkTake,
   countHomeReady,
+  isShowcaseDevClientOpenTimeout,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -705,8 +706,16 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
       recoverLauncher: async () => {
         console.log(`${LOG} ${phone.role}: no bundle requested; opening dev-client URL on ${phone.metroPort}.`);
         const opened = simctl(['openurl', phone.device.udid, metroDevClientUrl(phone.metroPort, APP_SCHEME)]);
-        if (opened.status !== 0)
-          throw new Error(`Opening dev-client on ${phone.device.name} failed: ${opened.stderr.trim()}`);
+        if (opened.status !== 0) {
+          if (!isShowcaseDevClientOpenTimeout(opened))
+            throw new Error(`Opening dev-client on ${phone.device.name} failed: ${opened.stderr.trim()}`);
+          // A timed-out URL handoff does not prove the app failed to open. Keep
+          // the optional dialog confirmation and fresh home check authoritative.
+          console.warn(
+            `${LOG} ${phone.role}: dev-client URL handoff timed out on launch ${attempt}/${attempts}; ` +
+              `checking dialog and home readiness. ${opened.stderr.trim()}`,
+          );
+        }
         const confirmed = await runMaestro({
           udid: phone.device.udid,
           flowFile: writeLauncherConfirmFlow(phone.role),

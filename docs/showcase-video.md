@@ -132,6 +132,12 @@ fallback. It:
    the crew take's live session is ended, Metro, the backend it started and the
    simulators are stopped. Ctrl-C does the same.
 
+If iOS times out handing off the development-client URL (`NSPOSIXErrorDomain`
+code 60), the recorder logs the error and continues through optional dialog
+confirmation and fresh home readiness. The URL command's exit status alone is
+not readiness. Other URL errors fail immediately; missing home readiness still
+uses the three-launch limit. Maestro confirmation has its own six-minute cap.
+
 Crew setup uses the existing localized Start, Invite climbers, and Copy link
 accessibility labels across all four locales. The second phone waits for the
 localized Join session button on the join card. The invitation closes through its

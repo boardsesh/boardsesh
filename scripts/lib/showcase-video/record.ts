@@ -41,6 +41,11 @@ export type { ShowcaseBackend } from './takes';
  * signal server here also accepts consent-independent home readiness pings.
  */
 
+/** simctl can time out handing off a URL even when the app opens it. */
+export function isShowcaseDevClientOpenTimeout(result: Readonly<{ status: number; stderr: string }>): boolean {
+  return result.status !== 0 && /\bdomain=NSPOSIXErrorDomain,\s*code=60\b/.test(result.stderr);
+}
+
 /** Keep HTTP readiness callbacks running while escaping an idle iOS dev launcher. */
 export async function waitForShowcaseHome(
   options: Readonly<{
