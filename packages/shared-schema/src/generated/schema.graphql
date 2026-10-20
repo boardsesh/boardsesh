@@ -2354,7 +2354,7 @@ input ActivityFeedInput {
   userId: String
   "Restrict results to users followed by the authenticated viewer"
   followingOnly: Boolean
-  "Include one daily hardest-send card for followed/user-filtered days without explicit sessions"
+  "Include daily activity cards for user, followed-user, or board scopes, covering readable logs outside listed sessions"
   includeDailyHighlights: Boolean
 }
 

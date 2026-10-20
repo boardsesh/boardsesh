@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { boardseshTicks } from '@boardsesh/db/schema';
+import type { SessionFeedItem } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
 
@@ -36,7 +38,9 @@ let boardAId: number;
 let boardBId: number;
 
 type SessionFeedResult = {
-  sessions: Array<{ sessionId: string }>;
+  sessions: SessionFeedItem[];
+  cursor: string | null;
+  hasMore: boolean;
 };
 
 const callFeed = (input: Record<string, unknown>) =>
@@ -81,17 +85,28 @@ const insertSession = async (id: string, boardId: number | null) => {
   `);
 };
 
-const insertTick = async (params: { uuid: string; sessionId: string; boardId: number | null; climbedAt: string }) => {
-  await db.execute(sql`
-    INSERT INTO boardsesh_ticks (uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
-    VALUES (${params.uuid}, ${CLIMBER_USER_ID}, 'kilter', ${params.boardId}, ${CLIMB_UUID}, 40, 'send', 1, 20, ${params.climbedAt}, ${params.sessionId})
-  `);
+const insertTick = async (params: {
+  uuid: string;
+  sessionId: string | null;
+  boardId: number | null;
+  climbedAt: string;
+  status?: 'send' | 'attempt';
+  difficulty?: number;
+}) => {
+  await db.insert(boardseshTicks).values({
+    userId: CLIMBER_USER_ID,
+    boardType: 'kilter',
+    climbUuid: CLIMB_UUID,
+    angle: 40,
+    status: 'send',
+    attemptCount: 1,
+    difficulty: 20,
+    ...params,
+  });
 };
 
 const cleanup = async () => {
-  await db.execute(
-    sql`DELETE FROM boardsesh_ticks WHERE session_id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
-  );
+  await db.delete(boardseshTicks).where(eq(boardseshTicks.userId, CLIMBER_USER_ID));
   await db.execute(
     sql`DELETE FROM board_sessions WHERE id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
@@ -135,6 +150,37 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       sessionId: SESSION_NULL_BOARD,
       boardId: null,
       climbedAt: '2026-02-03 10:00:00',
+    });
+
+    // The board feed must include climbing logged without starting a session.
+    // A harder send on another board that day must not affect this board's card.
+    await insertTick({
+      uuid: 'sf-daily-a',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: '2026-10-01 10:00:00',
+    });
+    await insertTick({
+      uuid: 'sf-daily-b',
+      sessionId: null,
+      boardId: boardBId,
+      difficulty: 30,
+      climbedAt: '2026-10-01 11:00:00',
+    });
+    await insertTick({
+      uuid: 'sf-daily-null',
+      sessionId: null,
+      boardId: null,
+      difficulty: 35,
+      climbedAt: '2026-10-01 12:00:00',
+    });
+    await insertTick({
+      uuid: 'sf-daily-attempt-a',
+      sessionId: null,
+      boardId: boardAId,
+      status: 'attempt',
+      difficulty: 24,
+      climbedAt: '2026-10-02 10:00:00',
     });
   });
 
@@ -181,5 +227,111 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
   it('returns an empty feed when the requested board does not exist', async () => {
     const result = await callFeed({ boardUuid: 'unknown-uuid', limit: 50 });
     expect(result.sessions).toEqual([]);
+  });
+
+  it('puts recent sessionless activity ahead of older sessions on the selected board', async () => {
+    const result = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      `daily:board:${BOARD_A_UUID}:sf-daily-attempt-a`,
+      `daily:board:${BOARD_A_UUID}:sf-daily-a`,
+      SESSION_ON_A,
+    ]);
+    const sendDay = result.sessions[1];
+    expect(sendDay).toMatchObject({
+      sessionType: 'daily_highlight',
+      tickCount: 1,
+      totalSends: 1,
+      participants: [expect.objectContaining({ userId: CLIMBER_USER_ID, sends: 1 })],
+      hardestSend: { uuid: 'sf-daily-a', difficulty: 20 },
+      socialEntityType: 'tick',
+      socialEntityId: 'sf-daily-a',
+    });
+    expect(sendDay.gradeDistribution.reduce((total, grade) => total + grade.send + grade.flash, 0)).toBe(1);
+  });
+
+  it('includes attempt-only days without reporting a send', async () => {
+    const result = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+
+    expect(result.sessions[0]).toMatchObject({
+      sessionId: `daily:board:${BOARD_A_UUID}:sf-daily-attempt-a`,
+      tickCount: 1,
+      totalSends: 0,
+      totalAttempts: 1,
+      hardestSend: null,
+      socialEntityType: 'tick',
+      socialEntityId: 'sf-daily-attempt-a',
+    });
+  });
+
+  it('scopes daily highlights independently to another board with the same layout', async () => {
+    const result = await callFeed({ boardUuid: BOARD_B_UUID, includeDailyHighlights: true, limit: 50 });
+
+    expect(result.sessions.map((session) => session.sessionId)).toEqual([
+      `daily:board:${BOARD_B_UUID}:sf-daily-b`,
+      SESSION_ON_B,
+    ]);
+    expect(result.sessions[0]).toMatchObject({
+      tickCount: 1,
+      hardestSend: { uuid: 'sf-daily-b', difficulty: 30 },
+    });
+  });
+
+  it('paginates across daily highlights and explicit sessions without duplicates', async () => {
+    const input = { boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 1 };
+    const first = await callFeed(input);
+    const second = await callFeed({ ...input, cursor: first.cursor });
+    const third = await callFeed({ ...input, cursor: second.cursor });
+
+    expect([first, second, third].flatMap((page) => page.sessions.map((session) => session.sessionId))).toEqual([
+      `daily:board:${BOARD_A_UUID}:sf-daily-attempt-a`,
+      `daily:board:${BOARD_A_UUID}:sf-daily-a`,
+      SESSION_ON_A,
+    ]);
+    expect(first.hasMore).toBe(true);
+    expect(second.hasMore).toBe(true);
+    expect(third.hasMore).toBe(false);
+    expect(third.cursor).toBeNull();
+  });
+
+  it('keeps daily highlights opt-in and leaves the unscoped Everyone feed unchanged', async () => {
+    const scoped = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: false, limit: 50 });
+    const unscoped = await callFeed({ includeDailyHighlights: true, limit: 50 });
+
+    expect(scoped.sessions.map((session) => session.sessionId)).toEqual([SESSION_ON_A]);
+    expect(unscoped.sessions.every((session) => session.sessionType !== 'daily_highlight')).toBe(true);
+  });
+
+  it('opens a daily card with only its selected board’s logs', async () => {
+    const result = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+    const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: result.sessions[1].sessionId });
+
+    expect(detail).toMatchObject({
+      sessionType: 'daily_highlight',
+      tickCount: 1,
+      totalSends: 1,
+      ticks: [expect.objectContaining({ uuid: 'sf-daily-a' })],
+    });
+    expect(JSON.stringify(detail)).not.toContain('sf-daily-b');
+    expect(JSON.stringify(detail)).not.toContain('sf-daily-null');
+  });
+
+  it('rejects a daily card whose anchor belongs to a different or nonexistent board', async () => {
+    expect(
+      await sessionFeedQueries.sessionDetail(null, { sessionId: `daily:board:${BOARD_A_UUID}:sf-daily-b` }),
+    ).toBeNull();
+    expect(
+      await sessionFeedQueries.sessionDetail(null, { sessionId: 'daily:board:unknown-uuid:sf-daily-a' }),
+    ).toBeNull();
+  });
+
+  it('preserves the existing profile daily-card identifier and cross-board detail', async () => {
+    const result = await callFeed({ userId: CLIMBER_USER_ID, includeDailyHighlights: true, limit: 50 });
+    const sessionId = `daily:${CLIMBER_USER_ID}:2026-10-01`;
+    expect(result.sessions.map((session) => session.sessionId)).toContain(sessionId);
+
+    const detail = await sessionFeedQueries.sessionDetail(null, { sessionId });
+    expect(detail?.ticks.map((tick) => tick.uuid).sort()).toEqual(['sf-daily-a', 'sf-daily-b', 'sf-daily-null']);
+    expect(detail?.tickCount).toBe(3);
   });
 });
