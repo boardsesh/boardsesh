@@ -1336,7 +1336,7 @@ async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): P
   const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
   const hierarchyStartedAt = new Date().toISOString();
   let hierarchyChild: ChildProcess | undefined;
-  let hierarchyStatus: number;
+  let hierarchyStatus = 1;
   try {
     guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
     hierarchyStatus = await runScreenshotMaestro(
