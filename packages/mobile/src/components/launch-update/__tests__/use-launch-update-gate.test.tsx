@@ -9,6 +9,8 @@ type Flags = { resolved: boolean; showPlaceholder: boolean };
 const store = vi.hoisted(() => ({
   flags: { resolved: false, showPlaceholder: false } as Flags,
   progress: undefined as number | undefined,
+  stage: 'checking' as 'checking' | 'installing',
+  firstLaunch: false,
   listeners: new Set<() => void>(),
   start: vi.fn(),
 }));
@@ -21,14 +23,23 @@ vi.mock('../../../lib/launch-update-gate-store', () => ({
   },
   getLaunchUpdateGateFlags: () => store.flags,
   getLaunchUpdateProgress: () => store.progress,
+  getLaunchUpdateStage: () => store.stage,
+  getLaunchUpdateFirstLaunch: () => store.firstLaunch,
 }));
 
-import { useLaunchUpdateGate, useLaunchUpdateProgress } from '../use-launch-update-gate';
+import {
+  useLaunchUpdateFirstLaunch,
+  useLaunchUpdateGate,
+  useLaunchUpdateProgress,
+  useLaunchUpdateStage,
+} from '../use-launch-update-gate';
 
-function publish(next: { flags?: Flags; progress?: number }) {
+function publish(next: { flags?: Flags; progress?: number; stage?: 'checking' | 'installing'; firstLaunch?: boolean }) {
   act(() => {
     if (next.flags) store.flags = next.flags;
     if ('progress' in next) store.progress = next.progress;
+    if (next.stage) store.stage = next.stage;
+    if (next.firstLaunch !== undefined) store.firstLaunch = next.firstLaunch;
     for (const listener of store.listeners) listener();
   });
 }
@@ -36,6 +47,8 @@ function publish(next: { flags?: Flags; progress?: number }) {
 beforeEach(() => {
   store.flags = { resolved: false, showPlaceholder: false };
   store.progress = undefined;
+  store.stage = 'checking';
+  store.firstLaunch = false;
   store.listeners.clear();
   store.start.mockReset();
 });
@@ -68,7 +81,7 @@ describe('useLaunchUpdateGate', () => {
     expect(result.current).toEqual({ resolved: true, showPlaceholder: false });
   });
 
-  it('does not re-render its caller on download progress', () => {
+  it('does not re-render its caller on download progress or a change of copy', () => {
     let renderCount = 0;
     renderHook(() => {
       renderCount += 1;
@@ -78,6 +91,7 @@ describe('useLaunchUpdateGate', () => {
 
     publish({ progress: 0.2 });
     publish({ progress: 0.6 });
+    publish({ stage: 'installing', firstLaunch: true });
 
     expect(renderCount).toBe(rendersBeforeProgress);
   });
@@ -100,5 +114,25 @@ describe('useLaunchUpdateProgress', () => {
 
     publish({ progress: 0.42 });
     expect(result.current).toBe(0.42);
+  });
+});
+
+describe('useLaunchUpdateStage', () => {
+  it('follows the copy from checking to installing', () => {
+    const { result } = renderHook(() => useLaunchUpdateStage());
+    expect(result.current).toBe('checking');
+
+    publish({ stage: 'installing' });
+    expect(result.current).toBe('installing');
+  });
+});
+
+describe('useLaunchUpdateFirstLaunch', () => {
+  it('follows whether this launch is a fresh install', () => {
+    const { result } = renderHook(() => useLaunchUpdateFirstLaunch());
+    expect(result.current).toBe(false);
+
+    publish({ firstLaunch: true });
+    expect(result.current).toBe(true);
   });
 });

@@ -19,16 +19,20 @@ import {
   launchUpdateStateFromContext,
   prepareLaunchUpdateGate,
   resolveLaunchUpdateProfile,
+  resolveLaunchUpdateStage,
   resolveLaunchUpdateTrigger,
   runExplicitUpdateCheck,
   settleLaunchUpdate,
   shouldMarkFirstLaunchHandled,
+  shouldTakeOverFromSplash,
+  type ExplicitUpdateCheckStatus,
   type LaunchUpdateDecisionInput,
   type LaunchUpdateOutcome,
   type LaunchUpdatePreparationDeps,
   type LaunchUpdateProfileInput,
   type LaunchUpdateSettleDeps,
   type LaunchUpdateState,
+  type LaunchUpdateTrigger,
 } from '../launch-update-gate';
 
 const RUNTIME = 'fingerprint-new';
@@ -100,7 +104,7 @@ function decide(overrides: Partial<LaunchUpdateDecisionInput> = {}) {
 describe('constants', () => {
   it('pins the caps, the splash window and the marker key', () => {
     expect(FIRST_LAUNCH_UPDATE_CAP_MS).toBe(15_000);
-    expect(COLD_START_UPDATE_CAP_MS).toBe(10_000);
+    expect(COLD_START_UPDATE_CAP_MS).toBe(5_000);
     expect(LAUNCH_UPDATE_CHECK_CAP_MS).toBe(4_000);
     expect(LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS).toBe(2_000);
     expect(LAUNCH_UPDATE_PREPARATION_TIMEOUT_MS).toBe(1_500);
@@ -113,12 +117,12 @@ describe('constants', () => {
 });
 
 describe('resolveLaunchUpdateProfile', () => {
-  it('gates the first launch of a binary: embedded and not yet handled', () => {
+  it('gives a fresh install the long wait: embedded and never handled', () => {
     expect(resolveLaunchUpdateProfile(profileInput())).toBe('first_launch');
   });
 
-  it('gates an embedded launch again after a store update moved the runtime version', () => {
-    expect(resolveLaunchUpdateProfile(profileInput({ handledRuntimeVersion: 'fingerprint-old' }))).toBe('first_launch');
+  it('gives a store update the short wait, though it runs embedded JS on a new runtime', () => {
+    expect(resolveLaunchUpdateProfile(profileInput({ handledRuntimeVersion: 'fingerprint-old' }))).toBe('cold_start');
   });
 
   it('treats an embedded launch whose runtime is already handled as an ordinary cold start', () => {
@@ -152,35 +156,46 @@ describe('isLaunchUpdateGateEligible', () => {
 });
 
 describe('trigger and cap per profile', () => {
-  it('names a first launch with no marker at all a fresh install', () => {
-    expect(resolveLaunchUpdateTrigger('first_launch', null)).toBe('fresh_install');
+  it('names an embedded launch with no marker at all a fresh install', () => {
+    expect(resolveLaunchUpdateTrigger(profileInput())).toBe('fresh_install');
   });
 
-  it('names a first launch with another runtime marked a binary update', () => {
-    expect(resolveLaunchUpdateTrigger('first_launch', 'fingerprint-old')).toBe('binary_update');
+  it('names an embedded launch with another runtime marked a binary update', () => {
+    expect(resolveLaunchUpdateTrigger(profileInput({ handledRuntimeVersion: 'fingerprint-old' }))).toBe(
+      'binary_update',
+    );
   });
 
   it('names every other gated launch a cold start', () => {
-    expect(resolveLaunchUpdateTrigger('cold_start', RUNTIME)).toBe('cold_start');
-    expect(resolveLaunchUpdateTrigger('cold_start', null)).toBe('cold_start');
+    expect(resolveLaunchUpdateTrigger(profileInput({ handledRuntimeVersion: RUNTIME }))).toBe('cold_start');
+    expect(resolveLaunchUpdateTrigger(profileInput({ isEmbeddedLaunch: false }))).toBe('cold_start');
+    expect(resolveLaunchUpdateTrigger(profileInput({ runtimeVersion: null }))).toBe('cold_start');
   });
 
-  it('gives a first launch 15 s and a cold start 10 s', () => {
+  it('gives a fresh install 15 s and every other cold start 5 s', () => {
     expect(launchUpdateCapMs('first_launch')).toBe(15_000);
-    expect(launchUpdateCapMs('cold_start')).toBe(10_000);
+    expect(launchUpdateCapMs('cold_start')).toBe(5_000);
   });
 });
 
 describe('shouldMarkFirstLaunchHandled', () => {
   it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'failed', 'nothing_newer', 'skipped_failed_update'])(
-    'marks a first launch that ended %s',
+    'marks a fresh install that ended %s',
     (outcome) => {
-      expect(shouldMarkFirstLaunchHandled('first_launch', outcome)).toBe(true);
+      expect(shouldMarkFirstLaunchHandled('fresh_install', outcome)).toBe(true);
+    },
+  );
+
+  it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'nothing_newer'])(
+    'moves the marker on for a store update that ended %s',
+    (outcome) => {
+      expect(shouldMarkFirstLaunchHandled('binary_update', outcome)).toBe(true);
     },
   );
 
   it('leaves an offline first launch unmarked so the next launch tries again', () => {
-    expect(shouldMarkFirstLaunchHandled('first_launch', 'offline')).toBe(false);
+    expect(shouldMarkFirstLaunchHandled('fresh_install', 'offline')).toBe(false);
+    expect(shouldMarkFirstLaunchHandled('binary_update', 'offline')).toBe(false);
   });
 
   it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'failed', 'offline', 'nothing_newer'])(
@@ -189,6 +204,31 @@ describe('shouldMarkFirstLaunchHandled', () => {
       expect(shouldMarkFirstLaunchHandled('cold_start', outcome)).toBe(false);
     },
   );
+});
+
+describe('shouldTakeOverFromSplash', () => {
+  it('hands a fresh install over at once, before the server has answered', () => {
+    expect(shouldTakeOverFromSplash({ profile: 'first_launch', stage: 'checking', splashWindowElapsed: false })).toBe(
+      true,
+    );
+  });
+
+  it('hands any launch over at once when a download is under way', () => {
+    expect(shouldTakeOverFromSplash({ profile: 'cold_start', stage: 'installing', splashWindowElapsed: false })).toBe(
+      true,
+    );
+    expect(shouldTakeOverFromSplash({ profile: null, stage: 'installing', splashWindowElapsed: false })).toBe(true);
+  });
+
+  it('keeps the splash over a cold start that is only checking, until its window runs out', () => {
+    expect(shouldTakeOverFromSplash({ profile: 'cold_start', stage: 'checking', splashWindowElapsed: false })).toBe(
+      false,
+    );
+    expect(shouldTakeOverFromSplash({ profile: null, stage: 'checking', splashWindowElapsed: false })).toBe(false);
+    expect(shouldTakeOverFromSplash({ profile: 'cold_start', stage: 'checking', splashWindowElapsed: true })).toBe(
+      true,
+    );
+  });
 });
 
 describe('launchUpdateStateFromContext', () => {
@@ -230,6 +270,48 @@ describe('launchUpdateStateFromContext', () => {
   it('flags errors', () => {
     expect(launchUpdateStateFromContext({ ...context, checkError: { message: 'no route' } }).hasCheckError).toBe(true);
     expect(launchUpdateStateFromContext({ ...context, downloadError: new Error('disk') }).hasDownloadError).toBe(true);
+  });
+});
+
+describe('resolveLaunchUpdateStage', () => {
+  function stage(updates: LaunchUpdateState, explicitCheck: ExplicitUpdateCheckStatus = 'not_needed') {
+    return resolveLaunchUpdateStage({
+      updates,
+      explicitCheck,
+      runningUpdateId: RUNNING_UPDATE_ID,
+      isEmbeddedLaunch: false,
+    });
+  }
+
+  it('says checking while the manifest request is out', () => {
+    expect(stage(CHECKING)).toBe('checking');
+  });
+
+  it('says installing while the download runs', () => {
+    expect(stage(DOWNLOADING)).toBe('installing');
+  });
+
+  it('says installing as soon as the manifest answers with an update, before the download reports', () => {
+    expect(stage({ ...CHECKING, isChecking: false, isUpdateAvailable: true })).toBe('installing');
+  });
+
+  it('says installing while a new update waits to be reloaded onto', () => {
+    expect(stage(PENDING)).toBe('installing');
+  });
+
+  it('does not say installing for a pending update that is the one already running', () => {
+    expect(stage({ ...PENDING, pendingUpdateId: RUNNING_UPDATE_ID })).toBe('checking');
+  });
+
+  it('says checking while a stale-override launch still owes its explicit check', () => {
+    // What the launch-time request found belongs to a retired channel.
+    expect(stage(PENDING, 'required')).toBe('checking');
+    expect(stage(DOWNLOADING, 'running')).toBe('installing');
+  });
+
+  it('says installing once the explicit check fetched something', () => {
+    expect(stage(IDLE, 'fetched')).toBe('installing');
+    expect(stage(IDLE, 'nothing')).toBe('checking');
   });
 });
 
@@ -589,23 +671,23 @@ describe('prepareLaunchUpdateGate', () => {
     });
   });
 
-  it('prepares a store update: first launch again, as a binary update', async () => {
+  it('prepares a store update: the short wait, reported as a binary update', async () => {
     const deps = preparationDeps({ readHandledRuntimeVersion: vi.fn().mockResolvedValue('fingerprint-old') });
 
     await expect(prepareLaunchUpdateGate(deps)).resolves.toMatchObject({
-      profile: 'first_launch',
+      profile: 'cold_start',
       trigger: 'binary_update',
-      capMs: 15_000,
+      capMs: 5_000,
     });
   });
 
-  it('prepares an ordinary cold start: 10 s, cold_start trigger', async () => {
+  it('prepares an ordinary cold start: 5 s, cold_start trigger', async () => {
     const deps = preparationDeps({ isEmbeddedLaunch: false });
 
     await expect(prepareLaunchUpdateGate(deps)).resolves.toMatchObject({
       profile: 'cold_start',
       trigger: 'cold_start',
-      capMs: 10_000,
+      capMs: 5_000,
     });
   });
 
@@ -712,7 +794,7 @@ describe('settleLaunchUpdate', () => {
   function settleDeps(overrides: Partial<LaunchUpdateSettleDeps> = {}) {
     const calls: string[] = [];
     const deps = {
-      profile: 'first_launch' as const,
+      trigger: 'fresh_install' as LaunchUpdateTrigger,
       runtimeVersion: RUNTIME,
       reportOutcome: vi.fn((outcome: LaunchUpdateOutcome, phase: string) => {
         calls.push(`report:${outcome}:${phase}`);
@@ -813,8 +895,16 @@ describe('settleLaunchUpdate', () => {
     expect(deps.markRuntimeHandled).not.toHaveBeenCalled();
   });
 
+  it('moves the marker on for a store update', async () => {
+    const { deps } = settleDeps({ trigger: 'binary_update' });
+
+    await settleLaunchUpdate({ step: 'release', outcome: 'nothing_newer', phase: 'none' }, deps);
+
+    expect(deps.markRuntimeHandled).toHaveBeenCalledExactlyOnceWith(RUNTIME);
+  });
+
   it('never writes the first-launch marker for a cold start', async () => {
-    const { deps } = settleDeps({ profile: 'cold_start' });
+    const { deps } = settleDeps({ trigger: 'cold_start' });
 
     await settleThroughGrace(settleLaunchUpdate(RELOAD_DECISION, deps));
     await settleLaunchUpdate({ step: 'release', outcome: 'timed_out', phase: 'check' }, deps);

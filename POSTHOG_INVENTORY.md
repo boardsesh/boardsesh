@@ -710,7 +710,7 @@ readiness while the update downloads. Native app only. The name lives in
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `OTA Launch Update` | `outcome` (`updated` / `timed_out` / `failed` / `offline` / `nothing_newer` / `skipped_failed_update`), `phase_at_release` (`check` / `download` / `none`), `duration_ms`, `trigger` (`fresh_install` / `binary_update` / `cold_start`), `cap_ms` (the profile's full cap, 15000 for a first launch and 10000 otherwise; the 4000 check cap is not reported), `ota_runtime_version`, `ota_is_embedded` | `packages/mobile/src/lib/launch-update-gate-store.ts`, once per gated launch, before any reload | Roughly one per cold start. Dev builds, background launches, emergency launches and the runtime a reload produced send nothing |
+| `OTA Launch Update` | `outcome` (`updated` / `timed_out` / `failed` / `offline` / `nothing_newer` / `skipped_failed_update`), `phase_at_release` (`check` / `download` / `none`), `duration_ms`, `trigger` (`fresh_install` / `binary_update` / `cold_start`), `cap_ms` (the profile's full cap, 15000 for a fresh install and 5000 otherwise; bundles from before #6613 send 10000; the 4000 check cap is not reported), `ota_runtime_version`, `ota_is_embedded` | `packages/mobile/src/lib/launch-update-gate-store.ts`, once per gated launch, before any reload | Roughly one per cold start. Dev builds, background launches, emergency launches and the runtime a reload produced send nothing |
 
 ### Reading it
 
@@ -724,7 +724,8 @@ readiness while the update downloads. Native app only. The name lives in
 - `updated` is sent before the reload; the flush waits up to 700 ms, so it can still be
   undercounted. Count the reload from the next `OTA Update Status` (`ota_is_embedded = false`) too.
 - `trigger = fresh_install` is a first launch with no earlier marker; `binary_update` is a store
-  update to a new fingerprint. A `failed` event with `trigger = cold_start` and `phase_at_release = none` can also mean the marker
+  update to a new fingerprint, on the 5 s cap since #6613 (15 s before). Split by `cap_ms` before
+  comparing durations across that change. A `failed` event with `trigger = cold_start` and `phase_at_release = none` can also mean the marker
   could not be read. `skipped_failed_update` means a stored update that already failed to launch was
   not reloaded onto again.
 

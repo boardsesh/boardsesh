@@ -5,10 +5,19 @@ import { BoardseshLogo } from '../BoardseshLogo';
 import { Text } from '../Text';
 import { brandColors } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
-import { useLaunchUpdateGate, useLaunchUpdateProgress } from './use-launch-update-gate';
+import {
+  useLaunchUpdateFirstLaunch,
+  useLaunchUpdateGate,
+  useLaunchUpdateProgress,
+  useLaunchUpdateStage,
+} from './use-launch-update-gate';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import type { LaunchUpdateStage } from '../../lib/launch-update-gate';
+import { notifyLaunchUpdatePlaceholderPainted } from '../../lib/launch-update-gate-store';
 
 const PROGRESS_TRACK_WIDTH = 200;
+// Wider than the mark, so German copy and large Dynamic Type wrap less.
+const COPY_COLUMN_WIDTH = 300;
 const INDETERMINATE_SEGMENT_WIDTH = 72;
 const INDETERMINATE_SWEEP_MS = 1_200;
 // Matches the expo-splash-screen config in app.config.ts (backgroundColor
@@ -16,6 +25,7 @@ const INDETERMINATE_SWEEP_MS = 1_200;
 // move the mark or flash a different black.
 const SPLASH_BACKGROUND = '#000000';
 const SPLASH_MARK_SIZE = 200;
+const MESSAGE_COLOR = '#FFFFFF';
 const COPY_COLOR = 'rgba(255, 255, 255, 0.72)';
 const TRACK_COLOR = 'rgba(255, 255, 255, 0.16)';
 
@@ -23,6 +33,11 @@ type LaunchUpdatePlaceholderProps = {
   visible: boolean;
   /** 0 to 1, or undefined before the download reports any progress. */
   progress: number | undefined;
+  stage: LaunchUpdateStage;
+  /** A fresh install's first launch: say why this one takes a moment. */
+  firstLaunch: boolean;
+  /** Called once it has laid out, so the native splash can come down over it. */
+  onPainted?: () => void;
 };
 
 // With Reduce Motion on, the segment rests mid-track instead of sweeping: the
@@ -65,8 +80,10 @@ function IndeterminateBar() {
 }
 
 /**
- * What the launch update gate shows once the wait outlasts the native splash:
- * the same black and the same mark, plus a progress bar and one line of copy.
+ * What the launch update gate shows in place of the native splash while an
+ * update is checked for or installed: the same black and the same mark, plus a
+ * progress bar, a line saying which of the two is happening and, on a fresh
+ * install, a line saying this wait only happens once.
  *
  * It covers the whole window and claims every touch, so the screens mounting
  * underneath (sign-in included) cannot be used until the gate resolves. That is
@@ -75,11 +92,18 @@ function IndeterminateBar() {
  * Rendered above `<DatabaseProvider>` and outside `ThemeProvider`, so it reads
  * static colours rather than the theme.
  */
-export function LaunchUpdatePlaceholder({ visible, progress }: LaunchUpdatePlaceholderProps) {
+export function LaunchUpdatePlaceholder({
+  visible,
+  progress,
+  stage,
+  firstLaunch,
+  onPainted,
+}: LaunchUpdatePlaceholderProps) {
   const { t } = useTranslation('common');
   if (!visible) return null;
 
-  const message = t('mobile.launchUpdate.message');
+  const message = stage === 'installing' ? t('mobile.launchUpdate.installing') : t('mobile.launchUpdate.checking');
+  const hint = firstLaunch ? t('mobile.launchUpdate.firstLaunchHint') : undefined;
   // A download that has reported nothing yet reads 0: an empty bar looks stuck,
   // so it stays indeterminate until there is something to show.
   const percent = progress === undefined || progress <= 0 ? undefined : Math.round(progress * 100);
@@ -91,9 +115,13 @@ export function LaunchUpdatePlaceholder({ visible, progress }: LaunchUpdatePlace
       accessibilityViewIsModal
       accessibilityRole="progressbar"
       accessibilityLabel={message}
+      // The container is one accessible element, so its child text is never
+      // read out on its own: the hint has to travel on the container.
+      accessibilityHint={hint}
       accessibilityValue={percent === undefined ? undefined : { min: 0, max: 100, now: percent }}
       // Claim the touch so nothing underneath can respond to it.
       onStartShouldSetResponder={() => true}
+      onLayout={onPainted}
       testID="launch-update-placeholder"
     >
       {/* The mark stays dead centre, where the splash drew it. The bar and the
@@ -104,9 +132,14 @@ export function LaunchUpdatePlaceholder({ visible, progress }: LaunchUpdatePlace
           <View style={styles.track}>
             {percent === undefined ? <IndeterminateBar /> : <View style={[styles.fill, { width: `${percent}%` }]} />}
           </View>
-          <Text variant="footnote" color={COPY_COLOR} style={styles.message}>
+          <Text variant="headline" color={MESSAGE_COLOR} style={styles.message}>
             {message}
           </Text>
+          {hint === undefined ? null : (
+            <Text variant="footnote" color={COPY_COLOR} style={styles.hint}>
+              {hint}
+            </Text>
+          )}
         </View>
       </View>
     </View>
@@ -132,8 +165,8 @@ const styles = StyleSheet.create({
   details: {
     position: 'absolute',
     top: '100%',
-    right: 0,
-    left: 0,
+    left: (SPLASH_MARK_SIZE - COPY_COLUMN_WIDTH) / 2,
+    width: COPY_COLUMN_WIDTH,
     alignItems: 'center',
   },
   track: {
@@ -158,6 +191,10 @@ const styles = StyleSheet.create({
     marginTop: spacing[4],
     textAlign: 'center',
   },
+  hint: {
+    marginTop: spacing[2],
+    textAlign: 'center',
+  },
 });
 
 /**
@@ -167,5 +204,15 @@ const styles = StyleSheet.create({
 export function LaunchUpdateGatePlaceholder() {
   const { showPlaceholder } = useLaunchUpdateGate();
   const progress = useLaunchUpdateProgress();
-  return <LaunchUpdatePlaceholder visible={showPlaceholder} progress={progress} />;
+  const stage = useLaunchUpdateStage();
+  const firstLaunch = useLaunchUpdateFirstLaunch();
+  return (
+    <LaunchUpdatePlaceholder
+      visible={showPlaceholder}
+      progress={progress}
+      stage={stage}
+      firstLaunch={firstLaunch}
+      onPainted={notifyLaunchUpdatePlaceholderPainted}
+    />
+  );
 }

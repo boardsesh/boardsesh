@@ -697,7 +697,9 @@
       }
     },
     "launchUpdate": {
-      "message": "Checking for the latest version"
+      "checking": "Checking for updates",
+      "installing": "Installing the latest update",
+      "firstLaunchHint": "Only on your first launch. Takes a few seconds."
     },
     "connectivity": {
       "serverDown": {

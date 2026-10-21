@@ -576,16 +576,18 @@ function RootLayout() {
   const [fontsReady, setFontsReady] = useState(false);
   // Holds the launch UI while a newer bundle downloads, then reloads onto it
   // before sign-in is usable (#6006). Resolved on the first render for a launch
-  // it does not cover. Only its two flags are read here, and they change a
-  // handful of times per launch; download progress goes to the placeholder
+  // it does not cover. Only its flags are read here, and they change a handful
+  // of times per launch; download progress and copy go to the placeholder
   // alone. See src/lib/launch-update-gate.ts.
   const launchUpdateGate = useLaunchUpdateGate();
   const launchSettled = authReady && fontsReady && launchUpdateGate.resolved;
-  // The placeholder is the splash's stand-in once the wait runs long, so the
-  // splash comes down for it as soon as the fonts it draws with are loaded. It
-  // then stays up until auth is ready too, so the hand-over is splash, then
-  // placeholder, then the settled app, with the pre-auth tree never showing.
-  const splashCanHide = launchSettled || (fontsReady && launchUpdateGate.showPlaceholder);
+  // The placeholder is the splash's stand-in while an update installs, so the
+  // splash comes down for it once it has actually laid out (it can mount late,
+  // behind the i18n provider's locale read) and the fonts it draws with are
+  // loaded. It then stays up until auth is ready too, so the hand-over is
+  // splash, then placeholder, then the settled app, with the pre-auth tree and
+  // an empty window never showing.
+  const splashCanHide = launchSettled || (fontsReady && launchUpdateGate.placeholderPainted);
   const splashHideRequestedRef = useRef(false);
 
   useEffect(() => {

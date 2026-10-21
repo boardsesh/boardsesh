@@ -24,6 +24,7 @@ import { addErrorBreadcrumb, reportHandledError } from './error-reporting';
 import {
   COLD_START_UPDATE_CAP_MS,
   LAUNCH_UPDATE_CHECK_CAP_MS,
+  LAUNCH_UPDATE_FLUSH_TIMEOUT_MS,
   LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS,
   LAUNCH_UPDATE_RELOAD_GRACE_MS,
   OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY,
@@ -32,12 +33,15 @@ import {
   isLaunchUpdateGateEligible,
   launchUpdateStateFromContext,
   prepareLaunchUpdateGate,
+  resolveLaunchUpdateStage,
   runExplicitUpdateCheck,
   settleLaunchUpdate,
+  shouldTakeOverFromSplash,
   type ExplicitUpdateCheckStatus,
   type LaunchUpdateOutcome,
   type LaunchUpdatePhase,
   type LaunchUpdatePreparation,
+  type LaunchUpdateStage,
   type LaunchUpdateTerminalDecision,
   type LaunchUpdateTrigger,
 } from './launch-update-gate';
@@ -56,11 +60,19 @@ export type LaunchUpdateGateFlags = {
   /** The gate is out of the way: nothing to wait for, or it released. Never goes back to false. */
   resolved: boolean;
   /**
-   * Paint the progress placeholder. True once the wait outlasts the splash
-   * window, and it stays true until the gate has resolved AND auth is ready, so
-   * the hand-over never exposes the pre-auth tree.
+   * Paint the progress placeholder. True once the placeholder takes over from
+   * the splash (see `shouldTakeOverFromSplash`), and it stays true until the
+   * gate has resolved AND auth is ready, so the hand-over never exposes the
+   * pre-auth tree.
    */
   showPlaceholder: boolean;
+  /**
+   * The placeholder has laid out, so the native splash can hide without
+   * exposing an empty window. It can mount late: it sits inside the i18n
+   * provider, which renders nothing until its stored locale is read. Never goes
+   * back to false.
+   */
+  placeholderPainted: boolean;
 };
 
 /**
@@ -73,12 +85,14 @@ type GatePreparation = Extract<LaunchUpdatePreparation, { kind: 'gate' }>;
 type GatePhase = 'idle' | 'preparing' | 'waiting' | 'settling' | 'resolved';
 type NativeContext = typeof Updates.latestContext;
 
-const INITIAL_FLAGS: LaunchUpdateGateFlags = { resolved: false, showPlaceholder: false };
+const INITIAL_FLAGS: LaunchUpdateGateFlags = { resolved: false, showPlaceholder: false, placeholderPainted: false };
 
 // Everything below is the single run for this runtime.
 let gatePhase: GatePhase = 'idle';
 let flags: LaunchUpdateGateFlags = INITIAL_FLAGS;
 let progress: number | undefined;
+let stage: LaunchUpdateStage = 'checking';
+let firstLaunch = false;
 // Bumped on every reset, so a promise still in flight from an earlier run (a
 // test reset, in practice) cannot move the next one.
 let runGeneration = 0;
@@ -91,7 +105,13 @@ let explicitFetchedUpdateId: string | null = null;
 let checkCapExpired = false;
 let capExpired = false;
 let authReady = false;
+let splashWindowElapsed = false;
 let placeholderTookOver = false;
+let placeholderPainted = false;
+// The terminal decision is a reload, so the placeholder says "installing".
+let settlingReload = false;
+// Set by the reload-window timer: past this a reload decided earlier is dropped.
+let reloadWindowClosed = false;
 let newestEventContext: NativeContext | null = null;
 let explicitCheckController: AbortController | null = null;
 let unsubscribeFromUpdates: (() => void) | null = null;
@@ -122,23 +142,57 @@ function readLatestContext(): NativeContext {
   return moduleContext;
 }
 
+/**
+ * Only moves forward: once the placeholder says "installing" it never goes back
+ * to "checking", which would read as the app starting over. It is worked out
+ * while the gate waits and frozen once the gate has a verdict, so the copy does
+ * not change under a placeholder held up by the auth wait.
+ */
+function resolveStage(context: NativeContext): LaunchUpdateStage {
+  if (stage === 'installing' || settlingReload) return 'installing';
+  if (gatePhase !== 'preparing' && gatePhase !== 'waiting') return stage;
+  return resolveLaunchUpdateStage({
+    updates: launchUpdateStateFromContext(context),
+    explicitCheck,
+    runningUpdateId: Updates.updateId,
+    isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+  });
+}
+
 function publish(): void {
   const resolved = gatePhase === 'resolved';
-  const showPlaceholder = placeholderTookOver && !(resolved && authReady);
   let nextProgress: number | undefined;
+  let nextStage = stage;
   if (!resolved && gatePhase !== 'idle') {
     const context = readLatestContext();
     if (context.isDownloading && typeof context.downloadProgress === 'number') {
       nextProgress = Math.min(1, Math.max(0, context.downloadProgress));
     }
+    nextStage = resolveStage(context);
+    // A release already decided never raises the placeholder: the app is about
+    // to open, so the splash covers the last few milliseconds instead.
+    const stillWaiting = gatePhase === 'preparing' || gatePhase === 'waiting' || settlingReload;
+    if (
+      stillWaiting &&
+      shouldTakeOverFromSplash({ profile: preparation?.profile ?? null, stage: nextStage, splashWindowElapsed })
+    ) {
+      placeholderTookOver = true;
+    }
   }
+  const nextFirstLaunch = preparation?.profile === 'first_launch';
+  const showPlaceholder = placeholderTookOver && !(resolved && authReady);
 
-  const flagsChanged = flags.resolved !== resolved || flags.showPlaceholder !== showPlaceholder;
-  const progressChanged = progress !== nextProgress;
-  if (!flagsChanged && !progressChanged) return;
+  const flagsChanged =
+    flags.resolved !== resolved ||
+    flags.showPlaceholder !== showPlaceholder ||
+    flags.placeholderPainted !== placeholderPainted;
+  const statusChanged = progress !== nextProgress || stage !== nextStage || firstLaunch !== nextFirstLaunch;
+  if (!flagsChanged && !statusChanged) return;
   // Reference-stable between changes: useSyncExternalStore compares by identity.
-  if (flagsChanged) flags = { resolved, showPlaceholder };
+  if (flagsChanged) flags = { resolved, showPlaceholder, placeholderPainted };
   progress = nextProgress;
+  stage = nextStage;
+  firstLaunch = nextFirstLaunch;
   for (const listener of listeners) listener();
 }
 
@@ -215,12 +269,26 @@ function trackLaunchUpdate(
 function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparation): void {
   // One terminal action per runtime. From here no state change can reload.
   gatePhase = 'settling';
+  settlingReload = decision.step === 'reload';
   const generation = runGeneration;
+  // A reload decided inside the cap still has its flush and marker writes to
+  // do, bounded at the flush budget. It may start until then; without that
+  // margin a download finishing just before the cap would report `updated`
+  // and then be dropped.
+  const reloadDeadlineMs = prepared.capMs + LAUNCH_UPDATE_FLUSH_TIMEOUT_MS;
+  if (settlingReload) {
+    schedule(
+      () => {
+        reloadWindowClosed = true;
+      },
+      Math.max(0, reloadDeadlineMs - elapsedMs()),
+    );
+  }
   const headerRevision = readOtaHeaderRevision();
   const receipt = decision.step === 'reload' ? captureOtaReloadReceipt() : null;
   const rollbackCommitTime = readLatestContext().rollback?.commitTime;
   void settleLaunchUpdate(decision, {
-    profile: prepared.profile,
+    trigger: prepared.trigger,
     runtimeVersion: Updates.runtimeVersion,
     reportOutcome: (outcome, phase) => trackLaunchUpdate(outcome, phase, prepared.trigger, prepared.capMs),
     flushOutcome: async () => {
@@ -243,7 +311,7 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
           if (
             generation !== runGeneration ||
             gatePhase !== 'settling' ||
-            capExpired ||
+            reloadWindowClosed ||
             headerRevision !== readOtaHeaderRevision() ||
             !matchesTarget ||
             (receipt !== null && !isOtaReloadReceiptCurrent(receipt))
@@ -255,7 +323,7 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
             return Updates.reloadAsync();
           });
         },
-        { timeoutMs: Math.max(0, Math.min(LAUNCH_UPDATE_RELOAD_GRACE_MS, prepared.capMs - elapsedMs())) },
+        { timeoutMs: Math.max(0, Math.min(LAUNCH_UPDATE_RELOAD_GRACE_MS, reloadDeadlineMs - elapsedMs())) },
       ),
     onHandledError: reportGateError,
   }).then(
@@ -421,9 +489,10 @@ function beginLaunchUpdateGate(environment: LaunchUpdateGateEnvironment): void {
   });
   unsubscribeFromUpdates = () => subscription.remove();
 
-  // Hand over from the native splash to the placeholder.
+  // A cold start still waiting on the server hands over from the native splash
+  // here. A fresh install, or a launch with a download under way, already has.
   schedule(() => {
-    placeholderTookOver = true;
+    splashWindowElapsed = true;
     publish();
   }, LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS);
 
@@ -456,6 +525,13 @@ export function notifyLaunchUpdateAuthReady(): void {
   evaluate();
 }
 
+/** The placeholder has laid out, so the native splash can hide over it. */
+export function notifyLaunchUpdatePlaceholderPainted(): void {
+  if (placeholderPainted) return;
+  placeholderPainted = true;
+  publish();
+}
+
 export function subscribeLaunchUpdateGate(onStoreChange: () => void): () => void {
   listeners.add(onStoreChange);
   return () => {
@@ -472,6 +548,15 @@ export function getLaunchUpdateProgress(): number | undefined {
   return progress;
 }
 
+export function getLaunchUpdateStage(): LaunchUpdateStage {
+  return stage;
+}
+
+/** This launch is a fresh install's first, the one long wait. */
+export function getLaunchUpdateFirstLaunch(): boolean {
+  return firstLaunch;
+}
+
 /** Test seam: put the module back to its pre-launch state. */
 export function resetLaunchUpdateGateForTests(): void {
   explicitCheckController?.abort();
@@ -485,6 +570,8 @@ export function resetLaunchUpdateGateForTests(): void {
   gatePhase = 'idle';
   flags = INITIAL_FLAGS;
   progress = undefined;
+  stage = 'checking';
+  firstLaunch = false;
   startedAtMs = 0;
   preparation = null;
   explicitCheck = 'not_needed';
@@ -492,6 +579,10 @@ export function resetLaunchUpdateGateForTests(): void {
   checkCapExpired = false;
   capExpired = false;
   authReady = false;
+  splashWindowElapsed = false;
   placeholderTookOver = false;
+  placeholderPainted = false;
+  settlingReload = false;
+  reloadWindowClosed = false;
   newestEventContext = null;
 }

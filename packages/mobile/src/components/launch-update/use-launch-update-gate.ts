@@ -1,7 +1,10 @@
 import { useState, useSyncExternalStore } from 'react';
+import type { LaunchUpdateStage } from '../../lib/launch-update-gate';
 import {
+  getLaunchUpdateFirstLaunch,
   getLaunchUpdateGateFlags,
   getLaunchUpdateProgress,
+  getLaunchUpdateStage,
   startLaunchUpdateGate,
   subscribeLaunchUpdateGate,
   type LaunchUpdateGateEnvironment,
@@ -18,8 +21,9 @@ import {
  * true on the first render for a launch the gate does not cover, so dev builds,
  * background launches and reloaded runtimes pay nothing.
  *
- * Deliberately excludes download progress: the root layout would otherwise
- * re-render on every progress event. Only the placeholder reads that.
+ * Deliberately excludes download progress and the placeholder's copy: the root
+ * layout would otherwise re-render on every progress event. Only the
+ * placeholder reads those.
  */
 export function useLaunchUpdateGate(environment?: LaunchUpdateGateEnvironment): LaunchUpdateGateFlags {
   // A lazy initializer runs before the first snapshot read, so that read
@@ -31,4 +35,14 @@ export function useLaunchUpdateGate(environment?: LaunchUpdateGateEnvironment): 
 /** Download progress from 0 to 1, or undefined before there is any to show. */
 export function useLaunchUpdateProgress(): number | undefined {
   return useSyncExternalStore(subscribeLaunchUpdateGate, getLaunchUpdateProgress, getLaunchUpdateProgress);
+}
+
+/** Whether the placeholder says it is checking or installing. */
+export function useLaunchUpdateStage(): LaunchUpdateStage {
+  return useSyncExternalStore(subscribeLaunchUpdateGate, getLaunchUpdateStage, getLaunchUpdateStage);
+}
+
+/** True on a fresh install's first launch, the one long wait. */
+export function useLaunchUpdateFirstLaunch(): boolean {
+  return useSyncExternalStore(subscribeLaunchUpdateGate, getLaunchUpdateFirstLaunch, getLaunchUpdateFirstLaunch);
 }

@@ -176,9 +176,12 @@ vi.mock('../qa/qa-surf', async () => {
 
 // Imported after the mocks (vi.mock is hoisted above imports).
 import {
+  getLaunchUpdateFirstLaunch,
   getLaunchUpdateGateFlags,
   getLaunchUpdateProgress,
+  getLaunchUpdateStage,
   notifyLaunchUpdateAuthReady,
+  notifyLaunchUpdatePlaceholderPainted,
   resetLaunchUpdateGateForTests,
   startLaunchUpdateGate,
   subscribeLaunchUpdateGate,
@@ -295,7 +298,7 @@ describe('launches the gate does not cover', () => {
   it('is resolved at once in a dev build, and touches nothing', async () => {
     startLaunchUpdateGate({ development: true });
 
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
     await advance(20_000);
     expect(preferences.getPreference).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalled();
@@ -350,7 +353,7 @@ describe('launches the gate does not cover', () => {
 
     startLaunchUpdateGate(PRODUCTION);
 
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
     expect(vi.getTimerCount()).toBe(0);
     expect(updates.listeners.size).toBe(0);
     await advance(20_000);
@@ -407,18 +410,136 @@ describe('a gated launch', () => {
     expect(updates.reloadAsync).toHaveBeenCalledOnce();
   });
 
-  it('keeps the splash for 2 s, then shows the placeholder with the download progress', async () => {
+  it('keeps the splash over a cold start that is only checking for 2 s, then shows the placeholder', async () => {
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = CHECKING;
     await startGate();
 
     await advance(1_999);
     expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(false);
 
     await advance(1);
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true });
-    expect(getLaunchUpdateProgress()).toBe(0);
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true, placeholderPainted: false });
+    expect(getLaunchUpdateStage()).toBe('checking');
+    expect(getLaunchUpdateFirstLaunch()).toBe(false);
+  });
 
+  it('shows a fresh install the placeholder the moment its reads are done, before the server answers', async () => {
+    updates.latestContext = CHECKING;
+    startLaunchUpdateGate(PRODUCTION);
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(false);
+
+    await advance(0);
+
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(true);
+    expect(getLaunchUpdateStage()).toBe('checking');
+    expect(getLaunchUpdateFirstLaunch()).toBe(true);
+  });
+
+  it('shows a fresh install the placeholder at 1.5 s when its reads take the whole budget', async () => {
+    updates.latestContext = CHECKING;
+    connectivity.refreshDeviceState.mockReturnValue(new Promise<never>(() => {}));
+    await startGate();
+
+    await advance(1_499);
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(false);
+    await advance(1);
+
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(true);
+  });
+
+  it('shows a cold start the placeholder the moment its download starts, with the progress', async () => {
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = CHECKING;
+    await startGate();
+    await advance(600);
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(false);
+
+    emit({ ...DOWNLOADING });
+
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(true);
+    expect(getLaunchUpdateStage()).toBe('installing');
+    expect(getLaunchUpdateProgress()).toBe(0);
     emit({ downloadProgress: 0.42 });
     expect(getLaunchUpdateProgress()).toBe(0.42);
+  });
+
+  it('never shows the placeholder to a cold start that hears nothing newer inside the splash window', async () => {
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = CHECKING;
+    await startGate();
+    await advance(400);
+
+    emit({ ...IDLE });
+    await advance(10_000);
+
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
+    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'nothing_newer', trigger: 'cold_start' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('tells listeners when the copy moves to installing, though no progress has been reported', async () => {
+    updates.latestContext = CHECKING;
+    await startGate();
+    const flagsBefore = getLaunchUpdateGateFlags();
+    const onChange = vi.fn();
+    subscribeLaunchUpdateGate(onChange);
+
+    // The manifest answered with an update; the download has not reported yet.
+    emit({ ...CHECKING, isChecking: false, isUpdateAvailable: true });
+
+    expect(getLaunchUpdateStage()).toBe('installing');
+    expect(getLaunchUpdateProgress()).toBeUndefined();
+    expect(onChange).toHaveBeenCalledOnce();
+    // The root layout reads only the flags, so it does not re-render for copy.
+    expect(getLaunchUpdateGateFlags()).toBe(flagsBefore);
+  });
+
+  it('keeps saying installing once it has, through a stalled download and into the auth wait', async () => {
+    updates.reloadAsync.mockReturnValue(new Promise<void>(() => {}));
+    await startGate({ authReady: false });
+    expect(getLaunchUpdateStage()).toBe('installing');
+
+    // The download stalls and the climber's auth never settles: released.
+    emit({ ...CHECKING, isChecking: false, isDownloading: false, isUpdateAvailable: false });
+    await advance(15_000);
+
+    expect(getLaunchUpdateGateFlags()).toMatchObject({ resolved: true, showPlaceholder: true });
+    expect(getLaunchUpdateStage()).toBe('installing');
+  });
+
+  it('says installing while the reload it decided on is under way', async () => {
+    updates.latestContext = CHECKING;
+    updates.reloadAsync.mockReturnValue(new Promise<void>(() => {}));
+    await startGate();
+
+    // The download landed with no event of its own. The next event, with
+    // nothing new in it, wakes the gate, and it settles on the reload while
+    // its published copy still says "checking".
+    silentlyAdvance({ ...PENDING });
+    emit({});
+    await advance(0);
+
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    expect(getLaunchUpdateStage()).toBe('installing');
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(true);
+  });
+
+  it('marks the placeholder painted once, and only then lets the splash hide over it', async () => {
+    updates.latestContext = CHECKING;
+    await startGate();
+    const onChange = vi.fn();
+    subscribeLaunchUpdateGate(onChange);
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true, placeholderPainted: false });
+
+    notifyLaunchUpdatePlaceholderPainted();
+    notifyLaunchUpdatePlaceholderPainted();
+
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true, placeholderPainted: true });
+    expect(onChange).toHaveBeenCalledOnce();
   });
 
   it('keeps the flags object stable across progress events, so only the placeholder re-renders', async () => {
@@ -440,7 +561,7 @@ describe('a gated launch', () => {
     await startGate();
     await advance(2_000);
 
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: true, placeholderPainted: false });
     expect(getLaunchUpdateProgress()).toBeUndefined();
   });
 
@@ -465,7 +586,7 @@ describe('a gated launch', () => {
     expect(getLaunchUpdateGateFlags().resolved).toBe(false);
     await advance(1);
 
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
     expect(getLaunchUpdateProgress()).toBeUndefined();
     expect(launchUpdateEvents()).toEqual([
       expect.objectContaining({ outcome: 'timed_out', phase_at_release: 'download', cap_ms: 15_000 }),
@@ -490,12 +611,13 @@ describe('a gated launch', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('gives an ordinary cold start 10 s and writes no first-launch marker', async () => {
+  it('gives an ordinary cold start 5 s and writes no first-launch marker', async () => {
     updates.isEmbeddedLaunch = false;
     updates.updateId = 'running-update';
     await startGate();
+    expect(getLaunchUpdateFirstLaunch()).toBe(false);
 
-    await advance(9_999);
+    await advance(4_999);
     expect(getLaunchUpdateGateFlags().resolved).toBe(false);
     await advance(1);
 
@@ -503,7 +625,7 @@ describe('a gated launch', () => {
     expect(launchUpdateEvents()[0]).toMatchObject({
       outcome: 'timed_out',
       trigger: 'cold_start',
-      cap_ms: 10_000,
+      cap_ms: 5_000,
       ota_is_embedded: false,
     });
     expect(preferences.setPreference).not.toHaveBeenCalled();
@@ -518,7 +640,22 @@ describe('a gated launch', () => {
       outcome: 'nothing_newer',
       phase_at_release: 'none',
       trigger: 'binary_update',
+      cap_ms: 5_000,
     });
+    expect(preferences.stored.get(MARKER_KEY)).toBe('fingerprint-new');
+  });
+
+  it('gives a store update the short wait and still moves the marker on', async () => {
+    preferences.stored.set(MARKER_KEY, 'fingerprint-old');
+    await startGate();
+    expect(getLaunchUpdateFirstLaunch()).toBe(false);
+
+    await advance(4_999);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(false);
+    await advance(1);
+
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'timed_out', trigger: 'binary_update', cap_ms: 5_000 });
     expect(preferences.stored.get(MARKER_KEY)).toBe('fingerprint-new');
   });
 
@@ -687,10 +824,10 @@ describe('waiting for auth', () => {
     await advance(4_000);
 
     // Released, but the pre-auth tree must not show through.
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: true });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: true, placeholderPainted: false });
 
     notifyLaunchUpdateAuthReady();
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
   });
 
   it('never shows the placeholder when the gate resolved inside the splash window', async () => {
@@ -698,7 +835,7 @@ describe('waiting for auth', () => {
     await startGate({ authReady: false });
     await advance(10_000);
 
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
   });
 });
 
@@ -759,7 +896,7 @@ describe('paths that must not hang', () => {
         outcome: 'failed',
         phase_at_release: 'none',
         trigger: 'cold_start',
-        cap_ms: 10_000,
+        cap_ms: 5_000,
         duration_ms: 1_500,
       }),
     ]);
@@ -806,7 +943,7 @@ describe('paths that must not hang', () => {
       tags: { source: 'ota', op: 'launch-update-read-marker' },
     });
     expect(launchUpdateEvents()).toEqual([
-      expect.objectContaining({ outcome: 'failed', phase_at_release: 'none', trigger: 'cold_start', cap_ms: 10_000 }),
+      expect.objectContaining({ outcome: 'failed', phase_at_release: 'none', trigger: 'cold_start', cap_ms: 5_000 }),
     ]);
 
     emit({ ...PENDING });
@@ -1000,7 +1137,7 @@ describe('a run reset while its reads are in flight', () => {
     await advance(0);
 
     // The abandoned run would have released as nothing_newer. It did nothing.
-    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: false });
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: false, showPlaceholder: false, placeholderPainted: false });
     expect(launchUpdateEvents()).toHaveLength(0);
   });
 });
@@ -1078,20 +1215,49 @@ describe('a launch whose manifest request used a retired override', () => {
 });
 
 describe('owned launch reloads', () => {
-  it('does not invoke reload when its launch cap expires during the analytics flush', async () => {
+  it('still reloads when a reload decided inside the cap finishes its analytics flush after it', async () => {
     let finishFlush: () => void = () => {};
     analytics.flush.mockReturnValue(
       new Promise<void>((resolve) => {
         finishFlush = resolve;
       }),
     );
-    updates.latestContext = PENDING;
-    await startGate({ authReady: false });
-    await advance(14_900);
-    notifyLaunchUpdateAuthReady();
-    await advance(150);
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = DOWNLOADING;
+    await startGate();
+    await advance(4_600);
+    emit({ ...PENDING });
+    await advance(600);
     finishFlush();
     await advance(0);
+
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    expect(launchUpdateEvents()).toEqual([expect.objectContaining({ outcome: 'updated', cap_ms: 5_000 })]);
+  });
+
+  it('does not invoke reload once the window after the cap has closed', async () => {
+    let finishNative: () => void = () => {};
+    const earlier = runOtaOperation((lease) =>
+      lease.native(
+        () =>
+          new Promise<void>((resolve) => {
+            finishNative = resolve;
+          }),
+      ),
+    );
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = DOWNLOADING;
+    await startGate();
+    await advance(4_600);
+    emit({ ...PENDING });
+    // The reload waits behind another native call past cap + flush budget.
+    await advance(1_100);
+    finishNative();
+    await earlier;
+    await advance(0);
+
     expect(updates.reloadAsync).not.toHaveBeenCalled();
     expect(getLaunchUpdateGateFlags().resolved).toBe(true);
   });

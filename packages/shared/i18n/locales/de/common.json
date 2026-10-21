@@ -697,7 +697,9 @@
       }
     },
     "launchUpdate": {
-      "message": "Suche nach der neuesten Version"
+      "checking": "Suche nach Updates",
+      "installing": "Neuestes Update wird installiert",
+      "firstLaunchHint": "Nur beim ersten Start der App. Dauert ein paar Sekunden."
     },
     "connectivity": {
       "serverDown": {

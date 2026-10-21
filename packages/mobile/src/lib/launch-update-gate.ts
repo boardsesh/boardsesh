@@ -1,6 +1,7 @@
 // The launch update gate (#6006): on a cold start, hold the launch UI for a
 // bounded time while expo-updates' own launch-time download finishes, then
-// reload onto the new bundle before anyone can start signing in.
+// reload onto the new bundle before anyone can start signing in. A fresh
+// install gets the long wait; every other cold start gets a short one (#6613).
 //
 // Why it exists. Native `launchWaitMs` is 0 and `checkOnLaunch` is ALWAYS, so
 // every launch runs the bundle already on the device and downloads the next one
@@ -15,10 +16,14 @@
 // React, no expo-updates import. `launch-update-gate-store.ts` supplies the
 // platform and runs it once per JS runtime.
 
-/** Full cap for the first launch of a binary (an embedded launch not yet handled). */
+/** Full cap for a fresh install's first launch: it runs the JS embedded at build time. */
 export const FIRST_LAUNCH_UPDATE_CAP_MS = 15_000;
-/** Full cap for every other eligible cold start. */
-export const COLD_START_UPDATE_CAP_MS = 10_000;
+/**
+ * Full cap for every other eligible cold start, a store update's first launch
+ * included. A returning climber already runs recent JS, so a download slower
+ * than this applies on the next cold start instead (#6613).
+ */
+export const COLD_START_UPDATE_CAP_MS = 5_000;
 /**
  * How long the manifest request gets to answer, on both profiles. Whoever owns
  * the timers arms one at this delay and one at the full cap. The full cap
@@ -28,7 +33,12 @@ export const COLD_START_UPDATE_CAP_MS = 10_000;
  * for the full cap with nothing to download.
  */
 export const LAUNCH_UPDATE_CHECK_CAP_MS = 4_000;
-/** The native splash covers the wait this long before the placeholder takes over. */
+/**
+ * How long the native splash covers a cold start that is still only checking.
+ * Most cold starts hear "nothing newer" well inside it, so they never see the
+ * placeholder. A fresh install, or any launch with a download under way, hands
+ * over at once instead (`shouldTakeOverFromSplash`).
+ */
 export const LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS = 2_000;
 /**
  * Budget for the pre-wait reads (markers, device state, override cleanup). They
@@ -52,8 +62,8 @@ export const LAUNCH_UPDATE_RELOAD_GRACE_MS = 5_000;
 
 /**
  * Preference holding the runtime version whose first launch was already gated.
- * Keyed by runtime version so a store update to a new fingerprint is gated once
- * too, not only a fresh install.
+ * Its absence is what marks a fresh install. It is kept current across store
+ * updates so telemetry can tell a store update's first launch from later ones.
  */
 export const OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY = 'ota_first_launch_update_runtime_v1';
 /**
@@ -81,6 +91,8 @@ export type LaunchUpdateOutcome =
  * or neither (`none`).
  */
 export type LaunchUpdatePhase = 'check' | 'download' | 'none';
+/** What the placeholder tells the climber: still asking the server, or installing. */
+export type LaunchUpdateStage = 'checking' | 'installing';
 
 /** Facts known synchronously at gate start, before any storage read. */
 export type LaunchUpdateEligibilityInput = {
@@ -134,24 +146,25 @@ export type LaunchUpdateProfileInput = {
   handledRuntimeVersion: string | null;
 };
 
-/** The profile of a launch that is already known to be eligible. */
-export function resolveLaunchUpdateProfile({
+/** Why this launch is gated, as the event reports it. */
+export function resolveLaunchUpdateTrigger({
   isEmbeddedLaunch,
   runtimeVersion,
   handledRuntimeVersion,
-}: LaunchUpdateProfileInput): LaunchUpdateProfile {
+}: LaunchUpdateProfileInput): LaunchUpdateTrigger {
   // Without a runtime version there is nothing to key the marker on, so the
   // launch takes the unmarked profile rather than being gated at 15 s forever.
-  if (isEmbeddedLaunch && runtimeVersion && runtimeVersion !== handledRuntimeVersion) return 'first_launch';
-  return 'cold_start';
+  if (!isEmbeddedLaunch || !runtimeVersion || runtimeVersion === handledRuntimeVersion) return 'cold_start';
+  return handledRuntimeVersion === null ? 'fresh_install' : 'binary_update';
 }
 
-export function resolveLaunchUpdateTrigger(
-  profile: LaunchUpdateProfile,
-  handledRuntimeVersion: string | null,
-): LaunchUpdateTrigger {
-  if (profile === 'cold_start') return 'cold_start';
-  return handledRuntimeVersion === null ? 'fresh_install' : 'binary_update';
+/**
+ * The profile of a launch that is already known to be eligible. Only a fresh
+ * install gets the long wait. A store update's first launch also runs embedded
+ * JS, but the climber is already signed in, so it gets the short one.
+ */
+export function resolveLaunchUpdateProfile(input: LaunchUpdateProfileInput): LaunchUpdateProfile {
+  return resolveLaunchUpdateTrigger(input) === 'fresh_install' ? 'first_launch' : 'cold_start';
 }
 
 export function launchUpdateCapMs(profile: LaunchUpdateProfile): number {
@@ -159,12 +172,33 @@ export function launchUpdateCapMs(profile: LaunchUpdateProfile): number {
 }
 
 /**
- * The marker is written on every first-launch outcome except `offline`. Offline
- * costs one NetInfo read, so trying again on the next launch is free; every
- * other outcome has spent its one long wait.
+ * The marker is written on every fresh-install or store-update outcome except
+ * `offline`. Offline costs one NetInfo read, so trying again on the next launch
+ * is free; every other outcome has spent its one long wait. A store update
+ * moves the marker on too, so later embedded launches on that binary stop
+ * reading as `binary_update`.
  */
-export function shouldMarkFirstLaunchHandled(profile: LaunchUpdateProfile, outcome: LaunchUpdateOutcome): boolean {
-  return profile === 'first_launch' && outcome !== 'offline';
+export function shouldMarkFirstLaunchHandled(trigger: LaunchUpdateTrigger, outcome: LaunchUpdateOutcome): boolean {
+  return trigger !== 'cold_start' && outcome !== 'offline';
+}
+
+/**
+ * Whether the placeholder replaces the native splash now. A fresh install
+ * always does: nearly every one has a download ahead of it, and the climber
+ * should see that the app is installing rather than a frozen logo. Any launch
+ * with a download under way does too. A cold start that is still only asking
+ * the server waits out the splash window, which most of them never reach.
+ */
+export function shouldTakeOverFromSplash({
+  profile,
+  stage,
+  splashWindowElapsed,
+}: {
+  profile: LaunchUpdateProfile | null;
+  stage: LaunchUpdateStage;
+  splashWindowElapsed: boolean;
+}): boolean {
+  return profile === 'first_launch' || stage === 'installing' || splashWindowElapsed;
 }
 
 /** The slice of the expo-updates state machine the decision reads. */
@@ -351,6 +385,26 @@ export function resolveLaunchUpdatePhase(
 }
 
 /**
+ * What the placeholder says. `installing` once a download is under way or a
+ * new update is waiting to be reloaded onto: the same test that hands the
+ * launch its full cap.
+ */
+export function resolveLaunchUpdateStage({
+  updates,
+  explicitCheck,
+  runningUpdateId,
+  isEmbeddedLaunch,
+}: {
+  updates: LaunchUpdateState;
+  explicitCheck: ExplicitUpdateCheckStatus;
+  runningUpdateId: string | null | undefined;
+  isEmbeddedLaunch: boolean;
+}): LaunchUpdateStage {
+  const pendingIsNew = isPendingUpdateNew(updates, runningUpdateId, isEmbeddedLaunch);
+  return resolveLaunchUpdatePhase(updates, explicitCheck, pendingIsNew) === 'download' ? 'installing' : 'checking';
+}
+
+/**
  * One evaluation of the gate. Pure and total: the caller re-runs it whenever
  * the expo-updates state changes, the explicit check moves, auth resolves, or a
  * cap timer fires. It reads no clock: the two caps arrive as facts.
@@ -464,7 +518,7 @@ export type LaunchUpdatePreparation =
  *
  * Failure rules differ on purpose:
  * - The first-launch marker failing (or hanging) releases the gate. Guessing a
- *   profile would either hold every launch at 15 s or skip the first-launch wait.
+ *   profile would either hold every launch at 15 s or skip a fresh install's wait.
  * - A device read that hangs or throws counts as online: the caps still bound
  *   the wait.
  * - The override cleanup failing means no explicit check. Its own caller
@@ -509,11 +563,12 @@ export async function prepareLaunchUpdateGate(deps: LaunchUpdatePreparationDeps)
     void deps.clearLastReloadTarget().catch(() => {});
   }
 
-  const profile = resolveLaunchUpdateProfile({ ...deps, handledRuntimeVersion: marker.handledRuntimeVersion });
+  const profileInput = { ...deps, handledRuntimeVersion: marker.handledRuntimeVersion };
+  const profile = resolveLaunchUpdateProfile(profileInput);
   return {
     kind: 'gate',
     profile,
-    trigger: resolveLaunchUpdateTrigger(profile, marker.handledRuntimeVersion),
+    trigger: resolveLaunchUpdateTrigger(profileInput),
     capMs: launchUpdateCapMs(profile),
     deviceOffline,
     explicitCheckRequired,
@@ -560,7 +615,7 @@ export async function runExplicitUpdateCheck({
 export type LaunchUpdateSettleOp = 'report' | 'flush' | 'mark-first-launch-handled' | 'record-reload-target' | 'reload';
 
 export type LaunchUpdateSettleDeps = {
-  profile: LaunchUpdateProfile;
+  trigger: LaunchUpdateTrigger;
   runtimeVersion: string | null | undefined;
   /** Emit the outcome event. Called exactly once, before any reload. */
   reportOutcome: (outcome: LaunchUpdateOutcome, phase: LaunchUpdatePhase) => void;
@@ -627,7 +682,7 @@ export async function settleLaunchUpdate(
 
   const writes: Promise<void>[] = [];
   const { runtimeVersion } = deps;
-  if (runtimeVersion && shouldMarkFirstLaunchHandled(deps.profile, decision.outcome)) {
+  if (runtimeVersion && shouldMarkFirstLaunchHandled(deps.trigger, decision.outcome)) {
     writes.push(boundedWrite(() => deps.markRuntimeHandled(runtimeVersion), 'mark-first-launch-handled'));
   }
 

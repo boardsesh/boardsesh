@@ -697,7 +697,9 @@
       }
     },
     "launchUpdate": {
-      "message": "Recherche de la dernière version"
+      "checking": "Recherche de mises à jour",
+      "installing": "Installation de la dernière mise à jour",
+      "firstLaunchHint": "Seulement au premier lancement de l'app. Ça prend quelques secondes."
     },
     "connectivity": {
       "serverDown": {

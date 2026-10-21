@@ -262,7 +262,8 @@ launch-time download, so the reload landed whenever the download finished. On 2.
 landed between `Login Attempted` and `Login Succeeded`.
 
 The **launch update gate** replaces that side effect. It gates every eligible cold start, not only
-first launches: a returning climber's cold start waits for the update check too. The gate runs once
+first launches: a returning climber's cold start waits for the update check too, but only briefly
+(5 s at most since #6613, down from 10 s). Only a fresh install gets the long wait. The gate runs once
 per JS runtime in a module-level store (`packages/mobile/src/lib/launch-update-gate-store.ts`, rules
 in `launch-update-gate.ts`). The root layout starts it and reads its flags through
 `useLaunchUpdateGate()`, so a remounted root layout reads the first verdict and never starts a
@@ -271,8 +272,8 @@ readiness (onboarding, the QA prompt) do not paint.
 
 | Profile | Which launch | Download cap |
 | --- | --- | --- |
-| `first_launch` | An embedded launch whose runtime version is not yet recorded in the `ota_first_launch_update_runtime_v1` preference. A fresh install, or the first launch after a store update to a new fingerprint | 15 s (`FIRST_LAUNCH_UPDATE_CAP_MS`) |
-| `cold_start` | Every other eligible cold start | 10 s (`COLD_START_UPDATE_CAP_MS`) |
+| `first_launch` | A fresh install: an embedded launch with no `ota_first_launch_update_runtime_v1` preference at all | 15 s (`FIRST_LAUNCH_UPDATE_CAP_MS`) |
+| `cold_start` | Every other eligible cold start, including the first launch after a store update to a new fingerprint (reported as `trigger = binary_update`). That climber is already signed in, so a slow download can apply on the next cold start | 5 s (`COLD_START_UPDATE_CAP_MS`) |
 | `none` | Dev builds, updates disabled, an emergency launch, an iOS background launch (Live Activity intent), and a runtime that is itself the product of a reload (`restartCount > 0`) | No gate |
 
 **Two phases, two caps.** The check phase is the wait for the update server to answer. It is capped
@@ -283,9 +284,27 @@ NetInfo calls online but whose upstream is dead: the manifest request can hang (
 timeout is 60 s), and without it every cold start on that network would sit behind the placeholder
 for the full cap.
 
-The native splash covers the first 2 s (`LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS`). After that
-`LaunchUpdatePlaceholder` shows "Checking for the latest version" with a progress bar for the
-download. The placeholder stays up until the gate has resolved and auth is ready.
+`LaunchUpdatePlaceholder` replaces the native splash (same black, same mark) as soon as there is
+something to tell the climber (`shouldTakeOverFromSplash`):
+
+- **A fresh install** hands over as soon as its preparation reads are done, normally a few
+  milliseconds after JS starts. Nearly every fresh install has something to download (12 of 1,026
+  found nothing in the two weeks before #6613), so it shows "Checking for updates", then "Installing
+  the latest update" with the download's progress, plus a line saying this only happens on the
+  first launch.
+- **Any launch with a download under way** hands over the moment the manifest answers with an
+  update, and says "Installing the latest update".
+- **A cold start still waiting on the server** keeps the native splash for 2 s
+  (`LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS`), then shows "Checking for updates". Most cold starts hear
+  "nothing newer" well inside that (p50 0.4 s, p90 1.5 s), so they never see the placeholder.
+
+The copy only moves forward: once it says "Installing" it never goes back to "Checking", and it is
+frozen once the gate has a verdict. A release that is already decided never raises the placeholder.
+The native splash only hides once the placeholder has laid out (`placeholderPainted`), because the
+placeholder renders inside the i18n provider, which renders nothing until it has read the stored
+locale; hiding on the request alone could show an empty window. The placeholder stays up until the
+gate has resolved and auth is ready. The splash is a static image and cannot show text, so the
+earliest the copy can appear is the JS's first paint.
 
 The gate ends in one of six outcomes:
 
@@ -304,7 +323,9 @@ The gate ends in one of six outcomes:
 
 Offline never waits because there is nothing to download, and a first launch with no signal must
 open the app, not sit behind a bar. The first-launch marker is not written on `offline`, so the
-next launch gets its full wait. Every other first-launch outcome writes it.
+next launch gets its full wait. Every other fresh-install outcome writes it, and so does every
+non-offline `binary_update` outcome, so the marker follows store updates and only its absence marks
+a fresh install.
 
 **No reload before auth settles.** Refresh tokens are single-use, so a reload in the middle of a
 launch-time refresh would sign the climber out. The gate holds a reload until the root layout
@@ -329,20 +350,29 @@ until launch is ready. A cold start from a climb link also waits on launch-ready
 the play drawer (`use-board-route-target.ts`). Add the wrapper to any new root modal route.
 
 The cap timers decide when a cap has passed; the gate does not re-derive it from the wall clock,
-which can step backwards on Android. Once a reload has been requested the gate gives the native
-relaunch 5 s (`LAUNCH_UPDATE_RELOAD_GRACE_MS`) and then lets the app open. A relaunch that is
-slower than that cannot be cancelled and can still land afterwards.
+which can step backwards on Android. A reload decided inside the cap may start until the cap plus
+the 700 ms flush budget (`LAUNCH_UPDATE_FLUSH_TIMEOUT_MS`): its flush and marker writes take up to
+that long, and without the margin a download finishing just before a 5 s cap would report `updated`
+and then be dropped. Once a reload has been requested the gate gives the native relaunch 5 s
+(`LAUNCH_UPDATE_RELOAD_GRACE_MS`) and then lets the app open. A relaunch that is slower than that
+cannot be cancelled and can still land afterwards.
 
 The browser target (`BOARDSESH_WEB=1`) is never gated: expo-updates' web module reports itself
 enabled, so the gate excludes `Platform.OS === 'web'` explicitly.
 
 **The gate has to be in the embedded bundle to help a first launch.** A first launch runs the
-embedded JS, so only a binary built with the gate waits for the update. The caps are JS constants,
-so a later OTA can change them for installs that already carry the gate. Do not remove the gate
+embedded JS, so only a binary built with the gate waits for the update, and the fresh-install copy
+from #6613 reaches fresh installs only once a store binary embeds it. The caps are JS constants,
+so a later OTA can change them for installs that already carry the gate: the 5 s cold-start cap
+reached existing installs by OTA. Do not remove the gate
 without a replacement that reloads before sign-in: without it a first launch runs stale embedded JS
 again, and the migration's old reload is gone.
 
-The gate has not yet been checked on a device or against production numbers.
+Production numbers, two weeks of `OTA Launch Update` before #6613 (10 s cold-start cap): 1,560 gated
+cold starts, of which 1,194 found nothing newer (p50 0.4 s, p90 1.5 s), 307 reloaded (p50 2.5 s,
+p90 5.8 s, then a second JS boot) and 47 waited out the full 10 s; 1,026 fresh installs, of which
+896 reloaded (p50 3.4 s, p90 8.8 s) and 110 waited out 15 s. A climber reported the cold-start wait
+as "very very slow" (#6613), which is why the cold-start cap dropped to 5 s.
 
 ### Invariant: OTA JS must not call native methods newer than the min shipped binary
 
@@ -1875,7 +1905,8 @@ mounted once near the root beside `AnalyticsScreenTracker`:
   `download` or `none`: what expo-updates was doing when the gate ended, which tells a hung
   manifest request from a slow download among the `timed_out` launches), `duration_ms`, `trigger`
   (`fresh_install` / `binary_update` / `cold_start`), `cap_ms` (always the profile's full cap,
-  15000 or 10000, never the 4000 check cap), `ota_runtime_version`, `ota_is_embedded`. Launches the
+  15000 or 5000, never the 4000 check cap; bundles from before #6613 send 10000, so split by
+  `cap_ms` when comparing), `ota_runtime_version`, `ota_is_embedded`. Launches the
   gate skips send nothing. `duration_ms` against `cap_ms` is how the caps get tuned. The flush
   before a reload waits up to 700 ms, so `updated` can still be undercounted.
 
