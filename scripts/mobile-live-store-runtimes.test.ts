@@ -193,6 +193,25 @@ describe('public iOS store evidence', () => {
     ).toThrow(/comparable version string/);
   });
 
+  it('compares version parts as numbers, not text', () => {
+    const released = (id: string, versionString: string) => ({
+      type: 'appStoreVersions' as const,
+      id,
+      attributes: { versionString, appVersionState: PUBLIC_IOS_STATE },
+      relationships: { build: { data: { type: 'builds' as const, id: `build-${id}` } } },
+    });
+    const included = ['nine', 'ten'].map((id) => ({ type: 'builds', id: `build-${id}`, attributes: { version: '7' } }));
+    expect(
+      mapPublicIosBuilds({ data: [released('ten', '2.10.0'), released('nine', '2.9.0')], included }),
+    ).toMatchObject([{ versionString: '2.10.0' }]);
+    expect(
+      mapPublicIosBuilds({ data: [released('nine', '2.9.0'), released('ten', '2.10.0')], included }),
+    ).toMatchObject([{ versionString: '2.10.0' }]);
+    expect(() => mapPublicIosBuilds({ data: [released('nine', '2.0'), released('ten', '2.0.0')], included })).toThrow(
+      /share a version string/,
+    );
+  });
+
   it('queries only publicly distributed iOS versions and prevents credential redirects', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

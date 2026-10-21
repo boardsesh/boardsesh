@@ -44,12 +44,12 @@ export function mapPublicIosBuilds(response: JsonApiCollectionResponse<AppStoreV
   const released = response.data.filter((version) => version.attributes?.appVersionState === PUBLIC_IOS_STATE);
   const newest = released.reduce<(typeof released)[number] | undefined>((current, version) => {
     const versionString = version.attributes?.versionString;
-    const currentString = current?.attributes?.versionString;
     if (typeof versionString !== 'string' || !/^\d+(\.\d+)*$/.test(versionString)) {
       throw new Error(`Public iOS version ${version.id} has no comparable version string`);
     }
-    if (current === undefined || typeof currentString !== 'string') return version;
-    const order = compareVersionStrings(versionString, currentString);
+    if (current === undefined) return version;
+    // Every earlier version passed the check above, so the current pick has a string.
+    const order = compareVersionStrings(versionString, current.attributes!.versionString!);
     if (order === 0) throw new Error(`Public iOS versions ${current.id} and ${version.id} share a version string`);
     return order > 0 ? version : current;
   }, undefined);
