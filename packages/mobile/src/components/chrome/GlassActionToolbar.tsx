@@ -13,6 +13,8 @@ import { PressableSurface } from '../PressableSurface';
 export const TOP_ACTION_SIZE = glassSize.standard;
 /** Edge length of one action slot in UIKit's native navigation bar. */
 export const NATIVE_ACTION_SIZE = glassSize.bar;
+/** The slot toolbar glyph sizes are drawn for; `toolbarGlyphSize` scales from it. */
+const GLYPH_REFERENCE_SLOT = glassSize.inline;
 const ToolbarActionSizeContext = createContext<number | undefined>(undefined);
 const ToolbarActionCountContext = createContext(1);
 
@@ -29,7 +31,7 @@ export function useToolbarActionSize(): number {
  * them down with it, so a 24pt plus becomes 21pt in a 38pt slot.
  */
 export function toolbarGlyphSize(baseSize: number, actionSize: number): number {
-  return Math.round(baseSize * Math.min(1, actionSize / glassSize.inline));
+  return Math.round(baseSize * Math.min(1, actionSize / GLYPH_REFERENCE_SLOT));
 }
 
 export function useToolbarActionCount(): number {

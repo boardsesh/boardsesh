@@ -38,7 +38,7 @@ import { PressableSurface } from '../PressableSurface';
 import { GlassSurface } from '../GlassSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
-import { NativeHeaderActionContext } from '../chrome/native-header-action-context';
+import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { NATIVE_ACTION_SIZE } from '../chrome/GlassActionToolbar';
 
 const CAPSULE_HEIGHT = 32;
@@ -51,6 +51,9 @@ const CAPSULE_ANON_GLYPH = 16;
 // scale has no 6 or 10.
 const CAPSULE_GAP = 6;
 const CAPSULE_PADDING_END = 10;
+// Under this title bound (a 320pt frame beside five bar slots leaves 58pt) the
+// avatar would squeeze the name to nothing and clip the grade, so it drops out.
+const CAPSULE_COMPACT_BELOW = 100;
 // 20pt reads unambiguously as a face above M3's ~18dp floor in the Material band.
 // Fixed — does not scale with Dynamic Type.
 const BAND_AVATAR_SIZE = 20;
@@ -80,6 +83,8 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const nativeHeader = useContext(NativeHeaderActionContext);
+  const titleMaxWidth = useContext(NativeTitleMaxWidthContext);
+  const compact = titleMaxWidth != null && titleMaxWidth < CAPSULE_COMPACT_BELOW;
   const nativeGlass = useNativeGlass();
 
   const name = climb.name ?? '';
@@ -240,22 +245,33 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
         accessibilityRole="button"
         accessibilityLabel={a11yLabel}
         accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
-        style={styles.pressable}
+        style={[styles.pressable, compact && styles.pressableCompact]}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
-        <View style={styles.capsuleAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {hasSenderIdentity ? (
-            <BoardDriverAvatar
-              uri={climb.sentByAvatarUrl}
-              name={senderName}
-              userId={null}
-              size={CAPSULE_AVATAR_SIZE}
-              status="none"
-            />
-          ) : (
-            <Icon maxFontSizeMultiplier={1} name="profile.fill" size={CAPSULE_ANON_GLYPH} color={brandColors.warning} />
-          )}
-        </View>
+        {compact ? null : (
+          <View
+            style={styles.capsuleAvatar}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {hasSenderIdentity ? (
+              <BoardDriverAvatar
+                uri={climb.sentByAvatarUrl}
+                name={senderName}
+                userId={null}
+                size={CAPSULE_AVATAR_SIZE}
+                status="none"
+              />
+            ) : (
+              <Icon
+                maxFontSizeMultiplier={1}
+                name="profile.fill"
+                size={CAPSULE_ANON_GLYPH}
+                color={brandColors.warning}
+              />
+            )}
+          </View>
+        )}
         <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={styles.capsuleNameViewer}>
           <Text
             variant="caption1"
@@ -361,6 +377,10 @@ const styles = StyleSheet.create({
     paddingStart: spacing[1],
     paddingEnd: CAPSULE_PADDING_END,
     gap: CAPSULE_GAP,
+  },
+  // Without the avatar the name starts at the trailing inset, so the text sits evenly.
+  pressableCompact: {
+    paddingStart: CAPSULE_PADDING_END,
   },
   name: {
     flexShrink: 1,

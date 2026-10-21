@@ -257,7 +257,7 @@ vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: numb
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { WallStatusCapsule } from '../WallStatusCapsule';
-import { NativeHeaderActionContext } from '../../chrome/native-header-action-context';
+import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../../chrome/native-header-action-context';
 
 function makeClimb(over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb {
   return {
@@ -392,6 +392,29 @@ describe('WallStatusCapsule', () => {
     expect(getByText('Lightest Pair of Shorts').getAttribute('data-ellipsize')).toBe('tail');
     fireEvent.click(getByText('Lightest Pair of Shorts'));
     expect(spies.openWallPreview).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    // A 320pt frame (Display Zoom, iPad Slide Over) beside five bar slots.
+    [58, true],
+    [99, true],
+    // 375pt and up keep the face.
+    [100, false],
+    [113, false],
+    [undefined, false],
+  ])('drops the avatar, never the grade, when the title bound is %s (compact: %s)', (titleMaxWidth, compact) => {
+    const { container, getByText } = render(
+      <NativeHeaderActionContext.Provider value={true}>
+        <NativeTitleMaxWidthContext.Provider value={titleMaxWidth}>
+          <WallStatusCapsule climb={makeClimb()} />
+        </NativeTitleMaxWidthContext.Provider>
+      </NativeHeaderActionContext.Provider>,
+    );
+    expect(container.querySelector('[data-driver-avatar]') == null).toBe(compact);
+    expect(getByText('Wax On')).toBeTruthy();
+    expect(getByText('V5 6C')).toBeTruthy();
+    const rowStyle = JSON.parse(container.querySelector('[data-pressable]')?.getAttribute('data-style') ?? '{}');
+    expect(rowStyle.paddingStart).toBe(compact ? 10 : 4);
   });
 
   it('renders without the entering animation when Reduce Motion is on', () => {

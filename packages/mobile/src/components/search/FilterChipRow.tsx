@@ -11,8 +11,8 @@
 // capsule: it re-grades the whole list, so it sits with the other list
 // refinements rather than in the app bar. It reads the active board, opens the
 // shared BoardAnglePicker and is absent on fixed-angle boards. Liquid Glass keeps
-// its toolbar angle button instead. Keyed on the variant, not the platform, so a
-// climber who picks the other look still sees the angle exactly once.
+// its toolbar angle button instead. Keyed on the variant, not the platform, so
+// the angle shows exactly once in either look.
 
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';

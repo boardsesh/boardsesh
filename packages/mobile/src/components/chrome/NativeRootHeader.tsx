@@ -9,7 +9,11 @@ import { useGlassCapability } from '../../hooks/use-glass-capability';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { glassSize } from '../../theme/layout';
 
-import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './native-header-action-context';
+import {
+  NativeHeaderActionContext,
+  NativeHeaderOwnBackgroundContext,
+  NativeTitleMaxWidthContext,
+} from './native-header-action-context';
 import { nativeTitleMaxWidth } from './native-title-bound';
 
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
@@ -92,12 +96,14 @@ export function NativeRootHeader({
             centerContent != null
               ? () => (
                   <NativeHeaderActionContext.Provider value={true}>
-                    <View
-                      pointerEvents="box-none"
-                      style={[styles.centerContent, centerMaxWidth == null ? null : { maxWidth: centerMaxWidth }]}
-                    >
-                      {centerContent}
-                    </View>
+                    <NativeTitleMaxWidthContext.Provider value={centerMaxWidth}>
+                      <View
+                        pointerEvents="box-none"
+                        style={[styles.centerContent, centerMaxWidth == null ? null : { maxWidth: centerMaxWidth }]}
+                      >
+                        {centerContent}
+                      </View>
+                    </NativeTitleMaxWidthContext.Provider>
                   </NativeHeaderActionContext.Provider>
                 )
               : undefined,

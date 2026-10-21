@@ -20,14 +20,14 @@ export function useMaterialAngleControl() {
 
   const canAdjust = canAdjustBoardAngle(activeBoard);
   const open = useCallback(() => {
-    if (!activeBoard || activeBoard.isAngleAdjustable === false || activeBoard.angle == null) return;
+    if (!canAdjustBoardAngle(activeBoard)) return;
     hapticLight();
     setVisible(true);
   }, [activeBoard]);
   const close = useCallback(() => setVisible(false), []);
   const change = useCallback(
     (newAngle: number) => {
-      if (!activeBoard || activeBoard.isAngleAdjustable === false || newAngle === activeBoard.angle) return;
+      if (!canAdjustBoardAngle(activeBoard) || newAngle === activeBoard.angle) return;
       void setBoardAngle(activeBoard, newAngle);
     },
     [activeBoard, setBoardAngle],

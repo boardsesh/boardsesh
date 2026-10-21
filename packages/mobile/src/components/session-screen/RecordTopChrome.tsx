@@ -4,7 +4,13 @@ import type { NativeStackNavigationOptions } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
-import { CollapsingLargeTitleHeader, GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
+import {
+  CollapsingLargeTitleHeader,
+  GlassActionToolbar,
+  GlassToolbarAction,
+  NATIVE_ACTION_SIZE,
+  TOP_ACTION_SIZE,
+} from '../chrome';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
@@ -70,7 +76,7 @@ export function RecordTopChrome({
       accessibilityLabel={exitLabel}
       style={[
         styles.exitAction,
-        { minHeight: nativeRootHeader ? glassSize.inline : TOP_ACTION_SIZE },
+        { minHeight: nativeRootHeader ? NATIVE_ACTION_SIZE : TOP_ACTION_SIZE },
         isMaterial && { borderRadius: radii.button },
       ]}
     >

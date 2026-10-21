@@ -37,7 +37,8 @@ export const MATERIAL_TAB_BAR_HEIGHT = 80;
  *   inline        standard inline control + touch-target floor
  *   bar           UIKit grouped bar-item slot in the native navigation bar;
  *                 UIKit's own grouped minimum is 36. UIKit owns the bar's
- *                 hit testing, and each action adds a 4pt hit slop.
+ *                 hit testing; a GlassToolbarAction adds a 4pt hit slop, while
+ *                 a native ⋯ menu anchor fills exactly its slot.
  *   mini          label-only pill (angle); carries 44pt hit-slop when tappable
  *
  * Guardrail: the hero bump and the capsule offset are for STANDALONE glass

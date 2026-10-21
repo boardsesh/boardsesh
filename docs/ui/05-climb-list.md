@@ -9,8 +9,8 @@ label names the active board. The four-square board glyph no longer represents h
 
 - **Angle:** Liquid Glass (iOS by default) shows the current angle as the first toolbar button,
   inboard of history. Material (Android and the web by default) shows it as the first filter chip
-  ("40°", before Filters) instead. The split follows the look the climber picked, not the platform,
-  so the angle always shows exactly once. Both open the existing angle picker and speak the value
+  ("40°", before Filters) instead. The split follows the UI variant, not the platform, so the
+  angle shows exactly once in either look. Both open the existing angle picker and speak the value
   ("Board angle, 40°"). Fixed-angle boards show neither, and on iOS the on-the-wall capsule takes
   the freed toolbar slot. The Material app bar's board title drops the angle while the chip shows
   it, and keeps it on a fixed-angle board.

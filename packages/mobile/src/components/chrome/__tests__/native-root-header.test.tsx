@@ -188,6 +188,8 @@ describe('NativeRootHeader', () => {
   // The Climbs bar with a climb on the wall: avatar + create leading, angle +
   // history + ⋯ trailing, each a 38pt UIKit slot.
   it.each([
+    // Display Zoom on an SE / mini, or iPad Slide Over: the capsule goes compact.
+    [320, 58],
     [375, 113],
     [393, 131],
     [402, 140],

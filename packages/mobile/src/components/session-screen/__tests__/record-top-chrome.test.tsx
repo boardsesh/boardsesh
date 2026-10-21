@@ -94,6 +94,7 @@ vi.mock('../../chrome', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-action': accessibilityLabel }, children),
   TOP_ACTION_SIZE: 48,
+  NATIVE_ACTION_SIZE: 38,
 }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: (props: HeaderProps) => {
@@ -260,7 +261,8 @@ describe('RecordTopChrome', () => {
       string,
       unknown
     >;
-    expect(exitStyle).toMatchObject({ minHeight: 44, minWidth: 44 });
+    // As tall as the 38pt rename slot beside it in the native bar.
+    expect(exitStyle).toMatchObject({ minHeight: 38, minWidth: 44 });
     expect(exitStyle.backgroundColor).toBeUndefined();
     expect(exitStyle.borderWidth).toBeUndefined();
     expect(exitStyle.borderRadius).toBeUndefined();
