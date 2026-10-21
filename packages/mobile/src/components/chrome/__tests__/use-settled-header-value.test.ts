@@ -59,6 +59,21 @@ describe('useSettledHeaderValue', () => {
     expect(result.current).toBe('newer climb');
   });
 
+  it('holds its first value when it mounts already covered', () => {
+    ctrl.isFocused = false;
+    const { result, rerender } = renderHook(({ value }) => useSettledHeaderValue(value), {
+      initialProps: { value: null as string | null },
+    });
+    rerender({ value: 'wall climb' });
+    expect(result.current).toBeNull();
+
+    ctrl.isFocused = true;
+    rerender({ value: 'wall climb' });
+    expect(result.current).toBeNull();
+    act(() => vi.advanceTimersByTime(HEADER_SETTLE_MS));
+    expect(result.current).toBe('wall climb');
+  });
+
   it('restarts the settle window when the screen is covered again mid-dismiss', () => {
     const { result, rerender } = renderHook(({ value }) => useSettledHeaderValue(value), {
       initialProps: { value: 'a' },
