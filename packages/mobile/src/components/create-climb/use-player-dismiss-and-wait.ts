@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
+import { PLAYER_DISMISS_CEILING_MS } from '../../lib/player-dismiss-timing';
 
 type NativeStackTransitionEndEvent = {
   data?: {
@@ -15,10 +16,6 @@ type NativeStackTransitionNavigation = {
 
 const DISMISSED_RESULT: DismissAndWaitResult = { status: 'dismissed' };
 const ABORTED_RESULT: DismissAndWaitResult = { status: 'aborted' };
-// Match the native-sheet coordinator's conservative ceilings. A player route can
-// unmount before react-native-screens delivers transitionEnd, so this is also the
-// sole settle signal for that expected teardown path.
-const PLAYER_DISMISS_CEILING_MS = Platform.OS === 'ios' ? 550 : 350;
 
 /**
  * `/play`-owned dismissal callback for the create-climb handoff.

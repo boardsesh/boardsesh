@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
 import { useIsFocused } from 'expo-router';
+import { PLAYER_DISMISS_CEILING_MS } from '../../lib/player-dismiss-timing';
 
-// The player's dismiss ceiling (see `use-player-dismiss-and-wait.ts`): long enough
-// for the transparent `/play` modal to finish sliding away. The covered tab screen
-// gets no transitionEnd of its own for that animation, so a timer is the signal.
-export const HEADER_SETTLE_MS = Platform.OS === 'ios' ? 550 : 350;
+// The covered tab screen gets no transitionEnd of its own for the player's
+// dismiss animation, so the player's dismiss ceiling is the signal.
+export const HEADER_SETTLE_MS = PLAYER_DISMISS_CEILING_MS;
 
 /**
  * Hold a value that drives native header options while the screen is covered, and
