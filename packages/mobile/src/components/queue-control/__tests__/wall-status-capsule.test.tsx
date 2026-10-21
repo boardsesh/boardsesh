@@ -183,16 +183,19 @@ vi.mock('../../Text', () => ({
     style,
     numberOfLines,
     ellipsizeMode,
+    variant,
   }: {
     children?: ReactNode;
     style?: unknown;
     numberOfLines?: number;
     ellipsizeMode?: string;
+    variant?: string;
   }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
+        'data-variant': variant,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-lines': numberOfLines,
         'data-ellipsize': ellipsizeMode,
@@ -299,8 +302,15 @@ describe('WallStatusCapsule', () => {
     expect(getByText('V5 6C')).toBeTruthy();
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
     expect(nameStyle.flex).toBeUndefined();
-    expect(capsuleStyle).toMatchObject({ height: 44 });
-    expect(glassSurface?.getAttribute('data-glass-radius')).toBe('22');
+    // UIKit's 38pt bar slot, the same height as the action groups beside it.
+    expect(capsuleStyle).toMatchObject({ height: 38 });
+    expect(glassSurface?.getAttribute('data-glass-radius')).toBe('19');
+    // 12pt caption text and a tighter row leave the name more of the slot.
+    expect(getByText('Wax On').getAttribute('data-variant')).toBe('caption1');
+    expect(getByText('V5 6C').getAttribute('data-variant')).toBe('caption1');
+    const rowStyle = JSON.parse(container.querySelector('[data-pressable]')?.getAttribute('data-style') ?? '{}');
+    expect(rowStyle).toMatchObject({ gap: 6, paddingStart: 4, paddingEnd: 10 });
+    expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('18');
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('none');
     expect(container.querySelector('[data-animated]')).toBeNull();
     expect(spies.enterAnimation).not.toHaveBeenCalled();
@@ -440,8 +450,8 @@ describe('WallStatusCapsule', () => {
       unknown
     >;
     expect(capsuleStyle).toMatchObject({
-      height: 44,
-      borderRadius: 22,
+      height: 38,
+      borderRadius: 19,
       backgroundColor: '#222',
       borderColor: '#FBBF24:0.35',
       borderWidth: 1,
@@ -479,7 +489,7 @@ describe('WallStatusCapsule', () => {
     expect(avatar).not.toBeNull();
     expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/casey.jpg');
     expect(avatar?.getAttribute('data-name')).toBe('Casey');
-    expect(avatar?.getAttribute('data-size')).toBe('20');
+    expect(avatar?.getAttribute('data-size')).toBe('18');
     expect(avatar?.getAttribute('data-user-id')).toBe('null');
     expect(avatar?.getAttribute('data-status')).toBe('none');
     expect(avatar?.parentElement?.getAttribute('data-a11y-hidden')).toBe('true');
@@ -576,6 +586,13 @@ describe('WallStatusCapsule', () => {
       expect(container.querySelector('[data-driver-avatar]')).toBeNull();
       expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+    });
+
+    it('keeps the band at its own 20dp face and subheadline text', () => {
+      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('20');
+      expect(getByText('Wax On').getAttribute('data-variant')).toBe('subheadline');
+      expect(getByText('V5 6C').getAttribute('data-variant')).toBe('subheadline');
     });
 
     it('opens the read-only wall preview on tap', () => {

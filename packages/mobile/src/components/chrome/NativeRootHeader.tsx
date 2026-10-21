@@ -7,13 +7,10 @@ import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { glassSize, TOOLBAR_GAP, TOOLBAR_SIDE_MARGIN } from '../../theme/layout';
-import { spacing } from '../../theme/tokens';
+import { glassSize } from '../../theme/layout';
 
 import { NativeHeaderActionContext, NativeHeaderOwnBackgroundContext } from './native-header-action-context';
-
-/** Widest the custom title gets, so a wide frame never shows a banner-length pill. */
-export const CENTER_CONTENT_MAX_WIDTH = 280;
+import { nativeTitleMaxWidth } from './native-title-bound';
 
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
 export function NativeRootHeader({
@@ -62,20 +59,8 @@ export function NativeRootHeader({
   // UIKit adds space around shared bar-item backgrounds that Yoga does not see.
   const frameWidth = useFrameSize((frame) => frame.width);
   const insets = useSafeAreaInsets();
-  // UIKit centres the title view, so it must clear the wider side on both
-  // sides: subtracting the two sides separately lets a long title slide under
-  // the bigger action group when the groups differ in size.
-  const centerMaxWidth = centerActionWidths
-    ? Math.min(
-        CENTER_CONTENT_MAX_WIDTH,
-        Math.max(
-          0,
-          frameWidth -
-            2 * Math.max(insets.left + centerActionWidths.leading, insets.right + centerActionWidths.trailing) -
-            2 * (TOOLBAR_SIDE_MARGIN + TOOLBAR_GAP + 2 * spacing[1]),
-        ),
-      )
-    : undefined;
+  // The title view gets the free space between the two groups (see nativeTitleMaxWidth).
+  const centerMaxWidth = centerActionWidths ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths) : undefined;
   const controlsHeight = useRef(0);
   const hasControls = children != null;
   useLayoutEffect(() => {
@@ -200,7 +185,8 @@ function HeaderControls({
 const styles = StyleSheet.create({
   controls: { position: 'absolute', left: 0, right: 0, zIndex: 20 },
   centerContent: {
-    height: glassSize.inline,
+    // The same slot as the action groups beside it (`NATIVE_ACTION_SIZE`).
+    height: glassSize.bar,
     maxWidth: '100%',
     minWidth: 0,
     flexShrink: 1,

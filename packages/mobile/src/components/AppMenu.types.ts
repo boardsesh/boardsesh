@@ -48,6 +48,7 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
   accessibilityLabel?: string;
   /** Trailing down-caret on the anchor. Default `true`. */
   showCaret?: boolean;
+  anchorSize?: never;
 };
 
 /** Icon anchor: a bare glyph trigger (the "⋯" overflow button), with no visible text. */
@@ -60,6 +61,12 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
   accessibilityLabel: string;
   /** A glyph anchor never carries a caret — the glyph itself is the affordance. */
   showCaret?: never;
+  /**
+   * Side of the glyph anchor's square frame, for a menu in a toolbar slot that is
+   * not 44pt (UIKit's narrower native bar slot). iOS and web; Android's M3
+   * IconButton keeps its 48dp target. The glyph keeps its size.
+   */
+  anchorSize?: number;
 };
 
 /** Exactly one of `label` / `iconName`: a text anchor or a glyph anchor, never both. */

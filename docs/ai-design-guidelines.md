@@ -355,7 +355,8 @@ Android (`elevation`) keys: `xs` (elevation 1) → `sm` (2) → `md` (4) → `lg
 Source: `packages/mobile/src/theme/layout.ts`, plus sheet/material metrics in `tokens.ts`.
 
 **Glass size ladder** — one height ladder for every floating FAB / capsule / pill so the chrome reads
-as one deliberately-sized system. Every interactive tier is at or above the 44pt touch floor:
+as one deliberately-sized system. Every interactive tier we draw ourselves is at or above the 44pt touch
+floor; `bar` is a slot inside UIKit's navigation bar, which owns that bar's hit testing:
 
 | Tier            | px  | Use                                                          |
 | --------------- | --- | ------------------------------------------------------------ |
@@ -364,6 +365,7 @@ as one deliberately-sized system. Every interactive tier is at or above the 44pt
 | `capsule`       | 44  | Standalone floating capsule (4pt under sibling FABs)         |
 | `inlinePrimary` | 48  | Primary action inside a sheet                                |
 | `inline`        | 44  | Standard inline control                                      |
+| `bar`           | 38  | UIKit grouped bar-item slot in the native navigation bar; UIKit's own grouped minimum is 36 |
 | `mini`          | 32  | Label-only pill (angle); carries 44pt hit-slop when tappable |
 
 **Tab bar.** `TAB_BAR_HEIGHT` = 49 (Liquid Glass / native iOS). `MATERIAL_TAB_BAR_HEIGHT` = 80 (M3
@@ -1134,7 +1136,8 @@ release velocity and retain the host's post-render handoff.
 On iOS, root screens use UIKit's collapsing large titles and automatic content
 insets. Controls pinned under that bar float over the list on iOS 26 and sit on a
 painted band elsewhere ("Controls pinned under the bar"). Native header controls
-use 44pt slots; floating controls keep their 48pt slots. A standalone avatar draws
+use 38pt slots (`glassSize.bar`), with glyphs scaled to the slot (a 24pt plus
+draws at 21pt); floating controls keep their 48pt slots. A standalone avatar draws
 one circular background, while grouped bar items use UIKit's shared material.
 Home's scope selector scrolls with the feed, and the
 on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layout

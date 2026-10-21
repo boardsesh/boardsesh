@@ -136,6 +136,23 @@ describe('CapsuleRow.android', () => {
     expect(onPress).toHaveBeenCalledOnce();
   });
 
+  it('speaks a labelled chip by its own label and leaves an unlabelled one to its text', () => {
+    const { container } = render(
+      createElement(CapsuleRow, {
+        capsules: [
+          { kind: 'sheet', key: 'angle', label: '40°', accessibilityLabel: 'Board angle, 40°', onPress: vi.fn() },
+          { kind: 'sheet', key: 'setter', label: 'Setter', onPress: vi.fn() },
+        ],
+      }),
+    );
+    const [angle, setter] = chips(container);
+    expect(chipLabel(angle)).toBe('40°');
+    expect(JSON.parse(angle.getAttribute('data-modifiers') ?? '[]')).toEqual([
+      { modifier: 'semantics', arg: { contentDescription: 'Board angle, 40°' } },
+    ]);
+    expect(setter.getAttribute('data-modifiers')).toBeNull();
+  });
+
   it('maps every kind to a FilterChip in order, filled with primaryFill + onPrimary when active', () => {
     const capsules: Capsule[] = [
       { kind: 'sheet', key: 'angle', label: '40°', onPress: vi.fn() },

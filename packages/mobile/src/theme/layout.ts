@@ -28,13 +28,16 @@ export const MATERIAL_TAB_BAR_HEIGHT = 80;
  * reads as a single, deliberately-sized system rather than a pile of ad-hoc
  * diameters. Liquid Glass earns expressiveness from a single hero bump plus a
  * 4pt capsule offset — not from many sizes — so the ladder is capped and every
- * interactive tier stays at or above the 44pt touch floor.
+ * interactive tier we draw ourselves stays at or above the 44pt touch floor.
  *
  *   hero          one defining action per floating surface (log-ascent, create)
  *   standard      default floating FAB
  *   capsule       standalone floating capsule — 4pt under its sibling FABs
  *   inlinePrimary primary action inside a sheet (PlayDrawer)
  *   inline        standard inline control + touch-target floor
+ *   bar           UIKit grouped bar-item slot in the native navigation bar;
+ *                 UIKit's own grouped minimum is 36. UIKit owns the bar's
+ *                 hit testing, and each action adds a 4pt hit slop.
  *   mini          label-only pill (angle); carries 44pt hit-slop when tappable
  *
  * Guardrail: the hero bump and the capsule offset are for STANDALONE glass
@@ -46,6 +49,7 @@ export const glassSize = {
   capsule: 44,
   inlinePrimary: 48,
   inline: 44,
+  bar: 38,
   mini: 32,
 } as const;
 

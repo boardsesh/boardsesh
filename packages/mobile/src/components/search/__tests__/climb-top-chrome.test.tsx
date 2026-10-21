@@ -4,36 +4,65 @@ vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: (
 vi.mock('../../../hooks/use-floating-header-controls', () => ({
   useFloatingHeaderControls: () => nativeChrome.glassGradeRail && ctrl.variant === 'liquidGlass',
 }));
-vi.mock('../../chrome/NativeRootHeader', () => ({
-  NativeRootHeader: ({
-    scrollEdge,
-    children,
-    floatingContent,
-    onHeightChange,
-  }: {
-    scrollEdge?: unknown;
-    children?: ReactNode;
-    // Retain the original overlay slot so reverting production for the regression
-    // control fails on measured containment rather than a missing mocked rail.
-    floatingContent?: ReactNode;
-    onHeightChange: (height: number) => void;
-  }) => {
-    nativeChrome.scrollEdge = scrollEdge;
-    return createElement(
-      'div',
-      null,
-      createElement(
-        'div',
-        {
-          'data-has-layout': 'true',
-          onClick: () => onHeightChange(nativeChrome.measuredChromeHeight),
-        },
-        children,
-      ),
+vi.mock('../../chrome/NativeRootHeader', async () => {
+  // The real title bound, so the centre width below is what UIKit's bar gives the
+  // capsule for the action widths this chrome actually hands the header.
+  const { nativeTitleMaxWidth } = await vi.importActual<typeof import('../../chrome/native-title-bound')>(
+    '../../chrome/native-title-bound',
+  );
+  return {
+    NativeRootHeader: ({
+      scrollEdge,
+      children,
       floatingContent,
-    );
-  },
-}));
+      onHeightChange,
+      centerContent,
+      centerActionWidths,
+      rightActions,
+    }: {
+      scrollEdge?: unknown;
+      centerContent?: ReactNode;
+      rightActions?: ReactNode;
+      centerActionWidths?: { leading: number; trailing: number };
+      children?: ReactNode;
+      // Retain the original overlay slot so reverting production for the regression
+      // control fails on measured containment rather than a missing mocked rail.
+      floatingContent?: ReactNode;
+      onHeightChange: (height: number) => void;
+    }) => {
+      nativeChrome.scrollEdge = scrollEdge;
+      nativeChrome.centerActionWidths = centerActionWidths;
+      return createElement(
+        'div',
+        null,
+        centerContent != null && centerActionWidths
+          ? createElement(
+              'div',
+              {
+                'data-native-center': 'true',
+                'data-max-width': nativeTitleMaxWidth(
+                  nativeChrome.frameWidth,
+                  { left: 0, right: 0 },
+                  centerActionWidths,
+                ),
+              },
+              centerContent,
+            )
+          : null,
+        createElement('div', { 'data-native-trailing': 'true' }, rightActions),
+        createElement(
+          'div',
+          {
+            'data-has-layout': 'true',
+            onClick: () => onHeightChange(nativeChrome.measuredChromeHeight),
+          },
+          children,
+        ),
+        floatingContent,
+      );
+    },
+  };
+});
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
 }));
@@ -68,6 +97,9 @@ const nativeChrome = vi.hoisted(() => ({
   glassGradeRail: false,
   measuredChromeHeight: 88,
   scrollEdge: undefined as unknown,
+  centerActionWidths: undefined as { leading: number; trailing: number } | undefined,
+  // The native stack's frame: an iPhone 17 Pro.
+  frameWidth: 402,
 }));
 
 const ctrl = vi.hoisted(() => ({
@@ -289,7 +321,8 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 vi.mock('../../../theme/layout', () => ({
-  glassSize: { standard: 48, capsule: 44 },
+  glassSize: { standard: 48, capsule: 44, inline: 44, bar: 38 },
+  TOOLBAR_SIDE_MARGIN: 16,
 }));
 
 vi.mock('../../../theme/colors', () => ({
@@ -480,7 +513,7 @@ function makeProps(over: Partial<Parameters<typeof ClimbTopChrome>[0]> = {}) {
 const createAction = (root: HTMLElement) =>
   root.querySelector('[data-pressable="mobile.create.fab.ariaLabel"]') as HTMLButtonElement | null;
 const angleAction = (root: HTMLElement) =>
-  [...root.querySelectorAll('button')].find((button) => button.textContent === 'mobile.listOptions.angle') ?? null;
+  root.querySelector('[data-pressable="mobile.angleSelector.buttonAria"]') as HTMLButtonElement | null;
 const lightbulb = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="ble.connectBoard"]') ??
     root.querySelector('[data-pressable="lightControl.disconnect"]')) as HTMLButtonElement | null;
@@ -518,6 +551,7 @@ describe('ClimbTopChrome', () => {
     nativeChrome.glassGradeRail = false;
     nativeChrome.measuredChromeHeight = 88;
     nativeChrome.scrollEdge = undefined;
+    nativeChrome.centerActionWidths = undefined;
     haptics.light.mockClear();
     haptics.selection.mockClear();
   });
@@ -569,12 +603,61 @@ describe('ClimbTopChrome', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it('puts angle in the menu beside a dedicated history glyph', () => {
+  it('shows the angle as a one-tap toolbar button before the history glyph, not a menu row', () => {
     ctrl.board = typedBoard;
     const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
-    expect(angleAction(container)).not.toBeNull();
-    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
-    expect(capsule(container)?.querySelector('[data-icon="history"]')).not.toBeNull();
+    const angle = angleAction(container);
+    expect(angle?.textContent).toBe('40°');
+    const history = capsule(container);
+    expect(history?.querySelector('[data-icon="history"]')).not.toBeNull();
+    expect(angle?.compareDocumentPosition(history!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const menuRows = [...container.querySelectorAll('[data-menu] button')].map((row) => row.textContent);
+    expect(menuRows).toEqual(['mobile.listOptions.viewOptions', 'mobile.boardPresence.switchBoard']);
+  });
+
+  it.each([
+    ['an adjustable board', typedBoard, 3],
+    ['a fixed-angle board', { ...typedBoard, isAngleAdjustable: false }, 2],
+    ['no board', null, 1],
+  ] as const)('reserves native slots for angle, history and the menu with %s', (_label, board, slots) => {
+    nativeChrome.enabled = true;
+    ctrl.board = board;
+    render(<ClimbTopChrome {...makeProps()} />);
+    expect(nativeChrome.centerActionWidths?.trailing).toBe(slots * 38);
+  });
+
+  // A fixed-angle wall hides its angle button, and UIKit's bar gives that 38pt
+  // slot to the on-the-wall capsule. Avatar + create lead, zero insets.
+  it.each([
+    ['an adjustable board', typedBoard, { leading: 76, trailing: 114 }, '140'],
+    ['a fixed-angle board', { ...typedBoard, isAngleAdjustable: false }, { leading: 76, trailing: 76 }, '178'],
+  ] as const)(
+    'sizes the native on-the-wall capsule from the real trailing slots with %s',
+    (_label, board, widths, max) => {
+      nativeChrome.enabled = true;
+      ctrl.board = board;
+      ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+      const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
+      expect(nativeChrome.centerActionWidths).toEqual(widths);
+      const center = container.querySelector('[data-native-center]');
+      expect(center?.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
+      expect(center?.getAttribute('data-max-width')).toBe(max);
+      const trailing = container.querySelector<HTMLElement>('[data-native-trailing]')!;
+      expect(angleAction(trailing) == null).toBe(board.isAngleAdjustable === false);
+    },
+  );
+
+  it('gives the capsule exactly the 38pt a fixed-angle wall frees', () => {
+    nativeChrome.enabled = true;
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+    const centerWidth = (board: BoardLabelFields) => {
+      ctrl.board = board;
+      const { container, unmount } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
+      const width = Number(container.querySelector('[data-native-center]')?.getAttribute('data-max-width'));
+      unmount();
+      return width;
+    };
+    expect(centerWidth({ ...typedBoard, isAngleAdjustable: false }) - centerWidth(typedBoard)).toBe(38);
   });
 
   it('mounts the "On the wall" capsule (glass centre slot) when a distinct wall climb is live', () => {
@@ -675,9 +758,16 @@ describe('ClimbTopChrome', () => {
     expect(lightbulb(container)).toBeNull();
   });
 
-  // The Material angle control moved out of ClimbTopChrome into the persistent filter
-  // chip row (FilterChipRow on Android), which this component test doesn't render — the
-  // angle chip is covered by the Android screenshot QA, not here.
+  // The Material angle is the first chip of the persistent filter row
+  // (FilterChipRow on Android and the web), which this component test doesn't
+  // render; filter-chip-row.test.tsx covers it. The app bar has no angle button.
+  it('keeps the angle out of the Material app bar', () => {
+    ctrl.variant = 'material';
+    ctrl.board = typedBoard;
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+    expect(angleAction(container)).toBeNull();
+    expect(container.querySelector('[data-appbar-action^="mobile.angleSelector"]')).toBeNull();
+  });
 
   // Regression guard for the Android tap-passthrough fix: the Material band must
   // be pointerEvents="auto" (NOT box-none) so RNGH's Android hit-test treats the
@@ -795,7 +885,8 @@ describe('ClimbTopChrome', () => {
     );
 
     expect(container.querySelector('[data-gradient]')).toBeNull();
-    expect(container.querySelector('[data-appbar-title]')?.textContent).toBe('Display:kilter • 12x12 • 40°');
+    // The Angle chip shows an adjustable board's angle, so the title drops it.
+    expect(container.querySelector('[data-appbar-title]')?.textContent).toBe('Display:kilter • 12x12');
     const history = capsule(container);
     expect(history?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');
     expect(container.querySelector('[data-search-field]')).not.toBeNull();

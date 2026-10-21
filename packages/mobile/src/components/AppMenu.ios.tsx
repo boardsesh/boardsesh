@@ -48,15 +48,6 @@ const ANCHOR_MIN_HEIGHT = topBarByVariant.liquidGlass.iconTarget;
 // (ChromeIconButton), so the overflow "…" matches the close beside it.
 const ICON_ANCHOR_GLYPH_SIZE = topBarByVariant.liquidGlass.glyphSize;
 
-// Semibold, as iOS 26's own bar glyphs draw. A `font` modifier wins over `size`,
-// so it carries the size too.
-const ICON_ANCHOR_GLYPH_MODIFIERS = [
-  font({ size: ICON_ANCHOR_GLYPH_SIZE, weight: 'semibold' }),
-  // Plain menus hit-test their label, so the label must own the full button target.
-  frame({ width: ANCHOR_MIN_HEIGHT, height: ANCHOR_MIN_HEIGHT }),
-  contentShape(shapes.rectangle()),
-];
-
 export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { systemColors } = useTheme();
@@ -64,6 +55,21 @@ export function AppMenu(props: AppMenuProps) {
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
   const iconName = props.iconName;
   const plainIcon = props.iconName != null && props.iconAppearance === 'plain';
+  // A glyph anchor in a narrower toolbar slot (UIKit's native bar) takes that
+  // slot's frame; everywhere else it keeps the 44pt top-bar target.
+  const anchorSize = props.anchorSize ?? ANCHOR_MIN_HEIGHT;
+
+  // Semibold, as iOS 26's own bar glyphs draw. A `font` modifier wins over `size`,
+  // so it carries the size too.
+  const glyphModifiers = useMemo(
+    () => [
+      font({ size: ICON_ANCHOR_GLYPH_SIZE, weight: 'semibold' }),
+      // Plain menus hit-test their label, so the label must own the full button target.
+      frame({ width: anchorSize, height: anchorSize }),
+      contentShape(shapes.rectangle()),
+    ],
+    [anchorSize],
+  );
 
   // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
   // modifier array (avoids redundant SwiftUI diffs).
@@ -77,7 +83,7 @@ export function AppMenu(props: AppMenuProps) {
             // creator header's own buttons — a 44pt `systemFill` circle — so the
             // overflow trigger sits in the same row as the close chevron and the BLE
             // lightbulb without looking like a different control.
-            frame({ width: ANCHOR_MIN_HEIGHT, height: ANCHOR_MIN_HEIGHT }),
+            frame({ width: anchorSize, height: anchorSize }),
             ...(!plainIcon ? [backgroundOverlay({ color: fillColor }), clipShape('circle')] : []),
             buttonStyle('plain'),
             ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
@@ -93,7 +99,7 @@ export function AppMenu(props: AppMenuProps) {
             ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
             ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
           ],
-    [iconName, plainIcon, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
+    [iconName, anchorSize, plainIcon, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
   );
 
   // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
@@ -103,7 +109,11 @@ export function AppMenu(props: AppMenuProps) {
   // drawer's scrolling top row and remounts on every climb, and ended up on top
   // of the grade that way. Same fix as Button's `ignoreContainerSafeArea`.
   return (
-    <Host matchContents ignoreSafeArea="all" style={[styles.host, style]}>
+    <Host
+      matchContents
+      ignoreSafeArea="all"
+      style={[styles.host, props.anchorSize != null && { minHeight: props.anchorSize }, style]}
+    >
       <Menu
         modifiers={menuModifiers}
         label={
@@ -112,7 +122,7 @@ export function AppMenu(props: AppMenuProps) {
               systemName={iconMap[props.iconName].ios}
               size={ICON_ANCHOR_GLYPH_SIZE}
               color={systemColors.label}
-              modifiers={ICON_ANCHOR_GLYPH_MODIFIERS}
+              modifiers={glyphModifiers}
             />
           ) : (
             <HStack spacing={spacing[1]} alignment="center">

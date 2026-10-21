@@ -6,14 +6,17 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
     centerContent,
     centerActionWidths,
     children,
+    leftActions,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     centerActionWidths?: { leading: number; trailing: number };
     children?: ReactNode;
+    leftActions?: ReactNode;
     scrollEdge?: unknown;
   }) => {
     ctrl.nativeScrollEdge = scrollEdge;
+    ctrl.nativeLeftActions = leftActions;
     ctrl.nativeCenterActionWidths = centerActionWidths;
     return createElement(
       'div',
@@ -58,6 +61,7 @@ const ctrl = vi.hoisted(() => ({
   // The scroll-edge store the native header was handed.
   nativeScrollEdge: undefined as unknown,
   nativeCenterActionWidths: undefined as { leading: number; trailing: number } | undefined,
+  nativeLeftActions: undefined as ReactNode,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
 
@@ -149,7 +153,7 @@ vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false 
 vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: haptics.light }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44, inline: 44 } }));
+vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44, inline: 44, bar: 38 } }));
 
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
 
@@ -170,8 +174,12 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name, color }: { name: string; color?: unknown }) =>
-    createElement('span', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : '' }),
+  Icon: ({ name, color, size }: { name: string; color?: unknown; size?: number }) =>
+    createElement('span', {
+      'data-icon': name,
+      'data-color': typeof color === 'string' ? color : '',
+      'data-size': size,
+    }),
 }));
 vi.mock('../../play-drawer/AngleSelectorSheet', () => ({
   AngleSelectorSheet: ({ visible }: { visible: boolean }) =>
@@ -234,10 +242,37 @@ describe('CollapsingTopChrome', () => {
   it('reserves the actual native action widths as controls are added or removed', () => {
     ctrl.nativeHeader = true;
     const { rerender } = render(<CollapsingTopChrome {...makeProps()} />);
-    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 44, trailing: 0 });
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 38, trailing: 0 });
     ctrl.board = board;
     rerender(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
-    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 88, trailing: 88 });
+    // UIKit's 38pt bar slots: avatar + create, then angle + board.
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 76, trailing: 76 });
+  });
+
+  it.each([
+    [true, '21'],
+    [false, '24'],
+  ])('scales the create glyph to the slot (native header: %s)', (nativeHeader, glyphSize) => {
+    ctrl.nativeHeader = nativeHeader;
+    const { container } = render(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
+    // The native header's leading group is handed to UIKit, not rendered in place.
+    const leading = nativeHeader ? render(<>{ctrl.nativeLeftActions}</>).container : container;
+    expect(leading.querySelector('[data-icon="plus"]')?.getAttribute('data-size')).toBe(glyphSize);
+  });
+
+  it('speaks the current angle on the Material app-bar angle action too', () => {
+    ctrl.variant = 'material';
+    ctrl.board = board;
+    const { container } = render(<CollapsingTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-appbar-action="mobile.angleSelector.buttonAria"]')?.textContent).toBe('40°');
+    expect(container.querySelector('[data-appbar-action="mobile.angleSelector.title"]')).toBeNull();
+  });
+
+  it('speaks the current angle on the default angle button', () => {
+    ctrl.board = board;
+    const { container } = render(<CollapsingTopChrome {...makeProps()} />);
+    const angle = container.querySelector('[data-pressable="mobile.angleSelector.buttonAria"]');
+    expect(angle?.textContent).toBe('40°');
   });
 
   it('sizes custom board controls instead of reserving the default angle and board pair', () => {
@@ -248,7 +283,7 @@ describe('CollapsingTopChrome', () => {
         {...makeProps({ boardControls: { content: <button>List options</button>, actionCount: 1 } })}
       />,
     );
-    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 44, trailing: 44 });
+    expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 38, trailing: 38 });
   });
 
   it('replaces the floating board and angle pair with the supplied controls', () => {
@@ -260,7 +295,7 @@ describe('CollapsingTopChrome', () => {
     );
     expect(getByRole('button', { name: 'List options' })).not.toBeNull();
     expect(boardAction(container)).toBeNull();
-    expect(container.querySelector('[data-pressable="mobile.angleSelector.title"]')).toBeNull();
+    expect(container.querySelector('[data-pressable="mobile.angleSelector.buttonAria"]')).toBeNull();
   });
 
   beforeEach(() => {
@@ -270,6 +305,7 @@ describe('CollapsingTopChrome', () => {
     ctrl.nativeHeader = false;
     ctrl.nativeScrollEdge = undefined;
     ctrl.nativeCenterActionWidths = undefined;
+    ctrl.nativeLeftActions = undefined;
     haptics.light.mockClear();
   });
 

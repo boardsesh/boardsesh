@@ -27,7 +27,8 @@ import type { AppMenuProps } from './AppMenu.types';
 const CARET = '▾';
 
 // Matches the 44pt circle the iOS glyph anchor draws, so the overflow trigger keeps
-// its touch target and its round silhouette in the browser build.
+// its touch target and its round silhouette in the browser build. A caller in a
+// narrower toolbar slot passes `anchorSize`, as on iOS.
 const ICON_ANCHOR_SIZE = 44;
 
 export function AppMenu(props: AppMenuProps) {
@@ -54,6 +55,9 @@ export function AppMenu(props: AppMenuProps) {
         props.iconName != null
           ? [
               styles.iconAnchor,
+              props.anchorSize != null
+                ? { width: props.anchorSize, height: props.anchorSize, borderRadius: props.anchorSize / 2 }
+                : null,
               props.iconAppearance !== 'plain' ? { backgroundColor: systemColors.fill as string } : null,
             ]
           : null,

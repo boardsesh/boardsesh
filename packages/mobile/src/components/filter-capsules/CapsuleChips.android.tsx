@@ -62,12 +62,15 @@ export function ActionChip({
 }) {
   const { brandColors } = useTheme();
   const badgeLabel = capsuleBadgeLabel(badgeCount);
+  // A chip speaks its own label when it has one ("Board angle, 40°" for a chip
+  // that shows "40°"); an icon-only chip falls back to its visible label.
+  const spokenLabel = accessibilityLabel ?? (iconOnly ? label : undefined);
   return (
     <FilterChip
       selected={selected}
       colors={colors}
       onClick={onPress}
-      modifiers={iconOnly ? [semantics({ contentDescription: accessibilityLabel ?? label })] : undefined}
+      modifiers={spokenLabel ? [semantics({ contentDescription: spokenLabel })] : undefined}
     >
       {iconOnly ? (
         <FilterChip.Label>

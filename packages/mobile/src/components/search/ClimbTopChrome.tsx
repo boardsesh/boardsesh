@@ -1,11 +1,12 @@
-// Top chrome for the climbs list. The board glyph, glass action islands and the
-// angle / lightbulb controls are shared with the Discover chrome via
-// CollapsingTopChrome (`../chrome`) so both tabs read as one system: on the
-// liquid-glass variant this file delegates to CollapsingTopChrome (left/right
-// glass islands over the progressive blur) and adds the climbs-only search row.
-// Climbs is the one tab that keeps a header title — the filter summary sits
-// persistently in the centre. The Material variant keeps a dedicated
-// Appbar.Header with the board as its subtitle plus grade / filter quick chips.
+// Top chrome for the climbs list. The glass action islands are shared with the
+// Discover chrome via CollapsingTopChrome (`../chrome`) so both tabs read as one
+// system: on the liquid-glass variant this file delegates to CollapsingTopChrome
+// (left/right glass islands over the progressive blur), fills its right island
+// with the climb-list board actions (angle · history · ⋯ menu) and adds the
+// climbs-only search row. Climbs is the one tab that keeps a header title — the
+// filter summary sits persistently in the centre. The Material variant keeps a
+// dedicated Appbar.Header with the board as its title, history and the ⋯ menu;
+// its angle is the first chip in the filter row (FilterChipRow).
 
 import { memo, type ReactNode, type RefObject, useCallback } from 'react';
 import { Keyboard, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
@@ -23,7 +24,7 @@ import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
 import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
-import { ClimbListBoardActions, ClimbListBoardTitle } from '../chrome/ClimbListBoardActions';
+import { ClimbListBoardActions, ClimbListBoardTitle, climbListBoardActionCount } from '../chrome/ClimbListBoardActions';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
@@ -188,8 +189,9 @@ function ClimbTopChromeComponent({
   if (isMaterial) {
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
-    // are suppressed — the chips own filtering. Angle and view options live in
-    // the toolbar menu; the Grade chip continues to open the in-chrome rail.
+    // are suppressed — the chips own filtering. The angle is the row's first chip,
+    // view options live in the toolbar menu, and the Grade chip continues to open
+    // the in-chrome rail.
     const showTopChromeFilters = !showPersistentChips;
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
@@ -300,7 +302,7 @@ function ClimbTopChromeComponent({
               {showPersistentChips ? filterChrome : null}
 
               {/* The quick row carries the condensed summary when the persistent
-                chip row is off. Angle is owned by the toolbar options menu. */}
+                chip row is off. The angle rides the persistent chip row above. */}
               {visibleFilterSummary ? (
                 <View pointerEvents="box-none" style={styles.materialQuickRow}>
                   <Chip
@@ -360,7 +362,7 @@ function ClimbTopChromeComponent({
             showcaseAnchor={anchorBoardButton}
           />
         ),
-        actionCount: activeBoard ? 2 : 1,
+        actionCount: climbListBoardActionCount(activeBoard),
       }}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}

@@ -321,7 +321,6 @@
   "mobile": {
     "listOptions": {
       "title": "Optionen für die Boulderliste",
-      "angle": "Winkel · {{angle}}°",
       "viewOptions": "Ansichtsoptionen",
       "history": "Board-Verlauf, {{board}}",
       "historyHint": "Sieh, welche Boulder an diesem Board beleuchtet wurden"

@@ -389,7 +389,8 @@
       "title": "Choisir l'angle",
       "fromVerticalHint": "Mesuré depuis la verticale",
       "diagramAria": "Board inclinée à {{angle}}° depuis la verticale",
-      "snapToAngle": "Passer à {{angle}}°"
+      "snapToAngle": "Passer à {{angle}}°",
+      "buttonAria": "Inclinaison de la board, {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Bloc inconnu",

@@ -5,8 +5,15 @@ import { createElement, type ReactNode } from 'react';
 
 type Modifier = { kind: string; params: unknown };
 vi.mock('@expo/ui', () => ({
-  Host: ({ children, ignoreSafeArea }: { children: ReactNode; ignoreSafeArea?: string }) =>
-    createElement('div', { 'data-host-ignore-safe-area': ignoreSafeArea }, children),
+  Host: ({ children, ignoreSafeArea, style }: { children: ReactNode; ignoreSafeArea?: string; style?: unknown }) =>
+    createElement(
+      'div',
+      {
+        'data-host-ignore-safe-area': ignoreSafeArea,
+        'data-host-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
 }));
 vi.mock('@expo/ui/swift-ui', () => ({
   Menu: ({ label, children, modifiers }: { label: ReactNode; children: ReactNode; modifiers: Modifier[] }) =>
@@ -16,7 +23,12 @@ vi.mock('@expo/ui/swift-ui', () => ({
   Divider: () => createElement('hr'),
   HStack: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
-  Image: ({ systemName }: { systemName: string }) => createElement('i', { 'data-symbol': systemName }),
+  Image: ({ systemName, size, modifiers }: { systemName: string; size?: number; modifiers?: Modifier[] }) =>
+    createElement('i', {
+      'data-symbol': systemName,
+      'data-size': size,
+      'data-glyph-modifiers': JSON.stringify(modifiers ?? []),
+    }),
 }));
 vi.mock('@expo/ui/swift-ui/modifiers', () => ({
   ...Object.fromEntries(
@@ -84,6 +96,43 @@ describe('AppMenu (iOS) icon surfaces', () => {
     expect(onSelectIndex).not.toHaveBeenCalled();
     fireEvent.click(getByText('Choose holds'));
     expect(onSelectIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('fits a glyph anchor to a narrower toolbar slot without shrinking the glyph', () => {
+    const { container } = render(
+      createElement(AppMenu, {
+        iconName: 'more',
+        iconAppearance: 'plain',
+        anchorSize: 38,
+        accessibilityLabel: 'More actions',
+        actions,
+        onSelectIndex: vi.fn(),
+      }),
+    );
+    expect(modifiersOf(container)).toContainEqual({ kind: 'frame', params: { width: 38, height: 38 } });
+    const glyph = container.querySelector('[data-symbol]')!;
+    expect(glyph.getAttribute('data-size')).toBe('17');
+    expect(JSON.parse(glyph.getAttribute('data-glyph-modifiers') ?? '[]')).toContainEqual({
+      kind: 'frame',
+      params: { width: 38, height: 38 },
+    });
+    expect(JSON.parse(container.querySelector('[data-host-style]')?.getAttribute('data-host-style') ?? '{}')).toEqual({
+      minHeight: 38,
+    });
+  });
+
+  it('keeps the 44pt anchor frame and floor without an anchorSize', () => {
+    const { container } = render(
+      createElement(AppMenu, { iconName: 'more', accessibilityLabel: 'More actions', actions, onSelectIndex: vi.fn() }),
+    );
+    const glyph = container.querySelector('[data-symbol]')!;
+    expect(JSON.parse(glyph.getAttribute('data-glyph-modifiers') ?? '[]')).toContainEqual({
+      kind: 'frame',
+      params: { width: 44, height: 44 },
+    });
+    expect(JSON.parse(container.querySelector('[data-host-style]')?.getAttribute('data-host-style') ?? '{}')).toEqual({
+      minHeight: 44,
+    });
   });
 
   it('keeps the text anchor glass capsule', () => {

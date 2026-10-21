@@ -121,9 +121,16 @@ vi.mock('../../Avatar', () => ({
   Avatar: ({ size }: { size: number }) => createElement('span', { 'data-avatar-size': size }),
 }));
 
-import { CENTER_CONTENT_MAX_WIDTH, NativeRootHeader } from '../NativeRootHeader';
+import { NativeRootHeader } from '../NativeRootHeader';
+import { CENTER_CONTENT_MAX_WIDTH } from '../native-title-bound';
 import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
-import { GlassActionToolbar, GlassToolbarAction } from '../GlassActionToolbar';
+import {
+  GlassActionToolbar,
+  GlassToolbarAction,
+  NATIVE_ACTION_SIZE,
+  TOP_ACTION_SIZE,
+  toolbarGlyphSize,
+} from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
 
 function lastOptions(): NativeStackNavigationOptions {
@@ -161,29 +168,57 @@ describe('NativeRootHeader', () => {
     expect(lastOptions().headerBlurEffect).toBeUndefined();
   });
 
-  it.each([390, 320, 600])('bounds long title content to the %spt local header frame between actions', (frameWidth) => {
+  const titleBound = (frameWidth: number, centerActionWidths: { leading: number; trailing: number }) => {
     controls.frameWidth = frameWidth;
     render(
       <NativeRootHeader
         centerContent={<button>Lightest Pair of Shorts V4 6B</button>}
-        centerActionWidths={{ leading: 88, trailing: 44 }}
+        centerActionWidths={centerActionWidths}
         onHeightChange={vi.fn()}
       />,
     );
     const headerTitle = lastOptions().headerTitle;
     if (typeof headerTitle !== 'function') throw new Error('Expected a native center renderer');
-    const { getByRole } = render(headerTitle({ children: 'Climbs', tintColor: 'theme-label' }));
+    const { getByRole, unmount } = render(headerTitle({ children: 'Climbs', tintColor: 'theme-label' }));
     const centerStyle = readStyle(getByRole('button').parentElement);
-    // Raw action slots plus each side's gutter, native capsule outset and gap.
-    const reservedLeading = 88 + 16 + 8 + 8;
-    const reservedTrailing = 44 + 16 + 8 + 8;
+    unmount();
+    return centerStyle;
+  };
+
+  // The Climbs bar with a climb on the wall: avatar + create leading, angle +
+  // history + ⋯ trailing, each a 38pt UIKit slot.
+  it.each([
+    [375, 113],
+    [393, 131],
+    [402, 140],
+    [440, 178],
+  ])('bounds the title to the free space between 2 + 3 native slots on a %spt frame', (frameWidth, expected) => {
+    const leading = 2 * NATIVE_ACTION_SIZE;
+    const trailing = 3 * NATIVE_ACTION_SIZE;
+    const centerStyle = titleBound(frameWidth, { leading, trailing });
     const maxWidth = Number(centerStyle.maxWidth);
-    expect(maxWidth).toBe(Math.min(CENTER_CONTENT_MAX_WIDTH, frameWidth - 2 * reservedLeading));
-    // UIKit centres the title: its span must clear both action groups.
-    const titleStart = (frameWidth - maxWidth) / 2;
-    expect(titleStart).toBeGreaterThanOrEqual(reservedLeading);
-    expect(titleStart + maxWidth).toBeLessThanOrEqual(frameWidth - reservedTrailing);
+    expect(maxWidth).toBe(expected);
+    // Each side: the bar margin, the group, its background padding both sides and
+    // UIKit's title-view clearance. The title fills exactly what is left.
+    const reservedLeading = 16 + leading + 2 * 4 + 12;
+    const reservedTrailing = 16 + trailing + 2 * 4 + 12;
+    expect(reservedLeading + maxWidth + reservedTrailing).toBe(frameWidth);
     expect(centerStyle).toMatchObject({ minWidth: 0, flexShrink: 1 });
+  });
+
+  it('caps the title on a wide frame and never sizes it below zero', () => {
+    const groups = { leading: 2 * NATIVE_ACTION_SIZE, trailing: 3 * NATIVE_ACTION_SIZE };
+    expect(titleBound(1024, groups).maxWidth).toBe(CENTER_CONTENT_MAX_WIDTH);
+    expect(titleBound(542, groups).maxWidth).toBe(CENTER_CONTENT_MAX_WIDTH);
+    expect(titleBound(541, groups).maxWidth).toBe(CENTER_CONTENT_MAX_WIDTH - 1);
+    expect(titleBound(240, groups).maxWidth).toBe(0);
+    expect(titleBound(262, groups).maxWidth).toBe(0);
+    expect(titleBound(263, groups).maxWidth).toBe(1);
+  });
+
+  it('uses the room between unequal groups, not twice the wider one', () => {
+    // 2 leading slots vs 1 trailing. Reserving the wider group on both sides gave 174.
+    expect(titleBound(390, { leading: 76, trailing: 38 }).maxWidth).toBe(204);
   });
 
   it('recomputes the title bound when its local stack changes size or action count', () => {
@@ -202,7 +237,7 @@ describe('NativeRootHeader', () => {
       unmount();
       return width;
     };
-    expect(centerWidth()).toBe(150);
+    expect(centerWidth()).toBe(390 - 88 - 44 - 72);
     controls.frameWidth = 600;
     controls.horizontalInsets = { left: 59, right: 59 };
     rerender(
@@ -212,7 +247,7 @@ describe('NativeRootHeader', () => {
         onHeightChange={vi.fn()}
       />,
     );
-    expect(centerWidth()).toBe(242);
+    expect(centerWidth()).toBe(600 - (59 + 44) - (59 + 88) - 72);
   });
 
   it('retains the underlying route title when the climb drawer opens and closes', () => {
@@ -469,7 +504,7 @@ describe('NativeRootHeader', () => {
     const currentClimbButton = getByRole('button', { name: `On the wall: ${climbName}` });
     expect(headerContainer.querySelectorAll('button')).toHaveLength(1);
     expect(readStyle(currentClimbButton.parentElement)).toMatchObject({
-      height: 44,
+      height: 38,
       minWidth: 0,
       maxWidth: '100%',
       flexShrink: 1,
@@ -521,16 +556,18 @@ describe('NativeRootHeader', () => {
     if (nativeItem?.type !== 'custom') throw new Error('Expected a custom avatar item');
     const { container, getByRole, getByTestId } = render(nativeItem.element);
 
-    expect(readStyle(getByTestId('avatar-toolbar'))).toMatchObject({ width: 44, height: 44, borderRadius: 22 });
-    expect(container.querySelectorAll('[data-glass-radius="22"]')).toHaveLength(1);
+    expect(readStyle(getByTestId('avatar-toolbar'))).toMatchObject({ width: 38, height: 38, borderRadius: 19 });
+    expect(container.querySelectorAll('[data-glass-radius="19"]')).toHaveLength(1);
     const avatarButton = getByRole('button', { name: 'ariaLabels.userMenu' });
-    expect(readStyle(avatarButton)).toMatchObject({ width: 44, height: 44 });
-    expect(readStyle(avatarButton.firstElementChild)).toMatchObject({ width: 44, height: 44, borderRightWidth: 0 });
+    expect(readStyle(avatarButton)).toMatchObject({ width: 38, height: 38 });
+    expect(readStyle(avatarButton.firstElementChild)).toMatchObject({ width: 38, height: 38, borderRightWidth: 0 });
+    // The face keeps 4pt of glass on each side of the narrower slot.
+    expect(container.querySelector('[data-avatar-size]')?.getAttribute('data-avatar-size')).toBe('30');
     fireEvent.click(avatarButton);
     expect(controls.openUserDrawer).toHaveBeenCalledOnce();
   });
 
-  it('keeps grouped native controls bare and shares 44-point slots with children', () => {
+  it('keeps grouped native controls bare and shares 38-point slots with children', () => {
     render(
       <NativeRootHeader
         onHeightChange={vi.fn()}
@@ -548,10 +585,10 @@ describe('NativeRootHeader', () => {
     const nativeGroup = lastOptions().headerLeft?.({ tintColor: 'theme-label', canGoBack: false });
     const { container, getAllByRole, getByTestId } = render(nativeGroup);
 
-    expect(readStyle(getByTestId('grouped-toolbar'))).toMatchObject({ width: 88, height: 44 });
+    expect(readStyle(getByTestId('grouped-toolbar'))).toMatchObject({ width: 76, height: 38 });
     expect(container.querySelector('[data-glass-radius]')).toBeNull();
     for (const button of getAllByRole('button')) {
-      expect(readStyle(button)).toMatchObject({ width: 44, height: 44 });
+      expect(readStyle(button)).toMatchObject({ width: 38, height: 38 });
     }
   });
 
@@ -575,5 +612,23 @@ describe('NativeRootHeader', () => {
     );
     expect(readStyle(getByTestId('sheet-toolbar'))).toMatchObject({ width: 48, height: 48 });
     expect(readStyle(getByRole('button'))).toMatchObject({ width: 48, height: 48 });
+  });
+
+  it.each([48, 44])('keeps the 34pt avatar in a %spt custom-header slot', (actionSize) => {
+    const { container } = render(
+      <GlassActionToolbar actionCount={1} actionSize={actionSize}>
+        <UserAvatarToolbarAction variant="glass" />
+      </GlassActionToolbar>,
+    );
+    expect(container.querySelector('[data-avatar-size]')?.getAttribute('data-avatar-size')).toBe('34');
+  });
+
+  it('scales toolbar glyphs down with the native bar slot and keeps them at 44pt and up', () => {
+    expect(NATIVE_ACTION_SIZE).toBe(38);
+    expect(TOP_ACTION_SIZE).toBe(48);
+    // plus, history / boards / lightbulb, bell / person
+    expect([24, 23, 22].map((glyph) => toolbarGlyphSize(glyph, NATIVE_ACTION_SIZE))).toEqual([21, 20, 19]);
+    expect([24, 23, 22].map((glyph) => toolbarGlyphSize(glyph, 44))).toEqual([24, 23, 22]);
+    expect([24, 23, 22].map((glyph) => toolbarGlyphSize(glyph, TOP_ACTION_SIZE))).toEqual([24, 23, 22]);
   });
 });

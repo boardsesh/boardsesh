@@ -7,6 +7,7 @@ import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { shadows } from '../../theme/tokens';
@@ -15,7 +16,13 @@ import { GlassSurface } from '../GlassSurface';
 import { BoardToolbarAction } from './BoardToolbarAction';
 import { BoardSwitcherButton } from './BoardSwitcherButton';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
-import { GlassActionToolbar, GlassToolbarAction, NATIVE_ACTION_SIZE, TOP_ACTION_SIZE } from './GlassActionToolbar';
+import {
+  GlassActionToolbar,
+  GlassToolbarAction,
+  NATIVE_ACTION_SIZE,
+  TOP_ACTION_SIZE,
+  toolbarGlyphSize,
+} from './GlassActionToolbar';
 import { AngleToolbarAction } from './AngleToolbarAction';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
@@ -163,7 +170,7 @@ export function CollapsingTopChrome({
     );
   }
 
-  const canOpenAngle = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
+  const canOpenAngle = canAdjustBoardAngle(activeBoard);
   // A fragment/element of leading actions reads as one element, so callers passing
   // several supply the explicit count; otherwise reserve a slot only for a real one.
   const leadingActions = leadingActionCount ?? (isValidElement(leadingAction) ? 1 : 0);
@@ -192,7 +199,12 @@ export function CollapsingTopChrome({
       {leadingAction}
       {canCreate ? (
         <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
-          <Icon maxFontSizeMultiplier={1} name="plus" size={24} color={systemColors.label} />
+          <Icon
+            maxFontSizeMultiplier={1}
+            name="plus"
+            size={toolbarGlyphSize(24, nativeHeader ? NATIVE_ACTION_SIZE : TOP_ACTION_SIZE)}
+            color={systemColors.label}
+          />
         </GlassToolbarAction>
       ) : null}
     </GlassActionToolbar>

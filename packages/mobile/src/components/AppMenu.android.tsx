@@ -84,6 +84,7 @@ export function AppMenu(props: AppMenuProps) {
             // The M3 overflow button: an IconButton (a 48dp touch target) holding
             // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
             // titleLarge text. Its spoken name rides the Host's label above.
+            // `anchorSize` is not read: M3 keeps the 48dp target.
             <IconButton onClick={() => setExpanded(true)}>
               <Icon source={MORE_VERT_ICON} size={topBarByVariant.material.glyphSize} tint={caretColor} />
             </IconButton>

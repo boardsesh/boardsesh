@@ -6,6 +6,7 @@ import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
+import { canAdjustBoardAngle, type BoardAngleFields } from '../../lib/boards/can-adjust-board-angle';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 import { hapticLight } from '../../lib/haptics';
 import { AppMenu } from '../AppMenu';
@@ -13,8 +14,8 @@ import type { AppMenuAction } from '../AppMenu.types';
 import { Icon } from '../Icon';
 import { Badge } from '../Badge';
 import { iconMap } from '../icon-map';
-import { BoardAnglePicker } from './BoardAnglePicker';
-import { GlassToolbarAction, useToolbarActionSize } from './GlassActionToolbar';
+import { AngleToolbarAction } from './AngleToolbarAction';
+import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './GlassActionToolbar';
 
 type ClimbListBoardActionsProps = {
   onOpenHistory: () => void;
@@ -23,9 +24,26 @@ type ClimbListBoardActionsProps = {
   material?: boolean;
 };
 
-type ListMenuRow = AppMenuAction & { id: 'angle' | 'viewOptions' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & { id: 'viewOptions' | 'switchBoard' };
 
-/** History keeps its own target; list and board options share the native menu. */
+type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
+
+/**
+ * How many glass toolbar slots `ClimbListBoardActions` fills for this board:
+ * the angle (adjustable boards), history (any board with a label) and the ⋯
+ * menu. Read from the same conditions the component renders on.
+ */
+export function climbListBoardActionCount(activeBoard: CountedBoard | null | undefined): number {
+  const angle = canAdjustBoardAngle(activeBoard) ? 1 : 0;
+  const history = formatActiveBoardLabel(activeBoard) ? 1 : 0;
+  return angle + history + 1;
+}
+
+/**
+ * The Climbs list's trailing board actions. Liquid Glass: the one-tap angle,
+ * history, then the ⋯ menu (View options, Switch board). Material leaves the
+ * angle to the filter row's Angle chip, so it keeps history and the menu.
+ */
 export function ClimbListBoardActions({
   onOpenHistory,
   badge = false,
@@ -39,18 +57,8 @@ export function ClimbListBoardActions({
   const router = useRouter();
   const actionSize = useToolbarActionSize();
   const boardLabel = formatActiveBoardLabel(activeBoard);
-  const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
   const rows = useMemo<ListMenuRow[]>(
     () => [
-      ...(canAdjust && activeBoard
-        ? [
-            {
-              id: 'angle' as const,
-              label: t('mobile.listOptions.angle', { angle: activeBoard.angle }),
-              systemIcon: 'angle',
-            },
-          ]
-        : []),
       { id: 'viewOptions', label: t('mobile.listOptions.viewOptions'), systemIcon: iconMap['view.options'].ios },
       {
         id: 'switchBoard',
@@ -59,7 +67,7 @@ export function ClimbListBoardActions({
         dividerBefore: true,
       },
     ],
-    [activeBoard, canAdjust, t, tSession],
+    [t, tSession],
   );
   const rowSignature = rows.map((row) => `${row.id}:${row.label}`).join('|');
   const handleOpenHistory = useCallback(() => {
@@ -69,6 +77,7 @@ export function ClimbListBoardActions({
 
   return (
     <>
+      {material ? null : <AngleToolbarAction />}
       {boardLabel ? (
         <ShowcaseAnchorView name="board-history-button" enabled={showcaseAnchor}>
           <View>
@@ -86,7 +95,12 @@ export function ClimbListBoardActions({
                 accessibilityLabel={t('mobile.listOptions.history', { board: boardLabel })}
                 accessibilityHint={t('mobile.listOptions.historyHint')}
               >
-                <Icon maxFontSizeMultiplier={1} name="history" size={23} color={systemColors.label} />
+                <Icon
+                  maxFontSizeMultiplier={1}
+                  name="history"
+                  size={toolbarGlyphSize(23, actionSize)}
+                  color={systemColors.label}
+                />
               </GlassToolbarAction>
             )}
             {badge ? (
@@ -97,42 +111,42 @@ export function ClimbListBoardActions({
           </View>
         </ShowcaseAnchorView>
       ) : null}
-      <BoardAnglePicker>
-        {(openAngle) => (
-          <View style={[styles.menu, !material && { width: actionSize, height: actionSize }]}>
-            <AppMenu
-              // Native popups retain their row indices until dismissed. Remount on
-              // board/row changes rather than let an old tap select a moved row.
-              key={`${activeBoard?.uuid ?? 'none'}|${rowSignature}`}
-              iconName="more"
-              iconAppearance="plain"
-              accessibilityLabel={t('mobile.listOptions.title')}
-              actions={rows}
-              onSelectIndex={(index) => {
-                switch (rows[index]?.id) {
-                  case 'angle':
-                    openAngle();
-                    break;
-                  case 'viewOptions':
-                    router.push('/(tabs)/climbs/settings/climb-list');
-                    break;
-                  case 'switchBoard':
-                    router.push('/boards');
-                    break;
-                }
-              }}
-            />
-          </View>
-        )}
-      </BoardAnglePicker>
+      <View style={[styles.menu, !material && { width: actionSize, height: actionSize }]}>
+        <AppMenu
+          // Native popups retain their row indices until dismissed. Remount on
+          // board/row changes rather than let an old tap select a moved row.
+          key={`${activeBoard?.uuid ?? 'none'}|${rowSignature}`}
+          iconName="more"
+          iconAppearance="plain"
+          // The ⋯ fills its toolbar slot (38pt in UIKit's bar); Material keeps M3's.
+          anchorSize={material ? undefined : actionSize}
+          accessibilityLabel={t('mobile.listOptions.title')}
+          actions={rows}
+          onSelectIndex={(index) => {
+            switch (rows[index]?.id) {
+              case 'viewOptions':
+                router.push('/(tabs)/climbs/settings/climb-list');
+                break;
+              case 'switchBoard':
+                router.push('/boards');
+                break;
+            }
+          }}
+        />
+      </View>
     </>
   );
 }
 
-/** Material retains the active board as a static title beside trailing actions. */
+/**
+ * Material shows the active board as a static title beside the trailing
+ * actions. An adjustable board's angle rides the filter row's Angle chip, so
+ * the title drops it rather than truncate it; a fixed-angle wall keeps it.
+ */
 export function ClimbListBoardTitle() {
   const { data: activeBoard } = useActiveBoard();
-  return <Appbar.Content title={formatActiveBoardLabel(activeBoard) ?? ''} />;
+  const title = formatActiveBoardLabel(activeBoard, { includeAngle: !canAdjustBoardAngle(activeBoard) });
+  return <Appbar.Content title={title ?? ''} />;
 }
 
 const styles = StyleSheet.create({

@@ -7,7 +7,10 @@ import { Avatar } from '../Avatar';
 import { GlassToolbarAction, useToolbarActionCount, useToolbarActionSize } from '../chrome/GlassActionToolbar';
 import { useUserDrawer } from './UserDrawerProvider';
 
+// 34pt in a 44pt or larger slot. In UIKit's narrower native bar slot the face
+// shrinks to stay 4pt inside each edge (30pt in 38pt).
 const GLASS_AVATAR_SIZE = 34;
+const GLASS_AVATAR_INSET = 8;
 const MATERIAL_AVATAR_SIZE = 32;
 
 type UserAvatarToolbarActionProps = {
@@ -49,7 +52,11 @@ export function UserAvatarToolbarAction({ variant }: UserAvatarToolbarActionProp
           },
         ]}
       >
-        <Avatar uri={profile?.avatarUrl} name={avatarName} size={GLASS_AVATAR_SIZE} />
+        <Avatar
+          uri={profile?.avatarUrl}
+          name={avatarName}
+          size={Math.min(GLASS_AVATAR_SIZE, actionSize - GLASS_AVATAR_INSET)}
+        />
       </View>
     </GlassToolbarAction>
   );

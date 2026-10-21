@@ -124,7 +124,7 @@ vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false 
 vi.mock('../../../hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'blur' }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: haptics.light }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44 } }));
+vi.mock('../../../theme/layout', () => ({ glassSize: { standard: 48, capsule: 44, inline: 44, bar: 38 } }));
 
 vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
 

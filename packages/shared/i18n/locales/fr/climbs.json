@@ -321,7 +321,6 @@
   "mobile": {
     "listOptions": {
       "title": "Options de la liste de blocs",
-      "angle": "Inclinaison · {{angle}}°",
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
       "historyHint": "Voir les blocs qui ont été allumés sur ce mur"

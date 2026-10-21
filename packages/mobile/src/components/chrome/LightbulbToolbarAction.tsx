@@ -11,7 +11,7 @@ import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { hapticLight } from '../../lib/haptics';
 import { Icon } from '../Icon';
-import { GlassToolbarAction } from './GlassActionToolbar';
+import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './GlassActionToolbar';
 
 /**
  * The lightbulb toolbar button that connects / disconnects the physical board's
@@ -29,6 +29,7 @@ export function LightbulbToolbarAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
+  const actionSize = useToolbarActionSize();
   const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
     useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls });
   const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
@@ -87,7 +88,7 @@ export function LightbulbToolbarAction() {
       <Icon
         maxFontSizeMultiplier={1}
         name={lit ? 'lightbulb.fill' : 'lightbulb'}
-        size={23}
+        size={toolbarGlyphSize(23, actionSize)}
         color={lit ? brandColors.warning : systemColors.label}
       />
     </GlassToolbarAction>

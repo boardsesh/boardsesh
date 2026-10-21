@@ -64,6 +64,8 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 } }));
 vi.mock('../../ProgressiveBlur', () => ({ ProgressiveBlur: () => createElement('div', { 'data-blur': 'true' }) }));
 vi.mock('../../chrome', () => ({
   TOP_ACTION_SIZE: 48,
+  NATIVE_ACTION_SIZE: 38,
+  toolbarGlyphSize: (baseSize: number, actionSize: number) => Math.round(baseSize * Math.min(1, actionSize / 44)),
   GlassActionToolbar: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-island': 'true' }, children),
   GlassToolbarAction: ({

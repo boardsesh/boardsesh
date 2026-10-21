@@ -24,7 +24,13 @@ import { Icon } from '../Icon';
 import { iconMap } from '../icon-map';
 import { type AppMenuAction } from '../AppMenu';
 import { ProgressiveBlur } from '../ProgressiveBlur';
-import { GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
+import {
+  GlassActionToolbar,
+  GlassToolbarAction,
+  NATIVE_ACTION_SIZE,
+  TOP_ACTION_SIZE,
+  toolbarGlyphSize,
+} from '../chrome';
 import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
@@ -92,7 +98,11 @@ function HomeTopChromeGlass({
           <GlassActionToolbar actionCount={2}>
             <NotificationsToolbarAction variant="glass" onPress={handleOpenNotifications} />
             <GlassToolbarAction onPress={onOpenSearch} accessibilityLabel={searchAccessibilityLabel}>
-              <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+              <Icon
+                name="person.badge.plus"
+                size={toolbarGlyphSize(22, NATIVE_ACTION_SIZE)}
+                color={systemColors.label}
+              />
             </GlassToolbarAction>
           </GlassActionToolbar>
         }

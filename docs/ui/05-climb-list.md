@@ -2,15 +2,21 @@
 
 ### Mobile toolbar and board history
 
-The Climbs tab keeps history separate from the list's options. Its trailing native toolbar contains a
-clock-arrow history button followed by an ellipsis menu. History opens the existing board sheet in one
-tap; its accessibility label names the active board. The four-square board glyph no longer represents
-history.
+The Climbs tab keeps the angle and history one tap away, apart from the list's options. On iOS its
+trailing native toolbar reads [angle | history | ⋯]: the current angle ("40°"), a clock-arrow history
+button, then an ellipsis menu. History opens the existing board sheet in one tap; its accessibility
+label names the active board. The four-square board glyph no longer represents history.
 
+- **Angle:** Liquid Glass (iOS by default) shows the current angle as the first toolbar button,
+  inboard of history. Material (Android and the web by default) shows it as the first filter chip
+  ("40°", before Filters) instead. The split follows the look the climber picked, not the platform,
+  so the angle always shows exactly once. Both open the existing angle picker and speak the value
+  ("Board angle, 40°"). Fixed-angle boards show neither, and on iOS the on-the-wall capsule takes
+  the freed toolbar slot. The Material app bar's board title drops the angle while the chip shows
+  it, and keeps it on a fixed-angle board.
 - **History:** `clock.arrow.circlepath` on iOS and `history` on Android. The existing onboarding tip
   points to this control and calls it the clock.
-- **Options menu:** Angle (including the current degree value), View options, then Switch board.
-  Angle opens the existing angle picker. Switch board opens the existing board picker.
+- **Options menu:** View options, then Switch board. Switch board opens the existing board picker.
 - **View options:** Pushes the existing climb-list settings within the Climbs navigation stack.
   Back returns to the same list, and settings keep their existing persistence.
 - **History sheet:** The pinned Switch board footer is removed so its space belongs to history.

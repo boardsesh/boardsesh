@@ -7,8 +7,10 @@
 // nothing when it doesn't apply (no adjustable board / no bluetooth).
 //
 // The Climbs angle lives as the first chip in the native filter chip row
-// (`FilterChipRow`, Android and web), not here — the app bar keeps only the create action.
-// `MaterialAngleAction` remains for Discover's `CollapsingTopChrome`.
+// (`FilterChipRow`, Android and web), not here: the Climbs app bar keeps the
+// create and history actions and the options menu. `MaterialAngleAction` is
+// Discover's, through `CollapsingTopChrome`. Both speak the current angle
+// ("Board angle, 40°"), not just what the control does.
 
 import { useCallback, useMemo } from 'react';
 import {
@@ -47,7 +49,11 @@ export function MaterialAngleAction() {
 
   return (
     <>
-      <Appbar.Action icon={angleIcon} onPress={open} accessibilityLabel={tSession('mobile.angleSelector.title')} />
+      <Appbar.Action
+        icon={angleIcon}
+        onPress={open}
+        accessibilityLabel={tSession('mobile.angleSelector.buttonAria', { angle: activeBoard.angle })}
+      />
       <AngleSelectorSheet
         visible={visible}
         onClose={close}

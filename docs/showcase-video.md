@@ -648,7 +648,7 @@ What changes per take:
 | Take | On Android |
 | --- | --- |
 | `boards-*`, `spray`, `log`, `workouts` | Same story, own coordinates. The shorter screen keeps the workout preview below the fold. |
-| `wall` | The Climbs header has no board glyph on the right ("+" is a new climb); the sheet opens from the board name ("Marco's Board", the `board-history-button` anchor) at half height. |
+| `wall` | The Climbs app bar shows the board name as a static title and no angle (it is the first filter chip); "+" is a new climb. The history clock beside the ⋯ menu (the `board-history-button` anchor) opens the sheet at half height. |
 | `crew` | The queue sheet is dragged to full height (history rows can push the new row below the fold at half height), and there is no "Play next" beat (see the app bugs below). The second phone is the iOS simulator, see below. |
 | `lock-screen` | The ongoing "session" notification in the shade instead of the Dynamic Island: Home, a swipe down from the status bar (the notification is expanded as the first one), Next by its label. No relaunch between setup and arm (a relaunch leaves the first climb without its thumbnail) and no home-screen cleanup (the shade covers it). |
 

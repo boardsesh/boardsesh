@@ -39,6 +39,8 @@ type ActionMockProps = {
   accessibilityHint?: string;
 };
 vi.mock('../GlassActionToolbar', () => ({
+  useToolbarActionSize: () => 48,
+  toolbarGlyphSize: (baseSize: number) => baseSize,
   GlassToolbarAction: ({ children, onPress, accessibilityLabel, accessibilityHint }: ActionMockProps) =>
     createElement(
       'button',

@@ -6,7 +6,7 @@ import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { hapticLight } from '../../lib/haptics';
 import { Icon } from '../Icon';
 import { Badge } from '../Badge';
-import { GlassToolbarAction } from './GlassActionToolbar';
+import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './GlassActionToolbar';
 
 type BoardToolbarActionProps = {
   /** What a tap does — open the board switcher. */
@@ -29,6 +29,7 @@ type BoardToolbarActionProps = {
 export function BoardToolbarAction({ onPress, accessibilityHint, badge = false }: BoardToolbarActionProps) {
   const { systemColors, brandColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
+  const actionSize = useToolbarActionSize();
 
   const boardLabel = useMemo(() => formatActiveBoardLabel(activeBoard), [activeBoard]);
 
@@ -41,7 +42,12 @@ export function BoardToolbarAction({ onPress, accessibilityHint, badge = false }
 
   return (
     <GlassToolbarAction onPress={handlePress} accessibilityLabel={boardLabel} accessibilityHint={accessibilityHint}>
-      <Icon maxFontSizeMultiplier={1} name="boards" size={23} color={systemColors.label} />
+      <Icon
+        maxFontSizeMultiplier={1}
+        name="boards"
+        size={toolbarGlyphSize(23, actionSize)}
+        color={systemColors.label}
+      />
       {badge ? (
         // Unclipped overlay so the parent toolbar's rounded corner can't crop the
         // dot. The enclosing GlassActionToolbar clips (overflow:hidden), so the

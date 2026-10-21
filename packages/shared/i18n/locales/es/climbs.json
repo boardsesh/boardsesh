@@ -321,7 +321,6 @@
   "mobile": {
     "listOptions": {
       "title": "Opciones de la lista de bloques",
-      "angle": "Ángulo · {{angle}}°",
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
       "historyHint": "Mira los bloques que se han iluminado en este muro"

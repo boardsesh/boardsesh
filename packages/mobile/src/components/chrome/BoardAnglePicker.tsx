@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useSetBoardAngle } from '../../lib/boards/use-set-board-angle';
 import { hapticLight } from '../../lib/haptics';
+import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { spacing } from '../../theme/tokens';
@@ -17,7 +18,7 @@ import { SheetTopBar } from '../SheetTopBar';
 
 type AnglePresentation = { scope: string; popover: boolean; open: boolean };
 
-/** One angle picker shared by toolbar buttons and the climb-list menu. */
+/** One angle picker shared by the toolbar angle buttons and the Climbs filter-row Angle chip. */
 export function BoardAnglePicker({ children }: { children: (open: () => void) => ReactElement }) {
   const { t: tSession } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
@@ -28,7 +29,7 @@ export function BoardAnglePicker({ children }: { children: (open: () => void) =>
   const angles = useBoardAngleOptions(activeBoard?.boardType as BoardName | undefined);
   const [presentation, setPresentation] = useState<AnglePresentation | null>(null);
   const [selectedAngle, setSelectedAngle] = useState(activeBoard?.angle ?? 40);
-  const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
+  const canAdjust = canAdjustBoardAngle(activeBoard);
   // An open picker belongs to one board and starting angle. A remote angle change
   // or board switch must not apply its old preview to the new list context.
   const scope = JSON.stringify([

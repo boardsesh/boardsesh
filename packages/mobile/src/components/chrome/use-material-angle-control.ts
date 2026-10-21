@@ -2,23 +2,23 @@ import { useCallback, useState } from 'react';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useSetBoardAngle } from '../../lib/boards/use-set-board-angle';
 import { hapticLight } from '../../lib/haptics';
+import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 
 /**
- * Shared angle state for the Material angle controls: reads the active board, owns
- * the selector sheet's open state, and writes the chosen angle back (re-grading the
- * list).
+ * Angle state for `MaterialAngleAction`, Discover's Material app-bar angle: reads
+ * the active board, owns the selector sheet's open state, and writes the chosen
+ * angle back (re-grading the list).
  *
- * Each consumer gets its OWN instance (and its own `visible` state) — that's by
- * design, not a bug: `MaterialAngleAction` (Discover's app bar) and the Climbs
- * filter-row angle chip never co-render on the same screen, so there is no shared
- * sheet-open state to diverge.
+ * The Climbs filter-row Angle chip doesn't use this. It goes through
+ * `BoardAnglePicker`, which also discards a picker left open across a board or
+ * angle change.
  */
 export function useMaterialAngleControl() {
   const { data: activeBoard } = useActiveBoard();
   const setBoardAngle = useSetBoardAngle();
   const [visible, setVisible] = useState(false);
 
-  const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
+  const canAdjust = canAdjustBoardAngle(activeBoard);
   const open = useCallback(() => {
     if (!activeBoard || activeBoard.isAngleAdjustable === false || activeBoard.angle == null) return;
     hapticLight();

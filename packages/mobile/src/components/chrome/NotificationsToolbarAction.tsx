@@ -8,7 +8,7 @@ import { hapticLight } from '../../lib/haptics';
 import { Icon } from '../Icon';
 import { iconMap } from '../icon-map';
 import { Badge } from '../Badge';
-import { GlassToolbarAction } from './GlassActionToolbar';
+import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './GlassActionToolbar';
 
 type NotificationsToolbarActionProps = {
   variant: 'glass' | 'material';
@@ -30,6 +30,7 @@ export function NotificationsToolbarAction({ variant, onPress }: NotificationsTo
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const unreadCount = useUnreadNotificationCount();
+  const actionSize = useToolbarActionSize();
 
   const handlePress = useCallback(() => {
     hapticLight();
@@ -63,7 +64,12 @@ export function NotificationsToolbarAction({ variant, onPress }: NotificationsTo
 
   return (
     <GlassToolbarAction onPress={handlePress} accessibilityLabel={accessibilityLabel}>
-      <Icon maxFontSizeMultiplier={1} name="notification" size={22} color={systemColors.label} />
+      <Icon
+        maxFontSizeMultiplier={1}
+        name="notification"
+        size={toolbarGlyphSize(22, actionSize)}
+        color={systemColors.label}
+      />
       {unreadCount > 0 ? (
         // Nudged inward (top/right 2) so the island's rounded corner can't crop
         // the dot — same geometry as BoardToolbarAction's onboarding cue.

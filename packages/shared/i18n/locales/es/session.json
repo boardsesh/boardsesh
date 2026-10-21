@@ -389,7 +389,8 @@
       "title": "Elegir ángulo",
       "fromVerticalHint": "Medido desde la vertical",
       "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical",
-      "snapToAngle": "Ir a {{angle}}°"
+      "snapToAngle": "Ir a {{angle}}°",
+      "buttonAria": "Ángulo del plafón, {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",

@@ -321,7 +321,6 @@
   "mobile": {
     "listOptions": {
       "title": "Climb list options",
-      "angle": "Angle · {{angle}}°",
       "viewOptions": "View options",
       "history": "Board history, {{board}}",
       "historyHint": "See what has been lit on this wall"
