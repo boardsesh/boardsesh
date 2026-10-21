@@ -100,6 +100,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: live-store-runtimes
+          path: ${{ runner.temp }}/live-store-runtimes
       - name: Freeze the exact archived bytes
         id: prepare
         env:
@@ -114,7 +115,7 @@ jobs:
           if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
           node --experimental-strip-types scripts/mobile-ota-stable.ts prepare --apply \
             --state controller-state/state.json --stage ota-stage --source-run-id "$SOURCE_RUN" \
-            --source-sha "$SOURCE_SHA" --loaded-state-run-id "$LOADED_RUN" --live-runtimes live-store-runtimes.json
+            --source-sha "$SOURCE_SHA" --loaded-state-run-id "$LOADED_RUN" --live-runtimes "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json"
       - name: Retain preparation checkpoint
         if: always() && steps.artifacts.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -254,6 +255,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: live-store-runtimes
+          path: ${{ runner.temp }}/live-store-runtimes
       - name: Judge and apply at most one timed step
         id: controller
         env:
@@ -273,7 +275,7 @@ jobs:
           if [ "$operation" = plan ]; then operation=tick; fi
           node --experimental-strip-types scripts/mobile-ota-stable.ts "$operation" "${flags[@]}" \
             --state controller-state/state.json --stage ota-stage --loaded-state-run-id "$LOADED_RUN" \
-            --live-runtimes live-store-runtimes.json \
+            --live-runtimes "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json" \
             | tee "$RUNNER_TEMP/ota-stable-result.txt"
           cat "$RUNNER_TEMP/ota-stable-result.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Collect durable upload leases

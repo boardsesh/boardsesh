@@ -149,10 +149,12 @@ describe('daily stable workflow boundaries', () => {
       // file and holds. A job output can't carry the JSON (see the resolver).
       const download = step(job, 'Download public store runtimes');
       expect(download.if).toBe("needs.live-store-runtimes.result == 'success'");
-      expect(download.with).toEqual({ name: 'live-store-runtimes' });
+      expect(download.with).toEqual({ name: 'live-store-runtimes', path: '${{ runner.temp }}/live-store-runtimes' });
       const steps = workflow.jobs[job].steps ?? [];
       expect(steps.indexOf(download)).toBeLessThan(steps.indexOf(step(job, consumer)));
-      expect(step(job, consumer).run).toContain('--live-runtimes live-store-runtimes.json');
+      expect(step(job, consumer).run).toContain(
+        '--live-runtimes "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json"',
+      );
     }
     expect(source).not.toContain('needs.live-store-runtimes.outputs');
     expect(workflow.jobs.smokes.if).toBe("needs.prepare.outputs.sha != ''");

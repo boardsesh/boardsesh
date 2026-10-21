@@ -241,6 +241,7 @@ export function createStableGithubClient(options: {
       'Collect durable upload leases',
       'Retain checkpoint and upload leases',
       'Resolve exact publicly available store runtimes',
+      'Download public store runtimes',
       'Deliver pending deployment events',
       'Retain delivery receipts even when Discord fails',
       'Surface notification delivery failure',
