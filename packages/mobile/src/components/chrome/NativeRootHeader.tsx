@@ -65,6 +65,24 @@ export function NativeRootHeader({
   const insets = useSafeAreaInsets();
   // The title view gets the free space between the two groups (see nativeTitleMaxWidth).
   const centerMaxWidth = centerActionWidths ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths) : undefined;
+  // Stable renderer identity across re-renders that change neither input: one
+  // fewer header option that changes on every render of the screen (#6619).
+  const hasCenterContent = centerContent != null;
+  const renderCenterContent = useCallback(
+    () => (
+      <NativeHeaderActionContext.Provider value={true}>
+        <NativeTitleMaxWidthContext.Provider value={centerMaxWidth}>
+          <View
+            pointerEvents="box-none"
+            style={[styles.centerContent, centerMaxWidth == null ? null : { maxWidth: centerMaxWidth }]}
+          >
+            {centerContent}
+          </View>
+        </NativeTitleMaxWidthContext.Provider>
+      </NativeHeaderActionContext.Provider>
+    ),
+    [centerContent, centerMaxWidth],
+  );
   const controlsHeight = useRef(0);
   const hasControls = children != null;
   useLayoutEffect(() => {
@@ -84,7 +102,7 @@ export function NativeRootHeader({
         options={{
           headerShown: true,
           // The current-climb pill replaces the root title while it is present.
-          headerLargeTitle: centerContent == null,
+          headerLargeTitle: !hasCenterContent,
           headerTransparent: true,
           // iOS 26 owns the scroll-edge material; don't inherit the legacy blur.
           headerBlurEffect: glassCapability ? undefined : 'systemMaterial',
@@ -92,21 +110,7 @@ export function NativeRootHeader({
           headerLargeTitleShadowVisible: false,
           // Route layouts own the title even while a root modal is focused.
           ...(title === undefined ? {} : { title }),
-          headerTitle:
-            centerContent != null
-              ? () => (
-                  <NativeHeaderActionContext.Provider value={true}>
-                    <NativeTitleMaxWidthContext.Provider value={centerMaxWidth}>
-                      <View
-                        pointerEvents="box-none"
-                        style={[styles.centerContent, centerMaxWidth == null ? null : { maxWidth: centerMaxWidth }]}
-                      >
-                        {centerContent}
-                      </View>
-                    </NativeTitleMaxWidthContext.Provider>
-                  </NativeHeaderActionContext.Provider>
-                )
-              : undefined,
+          headerTitle: hasCenterContent ? renderCenterContent : undefined,
           headerTitleStyle: { color: systemColors.label },
           headerLargeTitleStyle: { color: systemColors.label },
           headerLeft:

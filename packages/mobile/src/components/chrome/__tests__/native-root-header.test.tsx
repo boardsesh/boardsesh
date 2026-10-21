@@ -252,6 +252,15 @@ describe('NativeRootHeader', () => {
     expect(centerWidth()).toBe(600 - (59 + 44) - (59 + 88) - 72);
   });
 
+  it('hands UIKit the same title renderer when a re-render changes nothing (#6619)', () => {
+    const capsule = <button>On the wall</button>;
+    const { rerender } = render(<NativeRootHeader centerContent={capsule} onHeightChange={vi.fn()} />);
+    const firstTitle = lastOptions().headerTitle;
+    rerender(<NativeRootHeader centerContent={capsule} onHeightChange={vi.fn()} />);
+    expect(lastOptions().headerTitle).toBe(firstTitle);
+    expect(lastOptions().headerLargeTitle).toBe(false);
+  });
+
   it('retains the underlying route title when the climb drawer opens and closes', () => {
     controls.focusedSegments = ['(tabs)', 'climbs'];
     const routeOptions: NativeStackNavigationOptions = { title: 'Climbs' };

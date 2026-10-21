@@ -8,7 +8,7 @@
 // dedicated Appbar.Header with the board as its title, history and the ⋯ menu;
 // its angle is the first chip in the filter row (FilterChipRow).
 
-import { memo, type ReactNode, type RefObject, useCallback } from 'react';
+import { memo, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Keyboard, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
 import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
+import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { ClimbListBoardActions, ClimbListBoardTitle, climbListBoardActionCount } from '../chrome/ClimbListBoardActions';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
@@ -31,6 +32,7 @@ import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction'
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
+import { addErrorBreadcrumb } from '../../lib/error-reporting';
 import { FilterButton } from './FilterButton';
 import { GradeFilterControl } from './GradeFilterControl';
 
@@ -146,10 +148,26 @@ function ClimbTopChromeComponent({
   // "On the wall" capsule: own the gate here so a falsy centre slot falls back to
   // the title, and the capsule gets a clean mount/unmount (entering/exiting fade).
   // Only present when a board feed lights a climb that differs from the user's own
-  // current climb (hidden in the solo case).
+  // current climb (hidden in the solo case). Settled: the capsule swaps the native
+  // header out of large-title mode, which must not happen under the player's
+  // dismiss animation (#6619).
   const currentClimbUuid = useActiveClimbUuid();
-  const wallClimb = useWallClimbIfDistinct(currentClimbUuid);
-  const wallCapsule = wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined;
+  const wallClimb = useSettledHeaderValue(useWallClimbIfDistinct(currentClimbUuid));
+  const wallCapsule = useMemo(
+    () => (wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined),
+    [wallClimb, boardName],
+  );
+  const hasWallCapsule = wallClimb !== null;
+  const loggedWallCapsuleRef = useRef(false);
+  useEffect(() => {
+    // Skip the "hidden" every Climbs mount would log; only transitions are a trail.
+    if (!hasWallCapsule && !loggedWallCapsuleRef.current) return;
+    loggedWallCapsuleRef.current = true;
+    addErrorBreadcrumb({
+      category: 'ui.header',
+      message: hasWallCapsule ? 'wall capsule shown' : 'wall capsule hidden',
+    });
+  }, [hasWallCapsule]);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),

@@ -160,6 +160,7 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => void | (() => void)) => {
     ctrl.focusEffects.push(effect);
   },

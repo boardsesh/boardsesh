@@ -37,6 +37,7 @@ import { useGymBoards } from '../lib/graphql/hooks/use-gym-boards';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
+import { addErrorBreadcrumb } from '../lib/error-reporting';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
@@ -664,6 +665,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // a dismiss-window tap on a climb from another board would replay against
       // the stored board with no way back to the one it was tapped on.
       const targetPending = playTargetRef.current != null && playTargetNonceRef.current !== consumedNonce;
+      addErrorBreadcrumb({ category: 'ui.play', message: 'play drawer closed', data: { targetPending } });
       if (!targetPending && !usesDetailPaneRef.current) setBoardConfigOverride(null);
       // Only drop the target this close was actually for. The reset runs from the
       // route's UNMOUNT cleanup — the end of the dismiss animation — and the list

@@ -45,7 +45,7 @@ import { GET_BOARD, GET_PROFILE } from '../lib/graphql/operations';
 import type { GetBoardQueryResponse, GetProfileQueryResponse } from '../lib/graphql/operations';
 import { getBoardRenderData } from '../lib/board-details';
 import { registerBluetoothConnection } from '../lib/ble/bluetooth-status-store';
-import { reportHandledError } from '../lib/error-reporting';
+import { addErrorBreadcrumb, reportHandledError } from '../lib/error-reporting';
 import { useQueue, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useBoardPresenceControls } from './board-presence-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
@@ -1593,6 +1593,8 @@ export function BluetoothProvider({
   const registerExternalHost = useCallback((hostId: string) => {
     setExternalHostStack((stack) => [...stack, hostId]);
     return () => {
+      // Trail for an App Hang: this hand-back can run while /play is still animating out.
+      addErrorBreadcrumb({ category: 'ui.picker', message: 'picker host released' });
       setExternalHostStack((stack) => stack.filter((id) => id !== hostId));
     };
   }, []);
