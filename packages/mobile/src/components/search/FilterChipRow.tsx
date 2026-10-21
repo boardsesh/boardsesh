@@ -16,7 +16,7 @@
 
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useTheme } from '../../providers/theme-provider';
+import { createVariantComponent } from '../../theme/variants';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { CapsuleRow } from '../filter-capsules/CapsuleRow';
@@ -60,9 +60,6 @@ function ClimbCapsuleRowWithAngle(props: FilterChipRowProps) {
 
 // A variant change swaps the component type, so React remounts instead of
 // switching hooks inside one component.
-function FilterChipRowForVariant(props: FilterChipRowProps) {
-  const { variant } = useTheme();
-  return variant === 'material' ? <ClimbCapsuleRowWithAngle {...props} /> : <ClimbCapsuleRow {...props} />;
-}
-
-export const FilterChipRow = memo(FilterChipRowForVariant);
+export const FilterChipRow = memo(
+  createVariantComponent('FilterChipRow', { liquidGlass: ClimbCapsuleRow, material: ClimbCapsuleRowWithAngle }),
+);
