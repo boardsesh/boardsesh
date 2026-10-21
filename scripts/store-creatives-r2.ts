@@ -23,6 +23,7 @@ export interface CreativeAsset {
 }
 export interface CreativeManifest {
   schemaVersion: 1;
+  marketingVersion?: string;
   storage: { bucket: string; baseUrl: string };
   locales: Record<string, string[]>;
   variants: Record<string, { cpp: string | null; assets: CreativeAsset[] }>;
@@ -73,6 +74,11 @@ function creativePath(file: string, variant: string, locale: string, extension: 
 export function parseCreativeManifest(input: unknown): CreativeManifest {
   const manifest = record(input);
   if (manifest.schemaVersion !== 1 || 'release' in manifest) throw new Error('Unsupported creative manifest schema');
+  if (
+    manifest.marketingVersion !== undefined &&
+    (typeof manifest.marketingVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(manifest.marketingVersion))
+  )
+    throw new Error('Invalid creative marketing version');
   const storage = record(manifest.storage);
   const baseUrl = new URL(textField(storage.baseUrl));
   if (
@@ -133,7 +139,13 @@ export function parseCreativeManifest(input: unknown): CreativeManifest {
     variants[variant] = { cpp: config.cpp as string | null, assets };
   }
   if (Object.keys(variants).length !== 5) throw new Error('Creative manifest needs all five variants');
-  return { schemaVersion: 1, storage: { bucket: STORE_CREATIVES_BUCKET, baseUrl: baseUrl.origin }, locales, variants };
+  return {
+    schemaVersion: 1,
+    ...(manifest.marketingVersion ? { marketingVersion: manifest.marketingVersion as string } : {}),
+    storage: { bucket: STORE_CREATIVES_BUCKET, baseUrl: baseUrl.origin },
+    locales,
+    variants,
+  };
 }
 export function creativeObjects(manifest: CreativeManifest, variant = 'all', placement = 'all'): CreativeObject[] {
   if (!['all', 'search', 'header'].includes(placement)) throw new Error('Unknown creative placement');
