@@ -93,6 +93,13 @@ jobs:
           echo "loaded_run=$(jq -r '.runId // "0"' <<< "$state")" >> "$GITHUB_OUTPUT"
           echo "source_run=$(jq -r .runId <<< "$source")" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(jq -r .headSha <<< "$source")" >> "$GITHUB_OUTPUT"
+      # An artifact, not a job output: GitHub drops a job output that contains a
+      # masked value. A failed lookup leaves no file, and the controller holds.
+      - name: Download public store runtimes
+        if: needs.live-store-runtimes.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: live-store-runtimes
       - name: Freeze the exact archived bytes
         id: prepare
         env:
@@ -103,10 +110,8 @@ jobs:
           SOURCE_RUN: ${{ steps.artifacts.outputs.source_run }}
           SOURCE_SHA: ${{ steps.artifacts.outputs.source_sha }}
           LOADED_RUN: ${{ steps.artifacts.outputs.loaded_run }}
-          LIVE_STORE_RUNTIMES: ${{ needs.live-store-runtimes.outputs.live_runtimes }}
         run: |
           if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
-          if [ -n "$LIVE_STORE_RUNTIMES" ]; then printf '%s' "$LIVE_STORE_RUNTIMES" > live-store-runtimes.json; fi
           node --experimental-strip-types scripts/mobile-ota-stable.ts prepare --apply \
             --state controller-state/state.json --stage ota-stage --source-run-id "$SOURCE_RUN" \
             --source-sha "$SOURCE_SHA" --loaded-state-run-id "$LOADED_RUN" --live-runtimes live-store-runtimes.json
@@ -244,6 +249,11 @@ jobs:
             fi
           fi
           if [ -f controller-state/rollout-receipt.json ]; then cp controller-state/rollout-receipt.json ota-stage/; fi
+      - name: Download public store runtimes
+        if: needs.live-store-runtimes.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: live-store-runtimes
       - name: Judge and apply at most one timed step
         id: controller
         env:
@@ -254,10 +264,8 @@ jobs:
           COMMAND: ${{ needs.resolve.outputs.command }}
           LOADED_RUN: ${{ steps.artifacts.outputs.loaded_run }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          LIVE_STORE_RUNTIMES: ${{ needs.live-store-runtimes.outputs.live_runtimes }}
         run: |
           if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
-          if [ -n "$LIVE_STORE_RUNTIMES" ]; then printf '%s' "$LIVE_STORE_RUNTIMES" > live-store-runtimes.json; fi
           flags=()
           if [ "$COMMAND" != plan ]; then flags+=(--apply); fi
           if [ -n "$CANDIDATE_SHA" ]; then flags+=(--expected-sha "$CANDIDATE_SHA"); fi

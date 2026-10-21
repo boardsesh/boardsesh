@@ -1,11 +1,10 @@
 name: Resolve Public Store Runtimes
 
+# Callers download the `live-store-runtimes` artifact. A job output cannot carry
+# the JSON: the multi-line Play service-account secret registers its bare `{`
+# line as a masked value, and GitHub drops any job output that contains one.
 on:
   workflow_call:
-    outputs:
-      live_runtimes:
-        description: Validated public iOS and Android build identities and full fingerprints
-        value: ${{ jobs.resolve.outputs.live_runtimes }}
 
 permissions:
   contents: read
@@ -15,8 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: Production
-    outputs:
-      live_runtimes: ${{ steps.live.outputs.live_runtimes }}
     steps:
       # Never execute train or PR code with store credentials. No install hooks.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -29,7 +26,6 @@ jobs:
         with:
           node-version: '22.x'
       - name: Resolve exact publicly available store runtimes
-        id: live
         env:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -40,4 +36,5 @@ jobs:
         with:
           name: live-store-runtimes
           path: live-store-runtimes.json
+          if-no-files-found: error
           retention-days: 7

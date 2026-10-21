@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   createAppStoreConnectJwt,
@@ -160,7 +160,6 @@ async function main(): Promise<void> {
     if (!outputPath || outputPath.startsWith('--')) throw new Error('--out needs a filename');
     writeFileSync(outputPath, `${json}\n`);
   }
-  if (process.env['GITHUB_OUTPUT']) appendFileSync(process.env['GITHUB_OUTPUT'], `live_runtimes=${json}\n`);
   console.log(json);
 }
 

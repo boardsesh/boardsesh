@@ -393,6 +393,24 @@ jobs:
           echo "train_sha=$train_sha" >> "$GITHUB_OUTPUT"
           echo 'superseded=false' >> "$GITHUB_OUTPUT"
 
+      # The store evidence arrives as an artifact, never a job output. GitHub drops
+      # a job output that contains any masked value, and the resolve job's
+      # multi-line Play service-account secret registers its bare `{` line as one.
+      - name: Download public store runtimes
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: live-store-runtimes
+          path: ${{ runner.temp }}/live-store-runtimes
+
+      - name: Read public store runtimes
+        id: live_store
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        run: |
+          set -euo pipefail
+          live_runtimes="$(jq -c . "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json")"
+          echo "live_runtimes=$live_runtimes" >> "$GITHUB_OUTPUT"
+
       # The live stores are the source of truth. main can already carry native
       # code awaiting review while production still runs the previous runtime.
       - name: Skip platforms whose runtimeVersion the train does not own
@@ -403,7 +421,7 @@ jobs:
           TRAIN_SUPERSEDED: ${{ steps.train_baselines.outputs.superseded }}
           TRAIN_ACTIVE: ${{ steps.train_baselines.outputs.train_active }}
           TRAIN_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
-          LIVE_STORE_RUNTIMES: ${{ needs.live-store-runtimes.outputs.live_runtimes }}
+          LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
         run: |
           set -euo pipefail
           {
@@ -675,7 +693,7 @@ jobs:
           OTA_EXPECT_RUNTIME_VERSION: ${{ steps.train_guard.outputs.ios_runtime_version }}
           OTA_EXPECT_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
           OTA_EXPECT_TRAIN_SHA: ${{ steps.train_baselines.outputs.train_sha }}
-          OTA_LIVE_STORE_RUNTIMES: ${{ needs.live-store-runtimes.outputs.live_runtimes }}
+          OTA_LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
         # The publisher independently confirms a train guard's exact runtime,
         # then freezes it through export/retries. Other publishes resolve the
         # current commit's fingerprint directly. That matches the shipped binary — which embeds the same Linux gate
@@ -717,7 +735,7 @@ jobs:
           OTA_EXPECT_RUNTIME_VERSION: ${{ steps.train_guard.outputs.android_runtime_version }}
           OTA_EXPECT_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
           OTA_EXPECT_TRAIN_SHA: ${{ steps.train_baselines.outputs.train_sha }}
-          OTA_LIVE_STORE_RUNTIMES: ${{ needs.live-store-runtimes.outputs.live_runtimes }}
+          OTA_LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
           # Must match the Android native prebuild (android-apk-rn.yml) so the
           # resolved android.config.googleMaps block — and the freshly-resolved
           # fingerprint — agree with the binary. (No fingerprint override: see the

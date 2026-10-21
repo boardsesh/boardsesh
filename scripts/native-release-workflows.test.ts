@@ -146,8 +146,29 @@ describe('native release workflow contracts', () => {
     expect(guard?.env).toMatchObject({
       TRAIN_SUPERSEDED: '${{ steps.train_baselines.outputs.superseded }}',
       TRAIN_ACTIVE: '${{ steps.train_baselines.outputs.train_active }}',
-      LIVE_STORE_RUNTIMES: '${{ needs.live-store-runtimes.outputs.live_runtimes }}',
+      LIVE_STORE_RUNTIMES: '${{ steps.live_store.outputs.live_runtimes }}',
     });
+    // The evidence must come from the artifact. A job output carrying it is
+    // dropped whenever it contains a masked value, which left every train
+    // publish reading an empty string.
+    const liveResolver = parse(workflow('mobile-live-store-runtimes.yml')) as {
+      on: { workflow_call?: { outputs?: unknown } };
+      jobs: Record<string, { outputs?: unknown }>;
+    };
+    expect(liveResolver.on.workflow_call?.outputs).toBeUndefined();
+    expect(liveResolver.jobs.resolve?.outputs).toBeUndefined();
+    expect(productionOta).not.toContain('needs.live-store-runtimes.outputs');
+    const downloadIndex = steps.findIndex((step) => step.name === 'Download public store runtimes');
+    expect(steps[downloadIndex]?.uses).toMatch(/^actions\/download-artifact@[a-f0-9]{40}$/);
+    expect(steps[downloadIndex]?.with?.name).toBe('live-store-runtimes');
+    const readIndex = steps.findIndex((step) => step.id === 'live_store');
+    expect(downloadIndex).toBeLessThan(readIndex);
+    expect(readIndex).toBeLessThan(steps.findIndex((step) => step.name === TRAIN_GUARD_STEP));
+    for (const stepName of ['Publish iOS OTA', 'Publish Android OTA']) {
+      expect(steps.find((step) => step.name === stepName)?.env?.OTA_LIVE_STORE_RUNTIMES).toBe(
+        '${{ steps.live_store.outputs.live_runtimes }}',
+      );
+    }
     const baselineIndex = steps.findIndex((step) => step.name === TRAIN_BASELINE_STEP);
     const baseline = steps[baselineIndex];
     expect(baseline?.id).toBe('train_baselines');

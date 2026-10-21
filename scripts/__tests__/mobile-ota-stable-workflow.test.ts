@@ -140,12 +140,21 @@ describe('daily stable workflow boundaries', () => {
   it('holds safely on store lookup failures and allows explicit abort without store access', () => {
     expect(workflow.jobs['live-store-runtimes'].uses).toBe('./.github/workflows/mobile-live-store-runtimes.yml');
     expect(workflow.jobs['live-store-runtimes'].if).toContain("command != 'abort'");
-    for (const job of ['prepare', 'tick']) {
+    for (const [job, consumer] of [
+      ['prepare', 'Freeze the exact archived bytes'],
+      ['tick', 'Judge and apply at most one timed step'],
+    ] as const) {
       expect(workflow.jobs[job].if).toContain('always()');
-      expect(workflow.jobs[job].steps?.find((entry) => entry.env?.LIVE_STORE_RUNTIMES)?.env?.LIVE_STORE_RUNTIMES).toBe(
-        '${{ needs.live-store-runtimes.outputs.live_runtimes }}',
-      );
+      // A failed or skipped lookup downloads nothing, so the controller finds no
+      // file and holds. A job output can't carry the JSON (see the resolver).
+      const download = step(job, 'Download public store runtimes');
+      expect(download.if).toBe("needs.live-store-runtimes.result == 'success'");
+      expect(download.with).toEqual({ name: 'live-store-runtimes' });
+      const steps = workflow.jobs[job].steps ?? [];
+      expect(steps.indexOf(download)).toBeLessThan(steps.indexOf(step(job, consumer)));
+      expect(step(job, consumer).run).toContain('--live-runtimes live-store-runtimes.json');
     }
+    expect(source).not.toContain('needs.live-store-runtimes.outputs');
     expect(workflow.jobs.smokes.if).toBe("needs.prepare.outputs.sha != ''");
     expect(workflow.jobs.boot.if).toBe("needs.prepare.outputs.sha != ''");
   });
