@@ -152,7 +152,8 @@ function ClimbTopChromeComponent({
   // header out of large-title mode, which must not happen under the player's
   // dismiss animation (#6619).
   const currentClimbUuid = useActiveClimbUuid();
-  const wallClimb = useSettledHeaderValue(useWallClimbIfDistinct(currentClimbUuid));
+  const liveWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  const wallClimb = useSettledHeaderValue(liveWallClimb);
   const wallCapsule = useMemo(
     () => (wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined),
     [wallClimb, boardName],
