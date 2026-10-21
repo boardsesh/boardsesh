@@ -36,7 +36,12 @@ type LaunchUpdatePlaceholderProps = {
   stage: LaunchUpdateStage;
   /** A fresh install's first launch: say why this one takes a moment. */
   firstLaunch: boolean;
-  /** Called once it has laid out, so the native splash can come down over it. */
+  /**
+   * Called from `onLayout`, so only after the native view exists: the splash
+   * comes down over it then. An effect would fire before native layout, which
+   * is the empty-window gap this closes. It fires again on later layouts
+   * (rotation, text size); the gate keeps only the first.
+   */
   onPainted?: () => void;
 };
 

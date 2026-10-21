@@ -33,6 +33,7 @@ import {
   type LaunchUpdateProfileInput,
   type LaunchUpdateSettleDeps,
   type LaunchUpdateState,
+  type LaunchUpdateTerminalDecision,
   type LaunchUpdateTrigger,
 } from '../launch-update-gate';
 
@@ -188,7 +189,7 @@ describe('shouldMarkFirstLaunchHandled', () => {
     },
   );
 
-  it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'nothing_newer'])(
+  it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'failed', 'nothing_newer', 'skipped_failed_update'])(
     'moves the marker on for a store update that ended %s',
     (outcome) => {
       expect(shouldMarkFirstLaunchHandled('binary_update', outcome)).toBe(true);
@@ -200,7 +201,7 @@ describe('shouldMarkFirstLaunchHandled', () => {
     expect(shouldMarkFirstLaunchHandled('binary_update', 'offline')).toBe(false);
   });
 
-  it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'failed', 'offline', 'nothing_newer'])(
+  it.each<LaunchUpdateOutcome>(['updated', 'timed_out', 'failed', 'offline', 'nothing_newer', 'skipped_failed_update'])(
     'never marks a cold start (%s)',
     (outcome) => {
       expect(shouldMarkFirstLaunchHandled('cold_start', outcome)).toBe(false);
@@ -897,13 +898,16 @@ describe('settleLaunchUpdate', () => {
     expect(deps.markRuntimeHandled).not.toHaveBeenCalled();
   });
 
-  it('moves the marker on for a store update', async () => {
-    const { deps } = settleDeps({ trigger: 'binary_update' });
+  it.each<LaunchUpdateOutcome>(['nothing_newer', 'failed', 'skipped_failed_update'])(
+    'moves the marker on for a store update released as %s',
+    async (outcome) => {
+      const { deps } = settleDeps({ trigger: 'binary_update' });
 
-    await settleLaunchUpdate({ step: 'release', outcome: 'nothing_newer', phase: 'none' }, deps);
+      await settleLaunchUpdate({ step: 'release', outcome, phase: 'none' } as LaunchUpdateTerminalDecision, deps);
 
-    expect(deps.markRuntimeHandled).toHaveBeenCalledExactlyOnceWith(RUNTIME);
-  });
+      expect(deps.markRuntimeHandled).toHaveBeenCalledExactlyOnceWith(RUNTIME);
+    },
+  );
 
   it('never writes the first-launch marker for a cold start', async () => {
     const { deps } = settleDeps({ trigger: 'cold_start' });
