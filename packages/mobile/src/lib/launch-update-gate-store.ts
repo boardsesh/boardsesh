@@ -277,10 +277,11 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
   settlingReload = decision.step === 'reload';
   const generation = runGeneration;
   // A reload still has its flush and marker writes to do, so it may start
-  // until the cap (or the decision, if that landed on the cap tick) plus the
-  // start window. Without the window a download finishing just before the cap
-  // would report `updated` and then be dropped.
-  const reloadDeadlineMs = Math.max(prepared.capMs, elapsedMs()) + LAUNCH_UPDATE_RELOAD_START_WINDOW_MS;
+  // until the cap plus the start window. Without the window a download
+  // finishing just before the cap would report `updated` and then be dropped.
+  // Anchored to the cap, never to the decision: a JS thread that stalled past
+  // the cap must not buy a late reload a fresh window.
+  const reloadDeadlineMs = prepared.capMs + LAUNCH_UPDATE_RELOAD_START_WINDOW_MS;
   if (settlingReload) {
     schedule(
       () => {

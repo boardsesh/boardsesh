@@ -56,9 +56,8 @@ export const LAUNCH_UPDATE_MARKER_WRITE_TIMEOUT_MS = 700;
 export const LAUNCH_UPDATE_FLUSH_TIMEOUT_MS = 700;
 /**
  * How long past the cap a reload decided inside it may still start: the flush
- * budget (the marker writes run alongside it) plus room for the timers behind
- * it to fire. Counted from the decision instead when that landed on the cap
- * tick itself, so such a reload still gets the whole window.
+ * budget (the marker writes run alongside it) plus room for late timers, so a
+ * reload decided on the cap tick itself still clears its flush in time.
  */
 export const LAUNCH_UPDATE_RELOAD_START_WINDOW_MS = LAUNCH_UPDATE_FLUSH_TIMEOUT_MS + 250;
 /**

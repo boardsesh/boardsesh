@@ -354,9 +354,10 @@ the play drawer (`use-board-route-target.ts`). Add the wrapper to any new root m
 The cap timers decide when a cap has passed; the gate does not re-derive it from the wall clock,
 which can step backwards on Android. A reload decided inside the cap may start until 950 ms past it
 (`LAUNCH_UPDATE_RELOAD_START_WINDOW_MS`: the 700 ms flush budget, which the marker writes share,
-plus room for the timers behind it), counted from the decision when that landed on the cap tick.
-Without that window a download finishing just before a 5 s cap would report `updated` and then be
-dropped. Once a reload has been requested the gate gives the native relaunch 5 s
+plus 250 ms for late timers, so a reload decided on the cap tick still clears its flush). The window
+is anchored to the cap, not the decision, so a JS thread that stalled past the cap cannot start a
+late reload. Without the window a download finishing just before a 5 s cap would report `updated`
+and then be dropped. Once a reload has been requested the gate gives the native relaunch 5 s
 (`LAUNCH_UPDATE_RELOAD_GRACE_MS`) and then lets the app open. A relaunch that is slower than that
 cannot be cancelled and can still land afterwards.
 
