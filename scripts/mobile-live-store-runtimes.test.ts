@@ -168,6 +168,31 @@ describe('public iOS store evidence', () => {
     expect(() => mapPublicIosBuilds({ ...response, included: [] })).toThrow(/exact build identity/);
   });
 
+  it('treats only the newest released version as live, since ASC never retires the state', () => {
+    const released = (id: string, versionString: string, buildId: string) => ({
+      type: 'appStoreVersions' as const,
+      id,
+      attributes: { versionString, appVersionState: PUBLIC_IOS_STATE },
+      relationships: { build: { data: { type: 'builds' as const, id: buildId } } },
+    });
+    const history = {
+      data: [
+        released('version-legacy', '2.0', 'build-legacy'),
+        released('version-old', '2.5.0', 'build-missing'),
+        response.data[0]!,
+        released('version-ancient', '1.2', 'build-ancient'),
+      ],
+      included: [...response.included, { type: 'builds', id: 'build-legacy', attributes: { version: '100399' } }],
+    };
+    expect(mapPublicIosBuilds(history)).toEqual([publicBuilds[0]]);
+    expect(() =>
+      mapPublicIosBuilds({ ...history, data: [...history.data, released('version-dup', '2.6.0', 'build-41')] }),
+    ).toThrow(/share a version string/);
+    expect(() =>
+      mapPublicIosBuilds({ ...history, data: [...history.data, released('version-bad', '2.6.0-beta', 'build-41')] }),
+    ).toThrow(/comparable version string/);
+  });
+
   it('queries only publicly distributed iOS versions and prevents credential redirects', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

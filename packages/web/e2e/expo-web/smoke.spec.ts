@@ -90,6 +90,12 @@ async function ensureSignedIn(page: Page): Promise<void> {
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill(TEST_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
   }
+  // An account with no analytics decision gets the consent prompt before the
+  // tab shell. Declining stores the decision on the account, so later tests
+  // signed in as the same user go straight to Home.
+  const declineAnalytics = page.getByRole('button', { name: 'No thanks', exact: true });
+  await expect(declineAnalytics.or(homeTab).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+  if (await declineAnalytics.isVisible()) await declineAnalytics.click();
   await expect(homeTab).toBeVisible({ timeout: WARM_TIMEOUT_MS });
 }
 
