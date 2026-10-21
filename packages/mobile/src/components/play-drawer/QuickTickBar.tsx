@@ -14,7 +14,7 @@ import { GradeSingleSelectRail } from '../grade';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { toBoardName } from '@boardsesh/board-config';
 import {
   TickAngleControl,
   TickCountRail,
@@ -73,7 +73,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     onClimbedAtChange,
     onFutureAdjusted,
   } = form;
-  const angles = useBoardAngleOptions(boardName as BoardName | undefined);
+  const angles = useBoardAngleOptions(toBoardName(boardName) ?? undefined);
 
   // StarRating speaks `number | undefined` and clears to 0; the tick state
   // stores `null` for "no rating", which is also the only value the save path
