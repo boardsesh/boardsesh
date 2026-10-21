@@ -13,11 +13,16 @@ import { Text } from '../Text';
 import { GradeSingleSelectRail } from '../grade';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
+import type { BoardName } from '@boardsesh/shared-schema';
 import {
+  TickAngleControl,
   TickCountRail,
   TickDateRow,
   TickFormRow,
   TickNoteField,
+  shouldShowAngleRow,
+  TICK_ANGLE_ROW_HEIGHT,
   TICK_RAIL_ROW_HEIGHT,
   TICK_RAIL_TRAIL_INSET,
 } from '../tick';
@@ -31,12 +36,16 @@ export type QuickTickBarProps = {
   showNote?: boolean;
   /** Compact logging keeps date/time in the expanded form. */
   showDate?: boolean;
+  /** Compact logging keeps the angle in the expanded form too: most ticks are
+   *  at the board's angle, and the medium detent has room for the common rows only. */
+  showAngle?: boolean;
 };
 
 export const QuickTickBar = React.memo(function QuickTickBar({
   form,
   showNote = true,
   showDate = true,
+  showAngle = true,
 }: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -47,6 +56,8 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const {
     climbUuid,
     boardName,
+    angle,
+    openingAngle,
     tickState,
     comment,
     climbedAt,
@@ -55,12 +66,14 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     consensusDifficultyId,
     firstAscent,
     onQualitySelect,
+    onAngleSelect,
     onGradeSelect,
     onTriesSelect,
     onCommentChange,
     onClimbedAtChange,
     onFutureAdjusted,
   } = form;
+  const angles = useBoardAngleOptions(boardName as BoardName | undefined);
 
   // StarRating speaks `number | undefined` and clears to 0; the tick state
   // stores `null` for "no rating", which is also the only value the save path
@@ -144,6 +157,25 @@ export const QuickTickBar = React.memo(function QuickTickBar({
           {tClimbs('mobile.tick.gradeHelp')}
         </Text>
       )}
+
+      {/* Below the grade rail, so expanding the sheet adds the row under the
+          climber's thumb rather than pushing the rails they were using. */}
+      {showAngle && shouldShowAngleRow(boardName, angles) ? (
+        <TickFormRow
+          label={tClimbs('mobile.tick.angleLabel')}
+          height={TICK_ANGLE_ROW_HEIGHT}
+          showSeparator={false}
+          testID="tick-row-angle"
+        >
+          <TickAngleControl
+            angles={angles}
+            value={angle}
+            openingValue={openingAngle}
+            onChange={onAngleSelect}
+            accessibilityLabel={tClimbs('mobile.tick.angleLabel')}
+          />
+        </TickFormRow>
+      ) : null}
 
       {/* Date and time on one row — two short, related values that don't each
           need a row of their own, separated by an `@`. Both fields commit

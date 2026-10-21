@@ -184,11 +184,13 @@ function LogAscentSheetContent({
   );
 
   // "Consensus" only once somebody has sent it (#5960 C7): before that, the
-  // grade a climb carries is its setter's, not a crowd's.
+  // grade a climb carries is its setter's, not a crowd's. And only at the angle
+  // the sheet opened at: the consensus and the send count are that angle's, so
+  // once the climber picks another one the subtitle names just the angle.
   const subtitle =
-    consensusGradeName && baseAscensionistCount > 0
-      ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle })
-      : t('mobile.tick.angleMeta', { angle });
+    consensusGradeName && baseAscensionistCount > 0 && form.angle === angle
+      ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle: form.angle })
+      : t('mobile.tick.angleMeta', { angle: form.angle });
 
   return (
     <ModalSheet
@@ -248,7 +250,7 @@ function LogAscentSheetContent({
       }
     >
       <View ref={formFieldsRef} onLayout={handleFormFieldsLayout} testID="tick-form-fields">
-        <QuickTickBar form={form} showNote={false} showDate={!compactNote} />
+        <QuickTickBar form={form} showNote={false} showDate={!compactNote} showAngle={!compactNote} />
         <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
       </View>
     </ModalSheet>

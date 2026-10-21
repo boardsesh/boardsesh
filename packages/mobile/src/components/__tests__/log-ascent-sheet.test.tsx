@@ -45,6 +45,9 @@ const formInput = vi.hoisted(() => ({
     savedRef?: { current: boolean };
   },
 }));
+// The angle the stubbed form reports the climber has picked. `null` = untouched,
+// so the form reads the opening angle, as the real hook does.
+const pickedAngle = vi.hoisted(() => ({ current: null as number | null }));
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -203,6 +206,12 @@ vi.mock('../tick', async () => {
     TickFormRow: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
       createElement('div', { 'data-testid': testID }, children),
     TickCountRail: () => createElement('span', null, 'tries'),
+    TickAngleControl: ({ value }: { value: number }) =>
+      createElement('span', { 'data-testid': 'tick-angle-value' }, value),
+    // A copy of the real rule; the rule itself is tested in
+    // tick/__tests__/tick-angle-control.test.tsx.
+    shouldShowAngleRow: (boardName: string | undefined, angles: number[]) =>
+      boardName !== 'spray' && angles.length >= 2,
     TickDateRow: ({ value, onChange }: { value: Date; onChange: (next: Date) => void }) =>
       createElement(
         'button',
@@ -299,6 +308,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
     climbUuid: string;
     baseAscensionistCount: number;
     boardName: string;
+    angle: number;
     onDismiss: () => void;
     savedRef?: { current: boolean };
   }) => {
@@ -306,6 +316,9 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
     const [comment, setComment] = useState('');
     const [climbedAt, setClimbedAt] = useState(new Date('2025-06-01T08:00:00.000Z'));
     return {
+      boardName: input.boardName,
+      angle: pickedAngle.current ?? input.angle,
+      openingAngle: input.angle,
       tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
       comment,
       climbedAt,
@@ -320,6 +333,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       isPending: false,
       lastError: null,
       onQualitySelect: vi.fn(),
+      onAngleSelect: vi.fn(),
       onGradeSelect: vi.fn(),
       onTriesSelect: vi.fn(),
       onCommentChange: setComment,
@@ -393,6 +407,7 @@ beforeEach(() => {
   platformMock.OS = 'ios';
   platformMock.Version = '26.1';
   formInput.current = null;
+  pickedAngle.current = null;
   vi.mocked(track).mockClear();
   sheetControls.snapToIndex.mockClear();
 });
@@ -521,6 +536,30 @@ describe('LogAscentSheet header', () => {
 
     const sent = renderSheet({ consensusGradeName: 'V2', baseAscensionistCount: 1 });
     expect(sent.getByTestId('tick-header').getAttribute('data-subtitle')).toBe('mobile.tick.consensusMeta');
+  });
+
+  // #6615: the consensus belongs to the angle the sheet opened at.
+  it('names only the angle once the climber picks another one', () => {
+    pickedAngle.current = 45;
+    const { getByTestId } = renderSheet({ consensusGradeName: 'V2', baseAscensionistCount: 1, angle: 40 });
+    expect(getByTestId('tick-header').getAttribute('data-subtitle')).toBe('mobile.tick.angleMeta');
+  });
+});
+
+describe('LogAscentSheet angle row (#6615)', () => {
+  it('keeps the angle in the expanded form only, on iOS', () => {
+    const { getByTestId, queryByTestId } = renderSheet();
+    expect(queryByTestId('tick-row-angle')).toBeNull();
+
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
+    expect(getByTestId('tick-angle-value').textContent).toBe('40');
+  });
+
+  it('shows the angle in the single Android content-fitting state', () => {
+    platformMock.OS = 'android';
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('tick-row-angle')).toBeTruthy();
   });
 });
 

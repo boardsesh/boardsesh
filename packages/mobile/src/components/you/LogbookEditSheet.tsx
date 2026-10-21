@@ -20,17 +20,18 @@ import { SheetTopBar } from '../SheetTopBar';
 import { StarRating } from '../StarRating';
 import { SegmentedControl } from '../SegmentedControl';
 import { GradeSingleSelectRail } from '../grade';
-import { AngleSlider } from '../play-drawer/AngleSlider';
 import {
   EDIT_TICK_SNAP_POINTS,
   TICK_ANGLE_ROW_HEIGHT,
   TICK_RAIL_ROW_HEIGHT,
   TICK_RAIL_TRAIL_INSET,
+  TickAngleControl,
   TickCountRail,
   TickDateRow,
   TickDestructiveRow,
   TickFormRow,
   TickNoteField,
+  shouldShowAngleRow,
 } from '../tick';
 import { clampToNow, toEditableDate, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
@@ -332,17 +333,20 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
             />
           </TickFormRow>
 
-          <TickFormRow label={tTick('mobile.tick.angleLabel')} height={TICK_ANGLE_ROW_HEIGHT}>
-            <View style={styles.angleSlider}>
-              {angles.length > 0 && <AngleSlider angles={angles} value={angle} onChange={setAngle} />}
-            </View>
-            {/* The value trails the slider instead of sitting above it as a centred
-            title3 — that readout was the same size as the sheet's own climb
-            title and gave the form a second reading axis. */}
-            <Text variant="body" color={systemColors.label} style={styles.angleValue}>
-              {angle}°
-            </Text>
-          </TickFormRow>
+          {/* Same control as the create sheet. The opening value is the angle
+          the tick was logged at, so a synced off-table angle (37°) stays
+          pickable after the climber tries another one. */}
+          {shouldShowAngleRow(ascent?.boardType, angles) ? (
+            <TickFormRow label={tTick('mobile.tick.angleLabel')} height={TICK_ANGLE_ROW_HEIGHT} testID="tick-row-angle">
+              <TickAngleControl
+                angles={angles}
+                value={angle}
+                openingValue={ascent?.angle}
+                onChange={setAngle}
+                accessibilityLabel={tTick('mobile.tick.angleLabel')}
+              />
+            </TickFormRow>
+          ) : null}
 
           <TickFormRow label={tTick('mobile.tick.starsLabel')}>
             <StarRating value={quality} onChange={setQuality} size={STAR_GLYPH_SIZE} />
@@ -386,16 +390,6 @@ const STAR_GLYPH_SIZE = 24;
 const styles = StyleSheet.create({
   boardRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[2], minHeight: 48 },
   boardName: { flex: 1 },
-  angleSlider: {
-    flex: 1,
-  },
-  angleValue: {
-    minWidth: 44,
-    textAlign: 'right',
-    // Digits keep their column as the angle steps, so the readout does not
-    // twitch under the thumb.
-    fontVariant: ['tabular-nums'],
-  },
   deleteGroup: {
     // Off on its own, well clear of the last field row — Delete is not the next
     // step in the form.

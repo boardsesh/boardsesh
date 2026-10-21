@@ -23,6 +23,22 @@ export function sliderIndexForAngle(angles: number[], value: number): number {
   return found === -1 ? 0 : found;
 }
 
+/**
+ * The stops a slider should offer when `value` may not be one of them: `angles`
+ * with `value` inserted in order. A tick synced from Aurora can carry an angle
+ * the board's table doesn't list (37°), and `sliderIndexForAngle` would park the
+ * thumb on the first stop beside a readout that says 37°. A slider must never
+ * show an angle it isn't set to. A caller that wants the climber to be able to
+ * pick 37 back after moving off it passes the opening value, not the live one.
+ *
+ * Returns `angles` itself (same reference) when `value` is already a stop or
+ * isn't a finite number, and never mutates it.
+ */
+export function withCurrentAngle(angles: number[], value: number): number[] {
+  if (!Number.isFinite(value) || angles.includes(value)) return angles;
+  return [...angles, value].sort((left, right) => left - right);
+}
+
 /** The snapped stop index for a (possibly continuous) slider value. */
 export function snappedIndexForSliderValue(angles: number[], sliderValue: number): number {
   return clampIndex(Math.round(sliderValue), angles.length);

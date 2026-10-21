@@ -64,6 +64,8 @@ export type QuickTickFormInput = {
   climb?: TickClimbIdentity;
   climbUuid: string;
   boardName: string;
+  /** The angle the sheet opened at — the board's current angle. The climber can
+   *  change it in the form; this stays the opening value. */
   angle: number;
   isMirror: boolean;
   isBenchmark: boolean;
@@ -92,6 +94,12 @@ export type QuickTickForm = {
   climbUuid: string;
   /** The climb's board, so the grade rail labels follow its scale. */
   boardName?: string;
+  /** The angle the tick is logged at. Starts at the opening angle (the board's)
+   *  and follows the angle row; this is what gets saved (#6615). */
+  angle: number;
+  /** The angle the sheet opened at. The climb's consensus grade and send count
+   *  belong to this angle, not to `angle` once the climber moves off it. */
+  openingAngle: number;
   tickState: QuickTickState;
   comment: string;
   climbedAt: Date;
@@ -115,6 +123,7 @@ export type QuickTickForm = {
   isPending: boolean;
   lastError: string | null;
   onQualitySelect: (value: number | null) => void;
+  onAngleSelect: (angle: number) => void;
   onGradeSelect: (difficultyId: number | undefined) => void;
   onTriesSelect: (value: number) => void;
   onCommentChange: (next: string) => void;
@@ -208,9 +217,26 @@ export function useQuickTickForm({
     if (!boardActions) return;
     void boardActions.getLogbook([climbUuid]);
   }, [boardActions, climbUuid]);
+
+  // The angle the climber picked in the angle row. It lives as long as the
+  // other fields do: cleared with them on a new climb and after a save, kept
+  // across an accidental pan-down and reopen, so a reopened sheet never keeps
+  // the stars but quietly drops the angle. Tagged with the opening angle it was
+  // picked against, so a board moved to another angle meanwhile reads the new
+  // angle instead of a pick made for the old one.
+  const [pickedAngle, setPickedAngle] = useState<{ openingAngle: number; angle: number } | null>(null);
+  const selectedAngle = pickedAngle && pickedAngle.openingAngle === angle ? pickedAngle.angle : angle;
+  // The climb's stats came with the opening angle. Another angle is, as far as
+  // this sheet knows, a different problem: its consensus grade and its senders
+  // are unknown here.
+  const atOpeningAngle = selectedAngle === angle;
+
   const hasPriorHistory = useMemo(() => {
     // A locally-queued tick that hasn't drained yet still counts as history so
     // the label stays `Send` while offline.
+    // The pending count is per climb, not per angle, so an offline-queued 40°
+    // tick also reads Send at 45°. Conservative on purpose: a wrong Send costs a
+    // label, a wrong Flash writes a phantom flash.
     if (localPendingTicks > 0) return true;
     // No provider → assume history so the label stays `Send` (failure mode 1).
     if (!boardLogbook) return true;
@@ -220,8 +246,10 @@ export function useQuickTickForm({
     // tapping it in that window writes a phantom flash, which is worse than a
     // Send label that resolves to Flash a moment later (#3940).
     if (!boardLogbook.fetchedLogbookClimbUuids.has(climbUuid)) return true;
-    return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
-  }, [boardLogbook, climbUuid, angle, localPendingTicks]);
+    // Flash vs Send asks about the angle being logged, not the one the sheet
+    // opened at: a climb sent at 40° is a flash candidate at 45°.
+    return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, selectedAngle))?.length ?? 0) > 0;
+  }, [boardLogbook, climbUuid, selectedAngle, localPendingTicks]);
 
   const [tickState, setTickState] = useState(createInitialTickState);
   const [comment, setComment] = useState('');
@@ -243,19 +271,22 @@ export function useQuickTickForm({
   // GradeSingleSelectRail compares against each chip's `difficultyId`.
   // The first ascent of a spray climb (#5971): nobody has sent it, so the
   // climber's grade is the one the climb takes. Spray only, where the climbers'
-  // vote is the grade; `baseAscensionistCount` is the count the sheet opened with.
-  const firstAscent = boardName === 'spray' && baseAscensionistCount === 0;
+  // vote is the grade; `baseAscensionistCount` is the count the sheet opened with,
+  // so it says nothing about any other angle.
+  const firstAscent = boardName === 'spray' && baseAscensionistCount === 0 && atOpeningAngle;
   const consensusDifficultyId = useMemo(() => {
     // No outline on a first ascent: whatever grade the climb carries is not a
-    // consensus yet, and the climber's grade should be their own.
-    if (firstAscent || !consensusGradeName || !grades) return undefined;
+    // consensus yet, and the climber's grade should be their own. None at another
+    // angle either: the consensus is per angle, and outlining 40°'s grade on a
+    // 45° tick would steer the climber to the wrong one.
+    if (firstAscent || !atOpeningAngle || !consensusGradeName || !grades) return undefined;
     // Fall back to the id behind the name: a label from another source can
     // spell the same grade differently (MoonBoard's 16 was "6a/V3" before it
     // became "6a/V2").
     const consensusId = getDifficultyIdForGradeName(consensusGradeName);
     return grades.find((grade) => grade.name === consensusGradeName || grade.difficultyId === consensusId)
       ?.difficultyId;
-  }, [firstAscent, consensusGradeName, grades]);
+  }, [firstAscent, atOpeningAngle, consensusGradeName, grades]);
 
   // Inverse of consensusDifficultyId: resolve the picked numeric difficulty
   // id back to its human-readable grade name (e.g. "V5") for analytics.
@@ -285,6 +316,7 @@ export function useQuickTickForm({
   // sheet (e.g. user swiped to next while the sheet was already open).
   useEffect(() => {
     setTickState(createInitialTickState());
+    setPickedAngle(null);
     setComment('');
     setLastError(null);
     setClimbedAt(new Date());
@@ -307,6 +339,11 @@ export function useQuickTickForm({
   const handleQualitySelect = useCallback((value: number | null) => {
     setTickState((prev) => ({ ...prev, quality: value }));
   }, []);
+
+  const handleAngleSelect = useCallback(
+    (next: number) => setPickedAngle({ openingAngle: angle, angle: next }),
+    [angle],
+  );
 
   const handleClimbedAtChange = useCallback((next: Date) => {
     hasEditedClimbedAtRef.current = true;
@@ -349,14 +386,18 @@ export function useQuickTickForm({
         {
           climbUuid,
           ...(privacy.publication ? { privacy: privacy.publication } : {}),
-          angle,
+          angle: selectedAngle,
           isMirror,
           status,
           attemptCount: finalAttempts,
           quality: tickState.quality != null && tickState.quality > 0 ? tickState.quality : null,
           difficulty: tickState.difficulty ?? null,
           isBenchmark,
-          baseAscensionistCount,
+          // The count the sheet opened with is the opening angle's senders. Sent
+          // with a tick at another angle, it would floor THAT angle's optimistic
+          // count at one above the opening angle's (37 senders at 40° shows 38 at
+          // a 45° nobody has sent). Without it, the count waits for the server.
+          baseAscensionistCount: atOpeningAngle ? baseAscensionistCount : undefined,
           comment,
           climbedAt: climbedAtIso,
           ...(sessionId ? { sessionId } : {}),
@@ -405,6 +446,7 @@ export function useQuickTickForm({
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());
+            setPickedAngle(null);
             setComment('');
             setLastError(null);
             setClimbedAt(new Date());
@@ -441,10 +483,11 @@ export function useQuickTickForm({
       saveBlockedByGrade,
       climbUuid,
       boardName,
-      angle,
+      selectedAngle,
       isMirror,
       isBenchmark,
       baseAscensionistCount,
+      atOpeningAngle,
       sessionId,
       layoutId,
       tickContext,
@@ -469,6 +512,8 @@ export function useQuickTickForm({
   return {
     climbUuid,
     boardName,
+    angle: selectedAngle,
+    openingAngle: angle,
     tickState,
     comment,
     climbedAt,
@@ -483,6 +528,7 @@ export function useQuickTickForm({
     isPending: saveTick.isPending,
     lastError,
     onQualitySelect: handleQualitySelect,
+    onAngleSelect: handleAngleSelect,
     onGradeSelect: handleGradeSelect,
     onTriesSelect: handleTriesSelect,
     onCommentChange: setComment,

@@ -114,25 +114,6 @@ export function segmentedBrandColors(brandColors: BrandControlColors): {
 }
 
 /**
- * Plain Compose `SliderColors` bridging the brand fill for a native Android
- * `Slider` — the thumb and the active (filled) portion of the track. Every other
- * slider element (inactive track, ticks) reads the Compose Material theme.
- * Returned as a minimal object — every `SliderColors` field is optional — so this
- * shared file needs no `@expo/ui/jetpack-compose` import; the `.android.tsx` file
- * passes it straight to the Slider's `colors` prop. Both fields read
- * `brandAccentColor` so they can't drift from the other primitives.
- */
-export function sliderBrandColors(brandColors: BrandControlColors): {
-  thumbColor: string;
-  activeTrackColor: string;
-} {
-  return {
-    thumbColor: brandAccentColor(brandColors),
-    activeTrackColor: brandAccentColor(brandColors),
-  };
-}
-
-/**
  * Plain Compose `SliderColors` for a native Android `Slider` on a settings card:
  * the thumb and the filled track take `brandControlTint`, like the iOS Slider's
  * `tint`, so the filled part clears 3:1 on a dark card.

@@ -4,7 +4,7 @@
 // keeps each platform's @expo/ui native tree — which resolves native views at
 // module load — off the other platform's bundle. The public API is identical to
 // the previous gesture-handler + reanimated custom slider, so every call site
-// (AngleSelectorSheet, BoardForm) is unchanged.
+// (AngleSelectorSheet, BoardForm) is unchanged; the props added since are optional.
 
 export type AngleSliderProps = {
   /**
@@ -21,4 +21,19 @@ export type AngleSliderProps = {
    * a confirm button). Always receives a real angle from `angles`.
    */
   onChange: (angle: number) => void;
+  /**
+   * What the slider adjusts ("Angle"), spoken before its value. iOS sets it as
+   * the SwiftUI accessibility label, Android folds it into the Compose
+   * content description with the angle, web uses it as the range's aria-label.
+   * Omitted, iOS and Android announce the value alone and web falls back to
+   * "Select angle".
+   */
+  accessibilityLabel?: string;
+  /**
+   * Web only: the trailing `40°` text beside the range input. Native sliders
+   * draw no value of their own, so the prop means nothing there. Callers that
+   * show the angle elsewhere (the tick sheets' angle row) pass `false` so it
+   * isn't printed twice. Defaults to `true`.
+   */
+  showValue?: boolean;
 };

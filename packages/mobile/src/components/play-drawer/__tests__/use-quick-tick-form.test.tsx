@@ -157,6 +157,10 @@ function Harness(props: QuickTickFormInput) {
     createElement('span', { 'data-testid': 'first-ascent' }, String(form.firstAscent)),
     createElement('span', { 'data-testid': 'save-blocked' }, String(form.saveBlockedByGrade)),
     createElement('span', { 'data-testid': 'consensus-id' }, String(form.consensusDifficultyId ?? '')),
+    createElement('span', { 'data-testid': 'angle' }, String(form.angle)),
+    createElement('span', { 'data-testid': 'opening-angle' }, String(form.openingAngle)),
+    createElement('button', { 'data-testid': 'angle-45', onClick: () => form.onAngleSelect(45) }),
+    createElement('button', { 'data-testid': 'angle-40', onClick: () => form.onAngleSelect(ANGLE) }),
   );
 }
 
@@ -410,6 +414,122 @@ describe('useQuickTickForm first ascent of a spray climb (#5971)', () => {
       expect(getByTestId('consensus-id').textContent).toBe('5');
       unmount();
     }
+  });
+});
+
+// #6615: the angle row. The climber's angle is what gets saved; the climb's
+// opening stats (consensus grade, send count) belong to the opening angle only.
+describe('useQuickTickForm angle', () => {
+  function formProps(overrides: Partial<QuickTickFormInput> = {}): QuickTickFormInput {
+    return {
+      climbUuid: CLIMB_UUID,
+      boardName: 'kilter',
+      angle: ANGLE,
+      isMirror: false,
+      isBenchmark: false,
+      baseAscensionistCount: 37,
+      onDismiss: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it('opens at the board angle and saves the angle the climber picks', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+    expect(getByTestId('angle').textContent).toBe(String(ANGLE));
+
+    fireEvent.click(getByTestId('angle-45'));
+    expect(getByTestId('angle').textContent).toBe('45');
+    expect(getByTestId('opening-angle').textContent).toBe(String(ANGLE));
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ angle: 45 });
+  });
+
+  it('drops the consensus outline at another angle and brings it back at the opening one', () => {
+    gradesState.current = [{ difficultyId: 5, name: 'V5' }];
+    const { getByTestId } = renderForm({ consensusGradeName: 'V5' });
+    expect(getByTestId('consensus-id').textContent).toBe('5');
+
+    fireEvent.click(getByTestId('angle-45'));
+    expect(getByTestId('consensus-id').textContent).toBe('');
+
+    fireEvent.click(getByTestId('angle-40'));
+    expect(getByTestId('consensus-id').textContent).toBe('5');
+  });
+
+  it('asks Flash vs Send about the picked angle, not the opening one', () => {
+    // History at 40° only: Send there, Flash at 45°.
+    boardState.current = boardWithHistory();
+    const { container, getByTestId } = renderForm();
+    expect(saveLabel(container)).toBe('playView.tickBar.sendSaveLabel');
+
+    fireEvent.click(getByTestId('angle-45'));
+    expect(saveLabel(container)).toBe('playView.tickBar.flashSaveLabel');
+  });
+
+  it('is not a first ascent at another angle: the zero send count is the opening angle\u2019s', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm({ boardName: 'spray', baseAscensionistCount: 0 });
+    expect(getByTestId('first-ascent').textContent).toBe('true');
+
+    fireEvent.click(getByTestId('angle-45'));
+    expect(getByTestId('first-ascent').textContent).toBe('false');
+  });
+
+  it('goes back to the opening angle when the next climb loads', () => {
+    boardState.current = null;
+    const { getByTestId, rerender } = render(createElement(Harness, formProps()));
+    fireEvent.click(getByTestId('angle-45'));
+
+    rerender(createElement(Harness, formProps({ climbUuid: 'climb-2' })));
+    expect(getByTestId('angle').textContent).toBe(String(ANGLE));
+  });
+
+  it('keeps the picked angle when the same climb is presented again, like the other fields', () => {
+    boardState.current = null;
+    const { getByTestId, rerender } = render(createElement(Harness, formProps({ visible: true })));
+    fireEvent.click(getByTestId('angle-45'));
+    fireEvent.click(getByTestId('tries-increment'));
+
+    // An accidental pan-down, then the climber reopens the same climb.
+    rerender(createElement(Harness, formProps({ visible: false })));
+    rerender(createElement(Harness, formProps({ visible: true })));
+    expect(getByTestId('tries-value').textContent).toBe(String(MIN_ATTEMPT_COUNT + 1));
+    expect(getByTestId('angle').textContent).toBe('45');
+  });
+
+  it('sends the opening angle\u2019s sender count only with a tick at that angle', () => {
+    // At 40° the 37 senders are this angle's, so the optimistic count may
+    // floor on them. At 45° they are not, and the count must wait for the server.
+    boardState.current = null;
+    const { getByTestId } = renderForm({ baseAscensionistCount: 37 });
+    fireEvent.click(getByTestId('save'));
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ angle: ANGLE, baseAscensionistCount: 37 });
+
+    fireEvent.click(getByTestId('angle-45'));
+    fireEvent.click(getByTestId('save'));
+    const pickedAnglePayload = saveMock.mutate.mock.calls[1][0] as { angle: number; baseAscensionistCount?: number };
+    expect(pickedAnglePayload.angle).toBe(45);
+    expect(pickedAnglePayload.baseAscensionistCount).toBeUndefined();
+  });
+
+  it('follows a new opening angle', () => {
+    boardState.current = null;
+    const { getByTestId, rerender } = render(createElement(Harness, formProps()));
+    fireEvent.click(getByTestId('angle-45'));
+
+    rerender(createElement(Harness, formProps({ angle: 30 })));
+    expect(getByTestId('angle').textContent).toBe('30');
+  });
+
+  it('goes back to the opening angle after a save', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm();
+    fireEvent.click(getByTestId('angle-45'));
+    fireEvent.click(getByTestId('save'));
+
+    expect(getByTestId('angle').textContent).toBe(String(ANGLE));
   });
 });
 

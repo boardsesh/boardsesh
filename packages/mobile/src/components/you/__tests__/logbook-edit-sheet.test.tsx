@@ -217,6 +217,9 @@ vi.mock('../../play-drawer/AngleSlider', () => ({
       ),
     ),
 }));
+// The angle row's wall glyph is an animated SVG (react-native-svg + reanimated),
+// neither of which runs in jsdom. Decoration only: it carries no state to assert.
+vi.mock('../../tick/AngleGlyph', () => ({ AngleGlyph: () => null }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
 vi.mock('../../../lib/haptics', () => ({
   hapticSuccess: vi.fn(),
@@ -597,6 +600,22 @@ describe('LogbookEditSheet', () => {
 
     save();
     expect(firstUpdateVariables().input.angle).toBe(25);
+  });
+
+  it('shows the angle row on a board with angles to pick', () => {
+    renderSheet(makeAscent({ boardType: 'kilter' }));
+
+    expect(screen.getByTestId('tick-row-angle')).toBeTruthy();
+  });
+
+  it('has no angle row on a spray wall, whose angle the wall fixes', () => {
+    renderSheet(makeAscent({ boardType: 'spray', angle: 40 }));
+
+    expect(screen.queryByTestId('tick-row-angle')).toBeNull();
+    expect(screen.queryByText('mobile.tick.angleLabel')).toBeNull();
+    // The saved angle is left alone.
+    save();
+    expect(firstUpdateVariables().input.angle).toBe(40);
   });
 
   it('prints a failed save in the top bar instead of a toast the sheet covers', () => {

@@ -12,6 +12,7 @@ import {
   makeAngleSliderHandler,
   sliderIndexForAngle,
   snappedIndexForSliderValue,
+  withCurrentAngle,
 } from '../AngleSlider.logic';
 
 // A non-uniform 2-value set (MoonBoard) and a uniform set (Kilter 5° steps).
@@ -120,5 +121,36 @@ describe('makeAngleSliderHandler', () => {
     makeAngleSliderHandler(KILTER, 0, onChange)(1);
     expect(hapticSelectionMock).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(25);
+  });
+});
+
+describe('withCurrentAngle', () => {
+  it('returns the set unchanged when the value is already a stop', () => {
+    expect(withCurrentAngle(KILTER, 30)).toBe(KILTER);
+  });
+
+  it('inserts an off-list angle in order (an Aurora-synced 37°)', () => {
+    expect(withCurrentAngle(KILTER, 37)).toEqual([20, 25, 30, 35, 37, 40, 45]);
+    expect(sliderIndexForAngle(withCurrentAngle(KILTER, 37), 37)).toBe(4);
+  });
+
+  it('turns a 2-stop set into 3 stops when the value sits between them', () => {
+    expect(withCurrentAngle(MOONBOARD, 30)).toEqual([25, 30, 40]);
+  });
+
+  it('inserts at either end', () => {
+    expect(withCurrentAngle(KILTER, -5)).toEqual([-5, 20, 25, 30, 35, 40, 45]);
+    expect(withCurrentAngle(KILTER, 70)).toEqual([20, 25, 30, 35, 40, 45, 70]);
+  });
+
+  it('ignores a non-finite value', () => {
+    expect(withCurrentAngle(KILTER, Number.NaN)).toBe(KILTER);
+    expect(withCurrentAngle(KILTER, Number.POSITIVE_INFINITY)).toBe(KILTER);
+  });
+
+  it('never mutates the input set', () => {
+    const angles = [25, 40];
+    withCurrentAngle(angles, 30);
+    expect(angles).toEqual([25, 40]);
   });
 });

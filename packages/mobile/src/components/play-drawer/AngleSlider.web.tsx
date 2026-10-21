@@ -8,7 +8,7 @@ import { spacing } from '../../theme/tokens';
 import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic';
 import type { AngleSliderProps } from './AngleSlider.types';
 
-export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
+export function AngleSlider({ angles, value, onChange, accessibilityLabel, showValue = true }: AngleSliderProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { brandColors, systemColors } = useTheme();
@@ -17,7 +17,9 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   const valueIndex = sliderIndexForAngle(angles, value);
   const handleSliderValue = makeAngleSliderHandler(angles, valueIndex, onChange);
   const rangeStyle: CSSProperties = {
-    accentColor: brandColors.primaryFill,
+    // A control on the card takes `primary`, as the native sliders do; the
+    // dark-mode fill is under 3:1 there.
+    accentColor: brandColors.primary,
     cursor: 'pointer',
     flex: 1,
     minWidth: 0,
@@ -29,7 +31,9 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
     max: angles.length - 1,
     step: 1,
     value: valueIndex,
-    'aria-label': t('angleSelector.selectAngle'),
+    'aria-label': accessibilityLabel ?? t('angleSelector.selectAngle'),
+    // The range runs in INDEX space; without this a screen reader reads "4".
+    'aria-valuetext': `${angles[valueIndex]}°`,
     onChange: (event: ChangeEvent<HTMLInputElement>) => handleSliderValue(Number(event.currentTarget.value)),
     style: rangeStyle,
   });
@@ -37,7 +41,9 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   return (
     <View style={styles.container}>
       {rangeInput}
-      <Text style={[styles.value, { color: systemColors.label as string }]}>{`${angles[valueIndex]}°`}</Text>
+      {showValue ? (
+        <Text style={[styles.value, { color: systemColors.label as string }]}>{`${angles[valueIndex]}°`}</Text>
+      ) : null}
     </View>
   );
 }

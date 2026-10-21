@@ -51,11 +51,20 @@ vi.mock('../../Text', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
 }));
+// The real hook reads a feature flag through its provider. A 15-stop table is
+// what matters here; the row's own show/hide rule is the tick family's, tested
+// with TickAngleControl.
+const boardAngles = vi.hoisted(() => ({ current: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70] }));
+vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => boardAngles.current }));
 
 // Stub the tick family: each stub records the props it was handed as data
 // attributes, so the wiring is readable from the DOM without a native tree.
 vi.mock('../../tick', () => ({
+  TICK_ANGLE_ROW_HEIGHT: 64,
   TICK_RAIL_ROW_HEIGHT: 60,
+  // A copy of the real rule so the spray case below reads true; the rule itself
+  // is tested in tick/__tests__/tick-angle-control.test.tsx.
+  shouldShowAngleRow: (boardName: string | undefined, angles: number[]) => boardName !== 'spray' && angles.length >= 2,
   TICK_RAIL_TRAIL_INSET: RAIL_TRAIL_INSET,
   TickFormRow: ({ label, children, bleed, height, showSeparator }: RowProps) =>
     createElement(
@@ -83,6 +92,27 @@ vi.mock('../../tick', () => ({
       'data-date-label': dateAccessibilityLabel,
       'data-time-label': timeAccessibilityLabel,
       onClick: () => onChange(new Date('2025-03-15T12:00:00.000Z')),
+    }),
+  TickAngleControl: ({
+    angles,
+    value,
+    openingValue,
+    onChange,
+    accessibilityLabel,
+  }: {
+    angles: number[];
+    value: number;
+    openingValue?: number;
+    onChange: (angle: number) => void;
+    accessibilityLabel: string;
+  }) =>
+    createElement('button', {
+      'data-testid': 'tick-angle-control',
+      'data-stops': String(angles.length),
+      'data-value': String(value),
+      'data-opening': String(openingValue),
+      'data-aria': accessibilityLabel,
+      onClick: () => onChange(45),
     }),
   TickCountRail: ({ value, onSelect }: { value: number; onSelect: (next: number) => void }) =>
     createElement('button', {
@@ -160,6 +190,9 @@ import type { QuickTickForm } from '../use-quick-tick-form';
 function makeForm(overrides: Partial<QuickTickForm> = {}): QuickTickForm {
   return {
     climbUuid: 'climb-1',
+    boardName: 'kilter',
+    angle: 40,
+    openingAngle: 40,
     tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
     comment: '',
     climbedAt: new Date('2025-06-01T08:00:00.000Z'),
@@ -174,6 +207,7 @@ function makeForm(overrides: Partial<QuickTickForm> = {}): QuickTickForm {
     isPending: false,
     lastError: null,
     onQualitySelect: vi.fn(),
+    onAngleSelect: vi.fn(),
     onGradeSelect: vi.fn(),
     onTriesSelect: vi.fn(),
     onCommentChange: vi.fn(),
@@ -197,13 +231,14 @@ function rowLabels(container: HTMLElement): string[] {
 }
 
 describe('QuickTickBar row order', () => {
-  it('runs tries, stars, grade, date, note from top to bottom', () => {
+  it('runs tries, stars, grade, angle, date, note from top to bottom', () => {
     const { container } = renderBar();
 
     expect(rowLabels(container)).toEqual([
       'mobile.tick.triesLabel',
       'mobile.tick.starsLabel',
       'mobile.tick.gradeLabel',
+      'mobile.tick.angleLabel',
       'mobile.tick.dateLabel',
       'mobile.tick.noteLabel',
     ]);
@@ -255,8 +290,47 @@ describe('QuickTickBar row order', () => {
       'mobile.tick.triesLabel',
       'mobile.tick.starsLabel',
       'mobile.tick.gradeLabel',
+      'mobile.tick.angleLabel',
       'mobile.tick.dateLabel',
     ]);
+  });
+});
+
+// #6615: the angle the tick is logged at, editable in the expanded form.
+describe('QuickTickBar angle', () => {
+  it('sits in a 64pt row with no divider, like the grade and date rows around it', () => {
+    const { container } = renderBar();
+
+    const angleRow = container.querySelector('[data-row="mobile.tick.angleLabel"]');
+    expect(angleRow?.getAttribute('data-height')).toBe('64');
+    expect(angleRow?.getAttribute('data-separator')).toBe('false');
+    expect(angleRow?.getAttribute('data-bleed')).toBe('false');
+  });
+
+  it('wires the control to the form angle, the opening angle and the board table', () => {
+    const { getByTestId, form } = renderBar({ angle: 45, openingAngle: 40 });
+
+    const control = getByTestId('tick-angle-control');
+    expect(control.getAttribute('data-value')).toBe('45');
+    expect(control.getAttribute('data-opening')).toBe('40');
+    expect(control.getAttribute('data-stops')).toBe('15');
+    expect(control.getAttribute('data-aria')).toBe('mobile.tick.angleLabel');
+
+    fireEvent.click(control);
+    expect(form.onAngleSelect).toHaveBeenCalledWith(45);
+  });
+
+  it('leaves the angle out of the compact form', () => {
+    const { container, queryByTestId } = render(createElement(QuickTickBar, { form: makeForm(), showAngle: false }));
+
+    expect(queryByTestId('tick-angle-control')).toBeNull();
+    expect(rowLabels(container)).not.toContain('mobile.tick.angleLabel');
+  });
+
+  it('has no angle row on a spray wall', () => {
+    const { container } = renderBar({ boardName: 'spray' });
+
+    expect(rowLabels(container)).not.toContain('mobile.tick.angleLabel');
   });
 });
 
