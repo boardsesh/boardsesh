@@ -299,7 +299,9 @@ something to tell the climber (`shouldTakeOverFromSplash`):
   "nothing newer" well inside that (p50 0.4 s, p90 1.5 s), so they never see the placeholder.
 
 The copy only moves forward: once it says "Installing" it never goes back to "Checking", and it is
-frozen once the gate has a verdict. A release that is already decided never raises the placeholder.
+frozen once the gate has a verdict. Neither a release that is already decided nor a launch whose
+preparation reads are still out raises the placeholder, since those reads can still turn the launch
+into an instant release (offline, a failed update).
 The native splash only hides once the placeholder has laid out (`placeholderPainted`), because the
 placeholder renders inside the i18n provider, which renders nothing until it has read the stored
 locale; hiding on the request alone could show an empty window. The placeholder stays up until the
@@ -350,10 +352,11 @@ until launch is ready. A cold start from a climb link also waits on launch-ready
 the play drawer (`use-board-route-target.ts`). Add the wrapper to any new root modal route.
 
 The cap timers decide when a cap has passed; the gate does not re-derive it from the wall clock,
-which can step backwards on Android. A reload decided inside the cap may start until the cap plus
-the 700 ms flush budget (`LAUNCH_UPDATE_FLUSH_TIMEOUT_MS`): its flush and marker writes take up to
-that long, and without the margin a download finishing just before a 5 s cap would report `updated`
-and then be dropped. Once a reload has been requested the gate gives the native relaunch 5 s
+which can step backwards on Android. A reload decided inside the cap may start until 950 ms past it
+(`LAUNCH_UPDATE_RELOAD_START_WINDOW_MS`: the 700 ms flush budget, which the marker writes share,
+plus room for the timers behind it), counted from the decision when that landed on the cap tick.
+Without that window a download finishing just before a 5 s cap would report `updated` and then be
+dropped. Once a reload has been requested the gate gives the native relaunch 5 s
 (`LAUNCH_UPDATE_RELOAD_GRACE_MS`) and then lets the app open. A relaunch that is slower than that
 cannot be cancelled and can still land afterwards.
 

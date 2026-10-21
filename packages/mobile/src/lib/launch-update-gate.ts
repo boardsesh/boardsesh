@@ -55,6 +55,13 @@ export const LAUNCH_UPDATE_MARKER_WRITE_TIMEOUT_MS = 700;
  */
 export const LAUNCH_UPDATE_FLUSH_TIMEOUT_MS = 700;
 /**
+ * How long past the cap a reload decided inside it may still start: the flush
+ * budget (the marker writes run alongside it) plus room for the timers behind
+ * it to fire. Counted from the decision instead when that landed on the cap
+ * tick itself, so such a reload still gets the whole window.
+ */
+export const LAUNCH_UPDATE_RELOAD_START_WINDOW_MS = LAUNCH_UPDATE_FLUSH_TIMEOUT_MS + 250;
+/**
  * Counted from the moment `reloadAsync()` is called. If this runtime is still
  * alive after it, the reload did not happen and the app opens instead.
  */

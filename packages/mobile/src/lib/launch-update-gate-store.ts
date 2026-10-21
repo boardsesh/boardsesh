@@ -24,9 +24,9 @@ import { addErrorBreadcrumb, reportHandledError } from './error-reporting';
 import {
   COLD_START_UPDATE_CAP_MS,
   LAUNCH_UPDATE_CHECK_CAP_MS,
-  LAUNCH_UPDATE_FLUSH_TIMEOUT_MS,
   LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS,
   LAUNCH_UPDATE_RELOAD_GRACE_MS,
+  LAUNCH_UPDATE_RELOAD_START_WINDOW_MS,
   OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY,
   OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY,
   decideLaunchUpdateStep,
@@ -145,12 +145,14 @@ function readLatestContext(): NativeContext {
 /**
  * Only moves forward: once the placeholder says "installing" it never goes back
  * to "checking", which would read as the app starting over. It is worked out
- * while the gate waits and frozen once the gate has a verdict, so the copy does
- * not change under a placeholder held up by the auth wait.
+ * only while the gate waits, and frozen once the gate has a verdict, so the
+ * copy does not change under a placeholder held up by the auth wait. Not while
+ * preparing either: until the reads are done the gate cannot know that this
+ * launch is offline or that its download belongs to a retired channel.
  */
 function resolveStage(context: NativeContext): LaunchUpdateStage {
   if (stage === 'installing' || settlingReload) return 'installing';
-  if (gatePhase !== 'preparing' && gatePhase !== 'waiting') return stage;
+  if (gatePhase !== 'waiting') return stage;
   return resolveLaunchUpdateStage({
     updates: launchUpdateStateFromContext(context),
     explicitCheck,
@@ -170,8 +172,11 @@ function publish(): void {
     }
     nextStage = resolveStage(context);
     // A release already decided never raises the placeholder: the app is about
-    // to open, so the splash covers the last few milliseconds instead.
-    const stillWaiting = gatePhase === 'preparing' || gatePhase === 'waiting' || settlingReload;
+    // to open, so the splash covers the last few milliseconds instead. Nor does
+    // a launch still preparing, which may turn out to release at once (offline,
+    // a failed update); the reads take milliseconds, and the 2 s window still
+    // applies if they run long.
+    const stillWaiting = gatePhase === 'waiting' || settlingReload;
     if (
       stillWaiting &&
       shouldTakeOverFromSplash({ profile: preparation?.profile ?? null, stage: nextStage, splashWindowElapsed })
@@ -271,11 +276,11 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
   gatePhase = 'settling';
   settlingReload = decision.step === 'reload';
   const generation = runGeneration;
-  // A reload decided inside the cap still has its flush and marker writes to
-  // do, bounded at the flush budget. It may start until then; without that
-  // margin a download finishing just before the cap would report `updated`
-  // and then be dropped.
-  const reloadDeadlineMs = prepared.capMs + LAUNCH_UPDATE_FLUSH_TIMEOUT_MS;
+  // A reload still has its flush and marker writes to do, so it may start
+  // until the cap (or the decision, if that landed on the cap tick) plus the
+  // start window. Without the window a download finishing just before the cap
+  // would report `updated` and then be dropped.
+  const reloadDeadlineMs = Math.max(prepared.capMs, elapsedMs()) + LAUNCH_UPDATE_RELOAD_START_WINDOW_MS;
   if (settlingReload) {
     schedule(
       () => {

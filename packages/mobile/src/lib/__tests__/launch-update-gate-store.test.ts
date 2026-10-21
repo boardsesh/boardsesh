@@ -470,15 +470,35 @@ describe('a gated launch', () => {
     updates.isEmbeddedLaunch = false;
     updates.updateId = 'running-update';
     updates.latestContext = CHECKING;
-    await startGate();
+    const shown: boolean[] = [];
+    subscribeLaunchUpdateGate(() => shown.push(getLaunchUpdateGateFlags().showPlaceholder));
+    // Auth still pending, so a placeholder raised at any point would stay up.
+    await startGate({ authReady: false });
     await advance(400);
 
     emit({ ...IDLE });
     await advance(10_000);
 
+    expect(shown).not.toContain(true);
     expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
     expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'nothing_newer', trigger: 'cold_start' });
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('never raises the placeholder before its reads say the launch is offline', async () => {
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    connectivity.snapshot.offlineMode = true;
+    startLaunchUpdateGate(PRODUCTION);
+    // A download event lands while the reads are still out.
+    emit({ downloadProgress: 0.1 });
+    expect(getLaunchUpdateGateFlags().showPlaceholder).toBe(false);
+
+    await advance(0);
+
+    expect(getLaunchUpdateGateFlags()).toEqual({ resolved: true, showPlaceholder: false, placeholderPainted: false });
+    expect(getLaunchUpdateStage()).toBe('checking');
+    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'offline' });
   });
 
   it('tells listeners when the copy moves to installing, though no progress has been reported', async () => {
@@ -1236,6 +1256,23 @@ describe('owned launch reloads', () => {
     expect(launchUpdateEvents()).toEqual([expect.objectContaining({ outcome: 'updated', cap_ms: 5_000 })]);
   });
 
+  it('still reloads when the reload is decided on the cap tick and the flush times out', async () => {
+    analytics.flush.mockReturnValue(new Promise<void>(() => {}));
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = 'running-update';
+    updates.latestContext = DOWNLOADING;
+    await startGate();
+    await advance(4_999);
+    // The download finished with no event; the cap tick is what sees it.
+    silentlyAdvance({ ...PENDING });
+    await advance(1);
+    expect(launchUpdateEvents()).toEqual([expect.objectContaining({ outcome: 'updated' })]);
+
+    await advance(700);
+
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+  });
+
   it('does not invoke reload once the window after the cap has closed', async () => {
     let finishNative: () => void = () => {};
     const earlier = runOtaOperation((lease) =>
@@ -1252,8 +1289,8 @@ describe('owned launch reloads', () => {
     await startGate();
     await advance(4_600);
     emit({ ...PENDING });
-    // The reload waits behind another native call past cap + flush budget.
-    await advance(1_100);
+    // The reload waits behind another native call past the cap + 950 ms window.
+    await advance(1_400);
     finishNative();
     await earlier;
     await advance(0);
