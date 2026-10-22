@@ -647,6 +647,7 @@
       "preGeneratorBlockSummarySteps_one": "{{count}} palier",
       "preGeneratorBlockSummarySteps_other": "{{count}} paliers",
       "preGeneratorBlockSummaryPerStep": "{{count}} par palier",
+      "preGeneratorBlockSummaryFiltered": "avec filtres",
       "preGeneratorWarmUpSummaryRamps": "monte jusqu'à {{grade}}",
       "preGeneratorWarmUpSummaryNoTarget": "il faut une phase après",
       "preGeneratorClimbFilters": "Filtres de blocs",

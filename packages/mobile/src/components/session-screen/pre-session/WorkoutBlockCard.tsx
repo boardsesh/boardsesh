@@ -19,7 +19,9 @@ import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { WorkoutBlockFields, warmUpLengthLabel } from './WorkoutBlockFields';
 import {
+  DEFAULT_WORKOUT_FILTERS,
   blockType,
+  sameFilters,
   type SizeFilterAvailability,
   type WorkoutBlock,
   type WorkoutBlockType,
@@ -32,20 +34,33 @@ type BlockAction = 'moveUp' | 'moveDown' | 'remove';
 
 /**
  * The one-line summary under a closed card's type: `V6 · 20 climbs · spread 0`
- * for a workout, `Standard · ramps to V6` for a warm-up.
+ * for a workout, `Standard · ramps to V6` for a warm-up. `filtered` adds a
+ * `· filtered` marker, for a block whose climb filters are not the defaults.
  */
 export function blockSummary(
   block: WorkoutBlockSpec,
   formatGrade: (difficultyId: number) => string,
   warmUpTargetGrade: number | null,
   t: Translate,
+  filtered = false,
 ): string {
+  const parts = blockSettingsSummary(block, formatGrade, warmUpTargetGrade, t);
+  if (filtered) parts.push(t('mobile.session.preGeneratorBlockSummaryFiltered'));
+  return parts.join(' · ');
+}
+
+function blockSettingsSummary(
+  block: WorkoutBlockSpec,
+  formatGrade: (difficultyId: number) => string,
+  warmUpTargetGrade: number | null,
+  t: Translate,
+): string[] {
   if (block.kind === 'warmUp') {
     const target =
       warmUpTargetGrade != null
         ? t('mobile.session.preGeneratorWarmUpSummaryRamps', { grade: formatGrade(warmUpTargetGrade) })
         : t('mobile.session.preGeneratorWarmUpSummaryNoTarget');
-    return [warmUpLengthLabel(block.warmUpType, t), target].join(' · ');
+    return [warmUpLengthLabel(block.warmUpType, t), target];
   }
   const { options } = block;
   const parts = [formatGrade(options.targetGrade)];
@@ -67,7 +82,7 @@ export function blockSummary(
       parts.push(t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }));
       break;
   }
-  return parts.join(' · ');
+  return parts;
 }
 
 type WorkoutBlockCardProps = {
@@ -129,6 +144,7 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
         (difficultyId) => formatGradeByDifficultyId(difficultyId, boardName) ?? String(difficultyId),
         warmUpTargetGrade,
         t,
+        !sameFilters(block.filters, DEFAULT_WORKOUT_FILTERS),
       ),
     [block, formatGradeByDifficultyId, boardName, warmUpTargetGrade, t],
   );

@@ -28,7 +28,10 @@ ascents, min rating, tall only, wide only). Each block becomes one **stage**. Th
   to it (`buildWorkoutRun`). A stage with no climbs is left out. A workout stage also
   keeps its `targetGrade`, and every stage keeps its `filters`, so a block added later
   can start from them. Both are optional: a run stored before they existed still loads
-  under the same storage key.
+  under the same storage key. A stage whose stored `filters` this bundle cannot read
+  (a malformed field, or a climb bias it does not know) loses just that field; the
+  stage and the run load, so the next mid-session block cannot overwrite the stages
+  queued at Start.
 - `locateInRun` answers "where is the current climb". It orders by the queue, not by the
   run, and counts only uuids still queued, because climbers reorder and remove climbs.
 
@@ -95,15 +98,31 @@ Every block, warm-ups included, has its own climb filters, in a folded "Climb fi
 disclosure under the block's fields (`WorkoutBlockFilters`, rendered by
 `WorkoutBlockFields`, so the mid-session sheet gets it too). The first block starts on
 the generator defaults; "Add a block" copies the last block's filters; changing a
-block's type keeps them. A board without smaller sizes turns tall/wide off on every
-block.
+block's type keeps them. A closed card whose filters are not the defaults ends its
+summary line with "· filtered". A board without smaller sizes turns tall/wide off on
+every block.
 
 The preview stamps every slot with its stage's filters and fetches one pool per grade
 and filter set (`workout-preview-pool.ts`, `poolKeyForSlot`). Blocks with equal filters
-share a pool at each grade, sized by their combined demand; a block with its own
-filters gets its own pool even at a grade another block uses. One used-climb set spans
-every pool, so a climb two pools both return still fills one slot, and a row refresh
-draws from, and refetches with, its own slot's filters. Start queues the preview with
+share a pool at each grade; a block with its own filters gets its own pool even at a
+grade another block uses. Signed out, climb bias never reaches the search, so it is set
+to `any` in the pool key (`fetchFilters`) and blocks that differ only in bias share a
+pool; the run still records the bias the climber picked.
+
+Every pool at a grade is sized for all the slots at that grade, not only its own. Two
+filter sets at one grade mostly return the same top-quality climbs: a V5 x20 block on
+the defaults beside V5 x20 and x15 blocks on stricter filters would otherwise fetch 50
+and 50 near-duplicates for 55 slots and leave about five empty. One used-climb set spans
+every pool, so a climb two pools both return still fills one slot. A row refresh draws
+from, and refetches with, its own slot's filters, and its refetch is sized past every
+row at the grade.
+
+An edit on the same board and sign-in reuses what the preview already has: a pool
+whose key is still in the plan and was fetched for at least the demand it needs now is
+kept, so one filter tap fetches only the changed block's pools, and a block whose
+settings and filters did not change keeps its rows (same climbs, same queue-item
+uuids) while their climbs still fit its pools. A board or sign-in change, and the
+public `regenerate`, start fresh. Start queues the preview with
 `activateFirstWhenIdle` so the first climb goes on the wall, then writes the run, each
 stage with its filters, for the new session.
 
@@ -117,8 +136,9 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 - The block opens on the run's last workout stage: same type, same target grade. With no
   run it opens on volume at the board's middle grade.
 - Its climb filters open on the last stage in the run that kept any, warm-ups included
-  (`defaultMidSessionFilters`), with tall/wide turned off where the board has no
-  smaller sizes. A run with none (none yet, or stored before stages kept filters) opens
+  (`defaultMidSessionFilters`). Tall/wide are turned off on every render where the
+  board has no smaller sizes, from the filters the climber asked for, so a board that
+  loads or changes while the sheet is open switches them back on or off. A run with none (none yet, or stored before stages kept filters) opens
   on the generator defaults. The added stage keeps the filters the climber left.
 - It reuses the pre-session pieces: the block card's fields (`WorkoutBlockFields`, given
   the workout types as `blockTypes`), the preview hook, the summary with Shuffle. The

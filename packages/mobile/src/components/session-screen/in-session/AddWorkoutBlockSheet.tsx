@@ -99,7 +99,11 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   // builds no preview and fetches nothing. Seeded on every open from the run's
   // last stage, so it reflects the workout as it is now.
   const [options, setOptions] = useState<GeneratorOptions | null>(null);
+  // What the climber asked for. The block uses `effectiveFilters`: these with any
+  // size filter the board does not offer turned off, worked out on every render,
+  // so a board that loads or changes after opening switches tall/wide back on or off.
   const [filters, setFilters] = useState<WorkoutFilters>(DEFAULT_WORKOUT_FILTERS);
+  const effectiveFilters = useMemo(() => withAvailableSizeFilters(filters, sizeFilters), [filters, sizeFilters]);
   const [error, setError] = useState<string | null>(null);
   // Set by the first "Add to session" of an opening. The body stays mounted
   // through the slide-down, so without it a second tap would queue the same
@@ -107,8 +111,6 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const submittedRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const wasVisibleRef = useRef(false);
-  const sizeFiltersRef = useRef(sizeFilters);
-  sizeFiltersRef.current = sizeFilters;
   const runRef = useRef(run);
   runRef.current = run;
   // Latest values for the confirm to re-check after it awaits the store.
@@ -119,7 +121,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       setOptions(defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName)));
-      setFilters(withAvailableSizeFilters(defaultMidSessionFilters(runRef.current), sizeFiltersRef.current));
+      setFilters(defaultMidSessionFilters(runRef.current));
       setError(null);
       submittedRef.current = false;
       setIsSubmitting(false);
@@ -136,8 +138,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   }, [visible, sessionId, onClose]);
 
   const selection = useMemo<GeneratorSelection>(
-    () => (options ? singleBlockSelection(options, ADD_BLOCK_ID, filters) : NO_WORKOUT),
-    [options, filters],
+    () => (options ? singleBlockSelection(options, ADD_BLOCK_ID, effectiveFilters) : NO_WORKOUT),
+    [options, effectiveFilters],
   );
   const block = useMemo<WorkoutBlockSpec | null>(() => (options ? { kind: 'workout', options } : null), [options]);
   // Read at build and shuffle time, never subscribed: a crew add mid-preview
@@ -341,7 +343,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               railGrades={railGrades}
               groupLabel={title}
               blockTypes={ADD_BLOCK_TYPES}
-              filters={filters}
+              filters={effectiveFilters}
               sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}
               onBlockChange={handleBlockChange}

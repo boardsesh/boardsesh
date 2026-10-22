@@ -335,6 +335,21 @@ describe('AddWorkoutBlockSheet', () => {
     expect(fields.filters).toEqual({ ...STRICT, onlyWideClimbs: false });
   });
 
+  it('switches the size filter back on once the board turns out to offer it', () => {
+    setWorkoutRun('session-1', {
+      stages: [{ id: 'stage-volume', kind: 'volume', itemUuids: ['v1'], targetGrade: 18, filters: STRICT }],
+    });
+    renderSheet(true);
+    expect(fields.filters?.onlyWideClimbs).toBe(false);
+
+    // The board loads, or changes, while the sheet is open.
+    sizeFilters.wide = true;
+    act(() => fields.onFiltersChange?.({ minRating: 3 }));
+
+    expect(fields.filters).toEqual(STRICT);
+    expect(preview.calls.at(-1)?.selection.blocks[0].filters).toEqual(STRICT);
+  });
+
   it("rebuilds the preview with the climber's filter changes", () => {
     renderSheet(true);
 

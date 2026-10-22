@@ -185,18 +185,38 @@ describe('workout-run-store', () => {
     expect(getWorkoutRunForSession('session-1')?.stages.map((stage) => stage.filters)).toEqual([undefined, undefined]);
   });
 
-  it('ignores a stored run whose stage filters have the wrong shape', async () => {
+  it('keeps a stage whose stored filters are unreadable, without them', async () => {
+    const goodFilters = { climbBias: 'any', minAscents: 0, minRating: 0, onlyTallClimbs: false, onlyWideClimbs: false };
     await storage.setItem(
       WORKOUT_RUN_STORAGE_KEY,
       JSON.stringify({
         sessionId: 'session-1',
-        run: { stages: [{ id: 's', kind: 'volume', itemUuids: ['v1'], filters: { minAscents: '5' } }] },
+        run: {
+          stages: [
+            { id: 'warm', kind: 'warmUp', itemUuids: ['w1'], filters: { minAscents: '5' } },
+            // A climb bias this bundle does not know, as a newer bundle might write.
+            {
+              id: 'main',
+              kind: 'volume',
+              itemUuids: ['v1'],
+              targetGrade: 18,
+              filters: { ...goodFilters, climbBias: 'fresh' },
+            },
+            { id: 'last', kind: 'ladder', itemUuids: ['l1'], filters: goodFilters },
+          ],
+        },
       }),
     );
 
     await hydrateWorkoutRun('session-1');
 
-    expect(getWorkoutRunState()).toBeNull();
+    expect(getWorkoutRunForSession('session-1')).toEqual({
+      stages: [
+        { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+        { id: 'main', kind: 'volume', itemUuids: ['v1'], targetGrade: 18 },
+        { id: 'last', kind: 'ladder', itemUuids: ['l1'], filters: goodFilters },
+      ],
+    });
   });
 
   it('does not let a slow hydrate overwrite a run written meanwhile', async () => {

@@ -647,6 +647,7 @@
       "preGeneratorBlockSummarySteps_one": "{{count}} Stufe",
       "preGeneratorBlockSummarySteps_other": "{{count}} Stufen",
       "preGeneratorBlockSummaryPerStep": "{{count}} pro Stufe",
+      "preGeneratorBlockSummaryFiltered": "gefiltert",
       "preGeneratorWarmUpSummaryRamps": "steigert sich bis {{grade}}",
       "preGeneratorWarmUpSummaryNoTarget": "braucht danach einen Block",
       "preGeneratorClimbFilters": "Boulder-Filter",

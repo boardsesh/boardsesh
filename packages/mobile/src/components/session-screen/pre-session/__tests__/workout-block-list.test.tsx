@@ -315,6 +315,15 @@ describe('WorkoutBlockList', () => {
     expect(lastSelection().blocks.map((block) => block.filters.climbBias)).toEqual(['attempted', 'unfamiliar']);
   });
 
+  it('marks a closed card whose filters are not the defaults', () => {
+    const screen = renderList([pyramid('first', 20), warmUp('warm', STRICT), warmUp('plain')]);
+
+    expect(headers(screen.container)[1].getAttribute('aria-label')).toContain(
+      ' · mobile.session.preGeneratorBlockSummaryFiltered',
+    );
+    expect(headers(screen.container)[2].getAttribute('aria-label')).not.toContain('Filtered');
+  });
+
   it("gives a new block the last block's filters, and keeps them through a type change", () => {
     const screen = renderList([pyramid('first', 20), warmUp('warm', STRICT)]);
 
