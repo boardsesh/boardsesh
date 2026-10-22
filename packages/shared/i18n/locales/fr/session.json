@@ -684,7 +684,7 @@
       "addBlockTitle": "Ajouter une phase",
       "addBlockConfirm": "Ajouter à la session",
       "addBlockIntro": "Ces blocs s'ajoutent à la fin de ta file d'attente. Le bloc allumé au mur ne change pas.",
-      "addBlockPreviewTitle": "Blocs ajoutés",
+      "addBlockPreviewTitle": "Blocs à ajouter",
       "addBlockPreviewEmpty": "Aucun bloc ne correspond à cette phase. Essaie une autre cotation.",
       "addBlockPreviewMore_one": "+{{count}} de plus",
       "addBlockPreviewMore_other": "+{{count}} de plus",
