@@ -214,7 +214,7 @@ describe('pools keyed by grade and filters', () => {
 
   it('reuses a cached pool fetched for enough slots, and refetches one that is new or too small', async () => {
     const fetchPool = vi.fn(async (grade: number) => [makeClimb(`fresh-${grade}`)]);
-    const cachedLoose = [makeClimb('cached-loose')];
+    const cachedLoose = [makeClimb('cached-loose'), makeClimb('cached-loose-2')];
     const cachedStrict = [makeClimb('cached-strict')];
     const cache = {
       pools: new Map([
@@ -241,6 +241,16 @@ describe('pools keyed by grade and filters', () => {
     expect(poolDemands.get(key(10, STRICT))).toBe(2);
     expect(pools.get(key(12, LOOSE))?.[0].uuid).toBe('fresh-12');
     expect(fetchPool).toHaveBeenCalledTimes(2);
+  });
+
+  it('refetches a cached pool that came back with fewer climbs than its slots', async () => {
+    const fetchPool = vi.fn(async (grade: number) => [makeClimb(`fresh-${grade}`)]);
+    const cache = { pools: new Map([[key(10, LOOSE), []]]), poolDemands: new Map([[key(10, LOOSE), 5]]) };
+
+    const { pools } = await buildPoolsReusing([slot(10, 0, LOOSE)], ctx, fetchPool, cache);
+
+    expect(pools.get(key(10, LOOSE))?.[0].uuid).toBe('fresh-10');
+    expect(fetchPool).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a row whose climb is still in its pool, and refills the rest', () => {

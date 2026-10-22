@@ -172,7 +172,9 @@ export async function buildPoolsReusing(
       const demand = demandByGrade.get(slot.grade) ?? 0;
       const cachedPool = cache?.pools.get(key);
       const cachedDemand = cache?.poolDemands?.get(key);
-      if (cachedPool && cachedDemand !== undefined && cachedDemand >= demand) {
+      // A pool that came back short (offline, a flaky fetch) is fetched again
+      // rather than starving its block until Regenerate.
+      if (cachedPool && cachedDemand !== undefined && cachedDemand >= demand && cachedPool.length >= demand) {
         pools.set(key, cachedPool);
         poolDemands.set(key, cachedDemand);
         return;
