@@ -329,7 +329,8 @@ If a session is already running when the workout lands, the card offers
 "End current session" or "Add to this session". Adding attaches the workout id
 to the live session and appends the blocks behind the current queue, the same
 way "Add a block" adds a stage mid-session today (`add-workout-block.ts`: no
-`activateFirstWhenIdle`, so the wall stays put, then the stages join the run).
+`activateFirstWhenIdle`, so it does not move the wall on this phone, then the stages
+join the run; it shares Add to queue's crew race, see `docs/workout-stages.md`).
 
 ### The web page behind the universal link
 

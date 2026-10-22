@@ -103,13 +103,22 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   the workout types as `blockTypes`), the preview hook, the summary with Shuffle. The
   preview passes over climbs already in the queue while the pool has others.
 - "Add to session" appends the climbs to the end of the queue with no
-  `activateFirstWhenIdle`, so the climb on the wall stays put. Then the block's stage is
-  appended to the run (or becomes the run), keeping only the climbs the queue took. The
-  pure part is `add-workout-block.ts`.
+  `activateFirstWhenIdle`, the same way the playlist "Add to queue" row does, so it does
+  not move the wall on this phone. Then the block's stage is appended to the run (or
+  becomes the run). Climbs cut by the queue's size cap get no stage; a climb whose wire
+  send fails afterwards keeps its stage, which is harmless because readers count only
+  queued climbs. Climbs already in the queue are left out, and a second tap during the
+  slide-down does nothing. The pure part is `add-workout-block.ts`.
+- Before it composes the run, the confirm waits for the store to finish reading this
+  session's run after a cold start, so the run queued at Start is never overwritten.
 - `Session Queue Generated` fires with `phase: 'in_session'`. Start sends
-  `phase: 'pre_session'`.
-- The append goes through the same queue path as any other add, so it reaches the crew
-  and survives going offline the same way.
+  `phase: 'pre_session'`. The event now fires once per mid-session block too, so
+  "workouts generated" insights should filter on `phase = pre_session`.
+- The append goes through the same queue path as Add to queue, so it reaches the crew
+  and behaves the same offline. It shares that path's known limit: in a crew session
+  with a climb on the wall, the append writes the whole queue with this phone's current
+  climb, so a crew member's wall change that has not reached this phone yet can be
+  reverted.
 - Known gap: the block uses the generator's default climb filters, not the ones the
   session was started with. The session does not keep its filters anywhere the sheet can
   read them yet.

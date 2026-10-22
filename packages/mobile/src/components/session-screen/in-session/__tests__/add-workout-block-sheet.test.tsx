@@ -71,7 +71,8 @@ vi.mock('../../../ModalSheet', () => ({
     onFullyDismissed?: () => void;
   }) => {
     sheet.modal = props;
-    return props.visible ? createElement('div', null, props.header, props.children) : null;
+    // The native sheet keeps its content mounted through the slide-down.
+    return createElement('div', null, props.header, props.children);
   },
 }));
 vi.mock('../../../SheetTopBar', () => ({
@@ -141,7 +142,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 const storage = vi.hoisted(() => ({
-  getItem: vi.fn(async () => null),
+  getItem: vi.fn(async (_key: string): Promise<string | null> => null),
   setItem: vi.fn(async () => undefined),
   removeItem: vi.fn(async () => undefined),
 }));
@@ -165,6 +166,13 @@ function readyPreview(uuids: string[], stageId = 'new-stage-uuid'): void {
   preview.staged = { items, run: { stages: [{ id: stageId, kind: 'pyramid', itemUuids: uuids, targetGrade: 20 }] } };
 }
 
+/** One tap on "Add to session", letting the confirm's storage read settle. */
+async function press(): Promise<void> {
+  await act(async () => {
+    sheet.topBar?.trailing.onPress();
+  });
+}
+
 function renderSheet(visible: boolean, onClose = vi.fn()) {
   render(createElement(AddWorkoutBlockSheet, { visible, onClose }));
   return { onClose };
@@ -172,6 +180,8 @@ function renderSheet(visible: boolean, onClose = vi.fn()) {
 
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
+  storage.getItem.mockReset();
+  storage.getItem.mockImplementation(async () => null);
   sessionListeners.clear();
   queue.sessionId = 'session-1';
   queue.queued = [];
@@ -222,7 +232,7 @@ describe('AddWorkoutBlockSheet', () => {
     expect(avoided).toEqual(new Set(['climb-queued']));
   });
 
-  it('queues the climbs behind the live queue and adds their stage to the run', () => {
+  it('queues the climbs behind the live queue and adds their stage to the run', async () => {
     setWorkoutRun('session-1', {
       stages: [{ id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }],
     });
@@ -231,7 +241,7 @@ describe('AddWorkoutBlockSheet', () => {
     expect(screen.getByText('Climb l1')).toBeTruthy();
     expect(sheet.topBar?.trailing.disabled).toBe(false);
 
-    act(() => sheet.topBar?.trailing.onPress());
+    await press();
 
     // One argument: the wall never moves.
     expect(queue.appendQueueItems.mock.calls).toEqual([[preview.staged.items]]);
@@ -254,31 +264,31 @@ describe('AddWorkoutBlockSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('turns a session without a workout into one', () => {
+  it('turns a session without a workout into one', async () => {
     readyPreview(['v1']);
     renderSheet(true);
 
-    act(() => sheet.topBar?.trailing.onPress());
+    await press();
 
     expect(getWorkoutRunForSession('session-1')).toEqual(preview.staged.run);
   });
 
-  it('keeps Add to session off until the preview is ready', () => {
+  it('keeps Add to session off until the preview is ready', async () => {
     readyPreview(['v1']);
     preview.status = 'loading';
     renderSheet(true);
 
     expect(sheet.topBar?.trailing.disabled).toBe(true);
-    act(() => sheet.topBar?.trailing.onPress());
+    await press();
     expect(queue.appendQueueItems).not.toHaveBeenCalled();
   });
 
-  it('says so and stays open when the queue is full', () => {
+  it('says so and stays open when the queue is full', async () => {
     readyPreview(['v1']);
     queue.appendQueueItems.mockImplementation(() => 0);
     const { onClose } = renderSheet(true);
 
-    act(() => sheet.topBar?.trailing.onPress());
+    await press();
 
     expect(screen.getByText(/error:addBlockQueueFull/)).toBeTruthy();
     expect(getWorkoutRunForSession('session-1')).toBeNull();
@@ -303,5 +313,59 @@ describe('AddWorkoutBlockSheet', () => {
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues the block once when Add to session is tapped twice', async () => {
+    readyPreview(['v1', 'v2']);
+    renderSheet(true);
+
+    await act(async () => {
+      sheet.topBar?.trailing.onPress();
+      sheet.topBar?.trailing.onPress();
+    });
+
+    expect(queue.appendQueueItems).toHaveBeenCalledTimes(1);
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a tap while the sheet slides away', async () => {
+    readyPreview(['v1']);
+    const onClose = vi.fn();
+    const view = render(createElement(AddWorkoutBlockSheet, { visible: true, onClose }));
+    view.rerender(createElement(AddWorkoutBlockSheet, { visible: false, onClose }));
+
+    expect(sheet.topBar).not.toBeNull();
+    await act(async () => {
+      sheet.topBar?.trailing.onPress();
+    });
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+  });
+
+  it('leaves out a climb already in the queue', async () => {
+    readyPreview(['v1', 'v2']);
+    queue.queued = [{ uuid: 'v1', climb: { uuid: 'climb-v1' } }];
+    renderSheet(true);
+
+    await press();
+
+    expect(queue.appendQueueItems.mock.calls).toEqual([[[climbItem('v2')]]]);
+    expect(getWorkoutRunForSession('session-1')?.stages[0].itemUuids).toEqual(['v2']);
+  });
+
+  it('keeps the Start run when the confirm beats the cold-start read', async () => {
+    const startRun: WorkoutRun = {
+      stages: [{ id: 'stage-start', kind: 'volume', itemUuids: ['s1'], targetGrade: 16 }],
+    };
+    storage.getItem.mockImplementation(async () => JSON.stringify({ sessionId: 'session-1', run: startRun }));
+    readyPreview(['v1']);
+    renderSheet(true);
+    expect(getWorkoutRunForSession('session-1')).toBeNull();
+
+    await press();
+
+    expect(getWorkoutRunForSession('session-1')?.stages.map((stage) => stage.id)).toEqual([
+      'stage-start',
+      'new-stage-uuid',
+    ]);
   });
 });

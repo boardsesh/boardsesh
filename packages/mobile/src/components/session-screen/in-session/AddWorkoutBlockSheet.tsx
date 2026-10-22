@@ -1,6 +1,6 @@
 // "Add a block" during a session (#5379): pick a workout type, a grade and the
 // counts, see the climbs it will add, and queue them behind the live queue
-// without touching the climb on the wall.
+// the way Add to queue does, without moving the wall on this phone.
 //
 // A ModalSheet, not a route (docs/mobile-sheets-vs-routes.md): it is a short
 // task over the session screen, opened by a button, and it opens no sheet of
@@ -31,7 +31,12 @@ import { useTheme } from '../../../providers/theme-provider';
 import { useAuth } from '../../../providers/auth-provider';
 import { useQueueActions, useQueueSessionId } from '../../../providers/queue-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
-import { getWorkoutRunForSession, setWorkoutRun, useWorkoutRun } from '../../../lib/workout-run-store';
+import {
+  getWorkoutRunForSession,
+  hydrateWorkoutRun,
+  setWorkoutRun,
+  useWorkoutRun,
+} from '../../../lib/workout-run-store';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { track } from '../../../lib/analytics';
 import { hapticSuccess } from '../../../lib/haptics';
@@ -86,13 +91,25 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   // last stage, so it reflects the workout as it is now.
   const [options, setOptions] = useState<GeneratorOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set by the first "Add to session" of an opening. The body stays mounted
+  // through the slide-down, so without it a second tap would queue the same
+  // climbs again (a whole-queue write does not dedupe by uuid).
+  const submittedRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const wasVisibleRef = useRef(false);
   const runRef = useRef(run);
   runRef.current = run;
+  // Latest values for the confirm to re-check after it awaits the store.
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       setOptions(defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName)));
       setError(null);
+      submittedRef.current = false;
+      setIsSubmitting(false);
     }
     wasVisibleRef.current = visible;
   }, [visible, boardName]);
@@ -152,12 +169,27 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   }, []);
 
   const isPreviewReady = status === 'ready' && items.length > 0 && refreshingUuids.size === 0;
-  const canAdd = sessionId !== null && activeBoard != null && options !== null && isPreviewReady;
+  const canAdd =
+    visible && !isSubmitting && sessionId !== null && activeBoard != null && options !== null && isPreviewReady;
 
-  const handleAdd = useCallback(() => {
-    if (!canAdd || !options || !activeBoard || sessionId === null) return;
-    const { items: blockItems, run: blockRun } = toStagedQueueItems();
-    if (blockItems.length === 0 || !blockRun) return;
+  const handleAdd = useCallback(async () => {
+    if (submittedRef.current || !canAdd || !options || !activeBoard || sessionId === null) return;
+    const { items: stagedItems, run: blockRun } = toStagedQueueItems();
+    if (stagedItems.length === 0 || !blockRun) return;
+    submittedRef.current = true;
+    setIsSubmitting(true);
+    // A cold start may still be reading this session's run from storage. Reading
+    // the store before it lands would see no run and overwrite the slot with
+    // only this block, losing the workout queued at Start.
+    await hydrateWorkoutRun(sessionId);
+    if (!visibleRef.current || sessionIdRef.current !== sessionId) return;
+    // Belt and braces for this path: never queue a uuid twice.
+    const queuedUuids = new Set(getQueueSnapshot().queue.map((queueItem) => queueItem.uuid));
+    const blockItems = stagedItems.filter((item) => !queuedUuids.has(item.uuid));
+    if (blockItems.length === 0) {
+      onClose();
+      return;
+    }
     const result = addWorkoutBlock({
       items: blockItems,
       blockRun,
@@ -166,6 +198,9 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     });
     if (result.landedCount === 0 || !result.run) {
       setError(t('mobile.session.addBlockQueueFull'));
+      // Nothing was queued, so a retry after clearing climbs is safe.
+      submittedRef.current = false;
+      setIsSubmitting(false);
       return;
     }
     setWorkoutRun(sessionId, result.run);
@@ -181,7 +216,19 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     });
     hapticSuccess();
     onClose();
-  }, [canAdd, options, activeBoard, sessionId, toStagedQueueItems, appendQueueItems, plannedCount, t, onClose]);
+  }, [
+    canAdd,
+    options,
+    activeBoard,
+    sessionId,
+    toStagedQueueItems,
+    getQueueSnapshot,
+    appendQueueItems,
+    plannedCount,
+    t,
+    onClose,
+  ]);
+  const handleAddPress = useCallback(() => void handleAdd(), [handleAdd]);
 
   const title = t('mobile.session.addBlockTitle');
   const header = (
@@ -191,8 +238,9 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       trailing={{
         kind: 'confirm',
         label: t('mobile.session.addBlockConfirm'),
-        onPress: handleAdd,
+        onPress: handleAddPress,
         disabled: !canAdd,
+        loading: isSubmitting,
         prominent: true,
       }}
       error={error}
