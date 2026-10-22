@@ -352,6 +352,31 @@ describe('AddWorkoutBlockSheet', () => {
     expect(getWorkoutRunForSession('session-1')?.stages[0].itemUuids).toEqual(['v2']);
   });
 
+  it('closes without queueing when the session switches during the confirm', async () => {
+    let finishRead: (value: string | null) => void = () => undefined;
+    storage.getItem.mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    readyPreview(['v1']);
+    const { onClose } = renderSheet(true);
+
+    await act(async () => {
+      sheet.topBar?.trailing.onPress();
+    });
+    await act(async () => {
+      queue.sessionId = 'session-2';
+      for (const listener of sessionListeners) listener();
+      finishRead(null);
+    });
+
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+    expect(getWorkoutRunForSession('session-1')).toBeNull();
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('keeps the Start run when the confirm beats the cold-start read', async () => {
     const startRun: WorkoutRun = {
       stages: [{ id: 'stage-start', kind: 'volume', itemUuids: ['s1'], targetGrade: 16 }],

@@ -182,7 +182,13 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     // the store before it lands would see no run and overwrite the slot with
     // only this block, losing the workout queued at Start.
     await hydrateWorkoutRun(sessionId);
-    if (!visibleRef.current || sessionIdRef.current !== sessionId) return;
+    if (!visibleRef.current || sessionIdRef.current !== sessionId) {
+      submittedRef.current = false;
+      setIsSubmitting(false);
+      // The preview was built for the session that just left.
+      if (visibleRef.current) onClose();
+      return;
+    }
     // Belt and braces for this path: never queue a uuid twice.
     const queuedUuids = new Set(getQueueSnapshot().queue.map((queueItem) => queueItem.uuid));
     const blockItems = stagedItems.filter((item) => !queuedUuids.has(item.uuid));
