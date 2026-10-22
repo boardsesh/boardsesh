@@ -72,19 +72,37 @@ const toMainStage = (options: GeneratorOptions, id: string): WorkoutMainStage =>
 };
 
 /**
- * Turns today's single-type generator selection into a plan: a warm-up stage
- * (when one was picked) followed by the workout itself. `makeId` is required:
- * ids must stay unique when stages are added mid-session or plans are joined,
- * so the app passes a uuid factory rather than relying on positions.
+ * Turns an ordered list of workout blocks into a plan: one warm-up stage at the
+ * very start (when `warmUp` is not `'none'`) followed by one stage per block, in
+ * the order given. Each block's own `warmUp` is ignored, so a warm-up can only
+ * ever open the session. No blocks gives an empty plan: a warm-up with nothing
+ * to warm up for has no target grade. `makeId` is required: ids must stay unique
+ * when stages are added mid-session or plans are joined, so the app passes a
+ * uuid factory rather than relying on positions.
  */
-export const planFromGeneratorOptions = (options: GeneratorOptions, makeId: StageIdFactory): WorkoutPlan => {
+export const planFromBlocks = (
+  blocks: readonly GeneratorOptions[],
+  warmUp: WarmUpType,
+  makeId: StageIdFactory,
+): WorkoutPlan => {
   const stages: WorkoutStage[] = [];
-  if (options.warmUp !== 'none') {
-    stages.push({ id: makeId(stages.length), kind: 'warmUp', warmUpType: options.warmUp });
+  if (blocks.length === 0) return { stages };
+  if (warmUp !== 'none') {
+    stages.push({ id: makeId(stages.length), kind: 'warmUp', warmUpType: warmUp });
   }
-  stages.push(toMainStage(options, makeId(stages.length)));
+  for (const block of blocks) {
+    stages.push(toMainStage(block, makeId(stages.length)));
+  }
   return { stages };
 };
+
+/**
+ * Turns a single-type generator selection into a plan: a warm-up stage (when
+ * one was picked) followed by the workout itself. The one-block case of
+ * `planFromBlocks`.
+ */
+export const planFromGeneratorOptions = (options: GeneratorOptions, makeId: StageIdFactory): WorkoutPlan =>
+  planFromBlocks([options], options.warmUp, makeId);
 
 /**
  * Generates every stage's slots in plan order. `index` runs across the whole

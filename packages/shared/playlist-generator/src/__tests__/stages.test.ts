@@ -16,6 +16,7 @@ import {
   generateStagedPlan,
   generateWorkoutPlan,
   locateInRun,
+  planFromBlocks,
   planFromGeneratorOptions,
   pruneRun,
 } from '../index';
@@ -299,6 +300,83 @@ describe('planFromGeneratorOptions', () => {
     planFromGeneratorOptions(options, counterIds());
 
     expect(options.warmUp).toBe('standard');
+  });
+});
+
+describe('planFromBlocks', () => {
+  it.each(EQUIVALENCE_CASES)('one block gives exactly what planFromGeneratorOptions gives: $label', ({ options }) => {
+    expect(planFromBlocks([options], options.warmUp, counterIds())).toEqual(
+      planFromGeneratorOptions(options, counterIds()),
+    );
+  });
+
+  it('puts one warm-up first, then every block in order', () => {
+    const pyramid: GeneratorOptions = { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 20 };
+    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 16 };
+    const plan = planFromBlocks([pyramid, volume], 'standard', counterIds());
+
+    expect(plan).toEqual({
+      stages: [
+        { id: 'stage-0', kind: 'warmUp', warmUpType: 'standard' },
+        { id: 'stage-1', kind: 'pyramid', options: pyramid },
+        { id: 'stage-2', kind: 'volume', options: volume },
+      ],
+    });
+  });
+
+  it("ignores each block's own warm-up so only the session opens with one", () => {
+    const plan = planFromBlocks(
+      [
+        { ...DEFAULT_LADDER_OPTIONS, warmUp: 'extended', targetGrade: 18 },
+        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', targetGrade: 12 },
+      ],
+      'none',
+      counterIds(),
+    );
+
+    expect(plan.stages.map((stage) => stage.kind)).toEqual(['ladder', 'gradeFocus']);
+    expect(plan.stages.every((stage) => stage.kind === 'warmUp' || stage.options.warmUp === 'none')).toBe(true);
+  });
+
+  it('gives an empty plan for no blocks, even with a warm-up picked', () => {
+    expect(planFromBlocks([], 'extended', counterIds())).toEqual({ stages: [] });
+  });
+
+  it('takes every id from the injected factory', () => {
+    const makeId = vi.fn((stagePosition: number) => `uuid-${stagePosition}`);
+    const plan = planFromBlocks(
+      [
+        { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 },
+        { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 },
+      ],
+      'standard',
+      makeId,
+    );
+
+    expect(plan.stages.map((stage) => stage.id)).toEqual(['uuid-0', 'uuid-1', 'uuid-2']);
+    expect(makeId).toHaveBeenCalledTimes(3);
+  });
+
+  it('warms up to the first block and runs the index across every block', () => {
+    const plan = planFromBlocks(
+      [
+        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 20, numberOfClimbs: 2 },
+        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 12, numberOfClimbs: 1 },
+      ],
+      'standard',
+      counterIds(),
+    );
+    const staged = generateStagedPlan(plan, DENSE_GRADES);
+
+    expect(staged.map((slot) => [slot.stageId, slot.grade, slot.index])).toEqual([
+      ['stage-0', 16, 0],
+      ['stage-0', 17, 1],
+      ['stage-0', 18, 2],
+      ['stage-0', 19, 3],
+      ['stage-1', 20, 4],
+      ['stage-1', 20, 5],
+      ['stage-2', 12, 6],
+    ]);
   });
 });
 

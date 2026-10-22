@@ -15,6 +15,7 @@ export type { GroupedSlots } from './generate';
 export { summarizePlanFill } from './plan-summary';
 export type { PlanFillSummary, PlanSectionCount } from './plan-summary';
 export {
+  planFromBlocks,
   planFromGeneratorOptions,
   generateStagedPlan,
   isWarmUpStage,
