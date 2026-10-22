@@ -22,7 +22,7 @@ const generator = vi.hoisted(() => ({
 }));
 vi.mock('@boardsesh/playlist-generator', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/playlist-generator')>()),
-  planFromGeneratorOptions: () => ({ stages: [{ id: 'stage-main', kind: 'volume' }] }),
+  planFromBlocks: () => ({ stages: [{ id: 'stage-main', kind: 'volume' }] }),
   generateStagedPlan: () => generator.plan,
 }));
 
@@ -72,6 +72,7 @@ function on(targetGrade: number, overrides?: Partial<VolumeOptions>): GeneratorS
       climbBias: 'any',
       ...overrides,
     },
+    extraBlocks: [],
   };
 }
 

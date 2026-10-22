@@ -32,18 +32,18 @@ import { BoardSummaryCard } from '../../boards/BoardSummaryCard';
 import { useBoardShortcutNavigation } from '../../../lib/boards/use-board-shortcut-navigation';
 import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionVisibilityRow } from '../SessionVisibilityRow';
-import {
-  DEFAULT_GRADE_FOCUS_OPTIONS,
-  DEFAULT_LADDER_OPTIONS,
-  DEFAULT_PYRAMID_OPTIONS,
-  DEFAULT_VOLUME_OPTIONS,
-  summarizePlanFill,
-} from '@boardsesh/playlist-generator';
-import { assertNever } from '../../../lib/assert-never';
+import { summarizePlanFill } from '@boardsesh/playlist-generator';
 import { SCREENSHOT_WORKOUT } from '../../../lib/screenshot-mode';
-import { GeneratorPickerCard, type GeneratorSelection } from './GeneratorPickerCard';
+import { GeneratorPickerCard } from './GeneratorPickerCard';
+import {
+  buildDefaultOptions,
+  selectionWorkoutTypes,
+  singleBlockSelection,
+  type GeneratorSelection,
+} from './workout-blocks';
 import { WorkoutPreviewRow } from './WorkoutPreviewRow';
 import { WorkoutPreviewSectionHeading } from './WorkoutPreviewSectionHeading';
+import { WorkoutPreviewStageHeading } from './WorkoutPreviewStageHeading';
 import { WorkoutPreviewSummary } from './WorkoutPreviewSummary';
 import { useWorkoutPreview } from './use-workout-preview';
 import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sections';
@@ -55,25 +55,10 @@ import { ONBOARDING_TIP_CREW_KEY, ONBOARDING_TIP_WORKOUT_KEY } from '@boardsesh/
 // generator (chart + generated preview) on load. The workout shelf is a
 // react-native-gesture-handler ScrollView that Maestro can't tap, so baking the
 // initial selection is the only reliable way to capture it. Off in normal builds.
-// The DEFAULT_*_OPTIONS omit `targetGrade` (see playlist-generator types), so each
-// branch adds a mid-grade default — mirroring buildDefaultOptions in GeneratorPickerCard.
+// A mid-grade target, as the DEFAULT_*_OPTIONS leave `targetGrade` out.
 function initialGeneratorSelection(): GeneratorSelection {
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !SCREENSHOT_WORKOUT) return { type: 'off' };
-  const targetGrade = 15;
-  switch (SCREENSHOT_WORKOUT) {
-    case 'volume':
-      return { type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade } };
-    case 'pyramid':
-      return { type: 'on', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade } };
-    case 'ladder':
-      return { type: 'on', options: { ...DEFAULT_LADDER_OPTIONS, targetGrade } };
-    case 'gradeFocus':
-      return { type: 'on', options: { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade } };
-    default:
-      // A new ScreenshotWorkout variant must add a case above; otherwise this
-      // turns into a compile error instead of silently returning undefined.
-      return assertNever(SCREENSHOT_WORKOUT);
-  }
+  return singleBlockSelection(buildDefaultOptions(SCREENSHOT_WORKOUT, 15));
 }
 
 type PreSessionViewProps = {
@@ -195,13 +180,14 @@ export function PreSessionView({
     refreshingUuids,
     plannedCount,
     plannedSlots,
+    plannedStages,
     refreshSlot,
     shuffle,
     toStagedQueueItems,
   } = preview;
-  // Section headings interleaved with the climbs, in the order the session runs them.
-  const previewRows = useMemo(() => buildPreviewListRows(previewItems), [previewItems]);
-  // What Start will queue: the planned slots that found a climb.
+  // Stage and section headings interleaved with the climbs, in the order the session runs them.
+  const previewRows = useMemo(() => buildPreviewListRows(previewItems, plannedStages), [previewItems, plannedStages]);
+  // What Start will queue: the planned slots that found a climb, across every stage.
   const planSummary = useMemo(
     () =>
       summarizePlanFill(
@@ -254,6 +240,7 @@ export function PreSessionView({
 
   const renderPreviewRow = useCallback(
     ({ item: row }: { item: PreviewListRow }) => {
+      if (row.kind === 'stage') return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} />;
       if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
       if (!previewBoard) return null;
       const previewItem = row.preview;
@@ -307,7 +294,9 @@ export function PreSessionView({
         // queue-item uuids just appended; it never goes over the wire.
         if (generatedRun) setWorkoutRun(newSessionId, generatedRun);
         track(SHARED_EVENTS.SessionQueueGenerated, {
+          // The first block's type, so single-workout funnels keep their meaning.
           workoutType: selection.options.type,
+          workoutTypes: selectionWorkoutTypes(selection),
           boardName: activeBoard.boardType,
           angle: activeBoard.angle,
           savedCount: generatedItems.length,

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { Chip as PaperChip } from 'react-native-paper';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BoardName, Grade } from '@boardsesh/shared-schema';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { getGradesForBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import {
@@ -13,10 +11,6 @@ import {
 } from '@boardsesh/climb-filters';
 import {
   CLIMB_BIAS_OPTIONS,
-  DEFAULT_GRADE_FOCUS_OPTIONS,
-  DEFAULT_LADDER_OPTIONS,
-  DEFAULT_PYRAMID_OPTIONS,
-  DEFAULT_VOLUME_OPTIONS,
   WARM_UP_OPTIONS,
   generateWorkoutPlan,
   type ClimbBias,
@@ -31,24 +25,29 @@ import { SegmentedControl } from '../../SegmentedControl';
 import { CollapsibleSection } from '../../CollapsibleSection';
 import { StarRating } from '../../StarRating';
 import { SwitchRow } from '../../SwitchRow';
-import { Stepper } from '../../Stepper';
 import { Text } from '../../Text';
 import { GradeSingleSelectRail } from '../../grade';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useTheme } from '../../../providers/theme-provider';
-import { createVariantComponent, selectByVariant } from '../../../theme/variants';
+import { selectByVariant } from '../../../theme/variants';
 import { hapticSelection } from '../../../lib/haptics';
-import { spacing, borderRadius } from '../../../theme/tokens';
-import { springs } from '../../../theme/animations';
-// Aliased: the selected chip is a FILL with white text that must stay legible in
-// both schemes, so it reads the static brand set (mirrors ClimbFilterSheet).
-import { brandColors as staticBrandColors } from '../../../theme/colors';
-import { iosSystemColors } from '../../../theme/ios-colors';
+import { spacing } from '../../../theme/tokens';
 import type { ColoredBar } from '../../you/profile-chart-colors';
 import { WorkoutTypeShelf, type WorkoutTypeShelfItem } from './WorkoutTypeShelf';
 import { buildWorkoutGradeBars, buildWorkoutProgressionBars } from './workout-type-shelf-data';
+import {
+  Chip,
+  GroupedSteppers,
+  generatorControlStyles,
+  getDefaultTargetGrade,
+  toRailGrades,
+  workoutStepperRows,
+} from './generator-controls';
+import { workoutStageName } from '../../../lib/workout-run-readout';
+import { buildDefaultOptions, singleBlockSelection, type GeneratorSelection } from './workout-blocks';
+import { WorkoutBlockList } from './WorkoutBlockList';
 
-export type GeneratorSelection = { type: 'off' } | { type: 'on'; options: GeneratorOptions };
+export type { GeneratorSelection } from './workout-blocks';
 
 type GeneratorPickerCardProps = {
   boardName: BoardName | null;
@@ -75,18 +74,7 @@ type CommonGeneratorPatch = Partial<
 const CHIP_VALUES: ChipValue[] = ['off', 'volume', 'pyramid', 'ladder', 'gradeFocus'];
 
 function chipLabel(value: ChipValue, t: (key: string) => string): string {
-  switch (value) {
-    case 'off':
-      return t('mobile.session.preGeneratorOff');
-    case 'volume':
-      return t('mobile.session.preGeneratorVolume');
-    case 'pyramid':
-      return t('mobile.session.preGeneratorPyramid');
-    case 'ladder':
-      return t('mobile.session.preGeneratorLadder');
-    case 'gradeFocus':
-      return t('mobile.session.preGeneratorGradeFocus');
-  }
+  return value === 'off' ? t('mobile.session.preGeneratorOff') : workoutStageName(value, t);
 }
 
 function warmUpLabel(value: WarmUpType, t: (key: string) => string): string {
@@ -111,136 +99,8 @@ function climbBiasLabel(value: ClimbBias, t: (key: string) => string): string {
   }
 }
 
-function buildDefaultOptions(type: WorkoutType, targetGrade: number): GeneratorOptions {
-  switch (type) {
-    case 'volume':
-      return { ...DEFAULT_VOLUME_OPTIONS, targetGrade };
-    case 'pyramid':
-      return { ...DEFAULT_PYRAMID_OPTIONS, targetGrade };
-    case 'ladder':
-      return { ...DEFAULT_LADDER_OPTIONS, targetGrade };
-    case 'gradeFocus':
-      return { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade };
-  }
-}
-
-function getDefaultTargetGrade(boardName: BoardName | null): number {
-  if (!boardName) return 15;
-  const grades = getGradesForBoard(boardName);
-  if (grades.length === 0) return 15;
-  return grades[Math.floor(grades.length / 2)].difficulty_id;
-}
-
 function getChartClimbCount(bar: ColoredBar): number {
   return bar.segments.reduce((total, segment) => total + segment.value, 0);
-}
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-type ChipProps = {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  accessibilityLabel?: string;
-};
-
-// Filled-rest-state chip (no faint border), matching the ClimbFilterSheet
-// `Chip`: the selected chip is a static-brand FILL with white text; the rest
-// state is the system fill so unselected chips stay legible. On Material it
-// routes to the Paper M3 filter chip (secondaryContainer + checkmark when
-// selected) so it reads as a native M3 filter chip rather than an iOS pill.
-// Split into two sub-components (rather than an early return) so the glass
-// branch's reanimated hooks stay unconditional across a runtime variant flip.
-const Chip = createVariantComponent('Chip', { liquidGlass: ChipGlass, material: ChipMaterial });
-
-function ChipMaterial({ label, selected, onPress, accessibilityLabel }: ChipProps) {
-  return (
-    <PaperChip
-      mode="flat"
-      selected={selected}
-      showSelectedCheck
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      accessibilityLabel={accessibilityLabel ?? label}
-    >
-      {label}
-    </PaperChip>
-  );
-}
-
-function ChipGlass({ label, selected, onPress, accessibilityLabel }: ChipProps) {
-  const { systemColors } = useTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const chipStyle: ViewStyle = {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: 20,
-    backgroundColor: selected ? staticBrandColors.primary : systemColors.fill,
-  };
-  return (
-    <AnimatedPressable
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      onPressIn={() => {
-        scale.value = withSpring(0.95, springs.snappy);
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, springs.snappy);
-      }}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={accessibilityLabel ?? label}
-      style={[animatedStyle, chipStyle]}
-    >
-      <Text variant="footnote" color={selected ? iosSystemColors.white : undefined} style={styles.chipText}>
-        {label}
-      </Text>
-    </AnimatedPressable>
-  );
-}
-
-type StepperRow = { key: string; node: ReactNode };
-
-// A grouped iOS inset card of stepper rows (label left, value + −/+ trailing),
-// hairline-divided between rows, matching the ClimbFilterSheet groupedCard
-// pattern. Rows carry stable keys (the option field name), so no index keys.
-function GroupedSteppers({ rows }: { rows: StepperRow[] }) {
-  const { systemColors, variant, m3 } = useTheme();
-  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
-  // Material: a filled tonal card (surfaceVariant) with outlineVariant dividers,
-  // instead of the iOS `systemColors.fill` inset-table look.
-  return (
-    <View style={[styles.groupedCard, { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill }]}>
-      {rows.map((row, index) => (
-        <View key={row.key}>
-          {index > 0 ? (
-            <View
-              style={[
-                styles.groupDivider,
-                { backgroundColor: isMaterial ? m3.outlineVariant : systemColors.separator },
-              ]}
-            />
-          ) : null}
-          {row.node}
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// Map the board-config grade table (snake_case BoulderGrade) onto the GraphQL
-// Grade shape GradeSingleSelectRail consumes.
-function toRailGrades(boardName: BoardName | null): Grade[] {
-  if (!boardName) return [];
-  return getGradesForBoard(boardName).map((grade) => ({
-    difficultyId: grade.difficulty_id,
-    name: grade.difficulty_name,
-  }));
 }
 
 /**
@@ -253,6 +113,10 @@ function toRailGrades(boardName: BoardName | null): Grade[] {
  * filled-chip workout-type rail, a single-select grade rail, a grouped stepper
  * card for the primary count(s), and a collapsed "Tuning" section for the long
  * tail (min-ascents, min-rating, climb bias, tall/wide).
+ *
+ * This card is the first workout block. Below it `WorkoutBlockList` adds more
+ * blocks that run after it; the warm-up and the Tuning filters here apply to
+ * the whole session.
  */
 export function GeneratorPickerCard({
   boardName,
@@ -282,7 +146,7 @@ export function GeneratorPickerCard({
     const shouldClearWideClimbs = selection.options.onlyWideClimbs && !showWideClimbsFilter;
     if (!shouldClearTallClimbs && !shouldClearWideClimbs) return;
     onChange({
-      type: 'on',
+      ...selection,
       options: {
         ...selection.options,
         ...(shouldClearTallClimbs ? { onlyTallClimbs: false } : {}),
@@ -316,8 +180,12 @@ export function GeneratorPickerCard({
       if (selection.type === 'off') {
         track(SHARED_EVENTS.WorkoutGeneratorOpened, { targetType: 'session', boardName, angle });
       }
-      const currentTarget = selection.type === 'on' ? selection.options.targetGrade : getDefaultTargetGrade(boardName);
-      onChange({ type: 'on', options: buildDefaultOptions(value, currentTarget) });
+      if (selection.type === 'off') {
+        onChange(singleBlockSelection(buildDefaultOptions(value, getDefaultTargetGrade(boardName))));
+        return;
+      }
+      // Switching the first block's type keeps the blocks after it.
+      onChange({ ...selection, options: buildDefaultOptions(value, selection.options.targetGrade) });
     },
     [angle, boardName, onChange, selection],
   );
@@ -402,7 +270,7 @@ export function GeneratorPickerCard({
 
   const updateCommonOptions = (patch: CommonGeneratorPatch) => {
     if (selection.type !== 'on') return;
-    onChange({ type: 'on', options: { ...selection.options, ...patch } });
+    onChange({ ...selection, options: { ...selection.options, ...patch } });
   };
 
   // Recollapse the Tuning section on generator-type change so a freshly picked
@@ -425,94 +293,9 @@ export function GeneratorPickerCard({
     return parts.join(' · ');
   }, [selection, t]);
 
-  // A stepper row with an already-translated label; resolves the decrease /
-  // increase accessibility labels off the same label. Callers pass the resolved
-  // string (via a literal `t('mobile.session.preGenerator…')`) so the i18n key
-  // stays statically analysable.
-  const stepperRow = (
-    label: string,
-    fieldKey: string,
-    value: number,
-    min: number,
-    max: number,
-    onValue: (next: number) => void,
-  ): StepperRow => ({
-    key: fieldKey,
-    node: <Stepper label={label} value={value} min={min} max={max} onChange={onValue} />,
-  });
-
-  // Primary count stepper(s) shown directly under the workout type. Volume:
-  // main-set climbs; pyramid/ladder: number of steps; grade focus: climbs.
-  const primarySteppers = (options: GeneratorOptions): StepperRow[] => {
-    switch (options.type) {
-      case 'volume':
-        return [
-          stepperRow(
-            t('mobile.session.preGeneratorMainSetClimbs'),
-            'mainSetClimbs',
-            options.mainSetClimbs,
-            1,
-            50,
-            (mainSetClimbs) => onChange({ type: 'on', options: { ...options, mainSetClimbs } }),
-          ),
-        ];
-      case 'pyramid':
-      case 'ladder':
-        return [
-          stepperRow(
-            t('mobile.session.preGeneratorNumberOfSteps'),
-            'numberOfSteps',
-            options.numberOfSteps,
-            3,
-            15,
-            (numberOfSteps) => onChange({ type: 'on', options: { ...options, numberOfSteps } }),
-          ),
-        ];
-      case 'gradeFocus':
-        return [
-          stepperRow(
-            t('mobile.session.preGeneratorNumberOfClimbs'),
-            'numberOfClimbs',
-            options.numberOfClimbs,
-            1,
-            50,
-            (numberOfClimbs) => onChange({ type: 'on', options: { ...options, numberOfClimbs } }),
-          ),
-        ];
-    }
-  };
-
-  // Each shape's secondary knob — Volume's variability ("grade spread") and
-  // pyramid/ladder's climbs-per-step. Shown in the primary group next to the main
-  // count (promoted out of Tuning for discoverability); Grade Focus has none.
-  const secondarySteppers = (options: GeneratorOptions): StepperRow[] => {
-    switch (options.type) {
-      case 'volume':
-        return [
-          stepperRow(
-            t('mobile.session.preGeneratorMainSetVariability'),
-            'mainSetVariability',
-            options.mainSetVariability,
-            0,
-            5,
-            (mainSetVariability) => onChange({ type: 'on', options: { ...options, mainSetVariability } }),
-          ),
-        ];
-      case 'pyramid':
-      case 'ladder':
-        return [
-          stepperRow(
-            t('mobile.session.preGeneratorClimbsPerStep'),
-            'climbsPerStep',
-            options.climbsPerStep,
-            1,
-            5,
-            (climbsPerStep) => onChange({ type: 'on', options: { ...options, climbsPerStep } }),
-          ),
-        ];
-      case 'gradeFocus':
-        return [];
-    }
+  const updateFirstBlockOptions = (options: GeneratorOptions) => {
+    if (selection.type !== 'on') return;
+    onChange({ ...selection, options });
   };
 
   const warmUpOptions = useMemo(
@@ -532,7 +315,7 @@ export function GeneratorPickerCard({
           <Text variant="footnote" style={styles.subsectionLabel}>
             {t('mobile.session.preGeneratorMinAscents')}
           </Text>
-          <View style={styles.chipRow}>
+          <View style={generatorControlStyles.chipRow}>
             {minAscentsOptions.map((minAscents) => {
               const label = t('mobile.session.preGeneratorMinAscentsOption', {
                 value: formatMinAscentsFilterCount(minAscents),
@@ -598,7 +381,12 @@ export function GeneratorPickerCard({
         </View>
 
         {showTallClimbsFilter || showWideClimbsFilter ? (
-          <View style={[styles.groupedCard, { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill }]}>
+          <View
+            style={[
+              generatorControlStyles.groupedCard,
+              { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill },
+            ]}
+          >
             {showTallClimbsFilter ? (
               <SwitchRow
                 label={t('mobile.session.preGeneratorTallClimbsLabel')}
@@ -610,7 +398,7 @@ export function GeneratorPickerCard({
             {showTallClimbsFilter && showWideClimbsFilter ? (
               <View
                 style={[
-                  styles.groupDivider,
+                  generatorControlStyles.groupDivider,
                   { backgroundColor: isMaterial ? m3.outlineVariant : systemColors.separator },
                 ]}
               />
@@ -664,7 +452,7 @@ export function GeneratorPickerCard({
           </View>
 
           <View style={[styles.inset, styles.steppersInset]}>
-            <GroupedSteppers rows={[...primarySteppers(selection.options), ...secondarySteppers(selection.options)]} />
+            <GroupedSteppers rows={workoutStepperRows(selection.options, t, updateFirstBlockOptions)} />
           </View>
 
           <View style={[styles.inset, styles.tuningInset]}>
@@ -676,6 +464,8 @@ export function GeneratorPickerCard({
               {renderTuning(selection.options)}
             </CollapsibleSection>
           </View>
+
+          <WorkoutBlockList boardName={boardName} railGrades={railGrades} selection={selection} onChange={onChange} />
         </>
       ) : null}
     </View>
@@ -697,22 +487,6 @@ const styles = StyleSheet.create({
   },
   tuningInset: {
     marginTop: spacing[3],
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  chipText: {
-    fontWeight: '500',
-  },
-  groupedCard: {
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
-  groupDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginStart: spacing[4],
   },
   tuningBody: {
     gap: spacing[4],

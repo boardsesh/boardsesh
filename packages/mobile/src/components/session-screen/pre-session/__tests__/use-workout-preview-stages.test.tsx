@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 // The preview against the REAL generator: a warm-up plus a workout must come out
 // as two stages whose climbs are exactly the warm-up rows and the workout rows.
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
-import { generateWorkoutPlan, type GeneratorGradeScale, type VolumeOptions } from '@boardsesh/playlist-generator';
+import {
+  DEFAULT_PYRAMID_OPTIONS,
+  DEFAULT_VOLUME_OPTIONS,
+  generateStagedPlan,
+  generateWorkoutPlan,
+  planFromBlocks,
+  summarizePlanFill,
+  type GeneratorGradeScale,
+  type PyramidOptions,
+  type VolumeOptions,
+} from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 import type { FetchGradePool } from '../workout-preview-pool';
 
@@ -41,7 +51,7 @@ const fetchPool: FetchGradePool = async (grade) =>
 
 describe('useWorkoutPreview stages', () => {
   it('plans the same slots as before and groups the queued climbs by stage', async () => {
-    const selection: GeneratorSelection = { type: 'on', options: volumeWithWarmUp };
+    const selection: GeneratorSelection = { type: 'on', options: volumeWithWarmUp, extraBlocks: [] };
     const { result } = renderHook(() =>
       useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
     );
@@ -69,5 +79,90 @@ describe('useWorkoutPreview stages', () => {
     expect(items.map((item) => item.uuid)).toEqual([...warmUpUuids, ...mainUuids]);
     // Stage ids are minted fresh, never positions.
     expect(new Set(run?.stages.map((stage) => stage.id)).size).toBe(2);
+  });
+
+  it('fills every block from one fetch per grade and keeps each climb in its own stage', async () => {
+    const pyramid: PyramidOptions = {
+      ...DEFAULT_PYRAMID_OPTIONS,
+      targetGrade: 22,
+      warmUp: 'standard',
+      numberOfSteps: 3,
+      climbsPerStep: 1,
+      minAscents: 0,
+      minRating: 0,
+      climbBias: 'any',
+    };
+    const volume: VolumeOptions = { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 4 };
+    const selection: GeneratorSelection = {
+      type: 'on',
+      options: pyramid,
+      extraBlocks: [{ id: 'block-volume', options: volume }],
+    };
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    // Warm-up up to the first block, then the pyramid, then the volume block on the first card's filters.
+    expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['warmUp', 'pyramid', 'volume']);
+    const expectedSlots = generateStagedPlan(
+      planFromBlocks([pyramid, { ...volume, minAscents: 0, minRating: 0, climbBias: 'any' }], 'standard', () => 'x'),
+      grades,
+    ).map(({ grade, section, index }) => ({ grade, section, index }));
+    expect(result.current.plannedSlots.map(({ grade, section, index }) => ({ grade, section, index }))).toEqual(
+      expectedSlots,
+    );
+    // The volume block's fetch carries the first card's filters, not its own defaults.
+    expect(countingFetchPool).toHaveBeenCalledWith(
+      15,
+      expect.objectContaining({ filters: expect.objectContaining({ minAscents: 0, minRating: 0, climbBias: 'any' }) }),
+    );
+
+    // One fetch per unique grade across every stage, none repeated.
+    const uniqueGrades = new Set(result.current.plannedSlots.map((slot) => slot.grade));
+    expect(countingFetchPool).toHaveBeenCalledTimes(uniqueGrades.size);
+
+    // The summary counts every stage.
+    const summary = summarizePlanFill(
+      result.current.plannedSlots,
+      result.current.items.map((preview) => preview.slot),
+    );
+    expect(summary.filled).toBe(expectedSlots.length);
+    expect(summary.lowestGrade).toBe(15);
+    expect(summary.highestGrade).toBe(22);
+
+    const expectRunMatchesRows = () => {
+      const { items, run } = result.current.toStagedQueueItems();
+      expect(items.map((item) => item.uuid)).toEqual(result.current.items.map((preview) => preview.item.uuid));
+      expect(run?.stages.map((stage) => stage.id)).toEqual(result.current.plannedStages.map((stage) => stage.id));
+      for (const runStage of run?.stages ?? []) {
+        expect(runStage.itemUuids).toEqual(
+          result.current.items
+            .filter((preview) => preview.slot.stageId === runStage.id)
+            .map((preview) => preview.item.uuid),
+        );
+      }
+      // No climb is picked twice across stages.
+      const climbUuids = result.current.items.map((preview) => preview.item.climb.uuid);
+      expect(new Set(climbUuids).size).toBe(climbUuids.length);
+    };
+    expectRunMatchesRows();
+    const [warmUpStage, pyramidStage, volumeStage] = result.current.toStagedQueueItems().run?.stages ?? [];
+    expect([warmUpStage?.itemUuids.length, pyramidStage?.itemUuids.length, volumeStage?.itemUuids.length]).toEqual([
+      4, 3, 4,
+    ]);
+
+    // Shuffle re-picks across every stage and the run follows the new rows.
+    act(() => result.current.shuffle());
+    expectRunMatchesRows();
+
+    // A row refresh in the second block keeps that row in the second block.
+    const volumeRow = result.current.items.find((preview) => preview.slot.grade === 15);
+    if (!volumeRow) throw new Error('expected a volume row');
+    await act(async () => result.current.refreshSlot(volumeRow.item.uuid));
+    await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
+    expectRunMatchesRows();
+    expect(result.current.toStagedQueueItems().run?.stages[2].itemUuids).toContain(volumeRow.item.uuid);
   });
 });

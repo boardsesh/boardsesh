@@ -28,10 +28,13 @@ export type PreviewFetchContext = {
 /** Fetch a pool of candidate climbs at a single target grade. */
 export type FetchGradePool = (grade: number, ctx: PreviewFetchContext) => Promise<Climb[]>;
 
+/** A plan slot, plus the workout stage it belongs to when it came from a staged plan. */
+export type PreviewSlot = PlannedClimbSlot & { stageId?: string };
+
 /** One preview row: the queue item plus the plan slot it fills (slot.grade is the refresh key). */
 export type PreviewItem = {
   item: ClimbQueueItem;
-  slot: PlannedClimbSlot;
+  slot: PreviewSlot;
 };
 
 export type WorkoutPreviewData = {
@@ -118,7 +121,7 @@ export function reshufflePools(
  * `failedCount`, matching the web generator's behavior.
  */
 export function selectItemsFromPools(
-  slots: readonly PlannedClimbSlot[],
+  slots: readonly PreviewSlot[],
   pools: ReadonlyMap<number, Climb[]>,
 ): { items: PreviewItem[]; usedUuids: Set<string> } {
   const items: PreviewItem[] = [];

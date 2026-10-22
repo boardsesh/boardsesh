@@ -4,14 +4,15 @@ import { randomUUID } from 'expo-crypto';
 import {
   buildWorkoutRun,
   generateStagedPlan,
-  planFromGeneratorOptions,
+  planFromBlocks,
   type GeneratorGradeScale,
-  type PlannedClimbSlot,
+  type GeneratorOptions,
   type StagedSlot,
   type WorkoutPlan,
   type WorkoutRun,
+  type WorkoutStage,
 } from '@boardsesh/playlist-generator';
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../../providers/toast-provider';
@@ -27,7 +28,7 @@ import {
   type PreviewItem,
   type WorkoutPreviewData,
 } from './workout-preview-pool';
-import type { GeneratorSelection } from './GeneratorPickerCard';
+import { selectionBlocks, type GeneratorSelection } from './workout-blocks';
 
 const DEBOUNCE_MS = 300;
 
@@ -40,8 +41,10 @@ export type UseWorkoutPreviewResult = {
   refreshingUuids: ReadonlySet<string>;
   /** Slots the generator planned — for the `SessionQueueGenerated.failedCount` delta. */
   plannedCount: number;
-  /** Actual generated slot plan, before climb-pool shortfalls remove rows from the preview. */
-  plannedSlots: readonly PlannedClimbSlot[];
+  /** Actual generated slot plan, before climb-pool shortfalls remove rows from the preview. Each slot names its stage. */
+  plannedSlots: readonly StagedSlot[];
+  /** The stages those slots belong to, in run order. Empty while no preview is current. */
+  plannedStages: readonly WorkoutStage[];
   regenerate: () => void;
   /** Pick new climbs for the same plan from the pools already fetched. No network. */
   shuffle: () => void;
@@ -73,11 +76,9 @@ type UseWorkoutPreviewDeps = {
 };
 
 const EMPTY_DATA = (): WorkoutPreviewData => ({ items: [], pools: new Map(), usedUuids: new Set() });
+const EMPTY_STAGES: readonly WorkoutStage[] = [];
 
-function getSelectionGenerationKey(selection: GeneratorSelection): string {
-  if (selection.type !== 'on') return 'off';
-
-  const { options } = selection;
+function getBlockGenerationKey(options: GeneratorOptions): string {
   const commonKey = [
     options.type,
     options.warmUp,
@@ -98,6 +99,12 @@ function getSelectionGenerationKey(selection: GeneratorSelection): string {
     case 'gradeFocus':
       return `${commonKey}:${options.numberOfClimbs}`;
   }
+}
+
+function getSelectionGenerationKey(selection: GeneratorSelection): string {
+  if (selection.type !== 'on') return 'off';
+  // Every block in run order: adding, removing or moving one rebuilds the preview.
+  return selectionBlocks(selection).map(getBlockGenerationKey).join('+');
 }
 
 function getBoardGenerationKey(board: UserBoard | null): string {
@@ -132,7 +139,8 @@ export function useWorkoutPreview(
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [refreshingUuids, setRefreshingUuids] = useState<ReadonlySet<string>>(() => new Set());
   const [plannedCount, setPlannedCount] = useState(0);
-  const [plannedSlots, setPlannedSlots] = useState<readonly PlannedClimbSlot[]>([]);
+  const [plannedSlots, setPlannedSlots] = useState<readonly StagedSlot[]>([]);
+  const [plannedStages, setPlannedStages] = useState<readonly WorkoutStage[]>(EMPTY_STAGES);
   const [committedPreviewKey, setCommittedPreviewKeyState] = useState<string | null>(null);
   const [committedBoardKey, setCommittedBoardKey] = useState<string | null>(null);
 
@@ -198,6 +206,7 @@ export function useWorkoutPreview(
       setItems([]);
       setPlannedCount(0);
       setPlannedSlots([]);
+      setPlannedStages(EMPTY_STAGES);
       setStatus(nextStatus);
     },
     [setCommittedPreviewKey],
@@ -221,8 +230,17 @@ export function useWorkoutPreview(
     const token = ++genTokenRef.current;
     setStatus('loading'); // keep prior items mounted so the list doesn't jump
     try {
-      const workoutPlan = planFromGeneratorOptions(currentSelection.options, makeStageId);
-      const plan = generateStagedPlan(workoutPlan, grades);
+      // One stage per block, after the first card's warm-up. Every stage shares
+      // the pools below: they are fetched once per unique grade with the first
+      // card's filters, so a second block at another grade only adds the grades
+      // it needs, and one climb never fills two slots across stages.
+      const workoutPlan = planFromBlocks(
+        selectionBlocks(currentSelection),
+        currentSelection.options.warmUp,
+        makeStageId,
+      );
+      // Start can never queue more than the party backend's setQueue accepts.
+      const plan = generateStagedPlan(workoutPlan, grades).slice(0, MAX_SYNCED_QUEUE_ITEMS);
       const ctx = buildCtx();
       if (!ctx || token !== genTokenRef.current) return; // selection/board changed underneath
       if (plan.length === 0) {
@@ -233,6 +251,7 @@ export function useWorkoutPreview(
         setItems([]);
         setPlannedCount(0);
         setPlannedSlots([]);
+        setPlannedStages(EMPTY_STAGES);
         setStatus('ready');
         return;
       }
@@ -246,6 +265,7 @@ export function useWorkoutPreview(
       setItems(nextItems);
       setPlannedCount(plan.length);
       setPlannedSlots(plan);
+      setPlannedStages(workoutPlan.stages);
       setStatus('ready');
     } catch {
       if (token !== genTokenRef.current) return;
@@ -354,6 +374,9 @@ export function useWorkoutPreview(
       refreshingUuids,
       plannedCount: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedCount : 0,
       plannedSlots: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedSlots : [],
+      // Kept while a rebuild runs, like `items`, so the stage headings over the
+      // rows still on screen keep their names.
+      plannedStages: hasActivePreviewRequest && committedBoardKey === boardKey ? plannedStages : EMPTY_STAGES,
       regenerate: regenerateVoid,
       shuffle,
       refreshSlot: refreshSlotVoid,
@@ -370,6 +393,7 @@ export function useWorkoutPreview(
     refreshingUuids,
     plannedCount,
     plannedSlots,
+    plannedStages,
     regenerateVoid,
     shuffle,
     refreshSlotVoid,

@@ -1,21 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
+import {
+  DEFAULT_PYRAMID_OPTIONS,
+  DEFAULT_VOLUME_OPTIONS,
+  type PlannedClimbSlot,
+  type WorkoutStage,
+} from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { buildPreviewListRows } from '../workout-preview-sections';
 import type { PreviewItem } from '../workout-preview-pool';
 
-function makePreview(uuid: string, section: PlannedClimbSlot['section'], index: number): PreviewItem {
+function makePreview(uuid: string, section: PlannedClimbSlot['section'], index: number, stageId?: string): PreviewItem {
   return {
     item: { uuid, climb: { uuid: `${uuid}-climb` } } as ClimbQueueItem,
-    slot: { grade: 10, section, index },
+    slot: { grade: 10, section, index, ...(stageId === undefined ? {} : { stageId }) },
   };
 }
 
-function describeRows(items: PreviewItem[]): string[] {
-  return buildPreviewListRows(items).map((row) =>
-    row.kind === 'section' ? `${row.section}:${row.count}` : row.preview.item.uuid,
-  );
+function describeRows(items: PreviewItem[], stages?: WorkoutStage[]): string[] {
+  return buildPreviewListRows(items, stages).map((row) => {
+    if (row.kind === 'stage') return `STAGE ${row.stageKind}:${row.count}`;
+    if (row.kind === 'section') return `${row.section}:${row.count}`;
+    return row.preview.item.uuid;
+  });
 }
+
+const WARM_UP_STAGE: WorkoutStage = { id: 'warm', kind: 'warmUp', warmUpType: 'standard' };
+const PYRAMID_STAGE: WorkoutStage = {
+  id: 'pyramid',
+  kind: 'pyramid',
+  options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10, warmUp: 'none' },
+};
+const VOLUME_STAGE: WorkoutStage = {
+  id: 'volume',
+  kind: 'volume',
+  options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8, warmUp: 'none' },
+};
 
 describe('buildPreviewListRows', () => {
   it('heads each section of a pyramid with its warm-up', () => {
@@ -63,5 +82,82 @@ describe('buildPreviewListRows', () => {
 
   it('returns nothing for an empty preview', () => {
     expect(buildPreviewListRows([])).toEqual([]);
+  });
+
+  it('looks exactly as before for one block with a warm-up', () => {
+    const items = [
+      makePreview('w1', 'warmUp', 0, 'warm'),
+      makePreview('u1', 'increasing', 1, 'pyramid'),
+      makePreview('p1', 'peak', 2, 'pyramid'),
+      makePreview('d1', 'decreasing', 3, 'pyramid'),
+    ];
+    const stages = [WARM_UP_STAGE, PYRAMID_STAGE];
+
+    expect(buildPreviewListRows(items, stages)).toEqual(buildPreviewListRows(items));
+    expect(describeRows(items, stages)).toEqual([
+      'warmUp:1',
+      'w1',
+      'increasing:1',
+      'u1',
+      'peak:1',
+      'p1',
+      'decreasing:1',
+      'd1',
+    ]);
+  });
+
+  it('heads each stage of a multi-block workout, over its own sections', () => {
+    const items = [
+      makePreview('w1', 'warmUp', 0, 'warm'),
+      makePreview('w2', 'warmUp', 1, 'warm'),
+      makePreview('u1', 'increasing', 2, 'pyramid'),
+      makePreview('p1', 'peak', 3, 'pyramid'),
+      makePreview('d1', 'decreasing', 4, 'pyramid'),
+      makePreview('v1', 'main', 5, 'volume'),
+      makePreview('v2', 'main', 6, 'volume'),
+    ];
+
+    expect(describeRows(items, [WARM_UP_STAGE, PYRAMID_STAGE, VOLUME_STAGE])).toEqual([
+      // A one-section stage (the warm-up, the volume set) gets no section heading under its stage heading.
+      'STAGE warmUp:2',
+      'w1',
+      'w2',
+      'STAGE pyramid:3',
+      'increasing:1',
+      'u1',
+      'peak:1',
+      'p1',
+      'decreasing:1',
+      'd1',
+      'STAGE volume:2',
+      'v1',
+      'v2',
+    ]);
+  });
+
+  it('counts only the filled climbs in a stage heading and skips a stage that found none', () => {
+    const items = [makePreview('p1', 'peak', 1, 'pyramid'), makePreview('v2', 'main', 6, 'volume')];
+
+    expect(describeRows(items, [WARM_UP_STAGE, PYRAMID_STAGE, VOLUME_STAGE])).toEqual([
+      'STAGE pyramid:1',
+      'p1',
+      'STAGE volume:1',
+      'v2',
+    ]);
+  });
+
+  it('keeps every key unique when two blocks share a type', () => {
+    const secondVolume: WorkoutStage = { ...VOLUME_STAGE, id: 'volume-2' };
+    const items = [
+      makePreview('a', 'main', 0, 'volume'),
+      makePreview('b', 'main', 1, 'volume-2'),
+      makePreview('c', 'main', 2, 'volume-2'),
+    ];
+
+    const rows = buildPreviewListRows(items, [VOLUME_STAGE, secondVolume]);
+    const keys = rows.map((row) => row.key);
+
+    expect(rows.filter((row) => row.kind === 'stage')).toHaveLength(2);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

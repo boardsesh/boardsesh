@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
+import type { ActiveGeneratorSelection, ExtraWorkoutBlock } from '../workout-blocks';
 import type { WarmUpType } from '@boardsesh/playlist-generator';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -198,6 +199,14 @@ vi.mock('../../../../theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
 vi.mock('../../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9' } }));
 vi.mock('../../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff', systemGray: '#999' } }));
+// The block list renders real icons; this suite only checks what the card hands it.
+const blockList = vi.hoisted(() => ({ selections: [] as unknown[] }));
+vi.mock('../WorkoutBlockList', () => ({
+  WorkoutBlockList: ({ selection }: { selection: unknown }) => {
+    blockList.selections.push(selection);
+    return null;
+  },
+}));
 vi.mock('../WorkoutTypeShelf', () => ({
   WorkoutTypeShelf: ({
     items,
@@ -231,9 +240,10 @@ beforeEach(() => {
   chips.entries = [];
   shelf.entries = [];
   segments.entries = [];
+  blockList.selections = [];
 });
 
-const VOLUME_SELECTION: GeneratorSelection = {
+const VOLUME_SELECTION: ActiveGeneratorSelection = {
   type: 'on',
   options: {
     type: 'volume',
@@ -247,6 +257,7 @@ const VOLUME_SELECTION: GeneratorSelection = {
     onlyTallClimbs: false,
     onlyWideClimbs: false,
   },
+  extraBlocks: [],
 };
 
 describe('GeneratorPickerCard analytics', () => {
@@ -336,6 +347,7 @@ describe('GeneratorPickerCard analytics', () => {
     expect(onChange).toHaveBeenCalledWith({
       type: 'on',
       options: expect.objectContaining({ type: 'volume', warmUp: 'none' }),
+      extraBlocks: [],
     });
   });
 
@@ -377,6 +389,71 @@ describe('GeneratorPickerCard analytics', () => {
     expect(onChange).toHaveBeenCalledWith({
       type: 'on',
       options: expect.objectContaining({ warmUp: 'extended' }),
+      extraBlocks: [],
+    });
+  });
+
+  it('hands the block list the selection and only shows it with the generator on', () => {
+    const { rerender } = render(
+      createElement(GeneratorPickerCard, {
+        boardName: 'kilter',
+        layoutId: 8,
+        sizeId: 21,
+        angle: 40,
+        selection: { type: 'off' } satisfies GeneratorSelection,
+        onChange: vi.fn(),
+      }),
+    );
+    expect(blockList.selections).toEqual([]);
+
+    rerender(
+      createElement(GeneratorPickerCard, {
+        boardName: 'kilter',
+        layoutId: 8,
+        sizeId: 21,
+        angle: 40,
+        selection: VOLUME_SELECTION,
+        onChange: vi.fn(),
+      }),
+    );
+    expect(blockList.selections.at(-1)).toBe(VOLUME_SELECTION);
+  });
+
+  it('keeps the blocks after the first card when its workout type changes', () => {
+    const onChange = vi.fn();
+    const extraBlocks: ExtraWorkoutBlock[] = [
+      {
+        id: 'block-1',
+        options: {
+          type: 'gradeFocus',
+          warmUp: 'none',
+          targetGrade: 10,
+          numberOfClimbs: 8,
+          climbBias: 'any',
+          minAscents: 0,
+          minRating: 0,
+          onlyTallClimbs: false,
+          onlyWideClimbs: false,
+        },
+      },
+    ];
+    render(
+      createElement(GeneratorPickerCard, {
+        boardName: 'kilter',
+        layoutId: 8,
+        sizeId: 21,
+        angle: 40,
+        selection: { ...VOLUME_SELECTION, extraBlocks },
+        onChange,
+      }),
+    );
+
+    shelf.entries.find((entry) => entry.key === 'pyramid')?.onPress();
+
+    expect(onChange).toHaveBeenCalledWith({
+      type: 'on',
+      options: expect.objectContaining({ type: 'pyramid', targetGrade: 20 }),
+      extraBlocks,
     });
   });
 });
