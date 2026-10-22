@@ -21,7 +21,7 @@ const preview = vi.hoisted(() => ({
     regenerate: vi.fn(),
     shuffle: vi.fn(),
     refreshSlot: vi.fn(),
-    toQueueItems: () => [] as ClimbQueueItem[],
+    toStagedQueueItems: () => ({ items: [] as ClimbQueueItem[], run: null }),
   },
 }));
 

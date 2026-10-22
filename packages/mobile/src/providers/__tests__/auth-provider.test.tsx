@@ -169,6 +169,8 @@ beforeEach(() => {
   clearAllCreateClimbDraftsMock.mockResolvedValue(undefined);
   clearSessionCommentDraftMock.mockReset();
   clearSessionCommentDraftMock.mockResolvedValue(undefined);
+  clearWorkoutRunMock.mockReset();
+  clearWorkoutRunMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -270,6 +272,11 @@ vi.mock('../../lib/create-climb-draft-store', () => ({
 const clearSessionCommentDraftMock = vi.fn();
 vi.mock('../../lib/session-comment-draft-store', () => ({
   clearSessionCommentDraft: (...args: unknown[]) => clearSessionCommentDraftMock(...args),
+}));
+
+const clearWorkoutRunMock = vi.fn();
+vi.mock('../../lib/workout-run-store', () => ({
+  clearWorkoutRun: (...args: unknown[]) => clearWorkoutRunMock(...args),
 }));
 
 vi.mock('../../lib/user-storage-owner', () => ({
@@ -554,6 +561,8 @@ describe('AuthProvider.signOut', () => {
     // these drafts, so this stays native-neutral when the PR ships via OTA.
     expect(clearAllCreateClimbDraftsMock).not.toHaveBeenCalled();
     expect(clearSessionCommentDraftMock).not.toHaveBeenCalled();
+    // The workout stage map is new (#5379), so it is cleared on every platform.
+    expect(clearWorkoutRunMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
     // Offline mode gates the backend, so a phone left signed out with the switch

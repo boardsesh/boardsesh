@@ -167,6 +167,8 @@ beforeEach(() => {
   clearAllCreateClimbDraftsMock.mockResolvedValue(undefined);
   clearSessionCommentDraftMock.mockReset();
   clearSessionCommentDraftMock.mockResolvedValue(undefined);
+  clearWorkoutRunMock.mockReset();
+  clearWorkoutRunMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -260,6 +262,11 @@ vi.mock('../../lib/create-climb-draft-store', () => ({
 const clearSessionCommentDraftMock = vi.fn();
 vi.mock('../../lib/session-comment-draft-store', () => ({
   clearSessionCommentDraft: (...args: unknown[]) => clearSessionCommentDraftMock(...args),
+}));
+
+const clearWorkoutRunMock = vi.fn();
+vi.mock('../../lib/workout-run-store', () => ({
+  clearWorkoutRun: (...args: unknown[]) => clearWorkoutRunMock(...args),
 }));
 
 vi.mock('../../lib/user-storage-owner', () => ({

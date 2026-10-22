@@ -41,6 +41,7 @@ import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-picker-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
+import { clearWorkoutRun } from '../lib/workout-run-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { getAppEntryHref } from '../lib/app-entry-route';
@@ -281,6 +282,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         // origin behavior and leaves these drafts intact, so shipping this via
         // OTA doesn't change what a native sign-out touches.
         ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+        // Which workout stage each queued climb belongs to. New with #5379, so
+        // there is no older native behaviour to keep: cleared on every platform.
+        clearWorkoutRun(),
       ]);
     },
     [],

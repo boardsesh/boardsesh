@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
-import { generateWorkoutPlan, type GeneratorGradeScale, type PlannedClimbSlot } from '@boardsesh/playlist-generator';
+import { randomUUID } from 'expo-crypto';
+import {
+  buildWorkoutRun,
+  generateStagedPlan,
+  planFromGeneratorOptions,
+  type GeneratorGradeScale,
+  type PlannedClimbSlot,
+  type StagedSlot,
+  type WorkoutPlan,
+  type WorkoutRun,
+} from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
@@ -36,9 +46,24 @@ export type UseWorkoutPreviewResult = {
   /** Pick new climbs for the same plan from the pools already fetched. No network. */
   shuffle: () => void;
   refreshSlot: (itemUuid: string) => void;
-  /** The current preview as a plain queue (the hand-off to `setQueue` on Start). */
-  toQueueItems: () => ClimbQueueItem[];
+  /**
+   * The current preview as a queue, plus which workout stage each item belongs
+   * to (the hand-off on Start). Empty items and a null run while the preview on
+   * screen is not the one the current settings describe.
+   */
+  toStagedQueueItems: () => StagedQueueItems;
 };
+
+export type StagedQueueItems = {
+  items: ClimbQueueItem[];
+  /** Null when there is nothing to queue. */
+  run: WorkoutRun | null;
+};
+
+const EMPTY_STAGED_QUEUE_ITEMS: StagedQueueItems = { items: [], run: null };
+
+/** Stage ids are uuids so a stage added mid-session can never collide with one already in the run. */
+const makeStageId = () => randomUUID();
 
 type UseWorkoutPreviewDeps = {
   /** Injectable fetcher (tests pass a fake; production defaults to the GraphQL one). */
@@ -113,8 +138,10 @@ export function useWorkoutPreview(
 
   // Mutable source of truth the async callbacks read/write without re-rendering.
   const dataRef = useRef<WorkoutPreviewData>(EMPTY_DATA());
-  // The committed plan, for a shuffle to re-fill without regenerating it.
-  const planRef = useRef<readonly PlannedClimbSlot[]>([]);
+  // The committed plan, for a shuffle to re-fill without regenerating it. Its
+  // slots carry their stage id; `workoutPlanRef` is the stage list they came from.
+  const planRef = useRef<readonly StagedSlot[]>([]);
+  const workoutPlanRef = useRef<WorkoutPlan | null>(null);
   // Monotonic token: a build/clear only commits if it's still the latest.
   const genTokenRef = useRef(0);
   const committedPreviewKeyRef = useRef<string | null>(null);
@@ -166,6 +193,7 @@ export function useWorkoutPreview(
       genTokenRef.current++; // invalidate any in-flight build
       dataRef.current = EMPTY_DATA();
       planRef.current = [];
+      workoutPlanRef.current = null;
       setCommittedPreviewKey(null);
       setItems([]);
       setPlannedCount(0);
@@ -193,12 +221,14 @@ export function useWorkoutPreview(
     const token = ++genTokenRef.current;
     setStatus('loading'); // keep prior items mounted so the list doesn't jump
     try {
-      const plan = generateWorkoutPlan(currentSelection.options, grades);
+      const workoutPlan = planFromGeneratorOptions(currentSelection.options, makeStageId);
+      const plan = generateStagedPlan(workoutPlan, grades);
       const ctx = buildCtx();
       if (!ctx || token !== genTokenRef.current) return; // selection/board changed underneath
       if (plan.length === 0) {
         dataRef.current = EMPTY_DATA();
         planRef.current = [];
+        workoutPlanRef.current = null;
         setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
         setItems([]);
         setPlannedCount(0);
@@ -211,6 +241,7 @@ export function useWorkoutPreview(
       const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools);
       dataRef.current = { items: nextItems, pools, usedUuids };
       planRef.current = plan;
+      workoutPlanRef.current = workoutPlan;
       setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
       setItems(nextItems);
       setPlannedCount(plan.length);
@@ -266,10 +297,21 @@ export function useWorkoutPreview(
     setItems(nextItems);
   }, []);
 
-  const toQueueItems = useCallback(() => {
+  const toStagedQueueItems = useCallback((): StagedQueueItems => {
     const currentPreviewKey = getPreviewGenerationKey(selectionRef.current, boardRef.current, isAuthRef.current);
-    if (committedPreviewKeyRef.current !== currentPreviewKey) return [];
-    return dataRef.current.items.map((preview) => preview.item);
+    if (committedPreviewKeyRef.current !== currentPreviewKey) return EMPTY_STAGED_QUEUE_ITEMS;
+    const previews = dataRef.current.items;
+    const workoutPlan = workoutPlanRef.current;
+    if (previews.length === 0 || !workoutPlan) return EMPTY_STAGED_QUEUE_ITEMS;
+    // Rows keep their slot through a row refresh (same uuid, new climb) and a
+    // shuffle (new uuids, same plan), so a slot's index always finds its stage.
+    const stageIdBySlotIndex = new Map(planRef.current.map((slot) => [slot.index, slot.stageId]));
+    const entries: Array<{ uuid: string; stageId: string }> = [];
+    for (const preview of previews) {
+      const stageId = stageIdBySlotIndex.get(preview.slot.index);
+      if (stageId !== undefined) entries.push({ uuid: preview.item.uuid, stageId });
+    }
+    return { items: previews.map((preview) => preview.item), run: buildWorkoutRun(entries, workoutPlan) };
   }, []);
 
   // Debounced live rebuild. `off`/no-board clears immediately; a real change
@@ -315,7 +357,7 @@ export function useWorkoutPreview(
       regenerate: regenerateVoid,
       shuffle,
       refreshSlot: refreshSlotVoid,
-      toQueueItems,
+      toStagedQueueItems,
     };
   }, [
     generationKey,
@@ -331,6 +373,6 @@ export function useWorkoutPreview(
     regenerateVoid,
     shuffle,
     refreshSlotVoid,
-    toQueueItems,
+    toStagedQueueItems,
   ]);
 }

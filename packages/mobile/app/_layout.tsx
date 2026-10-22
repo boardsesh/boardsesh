@@ -118,6 +118,7 @@ import { FirstConnectHost } from '../src/components/onboarding/FirstConnectHost'
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { ClimbsTabReturnTip } from '../src/components/onboarding/ClimbsTabReturnTip';
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
+import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
@@ -1015,6 +1016,9 @@ function RootLayout() {
                                                             AND a climber has armed the timer. Sits inside
                                                             QueueProvider so it can advance the queue. */}
                                                                         <RestTimerRuntime />
+                                                                        {/* Workout stages (#5379): renders nothing; follows the session
+                                                                            and prunes the stage map only while a workout is running. */}
+                                                                        <WorkoutRunSessionSync />
                                                                         {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and

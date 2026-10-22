@@ -12,6 +12,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
+import { setWorkoutRun } from '../../../lib/workout-run-store';
 import { Card } from '../../Card';
 import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
@@ -196,7 +197,7 @@ export function PreSessionView({
     plannedSlots,
     refreshSlot,
     shuffle,
-    toQueueItems,
+    toStagedQueueItems,
   } = preview;
   // Section headings interleaved with the climbs, in the order the session runs them.
   const previewRows = useMemo(() => buildPreviewListRows(previewItems), [previewItems]);
@@ -274,7 +275,8 @@ export function PreSessionView({
 
   const handleStart = useCallback(async () => {
     if (!activeBoard || isStartPending) return;
-    const generatedItems = selection.type === 'on' ? toQueueItems() : [];
+    const { items: generatedItems, run: generatedRun } =
+      selection.type === 'on' ? toStagedQueueItems() : { items: [], run: null };
     if (selection.type === 'on' && (status !== 'ready' || refreshingUuids.size > 0 || generatedItems.length === 0)) {
       return;
     }
@@ -300,12 +302,17 @@ export function PreSessionView({
         // starting a generated session means. Bulk adds that aren't "start my
         // session" (the playlist row) leave it off so they never take the wall.
         appendQueueItems(generatedItems, { activateFirstWhenIdle: true });
+        // Remember which stage each queued climb belongs to, so the session
+        // screen and the player can say "Warm-up · 2 of 5". Keyed by the same
+        // queue-item uuids just appended; it never goes over the wire.
+        if (generatedRun) setWorkoutRun(newSessionId, generatedRun);
         track(SHARED_EVENTS.SessionQueueGenerated, {
           workoutType: selection.options.type,
           boardName: activeBoard.boardType,
           angle: activeBoard.angle,
           savedCount: generatedItems.length,
           failedCount: plannedCount - generatedItems.length,
+          stageCount: generatedRun?.stages.length ?? 0,
         });
       }
       if (onStarted) onStarted();
@@ -320,7 +327,7 @@ export function PreSessionView({
   }, [
     activeBoard,
     selection,
-    toQueueItems,
+    toStagedQueueItems,
     status,
     refreshingUuids,
     plannedCount,

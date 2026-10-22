@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
-import type { GeneratorGradeScale, PlannedClimbSlot, VolumeOptions } from '@boardsesh/playlist-generator';
+import type { GeneratorGradeScale, StagedSlot, VolumeOptions } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 import type { FetchGradePool } from '../workout-preview-pool';
 
@@ -16,11 +16,15 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => cryptoMock.randomUUID() }));
 // real generator algorithm (covered by its own tests).
 const generator = vi.hoisted(() => ({
   plan: [
-    { grade: 10, section: 'main', index: 0 },
-    { grade: 10, section: 'main', index: 1 },
-  ] as PlannedClimbSlot[],
+    { grade: 10, section: 'main', index: 0, stageId: 'stage-main' },
+    { grade: 10, section: 'main', index: 1, stageId: 'stage-main' },
+  ] as StagedSlot[],
 }));
-vi.mock('@boardsesh/playlist-generator', () => ({ generateWorkoutPlan: () => generator.plan }));
+vi.mock('@boardsesh/playlist-generator', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/playlist-generator')>()),
+  planFromGeneratorOptions: () => ({ stages: [{ id: 'stage-main', kind: 'volume' }] }),
+  generateStagedPlan: () => generator.plan,
+}));
 
 // Don't load the real GraphQL-backed fetcher; the hook is driven via deps.fetchPool.
 vi.mock('../select-climbs-for-plan', () => ({ fetchGradePool: vi.fn() }));
@@ -121,7 +125,7 @@ describe('useWorkoutPreview', () => {
     expect(uuids.every((uuid) => ['a', 'b', 'c'].includes(uuid))).toBe(true);
     expect(result.current.plannedCount).toBe(2);
     expect(fetchPool).toHaveBeenCalledTimes(1); // one unique grade
-    expect(result.current.toQueueItems().map((item) => item.climb.uuid)).toEqual(uuids);
+    expect(result.current.toStagedQueueItems().items.map((item) => item.climb.uuid)).toEqual(uuids);
   });
 
   it('coalesces rapid selection changes into a single build', async () => {
@@ -154,7 +158,7 @@ describe('useWorkoutPreview', () => {
 
     rerender({ selection: on(10) });
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.toQueueItems()).toHaveLength(2);
+    expect(result.current.toStagedQueueItems().items).toHaveLength(2);
 
     rerender({ selection: on(11) });
 
@@ -162,7 +166,7 @@ describe('useWorkoutPreview', () => {
     expect(result.current.items).toHaveLength(2); // same board: keep rows while options rebuild
     expect(result.current.plannedSlots).toEqual([]);
     expect(result.current.plannedCount).toBe(0);
-    expect(result.current.toQueueItems()).toEqual([]);
+    expect(result.current.toStagedQueueItems().items).toEqual([]);
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
   });
@@ -185,7 +189,7 @@ describe('useWorkoutPreview', () => {
 
     expect(result.current.status).toBe('loading');
     expect(result.current.items).toEqual([]);
-    expect(result.current.toQueueItems()).toEqual([]);
+    expect(result.current.toStagedQueueItems().items).toEqual([]);
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.items.map(({ item }) => item.climb.uuid).sort()).toEqual(['tension-a', 'tension-b']);
   });
@@ -323,7 +327,7 @@ describe('useWorkoutPreview', () => {
     expect(result.current.items.map((preview) => preview.item.climb.uuid)).toEqual(previousUuids);
     expect(result.current.plannedSlots).toEqual([]);
     expect(result.current.plannedCount).toBe(0);
-    expect(result.current.toQueueItems()).toEqual([]);
+    expect(result.current.toStagedQueueItems().items).toEqual([]);
     expect(toast.showToast).toHaveBeenCalledWith('mobile.session.preWorkoutPreviewError', 'error');
   });
 
@@ -345,7 +349,7 @@ describe('useWorkoutPreview', () => {
     const climbUuids = result.current.items.map((preview) => preview.item.climb.uuid);
     expect(new Set(climbUuids).size).toBe(2);
     // Start queues exactly what the shuffled preview shows.
-    expect(result.current.toQueueItems().map((item) => item.climb.uuid)).toEqual(climbUuids);
+    expect(result.current.toStagedQueueItems().items.map((item) => item.climb.uuid)).toEqual(climbUuids);
   });
 
   it('ignores Shuffle while a changed selection is still rebuilding', async () => {
@@ -360,5 +364,46 @@ describe('useWorkoutPreview', () => {
     act(() => result.current.shuffle());
 
     expect(result.current.items).toBe(during);
+  });
+
+  it('hands Start the reviewed climbs grouped by their workout stage', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const { result } = renderPreview(fetchPool, on(10));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const { items, run } = result.current.toStagedQueueItems();
+    expect(run).toEqual({ stages: [{ id: 'stage-main', kind: 'volume', itemUuids: items.map((item) => item.uuid) }] });
+  });
+
+  it('keeps the stage map in step with a row refresh and a shuffle', async () => {
+    const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
+    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const { result } = renderPreview(fetchPool, on(10));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const refreshedUuid = result.current.items[0].item.uuid;
+    await act(async () => {
+      result.current.refreshSlot(refreshedUuid);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
+    expect(result.current.toStagedQueueItems().run?.stages[0].itemUuids).toEqual(
+      result.current.items.map((preview) => preview.item.uuid),
+    );
+
+    act(() => result.current.shuffle());
+    const afterShuffle = result.current.toStagedQueueItems();
+    expect(afterShuffle.items.map((item) => item.uuid)).not.toContain(refreshedUuid);
+    expect(afterShuffle.run?.stages[0].itemUuids).toEqual(afterShuffle.items.map((item) => item.uuid));
+  });
+
+  it('hands Start no run while a changed selection is still rebuilding', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const { result, rerender } = renderPreview(fetchPool, on(10));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    rerender({ selection: on(11) });
+    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
   });
 });

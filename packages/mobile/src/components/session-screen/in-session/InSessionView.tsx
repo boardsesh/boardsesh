@@ -52,6 +52,7 @@ import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
 import { RestTimerArmRow } from '../RestTimerArmRow';
+import { WorkoutRunCard } from './WorkoutRunCard';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
 import { SessionVisibilityControl } from './SessionVisibilityControl';
@@ -657,6 +658,10 @@ export function InSessionView({
         gradeDistribution={gradeDistribution}
         boardName={sessionBoardType}
       />
+
+      {/* The workout you generated at Start (#5379): its stages and where you
+          are in it. Renders nothing for a session without one. */}
+      <WorkoutRunCard />
 
       {/* Turn the rest timer on for the session you're in (#5378), and see it
           without leaving the Record tab. */}

@@ -28,7 +28,7 @@ const activeBoard = vi.hoisted(() => ({
 }));
 
 // The preview hook is mocked so the test controls the queued/planned counts. The
-// generator-on Start path reads `toQueueItems()` (queued) and `plannedCount`.
+// generator-on Start path reads `toStagedQueueItems()` (queued + stages) and `plannedCount`.
 const previewItems = vi.hoisted(() => [
   { uuid: 'c1', climb: { uuid: 'x' } },
   { uuid: 'c2', climb: { uuid: 'y' } },
@@ -39,6 +39,11 @@ const previewRows = vi.hoisted(() =>
     slot: { grade: 10, section: 'main', index },
   })),
 );
+const previewRun = vi.hoisted(() => ({
+  stages: [{ id: 'stage-main', kind: 'volume' as const, itemUuids: ['c1', 'c2'] }],
+}));
+const workoutRunStore = vi.hoisted(() => ({ setWorkoutRun: vi.fn() }));
+vi.mock('../../../../lib/workout-run-store', () => workoutRunStore);
 const preview = vi.hoisted(() => ({
   result: {
     items: previewRows as unknown[],
@@ -49,7 +54,7 @@ const preview = vi.hoisted(() => ({
     regenerate: vi.fn(),
     shuffle: vi.fn(),
     refreshSlot: vi.fn(),
-    toQueueItems: () => previewItems,
+    toStagedQueueItems: () => ({ items: previewItems, run: previewRun }),
   },
 }));
 
@@ -239,6 +244,7 @@ beforeEach(() => {
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
   queue.appendQueueItems.mockClear();
+  workoutRunStore.setWorkoutRun.mockClear();
   screenState.sessionId = null;
   screenState.isFocused = true;
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
@@ -367,6 +373,7 @@ describe('PreSessionView analytics', () => {
         // 2 climbs queued out of a 3-slot plan → 1 short.
         savedCount: 2,
         failedCount: 1,
+        stageCount: 1,
       }),
     );
 
@@ -385,7 +392,10 @@ describe('PreSessionView analytics', () => {
       // 2 climbs queued out of a 3-slot plan → 1 short.
       savedCount: 2,
       failedCount: 1,
+      stageCount: 1,
     });
+    // The run is kept on the phone for the session that just started.
+    expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
   });
 
   it('does not replace the queue or fire when the generator is off', async () => {

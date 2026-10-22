@@ -210,6 +210,9 @@ export const SHARED_EVENTS = {
   ClimbCreateFailed: 'Climb Create Failed',
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
+  // Props: { workoutType, boardName, angle, savedCount, failedCount, stageCount }.
+  // `stageCount` (#5379) is how many workout stages got at least one climb: 2 for
+  // a warm-up plus a workout, 1 without the warm-up, 0 when nothing was queued.
   SessionQueueGenerated: 'Session Queue Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',

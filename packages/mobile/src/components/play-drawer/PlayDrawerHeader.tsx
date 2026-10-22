@@ -82,6 +82,9 @@ type PlayDrawerHeaderProps = {
   /** The angle currently being viewed. Compared against `statsAngle` to decide
    *  whether to show the "set at N°" marker under the grade. */
   angle?: number;
+  /** Where this climb sits in the workout generated at Start ("Warm-up · 2 of
+   *  5", #5379). Leads the subtitle so truncation never hides it. */
+  workoutStageLabel?: string | null;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -105,6 +108,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   onPressSetter,
   statsAngle,
   angle,
+  workoutStageLabel,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -126,6 +130,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
+  if (workoutStageLabel) subtitleParts.push(workoutStageLabel);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
@@ -282,6 +287,7 @@ export type LivePlayDrawerHeaderProps = {
   leading?: ReactNode;
   onLongPressName?: () => void;
   onPressSetter?: () => void;
+  workoutStageLabel?: string | null;
 };
 
 type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
@@ -300,6 +306,7 @@ export function useLivePlayDrawerHeaderModel({
   leading,
   onLongPressName,
   onPressSetter,
+  workoutStageLabel = null,
 }: LivePlayDrawerHeaderProps): LivePlayDrawerHeaderModel | null {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
@@ -364,6 +371,7 @@ export function useLivePlayDrawerHeaderModel({
       isDraft: climb.is_draft === true,
       statsAngle: climb.statsAngle,
       angle,
+      workoutStageLabel,
     };
     return Object.freeze({
       headerProps: Object.freeze(headerProps),
@@ -397,6 +405,7 @@ export function useLivePlayDrawerHeaderModel({
     climb?.is_draft,
     climb?.statsAngle,
     angle,
+    workoutStageLabel,
     hasLeading,
     hasLongPressName,
     hasSetterAction,

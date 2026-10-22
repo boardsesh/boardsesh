@@ -1,0 +1,66 @@
+import { describe, expect, it } from 'vitest';
+import type { WorkoutRun } from '@boardsesh/playlist-generator';
+import { describeWorkoutRun, formatWorkoutStagePosition, workoutStageName } from '../workout-run-readout';
+
+const run: WorkoutRun = {
+  stages: [
+    { id: 'warm', kind: 'warmUp', itemUuids: ['w1', 'w2'] },
+    { id: 'main', kind: 'pyramid', itemUuids: ['m1', 'm2', 'm3'] },
+  ],
+};
+
+// Echoes the key and its options so the assertions read the inputs directly.
+const t = (key: string, options?: Record<string, string | number>) =>
+  options
+    ? `${key}(${Object.entries(options)
+        .map(([name, value]) => `${name}=${value}`)
+        .join(',')})`
+    : key;
+
+describe('describeWorkoutRun', () => {
+  it('marks the current stage and counts what is left in it', () => {
+    const readout = describeWorkoutRun(run, ['w1', 'w2', 'm1', 'm2', 'm3'], 'm1');
+
+    expect(readout?.stages).toEqual([
+      { id: 'warm', kind: 'warmUp', size: 2, isCurrent: false, remainingAfterCurrent: null },
+      { id: 'main', kind: 'pyramid', size: 3, isCurrent: true, remainingAfterCurrent: 2 },
+    ]);
+    expect(readout?.current).toMatchObject({ stageId: 'main', positionInStage: 1, stageSize: 3 });
+  });
+
+  it('orders stages the way the queue does after the climber moves one', () => {
+    const readout = describeWorkoutRun(run, ['m1', 'm2', 'm3', 'w1', 'w2'], null);
+
+    expect(readout?.stages.map((stage) => stage.id)).toEqual(['main', 'warm']);
+    expect(readout?.current).toBeNull();
+  });
+
+  it('counts only climbs still queued and hides stages with none', () => {
+    const readout = describeWorkoutRun(run, ['m2', 'hand-queued'], 'hand-queued');
+
+    expect(readout?.stages).toEqual([
+      { id: 'main', kind: 'pyramid', size: 1, isCurrent: false, remainingAfterCurrent: null },
+    ]);
+    expect(readout?.current).toBeNull();
+  });
+
+  it('is null once none of the workout is left in the queue', () => {
+    expect(describeWorkoutRun(run, ['hand-queued'], 'hand-queued')).toBeNull();
+  });
+});
+
+describe('workout stage labels', () => {
+  it('names each stage with the workout picker labels', () => {
+    expect(workoutStageName('warmUp', t)).toBe('mobile.session.preWorkoutSectionWarmUp');
+    expect(workoutStageName('gradeFocus', t)).toBe('mobile.session.preGeneratorGradeFocus');
+  });
+
+  it('formats the player subtitle part', () => {
+    const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'w2')?.current;
+    expect(position).toBeTruthy();
+    if (!position) return;
+    expect(formatWorkoutStagePosition(position, t)).toBe(
+      'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionWarmUp,position=2,total=2)',
+    );
+  });
+});

@@ -95,6 +95,8 @@ import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
+import { useWorkoutRun } from '../../lib/workout-run-store';
+import { useWorkoutQueueUuids, useWorkoutStageLabel } from './use-workout-stage-label';
 import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
 import { topBarByVariant } from '../../theme/top-bar';
 import {
@@ -426,6 +428,11 @@ export function PlayCore({
     () => resolveQueuedSlotUuid(queue, displayedQueueItemUuid),
     [queue, displayedQueueItemUuid],
   );
+  // Where the climb sits in the workout generated at Start (#5379). Null for a
+  // session without one, a crew member's phone, and a climb outside the workout.
+  const workoutRun = useWorkoutRun(sessionId);
+  const workoutQueueUuids = useWorkoutQueueUuids(workoutRun, queue);
+  const workoutStageLabel = useWorkoutStageLabel(workoutRun, workoutQueueUuids, displayedQueueItemUuid);
   // A view-only preview is showing (not the active/wall climb). Commit paths
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
@@ -710,6 +717,19 @@ export function PlayCore({
     isReachableClimb,
     enhancementsReady,
   });
+
+  // The neighbours' headers carry their own workout position, so a swipe slides
+  // the right "2 of 5" in rather than popping it on landing.
+  const previousWorkoutStageLabel = useWorkoutStageLabel(
+    workoutRun,
+    workoutQueueUuids,
+    navigationState.canPrevious ? navigationState.prevItem?.uuid : null,
+  );
+  const nextWorkoutStageLabel = useWorkoutStageLabel(
+    workoutRun,
+    workoutQueueUuids,
+    navigationState.canNext ? navigationState.nextItem?.uuid : null,
+  );
 
   // The page each of the three climbs is on. Keyed on the CLIMB, which a
   // suggestion keeps when a swipe turns it into a queue item, so the board that
@@ -1430,6 +1450,7 @@ export function PlayCore({
     ) : undefined,
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
+    workoutStageLabel,
   });
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
@@ -1864,6 +1885,7 @@ export function PlayCore({
                                 boardName={previousHeaderBoard.boardName as BoardName}
                                 layoutId={previousHeaderBoard.layoutId}
                                 angle={previousHeaderBoard.angle}
+                                workoutStageLabel={previousWorkoutStageLabel}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -1879,6 +1901,7 @@ export function PlayCore({
                                 boardName={nextHeaderBoard.boardName as BoardName}
                                 layoutId={nextHeaderBoard.layoutId}
                                 angle={nextHeaderBoard.angle}
+                                workoutStageLabel={nextWorkoutStageLabel}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
