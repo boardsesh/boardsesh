@@ -64,7 +64,8 @@ function isWorkoutRunRecord(candidate: unknown): candidate is WorkoutRunRecord {
         stage !== null &&
         typeof stage.id === 'string' &&
         typeof stage.kind === 'string' &&
-        Array.isArray(stage.itemUuids),
+        Array.isArray(stage.itemUuids) &&
+        stage.itemUuids.every((uuid) => typeof uuid === 'string'),
     )
   );
 }

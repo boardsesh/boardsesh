@@ -101,6 +101,17 @@ describe('workout-run-store', () => {
     expect(getWorkoutRunState()).toBeNull();
   });
 
+  it('ignores a stored run whose climb ids are not strings', async () => {
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: { stages: [{ id: 's', kind: 'volume', itemUuids: [7] }] } }),
+    );
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunState()).toBeNull();
+  });
+
   it('does not let a slow hydrate overwrite a run written meanwhile', async () => {
     setWorkoutRun('session-1', { stages: [{ id: 'old', kind: 'volume', itemUuids: ['x'] }] });
     await flushStorageWrites();
