@@ -15,10 +15,11 @@ undone the day Crimpd or Lattice asks.
 
 Status: design, nothing merged. The workout runner it leans on is
 [epic #5399](https://github.com/boardsesh/boardsesh/issues/5399); the stage
-model is [#5379](https://github.com/boardsesh/boardsesh/issues/5379) and 4x4
-rounds are [#5380](https://github.com/boardsesh/boardsesh/issues/5380). This
-integration ships before both and degrades honestly until they land (see
-"What waits on the workouts epic").
+model is [#5379](https://github.com/boardsesh/boardsesh/issues/5379), which
+now exists on the phone (`docs/workout-stages.md`), and 4x4 rounds are
+[#5380](https://github.com/boardsesh/boardsesh/issues/5380). This integration
+does not wait for #5380 and degrades honestly until it lands (see "What waits
+on the workouts epic").
 
 ---
 
@@ -307,15 +308,28 @@ id, so the mapping happens on device against the board's grade table from
 `@boardsesh/board-config`, once the board is known. A target the board cannot
 express (V0 on a MoonBoard) clamps to the nearest grade and the card says so.
 
-What was actually queued, per block, is written back as `plan_snapshot`
-through a `recordPartnerWorkoutPlan` mutation at Start. That snapshot is how
-results attribute ticks to blocks without the stage model: a tick is assigned
-to the block whose queued climbs it belongs to, and a tick on a climb that was
+The native blocks run through the stage model #5379 built
+(`docs/workout-stages.md`). The app already treats every part of a workout as
+a block, warm-ups included and in any order, so a partner workout's blocks map
+one to one: `planFromBlocks` turns them into one stage per block in the
+partner block vocabulary (a partner `warmUp` keeps its own target grade;
+the app's ramps to the next workout block), `generateStagedPlan` and the shared
+preview pools fill them, and the phone keeps a `WorkoutRun` that maps every
+queued climb to its block, so the player and the session card can say
+"Volume · 3 of 8".
+
+That run stays on the phone and the server never sees a stage, so what was
+actually queued, per block, is still written back as `plan_snapshot` through a
+`recordPartnerWorkoutPlan` mutation at Start. The snapshot can be built
+straight from the run. Results attribute ticks with it: a tick is assigned to
+the block whose queued climbs it belongs to, and a tick on a climb that was
 never queued falls into the nearest freeform block by time order.
 
 If a session is already running when the workout lands, the card offers
 "End current session" or "Add to this session". Adding attaches the workout id
-to the live session and appends the blocks behind the current queue.
+to the live session and appends the blocks behind the current queue, the same
+way "Add a block" adds a stage mid-session today (`add-workout-block.ts`: no
+`activateFirstWhenIdle`, so the wall stays put, then the stages join the run).
 
 ### The web page behind the universal link
 
@@ -504,10 +518,11 @@ Completed `completion`. Per the board-render rule, never pool these across
 The partner doc promises `climbs[].round`, per-round timing and rest adherence
 "later". Concretely:
 
-- `blockIndex` today comes from the plan snapshot, which is good for native
-  blocks and a guess for freeform ones. Once #5379 gives every queue item a
-  stage that survives the queue boundary and the server records it on the
-  tick, attribution becomes exact and `blockIndex` is set for every tick.
+- `blockIndex` comes from the plan snapshot, which is good for native blocks
+  and a guess for freeform ones. #5379 gave every queued climb a stage, but on
+  the phone only (`docs/workout-stages.md` says why there is no wire field), so
+  the server still cannot read a stage off a tick. Exact attribution needs the
+  stage recorded on the tick itself; until then the snapshot is the source.
 - `round` needs #5380: a queue that knows it is four climbs repeated four
   times, and a tick that knows which repetition it was. Until then it is
   `null` and the doc says so.
