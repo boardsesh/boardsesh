@@ -27,6 +27,7 @@ export type {
   WorkoutBlockSpec,
   WorkoutStageKind,
   WarmUpStageType,
+  WorkoutStageFilters,
   WarmUpStage,
   StageGeneratorOptions,
   WorkoutMainStage,

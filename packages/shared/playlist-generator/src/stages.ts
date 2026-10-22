@@ -13,6 +13,17 @@ export type WorkoutStageKind = 'warmUp' | WorkoutType;
 export type WarmUpStageType = Exclude<WarmUpType, 'none'>;
 
 /**
+ * The climb filters one stage's climbs are fetched with. The generator plans
+ * grades only, so these never change a stage's slots; the app reads them when
+ * it fills the slots with climbs. On a workout stage they win over the copies
+ * its `options` carry.
+ */
+export type WorkoutStageFilters = Pick<
+  GeneratorOptions,
+  'climbBias' | 'minAscents' | 'minRating' | 'onlyTallClimbs' | 'onlyWideClimbs'
+>;
+
+/**
  * Climbs stepping up to a target grade: its own `targetGrade` when set
  * (partner `warmUp` blocks carry their own range), else the grade of the first
  * workout stage after it. The app's warm-ups never set one.
@@ -22,6 +33,7 @@ export type WarmUpStage = {
   kind: 'warmUp';
   warmUpType: WarmUpStageType;
   targetGrade?: number;
+  filters?: WorkoutStageFilters;
 };
 
 /** Generator options for one workout type, with warm-up handled by its own stage. */
@@ -33,7 +45,12 @@ export type StageGeneratorOptions<Kind extends WorkoutType = WorkoutType> = Extr
 };
 
 type WorkoutStageByKind = {
-  [Kind in WorkoutType]: { id: string; kind: Kind; options: StageGeneratorOptions<Kind> };
+  [Kind in WorkoutType]: {
+    id: string;
+    kind: Kind;
+    options: StageGeneratorOptions<Kind>;
+    filters?: WorkoutStageFilters;
+  };
 };
 
 /** A main-set stage. `kind` always equals `options.type`. */
@@ -74,11 +91,13 @@ const toMainStage = (options: GeneratorOptions, id: string): WorkoutMainStage =>
 /**
  * One block of a workout as the climber builds it: a warm-up, or a workout of
  * one type. A warm-up has no grade of its own; it ramps to the next workout
- * block after it.
+ * block after it. `filters`, when set, are the block's own climb filters and
+ * pass to its stage.
  */
-export type WorkoutBlockSpec =
+export type WorkoutBlockSpec = (
   | { kind: 'warmUp'; warmUpType: WarmUpStageType }
-  | { kind: 'workout'; options: GeneratorOptions };
+  | { kind: 'workout'; options: GeneratorOptions }
+) & { filters?: WorkoutStageFilters };
 
 /**
  * Turns an ordered list of blocks into a plan with one stage per block, in the
@@ -91,9 +110,10 @@ export const planFromBlocks = (blocks: readonly WorkoutBlockSpec[], makeId: Stag
   const stages: WorkoutStage[] = [];
   for (const block of blocks) {
     const id = makeId(stages.length);
-    stages.push(
-      block.kind === 'warmUp' ? { id, kind: 'warmUp', warmUpType: block.warmUpType } : toMainStage(block.options, id),
-    );
+    const stage: WorkoutStage =
+      block.kind === 'warmUp' ? { id, kind: 'warmUp', warmUpType: block.warmUpType } : toMainStage(block.options, id);
+    // Left off rather than set to undefined, so a plan without filters reads the same as before.
+    stages.push(block.filters ? { ...stage, filters: { ...block.filters } } : stage);
   }
   return { stages };
 };
@@ -145,10 +165,16 @@ export type WorkoutRunStage = {
    * stored before it existed.
    */
   targetGrade?: number;
+  /**
+   * The climb filters the stage's climbs were fetched with, so a block added
+   * mid-session can fetch the same kind of climbs. Absent on runs stored before
+   * it existed and on stages planned without filters.
+   */
+  filters?: WorkoutStageFilters;
 };
 
 /** What a run stage says about itself, without its climbs. */
-export type WorkoutRunStageIdentity = Pick<WorkoutRunStage, 'id' | 'kind' | 'targetGrade'>;
+export type WorkoutRunStageIdentity = Pick<WorkoutRunStage, 'id' | 'kind' | 'targetGrade' | 'filters'>;
 
 /** Stages in workout order. A stage with no items is never kept. */
 export type WorkoutRun = { stages: WorkoutRunStage[] };
@@ -186,11 +212,10 @@ export const buildWorkoutRun = (
     emittedStageIds.add(stage.id);
     const itemUuids = uuidsByStageId.get(stage.id);
     if (itemUuids && itemUuids.length > 0) {
-      stages.push(
-        isWarmUpStage(stage)
-          ? { id: stage.id, kind: stage.kind, itemUuids }
-          : { id: stage.id, kind: stage.kind, itemUuids, targetGrade: stage.options.targetGrade },
-      );
+      const runStage: WorkoutRunStage = isWarmUpStage(stage)
+        ? { id: stage.id, kind: stage.kind, itemUuids }
+        : { id: stage.id, kind: stage.kind, itemUuids, targetGrade: stage.options.targetGrade };
+      stages.push(stage.filters ? { ...runStage, filters: stage.filters } : runStage);
     }
   }
   return { stages };
@@ -201,7 +226,7 @@ export const buildWorkoutRun = (
  * with the same kind gets the items appended to it instead; the same id with a
  * different kind is a caller bug and throws. Uuids already in the run are
  * skipped, and when nothing is left to add the same run object comes back. A
- * new stage keeps the `targetGrade` it was given.
+ * new stage keeps the `targetGrade` and `filters` it was given.
  */
 export const appendStageToRun = (
   run: WorkoutRun,
@@ -225,10 +250,9 @@ export const appendStageToRun = (
   if (newUuids.length === 0) return run;
 
   if (existingPosition < 0) {
-    const newStage: WorkoutRunStage =
-      stage.targetGrade === undefined
-        ? { id: stage.id, kind: stage.kind, itemUuids: newUuids }
-        : { id: stage.id, kind: stage.kind, itemUuids: newUuids, targetGrade: stage.targetGrade };
+    const newStage: WorkoutRunStage = { id: stage.id, kind: stage.kind, itemUuids: newUuids };
+    if (stage.targetGrade !== undefined) newStage.targetGrade = stage.targetGrade;
+    if (stage.filters !== undefined) newStage.filters = stage.filters;
     return { stages: [...run.stages, newStage] };
   }
   return {

@@ -12,6 +12,7 @@ import {
   type WorkoutRun,
   type WorkoutBlockSpec,
   type WorkoutStage,
+  type WorkoutStageFilters,
   appendStageToRun,
   buildWorkoutRun,
   generateStagedPlan,
@@ -80,6 +81,13 @@ const blocksFor = (options: GeneratorOptions): WorkoutBlockSpec[] => [
   { kind: 'workout', options },
 ];
 const workoutBlock = (options: GeneratorOptions): WorkoutBlockSpec => ({ kind: 'workout', options });
+const STRICT_FILTERS: WorkoutStageFilters = {
+  climbBias: 'any',
+  minAscents: 50,
+  minRating: 3,
+  onlyTallClimbs: true,
+  onlyWideClimbs: false,
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -397,6 +405,33 @@ describe('planFromBlocks', () => {
     ]);
   });
 
+  it("gives each stage its block's filters, and leaves them off a block without any", () => {
+    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 16 };
+    const plan = planFromBlocks(
+      [
+        { kind: 'warmUp', warmUpType: 'standard', filters: STRICT_FILTERS },
+        { kind: 'workout', options: volume, filters: { ...STRICT_FILTERS, climbBias: 'attempted' } },
+        workoutBlock(volume),
+      ],
+      counterIds(),
+    );
+
+    expect(plan.stages[0].filters).toEqual(STRICT_FILTERS);
+    expect(plan.stages[1].filters).toEqual({ ...STRICT_FILTERS, climbBias: 'attempted' });
+    expect('filters' in plan.stages[2]).toBe(false);
+  });
+
+  it('plans the same slots whatever the filters', () => {
+    const pyramid: GeneratorOptions = { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 20 };
+    const plain = generateStagedPlan(planFromBlocks([workoutBlock(pyramid)], counterIds()), DENSE_GRADES);
+    const filtered = generateStagedPlan(
+      planFromBlocks([{ kind: 'workout', options: pyramid, filters: STRICT_FILTERS }], counterIds()),
+      DENSE_GRADES,
+    );
+
+    expect(filtered).toEqual(plain);
+  });
+
   it('plans no climbs for a warm-up with no workout block after it', () => {
     const plan = planFromBlocks(
       [
@@ -499,6 +534,40 @@ describe('buildWorkoutRun', () => {
   it('returns an empty run for no entries', () => {
     expect(buildWorkoutRun([], PLAN)).toEqual({ stages: [] });
   });
+
+  it("keeps every stage's filters, warm-ups included", () => {
+    const plan = planFromBlocks(
+      [
+        { kind: 'warmUp', warmUpType: 'standard', filters: STRICT_FILTERS },
+        {
+          kind: 'workout',
+          options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 16 },
+          filters: { ...STRICT_FILTERS, minRating: 0 },
+        },
+      ],
+      counterIds(),
+    );
+    const run = buildWorkoutRun(
+      [
+        { uuid: 'w1', stageId: 'stage-0' },
+        { uuid: 'v1', stageId: 'stage-1' },
+      ],
+      plan,
+    );
+
+    expect(run).toEqual({
+      stages: [
+        { id: 'stage-0', kind: 'warmUp', itemUuids: ['w1'], filters: STRICT_FILTERS },
+        {
+          id: 'stage-1',
+          kind: 'volume',
+          itemUuids: ['v1'],
+          targetGrade: 16,
+          filters: { ...STRICT_FILTERS, minRating: 0 },
+        },
+      ],
+    });
+  });
 });
 
 const RUN: WorkoutRun = {
@@ -541,6 +610,14 @@ describe('appendStageToRun', () => {
 
     const ungraded = appendStageToRun(RUN, { id: 'stage-2', kind: 'ladder' }, ['l1']);
     expect('targetGrade' in ungraded.stages[2]).toBe(false);
+  });
+
+  it('keeps the filters of a new stage, and leaves them off when none are given', () => {
+    const filtered = appendStageToRun(RUN, { id: 'stage-2', kind: 'volume', filters: STRICT_FILTERS }, ['v1']);
+    expect(filtered.stages[2]).toEqual({ id: 'stage-2', kind: 'volume', itemUuids: ['v1'], filters: STRICT_FILTERS });
+
+    const unfiltered = appendStageToRun(RUN, { id: 'stage-2', kind: 'volume' }, ['v1']);
+    expect('filters' in unfiltered.stages[2]).toBe(false);
   });
 
   it('returns the same run when there is nothing to add', () => {
