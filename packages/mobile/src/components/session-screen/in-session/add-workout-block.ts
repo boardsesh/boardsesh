@@ -79,6 +79,8 @@ export function addWorkoutBlock({
   // landed are the first `landedCount` items.
   const landedUuids = items.slice(0, landedCount).map((item) => item.uuid);
   const landed = new Set(landedUuids);
+  // Counted from the block, not from what appendStageToRun wrote: the items carry
+  // uuids minted for this preview, so none is in the run yet and nothing is skipped.
   const addedStageCount = blockRun.stages.filter((stage) => stage.itemUuids.some((uuid) => landed.has(uuid))).length;
   return { landedCount, run: appendBlockToRun(existingRun, blockRun, landedUuids), addedStageCount };
 }

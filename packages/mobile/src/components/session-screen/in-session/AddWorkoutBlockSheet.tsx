@@ -211,6 +211,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     }
     setWorkoutRun(sessionId, result.run);
     track(SHARED_EVENTS.SessionQueueGenerated, {
+      // One block and never a warm-up, so both fields hold the same type here;
+      // `phase` tells this add apart from a pre-session workout.
       workoutType: options.type,
       workoutTypes: options.type,
       boardName: activeBoard.boardType,
