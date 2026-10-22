@@ -76,6 +76,17 @@ describe('fetchGradePool', () => {
     expect(requestedPages().map(({ page }) => page)).toEqual([0, 1]);
   });
 
+  it('stops paging when the backend repeats a page and still says hasMore', async () => {
+    const repeatedPage = Array.from({ length: MAX_SEARCH_PAGE_SIZE }, (_, index) => ({ uuid: `climb-${index}` }));
+    offlineAwareRequestMock.mockResolvedValue({ searchClimbs: { climbs: repeatedPage, hasMore: true } });
+
+    const pool = await fetchGradePool(15, ctx, 150);
+
+    // 160 wanted fits in 2 pages of 100; 2 more are allowed before giving up.
+    expect(pool).toHaveLength(MAX_SEARCH_PAGE_SIZE);
+    expect(offlineAwareRequestMock).toHaveBeenCalledTimes(4);
+  });
+
   it('keeps the 50-climb pool for a demand that fits in it', async () => {
     serveCatalogue(300);
 

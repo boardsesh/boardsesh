@@ -82,9 +82,12 @@ export function gradePoolTarget(demand: number): number {
 export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, demand = 0): Promise<Climb[]> {
   const target = gradePoolTarget(demand);
   const pageSize = Math.min(target, MAX_SEARCH_PAGE_SIZE);
+  // Two pages beyond what the target needs, so a backend that keeps saying
+  // hasMore while repeating climbs can't keep the preview loading forever.
+  const maxPages = Math.ceil(target / pageSize) + 2;
   const climbs: Climb[] = [];
   const seenUuids = new Set<string>();
-  for (let page = 0; climbs.length < target; page++) {
+  for (let page = 0; climbs.length < target && page < maxPages; page++) {
     const input = buildClimbSearchInput(grade, ctx, page, pageSize);
     const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
     const pageClimbs = response.searchClimbs.climbs;
