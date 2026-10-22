@@ -39,6 +39,7 @@ Use instead:
 | board (the device)      | la board (feminine — see below)       |
 | flash                   | flash (verb: flasher; plural: flashs) |
 | climb / boulder problem | bloc                                  |
+| workout block (stage of a training session, not a climb) | phase (bloc stays the climb) |
 | route                   | voie                                  |
 | grade                   | cotation                              |
 | hold                    | prise                                 |

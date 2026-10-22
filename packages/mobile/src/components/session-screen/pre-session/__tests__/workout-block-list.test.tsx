@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LADDER_OPTIONS, DEFAULT_PYRAMID_OPTIONS, DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
 import type { ActiveGeneratorSelection, GeneratorSelection } from '../workout-blocks';
 
+const uuids = vi.hoisted(() => {
+  let counter = 0;
+  return { next: () => `uuid-${++counter}` };
+});
+vi.mock('expo-crypto', () => ({ randomUUID: () => uuids.next() }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, string | number>) =>
@@ -92,7 +97,7 @@ describe('WorkoutBlockList', () => {
     fireEvent.click(screen.getByLabelText('mobile.session.preGeneratorAddBlock'));
 
     expect(lastSelection().extraBlocks).toEqual([
-      { id: expect.any(String), options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 } },
+      { id: expect.stringMatching(/^uuid-/), options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 } },
     ]);
   });
 

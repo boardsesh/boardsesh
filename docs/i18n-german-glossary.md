@@ -57,6 +57,7 @@ Never: _Spraywand_, _Spraywände_, _Spray Wall_, _Spray Walls_, bare _Wand_ / _W
 | attempt (on a climb)    | Versuch (verb: versuchen; status: Versucht) |
 | flash                   | Flash (verb: flashen; status: Geflasht)     |
 | climb / boulder problem | Boulder                                     |
+| workout block (stage of a training session, not a climb) | Block (the climb is a Boulder) |
 | route                   | Route                                       |
 | grade                   | Grad                                        |
 | hold                    | Griff                                       |

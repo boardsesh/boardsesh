@@ -1,5 +1,6 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { randomUUID } from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Grade } from '@boardsesh/shared-schema';
 import type { GeneratorOptions, WorkoutType } from '@boardsesh/playlist-generator';
@@ -29,10 +30,10 @@ import {
 
 const BLOCK_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
 
-// Block ids only key the editors on this screen; stage ids are minted as uuids
-// when the plan is built, so a session-local counter is enough here.
-let blockSerial = 0;
-const makeBlockId = () => `block-${++blockSerial}`;
+// Block ids key the editors on this screen. Uuids, like the stage ids: a module
+// counter restarts on a Fast Refresh while the selection in PreSessionView state
+// survives it, and could hand a new block an id that is already in use.
+const makeBlockId = () => randomUUID();
 
 type WorkoutBlockListProps = {
   boardName: BoardName | null;
@@ -155,7 +156,24 @@ const WorkoutBlockEditor = memo(function WorkoutBlockEditor({
   const { t } = useTranslation('session');
   const { id: blockId, options } = block;
   const title = t('mobile.session.preGeneratorBlockTitle', { position });
-  const handleOptionsChange = (nextOptions: GeneratorOptions) => onOptionsChange(blockId, nextOptions);
+  // Stable per block, so the rail and the steppers don't get a new handler on every render.
+  const handleOptionsChange = useCallback(
+    (nextOptions: GeneratorOptions) => onOptionsChange(blockId, nextOptions),
+    [onOptionsChange, blockId],
+  );
+  const handleTypeChange = useCallback((type: WorkoutType) => onTypeChange(blockId, type), [onTypeChange, blockId]);
+  const handleMoveUp = useCallback(() => onMove(blockId, 'up'), [onMove, blockId]);
+  const handleMoveDown = useCallback(() => onMove(blockId, 'down'), [onMove, blockId]);
+  const handleRemove = useCallback(() => onRemove(blockId), [onRemove, blockId]);
+  const handleGradeSelect = useCallback(
+    (difficultyId: number | undefined) =>
+      handleOptionsChange({ ...options, targetGrade: difficultyId ?? options.targetGrade }),
+    [handleOptionsChange, options],
+  );
+  const stepperRows = useMemo(
+    () => workoutStepperRows(options, t, handleOptionsChange),
+    [options, t, handleOptionsChange],
+  );
 
   return (
     <View style={styles.block} testID={`workout-block-${position}`}>
@@ -167,18 +185,18 @@ const WorkoutBlockEditor = memo(function WorkoutBlockEditor({
           <BlockActionButton
             icon="chevron.up"
             disabled={!canMoveUp}
-            onPress={() => onMove(blockId, 'up')}
+            onPress={handleMoveUp}
             accessibilityLabel={t('mobile.session.preGeneratorMoveBlockUpAccessibilityLabel', { position })}
           />
           <BlockActionButton
             icon="chevron.down"
             disabled={!canMoveDown}
-            onPress={() => onMove(blockId, 'down')}
+            onPress={handleMoveDown}
             accessibilityLabel={t('mobile.session.preGeneratorMoveBlockDownAccessibilityLabel', { position })}
           />
           <BlockActionButton
             icon="delete"
-            onPress={() => onRemove(blockId)}
+            onPress={handleRemove}
             accessibilityLabel={t('mobile.session.preGeneratorRemoveBlockAccessibilityLabel', { position })}
           />
         </View>
@@ -192,7 +210,7 @@ const WorkoutBlockEditor = memo(function WorkoutBlockEditor({
               key={type}
               label={label}
               selected={options.type === type}
-              onPress={() => onTypeChange(blockId, type)}
+              onPress={() => handleTypeChange(type)}
               accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
                 group: title,
                 value: label,
@@ -211,16 +229,14 @@ const WorkoutBlockEditor = memo(function WorkoutBlockEditor({
             grades={railGrades}
             selectedDifficultyId={options.targetGrade}
             boardName={boardName}
-            onSelect={(difficultyId) =>
-              handleOptionsChange({ ...options, targetGrade: difficultyId ?? options.targetGrade })
-            }
+            onSelect={handleGradeSelect}
             allowClear={false}
           />
         </View>
       ) : null}
 
       <View style={[styles.inset, styles.steppers]}>
-        <GroupedSteppers rows={workoutStepperRows(options, t, handleOptionsChange)} />
+        <GroupedSteppers rows={stepperRows} />
       </View>
     </View>
   );
