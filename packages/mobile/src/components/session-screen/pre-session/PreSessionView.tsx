@@ -298,8 +298,8 @@ export function PreSessionView({
         if (generatedRun) setWorkoutRun(newSessionId, generatedRun);
         track(SHARED_EVENTS.SessionQueueGenerated, {
           // The first workout block's type, so single-workout funnels keep their
-          // meaning. Never a warm-up: a queue with climbs always has a workout block.
-          workoutType: firstWorkoutType(selection) ?? 'warmUp',
+          // meaning. Never a warm-up: null if a queue ever starts with no workout block.
+          workoutType: firstWorkoutType(selection),
           workoutTypes: selectionWorkoutTypes(selection),
           boardName: activeBoard.boardType,
           angle: activeBoard.angle,
