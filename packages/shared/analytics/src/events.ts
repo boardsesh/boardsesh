@@ -211,12 +211,13 @@ export const SHARED_EVENTS = {
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
   // Props: { workoutType, workoutTypes, boardName, angle, savedCount, failedCount, stageCount }.
-  // `stageCount` (#5379) is how many workout stages got at least one climb: 2 for
-  // a warm-up plus a workout, 1 without the warm-up, 0 when nothing was queued.
-  // `workoutType` is the first block's type. `workoutTypes` is every block the
-  // climber built, in run order, comma-joined (`pyramid,volume`): a string because
-  // web `track()` types arrays out (docs/gym-funnel-analytics.md), and not sorted
-  // because the order is the workout. The warm-up is not a block.
+  // `stageCount` (#5379) is how many blocks got at least one climb, warm-ups
+  // included: 2 for a warm-up plus a workout, 0 when nothing was queued.
+  // `workoutType` is the first workout block's type (never `warmUp`), so
+  // single-workout funnels keep their meaning. `workoutTypes` is every block the
+  // climber built, warm-ups included, in run order, comma-joined
+  // (`warmUp,pyramid,volume`): a string because web `track()` types arrays out
+  // (docs/gym-funnel-analytics.md), and not sorted because the order is the workout.
   SessionQueueGenerated: 'Session Queue Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',

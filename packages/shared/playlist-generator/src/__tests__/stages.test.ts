@@ -10,6 +10,7 @@ import {
   WARM_UP_OPTIONS,
   type WorkoutPlan,
   type WorkoutRun,
+  type WorkoutBlockSpec,
   type WorkoutStage,
   appendStageToRun,
   buildWorkoutRun,
@@ -17,7 +18,6 @@ import {
   generateWorkoutPlan,
   locateInRun,
   planFromBlocks,
-  planFromGeneratorOptions,
   pruneRun,
 } from '../index';
 
@@ -73,6 +73,14 @@ const counterIds = () => {
 
 const withoutStageId = (slots: StagedSlot[]) => slots.map(({ stageId: _stageId, ...slot }) => slot);
 
+// The blocks a single-type selection with its own warm-up becomes: the warm-up
+// as a block of its own, then the workout.
+const blocksFor = (options: GeneratorOptions): WorkoutBlockSpec[] => [
+  ...(options.warmUp === 'none' ? [] : [{ kind: 'warmUp' as const, warmUpType: options.warmUp }]),
+  { kind: 'workout', options },
+];
+const workoutBlock = (options: GeneratorOptions): WorkoutBlockSpec => ({ kind: 'workout', options });
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -83,14 +91,14 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     const expected = generateWorkoutPlan(options, grades);
     vi.restoreAllMocks();
     seedRandom();
-    const staged = generateStagedPlan(planFromGeneratorOptions(options, counterIds()), grades);
+    const staged = generateStagedPlan(planFromBlocks(blocksFor(options), counterIds()), grades);
 
     expect(withoutStageId(staged)).toEqual(expected);
   });
 
   it('tags warm-up slots with the warm-up stage and the rest with the workout stage', () => {
-    const plan = planFromGeneratorOptions(
-      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 20 },
+    const plan = planFromBlocks(
+      blocksFor({ ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 20 }),
       counterIds(),
     );
     const staged = generateStagedPlan(plan, DENSE_GRADES);
@@ -100,8 +108,8 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
   });
 
   it('keeps the lowest-grade warm-up length (#6233)', () => {
-    const plan = planFromGeneratorOptions(
-      { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'extended', targetGrade: 13 },
+    const plan = planFromBlocks(
+      blocksFor({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'extended', targetGrade: 13 }),
       counterIds(),
     );
     const warmUpSlots = generateStagedPlan(plan, MOONBOARD_GRADES).filter((slot) => slot.section === 'warmUp');
@@ -115,7 +123,7 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     expect(generateStagedPlan(plan, DENSE_GRADES)).toEqual([]);
   });
 
-  it('leaves the first of two back-to-back warm-ups empty', () => {
+  it('ramps two back-to-back warm-ups to the workout after them', () => {
     const plan: WorkoutPlan = {
       stages: [
         { id: 'first', kind: 'warmUp', warmUpType: 'standard' },
@@ -130,12 +138,16 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     const staged = generateStagedPlan(plan, DENSE_GRADES);
 
     expect(staged.map((slot) => [slot.stageId, slot.grade, slot.index])).toEqual([
-      ['second', 6, 0],
-      ['second', 7, 1],
-      ['second', 8, 2],
-      ['second', 9, 3],
-      ['main', 10, 4],
-      ['main', 10, 5],
+      ['first', 6, 0],
+      ['first', 7, 1],
+      ['first', 8, 2],
+      ['first', 9, 3],
+      ['second', 6, 4],
+      ['second', 7, 5],
+      ['second', 8, 6],
+      ['second', 9, 7],
+      ['main', 10, 8],
+      ['main', 10, 9],
     ]);
   });
 
@@ -147,7 +159,7 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     );
   });
 
-  it('falls back to its own target when another warm-up follows', () => {
+  it('prefers a later workout stage over its own target when another warm-up comes first', () => {
     const plan: WorkoutPlan = {
       stages: [
         { id: 'first', kind: 'warmUp', warmUpType: 'standard', targetGrade: 8 },
@@ -161,10 +173,10 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     };
 
     expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => [slot.stageId, slot.grade])).toEqual([
-      ['first', 4],
-      ['first', 5],
       ['first', 6],
       ['first', 7],
+      ['first', 8],
+      ['first', 9],
       ['second', 6],
       ['second', 7],
       ['second', 8],
@@ -246,49 +258,109 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
   });
 });
 
-describe('planFromGeneratorOptions', () => {
-  it('splits a warm-up into its own stage with deterministic ids', () => {
-    const plan = planFromGeneratorOptions(
-      { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'extended', targetGrade: 18 },
+describe('planFromBlocks', () => {
+  it('plans a warm-up block and a workout block as a warm-up stage then the workout', () => {
+    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 18 };
+
+    expect(planFromBlocks([{ kind: 'warmUp', warmUpType: 'extended' }, workoutBlock(volume)], counterIds())).toEqual({
+      stages: [
+        { id: 'stage-0', kind: 'warmUp', warmUpType: 'extended' },
+        { id: 'stage-1', kind: 'volume', options: volume },
+      ],
+    });
+  });
+
+  it('plans one workout block as the workout alone', () => {
+    const ladder: GeneratorOptions = { ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 12 };
+
+    expect(planFromBlocks([workoutBlock(ladder)], counterIds())).toEqual({
+      stages: [{ id: 'stage-0', kind: 'ladder', options: ladder }],
+    });
+  });
+
+  it.each(EQUIVALENCE_CASES)(
+    'a warm-up block plus a workout block generates what generateWorkoutPlan generates: $label',
+    ({ options, grades }) => {
+      seedRandom();
+      const expected = generateWorkoutPlan(options, grades);
+      vi.restoreAllMocks();
+      seedRandom();
+      const staged = generateStagedPlan(planFromBlocks(blocksFor(options), counterIds()), grades);
+
+      expect(withoutStageId(staged)).toEqual(expected);
+    },
+  );
+
+  it('keeps a warm-up wherever it sits, as often as it appears', () => {
+    const pyramid: GeneratorOptions = { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 20 };
+    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 16 };
+    const plan = planFromBlocks(
+      [
+        workoutBlock(pyramid),
+        { kind: 'warmUp', warmUpType: 'standard' },
+        workoutBlock(volume),
+        { kind: 'warmUp', warmUpType: 'extended' },
+      ],
       counterIds(),
     );
 
     expect(plan).toEqual({
       stages: [
-        { id: 'stage-0', kind: 'warmUp', warmUpType: 'extended' },
-        { id: 'stage-1', kind: 'volume', options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 18 } },
+        { id: 'stage-0', kind: 'pyramid', options: pyramid },
+        { id: 'stage-1', kind: 'warmUp', warmUpType: 'standard' },
+        { id: 'stage-2', kind: 'volume', options: volume },
+        { id: 'stage-3', kind: 'warmUp', warmUpType: 'extended' },
       ],
     });
   });
 
-  it('emits only the workout stage when no warm-up is picked', () => {
-    const plan = planFromGeneratorOptions({ ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 18 }, counterIds());
-
-    expect(plan.stages).toHaveLength(1);
-    expect(plan.stages[0]).toMatchObject({ id: 'stage-0', kind: 'ladder' });
-  });
-
-  it('uses an injected id factory', () => {
-    const plan = planFromGeneratorOptions(
-      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 18 },
-      (stagePosition) => `custom-${stagePosition * 10}`,
+  it("ignores a workout block's own warm-up: warm-ups are blocks of their own", () => {
+    const plan = planFromBlocks(
+      [
+        workoutBlock({ ...DEFAULT_LADDER_OPTIONS, warmUp: 'extended', targetGrade: 18 }),
+        workoutBlock({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', targetGrade: 12 }),
+      ],
+      counterIds(),
     );
 
-    expect(plan.stages.map((stage) => stage.id)).toEqual(['custom-0', 'custom-10']);
+    expect(plan.stages.map((stage) => stage.kind)).toEqual(['ladder', 'gradeFocus']);
+    expect(plan.stages.every((stage) => stage.kind === 'warmUp' || stage.options.warmUp === 'none')).toBe(true);
+  });
+
+  it('gives an empty plan for no blocks', () => {
+    expect(planFromBlocks([], counterIds())).toEqual({ stages: [] });
+  });
+
+  it('takes every id from the injected factory', () => {
+    const makeId = vi.fn((stagePosition: number) => `uuid-${stagePosition * 10}`);
+    const plan = planFromBlocks(
+      [
+        { kind: 'warmUp', warmUpType: 'standard' },
+        workoutBlock({ ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 }),
+        workoutBlock({ ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 }),
+      ],
+      makeId,
+    );
+
+    expect(plan.stages.map((stage) => stage.id)).toEqual(['uuid-0', 'uuid-10', 'uuid-20']);
+    expect(makeId).toHaveBeenCalledTimes(3);
   });
 
   it('keeps ids unique when two plans share one id factory', () => {
     const makeId = counterIds();
-    const first = planFromGeneratorOptions({ ...DEFAULT_VOLUME_OPTIONS, warmUp: 'standard', targetGrade: 18 }, makeId);
-    const second = planFromGeneratorOptions({ ...DEFAULT_LADDER_OPTIONS, warmUp: 'standard', targetGrade: 18 }, makeId);
+    const first = planFromBlocks(blocksFor({ ...DEFAULT_VOLUME_OPTIONS, warmUp: 'standard', targetGrade: 18 }), makeId);
+    const second = planFromBlocks(
+      blocksFor({ ...DEFAULT_LADDER_OPTIONS, warmUp: 'standard', targetGrade: 18 }),
+      makeId,
+    );
     const joinedIds = [...first.stages, ...second.stages].map((stage) => stage.id);
 
     expect(new Set(joinedIds).size).toBe(joinedIds.length);
   });
 
   it('survives a JSON round trip', () => {
-    const plan = planFromGeneratorOptions(
-      { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', targetGrade: 18 },
+    const plan = planFromBlocks(
+      blocksFor({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', targetGrade: 18 }),
       counterIds(),
     );
 
@@ -297,119 +369,51 @@ describe('planFromGeneratorOptions', () => {
 
   it('does not mutate the options it was given', () => {
     const options: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'standard', targetGrade: 18 };
-    planFromGeneratorOptions(options, counterIds());
+    planFromBlocks([workoutBlock(options)], counterIds());
 
     expect(options.warmUp).toBe('standard');
   });
-});
 
-describe('planFromBlocks', () => {
-  // planFromGeneratorOptions now delegates here, so pin the one-block result to
-  // hard-coded plans and to the single-type generator rather than to itself.
-  it('plans one block with a warm-up as the warm-up stage then the workout', () => {
-    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'extended', targetGrade: 18 };
-
-    expect(planFromBlocks([volume], volume.warmUp, counterIds())).toEqual({
-      stages: [
-        { id: 'stage-0', kind: 'warmUp', warmUpType: 'extended' },
-        { id: 'stage-1', kind: 'volume', options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 18 } },
-      ],
-    });
-  });
-
-  it('plans one block without a warm-up as the workout alone', () => {
-    const ladder: GeneratorOptions = { ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 12 };
-
-    expect(planFromBlocks([ladder], 'none', counterIds())).toEqual({
-      stages: [{ id: 'stage-0', kind: 'ladder', options: ladder }],
-    });
-  });
-
-  it.each(EQUIVALENCE_CASES)(
-    'one block generates what generateWorkoutPlan generates: $label',
-    ({ options, grades }) => {
-      seedRandom();
-      const expected = generateWorkoutPlan(options, grades);
-      vi.restoreAllMocks();
-      seedRandom();
-      const staged = generateStagedPlan(planFromBlocks([options], options.warmUp, counterIds()), grades);
-
-      expect(withoutStageId(staged)).toEqual(expected);
-    },
-  );
-
-  it('puts one warm-up first, then every block in order', () => {
-    const pyramid: GeneratorOptions = { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 20 };
-    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 16 };
-    const plan = planFromBlocks([pyramid, volume], 'standard', counterIds());
-
-    expect(plan).toEqual({
-      stages: [
-        { id: 'stage-0', kind: 'warmUp', warmUpType: 'standard' },
-        { id: 'stage-1', kind: 'pyramid', options: pyramid },
-        { id: 'stage-2', kind: 'volume', options: volume },
-      ],
-    });
-  });
-
-  it("ignores each block's own warm-up so only the session opens with one", () => {
+  it("ramps a warm-up in the middle to the next block's grade and runs the index across every block", () => {
     const plan = planFromBlocks(
       [
-        { ...DEFAULT_LADDER_OPTIONS, warmUp: 'extended', targetGrade: 18 },
-        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', targetGrade: 12 },
+        workoutBlock({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 12, numberOfClimbs: 1 }),
+        { kind: 'warmUp', warmUpType: 'standard' },
+        workoutBlock({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 20, numberOfClimbs: 2 }),
       ],
-      'none',
-      counterIds(),
-    );
-
-    expect(plan.stages.map((stage) => stage.kind)).toEqual(['ladder', 'gradeFocus']);
-    expect(plan.stages.every((stage) => stage.kind === 'warmUp' || stage.options.warmUp === 'none')).toBe(true);
-  });
-
-  it('gives an empty plan for no blocks, even with a warm-up picked', () => {
-    expect(planFromBlocks([], 'extended', counterIds())).toEqual({ stages: [] });
-  });
-
-  it('takes every id from the injected factory', () => {
-    const makeId = vi.fn((stagePosition: number) => `uuid-${stagePosition}`);
-    const plan = planFromBlocks(
-      [
-        { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 },
-        { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10 },
-      ],
-      'standard',
-      makeId,
-    );
-
-    expect(plan.stages.map((stage) => stage.id)).toEqual(['uuid-0', 'uuid-1', 'uuid-2']);
-    expect(makeId).toHaveBeenCalledTimes(3);
-  });
-
-  it('warms up to the first block and runs the index across every block', () => {
-    const plan = planFromBlocks(
-      [
-        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 20, numberOfClimbs: 2 },
-        { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 12, numberOfClimbs: 1 },
-      ],
-      'standard',
       counterIds(),
     );
     const staged = generateStagedPlan(plan, DENSE_GRADES);
 
     expect(staged.map((slot) => [slot.stageId, slot.grade, slot.index])).toEqual([
-      ['stage-0', 16, 0],
-      ['stage-0', 17, 1],
-      ['stage-0', 18, 2],
-      ['stage-0', 19, 3],
-      ['stage-1', 20, 4],
-      ['stage-1', 20, 5],
-      ['stage-2', 12, 6],
+      ['stage-0', 12, 0],
+      ['stage-1', 16, 1],
+      ['stage-1', 17, 2],
+      ['stage-1', 18, 3],
+      ['stage-1', 19, 4],
+      ['stage-2', 20, 5],
+      ['stage-2', 20, 6],
     ]);
+  });
+
+  it('plans no climbs for a warm-up with no workout block after it', () => {
+    const plan = planFromBlocks(
+      [
+        workoutBlock({ ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'none', targetGrade: 12, numberOfClimbs: 1 }),
+        { kind: 'warmUp', warmUpType: 'extended' },
+      ],
+      counterIds(),
+    );
+
+    expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => slot.stageId)).toEqual(['stage-0']);
+    expect(
+      generateStagedPlan(planFromBlocks([{ kind: 'warmUp', warmUpType: 'standard' }], counterIds()), DENSE_GRADES),
+    ).toEqual([]);
   });
 });
 
-const PLAN: WorkoutPlan = planFromGeneratorOptions(
-  { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 18 },
+const PLAN: WorkoutPlan = planFromBlocks(
+  blocksFor({ ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 18 }),
   counterIds(),
 );
 

@@ -13,7 +13,7 @@ export type WorkoutStageKind = 'warmUp' | WorkoutType;
 export type WarmUpStageType = Exclude<WarmUpType, 'none'>;
 
 /**
- * Climbs stepping up to a target grade. The workout stage right after it sets
+ * Climbs stepping up to a target grade. The first workout stage after it sets
  * that grade; `targetGrade` is the fallback when no workout stage follows
  * (partner `warmUp` blocks carry their own grade).
  */
@@ -72,45 +72,39 @@ const toMainStage = (options: GeneratorOptions, id: string): WorkoutMainStage =>
 };
 
 /**
- * Turns an ordered list of workout blocks into a plan: one warm-up stage at the
- * very start (when `warmUp` is not `'none'`) followed by one stage per block, in
- * the order given. Each block's own `warmUp` is ignored, so a warm-up can only
- * ever open the session. No blocks gives an empty plan: a warm-up with nothing
- * to warm up for has no target grade. `makeId` is required: ids must stay unique
- * when stages are added mid-session or plans are joined, so the app passes a
- * uuid factory rather than relying on positions.
+ * One block of a workout as the climber builds it: a warm-up, or a workout of
+ * one type. A warm-up has no grade of its own; it ramps to the next workout
+ * block after it.
  */
-export const planFromBlocks = (
-  blocks: readonly GeneratorOptions[],
-  warmUp: WarmUpType,
-  makeId: StageIdFactory,
-): WorkoutPlan => {
+export type WorkoutBlockSpec =
+  | { kind: 'warmUp'; warmUpType: WarmUpStageType }
+  | { kind: 'workout'; options: GeneratorOptions };
+
+/**
+ * Turns an ordered list of blocks into a plan with one stage per block, in the
+ * order given. A warm-up can sit anywhere and more than once; a workout block's
+ * own `warmUp` is ignored, since warm-ups are blocks of their own. `makeId` is
+ * required: ids must stay unique when stages are added mid-session or plans are
+ * joined, so the app passes a uuid factory rather than relying on positions.
+ */
+export const planFromBlocks = (blocks: readonly WorkoutBlockSpec[], makeId: StageIdFactory): WorkoutPlan => {
   const stages: WorkoutStage[] = [];
-  if (blocks.length === 0) return { stages };
-  if (warmUp !== 'none') {
-    stages.push({ id: makeId(stages.length), kind: 'warmUp', warmUpType: warmUp });
-  }
   for (const block of blocks) {
-    stages.push(toMainStage(block, makeId(stages.length)));
+    const id = makeId(stages.length);
+    stages.push(
+      block.kind === 'warmUp' ? { id, kind: 'warmUp', warmUpType: block.warmUpType } : toMainStage(block.options, id),
+    );
   }
   return { stages };
 };
 
 /**
- * Turns a single-type generator selection into a plan: a warm-up stage (when
- * one was picked) followed by the workout itself. The one-block case of
- * `planFromBlocks`.
- */
-export const planFromGeneratorOptions = (options: GeneratorOptions, makeId: StageIdFactory): WorkoutPlan =>
-  planFromBlocks([options], options.warmUp, makeId);
-
-/**
  * Generates every stage's slots in plan order. `index` runs across the whole
  * plan, so a warm-up plus one workout yields exactly what `generateWorkoutPlan`
- * yields for the same options. A warm-up stage takes its target grade from the
- * workout stage right after it, else from its own `targetGrade`; with neither it
- * generates nothing. A workout stage whose `kind` no longer matches
- * `options.type` generates nothing rather than throwing on persisted data.
+ * yields for the same options. A warm-up stage ramps to the first workout stage
+ * after it, skipping any warm-ups in between, else to its own `targetGrade`;
+ * with neither it generates nothing. A workout stage whose `kind` no longer
+ * matches `options.type` generates nothing rather than throwing on persisted data.
  */
 export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScale): StagedSlot[] => {
   const stagedSlots: StagedSlot[] = [];
@@ -118,8 +112,8 @@ export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScal
   plan.stages.forEach((stage, stagePosition) => {
     let stageSlots: PlannedClimbSlot[];
     if (isWarmUpStage(stage)) {
-      const followingStage = plan.stages[stagePosition + 1];
-      const warmUpTarget = isRunnableMainStage(followingStage) ? followingStage.options.targetGrade : stage.targetGrade;
+      const nextMainStage = plan.stages.slice(stagePosition + 1).find(isRunnableMainStage);
+      const warmUpTarget = nextMainStage ? nextMainStage.options.targetGrade : stage.targetGrade;
       stageSlots = warmUpTarget === undefined ? [] : generateWarmUp(warmUpTarget, stage.warmUpType, grades);
     } else if (!isRunnableMainStage(stage)) {
       stageSlots = [];
