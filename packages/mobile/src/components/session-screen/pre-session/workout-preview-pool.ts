@@ -25,8 +25,12 @@ export type PreviewFetchContext = {
   filters?: PreviewFilters;
 };
 
-/** Fetch a pool of candidate climbs at a single target grade. */
-export type FetchGradePool = (grade: number, ctx: PreviewFetchContext) => Promise<Climb[]>;
+/**
+ * Fetch a pool of candidate climbs at a single target grade. `demand` is how
+ * many slots will draw from it, so the fetcher can return at least that many
+ * when the catalogue has them.
+ */
+export type FetchGradePool = (grade: number, ctx: PreviewFetchContext, demand: number) => Promise<Climb[]>;
 
 /** A plan slot, plus the workout stage it belongs to when it came from a staged plan. */
 export type PreviewSlot = PlannedClimbSlot & { stageId?: string };
@@ -83,18 +87,20 @@ export function pickRandomUnused(
 
 /**
  * Fetch one shuffled pool per unique grade in the plan. Round-trips stay
- * proportional to the workout shape (unique grades), not the climb count.
+ * proportional to the workout shape (unique grades), not the climb count. Each
+ * fetch is told how many slots share that grade, across every workout stage.
  */
 export async function buildPools(
   slots: readonly PlannedClimbSlot[],
   ctx: PreviewFetchContext,
   fetchPool: FetchGradePool,
 ): Promise<Map<number, Climb[]>> {
-  const grades = Array.from(new Set(slots.map((slot) => slot.grade)));
+  const demandByGrade = new Map<number, number>();
+  for (const slot of slots) demandByGrade.set(slot.grade, (demandByGrade.get(slot.grade) ?? 0) + 1);
   const pools = new Map<number, Climb[]>();
   await Promise.all(
-    grades.map(async (grade) => {
-      const climbs = await fetchPool(grade, ctx);
+    Array.from(demandByGrade, async ([grade, demand]) => {
+      const climbs = await fetchPool(grade, ctx, demand);
       // Shuffle here (not in the fetcher) so a refetch-on-refresh reshuffles.
       pools.set(grade, shuffleInPlace(climbs.slice(), screenshotModeRandom()));
     }),
@@ -169,7 +175,9 @@ export async function refreshSlotInState(
 
   // 1) Cache exhausted of unused climbs → refetch + reshuffle this grade once.
   if (!nextClimb) {
-    refreshedPool = shuffleInPlace((await fetchPool(grade, ctx)).slice(), screenshotModeRandom());
+    // Ask for one more than the rows at this grade, so the refetch can reach past them.
+    const rowsAtGrade = state.items.filter((preview) => preview.slot.grade === grade).length;
+    refreshedPool = shuffleInPlace((await fetchPool(grade, ctx, rowsAtGrade + 1)).slice(), screenshotModeRandom());
     pools.set(grade, refreshedPool);
     nextClimb = pickRandomUnused(refreshedPool, state.usedUuids, screenshotModeRandom());
   }

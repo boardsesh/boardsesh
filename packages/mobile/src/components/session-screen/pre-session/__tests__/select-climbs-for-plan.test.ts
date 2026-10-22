@@ -1,7 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { Climb, UserBoard } from '@boardsesh/shared-schema';
+import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
+import {
+  DEFAULT_GRADE_FOCUS_OPTIONS,
+  generateStagedPlan,
+  planFromBlocks,
+  type GeneratorGradeScale,
+} from '@boardsesh/playlist-generator';
 import { SEARCH_CLIMBS } from '../../../../lib/graphql/operations';
-import type { PreviewFetchContext } from '../workout-preview-pool';
+import { buildPools, selectItemsFromPools, type PreviewFetchContext } from '../workout-preview-pool';
 
 // Keep expo-crypto (pulled in via workout-preview-pool → climb-to-queue-item)
 // out of the node test environment — it drags in raw react-native source.
@@ -15,7 +21,7 @@ vi.mock('../../../../lib/graphql/offline-request', () => ({
 }));
 
 import { offlineAwareRequest } from '../../../../lib/graphql/offline-request';
-import { buildClimbSearchInput, fetchGradePool } from '../select-climbs-for-plan';
+import { MAX_SEARCH_PAGE_SIZE, buildClimbSearchInput, fetchGradePool } from '../select-climbs-for-plan';
 
 const offlineAwareRequestMock = vi.mocked(offlineAwareRequest);
 
@@ -46,4 +52,75 @@ describe('fetchGradePool', () => {
 
     await expect(fetchGradePool(15, ctx)).resolves.toEqual([]);
   });
+
+  it('reads past the 100-climb page cap when the demand needs it', async () => {
+    serveCatalogue(300);
+
+    const pool = await fetchGradePool(15, ctx, 150);
+
+    // 150 slots + 10 spare = 160 wanted, in pages of 100.
+    expect(pool).toHaveLength(200);
+    expect(new Set(pool.map((climb) => climb.uuid)).size).toBe(200);
+    expect(requestedPages()).toEqual([
+      { page: 0, pageSize: MAX_SEARCH_PAGE_SIZE },
+      { page: 1, pageSize: MAX_SEARCH_PAGE_SIZE },
+    ]);
+  });
+
+  it('stops when the grade runs out', async () => {
+    serveCatalogue(120);
+
+    const pool = await fetchGradePool(15, ctx, 400);
+
+    expect(pool).toHaveLength(120);
+    expect(requestedPages().map(({ page }) => page)).toEqual([0, 1]);
+  });
+
+  it('keeps the 50-climb pool for a demand that fits in it', async () => {
+    serveCatalogue(300);
+
+    await fetchGradePool(15, ctx, 20);
+
+    expect(requestedPages()).toEqual([{ page: 0, pageSize: 50 }]);
+  });
+
+  it('fills two blocks at one grade when together they need more than 50 climbs', async () => {
+    serveCatalogue(200);
+    const grades: GeneratorGradeScale = Array.from({ length: 20 }, (_, index) => ({ difficulty_id: index + 10 }));
+    const plan = planFromBlocks(
+      [
+        { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 40 },
+        { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 30 },
+      ],
+      'none',
+      (stagePosition) => `stage-${stagePosition}`,
+    );
+    const slots = generateStagedPlan(plan, grades);
+
+    const pools = await buildPools(slots, ctx, fetchGradePool);
+    const { items } = selectItemsFromPools(slots, pools);
+
+    expect(slots).toHaveLength(70);
+    expect(items).toHaveLength(70);
+    expect(items.filter((preview) => preview.slot.stageId === 'stage-1')).toHaveLength(30);
+  });
 });
+
+// A grade with `size` climbs, served one page at a time like SEARCH_CLIMBS.
+function serveCatalogue(size: number) {
+  const catalogue = Array.from({ length: size }, (_, index) => ({ uuid: `climb-${index}` }) as Climb);
+  offlineAwareRequestMock.mockImplementation(async (_query, variables) => {
+    const { input } = variables as { input: ClimbSearchInput };
+    const page = input.page ?? 0;
+    const pageSize = input.pageSize ?? 20;
+    const climbs = catalogue.slice(page * pageSize, (page + 1) * pageSize);
+    return { searchClimbs: { climbs, hasMore: (page + 1) * pageSize < catalogue.length } };
+  });
+}
+
+function requestedPages() {
+  return offlineAwareRequestMock.mock.calls.map(([, variables]) => {
+    const { input } = variables as { input: ClimbSearchInput };
+    return { page: input.page, pageSize: input.pageSize };
+  });
+}

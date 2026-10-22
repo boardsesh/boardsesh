@@ -304,11 +304,39 @@ describe('planFromGeneratorOptions', () => {
 });
 
 describe('planFromBlocks', () => {
-  it.each(EQUIVALENCE_CASES)('one block gives exactly what planFromGeneratorOptions gives: $label', ({ options }) => {
-    expect(planFromBlocks([options], options.warmUp, counterIds())).toEqual(
-      planFromGeneratorOptions(options, counterIds()),
-    );
+  // planFromGeneratorOptions now delegates here, so pin the one-block result to
+  // hard-coded plans and to the single-type generator rather than to itself.
+  it('plans one block with a warm-up as the warm-up stage then the workout', () => {
+    const volume: GeneratorOptions = { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'extended', targetGrade: 18 };
+
+    expect(planFromBlocks([volume], volume.warmUp, counterIds())).toEqual({
+      stages: [
+        { id: 'stage-0', kind: 'warmUp', warmUpType: 'extended' },
+        { id: 'stage-1', kind: 'volume', options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 18 } },
+      ],
+    });
   });
+
+  it('plans one block without a warm-up as the workout alone', () => {
+    const ladder: GeneratorOptions = { ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 12 };
+
+    expect(planFromBlocks([ladder], 'none', counterIds())).toEqual({
+      stages: [{ id: 'stage-0', kind: 'ladder', options: ladder }],
+    });
+  });
+
+  it.each(EQUIVALENCE_CASES)(
+    'one block generates what generateWorkoutPlan generates: $label',
+    ({ options, grades }) => {
+      seedRandom();
+      const expected = generateWorkoutPlan(options, grades);
+      vi.restoreAllMocks();
+      seedRandom();
+      const staged = generateStagedPlan(planFromBlocks([options], options.warmUp, counterIds()), grades);
+
+      expect(withoutStageId(staged)).toEqual(expected);
+    },
+  );
 
   it('puts one warm-up first, then every block in order', () => {
     const pyramid: GeneratorOptions = { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 20 };

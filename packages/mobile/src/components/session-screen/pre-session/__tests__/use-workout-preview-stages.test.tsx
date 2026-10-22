@@ -16,6 +16,7 @@ import {
   type VolumeOptions,
 } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
+import { addBlock, moveBlock, removeBlock, type ActiveGeneratorSelection } from '../workout-blocks';
 import type { FetchGradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
@@ -113,10 +114,12 @@ describe('useWorkoutPreview stages', () => {
     expect(result.current.plannedSlots.map(({ grade, section, index }) => ({ grade, section, index }))).toEqual(
       expectedSlots,
     );
-    // The volume block's fetch carries the first card's filters, not its own defaults.
+    // The volume block's fetch carries the first card's filters, not its own
+    // defaults, and asks for as many climbs as its four slots need.
     expect(countingFetchPool).toHaveBeenCalledWith(
       15,
       expect.objectContaining({ filters: expect.objectContaining({ minAscents: 0, minRating: 0, climbBias: 'any' }) }),
+      4,
     );
 
     // One fetch per unique grade across every stage, none repeated.
@@ -164,5 +167,36 @@ describe('useWorkoutPreview stages', () => {
     await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
     expectRunMatchesRows();
     expect(result.current.toStagedQueueItems().run?.stages[2].itemUuids).toContain(volumeRow.item.uuid);
+  });
+
+  it.each([
+    ['moved', (selection: ActiveGeneratorSelection) => moveBlock(selection, 'block-a', 'down')],
+    ['added', (selection: ActiveGeneratorSelection) => addBlock(selection, () => 'block-c')],
+    ['removed', (selection: ActiveGeneratorSelection) => removeBlock(selection, 'block-b')],
+  ] as const)('hands Start nothing while a %s block rebuilds the preview', async (_change, changeBlocks) => {
+    const committed: ActiveGeneratorSelection = {
+      type: 'on',
+      options: { ...volumeWithWarmUp, warmUp: 'none' },
+      extraBlocks: [
+        { id: 'block-a', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 } },
+        { id: 'block-b', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 14, mainSetClimbs: 3 } },
+      ],
+    };
+    const { result, rerender } = renderHook(
+      ({ selection }: { selection: GeneratorSelection }) =>
+        useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
+      { initialProps: { selection: committed as GeneratorSelection } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.toStagedQueueItems().run?.stages).toHaveLength(3);
+
+    rerender({ selection: changeBlocks(committed) });
+
+    // The rows on screen belong to the old blocks: Start must not queue them.
+    expect(result.current.status).toBe('loading');
+    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.toStagedQueueItems().items.length).toBeGreaterThan(0);
   });
 });

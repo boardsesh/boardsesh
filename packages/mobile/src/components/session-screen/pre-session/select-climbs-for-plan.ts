@@ -10,7 +10,12 @@ import {
   type PreviewFilters,
 } from './workout-preview-pool';
 
-const POOL_SIZE_PER_GRADE = 50;
+/** Smallest pool fetched per grade: enough to shuffle and refresh from. */
+export const POOL_SIZE_PER_GRADE = 50;
+/** The backend's `SEARCH_CLIMBS` page-size cap (`ClimbSearchInputSchema.pageSize`, max 100). */
+export const MAX_SEARCH_PAGE_SIZE = 100;
+/** Spare climbs fetched on top of the slots a grade has to fill, so a refresh has somewhere to go. */
+const POOL_SLACK_PER_GRADE = 10;
 
 type SelectClimbsForPlanOptions = {
   /** Authenticated session — gates climbBias's hide/show-attempted filters,
@@ -27,7 +32,12 @@ type SelectClimbsForPlanOptions = {
  * tall filters, and the auth-gated climbBias hide/show flags (anonymous users
  * skip those entirely — the server rejects them without a user context).
  */
-export function buildClimbSearchInput(grade: number, ctx: PreviewFetchContext): ClimbSearchInput {
+export function buildClimbSearchInput(
+  grade: number,
+  ctx: PreviewFetchContext,
+  page = 0,
+  pageSize = POOL_SIZE_PER_GRADE,
+): ClimbSearchInput {
   const { board, isAuthenticated, filters } = ctx;
   return {
     boardName: board.boardType,
@@ -38,8 +48,8 @@ export function buildClimbSearchInput(grade: number, ctx: PreviewFetchContext): 
     minGrade: grade,
     maxGrade: grade,
     gradeAccuracy: 'moderate',
-    pageSize: POOL_SIZE_PER_GRADE,
-    page: 0,
+    pageSize,
+    page,
     // Quality-sorted so the generator favours the better climbs at each grade
     // rather than whatever happens to be most-recently published.
     sortBy: 'quality',
@@ -53,16 +63,39 @@ export function buildClimbSearchInput(grade: number, ctx: PreviewFetchContext): 
   };
 }
 
+/** How many climbs to fetch for a grade that `demand` slots draw from. */
+export function gradePoolTarget(demand: number): number {
+  return Math.max(POOL_SIZE_PER_GRADE, demand + POOL_SLACK_PER_GRADE);
+}
+
 /**
  * Fetch the candidate climb pool for one grade. The mobile-only fetcher injected
  * into `@boardsesh/playlist-generator`'s pure pool helpers; the shared package
  * intentionally stays platform-agnostic (no GraphQL client). Shuffling happens
  * in `buildPools`, not here, so a refetch-on-refresh reshuffles.
+ *
+ * The pool is sized by `demand`, the slots that will draw from it: several
+ * workout blocks at one grade share one pool, and a fixed 50 would leave the
+ * later blocks empty. Past the backend's 100-per-page cap it reads the next
+ * pages until it has enough or the grade runs out.
  */
-export async function fetchGradePool(grade: number, ctx: PreviewFetchContext): Promise<Climb[]> {
-  const input = buildClimbSearchInput(grade, ctx);
-  const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
-  return response.searchClimbs.climbs.slice();
+export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, demand = 0): Promise<Climb[]> {
+  const target = gradePoolTarget(demand);
+  const pageSize = Math.min(target, MAX_SEARCH_PAGE_SIZE);
+  const climbs: Climb[] = [];
+  const seenUuids = new Set<string>();
+  for (let page = 0; climbs.length < target; page++) {
+    const input = buildClimbSearchInput(grade, ctx, page, pageSize);
+    const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
+    const pageClimbs = response.searchClimbs.climbs;
+    for (const climb of pageClimbs) {
+      if (seenUuids.has(climb.uuid)) continue;
+      seenUuids.add(climb.uuid);
+      climbs.push(climb);
+    }
+    if (!response.searchClimbs.hasMore || pageClimbs.length < pageSize) break;
+  }
+  return climbs;
 }
 
 /**
