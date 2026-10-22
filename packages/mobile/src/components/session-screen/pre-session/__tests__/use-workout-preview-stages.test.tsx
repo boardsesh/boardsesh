@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// The preview against the REAL generator: a warm-up plus a workout must come out
-// as two stages whose climbs are exactly the warm-up rows and the workout rows.
+// The preview against the REAL generator: a warm-up block plus a workout block
+// must come out as two stages whose climbs are exactly the warm-up rows and the
+// workout rows, and a warm-up anywhere must ramp to the workout block after it.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -15,8 +16,14 @@ import {
   type PyramidOptions,
   type VolumeOptions,
 } from '@boardsesh/playlist-generator';
-import type { GeneratorSelection } from '../GeneratorPickerCard';
-import { addBlock, moveBlock, removeBlock, type ActiveGeneratorSelection } from '../workout-blocks';
+import {
+  NO_WORKOUT,
+  addBlock,
+  moveBlock,
+  removeBlock,
+  type GeneratorSelection,
+  type WorkoutBlock,
+} from '../workout-blocks';
 import type { FetchGradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
@@ -46,13 +53,26 @@ const volumeWithWarmUp: VolumeOptions = {
   climbBias: 'any',
 };
 
+const ANY_FILTERS = {
+  minAscents: 0,
+  minRating: 0,
+  onlyTallClimbs: false,
+  onlyWideClimbs: false,
+  climbBias: 'any',
+} as const;
+const warmUpBlock = (id: string): WorkoutBlock => ({ id, kind: 'warmUp', warmUpType: 'standard' });
+const selectionOf = (blocks: WorkoutBlock[]): GeneratorSelection => ({ blocks, filters: ANY_FILTERS });
+
 // A deep pool at every grade, with climb uuids unique across grades.
 const fetchPool: FetchGradePool = async (grade) =>
   Array.from({ length: 30 }, (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}` }) as Climb);
 
 describe('useWorkoutPreview stages', () => {
   it('plans the same slots as before and groups the queued climbs by stage', async () => {
-    const selection: GeneratorSelection = { type: 'on', options: volumeWithWarmUp, extraBlocks: [] };
+    const selection = selectionOf([
+      warmUpBlock('warm'),
+      { id: 'volume', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } },
+    ]);
     const { result } = renderHook(() =>
       useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
     );
@@ -83,38 +103,29 @@ describe('useWorkoutPreview stages', () => {
   });
 
   it('fills every block from one fetch per grade and keeps each climb in its own stage', async () => {
-    const pyramid: PyramidOptions = {
-      ...DEFAULT_PYRAMID_OPTIONS,
-      targetGrade: 22,
-      warmUp: 'standard',
-      numberOfSteps: 3,
-      climbsPerStep: 1,
-      minAscents: 0,
-      minRating: 0,
-      climbBias: 'any',
-    };
+    const pyramid: PyramidOptions = { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 22, numberOfSteps: 3, climbsPerStep: 1 };
     const volume: VolumeOptions = { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 4 };
-    const selection: GeneratorSelection = {
-      type: 'on',
-      options: pyramid,
-      extraBlocks: [{ id: 'block-volume', options: volume }],
-    };
+    const selection = selectionOf([
+      warmUpBlock('warm'),
+      { id: 'block-pyramid', kind: 'workout', options: pyramid },
+      { id: 'block-volume', kind: 'workout', options: volume },
+    ]);
     const countingFetchPool = vi.fn(fetchPool);
     const { result } = renderHook(() =>
       useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
     );
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    // Warm-up up to the first block, then the pyramid, then the volume block on the first card's filters.
+    // Warm-up up to the pyramid, then the pyramid, then the volume block.
     expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['warmUp', 'pyramid', 'volume']);
     const expectedSlots = generateStagedPlan(
-      planFromBlocks([pyramid, { ...volume, minAscents: 0, minRating: 0, climbBias: 'any' }], 'standard', () => 'x'),
+      planFromBlocks(selection.blocks, () => 'x'),
       grades,
     ).map(({ grade, section, index }) => ({ grade, section, index }));
     expect(result.current.plannedSlots.map(({ grade, section, index }) => ({ grade, section, index }))).toEqual(
       expectedSlots,
     );
-    // The volume block's fetch carries the first card's filters, not its own
+    // The volume block's fetch carries the shared filters, not its options' own
     // defaults, and asks for as many climbs as its four slots need.
     expect(countingFetchPool).toHaveBeenCalledWith(
       15,
@@ -170,18 +181,15 @@ describe('useWorkoutPreview stages', () => {
   });
 
   it.each([
-    ['moved', (selection: ActiveGeneratorSelection) => moveBlock(selection, 'block-a', 'down')],
-    ['added', (selection: ActiveGeneratorSelection) => addBlock(selection, () => 'block-c')],
-    ['removed', (selection: ActiveGeneratorSelection) => removeBlock(selection, 'block-b')],
+    ['moved', (selection: GeneratorSelection) => moveBlock(selection, 'block-a', 'down')],
+    ['added', (selection: GeneratorSelection) => addBlock(selection, () => 'block-c', 15)],
+    ['removed', (selection: GeneratorSelection) => removeBlock(selection, 'block-b')],
   ] as const)('hands Start nothing while a %s block rebuilds the preview', async (_change, changeBlocks) => {
-    const committed: ActiveGeneratorSelection = {
-      type: 'on',
-      options: { ...volumeWithWarmUp, warmUp: 'none' },
-      extraBlocks: [
-        { id: 'block-a', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 } },
-        { id: 'block-b', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 14, mainSetClimbs: 3 } },
-      ],
-    };
+    const committed = selectionOf([
+      { id: 'block-first', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } },
+      { id: 'block-a', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 } },
+      { id: 'block-b', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 14, mainSetClimbs: 3 } },
+    ]);
     const { result, rerender } = renderHook(
       ({ selection }: { selection: GeneratorSelection }) =>
         useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
@@ -198,5 +206,78 @@ describe('useWorkoutPreview stages', () => {
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.toStagedQueueItems().items.length).toBeGreaterThan(0);
+  });
+
+  it("ramps a warm-up at position 2 to block 3's grade and plans none for a trailing warm-up", async () => {
+    const selection = selectionOf([
+      { id: 'focus', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 2 } },
+      warmUpBlock('middle'),
+      { id: 'pyramid', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 22, numberOfSteps: 3 } },
+      warmUpBlock('trailing'),
+    ]);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const middleGrades = result.current.items
+      .filter((preview) => preview.slot.section === 'warmUp')
+      .map((preview) => preview.slot.grade);
+    expect(middleGrades).toEqual([18, 19, 20, 21]);
+    // The trailing warm-up has nothing to ramp to: no climbs, no heading.
+    expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid']);
+    expect(result.current.toStagedQueueItems().run?.stages.map((stage) => stage.kind)).toEqual([
+      'volume',
+      'warmUp',
+      'pyramid',
+    ]);
+  });
+
+  it('plans nothing, and hands Start nothing, for a warm-up on its own', async () => {
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(
+        selectionOf([warmUpBlock('alone')]),
+        board,
+        { isAuthenticated: false },
+        {
+          fetchPool: countingFetchPool,
+          grades,
+        },
+      ),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(result.current.plannedCount).toBe(0);
+    expect(result.current.items).toEqual([]);
+    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
+    expect(countingFetchPool).not.toHaveBeenCalled();
+  });
+
+  it('keeps the preview when the selection is re-created with the same blocks', async () => {
+    const selection = selectionOf([{ id: 'only', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } }]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result, rerender } = renderHook(
+      ({ current }: { current: GeneratorSelection }) =>
+        useWorkoutPreview(current, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+      { initialProps: { current: selection } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const rowUuids = result.current.items.map((preview) => preview.item.uuid);
+    const fetchCount = countingFetchPool.mock.calls.length;
+
+    rerender({ current: { ...selection, blocks: [...selection.blocks] } });
+
+    expect(result.current.status).toBe('ready');
+    expect(result.current.items.map((preview) => preview.item.uuid)).toEqual(rowUuids);
+    expect(countingFetchPool).toHaveBeenCalledTimes(fetchCount);
+  });
+
+  it('starts empty with no blocks', () => {
+    const { result } = renderHook(() =>
+      useWorkoutPreview(NO_WORKOUT, board, { isAuthenticated: false }, { fetchPool, grades }),
+    );
+
+    expect(result.current.status).toBe('idle');
   });
 });

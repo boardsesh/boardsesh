@@ -4,54 +4,68 @@ import {
   DEFAULT_LADDER_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
+  generateStagedPlan,
+  planFromBlocks,
+  type GeneratorGradeScale,
   type GeneratorOptions,
 } from '@boardsesh/playlist-generator';
 import {
   MAX_WORKOUT_BLOCKS,
+  NO_WORKOUT,
   addBlock,
   canAddBlock,
   changeBlockType,
+  firstWorkoutType,
+  hasWorkoutBlocks,
   moveBlock,
   nextBlockType,
   removeBlock,
-  selectionBlocks,
   selectionWorkoutTypes,
   singleBlockSelection,
-  updateBlockOptions,
-  type ActiveGeneratorSelection,
+  updateBlock,
+  updateFilters,
+  warmUpTarget,
   type GeneratorSelection,
+  type WorkoutBlock,
 } from '../workout-blocks';
 
-const FIRST: GeneratorOptions = {
-  ...DEFAULT_PYRAMID_OPTIONS,
-  targetGrade: 20,
-  warmUp: 'standard',
-  climbBias: 'attempted',
-  minAscents: 10,
-  minRating: 3,
-  onlyTallClimbs: true,
-  onlyWideClimbs: true,
-};
+const FALLBACK_GRADE = 15;
+const GRADES: GeneratorGradeScale = Array.from({ length: 30 }, (_, index) => ({ difficulty_id: index + 1 }));
 
 const counterIds = () => {
   let nextId = 0;
   return () => `block-${nextId++}`;
 };
 
-function activeSelection(selection: GeneratorSelection): ActiveGeneratorSelection {
-  if (selection.type !== 'on') throw new Error('expected the generator on');
+const workout = (id: string, options: GeneratorOptions): WorkoutBlock => ({ id, kind: 'workout', options });
+const warmUp = (id: string): WorkoutBlock => ({ id, kind: 'warmUp', warmUpType: 'standard' });
+
+function withBlocks(blocks: WorkoutBlock[]): GeneratorSelection {
+  return { ...NO_WORKOUT, blocks };
+}
+
+function addedBlocks(count: number): GeneratorSelection {
+  const makeId = counterIds();
+  let selection = NO_WORKOUT;
+  for (let added = 0; added < count; added++) selection = addBlock(selection, makeId, FALLBACK_GRADE);
   return selection;
 }
 
-function withBlocks(count: number): ActiveGeneratorSelection {
-  const makeId = counterIds();
-  let selection: GeneratorSelection = singleBlockSelection(FIRST);
-  for (let added = 0; added < count; added++) selection = addBlock(selection, makeId);
-  return activeSelection(selection);
-}
+const ids = (selection: GeneratorSelection) => selection.blocks.map((block) => block.id);
+
+describe('no blocks', () => {
+  it('is no workout, and keeps the filters the climber set', () => {
+    const filtered = updateFilters(addedBlocks(1), { minAscents: 50, climbBias: 'attempted' });
+    const emptied = removeBlock(filtered, 'block-0');
+
+    expect(hasWorkoutBlocks(NO_WORKOUT)).toBe(false);
+    expect(hasWorkoutBlocks(emptied)).toBe(false);
+    expect(emptied.filters).toMatchObject({ minAscents: 50, climbBias: 'attempted' });
+  });
+});
 
 describe('nextBlockType', () => {
-  it('walks the picker order and wraps round', () => {
+  it('walks the workout types and wraps round', () => {
     expect(nextBlockType('volume')).toBe('pyramid');
     expect(nextBlockType('pyramid')).toBe('ladder');
     expect(nextBlockType('ladder')).toBe('gradeFocus');
@@ -60,75 +74,56 @@ describe('nextBlockType', () => {
 });
 
 describe('addBlock', () => {
-  it('appends a block of a different type from the last, at the same target grade, with defaults', () => {
-    const selection = withBlocks(1);
-
-    expect(selection.extraBlocks).toEqual([{ id: 'block-0', options: { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 } }]);
+  it('starts a workout with Volume at the fallback grade', () => {
+    expect(addedBlocks(1).blocks).toEqual([
+      workout('block-0', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: FALLBACK_GRADE }),
+    ]);
   });
 
-  it('follows the last extra block, not the first card', () => {
-    const selection = activeSelection(
-      addBlock(
-        updateBlockOptions(withBlocks(1), 'block-0', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12 }),
-        () => 'added',
-      ),
+  it("follows the last workout block's type and grade, past a warm-up after it", () => {
+    const selection = withBlocks([workout('pyramid', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 20 }), warmUp('warm')]);
+
+    expect(addBlock(selection, () => 'added', FALLBACK_GRADE).blocks.at(-1)).toEqual(
+      workout('added', { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 }),
     );
-
-    expect(selection.extraBlocks[1]).toEqual({
-      id: 'added',
-      options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 },
-    });
   });
 
-  it(`stops at ${MAX_WORKOUT_BLOCKS} blocks, the first card included`, () => {
-    const full = withBlocks(MAX_WORKOUT_BLOCKS - 1);
+  it(`stops at ${MAX_WORKOUT_BLOCKS} blocks, warm-ups counted like any block`, () => {
+    const full = withBlocks([warmUp('w0'), ...addedBlocks(MAX_WORKOUT_BLOCKS - 2).blocks, warmUp('w1')]);
 
-    expect(full.extraBlocks).toHaveLength(MAX_WORKOUT_BLOCKS - 1);
+    expect(full.blocks).toHaveLength(MAX_WORKOUT_BLOCKS);
     expect(canAddBlock(full)).toBe(false);
-    expect(addBlock(full, () => 'one-too-many')).toBe(full);
-  });
-
-  it('does nothing with the generator off', () => {
-    const off: GeneratorSelection = { type: 'off' };
-
-    expect(canAddBlock(off)).toBe(false);
-    expect(addBlock(off, () => 'never')).toBe(off);
+    expect(addBlock(full, () => 'one-too-many', FALLBACK_GRADE)).toBe(full);
+    expect(canAddBlock(removeBlock(full, 'w0'))).toBe(true);
   });
 });
 
 describe('removeBlock', () => {
-  it('drops the block and keeps the rest in order', () => {
-    const selection = activeSelection(removeBlock(withBlocks(3), 'block-1'));
+  it('drops any block, the first included, and keeps the rest in order', () => {
+    const selection = addedBlocks(3);
 
-    expect(selection.extraBlocks.map((block) => block.id)).toEqual(['block-0', 'block-2']);
-    expect(selection.options).toBe(FIRST);
+    expect(ids(removeBlock(selection, 'block-0'))).toEqual(['block-1', 'block-2']);
+    expect(ids(removeBlock(selection, 'block-1'))).toEqual(['block-0', 'block-2']);
   });
 
   it('returns the same selection for an unknown block', () => {
-    const selection = withBlocks(1);
+    const selection = addedBlocks(1);
 
     expect(removeBlock(selection, 'missing')).toBe(selection);
   });
 });
 
 describe('moveBlock', () => {
-  it('swaps a block with its neighbour', () => {
-    const selection = withBlocks(3);
+  it('moves any block, the first included', () => {
+    const selection = addedBlocks(3);
 
-    expect(activeSelection(moveBlock(selection, 'block-1', 'up')).extraBlocks.map((block) => block.id)).toEqual([
-      'block-1',
-      'block-0',
-      'block-2',
-    ]);
-    expect(activeSelection(moveBlock(selection, 'block-1', 'down')).extraBlocks.map((block) => block.id)).toEqual([
-      'block-0',
-      'block-2',
-      'block-1',
-    ]);
+    expect(ids(moveBlock(selection, 'block-0', 'down'))).toEqual(['block-1', 'block-0', 'block-2']);
+    expect(ids(moveBlock(selection, 'block-1', 'up'))).toEqual(['block-1', 'block-0', 'block-2']);
+    expect(ids(moveBlock(selection, 'block-1', 'down'))).toEqual(['block-0', 'block-2', 'block-1']);
   });
 
-  it('never moves a block above the first card or past the end', () => {
-    const selection = withBlocks(2);
+  it('never moves a block past either end', () => {
+    const selection = addedBlocks(2);
 
     expect(moveBlock(selection, 'block-0', 'up')).toBe(selection);
     expect(moveBlock(selection, 'block-1', 'down')).toBe(selection);
@@ -137,53 +132,111 @@ describe('moveBlock', () => {
 });
 
 describe('changeBlockType', () => {
-  it("switches to the new type's defaults and keeps the block's target grade", () => {
-    const edited = updateBlockOptions(withBlocks(1), 'block-0', {
-      ...DEFAULT_LADDER_OPTIONS,
-      targetGrade: 14,
-      numberOfSteps: 9,
-    });
-    const selection = activeSelection(changeBlockType(edited, 'block-0', 'gradeFocus'));
+  it("switches a workout to another type's defaults and keeps its grade", () => {
+    const selection = withBlocks([workout('ladder', { ...DEFAULT_LADDER_OPTIONS, targetGrade: 14, numberOfSteps: 9 })]);
 
-    expect(selection.extraBlocks[0].options).toEqual({ ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 14 });
+    expect(changeBlockType(selection, 'ladder', 'gradeFocus', FALLBACK_GRADE).blocks[0]).toEqual(
+      workout('ladder', { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 14 }),
+    );
+  });
+
+  it('turns a workout into a standard warm-up with no grade of its own', () => {
+    expect(changeBlockType(addedBlocks(1), 'block-0', 'warmUp', FALLBACK_GRADE).blocks[0]).toEqual(warmUp('block-0'));
+  });
+
+  it("turns a warm-up into a workout at the next workout block's grade, else the previous one's", () => {
+    const selection = withBlocks([
+      workout('before', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8 }),
+      warmUp('warm'),
+      workout('after', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 22 }),
+    ]);
+
+    expect(changeBlockType(selection, 'warm', 'ladder', FALLBACK_GRADE).blocks[1]).toEqual(
+      workout('warm', { ...DEFAULT_LADDER_OPTIONS, targetGrade: 22 }),
+    );
+    expect(changeBlockType(removeBlock(selection, 'after'), 'warm', 'ladder', FALLBACK_GRADE).blocks[1]).toEqual(
+      workout('warm', { ...DEFAULT_LADDER_OPTIONS, targetGrade: 8 }),
+    );
+    expect(changeBlockType(withBlocks([warmUp('warm')]), 'warm', 'volume', FALLBACK_GRADE).blocks[0]).toEqual(
+      workout('warm', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: FALLBACK_GRADE }),
+    );
   });
 
   it('keeps the block untouched when its type is picked again', () => {
-    const selection = withBlocks(1);
+    const selection = withBlocks([warmUp('warm'), ...addedBlocks(1).blocks]);
 
-    expect(changeBlockType(selection, 'block-0', 'ladder')).toBe(selection);
+    expect(changeBlockType(selection, 'block-0', 'volume', FALLBACK_GRADE)).toBe(selection);
+    expect(changeBlockType(selection, 'warm', 'warmUp', FALLBACK_GRADE)).toBe(selection);
   });
 });
 
-describe('selectionBlocks', () => {
-  it('is just the first card for a one-block workout', () => {
-    expect(selectionBlocks(singleBlockSelection(FIRST))).toEqual([FIRST]);
-  });
+describe('updateBlock', () => {
+  it("replaces a block's settings in place, keeping its id", () => {
+    const selection = withBlocks([warmUp('warm'), ...addedBlocks(1).blocks]);
+    const updated = updateBlock(selection, 'warm', { kind: 'warmUp', warmUpType: 'extended' });
 
-  it("gives every extra block the first card's filters and no warm-up of its own", () => {
-    const blocks = selectionBlocks(withBlocks(2));
-
-    expect(blocks[0]).toBe(FIRST);
-    for (const block of blocks.slice(1)) {
-      expect(block).toMatchObject({
-        warmUp: 'none',
-        climbBias: 'attempted',
-        minAscents: 10,
-        minRating: 3,
-        onlyTallClimbs: true,
-        onlyWideClimbs: true,
-        targetGrade: 20,
-      });
-    }
-    expect(blocks.map((block) => block.type)).toEqual(['pyramid', 'ladder', 'gradeFocus']);
+    expect(updated.blocks[0]).toEqual({ id: 'warm', kind: 'warmUp', warmUpType: 'extended' });
+    expect(updated.blocks[1]).toBe(selection.blocks[1]);
   });
 });
 
-describe('selectionWorkoutTypes', () => {
-  it('joins the block types in run order, unsorted', () => {
-    const selection = activeSelection(moveBlock(withBlocks(2), 'block-1', 'up'));
+describe('warm-ups in the plan', () => {
+  const blocks = [
+    workout('first', { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 10, numberOfClimbs: 1 }),
+    warmUp('middle'),
+    workout('third', { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 20, numberOfClimbs: 2 }),
+    warmUp('trailing'),
+  ];
+  const plannedSlots = () =>
+    generateStagedPlan(
+      planFromBlocks(blocks, (position) => blocks[position].id),
+      GRADES,
+    );
 
-    expect(selectionWorkoutTypes(singleBlockSelection(FIRST))).toBe('pyramid');
-    expect(selectionWorkoutTypes(selection)).toBe('pyramid,gradeFocus,ladder');
+  it("ramps a warm-up at position 2 to block 3's grade", () => {
+    expect(warmUpTarget(blocks, 1)).toEqual({ targetGrade: 20, blockNumber: 3 });
+    expect(
+      plannedSlots()
+        .filter((slot) => slot.stageId === 'middle')
+        .map((slot) => slot.grade),
+    ).toEqual([16, 17, 18, 19]);
+  });
+
+  it('plans no climbs for a warm-up with no workout block after it', () => {
+    expect(warmUpTarget(blocks, 3)).toBeNull();
+    expect(plannedSlots().map((slot) => slot.stageId)).toEqual([
+      'first',
+      'middle',
+      'middle',
+      'middle',
+      'middle',
+      'third',
+      'third',
+    ]);
+  });
+});
+
+describe('analytics helpers', () => {
+  it('lists every block in run order, warm-ups included, and names the first workout type', () => {
+    const selection = withBlocks([
+      warmUp('warm'),
+      workout('pyramid', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 }),
+      workout('volume', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12 }),
+    ]);
+
+    expect(selectionWorkoutTypes(selection)).toBe('warmUp,pyramid,volume');
+    expect(firstWorkoutType(selection)).toBe('pyramid');
+    expect(firstWorkoutType(withBlocks([warmUp('warm')]))).toBeNull();
+  });
+});
+
+describe('singleBlockSelection', () => {
+  it('holds one workout block and takes its filters from the options', () => {
+    const options = { ...DEFAULT_LADDER_OPTIONS, targetGrade: 15, minAscents: 25 };
+
+    expect(singleBlockSelection(options, 'only')).toEqual({
+      blocks: [workout('only', options)],
+      filters: expect.objectContaining({ minAscents: 25, climbBias: 'unfamiliar' }),
+    });
   });
 });

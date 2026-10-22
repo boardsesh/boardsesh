@@ -165,8 +165,8 @@ name: app-store screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 03-climbs
 
-# Workout generator — the Record screen with a workout pre-selected (volume): target
-# grade, warm-up, set config + the generated preview queue.
+# Workout generator — the Record screen with one Volume block pre-selected: its open
+# card (type, target grade, counts) + the generated preview queue.
 - openLink: com.boardsesh.app://record
 - tapOn:
     text: 'Open'

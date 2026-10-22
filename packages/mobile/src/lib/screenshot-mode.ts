@@ -137,12 +137,10 @@ export const SCREENSHOT_VARIANT_PREFERENCE: UiVariantPreference = isUiVariantPre
   : 'auto';
 
 /**
- * Workout type the session/Record screen pre-selects in screenshot mode, so the
- * generator renders with a chosen workout (chart + generated preview) on load.
- * The workout shelf is a react-native-gesture-handler ScrollView, which doesn't
- * respond to Maestro's synthetic taps/swipes, so we can't pick it from the flow —
- * baking the initial selection is the reliable way. Empty/unset (the default)
- * leaves the generator "Off". Set e.g. `EXPO_PUBLIC_SCREENSHOT_WORKOUT=volume`.
+ * Workout type the session/Record screen starts with in screenshot mode: one
+ * open block of this type, so the block card and its generated preview render
+ * on load without the flow driving the picker. Empty/unset (the default) starts
+ * with no blocks. Set e.g. `EXPO_PUBLIC_SCREENSHOT_WORKOUT=volume`.
  */
 const SCREENSHOT_WORKOUT_TYPES = ['volume', 'pyramid', 'ladder', 'gradeFocus'] as const;
 export type ScreenshotWorkout = (typeof SCREENSHOT_WORKOUT_TYPES)[number];

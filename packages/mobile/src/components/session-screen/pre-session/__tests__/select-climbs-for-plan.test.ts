@@ -89,10 +89,9 @@ describe('fetchGradePool', () => {
     const grades: GeneratorGradeScale = Array.from({ length: 20 }, (_, index) => ({ difficulty_id: index + 10 }));
     const plan = planFromBlocks(
       [
-        { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 40 },
-        { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 30 },
+        { kind: 'workout', options: { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 40 } },
+        { kind: 'workout', options: { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 15, numberOfClimbs: 30 } },
       ],
-      'none',
       (stagePosition) => `stage-${stagePosition}`,
     );
     const slots = generateStagedPlan(plan, grades);

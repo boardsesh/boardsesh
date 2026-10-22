@@ -4,7 +4,7 @@ import { View, StyleSheet } from 'react-native';
 // RNGH ScrollView (not react-native's): the play drawer's outer scroll is an RNGH
 // ScrollView, so this nested horizontal strip must join the same gesture tree or
 // Android's outer scroll swallows its horizontal pans and it never scrolls. Same
-// pattern as WorkoutTypeShelf / BetaVideosSection.
+// pattern as BetaVideosSection.
 import { ScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName, SimilarClimb } from '@boardsesh/shared-schema';

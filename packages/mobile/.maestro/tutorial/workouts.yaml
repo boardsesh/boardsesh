@@ -6,7 +6,14 @@ name: Tutorial - a workout advances after real rest
 - waitForAnimationToEnd
 - runFlow: session-private.yaml
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/flow-start')}
-- tapOn: 'Workout, Pyramid.*'
+# A new block opens as Volume; its chips switch it to a pyramid.
+- scrollUntilVisible:
+    element: 'Add a block'
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn: 'Add a block'
+- tapOn: 'Block 1, Pyramid'
 - extendedWaitUntil:
     notVisible: 'Building your workout…'
     timeout: 20000
@@ -16,15 +23,8 @@ name: Tutorial - a workout advances after real rest
       text: Start
       enabled: true
     timeout: 120000
-# Native semantics clip the shelf card bounds, so centering its label does not
-# bring the whole selected chart into frame. Swipe the measured shelf itself.
-- assertVisible: 'Workout, Pyramid.*'
-- swipe:
-    start: '90%,60%'
-    end: '20%,60%'
-    duration: 800
 - assertVisible:
-    text: 'Workout, Pyramid.*'
+    text: 'Block 1, Pyramid'
     selected: true
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/generated')}
 - extendedWaitUntil:

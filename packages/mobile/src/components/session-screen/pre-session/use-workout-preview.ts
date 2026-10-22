@@ -6,8 +6,8 @@ import {
   generateStagedPlan,
   planFromBlocks,
   type GeneratorGradeScale,
-  type GeneratorOptions,
   type StagedSlot,
+  type WorkoutBlockSpec,
   type WorkoutPlan,
   type WorkoutRun,
   type WorkoutStage,
@@ -28,7 +28,7 @@ import {
   type PreviewItem,
   type WorkoutPreviewData,
 } from './workout-preview-pool';
-import { selectionBlocks, type GeneratorSelection } from './workout-blocks';
+import { hasWorkoutBlocks, type GeneratorSelection, type WorkoutFilters } from './workout-blocks';
 
 const DEBOUNCE_MS = 300;
 
@@ -78,17 +78,11 @@ type UseWorkoutPreviewDeps = {
 const EMPTY_DATA = (): WorkoutPreviewData => ({ items: [], pools: new Map(), usedUuids: new Set() });
 const EMPTY_STAGES: readonly WorkoutStage[] = [];
 
-function getBlockGenerationKey(options: GeneratorOptions): string {
-  const commonKey = [
-    options.type,
-    options.warmUp,
-    options.targetGrade,
-    options.minAscents,
-    options.minRating,
-    options.onlyTallClimbs,
-    options.onlyWideClimbs,
-    options.climbBias,
-  ].join(':');
+// A block's own filter fields are left out: the selection's filters apply to every block.
+function getBlockGenerationKey(block: WorkoutBlockSpec): string {
+  if (block.kind === 'warmUp') return `warmUp:${block.warmUpType}`;
+  const { options } = block;
+  const commonKey = `${options.type}:${options.targetGrade}`;
 
   switch (options.type) {
     case 'volume':
@@ -101,10 +95,20 @@ function getBlockGenerationKey(options: GeneratorOptions): string {
   }
 }
 
+function getFiltersGenerationKey(filters: WorkoutFilters): string {
+  return [
+    filters.minAscents,
+    filters.minRating,
+    filters.onlyTallClimbs,
+    filters.onlyWideClimbs,
+    filters.climbBias,
+  ].join(':');
+}
+
 function getSelectionGenerationKey(selection: GeneratorSelection): string {
-  if (selection.type !== 'on') return 'off';
+  if (!hasWorkoutBlocks(selection)) return 'off';
   // Every block in run order: adding, removing or moving one rebuilds the preview.
-  return selectionBlocks(selection).map(getBlockGenerationKey).join('+');
+  return `${selection.blocks.map(getBlockGenerationKey).join('+')}|${getFiltersGenerationKey(selection.filters)}`;
 }
 
 function getBoardGenerationKey(board: UserBoard | null): string {
@@ -180,13 +184,9 @@ export function useWorkoutPreview(
   const buildCtx = useCallback((): PreviewFetchContext | null => {
     const currentBoard = boardRef.current;
     const currentSelection = selectionRef.current;
-    if (!currentBoard || currentSelection.type !== 'on') return null;
-    const { minAscents, minRating, onlyTallClimbs, onlyWideClimbs, climbBias } = currentSelection.options;
-    return {
-      board: currentBoard,
-      isAuthenticated: isAuthRef.current,
-      filters: { minAscents, minRating, onlyTallClimbs, onlyWideClimbs, climbBias },
-    };
+    if (!currentBoard || !hasWorkoutBlocks(currentSelection)) return null;
+    // One set of filters for every block's pool.
+    return { board: currentBoard, isAuthenticated: isAuthRef.current, filters: currentSelection.filters };
   }, []);
 
   const resolveGrades = useCallback((targetBoard: UserBoard): GeneratorGradeScale | null => {
@@ -215,7 +215,7 @@ export function useWorkoutPreview(
   const regenerate = useCallback(async () => {
     const currentSelection = selectionRef.current;
     const currentBoard = boardRef.current;
-    if (currentSelection.type !== 'on' || !currentBoard) {
+    if (!hasWorkoutBlocks(currentSelection) || !currentBoard) {
       clearPreview('idle');
       return;
     }
@@ -230,15 +230,11 @@ export function useWorkoutPreview(
     const token = ++genTokenRef.current;
     setStatus('loading'); // keep prior items mounted so the list doesn't jump
     try {
-      // One stage per block, after the first card's warm-up. Every stage shares
-      // the pools below: they are fetched once per unique grade with the first
-      // card's filters, so a second block at another grade only adds the grades
-      // it needs, and one climb never fills two slots across stages.
-      const workoutPlan = planFromBlocks(
-        selectionBlocks(currentSelection),
-        currentSelection.options.warmUp,
-        makeStageId,
-      );
+      // One stage per block, warm-ups included. Every stage shares the pools
+      // below: they are fetched once per unique grade with the shared filters,
+      // so a second block at another grade only adds the grades it needs, and
+      // one climb never fills two slots across stages.
+      const workoutPlan = planFromBlocks(currentSelection.blocks, makeStageId);
       // Start can never queue more than the party backend's setQueue accepts.
       const plan = generateStagedPlan(workoutPlan, grades).slice(0, MAX_SYNCED_QUEUE_ITEMS);
       const ctx = buildCtx();

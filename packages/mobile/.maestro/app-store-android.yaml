@@ -138,7 +138,7 @@ name: app-store screenshots android
       id: 'pre-session-board-summary'
     direction: UP
     timeout: 60000
-# Bring the workout choices, target grade, and warm-up controls above the tray.
+# Bring the open block card (type chips, target grade, counts) above the tray.
 - repeat:
     times: 2
     commands:

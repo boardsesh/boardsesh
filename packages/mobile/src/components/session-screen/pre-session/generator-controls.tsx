@@ -1,9 +1,9 @@
-// Controls the workout card and the extra workout blocks share: the filled
+// Controls the workout block cards and the climb filters share: the filled
 // chip, the grouped stepper card, the per-type count steppers and the grade
-// helpers. Extracted from GeneratorPickerCard so both render the same thing.
+// helpers.
 
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type Insets, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Chip as PaperChip } from 'react-native-paper';
 import type { BoardName, Grade } from '@boardsesh/shared-schema';
@@ -47,6 +47,8 @@ type ChipProps = {
   selected: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
+  /** Grows the touch target past the drawn pill, e.g. to 44pt in a dense row. */
+  hitSlop?: Insets;
 };
 
 // Filled-rest-state chip (no faint border), matching the ClimbFilterSheet
@@ -58,12 +60,13 @@ type ChipProps = {
 // branch's reanimated hooks stay unconditional across a runtime variant flip.
 export const Chip = createVariantComponent('Chip', { liquidGlass: ChipGlass, material: ChipMaterial });
 
-function ChipMaterial({ label, selected, onPress, accessibilityLabel }: ChipProps) {
+function ChipMaterial({ label, selected, onPress, accessibilityLabel, hitSlop }: ChipProps) {
   return (
     <PaperChip
       mode="flat"
       selected={selected}
       showSelectedCheck
+      hitSlop={hitSlop}
       onPress={() => {
         hapticSelection();
         onPress();
@@ -75,7 +78,7 @@ function ChipMaterial({ label, selected, onPress, accessibilityLabel }: ChipProp
   );
 }
 
-function ChipGlass({ label, selected, onPress, accessibilityLabel }: ChipProps) {
+function ChipGlass({ label, selected, onPress, accessibilityLabel, hitSlop }: ChipProps) {
   const { systemColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -100,6 +103,7 @@ function ChipGlass({ label, selected, onPress, accessibilityLabel }: ChipProps) 
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={accessibilityLabel ?? label}
+      hitSlop={hitSlop}
       style={[animatedStyle, chipStyle]}
     >
       <Text

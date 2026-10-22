@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { GeneratorGradeScale, StagedSlot, VolumeOptions } from '@boardsesh/playlist-generator';
-import type { GeneratorSelection } from '../GeneratorPickerCard';
+import { NO_WORKOUT, singleBlockSelection, type GeneratorSelection } from '../workout-blocks';
 import type { FetchGradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
@@ -55,11 +55,11 @@ function makeClimb(uuid: string): Climb {
 const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as UserBoard;
 const grades: GeneratorGradeScale = [{ difficulty_id: 10 }, { difficulty_id: 11 }];
 
-const OFF: GeneratorSelection = { type: 'off' };
+const OFF: GeneratorSelection = NO_WORKOUT;
+// One Volume block; filter overrides land in the selection's shared filters.
 function on(targetGrade: number, overrides?: Partial<VolumeOptions>): GeneratorSelection {
-  return {
-    type: 'on',
-    options: {
+  return singleBlockSelection(
+    {
       type: 'volume',
       targetGrade,
       warmUp: 'none',
@@ -72,8 +72,8 @@ function on(targetGrade: number, overrides?: Partial<VolumeOptions>): GeneratorS
       climbBias: 'any',
       ...overrides,
     },
-    extraBlocks: [],
-  };
+    'block-volume',
+  );
 }
 
 type Props = { selection: GeneratorSelection };

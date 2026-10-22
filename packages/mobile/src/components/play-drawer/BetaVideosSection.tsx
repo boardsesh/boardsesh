@@ -6,7 +6,7 @@ import { View, StyleSheet } from 'react-native';
 // a nested horizontal shelf must also be RNGH's ScrollView — otherwise on Android
 // the outer scroll's native gesture handler swallows the horizontal pans and this
 // strip never scrolls (a plain RN ScrollView isn't in RNGH's gesture tree). Same
-// pattern as WorkoutTypeShelf inside PreSessionView's RNGH scroll.
+// pattern as SimilarClimbsSection.
 import { ScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';

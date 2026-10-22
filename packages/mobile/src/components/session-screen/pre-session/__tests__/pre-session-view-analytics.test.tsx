@@ -4,6 +4,7 @@ import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PYRAMID_OPTIONS, DEFAULT_VOLUME_OPTIONS, type WorkoutRun } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
+import { NO_WORKOUT, singleBlockSelection } from '../workout-blocks';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
@@ -260,10 +261,22 @@ beforeEach(() => {
   visibilityRow.onChange = null;
 });
 
-function selectWorkout() {
-  act(() =>
-    picker.onChange?.({ type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, extraBlocks: [] }),
+// One Volume block on loose filters, as the generator-on Start path needs.
+function volumeSelection(): GeneratorSelection {
+  return singleBlockSelection(
+    {
+      ...DEFAULT_VOLUME_OPTIONS,
+      targetGrade: 10,
+      minAscents: 0,
+      minRating: 0,
+      climbBias: 'any',
+    },
+    'block-volume',
   );
+}
+
+function selectWorkout() {
+  act(() => picker.onChange?.(singleBlockSelection({ ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, 'block-volume')));
 }
 
 describe('PreSessionView Shuffle during Start', () => {
@@ -343,22 +356,7 @@ describe('PreSessionView analytics', () => {
 
     // Flip the generator on so handleStart takes the generate branch.
     act(() => {
-      picker.onChange?.({
-        type: 'on',
-        options: {
-          type: 'volume',
-          targetGrade: 10,
-          warmUp: 'none',
-          mainSetClimbs: 20,
-          mainSetVariability: 0,
-          minAscents: 0,
-          minRating: 0,
-          onlyTallClimbs: false,
-          onlyWideClimbs: false,
-          climbBias: 'any',
-        },
-        extraBlocks: [],
-      });
+      picker.onChange?.(volumeSelection());
     });
 
     await act(async () => {
@@ -416,11 +414,12 @@ describe('PreSessionView analytics', () => {
       render(createElement(PreSessionView));
       act(() =>
         picker.onChange?.({
-          type: 'on',
-          options: { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'standard', targetGrade: 10 },
-          extraBlocks: [
-            { id: 'block-1', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8 } },
-            { id: 'block-2', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 } },
+          ...NO_WORKOUT,
+          blocks: [
+            { id: 'block-warm', kind: 'warmUp', warmUpType: 'standard' },
+            { id: 'block-1', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10 } },
+            { id: 'block-2', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8 } },
+            { id: 'block-3', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 } },
           ],
         }),
       );
@@ -428,9 +427,9 @@ describe('PreSessionView analytics', () => {
       await act(async () => startButton.onPress?.());
 
       expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
-        // The first block's type stays the headline type.
+        // The first workout block's type stays the headline type; the list keeps the warm-up.
         workoutType: 'pyramid',
-        workoutTypes: 'pyramid,volume,pyramid',
+        workoutTypes: 'warmUp,pyramid,volume,pyramid',
         boardName: 'kilter',
         angle: 40,
         savedCount: 2,
@@ -461,22 +460,7 @@ describe('PreSessionView analytics', () => {
     render(createElement(PreSessionView));
 
     act(() => {
-      picker.onChange?.({
-        type: 'on',
-        options: {
-          type: 'volume',
-          targetGrade: 10,
-          warmUp: 'none',
-          mainSetClimbs: 20,
-          mainSetVariability: 0,
-          minAscents: 0,
-          minRating: 0,
-          onlyTallClimbs: false,
-          onlyWideClimbs: false,
-          climbBias: 'any',
-        },
-        extraBlocks: [],
-      });
+      picker.onChange?.(volumeSelection());
     });
 
     await act(async () => {
@@ -573,24 +557,7 @@ describe('SessionScreen Start handoff', () => {
       throw new Error('Queue unavailable');
     });
     const screen = render(createElement(SessionScreen));
-    act(() =>
-      picker.onChange?.({
-        type: 'on',
-        options: {
-          type: 'volume',
-          targetGrade: 10,
-          warmUp: 'none',
-          mainSetClimbs: 20,
-          mainSetVariability: 0,
-          minAscents: 0,
-          minRating: 0,
-          onlyTallClimbs: false,
-          onlyWideClimbs: false,
-          climbBias: 'any',
-        },
-        extraBlocks: [],
-      }),
-    );
+    act(() => picker.onChange?.(volumeSelection()));
     await act(async () => startButton.onPress?.());
     screenState.sessionId = 'session-1';
     screen.rerender(createElement(SessionScreen));

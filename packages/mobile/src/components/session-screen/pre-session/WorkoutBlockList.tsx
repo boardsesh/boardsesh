@@ -1,20 +1,18 @@
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
-import type { BoardName, Grade } from '@boardsesh/shared-schema';
-import type { GeneratorOptions, WorkoutType } from '@boardsesh/playlist-generator';
+import type { BoardName } from '@boardsesh/shared-schema';
+import type { WorkoutBlockSpec } from '@boardsesh/playlist-generator';
+import { Card } from '../../Card';
 import { Icon } from '../../Icon';
-import type { IconName } from '../../icon-map';
 import { PressableSurface } from '../../PressableSurface';
-import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
-import { GradeSingleSelectRail } from '../../grade';
 import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
-import { Chip, GroupedSteppers, generatorControlStyles, workoutStepperRows } from './generator-controls';
-import { workoutStageName } from '../../../lib/workout-run-readout';
+import { getDefaultTargetGrade, toRailGrades } from './generator-controls';
+import { WorkoutBlockCard } from './WorkoutBlockCard';
 import {
   MAX_WORKOUT_BLOCKS,
   addBlock,
@@ -22,48 +20,64 @@ import {
   changeBlockType,
   moveBlock,
   removeBlock,
-  updateBlockOptions,
-  type ActiveGeneratorSelection,
-  type ExtraWorkoutBlock,
+  updateBlock,
+  warmUpTarget,
   type GeneratorSelection,
+  type WorkoutBlockType,
 } from './workout-blocks';
 
-const BLOCK_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
-
-// Block ids key the editors on this screen. Uuids, like the stage ids: a module
+// Block ids key the cards on this screen. Uuids, like the stage ids: a module
 // counter restarts on a Fast Refresh while the selection in PreSessionView state
 // survives it, and could hand a new block an id that is already in use.
 const makeBlockId = () => randomUUID();
 
 type WorkoutBlockListProps = {
   boardName: BoardName | null;
-  railGrades: readonly Grade[];
-  selection: ActiveGeneratorSelection;
+  selection: GeneratorSelection;
   onChange: (selection: GeneratorSelection) => void;
+  /** Scrolls a card that was just added or opened clear of the bottom chrome. */
+  onRevealBlock?: (cardView: View) => void;
 };
 
 /**
- * The workout blocks after the first card, then "Add a block". Each block runs
- * after the one above it; the first card's warm-up opens the session and its
- * Tuning filters apply to every block, so a block only picks its type, target
- * grade and counts.
+ * The workout's blocks in run order, or a note that there is no workout yet,
+ * then "Add a block". One card is open at a time and a new block opens on add.
+ * Which card is open is this list's own state, not part of the selection, so
+ * opening one never rebuilds the preview.
  */
-export function WorkoutBlockList({ boardName, railGrades, selection, onChange }: WorkoutBlockListProps) {
+export function WorkoutBlockList({ boardName, selection, onChange, onRevealBlock }: WorkoutBlockListProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  // The editors' callbacks read the latest selection through a ref, so they keep
-  // one identity across edits and the memoised editors only re-render when their
-  // own block changes.
-  const selectionRef = useRef<GeneratorSelection>(selection);
-  selectionRef.current = selection;
+  const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
+  // Screenshot mode starts with a block; show it open.
+  const [expandedBlockId, setExpandedBlockId] = useState<string | null>(() => selection.blocks[0]?.id ?? null);
+  // The card to scroll into view on its next layout, once it has opened.
+  const pendingRevealIdRef = useRef<string | null>(null);
 
+  // The cards' callbacks read the latest values through refs, so they keep one
+  // identity across edits and the memoised cards only re-render when their own
+  // block changes.
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const expandedBlockIdRef = useRef(expandedBlockId);
+  expandedBlockIdRef.current = expandedBlockId;
+  const fallbackGradeRef = useRef(getDefaultTargetGrade(boardName));
+  fallbackGradeRef.current = getDefaultTargetGrade(boardName);
+  const onRevealBlockRef = useRef(onRevealBlock);
+  onRevealBlockRef.current = onRevealBlock;
+
+  const handleToggle = useCallback((blockId: string) => {
+    const opening = expandedBlockIdRef.current !== blockId;
+    if (opening) pendingRevealIdRef.current = blockId;
+    setExpandedBlockId(opening ? blockId : null);
+  }, []);
   const handleTypeChange = useCallback(
-    (blockId: string, type: WorkoutType) => onChange(changeBlockType(selectionRef.current, blockId, type)),
+    (blockId: string, type: WorkoutBlockType) =>
+      onChange(changeBlockType(selectionRef.current, blockId, type, fallbackGradeRef.current)),
     [onChange],
   );
-  const handleOptionsChange = useCallback(
-    (blockId: string, options: GeneratorOptions) =>
-      onChange(updateBlockOptions(selectionRef.current, blockId, options)),
+  const handleBlockChange = useCallback(
+    (blockId: string, spec: WorkoutBlockSpec) => onChange(updateBlock(selectionRef.current, blockId, spec)),
     [onChange],
   );
   const handleRemove = useCallback(
@@ -76,243 +90,89 @@ export function WorkoutBlockList({ boardName, railGrades, selection, onChange }:
   );
   const handleAdd = useCallback(() => {
     hapticSelection();
-    onChange(addBlock(selectionRef.current, makeBlockId));
+    const blockId = makeBlockId();
+    const next = addBlock(selectionRef.current, () => blockId, fallbackGradeRef.current);
+    if (next === selectionRef.current) return;
+    pendingRevealIdRef.current = blockId;
+    setExpandedBlockId(blockId);
+    onChange(next);
   }, [onChange]);
+  const handleCardLayout = useCallback((blockId: string, cardView: View) => {
+    if (pendingRevealIdRef.current !== blockId) return;
+    pendingRevealIdRef.current = null;
+    onRevealBlockRef.current?.(cardView);
+  }, []);
 
-  const lastExtraPosition = selection.extraBlocks.length - 1;
+  const { blocks } = selection;
+  const canAdd = canAddBlock(selection);
+  const addLabel = canAdd
+    ? t('mobile.session.preGeneratorAddBlock')
+    : t('mobile.session.preGeneratorBlockLimit', { max: MAX_WORKOUT_BLOCKS });
+  // At the cap the row stays put and greys out, saying why.
+  const addColor = canAdd ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
-    <View>
-      {selection.extraBlocks.map((block, extraPosition) => (
-        <WorkoutBlockEditor
-          key={block.id}
-          block={block}
-          // The first card is block 1.
-          position={extraPosition + 2}
-          canMoveUp={extraPosition > 0}
-          canMoveDown={extraPosition < lastExtraPosition}
-          boardName={boardName}
-          railGrades={railGrades}
-          onTypeChange={handleTypeChange}
-          onOptionsChange={handleOptionsChange}
-          onRemove={handleRemove}
-          onMove={handleMove}
-        />
-      ))}
-
-      <View style={styles.addRow}>
-        {canAddBlock(selection) ? (
-          <PressableSurface
-            onPress={handleAdd}
-            feedback="opacity"
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.session.preGeneratorAddBlock')}
-            accessibilityHint={t('mobile.session.preGeneratorAddBlockHint')}
-            style={styles.addButton}
-          >
-            <Icon name="add" size={18} color={brandColors.primary} />
-            <Text variant="subheadline" color={brandColors.primary} style={styles.addText}>
-              {t('mobile.session.preGeneratorAddBlock')}
-            </Text>
-          </PressableSurface>
-        ) : (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.session.preGeneratorBlockLimit', { max: MAX_WORKOUT_BLOCKS })}
+    <View style={styles.list}>
+      {blocks.length === 0 ? (
+        <Card>
+          <Text variant="body" color={systemColors.secondaryLabel}>
+            {t('mobile.session.preGeneratorEmpty')}
           </Text>
-        )}
-      </View>
-    </View>
-  );
-}
-
-type WorkoutBlockEditorProps = {
-  block: ExtraWorkoutBlock;
-  /** 1-based, counting the first card as block 1. */
-  position: number;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  boardName: BoardName | null;
-  railGrades: readonly Grade[];
-  onTypeChange: (blockId: string, type: WorkoutType) => void;
-  onOptionsChange: (blockId: string, options: GeneratorOptions) => void;
-  onRemove: (blockId: string) => void;
-  onMove: (blockId: string, direction: 'up' | 'down') => void;
-};
-
-/** One extra block: its title with move and remove, the type chips, a target grade and the count steppers. */
-const WorkoutBlockEditor = memo(function WorkoutBlockEditor({
-  block,
-  position,
-  canMoveUp,
-  canMoveDown,
-  boardName,
-  railGrades,
-  onTypeChange,
-  onOptionsChange,
-  onRemove,
-  onMove,
-}: WorkoutBlockEditorProps) {
-  const { t } = useTranslation('session');
-  const { id: blockId, options } = block;
-  const title = t('mobile.session.preGeneratorBlockTitle', { position });
-  // Stable per block, so the rail and the steppers don't get a new handler on every render.
-  const handleOptionsChange = useCallback(
-    (nextOptions: GeneratorOptions) => onOptionsChange(blockId, nextOptions),
-    [onOptionsChange, blockId],
-  );
-  const handleTypeChange = useCallback((type: WorkoutType) => onTypeChange(blockId, type), [onTypeChange, blockId]);
-  const handleMoveUp = useCallback(() => onMove(blockId, 'up'), [onMove, blockId]);
-  const handleMoveDown = useCallback(() => onMove(blockId, 'down'), [onMove, blockId]);
-  const handleRemove = useCallback(() => onRemove(blockId), [onRemove, blockId]);
-  const handleGradeSelect = useCallback(
-    (difficultyId: number | undefined) =>
-      handleOptionsChange({ ...options, targetGrade: difficultyId ?? options.targetGrade }),
-    [handleOptionsChange, options],
-  );
-  const stepperRows = useMemo(
-    () => workoutStepperRows(options, t, handleOptionsChange),
-    [options, t, handleOptionsChange],
-  );
-
-  return (
-    <View style={styles.block} testID={`workout-block-${position}`}>
-      <View style={styles.blockHeader}>
-        <View style={styles.blockTitle}>
-          <SectionHeader title={title} />
-        </View>
-        <View style={styles.blockActions}>
-          <BlockActionButton
-            icon="chevron.up"
-            disabled={!canMoveUp}
-            onPress={handleMoveUp}
-            accessibilityLabel={t('mobile.session.preGeneratorMoveBlockUpAccessibilityLabel', { position })}
-          />
-          <BlockActionButton
-            icon="chevron.down"
-            disabled={!canMoveDown}
-            onPress={handleMoveDown}
-            accessibilityLabel={t('mobile.session.preGeneratorMoveBlockDownAccessibilityLabel', { position })}
-          />
-          <BlockActionButton
-            icon="delete"
-            onPress={handleRemove}
-            accessibilityLabel={t('mobile.session.preGeneratorRemoveBlockAccessibilityLabel', { position })}
-          />
-        </View>
-      </View>
-
-      <View style={[styles.inset, generatorControlStyles.chipRow]}>
-        {BLOCK_TYPES.map((type) => {
-          const label = workoutStageName(type, t);
+        </Card>
+      ) : (
+        blocks.map((block, position) => {
+          const target = block.kind === 'warmUp' ? warmUpTarget(blocks, position) : null;
           return (
-            <Chip
-              key={type}
-              label={label}
-              selected={options.type === type}
-              onPress={() => handleTypeChange(type)}
-              accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
-                group: title,
-                value: label,
-              })}
+            <WorkoutBlockCard
+              key={block.id}
+              block={block}
+              position={position + 1}
+              canMoveUp={position > 0}
+              canMoveDown={position < blocks.length - 1}
+              expanded={block.id === expandedBlockId}
+              warmUpTargetGrade={target?.targetGrade ?? null}
+              warmUpTargetBlockNumber={target?.blockNumber ?? null}
+              boardName={boardName}
+              railGrades={railGrades}
+              onToggle={handleToggle}
+              onTypeChange={handleTypeChange}
+              onBlockChange={handleBlockChange}
+              onMove={handleMove}
+              onRemove={handleRemove}
+              onCardLayout={handleCardLayout}
             />
           );
-        })}
-      </View>
+        })
+      )}
 
-      {boardName != null ? (
-        <View style={styles.gradeRail}>
-          <Text variant="footnote" style={[styles.inset, styles.subsectionLabel]}>
-            {t('mobile.session.preGeneratorTargetGrade')}
-          </Text>
-          <GradeSingleSelectRail
-            grades={railGrades}
-            selectedDifficultyId={options.targetGrade}
-            boardName={boardName}
-            onSelect={handleGradeSelect}
-            allowClear={false}
-          />
-        </View>
-      ) : null}
-
-      <View style={[styles.inset, styles.steppers]}>
-        <GroupedSteppers rows={stepperRows} />
-      </View>
+      <PressableSurface
+        onPress={handleAdd}
+        disabled={!canAdd}
+        feedback="opacity"
+        accessibilityRole="button"
+        accessibilityLabel={addLabel}
+        accessibilityHint={canAdd ? t('mobile.session.preGeneratorAddBlockHint') : undefined}
+        accessibilityState={{ disabled: !canAdd }}
+        style={styles.addRow}
+      >
+        <Icon name="add" size={18} color={addColor} />
+        <Text variant="subheadline" color={addColor} style={styles.addText}>
+          {addLabel}
+        </Text>
+      </PressableSurface>
     </View>
-  );
-});
-
-type BlockActionButtonProps = {
-  icon: IconName;
-  onPress: () => void;
-  accessibilityLabel: string;
-  disabled?: boolean;
-};
-
-function BlockActionButton({ icon, onPress, accessibilityLabel, disabled = false }: BlockActionButtonProps) {
-  const { brandColors, opacity } = useTheme();
-  return (
-    <PressableSurface
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
-      disabled={disabled}
-      feedback="opacity"
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
-      style={[styles.actionButton, disabled ? { opacity: opacity.disabled } : null]}
-    >
-      <Icon name={icon} size={18} color={brandColors.primary} />
-    </PressableSurface>
   );
 }
 
 const styles = StyleSheet.create({
-  inset: {
-    paddingHorizontal: spacing[4],
+  list: {
+    gap: spacing[3],
   },
-  block: {
-    marginTop: spacing[4],
-  },
-  blockHeader: {
+  // Full width, so the whole row is the target, not just its label.
+  addRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-  },
-  blockTitle: {
-    flex: 1,
-  },
-  blockActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingEnd: spacing[2],
-  },
-  // 44pt square: the minimum touch target for an icon-only button.
-  actionButton: {
-    width: 44,
-    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  gradeRail: {
-    marginTop: spacing[3],
-  },
-  subsectionLabel: {
-    opacity: 0.55,
-    marginBottom: spacing[2],
-  },
-  steppers: {
-    marginTop: spacing[2],
-  },
-  addRow: {
-    paddingHorizontal: spacing[4],
-    marginTop: spacing[4],
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
     gap: spacing[2],
     minHeight: 44,
   },

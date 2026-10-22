@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
+import { singleBlockSelection } from '../workout-blocks';
 
 // The preview hook is mocked; the test mutates `preview.result.items` /
 // `refreshingUuids` and rerenders to drive the view's row props.
@@ -257,7 +258,7 @@ import { PreSessionView } from '../PreSessionView';
 function renderWithWorkout() {
   const view = render(createElement(PreSessionView));
   act(() => {
-    picker.onChange?.({ type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, extraBlocks: [] });
+    picker.onChange?.(singleBlockSelection({ ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, 'block-volume'));
   });
   return view;
 }
@@ -414,7 +415,7 @@ describe('PreSessionView preview rows', () => {
 
     // The summary line counts every block's climbs.
     act(() => {
-      picker.onChange?.({ type: 'on', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, extraBlocks: [] });
+      picker.onChange?.(singleBlockSelection({ ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, 'block-volume'));
     });
     expect(summaryLine.props?.summary).toMatchObject({ planned: 5, filled: 5, missing: 0 });
   });
