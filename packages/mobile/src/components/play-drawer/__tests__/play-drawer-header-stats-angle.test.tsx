@@ -121,3 +121,25 @@ describe('PlayDrawerHeader set-angle marker', () => {
     expect(marker(container)).toBeNull();
   });
 });
+
+describe('PlayDrawerHeader workout stage subtitle', () => {
+  // #5379: a climb from the generated workout says where it sits, first, so a
+  // long setter name truncates instead of the position.
+  it('leads the subtitle with the workout position', () => {
+    const { container } = render(
+      createElement(PlayDrawerHeader, {
+        ...baseProps,
+        ascensionistCount: 12,
+        workoutStageLabel: 'Warm-up · 2 of 5',
+      }),
+    );
+    expect(container.querySelector('[data-variant="caption1"]')?.textContent).toBe('Warm-up · 2 of 5 · 12 sends');
+  });
+
+  it('leaves the subtitle alone for a climb outside the workout', () => {
+    const { container } = render(
+      createElement(PlayDrawerHeader, { ...baseProps, ascensionistCount: 12, workoutStageLabel: null }),
+    );
+    expect(container.querySelector('[data-variant="caption1"]')?.textContent).toBe('12 sends');
+  });
+});

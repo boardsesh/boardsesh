@@ -9,7 +9,6 @@ const queueState = vi.hoisted(() => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queueState.sessionId }),
-  useQueueData: () => ({ queue: queueState.queue, currentClimbQueueItem: null }),
 }));
 
 const storage = vi.hoisted(() => {
@@ -78,21 +77,15 @@ describe('WorkoutRunSessionSync', () => {
     expect(getWorkoutRunState()).toBeNull();
   });
 
-  it('prunes climbs that leave the queue, but not before the workout is in it', () => {
+  it('keeps every stage while climbs leave the queue, so Undo brings them back staged', () => {
     queueState.sessionId = 'session-1';
-    queueState.queue = [{ uuid: 'older-climb' }];
+    queueState.queue = [{ uuid: 'w1' }, { uuid: 'm1' }, { uuid: 'm2' }];
     setWorkoutRun('session-1', run);
     const { rerender } = render(<WorkoutRunSessionSync />);
-    // The queue has not caught up with the append yet: leave the run alone.
+
+    queueState.queue = [{ uuid: 'm2' }];
+    rerender(<WorkoutRunSessionSync />);
+
     expect(getWorkoutRunForSession('session-1')).toBe(run);
-
-    queueState.queue = [{ uuid: 'older-climb' }, { uuid: 'm1' }, { uuid: 'm2' }];
-    act(() => {
-      rerender(<WorkoutRunSessionSync />);
-    });
-
-    expect(getWorkoutRunForSession('session-1')).toEqual({
-      stages: [{ id: 'main', kind: 'volume', itemUuids: ['m1', 'm2'] }],
-    });
   });
 });

@@ -315,6 +315,13 @@ vi.mock('../PlayDrawerHeader', () => ({
     return null;
   },
 }));
+// The workout position (#5379) has its own suites; here only that each header
+// is handed the label for ITS queue item.
+vi.mock('../use-workout-stage-label', () => ({
+  useWorkoutQueueUuids: () => [],
+  useWorkoutStageLabel: (_run: unknown, _queueUuids: unknown, queueItemUuid: string | null | undefined) =>
+    queueItemUuid ? `stage:${queueItemUuid}` : null,
+}));
 vi.mock('../SwipeableHeader', () => ({
   SwipeableHeader: ({ current, previous, next }: { current?: ReactNode; previous?: ReactNode; next?: ReactNode }) =>
     createElement('div', null, previous, current, next),
@@ -800,6 +807,25 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     renderDrawer(vi.fn());
     const header = recorded.headers.find((props) => (props.climb as Climb).uuid === 'woods-peek');
     expect(header).toMatchObject({ boardName: 'woods', layoutId: 1 });
+  });
+
+  it('hands the current and neighbour headers their own workout position', () => {
+    const woods = { ...TWELVE_CLIMB, uuid: 'woods-peek', boardType: 'woods', layoutId: 1, characteristics: [] };
+    const previous = { ...TWELVE_CLIMB, uuid: 'twelve-prev' };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    navigation.state = {
+      nextItem: queueItem(woods, 'queue-woods'),
+      prevItem: queueItem(previous, 'queue-prev'),
+      canNext: true,
+      canPrevious: true,
+    };
+    renderDrawer(vi.fn());
+
+    const labelFor = (climbUuid: string) =>
+      recorded.headers.find((props) => (props.climb as Climb).uuid === climbUuid)?.workoutStageLabel;
+    expect(labelFor(TWELVE_CLIMB.uuid)).toBe('stage:queue-twelve');
+    expect(labelFor('woods-peek')).toBe('stage:queue-woods');
+    expect(labelFor('twelve-prev')).toBe('stage:queue-prev');
   });
 
   it('withholds a peek whose climb lives on another board', () => {

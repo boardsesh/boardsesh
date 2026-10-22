@@ -12,11 +12,15 @@
 // replaces the old one. It survives a cold start mid-workout; it does not
 // survive the session ending, changing, or the account signing out.
 //
+// Never pruned as climbs leave the queue: Undo restores removed climbs under
+// their old uuids, and they must come back in their stage. Readers count only
+// queued uuids, so the stale ones cost nothing.
+//
 // Schema note: bump the key suffix if `WorkoutRun`'s shape changes, so a stale
 // value is ignored rather than misread.
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { pruneRun, type WorkoutRun } from '@boardsesh/playlist-generator';
+import type { WorkoutRun } from '@boardsesh/playlist-generator';
 import { getPreference, removePreference, setPreference } from './preference-store';
 
 export const WORKOUT_RUN_STORAGE_KEY = 'boardsesh_workout_run_v1';
@@ -107,32 +111,33 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
   setState(stored);
 }
 
-/**
- * Drop climbs that left the queue, and stages left with none. Keeps the run
- * untouched when nothing changed, and while the queue holds none of its climbs:
- * a queue that is empty or still syncing (a FullSync from before the workout
- * was appended) would otherwise wipe the run the moment it was written.
- */
-export function pruneWorkoutRun(queueUuids: readonly string[]): void {
-  if (!state) return;
-  const runUuids = state.run.stages.flatMap((stage) => stage.itemUuids);
-  const queued = new Set(queueUuids);
-  if (!runUuids.some((uuid) => queued.has(uuid))) return;
-  const prunedRun = pruneRun(state.run, queueUuids);
-  if (prunedRun === state.run) return;
-  setWorkoutRun(state.sessionId, prunedRun);
-}
-
 /** Forget the run, in memory and on disk. */
 export function clearWorkoutRun(): Promise<void> {
   setState(null);
   return clearStoredWorkoutRun();
 }
 
-/** Forget the run only when it belongs to `sessionId` (that session ended or was left). */
-export function clearWorkoutRunForSession(sessionId: string): void {
-  if (state?.sessionId !== sessionId) return;
-  clearWorkoutRun().catch(ignoreStorageError);
+/**
+ * `sessionId` ended or was left: forget its run. Always bumps the write
+ * generation, so a hydrate for that session still in flight never lands after
+ * it ended, and removes the stored slot when it names that session (the
+ * restored session may have ended before its run was ever read into memory).
+ */
+export async function clearWorkoutRunForSession(sessionId: string): Promise<void> {
+  if (state?.sessionId === sessionId) {
+    setState(null);
+  } else {
+    writeGeneration += 1;
+  }
+  const generationAtRead = writeGeneration;
+  try {
+    const stored = await getPreference<unknown>(WORKOUT_RUN_STORAGE_KEY);
+    // A run written while this read was in flight is newer and stays.
+    if (generationAtRead !== writeGeneration) return;
+    if (isWorkoutRunRecord(stored) && stored.sessionId === sessionId) await clearStoredWorkoutRun();
+  } catch {
+    ignoreStorageError();
+  }
 }
 
 /** The run for `sessionId`. Re-renders only when that answer changes. */

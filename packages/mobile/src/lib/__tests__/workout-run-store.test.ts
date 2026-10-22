@@ -26,7 +26,6 @@ import {
   getWorkoutRunForSession,
   getWorkoutRunState,
   hydrateWorkoutRun,
-  pruneWorkoutRun,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
   subscribeWorkoutRun,
@@ -120,47 +119,50 @@ describe('workout-run-store', () => {
     expect(storage.getItem).not.toHaveBeenCalled();
   });
 
-  it('keeps the same run object when pruning removes nothing', () => {
-    setWorkoutRun('session-1', run);
-    const listener = vi.fn();
-    subscribeWorkoutRun(listener);
-
-    pruneWorkoutRun(['w1', 'w2', 'm1', 'm2', 'm3', 'hand-queued']);
-
-    expect(getWorkoutRunForSession('session-1')).toBe(run);
-    expect(listener).not.toHaveBeenCalled();
-  });
-
-  it('drops climbs that left the queue and stages left empty', async () => {
-    setWorkoutRun('session-1', run);
-
-    pruneWorkoutRun(['m1', 'm3']);
-    await flushStorageWrites();
-
-    const expected: WorkoutRun = { stages: [{ id: 'main', kind: 'volume', itemUuids: ['m1', 'm3'] }] };
-    expect(getWorkoutRunForSession('session-1')).toEqual(expected);
-    expect(storedRecord()).toEqual({ sessionId: 'session-1', run: expected });
-  });
-
-  it('leaves the run alone while the queue holds none of its climbs', () => {
-    setWorkoutRun('session-1', run);
-
-    pruneWorkoutRun([]);
-    pruneWorkoutRun(['from-before-the-workout']);
-
-    expect(getWorkoutRunForSession('session-1')).toBe(run);
-  });
-
   it('clears only the session that ended', async () => {
     setWorkoutRun('session-1', run);
 
-    clearWorkoutRunForSession('session-2');
+    await clearWorkoutRunForSession('session-2');
     expect(getWorkoutRunForSession('session-1')).toBe(run);
 
-    clearWorkoutRunForSession('session-1');
-    await flushStorageWrites();
+    await clearWorkoutRunForSession('session-1');
     expect(getWorkoutRunState()).toBeNull();
     expect(storedRecord()).toBeNull();
+  });
+
+  it('does not let a hydrate land after its session ended', async () => {
+    setWorkoutRun('session-1', run);
+    await flushStorageWrites();
+    resetWorkoutRunStoreForTests();
+
+    // Restore starts reading the slot, then the session ends before it lands.
+    const hydrate = hydrateWorkoutRun('session-1');
+    const clear = clearWorkoutRunForSession('session-1');
+    await hydrate;
+    await clear;
+
+    expect(getWorkoutRunState()).toBeNull();
+    expect(storedRecord()).toBeNull();
+  });
+
+  it('removes the stored slot for an ended session that was never read into memory', async () => {
+    setWorkoutRun('session-1', run);
+    await flushStorageWrites();
+    resetWorkoutRunStoreForTests();
+
+    await clearWorkoutRunForSession('session-1');
+
+    expect(storedRecord()).toBeNull();
+  });
+
+  it('keeps the stored slot when another session ended', async () => {
+    setWorkoutRun('session-1', run);
+    await flushStorageWrites();
+    resetWorkoutRunStoreForTests();
+
+    await clearWorkoutRunForSession('session-2');
+
+    expect(storedRecord()).toEqual({ sessionId: 'session-1', run });
   });
 
   it('forgets the run in memory and on disk at sign-out', async () => {

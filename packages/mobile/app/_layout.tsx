@@ -1017,7 +1017,7 @@ function RootLayout() {
                                                             QueueProvider so it can advance the queue. */}
                                                                         <RestTimerRuntime />
                                                                         {/* Workout stages (#5379): renders nothing; follows the session
-                                                                            and prunes the stage map only while a workout is running. */}
+                                                                            and drops the stage map when that session ends. */}
                                                                         <WorkoutRunSessionSync />
                                                                         {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
