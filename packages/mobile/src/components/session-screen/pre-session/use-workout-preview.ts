@@ -265,7 +265,9 @@ export function useWorkoutPreview(
       setItems(nextItems);
       setPlannedCount(plan.length);
       setPlannedSlots(plan);
-      setPlannedStages(workoutPlan.stages);
+      // The queue cap can cut a late stage off entirely; it gets no heading.
+      const stageIdsWithSlots = new Set(plan.map((slot) => slot.stageId));
+      setPlannedStages(workoutPlan.stages.filter((stage) => stageIdsWithSlots.has(stage.id)));
       setStatus('ready');
     } catch {
       if (token !== genTokenRef.current) return;
