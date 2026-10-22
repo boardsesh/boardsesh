@@ -210,7 +210,7 @@ export function reshufflePools(
   return new Map(Array.from(pools, ([key, climbs]) => [key, shuffleInPlace(climbs.slice(), random)]));
 }
 
-const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
+export const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
 
 /**
  * Walk each slot's shuffled pool, skipping climbs already chosen in ANY pool,
@@ -315,6 +315,8 @@ export async function refreshSlotInState(
       screenshotModeRandom(),
     );
     pools.set(poolKey, refreshedPool);
+    // Every state from buildPoolsReusing carries poolDemands. Without it the
+    // next rebuild sees no entry and refetches this pool, which is safe.
     state.poolDemands?.set(poolKey, rowsAtGrade + 1);
     nextClimb = pickPreferred(refreshedPool);
   }

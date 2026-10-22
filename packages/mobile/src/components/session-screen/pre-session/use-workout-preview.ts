@@ -24,6 +24,7 @@ import {
   filtersSignature,
   refreshSlotInState,
   reshufflePools,
+  NO_AVOIDED_CLIMBS,
   selectItemsFromPools,
   type FetchGradePool,
   type PreviewFetchContext,
@@ -148,8 +149,6 @@ export type UseWorkoutPreviewOptions = {
    */
   getAvoidedClimbUuids?: () => ReadonlySet<string>;
 };
-
-const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
 
 const EMPTY_DATA = (): WorkoutPreviewData => ({ items: [], pools: new Map(), usedUuids: new Set() });
 const EMPTY_STAGES: readonly WorkoutStage[] = [];
