@@ -209,10 +209,11 @@ describe('useWorkoutPreview stages', () => {
     );
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    // One pool for the two loose blocks, sized for both; one for the strict block.
+    // One pool for the two loose blocks and one for the strict block, each sized
+    // for every slot at the grade, since the two return mostly the same climbs.
     expect(countingFetchPool).toHaveBeenCalledTimes(2);
-    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: ANY_FILTERS }), 7);
-    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: STRICT_FILTERS }), 2);
+    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: ANY_FILTERS }), 9);
+    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: STRICT_FILTERS }), 9);
     // The fake hands both pools the same climbs, and still no climb fills two slots.
     const climbUuids = result.current.items.map((preview) => preview.item.climb.uuid);
     expect(climbUuids).toHaveLength(9);
@@ -255,6 +256,69 @@ describe('useWorkoutPreview stages', () => {
       expect.objectContaining({ filters: { ...ANY_FILTERS, minAscents: 100 } }),
       2,
     );
+  });
+
+  it("refetches only the changed block's pools and keeps the other blocks' rows", async () => {
+    const committed = selectionOf([
+      workoutBlock('low', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 3 }),
+      workoutBlock('high', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 18, mainSetClimbs: 2 }),
+    ]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result, rerender } = renderHook(
+      ({ selection }: { selection: GeneratorSelection }) =>
+        useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+      { initialProps: { selection: committed } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const lowRows = result.current.items.filter((preview) => preview.slot.grade === 12).map((preview) => preview.item);
+    expect(countingFetchPool).toHaveBeenCalledTimes(2);
+
+    rerender({ selection: updateBlockFilters(committed, 'high', { minAscents: 100 }) });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    // One new search, for the changed block; the untouched block keeps its rows.
+    expect(countingFetchPool).toHaveBeenCalledTimes(3);
+    expect(countingFetchPool).toHaveBeenLastCalledWith(
+      18,
+      expect.objectContaining({ filters: { ...ANY_FILTERS, minAscents: 100 } }),
+      2,
+    );
+    expect(result.current.items.filter((preview) => preview.slot.grade === 12).map((preview) => preview.item)).toEqual(
+      lowRows,
+    );
+    const { run } = result.current.toStagedQueueItems();
+    expect(run?.stages[0].itemUuids).toEqual(lowRows.map((item) => item.uuid));
+  });
+
+  it('starts fresh on an explicit regenerate', async () => {
+    const selection = selectionOf([
+      workoutBlock('low', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 3 }),
+    ]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    act(() => result.current.regenerate());
+    await waitFor(() => expect(countingFetchPool).toHaveBeenCalledTimes(2));
+  });
+
+  it('shares a pool between blocks that differ only in climb bias while signed out', async () => {
+    const volume: VolumeOptions = { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 2 };
+    const selection = selectionOf([
+      workoutBlock('any', volume),
+      workoutBlock('attempted', volume, { ...ANY_FILTERS, climbBias: 'attempted' }),
+    ]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(countingFetchPool).toHaveBeenCalledTimes(1);
+    // The run still records the bias the climber picked.
+    expect(result.current.toStagedQueueItems().run?.stages[1].filters?.climbBias).toBe('attempted');
   });
 
   it.each([

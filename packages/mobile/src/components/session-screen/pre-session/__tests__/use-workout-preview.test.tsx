@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { GeneratorGradeScale, StagedSlot, VolumeOptions } from '@boardsesh/playlist-generator';
 import { NO_WORKOUT, singleBlockSelection, type GeneratorSelection } from '../workout-blocks';
@@ -14,12 +14,11 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => cryptoMock.randomUUID() }));
 
 // Plan is mocked so tests control the slot count/grades independent of the
 // real generator algorithm (covered by its own tests).
-const generator = vi.hoisted(() => ({
-  plan: [
-    { grade: 10, section: 'main', index: 0, stageId: 'stage-main' },
-    { grade: 10, section: 'main', index: 1, stageId: 'stage-main' },
-  ] as StagedSlot[],
-}));
+const TWO_SLOTS_AT_10: StagedSlot[] = [
+  { grade: 10, section: 'main', index: 0, stageId: 'stage-main' },
+  { grade: 10, section: 'main', index: 1, stageId: 'stage-main' },
+];
+const generator = vi.hoisted(() => ({ plan: [] as StagedSlot[] }));
 vi.mock('@boardsesh/playlist-generator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/playlist-generator')>();
   return {
@@ -108,6 +107,10 @@ function renderPreviewWithAuth(fetchPool: FetchGradePool, initial: GeneratorSele
   );
 }
 
+beforeEach(() => {
+  generator.plan = TWO_SLOTS_AT_10;
+});
+
 afterEach(() => {
   vi.useRealTimers();
   toast.showToast.mockClear();
@@ -159,9 +162,12 @@ describe('useWorkoutPreview', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
     fetchPool.mockClear();
 
+    // One more climb at the same grade: the cached pool was fetched for one fewer.
+    generator.plan = [...TWO_SLOTS_AT_10, { grade: 10, section: 'main', index: 2, stageId: 'stage-main' }];
     rerender({ selection: on(10, { mainSetClimbs: 21 }) });
 
     await waitFor(() => expect(fetchPool).toHaveBeenCalledTimes(1));
+    expect(fetchPool).toHaveBeenCalledWith(10, expect.anything(), 3);
   });
 
   it('hides stale generated plan data while a changed selection rebuilds', async () => {
@@ -333,6 +339,8 @@ describe('useWorkoutPreview', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const previousUuids = result.current.items.map((preview) => preview.item.climb.uuid);
 
+    // A new grade has no cached pool to fall back on, so this build has to fetch.
+    generator.plan = TWO_SLOTS_AT_10.map((slot) => ({ ...slot, grade: 11 }));
     rerender({ selection: on(11) });
     await waitFor(() => expect(result.current.status).toBe('error'));
 

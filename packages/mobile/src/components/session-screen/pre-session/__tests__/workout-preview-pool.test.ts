@@ -11,6 +11,8 @@ vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 
 import {
   buildPools,
+  buildPoolsReusing,
+  fetchFilters,
   filtersSignature,
   pickRandomUnused,
   poolKeyForSlot,
@@ -168,8 +170,9 @@ describe('pools keyed by grade and filters', () => {
     const pools = await buildPools([slot(10, 0, LOOSE), slot(10, 1, STRICT), slot(12, 2, STRICT)], ctx, fetchPool);
 
     expect(fetchPool).toHaveBeenCalledTimes(3);
-    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: LOOSE }, 1);
-    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 1);
+    // Each pool at grade 10 is sized for both of grade 10's slots.
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: LOOSE }, 2);
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 2);
     expect(fetchPool).toHaveBeenCalledWith(12, { ...ctx, filters: STRICT }, 1);
     expect(pools.get(key(10, LOOSE))?.[0].uuid).toBe(`10-${filtersSignature(LOOSE)}`);
     expect(pools.get(key(10, STRICT))?.[0].uuid).toBe(`10-${filtersSignature(STRICT)}`);
@@ -186,6 +189,82 @@ describe('pools keyed by grade and filters', () => {
 
     expect(fetchPool).toHaveBeenCalledTimes(1);
     expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 3);
+  });
+
+  it('fills every slot when two filter sets at one grade return the same climbs', async () => {
+    // V5 x20 on the defaults plus V5 x20 and x15 on stricter filters: 55 slots
+    // at one grade. Both filter sets return the same top-quality climbs, sized
+    // like fetchGradePool (at least 50, else demand + 10).
+    const fetchPool = vi.fn(async (_grade: number, _ctx: PreviewFetchContext, demand: number) =>
+      Array.from({ length: Math.max(50, demand + 10) }, (_, index) => makeClimb(`climb-${index}`)),
+    );
+    const slots = [
+      ...Array.from({ length: 20 }, (_, index) => slot(10, index, LOOSE)),
+      ...Array.from({ length: 35 }, (_, index) => slot(10, 20 + index, STRICT)),
+    ];
+
+    const pools = await buildPools(slots, ctx, fetchPool);
+    const { items } = selectItemsFromPools(slots, pools);
+
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: LOOSE }, 55);
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 55);
+    expect(items).toHaveLength(55);
+    expect(new Set(items.map((preview) => preview.item.climb.uuid)).size).toBe(55);
+  });
+
+  it('reuses a cached pool fetched for enough slots, and refetches one that is new or too small', async () => {
+    const fetchPool = vi.fn(async (grade: number) => [makeClimb(`fresh-${grade}`)]);
+    const cachedLoose = [makeClimb('cached-loose')];
+    const cachedStrict = [makeClimb('cached-strict')];
+    const cache = {
+      pools: new Map([
+        [key(10, LOOSE), cachedLoose],
+        [key(10, STRICT), cachedStrict],
+      ]),
+      poolDemands: new Map([
+        [key(10, LOOSE), 5],
+        [key(10, STRICT), 1],
+      ]),
+    };
+
+    const { pools, poolDemands } = await buildPoolsReusing(
+      [slot(10, 0, LOOSE), slot(10, 1, STRICT), slot(12, 2, LOOSE)],
+      ctx,
+      fetchPool,
+      cache,
+    );
+
+    expect(pools.get(key(10, LOOSE))).toBe(cachedLoose);
+    expect(poolDemands.get(key(10, LOOSE))).toBe(5);
+    // Fetched for one slot, it now has to cover both of grade 10's.
+    expect(pools.get(key(10, STRICT))?.[0].uuid).toBe('fresh-10');
+    expect(poolDemands.get(key(10, STRICT))).toBe(2);
+    expect(pools.get(key(12, LOOSE))?.[0].uuid).toBe('fresh-12');
+    expect(fetchPool).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a row whose climb is still in its pool, and refills the rest', () => {
+    const pools = new Map([[key(10), [makeClimb('a'), makeClimb('b'), makeClimb('kept')]]]);
+    const keptRow = selectItemsFromPools([slot(10, 0)], new Map([[key(10), [makeClimb('kept')]]])).items[0].item;
+    const goneRow = selectItemsFromPools([slot(10, 0)], new Map([[key(10), [makeClimb('gone')]]])).items[0].item;
+
+    const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1), slot(10, 2)], pools, undefined, [
+      undefined,
+      keptRow,
+      goneRow,
+    ]);
+
+    // The kept row stays as it was, uuid and all; the others never take its climb.
+    expect(items[1].item).toBe(keptRow);
+    expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'kept', 'b']);
+  });
+
+  it('sets climb bias aside in the pool key while signed out, where the search cannot use it', () => {
+    const attempted = { ...LOOSE, climbBias: 'attempted' as const };
+
+    expect(fetchFilters(attempted, false)).toEqual(LOOSE);
+    expect(fetchFilters(attempted, true)).toBe(attempted);
+    expect(fetchFilters(undefined, false)).toBeUndefined();
   });
 
   it('never fills two slots with one climb, even from two pools that both hold it', () => {
@@ -212,7 +291,8 @@ describe('pools keyed by grade and filters', () => {
 
     // The strict pool had nothing unused, so it refetched with the strict filters
     // rather than take the loose pool's spare climb.
-    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 2);
+    // Sized past every row at grade 10, the loose row included.
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 3);
     expect(next.items[1].item.climb.uuid).toBe('strict-b');
     expect(next.pools.get(key(10, LOOSE))?.map((climb) => climb.uuid)).toEqual(['loose-a', 'loose-b']);
   });
