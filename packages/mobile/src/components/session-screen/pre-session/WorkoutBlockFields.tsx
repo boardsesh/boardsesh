@@ -16,6 +16,7 @@ import { GradeSingleSelectRail } from '../../grade';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
+import { ShowcaseAnchorView } from '../../../lib/showcase-anchor';
 import { workoutStageName } from '../../../lib/workout-run-readout';
 import { Chip, GroupedSteppers, generatorControlStyles, workoutStepperRows } from './generator-controls';
 import { WORKOUT_BLOCK_TYPES, blockType, type WorkoutBlockType } from './workout-blocks';
@@ -70,18 +71,21 @@ export function WorkoutBlockFields({
       <View style={generatorControlStyles.chipRow}>
         {blockTypes.map((type) => {
           const label = workoutStageName(type, t);
+          const selected = selectedType === type;
           return (
-            <Chip
-              key={type}
-              label={label}
-              selected={selectedType === type}
-              onPress={() => onTypeChange(type)}
-              hitSlop={CHIP_HIT_SLOP}
-              accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
-                group: groupLabel,
-                value: label,
-              })}
-            />
+            // Only the selected chip reports (screenshot mode); a pass-through elsewhere.
+            <ShowcaseAnchorView key={type} name="workout-type" enabled={selected}>
+              <Chip
+                label={label}
+                selected={selected}
+                onPress={() => onTypeChange(type)}
+                hitSlop={CHIP_HIT_SLOP}
+                accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
+                  group: groupLabel,
+                  value: label,
+                })}
+              />
+            </ShowcaseAnchorView>
           );
         })}
       </View>

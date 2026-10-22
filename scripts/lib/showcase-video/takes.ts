@@ -329,7 +329,8 @@ export const SHOWCASE_TAKES: readonly ShowcaseTake[] = [
   }),
   take({
     id: 'workouts',
-    summary: 'Record tab: pick Pyramid, see the generated preview, arm a fixed-window rest timer, start.',
+    summary:
+      'Record tab: add a block, switch it to Pyramid, see the generated preview, arm a fixed-window rest timer, start.',
     primeLinks: sessionPrime(0),
     flow: 'workouts.yaml',
     trimSeconds: 6,

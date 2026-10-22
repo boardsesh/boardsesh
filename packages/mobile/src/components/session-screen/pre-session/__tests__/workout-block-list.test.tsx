@@ -24,6 +24,9 @@ vi.mock('react-i18next', () => ({
         return `${options.group}, ${options.value}`;
       }
       if (key === 'mobile.session.preGeneratorBlockTitle' && options) return `Block ${options.position}`;
+      if (key === 'mobile.session.preGeneratorBlockHeaderAccessibilityLabel' && options) {
+        return `Block ${options.position}: ${options.type}`;
+      }
       return options ? `${key}(${Object.values(options).join(',')})` : key;
     },
   }),
@@ -207,8 +210,11 @@ describe('WorkoutBlockList', () => {
     const screen = renderList([pyramid('first', 20), pyramid('second', 18)]);
 
     expect(headers(screen.container)[1].getAttribute('aria-label')).toBe(
-      'Block 2, mobile.session.preGeneratorPyramid. V18 · mobile.session.preGeneratorBlockSummarySteps(5) · mobile.session.preGeneratorBlockSummaryPerStep(1)',
+      'Block 2: mobile.session.preGeneratorPyramid. V18 · mobile.session.preGeneratorBlockSummarySteps(5) · mobile.session.preGeneratorBlockSummaryPerStep(1)',
     );
+    // The open card's header names it apart from its selected type chip.
+    expect(headers(screen.container)[0].getAttribute('aria-label')).toBe('Block 1: mobile.session.preGeneratorPyramid');
+    expect(screen.getAllByLabelText('Block 1, mobile.session.preGeneratorPyramid')).toHaveLength(1);
   });
 
   it('moves and removes any block from its menu, the first included', () => {

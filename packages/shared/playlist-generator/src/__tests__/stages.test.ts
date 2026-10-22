@@ -159,7 +159,7 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     );
   });
 
-  it('prefers a later workout stage over its own target when another warm-up comes first', () => {
+  it('keeps its own target when another warm-up sits between it and the workout', () => {
     const plan: WorkoutPlan = {
       stages: [
         { id: 'first', kind: 'warmUp', warmUpType: 'standard', targetGrade: 8 },
@@ -173,10 +173,10 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     };
 
     expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => [slot.stageId, slot.grade])).toEqual([
+      ['first', 4],
+      ['first', 5],
       ['first', 6],
       ['first', 7],
-      ['first', 8],
-      ['first', 9],
       ['second', 6],
       ['second', 7],
       ['second', 8],
@@ -185,7 +185,8 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     ]);
   });
 
-  it("prefers the following workout stage's target over its own", () => {
+  // Partner warm-ups set their own range (docs/partner-api.md, "Blocks").
+  it("keeps its own target over the following workout stage's", () => {
     const plan: WorkoutPlan = {
       stages: [
         { id: 'warm', kind: 'warmUp', warmUpType: 'standard', targetGrade: 5 },
@@ -197,7 +198,7 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
       ],
     };
 
-    expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => slot.grade)).toEqual([6, 7, 8, 9, 10]);
+    expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => slot.grade)).toEqual([1, 2, 3, 4, 10]);
   });
 
   it('generates nothing for a workout stage whose kind does not match its options', () => {

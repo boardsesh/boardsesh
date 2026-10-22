@@ -13,9 +13,9 @@ export type WorkoutStageKind = 'warmUp' | WorkoutType;
 export type WarmUpStageType = Exclude<WarmUpType, 'none'>;
 
 /**
- * Climbs stepping up to a target grade. The first workout stage after it sets
- * that grade; `targetGrade` is the fallback when no workout stage follows
- * (partner `warmUp` blocks carry their own grade).
+ * Climbs stepping up to a target grade: its own `targetGrade` when set
+ * (partner `warmUp` blocks carry their own range), else the grade of the first
+ * workout stage after it. The app's warm-ups never set one.
  */
 export type WarmUpStage = {
   id: string;
@@ -101,8 +101,8 @@ export const planFromBlocks = (blocks: readonly WorkoutBlockSpec[], makeId: Stag
 /**
  * Generates every stage's slots in plan order. `index` runs across the whole
  * plan, so a warm-up plus one workout yields exactly what `generateWorkoutPlan`
- * yields for the same options. A warm-up stage ramps to the first workout stage
- * after it, skipping any warm-ups in between, else to its own `targetGrade`;
+ * yields for the same options. A warm-up stage ramps to its own `targetGrade`,
+ * else to the first workout stage after it, skipping any warm-ups in between;
  * with neither it generates nothing. A workout stage whose `kind` no longer
  * matches `options.type` generates nothing rather than throwing on persisted data.
  */
@@ -112,8 +112,8 @@ export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScal
   plan.stages.forEach((stage, stagePosition) => {
     let stageSlots: PlannedClimbSlot[];
     if (isWarmUpStage(stage)) {
-      const nextMainStage = plan.stages.slice(stagePosition + 1).find(isRunnableMainStage);
-      const warmUpTarget = nextMainStage ? nextMainStage.options.targetGrade : stage.targetGrade;
+      const warmUpTarget =
+        stage.targetGrade ?? plan.stages.slice(stagePosition + 1).find(isRunnableMainStage)?.options.targetGrade;
       stageSlots = warmUpTarget === undefined ? [] : generateWarmUp(warmUpTarget, stage.warmUpType, grades);
     } else if (!isRunnableMainStage(stage)) {
       stageSlots = [];

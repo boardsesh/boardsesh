@@ -629,6 +629,7 @@
       "preGeneratorAddBlock": "Añadir una fase",
       "preGeneratorAddBlockHint": "Añade una fase al final del entrenamiento",
       "preGeneratorBlockTitle": "Fase {{position}}",
+      "preGeneratorBlockHeaderAccessibilityLabel": "Fase {{position}}: {{type}}",
       "preGeneratorBlockLimit": "{{max}} fases como máximo",
       "preGeneratorMoveBlockUpAccessibilityLabel": "Subir la fase {{position}}",
       "preGeneratorMoveBlockDownAccessibilityLabel": "Bajar la fase {{position}}",

@@ -629,6 +629,7 @@
       "preGeneratorAddBlock": "Block hinzufügen",
       "preGeneratorAddBlockHint": "Hängt einen Block ans Ende deines Workouts an",
       "preGeneratorBlockTitle": "Block {{position}}",
+      "preGeneratorBlockHeaderAccessibilityLabel": "Block {{position}}: {{type}}",
       "preGeneratorBlockLimit": "Maximal {{max}} Blöcke",
       "preGeneratorMoveBlockUpAccessibilityLabel": "Block {{position}} nach oben",
       "preGeneratorMoveBlockDownAccessibilityLabel": "Block {{position}} nach unten",

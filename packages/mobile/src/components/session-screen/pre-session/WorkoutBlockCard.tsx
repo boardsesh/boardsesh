@@ -205,7 +205,7 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
     [availableActions, runAction],
   );
 
-  const headerLabel = t('mobile.session.preGeneratorOptionAccessibilityLabel', { group: title, value: typeName });
+  const headerLabel = t('mobile.session.preGeneratorBlockHeaderAccessibilityLabel', { position, type: typeName });
 
   return (
     <View ref={cardRef} onLayout={handleLayout} collapsable={false} testID={`workout-block-${position}`}>

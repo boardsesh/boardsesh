@@ -179,7 +179,7 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
     Climbs list (liquid glass chrome only), which opens the board sheet.
   - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
     header. Only the sheet reports them, never the iPad column or the Wall tab.
-  - `workout-type`: the selected tile in the Session tab's workout shelf.
+  - `workout-type`: the selected type chip on the open workout block card in the Session tab.
   - `rest-timer`: the rest timer's on/off row.
   - `activity-calendar`: the Progress tab's activity calendar grid.
 

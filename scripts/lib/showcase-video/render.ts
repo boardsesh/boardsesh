@@ -548,9 +548,10 @@ export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
       'queue-row-avatar': [{ from: null, dy: 322 }],
     },
   },
-  // Pyramid picked (the target-grade row appears), then the fixed-window rest
-  // pill counting. The checklist's countdown starts on the pill's first value
-  // and reads `restPill`, so both show the same value on the same frame.
+  // Pyramid picked on a new block (its card shows the target grade), then the
+  // fixed-window rest pill counting. The checklist's countdown starts on the
+  // pill's first value and reads `restPill`, so both show the same value on the
+  // same frame.
   workouts: {
     segments: [
       { mark: 'pyramid-picked', from: -1.9, to: 0.1 },
@@ -2619,6 +2620,8 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<
   workouts: {
     source: { kind: 'frame', file: 'start-playlist-queue.mp4', at: 1.5 },
     anchors: {
+      // Measured on this clip's old workout-shelf tile. The live app reports the
+      // selected type chip on a block card instead; a real recording replaces it.
       'workout-type': { x: 16, y: 187, width: 103, height: 47 },
       'rest-timer': { x: 22, y: 817, width: 396, height: 48 },
     },
