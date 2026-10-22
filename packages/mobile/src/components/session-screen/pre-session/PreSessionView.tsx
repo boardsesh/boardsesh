@@ -306,6 +306,8 @@ export function PreSessionView({
           savedCount: generatedItems.length,
           failedCount: plannedCount - generatedItems.length,
           stageCount: generatedRun?.stages.length ?? 0,
+          // Start builds the workout; a block added later sends 'in_session'.
+          phase: 'pre_session',
         });
       }
       if (onStarted) onStarted();

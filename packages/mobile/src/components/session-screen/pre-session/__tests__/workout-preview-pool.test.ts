@@ -111,6 +111,18 @@ describe('selectItemsFromPools', () => {
     const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools);
     expect(items).toEqual([]);
   });
+
+  it('passes over avoided climbs while the pool has others', () => {
+    const pools = new Map([[10, [makeClimb('queued'), makeClimb('a'), makeClimb('b')]]]);
+    const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools, new Set(['queued']));
+    expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'b']);
+  });
+
+  it('falls back to an avoided climb rather than leave a slot empty', () => {
+    const pools = new Map([[10, [makeClimb('queued'), makeClimb('a')]]]);
+    const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools, new Set(['queued']));
+    expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'queued']);
+  });
 });
 
 describe('buildPools', () => {

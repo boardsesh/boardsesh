@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
 
@@ -51,8 +51,15 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../Card', () => ({
-  Card: ({ children }: { children?: ReactNode }) => createElement('section', null, children),
+  Card: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('section', { onClick: onPress }, children),
 }));
+vi.mock('../../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../PressableSurface', () => ({
+  PressableSurface: ({ children, onPress, testID }: { children?: ReactNode; onPress?: () => void; testID?: string }) =>
+    createElement('button', { onClick: onPress, 'data-testid': testID }, children),
+}));
+vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -128,5 +135,41 @@ describe('WorkoutRunCard', () => {
     queueState.currentClimbQueueItem = { uuid: 'hand-queued' };
     const { container } = render(createElement(WorkoutRunCard));
     expect(container.textContent).toBe('');
+  });
+
+  describe('Add a block', () => {
+    it('sits under the stages and opens the sheet', () => {
+      setWorkoutRun('session-1', run);
+      const onAddBlock = vi.fn();
+      render(createElement(WorkoutRunCard, { onAddBlock }));
+
+      fireEvent.click(screen.getByTestId('workout-add-block'));
+      expect(onAddBlock).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers to start a workout in a session without one', () => {
+      const onAddBlock = vi.fn();
+      render(createElement(WorkoutRunCard, { onAddBlock }));
+
+      expect(screen.getByText('addWorkoutPromptTitle')).toBeTruthy();
+      fireEvent.click(screen.getByText('addWorkoutPromptTitle'));
+      expect(onAddBlock).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers a fresh block once the workout has left the queue', () => {
+      setWorkoutRun('session-1', run);
+      queueState.queue = queued(['hand-queued']);
+      queueState.currentClimbQueueItem = { uuid: 'hand-queued' };
+      render(createElement(WorkoutRunCard, { onAddBlock: vi.fn() }));
+
+      expect(screen.getByTestId('workout-add-prompt')).toBeTruthy();
+      expect(screen.queryByText('workoutCardTitle')).toBeNull();
+    });
+
+    it('renders nothing outside an active session', () => {
+      queueState.sessionId = null;
+      const { container } = render(createElement(WorkoutRunCard, { onAddBlock: vi.fn() }));
+      expect(container.textContent).toBe('');
+    });
   });
 });

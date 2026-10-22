@@ -135,7 +135,20 @@ export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScal
 // Run carrier: which queue items belong to which stage.
 // ---------------------------------------------------------------------------
 
-export type WorkoutRunStage = { id: string; kind: WorkoutStageKind; itemUuids: string[] };
+export type WorkoutRunStage = {
+  id: string;
+  kind: WorkoutStageKind;
+  itemUuids: string[];
+  /**
+   * The grade a workout stage was built around, so a block added mid-session
+   * can start where the last one left off. Absent on warm-up stages and on runs
+   * stored before it existed.
+   */
+  targetGrade?: number;
+};
+
+/** What a run stage says about itself, without its climbs. */
+export type WorkoutRunStageIdentity = Pick<WorkoutRunStage, 'id' | 'kind' | 'targetGrade'>;
 
 /** Stages in workout order. A stage with no items is never kept. */
 export type WorkoutRun = { stages: WorkoutRunStage[] };
@@ -173,7 +186,11 @@ export const buildWorkoutRun = (
     emittedStageIds.add(stage.id);
     const itemUuids = uuidsByStageId.get(stage.id);
     if (itemUuids && itemUuids.length > 0) {
-      stages.push({ id: stage.id, kind: stage.kind, itemUuids });
+      stages.push(
+        isWarmUpStage(stage)
+          ? { id: stage.id, kind: stage.kind, itemUuids }
+          : { id: stage.id, kind: stage.kind, itemUuids, targetGrade: stage.options.targetGrade },
+      );
     }
   }
   return { stages };
@@ -183,11 +200,12 @@ export const buildWorkoutRun = (
  * Adds a stage's items to the end of the run. A stage id already in the run
  * with the same kind gets the items appended to it instead; the same id with a
  * different kind is a caller bug and throws. Uuids already in the run are
- * skipped, and when nothing is left to add the same run object comes back.
+ * skipped, and when nothing is left to add the same run object comes back. A
+ * new stage keeps the `targetGrade` it was given.
  */
 export const appendStageToRun = (
   run: WorkoutRun,
-  stage: { id: string; kind: WorkoutStageKind },
+  stage: WorkoutRunStageIdentity,
   uuids: readonly string[],
 ): WorkoutRun => {
   const existingPosition = run.stages.findIndex((runStage) => runStage.id === stage.id);
@@ -207,7 +225,11 @@ export const appendStageToRun = (
   if (newUuids.length === 0) return run;
 
   if (existingPosition < 0) {
-    return { stages: [...run.stages, { id: stage.id, kind: stage.kind, itemUuids: newUuids }] };
+    const newStage: WorkoutRunStage =
+      stage.targetGrade === undefined
+        ? { id: stage.id, kind: stage.kind, itemUuids: newUuids }
+        : { id: stage.id, kind: stage.kind, itemUuids: newUuids, targetGrade: stage.targetGrade };
+    return { stages: [...run.stages, newStage] };
   }
   return {
     stages: run.stages.map((runStage, position) =>

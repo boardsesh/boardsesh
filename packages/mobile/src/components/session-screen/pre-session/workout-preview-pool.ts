@@ -121,20 +121,30 @@ export function reshufflePools(
   return new Map(Array.from(pools, ([grade, climbs]) => [grade, shuffleInPlace(climbs.slice(), random)]));
 }
 
+const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
+
 /**
  * Walk each slot's shuffled pool, skipping climbs already chosen. Short or
  * empty pools skip the slot so the caller can report the shortfall as
  * `failedCount`, matching the web generator's behavior.
+ *
+ * `avoidClimbUuids` are climbs to pass over when the pool has others, such as
+ * the climbs already in a live session's queue when a block is added mid-session.
+ * They are a preference, not a filter: when only avoided climbs are left at a
+ * grade, one of them still fills the slot rather than leave it empty.
  */
 export function selectItemsFromPools(
   slots: readonly PreviewSlot[],
   pools: ReadonlyMap<number, Climb[]>,
+  avoidClimbUuids: ReadonlySet<string> = NO_AVOIDED_CLIMBS,
 ): { items: PreviewItem[]; usedUuids: Set<string> } {
   const items: PreviewItem[] = [];
   const usedUuids = new Set<string>();
   for (const slot of slots) {
     const pool = pools.get(slot.grade) ?? [];
-    const next = pickUnused(pool, usedUuids);
+    const next =
+      pool.find((climb) => !usedUuids.has(climb.uuid) && !avoidClimbUuids.has(climb.uuid)) ??
+      pickUnused(pool, usedUuids);
     if (!next) continue;
     usedUuids.add(next.uuid);
     items.push({ slot, item: climbToQueueItem(next, { suggested: true }) });

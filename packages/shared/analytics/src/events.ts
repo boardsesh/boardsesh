@@ -210,7 +210,7 @@ export const SHARED_EVENTS = {
   ClimbCreateFailed: 'Climb Create Failed',
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
-  // Props: { workoutType, workoutTypes, boardName, angle, savedCount, failedCount, stageCount }.
+  // Props: { workoutType, workoutTypes, boardName, angle, savedCount, failedCount, stageCount, phase }.
   // `stageCount` (#5379) is how many blocks got at least one climb, warm-ups
   // included: 2 for a warm-up plus a workout, 0 when nothing was queued.
   // `workoutType` is the first workout block's type (never `warmUp`), so
@@ -218,6 +218,10 @@ export const SHARED_EVENTS = {
   // climber built, warm-ups included, in run order, comma-joined
   // (`warmUp,pyramid,volume`): a string because web `track()` types arrays out
   // (docs/gym-funnel-analytics.md), and not sorted because the order is the workout.
+  // `phase` is 'pre_session' for the workout queued at Start and 'in_session'
+  // for a block added to a running session (one workout block, never a warm-up);
+  // events from before it existed are all Start. Same values as
+  // SessionVisibilityChanged.
   SessionQueueGenerated: 'Session Queue Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',

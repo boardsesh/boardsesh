@@ -41,6 +41,7 @@ const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../WorkoutRunCard', () => ({ WorkoutRunCard: () => null }));
+vi.mock('../AddWorkoutBlockSheet', () => ({ AddWorkoutBlockSheet: () => null }));
 vi.mock('../SessionVisibilityControl', () => ({ SessionVisibilityControl: () => null }));
 vi.mock('react-native', () => ({
   // This suite exercises the JS chrome fallback; native headers have their own navigation tests.

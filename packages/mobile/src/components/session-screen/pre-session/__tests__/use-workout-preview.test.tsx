@@ -20,11 +20,22 @@ const generator = vi.hoisted(() => ({
     { grade: 10, section: 'main', index: 1, stageId: 'stage-main' },
   ] as StagedSlot[],
 }));
-vi.mock('@boardsesh/playlist-generator', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@boardsesh/playlist-generator')>()),
-  planFromBlocks: () => ({ stages: [{ id: 'stage-main', kind: 'volume' }] }),
-  generateStagedPlan: () => generator.plan,
-}));
+vi.mock('@boardsesh/playlist-generator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/playlist-generator')>();
+  return {
+    ...actual,
+    planFromBlocks: () => ({
+      stages: [
+        {
+          id: 'stage-main',
+          kind: 'volume',
+          options: { ...actual.DEFAULT_VOLUME_OPTIONS, targetGrade: 10, warmUp: 'none' },
+        },
+      ],
+    }),
+    generateStagedPlan: () => generator.plan,
+  };
+});
 
 // Don't load the real GraphQL-backed fetcher; the hook is driven via deps.fetchPool.
 vi.mock('../select-climbs-for-plan', () => ({ fetchGradePool: vi.fn() }));
@@ -373,7 +384,30 @@ describe('useWorkoutPreview', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     const { items, run } = result.current.toStagedQueueItems();
-    expect(run).toEqual({ stages: [{ id: 'stage-main', kind: 'volume', itemUuids: items.map((item) => item.uuid) }] });
+    expect(run).toEqual({
+      stages: [{ id: 'stage-main', kind: 'volume', itemUuids: items.map((item) => item.uuid), targetGrade: 10 }],
+    });
+  });
+
+  it('passes over the climbs the caller avoids, on build and on shuffle', async () => {
+    const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
+    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const avoided = new Set(['c0', 'c1', 'c2', 'c3']);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(
+        on(10, { mainSetClimbs: 4 }),
+        board,
+        { isAuthenticated: false, getAvoidedClimbUuids: () => avoided },
+        { fetchPool, grades },
+      ),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const shown = () => result.current.items.map((preview) => preview.item.climb.uuid);
+    expect(shown().length).toBeGreaterThan(0);
+    expect(shown().some((uuid) => avoided.has(uuid))).toBe(false);
+
+    act(() => result.current.shuffle());
+    expect(shown().some((uuid) => avoided.has(uuid))).toBe(false);
   });
 
   it('keeps the stage map in step with a row refresh and a shuffle', async () => {

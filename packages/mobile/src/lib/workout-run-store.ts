@@ -17,7 +17,8 @@
 // queued uuids, so the stale ones cost nothing.
 //
 // Schema note: bump the key suffix if `WorkoutRun`'s shape changes, so a stale
-// value is ignored rather than misread.
+// value is ignored rather than misread. An added OPTIONAL field (a stage's
+// `targetGrade`) needs no bump: a stored run without it still reads correctly.
 
 import { useCallback, useSyncExternalStore } from 'react';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
@@ -65,7 +66,9 @@ function isWorkoutRunRecord(candidate: unknown): candidate is WorkoutRunRecord {
         typeof stage.id === 'string' &&
         typeof stage.kind === 'string' &&
         Array.isArray(stage.itemUuids) &&
-        stage.itemUuids.every((uuid) => typeof uuid === 'string'),
+        stage.itemUuids.every((uuid) => typeof uuid === 'string') &&
+        // Optional and newer than the key: an older run without it still loads.
+        (stage.targetGrade === undefined || typeof stage.targetGrade === 'number'),
     )
   );
 }

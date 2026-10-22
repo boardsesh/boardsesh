@@ -433,7 +433,7 @@ describe('buildWorkoutRun', () => {
     expect(run).toEqual({
       stages: [
         { id: 'stage-0', kind: 'warmUp', itemUuids: ['w1', 'w2'] },
-        { id: 'stage-1', kind: 'pyramid', itemUuids: ['p1', 'p2'] },
+        { id: 'stage-1', kind: 'pyramid', itemUuids: ['p1', 'p2'], targetGrade: 18 },
       ],
     });
   });
@@ -451,7 +451,7 @@ describe('buildWorkoutRun', () => {
     expect(run).toEqual({
       stages: [
         { id: 'stage-0', kind: 'warmUp', itemUuids: ['w1'] },
-        { id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'] },
+        { id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 },
       ],
     });
   });
@@ -465,7 +465,7 @@ describe('buildWorkoutRun', () => {
       PLAN,
     );
 
-    expect(run).toEqual({ stages: [{ id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'] }] });
+    expect(run).toEqual({ stages: [{ id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }] });
   });
 
   it('skips stages with no items and entries for unknown stages', () => {
@@ -477,7 +477,7 @@ describe('buildWorkoutRun', () => {
       PLAN,
     );
 
-    expect(run).toEqual({ stages: [{ id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'] }] });
+    expect(run).toEqual({ stages: [{ id: 'stage-1', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }] });
   });
 
   it('emits a stage id repeated in the plan only once', () => {
@@ -533,6 +533,14 @@ describe('appendStageToRun', () => {
     const next = appendStageToRun(RUN, { id: 'stage-2', kind: 'volume' }, ['w1', 'v1', 'v1']);
 
     expect(next.stages[2].itemUuids).toEqual(['v1']);
+  });
+
+  it('keeps the target grade of a new stage, and leaves it off when none is given', () => {
+    const graded = appendStageToRun(RUN, { id: 'stage-2', kind: 'ladder', targetGrade: 21 }, ['l1']);
+    expect(graded.stages[2]).toEqual({ id: 'stage-2', kind: 'ladder', itemUuids: ['l1'], targetGrade: 21 });
+
+    const ungraded = appendStageToRun(RUN, { id: 'stage-2', kind: 'ladder' }, ['l1']);
+    expect('targetGrade' in ungraded.stages[2]).toBe(false);
   });
 
   it('returns the same run when there is nothing to add', () => {

@@ -112,6 +112,26 @@ describe('workout-run-store', () => {
     expect(getWorkoutRunState()).toBeNull();
   });
 
+  it('hydrates a stage target grade, and ignores one that is not a number', async () => {
+    const graded: WorkoutRun = { stages: [{ id: 'main', kind: 'ladder', itemUuids: ['l1'], targetGrade: 20 }] };
+    setWorkoutRun('session-1', graded);
+    await flushStorageWrites();
+    resetWorkoutRunStoreForTests();
+    await hydrateWorkoutRun('session-1');
+    expect(getWorkoutRunForSession('session-1')).toEqual(graded);
+
+    resetWorkoutRunStoreForTests();
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: { stages: [{ id: 's', kind: 'volume', itemUuids: ['v1'], targetGrade: 'V5' }] },
+      }),
+    );
+    await hydrateWorkoutRun('session-1');
+    expect(getWorkoutRunState()).toBeNull();
+  });
+
   it('does not let a slow hydrate overwrite a run written meanwhile', async () => {
     setWorkoutRun('session-1', { stages: [{ id: 'old', kind: 'volume', itemUuids: ['x'] }] });
     await flushStorageWrites();

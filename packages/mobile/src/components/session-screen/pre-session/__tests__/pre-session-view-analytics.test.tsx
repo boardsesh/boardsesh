@@ -376,6 +376,7 @@ describe('PreSessionView analytics', () => {
         savedCount: 2,
         failedCount: 1,
         stageCount: 1,
+        phase: 'pre_session',
       }),
     );
 
@@ -396,6 +397,7 @@ describe('PreSessionView analytics', () => {
       savedCount: 2,
       failedCount: 1,
       stageCount: 1,
+      phase: 'pre_session',
     });
     // The run is kept on the phone for the session that just started.
     expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
@@ -435,6 +437,7 @@ describe('PreSessionView analytics', () => {
         savedCount: 2,
         failedCount: 1,
         stageCount: 2,
+        phase: 'pre_session',
       });
       expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', multiStageRun);
     } finally {

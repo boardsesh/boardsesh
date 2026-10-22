@@ -1,6 +1,7 @@
 // The workout you generated, on the session screen (#5379): its stages in the
 // order you will reach them, which one you are on, and how many climbs are left
-// in it. Renders nothing unless this session has a workout on this phone.
+// in it, with "Add a block" under them. A session with no workout on this phone
+// gets a one-row prompt to add one instead. Renders nothing outside a session.
 //
 // Split in two so the session screen pays nothing for it: the outer component
 // reads only the session id and the run, and the queue subscription lives in the
@@ -11,7 +12,10 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
 import { Card } from '../../Card';
+import { Icon } from '../../Icon';
+import { PressableSurface } from '../../PressableSurface';
 import { Text } from '../../Text';
+import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { useQueueData, useQueueSessionId } from '../../../providers/queue-provider';
 import { useWorkoutRun } from '../../../lib/workout-run-store';
@@ -25,11 +29,45 @@ import { spacing } from '../../../theme/tokens';
 
 const STAGE_MARKER_SIZE = 10;
 
-export const WorkoutRunCard = memo(function WorkoutRunCard() {
+type WorkoutRunCardProps = {
+  /** Opens "Add a block". Without it the card only reads out the run. */
+  onAddBlock?: () => void;
+};
+
+export const WorkoutRunCard = memo(function WorkoutRunCard({ onAddBlock }: WorkoutRunCardProps) {
   const { sessionId } = useQueueSessionId();
   const run = useWorkoutRun(sessionId);
-  return run ? <WorkoutRunCardContent run={run} /> : null;
+  if (sessionId === null) return null;
+  if (run) return <WorkoutRunCardContent run={run} onAddBlock={onAddBlock} />;
+  return onAddBlock ? <AddWorkoutPrompt onPress={onAddBlock} /> : null;
 });
+
+/** One quiet row for a session with no workout: tap it to add the first block. */
+function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
+  const { t } = useTranslation('session');
+  const { systemColors, brandColors } = useTheme();
+  // Card gives the tap its own haptic.
+  return (
+    <Card
+      onPress={onPress}
+      accessibilityLabel={t('mobile.session.addWorkoutPromptTitle')}
+      accessibilityHint={t('mobile.session.addWorkoutPromptSubtitle')}
+    >
+      <View style={styles.promptRow} testID="workout-add-prompt">
+        <Icon name="add" size={22} color={brandColors.primary} />
+        <View style={styles.promptText}>
+          <Text variant="body" color={brandColors.primary} style={styles.promptTitle}>
+            {t('mobile.session.addWorkoutPromptTitle')}
+          </Text>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('mobile.session.addWorkoutPromptSubtitle')}
+          </Text>
+        </View>
+        <Icon name="chevron.right" size={18} color={systemColors.tertiaryLabel} />
+      </View>
+    </Card>
+  );
+}
 
 function stageStatus(stage: WorkoutStageReadout, t: TranslateWorkoutStage): string {
   if (stage.remainingAfterCurrent === null) return t('mobile.session.workoutStageClimbs', { count: stage.size });
@@ -37,7 +75,7 @@ function stageStatus(stage: WorkoutStageReadout, t: TranslateWorkoutStage): stri
   return t('mobile.session.workoutStageToGo', { count: stage.remainingAfterCurrent });
 }
 
-function WorkoutRunCardContent({ run }: { run: WorkoutRun }) {
+function WorkoutRunCardContent({ run, onAddBlock }: { run: WorkoutRun; onAddBlock?: () => void }) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -45,7 +83,8 @@ function WorkoutRunCardContent({ run }: { run: WorkoutRun }) {
   const currentUuid = currentClimbQueueItem?.uuid ?? null;
   const readout = useMemo(() => describeWorkoutRun(run, queueUuids, currentUuid), [run, queueUuids, currentUuid]);
 
-  if (!readout) return null;
+  // Every workout climb has left the queue: offer a fresh block instead.
+  if (!readout) return onAddBlock ? <AddWorkoutPrompt onPress={onAddBlock} /> : null;
 
   return (
     <Card>
@@ -95,7 +134,33 @@ function WorkoutRunCardContent({ run }: { run: WorkoutRun }) {
           );
         })}
       </View>
+      {onAddBlock ? <AddBlockButton onPress={onAddBlock} /> : null}
     </Card>
+  );
+}
+
+function AddBlockButton({ onPress }: { onPress: () => void }) {
+  const { t } = useTranslation('session');
+  const { brandColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={() => {
+        hapticSelection();
+        onPress();
+      }}
+      feedback="opacity"
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={t('mobile.session.preGeneratorAddBlock')}
+      accessibilityHint={t('mobile.session.preGeneratorAddBlockHint')}
+      style={styles.addButton}
+      testID="workout-add-block"
+    >
+      <Icon name="add" size={18} color={brandColors.primary} />
+      <Text variant="subheadline" color={brandColors.primary} style={styles.addText}>
+        {t('mobile.session.preGeneratorAddBlock')}
+      </Text>
+    </PressableSurface>
   );
 }
 
@@ -119,6 +184,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   currentStageName: {
+    fontWeight: '600',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing[2],
+    minHeight: 44,
+    marginTop: spacing[2],
+  },
+  addText: {
+    fontWeight: '600',
+  },
+  promptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  promptText: {
+    flex: 1,
+    gap: 2,
+  },
+  promptTitle: {
     fontWeight: '600',
   },
 });

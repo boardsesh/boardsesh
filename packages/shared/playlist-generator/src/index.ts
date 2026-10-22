@@ -35,6 +35,7 @@ export type {
   StagedSlot,
   StageIdFactory,
   WorkoutRunStage,
+  WorkoutRunStageIdentity,
   WorkoutRun,
   WorkoutRunPosition,
 } from './stages';

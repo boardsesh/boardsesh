@@ -53,6 +53,7 @@ import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
 import { RestTimerArmRow } from '../RestTimerArmRow';
 import { WorkoutRunCard } from './WorkoutRunCard';
+import { AddWorkoutBlockSheet } from './AddWorkoutBlockSheet';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
 import { SessionVisibilityControl } from './SessionVisibilityControl';
@@ -311,6 +312,11 @@ export function InSessionView({
     setTitleSheetVisible(true);
   }, []);
   const closeTitleSheet = useCallback(() => setTitleSheetVisible(false), []);
+
+  // "Add a block" (#5379): grow the workout, or start one, without restarting.
+  const [addBlockVisible, setAddBlockVisible] = useState(false);
+  const openAddBlock = useCallback(() => setAddBlockVisible(true), []);
+  const closeAddBlock = useCallback(() => setAddBlockVisible(false), []);
 
   // Only trust a live push that belongs to the CURRENT session. After a direct
   // A->B session switch the provider resets liveStats, but this guards the
@@ -659,9 +665,10 @@ export function InSessionView({
         boardName={sessionBoardType}
       />
 
-      {/* The workout you generated at Start (#5379): its stages and where you
-          are in it. Renders nothing for a session without one. */}
-      <WorkoutRunCard />
+      {/* The workout you generated at Start (#5379): its stages, where you are
+          in it, and "Add a block". A session without one gets a single row to
+          add its first block. */}
+      <WorkoutRunCard onAddBlock={openAddBlock} />
 
       {/* Turn the rest timer on for the session you're in (#5378), and see it
           without leaving the Record tab. */}
@@ -749,6 +756,8 @@ export function InSessionView({
         currentName={detail?.sessionName ?? null}
         onClose={closeTitleSheet}
       />
+
+      <AddWorkoutBlockSheet visible={addBlockVisible} onClose={closeAddBlock} />
 
       <EndSessionSheet
         visible={endVisible}
