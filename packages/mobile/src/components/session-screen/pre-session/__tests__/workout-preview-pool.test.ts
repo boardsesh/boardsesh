@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
-import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
 
 // Monotonic uuids so each generated queue item is distinct (the real
 // climbToQueueItem uses expo-crypto's randomUUID for the queue-item uuid).
@@ -12,13 +11,17 @@ vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 
 import {
   buildPools,
+  filtersSignature,
   pickRandomUnused,
+  poolKeyForSlot,
   pickUnused,
   refreshSlotInState,
   reshufflePools,
   selectItemsFromPools,
   shuffleInPlace,
   type PreviewFetchContext,
+  type PreviewFilters,
+  type PreviewSlot,
   type WorkoutPreviewData,
 } from '../workout-preview-pool';
 import { screenshotModeRandom } from '../../../../lib/screenshot-mode';
@@ -41,9 +44,23 @@ function makeClimb(uuid: string): Climb {
   } as Climb;
 }
 
-function slot(grade: number, index: number): PlannedClimbSlot {
-  return { grade, section: 'main', index };
+function slot(grade: number, index: number, filters?: PreviewFilters): PreviewSlot {
+  return { grade, section: 'main', index, ...(filters ? { filters } : {}) };
 }
+
+/** The pool key an unfiltered slot (or one with `filters`) at `grade` draws from. */
+function key(grade: number, filters?: PreviewFilters): string {
+  return poolKeyForSlot(slot(grade, 0, filters));
+}
+
+const LOOSE: PreviewFilters = {
+  climbBias: 'any',
+  minAscents: 0,
+  minRating: 0,
+  onlyTallClimbs: false,
+  onlyWideClimbs: false,
+};
+const STRICT: PreviewFilters = { ...LOOSE, minAscents: 50, minRating: 3 };
 
 const ctx: PreviewFetchContext = {
   board: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as UserBoard,
@@ -51,8 +68,8 @@ const ctx: PreviewFetchContext = {
 };
 
 function buildState(poolByGrade: Record<number, string[]>, slotSpecs: [number, number][]): WorkoutPreviewData {
-  const pools = new Map<number, Climb[]>(
-    Object.entries(poolByGrade).map(([grade, uuids]) => [Number(grade), uuids.map(makeClimb)]),
+  const pools = new Map<string, Climb[]>(
+    Object.entries(poolByGrade).map(([grade, uuids]) => [key(Number(grade)), uuids.map(makeClimb)]),
   );
   const slots = slotSpecs.map(([grade, index]) => slot(grade, index));
   const { items, usedUuids } = selectItemsFromPools(slots, pools);
@@ -94,32 +111,32 @@ describe('pickRandomUnused', () => {
 
 describe('selectItemsFromPools', () => {
   it('picks a distinct climb per slot when the pool is large enough', () => {
-    const pools = new Map([[10, [makeClimb('a'), makeClimb('b'), makeClimb('c')]]]);
+    const pools = new Map([[key(10), [makeClimb('a'), makeClimb('b'), makeClimb('c')]]]);
     const { items, usedUuids } = selectItemsFromPools([slot(10, 0), slot(10, 1), slot(10, 2)], pools);
     expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'b', 'c']);
     expect(usedUuids).toEqual(new Set(['a', 'b', 'c']));
   });
 
   it('skips slots when the pool is shorter than the slot count', () => {
-    const pools = new Map([[10, [makeClimb('a')]]]);
+    const pools = new Map([[key(10), [makeClimb('a')]]]);
     const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools);
     expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a']);
   });
 
   it('skips a slot whose grade pool is empty', () => {
-    const pools = new Map([[10, []]]);
+    const pools = new Map([[key(10), []]]);
     const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools);
     expect(items).toEqual([]);
   });
 
   it('passes over avoided climbs while the pool has others', () => {
-    const pools = new Map([[10, [makeClimb('queued'), makeClimb('a'), makeClimb('b')]]]);
+    const pools = new Map([[key(10), [makeClimb('queued'), makeClimb('a'), makeClimb('b')]]]);
     const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools, new Set(['queued']));
     expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'b']);
   });
 
   it('falls back to an avoided climb rather than leave a slot empty', () => {
-    const pools = new Map([[10, [makeClimb('queued'), makeClimb('a')]]]);
+    const pools = new Map([[key(10), [makeClimb('queued'), makeClimb('a')]]]);
     const { items } = selectItemsFromPools([slot(10, 0), slot(10, 1)], pools, new Set(['queued']));
     expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'queued']);
   });
@@ -130,8 +147,74 @@ describe('buildPools', () => {
     const fetchPool = vi.fn(async (grade: number) => [makeClimb(`${grade}-x`), makeClimb(`${grade}-y`)]);
     const pools = await buildPools([slot(10, 0), slot(10, 1), slot(12, 2)], ctx, fetchPool);
     expect(fetchPool).toHaveBeenCalledTimes(2); // grades 10 and 12, deduped
-    expect(pools.get(10)).toHaveLength(2);
-    expect(pools.get(12)).toHaveLength(2);
+    expect(pools.get(key(10))).toHaveLength(2);
+    expect(pools.get(key(12))).toHaveLength(2);
+  });
+});
+
+describe('pools keyed by grade and filters', () => {
+  it('gives equal filters one signature and different filters another', () => {
+    expect(filtersSignature({ ...STRICT })).toBe(filtersSignature(STRICT));
+    expect(filtersSignature(STRICT)).not.toBe(filtersSignature(LOOSE));
+    expect(filtersSignature({ ...LOOSE, onlyWideClimbs: true })).not.toBe(filtersSignature(LOOSE));
+    expect(key(10, STRICT)).not.toBe(key(10, LOOSE));
+    expect(key(10, STRICT)).not.toBe(key(11, STRICT));
+  });
+
+  it('fetches each slot with its own filters, one pool per grade and filter set', async () => {
+    const fetchPool = vi.fn(async (grade: number, fetchCtx: PreviewFetchContext) => [
+      makeClimb(`${grade}-${filtersSignature(fetchCtx.filters)}`),
+    ]);
+    const pools = await buildPools([slot(10, 0, LOOSE), slot(10, 1, STRICT), slot(12, 2, STRICT)], ctx, fetchPool);
+
+    expect(fetchPool).toHaveBeenCalledTimes(3);
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: LOOSE }, 1);
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 1);
+    expect(fetchPool).toHaveBeenCalledWith(12, { ...ctx, filters: STRICT }, 1);
+    expect(pools.get(key(10, LOOSE))?.[0].uuid).toBe(`10-${filtersSignature(LOOSE)}`);
+    expect(pools.get(key(10, STRICT))?.[0].uuid).toBe(`10-${filtersSignature(STRICT)}`);
+  });
+
+  it('shares one pool between slots with equal filters, sized by their combined demand', async () => {
+    const fetchPool = vi.fn(async () => [makeClimb('a')]);
+    // Two stages' slots, each with its own copy of the same filters.
+    await buildPools(
+      [slot(10, 0, { ...STRICT }), slot(10, 1, { ...STRICT }), slot(10, 2, { ...STRICT })],
+      ctx,
+      fetchPool,
+    );
+
+    expect(fetchPool).toHaveBeenCalledTimes(1);
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 3);
+  });
+
+  it('never fills two slots with one climb, even from two pools that both hold it', () => {
+    const pools = new Map([
+      [key(10, LOOSE), [makeClimb('shared'), makeClimb('loose-only')]],
+      [key(10, STRICT), [makeClimb('shared'), makeClimb('strict-only')]],
+    ]);
+    const { items, usedUuids } = selectItemsFromPools([slot(10, 0, LOOSE), slot(10, 1, STRICT)], pools);
+
+    expect(items.map((preview) => preview.item.climb.uuid)).toEqual(['shared', 'strict-only']);
+    expect(usedUuids).toEqual(new Set(['shared', 'strict-only']));
+  });
+
+  it('refreshes a row from its own pool and refetches with its own filters', async () => {
+    const pools = new Map([
+      [key(10, LOOSE), [makeClimb('loose-a'), makeClimb('loose-b')]],
+      [key(10, STRICT), [makeClimb('strict-a')]],
+    ]);
+    const { items, usedUuids } = selectItemsFromPools([slot(10, 0, LOOSE), slot(10, 1, STRICT)], pools);
+    const state: WorkoutPreviewData = { items, pools, usedUuids };
+    const fetchPool = vi.fn(async () => [makeClimb('strict-a'), makeClimb('strict-b')]);
+
+    const { state: next } = await refreshSlotInState(state, items[1].item.uuid, ctx, fetchPool);
+
+    // The strict pool had nothing unused, so it refetched with the strict filters
+    // rather than take the loose pool's spare climb.
+    expect(fetchPool).toHaveBeenCalledWith(10, { ...ctx, filters: STRICT }, 2);
+    expect(next.items[1].item.climb.uuid).toBe('strict-b');
+    expect(next.pools.get(key(10, LOOSE))?.map((climb) => climb.uuid)).toEqual(['loose-a', 'loose-b']);
   });
 });
 
@@ -340,16 +423,16 @@ describe('reshufflePools', () => {
     const tens = ['a', 'b', 'c', 'd', 'e'].map(makeClimb);
     const elevens = ['f', 'g'].map(makeClimb);
     const pools = new Map([
-      [10, tens],
-      [11, elevens],
+      [key(10), tens],
+      [key(11), elevens],
     ]);
 
     const reshuffled = reshufflePools(pools, mulberry32(7));
 
     expect(reshuffled).not.toBe(pools);
-    expect(reshuffled.get(10)).not.toBe(tens);
-    expect(pools.get(10)?.map((climb) => climb.uuid)).toEqual(['a', 'b', 'c', 'd', 'e']);
-    expect([...(reshuffled.get(10) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
-    expect([...(reshuffled.get(11) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['f', 'g']);
+    expect(reshuffled.get(key(10))).not.toBe(tens);
+    expect(pools.get(key(10))?.map((climb) => climb.uuid)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect([...(reshuffled.get(key(10)) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect([...(reshuffled.get(key(11)) ?? [])].map((climb) => climb.uuid).sort()).toEqual(['f', 'g']);
   });
 });

@@ -12,8 +12,8 @@
 // the workout types only (mid-session the climber is already warm, so no
 // warm-up), `useWorkoutPreview` (planFromBlocks + generateStagedPlan + the
 // shared pools), and the preview summary with Shuffle. The climbs already queued
-// are passed over where the pool has others. The block uses the generator's
-// default climb filters, not the ones the session was started with.
+// are passed over where the pool has others. The block's climb filters open on
+// those of the run's last stage, and its stage keeps them in the run.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -43,20 +43,24 @@ import { hapticSuccess } from '../../../lib/haptics';
 import { spacing } from '../../../theme/tokens';
 import { getDefaultTargetGrade, toRailGrades } from '../pre-session/generator-controls';
 import { WorkoutBlockFields } from '../pre-session/WorkoutBlockFields';
+import { sizeFilterAvailability } from '../pre-session/WorkoutBlockFilters';
 import { WorkoutPreviewListRow } from '../pre-session/WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from '../pre-session/WorkoutPreviewSummary';
 import { useWorkoutPreview } from '../pre-session/use-workout-preview';
 import {
+  DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
   WORKOUT_BLOCK_TYPES,
   buildDefaultOptions,
   singleBlockSelection,
+  withAvailableSizeFilters,
   type GeneratorSelection,
   type WorkoutBlockType,
+  type WorkoutFilters,
 } from '../pre-session/workout-blocks';
 import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workout-preview-sections';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
-import { addWorkoutBlock, defaultMidSessionBlock } from './add-workout-block';
+import { addWorkoutBlock, defaultMidSessionBlock, defaultMidSessionFilters } from './add-workout-block';
 
 /** Workout types only: mid-session the climber is already warm. */
 export const ADD_BLOCK_TYPES: readonly WorkoutBlockType[] = WORKOUT_BLOCK_TYPES.filter((type) => type !== 'warmUp');
@@ -88,11 +92,14 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const run = useWorkoutRun(sessionId);
   const boardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
   const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
+  const { tall, wide } = sizeFilterAvailability(boardName, activeBoard?.layoutId ?? null, activeBoard?.sizeId ?? null);
+  const sizeFilters = useMemo(() => ({ tall, wide }), [tall, wide]);
 
   // The block being edited. Null while the sheet is closed, so a closed sheet
   // builds no preview and fetches nothing. Seeded on every open from the run's
   // last stage, so it reflects the workout as it is now.
   const [options, setOptions] = useState<GeneratorOptions | null>(null);
+  const [filters, setFilters] = useState<WorkoutFilters>(DEFAULT_WORKOUT_FILTERS);
   const [error, setError] = useState<string | null>(null);
   // Set by the first "Add to session" of an opening. The body stays mounted
   // through the slide-down, so without it a second tap would queue the same
@@ -100,6 +107,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const submittedRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const wasVisibleRef = useRef(false);
+  const sizeFiltersRef = useRef(sizeFilters);
+  sizeFiltersRef.current = sizeFilters;
   const runRef = useRef(run);
   runRef.current = run;
   // Latest values for the confirm to re-check after it awaits the store.
@@ -110,6 +119,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       setOptions(defaultMidSessionBlock(runRef.current, getDefaultTargetGrade(boardName)));
+      setFilters(withAvailableSizeFilters(defaultMidSessionFilters(runRef.current), sizeFiltersRef.current));
       setError(null);
       submittedRef.current = false;
       setIsSubmitting(false);
@@ -126,8 +136,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   }, [visible, sessionId, onClose]);
 
   const selection = useMemo<GeneratorSelection>(
-    () => (options ? singleBlockSelection(options, ADD_BLOCK_ID) : NO_WORKOUT),
-    [options],
+    () => (options ? singleBlockSelection(options, ADD_BLOCK_ID, filters) : NO_WORKOUT),
+    [options, filters],
   );
   const block = useMemo<WorkoutBlockSpec | null>(() => (options ? { kind: 'workout', options } : null), [options]);
   // Read at build and shuffle time, never subscribed: a crew add mid-preview
@@ -177,6 +187,10 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     if (next.kind !== 'workout') return;
     setError(null);
     setOptions(next.options);
+  }, []);
+  const handleFiltersChange = useCallback((patch: Partial<WorkoutFilters>) => {
+    setError(null);
+    setFilters((current) => ({ ...current, ...patch }));
   }, []);
 
   const isPreviewReady = status === 'ready' && items.length > 0 && refreshingUuids.size === 0;
@@ -327,8 +341,11 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               railGrades={railGrades}
               groupLabel={title}
               blockTypes={ADD_BLOCK_TYPES}
+              filters={filters}
+              sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}
               onBlockChange={handleBlockChange}
+              onFiltersChange={handleFiltersChange}
             />
           </View>
         ) : null}
@@ -362,8 +379,11 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       boardName,
       railGrades,
       title,
+      filters,
+      sizeFilters,
       handleTypeChange,
       handleBlockChange,
+      handleFiltersChange,
       hasPreviewItems,
       planSummary,
       shuffle,

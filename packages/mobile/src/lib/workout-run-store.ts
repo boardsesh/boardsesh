@@ -18,10 +18,11 @@
 //
 // Schema note: bump the key suffix if `WorkoutRun`'s shape changes, so a stale
 // value is ignored rather than misread. An added OPTIONAL field (a stage's
-// `targetGrade`) needs no bump: a stored run without it still reads correctly.
+// `targetGrade` or `filters`) needs no bump: a stored run without it still
+// reads correctly.
 
 import { useCallback, useSyncExternalStore } from 'react';
-import type { WorkoutRun } from '@boardsesh/playlist-generator';
+import type { WorkoutRun, WorkoutStageFilters } from '@boardsesh/playlist-generator';
 import { getPreference, removePreference, setPreference } from './preference-store';
 
 export const WORKOUT_RUN_STORAGE_KEY = 'boardsesh_workout_run_v1';
@@ -53,6 +54,18 @@ function clearStoredWorkoutRun(): Promise<void> {
   return removePreference(WORKOUT_RUN_STORAGE_KEY);
 }
 
+function isStageFilters(candidate: unknown): candidate is WorkoutStageFilters {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const filters = candidate as Partial<Record<keyof WorkoutStageFilters, unknown>>;
+  return (
+    typeof filters.climbBias === 'string' &&
+    typeof filters.minAscents === 'number' &&
+    typeof filters.minRating === 'number' &&
+    typeof filters.onlyTallClimbs === 'boolean' &&
+    typeof filters.onlyWideClimbs === 'boolean'
+  );
+}
+
 function isWorkoutRunRecord(candidate: unknown): candidate is WorkoutRunRecord {
   if (typeof candidate !== 'object' || candidate === null) return false;
   const record = candidate as Partial<WorkoutRunRecord>;
@@ -67,8 +80,9 @@ function isWorkoutRunRecord(candidate: unknown): candidate is WorkoutRunRecord {
         typeof stage.kind === 'string' &&
         Array.isArray(stage.itemUuids) &&
         stage.itemUuids.every((uuid) => typeof uuid === 'string') &&
-        // Optional and newer than the key: an older run without it still loads.
-        (stage.targetGrade === undefined || typeof stage.targetGrade === 'number'),
+        // Optional and newer than the key: an older run without them still loads.
+        (stage.targetGrade === undefined || typeof stage.targetGrade === 'number') &&
+        (stage.filters === undefined || isStageFilters(stage.filters)),
     )
   );
 }

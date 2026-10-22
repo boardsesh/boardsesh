@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { Fragment, createElement, type ReactElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { WorkoutBlockSpec, WorkoutRun } from '@boardsesh/playlist-generator';
-import type { GeneratorSelection } from '../../pre-session/workout-blocks';
+import type { WorkoutBlockSpec, WorkoutRun, WorkoutStageFilters } from '@boardsesh/playlist-generator';
+import { DEFAULT_WORKOUT_FILTERS, type GeneratorSelection } from '../../pre-session/workout-blocks';
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
@@ -91,14 +91,30 @@ vi.mock('../../../SheetTopBar', () => ({
 const fields = vi.hoisted(() => ({
   block: null as WorkoutBlockSpec | null,
   blockTypes: undefined as readonly string[] | undefined,
+  filters: null as WorkoutStageFilters | null,
+  onFiltersChange: null as ((patch: Partial<WorkoutStageFilters>) => void) | null,
 }));
 vi.mock('../../pre-session/WorkoutBlockFields', () => ({
-  WorkoutBlockFields: ({ block, blockTypes }: { block: WorkoutBlockSpec; blockTypes?: readonly string[] }) => {
+  WorkoutBlockFields: ({
+    block,
+    blockTypes,
+    filters,
+    onFiltersChange,
+  }: {
+    block: WorkoutBlockSpec;
+    blockTypes?: readonly string[];
+    filters: WorkoutStageFilters;
+    onFiltersChange: (patch: Partial<WorkoutStageFilters>) => void;
+  }) => {
     fields.block = block;
     fields.blockTypes = blockTypes;
+    fields.filters = filters;
+    fields.onFiltersChange = onFiltersChange;
     return createElement('div', null, block.kind === 'workout' ? `block:${block.options.type}` : 'block:warmUp');
   },
 }));
+const sizeFilters = vi.hoisted(() => ({ tall: false, wide: false }));
+vi.mock('../../pre-session/WorkoutBlockFilters', () => ({ sizeFilterAvailability: () => ({ ...sizeFilters }) }));
 vi.mock('../../pre-session/WorkoutPreviewSummary', () => ({
   WorkoutPreviewSummary: ({ shuffleDisabled }: { shuffleDisabled: boolean }) => {
     summary.shuffleDisabled = shuffleDisabled;
@@ -254,7 +270,19 @@ beforeEach(() => {
   sheet.topBar = null;
   fields.block = null;
   fields.blockTypes = undefined;
+  fields.filters = null;
+  fields.onFiltersChange = null;
+  sizeFilters.tall = false;
+  sizeFilters.wide = false;
 });
+
+const STRICT: WorkoutStageFilters = {
+  climbBias: 'any',
+  minAscents: 50,
+  minRating: 3,
+  onlyTallClimbs: false,
+  onlyWideClimbs: true,
+};
 
 describe('AddWorkoutBlockSheet', () => {
   it('builds nothing while closed', () => {
@@ -273,6 +301,47 @@ describe('AddWorkoutBlockSheet', () => {
       options: { type: 'pyramid', targetGrade: 18, warmUp: 'none' },
     });
     expect(preview.calls.at(-1)?.selection.blocks).toMatchObject([{ kind: 'workout', options: { type: 'pyramid' } }]);
+  });
+
+  it("opens on the filters of the run's last stage and builds the preview with them", () => {
+    sizeFilters.wide = true;
+    setWorkoutRun('session-1', {
+      stages: [
+        { id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18, filters: DEFAULT_WORKOUT_FILTERS },
+        { id: 'stage-volume', kind: 'volume', itemUuids: ['v1'], targetGrade: 18, filters: STRICT },
+      ],
+    });
+    renderSheet(true);
+
+    expect(fields.filters).toEqual(STRICT);
+    expect(preview.calls.at(-1)?.selection.blocks[0].filters).toEqual(STRICT);
+  });
+
+  it('opens on the default filters for a run stored before stages kept them', () => {
+    setWorkoutRun('session-1', {
+      stages: [{ id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }],
+    });
+    renderSheet(true);
+
+    expect(fields.filters).toEqual(DEFAULT_WORKOUT_FILTERS);
+  });
+
+  it('turns off a size filter the board does not offer', () => {
+    setWorkoutRun('session-1', {
+      stages: [{ id: 'stage-volume', kind: 'volume', itemUuids: ['v1'], targetGrade: 18, filters: STRICT }],
+    });
+    renderSheet(true);
+
+    expect(fields.filters).toEqual({ ...STRICT, onlyWideClimbs: false });
+  });
+
+  it("rebuilds the preview with the climber's filter changes", () => {
+    renderSheet(true);
+
+    act(() => fields.onFiltersChange?.({ climbBias: 'attempted', minAscents: 100 }));
+
+    expect(fields.filters).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', minAscents: 100 });
+    expect(preview.calls.at(-1)?.selection.blocks[0].filters).toEqual(fields.filters);
   });
 
   it('offers the workout types only, never a warm-up', () => {

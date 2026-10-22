@@ -649,7 +649,7 @@
       "preGeneratorBlockSummaryPerStep": "{{count}} pro Stufe",
       "preGeneratorWarmUpSummaryRamps": "steigert sich bis {{grade}}",
       "preGeneratorWarmUpSummaryNoTarget": "braucht danach einen Block",
-      "preGeneratorClimbFilters": "Boulder-Filter · alle Blöcke",
+      "preGeneratorClimbFilters": "Boulder-Filter",
       "preWorkoutPreviewNothingPlanned": "Ein Aufwärmen allein hat kein Ziel. Füg danach einen Block hinzu, um Boulder zu planen.",
       "preStart": "Starten",
       "preStarting": "Startet…",

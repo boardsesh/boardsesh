@@ -132,6 +132,73 @@ describe('workout-run-store', () => {
     expect(getWorkoutRunState()).toBeNull();
   });
 
+  it("hydrates each stage's filters, warm-ups included", async () => {
+    const filtered: WorkoutRun = {
+      stages: [
+        {
+          id: 'warm',
+          kind: 'warmUp',
+          itemUuids: ['w1'],
+          filters: { climbBias: 'any', minAscents: 0, minRating: 0, onlyTallClimbs: false, onlyWideClimbs: false },
+        },
+        {
+          id: 'main',
+          kind: 'volume',
+          itemUuids: ['v1'],
+          targetGrade: 18,
+          filters: {
+            climbBias: 'attempted',
+            minAscents: 50,
+            minRating: 3,
+            onlyTallClimbs: true,
+            onlyWideClimbs: false,
+          },
+        },
+      ],
+    };
+    setWorkoutRun('session-1', filtered);
+    await flushStorageWrites();
+    resetWorkoutRunStoreForTests();
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')).toEqual(filtered);
+  });
+
+  it('still loads a run stored before stages kept their filters, under the same key', async () => {
+    // Written by the previous bundle: no `filters` on any stage.
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: {
+          stages: [
+            { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+            { id: 'main', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 },
+          ],
+        },
+      }),
+    );
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')?.stages.map((stage) => stage.filters)).toEqual([undefined, undefined]);
+  });
+
+  it('ignores a stored run whose stage filters have the wrong shape', async () => {
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: { stages: [{ id: 's', kind: 'volume', itemUuids: ['v1'], filters: { minAscents: '5' } }] },
+      }),
+    );
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunState()).toBeNull();
+  });
+
   it('does not let a slow hydrate overwrite a run written meanwhile', async () => {
     setWorkoutRun('session-1', { stages: [{ id: 'old', kind: 'volume', itemUuids: ['x'] }] });
     await flushStorageWrites();

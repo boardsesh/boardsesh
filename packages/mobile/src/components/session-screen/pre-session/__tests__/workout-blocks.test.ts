@@ -10,11 +10,13 @@ import {
   type GeneratorOptions,
 } from '@boardsesh/playlist-generator';
 import {
+  DEFAULT_WORKOUT_FILTERS,
   MAX_WORKOUT_BLOCKS,
   NO_WORKOUT,
   addBlock,
   canAddBlock,
   changeBlockType,
+  clearUnavailableSizeFilters,
   firstWorkoutType,
   hasWorkoutBlocks,
   moveBlock,
@@ -23,10 +25,12 @@ import {
   selectionWorkoutTypes,
   singleBlockSelection,
   updateBlock,
-  updateFilters,
+  updateBlockFilters,
   warmUpTarget,
+  withAvailableSizeFilters,
   type GeneratorSelection,
   type WorkoutBlock,
+  type WorkoutFilters,
 } from '../workout-blocks';
 
 const FALLBACK_GRADE = 15;
@@ -37,8 +41,26 @@ const counterIds = () => {
   return () => `block-${nextId++}`;
 };
 
-const workout = (id: string, options: GeneratorOptions): WorkoutBlock => ({ id, kind: 'workout', options });
-const warmUp = (id: string): WorkoutBlock => ({ id, kind: 'warmUp', warmUpType: 'standard' });
+const STRICT: WorkoutFilters = {
+  climbBias: 'attempted',
+  minAscents: 50,
+  minRating: 3,
+  onlyTallClimbs: true,
+  onlyWideClimbs: false,
+};
+
+const workout = (id: string, options: GeneratorOptions, filters = DEFAULT_WORKOUT_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'workout',
+  options,
+  filters,
+});
+const warmUp = (id: string, filters = DEFAULT_WORKOUT_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'warmUp',
+  warmUpType: 'standard',
+  filters,
+});
 
 function withBlocks(blocks: WorkoutBlock[]): GeneratorSelection {
   return { ...NO_WORKOUT, blocks };
@@ -54,13 +76,9 @@ function addedBlocks(count: number): GeneratorSelection {
 const ids = (selection: GeneratorSelection) => selection.blocks.map((block) => block.id);
 
 describe('no blocks', () => {
-  it('is no workout, and keeps the filters the climber set', () => {
-    const filtered = updateFilters(addedBlocks(1), { minAscents: 50, climbBias: 'attempted' });
-    const emptied = removeBlock(filtered, 'block-0');
-
+  it('is no workout', () => {
     expect(hasWorkoutBlocks(NO_WORKOUT)).toBe(false);
-    expect(hasWorkoutBlocks(emptied)).toBe(false);
-    expect(emptied.filters).toMatchObject({ minAscents: 50, climbBias: 'attempted' });
+    expect(hasWorkoutBlocks(removeBlock(addedBlocks(1), 'block-0'))).toBe(false);
   });
 });
 
@@ -86,6 +104,24 @@ describe('addBlock', () => {
     expect(addBlock(selection, () => 'added', FALLBACK_GRADE).blocks.at(-1)).toEqual(
       workout('added', { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 }),
     );
+  });
+
+  it('gives the first block the generator defaults as filters', () => {
+    expect(addedBlocks(1).blocks[0].filters).toEqual(DEFAULT_WORKOUT_FILTERS);
+  });
+
+  it("copies the last block's filters, a warm-up's included, into a block of its own", () => {
+    const selection = withBlocks([
+      workout('pyramid', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 20 }),
+      warmUp('warm', STRICT),
+    ]);
+    const added = addBlock(selection, () => 'added', FALLBACK_GRADE);
+    const addedBlock = added.blocks[2];
+
+    expect(addedBlock.filters).toEqual(STRICT);
+    expect(addedBlock.filters).not.toBe(STRICT);
+    // Editing the new block's filters leaves the block it copied alone.
+    expect(updateBlockFilters(added, 'added', { minRating: 0 }).blocks[1].filters).toEqual(STRICT);
   });
 
   it(`stops at ${MAX_WORKOUT_BLOCKS} blocks, warm-ups counted like any block`, () => {
@@ -140,6 +176,17 @@ describe('changeBlockType', () => {
     );
   });
 
+  it('keeps the filters whichever type the block turns into', () => {
+    const selection = withBlocks([
+      warmUp('warm', STRICT),
+      workout('volume', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12 }, STRICT),
+    ]);
+
+    expect(changeBlockType(selection, 'warm', 'pyramid', FALLBACK_GRADE).blocks[0].filters).toEqual(STRICT);
+    expect(changeBlockType(selection, 'volume', 'warmUp', FALLBACK_GRADE).blocks[1].filters).toEqual(STRICT);
+    expect(changeBlockType(selection, 'volume', 'ladder', FALLBACK_GRADE).blocks[1].filters).toEqual(STRICT);
+  });
+
   it('turns a workout into a standard warm-up with no grade of its own', () => {
     expect(changeBlockType(addedBlocks(1), 'block-0', 'warmUp', FALLBACK_GRADE).blocks[0]).toEqual(warmUp('block-0'));
   });
@@ -175,8 +222,59 @@ describe('updateBlock', () => {
     const selection = withBlocks([warmUp('warm'), ...addedBlocks(1).blocks]);
     const updated = updateBlock(selection, 'warm', { kind: 'warmUp', warmUpType: 'extended' });
 
-    expect(updated.blocks[0]).toEqual({ id: 'warm', kind: 'warmUp', warmUpType: 'extended' });
+    expect(updated.blocks[0]).toEqual({
+      id: 'warm',
+      kind: 'warmUp',
+      warmUpType: 'extended',
+      filters: DEFAULT_WORKOUT_FILTERS,
+    });
     expect(updated.blocks[1]).toBe(selection.blocks[1]);
+  });
+
+  it("keeps the block's filters", () => {
+    const selection = withBlocks([warmUp('warm', STRICT)]);
+
+    expect(updateBlock(selection, 'warm', { kind: 'warmUp', warmUpType: 'extended' }).blocks[0].filters).toBe(STRICT);
+  });
+});
+
+describe('updateBlockFilters', () => {
+  it("changes only that block's filters", () => {
+    const selection = addedBlocks(2);
+    const updated = updateBlockFilters(selection, 'block-1', { climbBias: 'any', minAscents: 100 });
+
+    expect(updated.blocks[1].filters).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any', minAscents: 100 });
+    expect(updated.blocks[0]).toBe(selection.blocks[0]);
+  });
+
+  it('returns the same selection when nothing changes or the block is unknown', () => {
+    const selection = addedBlocks(1);
+
+    expect(updateBlockFilters(selection, 'block-0', { minAscents: DEFAULT_WORKOUT_FILTERS.minAscents })).toBe(
+      selection,
+    );
+    expect(updateBlockFilters(selection, 'missing', { minAscents: 100 })).toBe(selection);
+  });
+});
+
+describe('size filters the board does not offer', () => {
+  it('turns off only the ones the board lacks', () => {
+    const both = { ...DEFAULT_WORKOUT_FILTERS, onlyTallClimbs: true, onlyWideClimbs: true };
+
+    expect(withAvailableSizeFilters(both, { tall: true, wide: false })).toEqual({ ...both, onlyWideClimbs: false });
+    expect(withAvailableSizeFilters(both, { tall: true, wide: true })).toBe(both);
+  });
+
+  it('clears every block, and returns the same selection when nothing is on', () => {
+    const selection = withBlocks([
+      warmUp('warm', STRICT),
+      workout('volume', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12 }),
+    ]);
+    const cleared = clearUnavailableSizeFilters(selection, { tall: false, wide: false });
+
+    expect(cleared.blocks[0].filters).toEqual({ ...STRICT, onlyTallClimbs: false });
+    expect(cleared.blocks[1]).toBe(selection.blocks[1]);
+    expect(clearUnavailableSizeFilters(cleared, { tall: false, wide: false })).toBe(cleared);
   });
 });
 
@@ -235,8 +333,13 @@ describe('singleBlockSelection', () => {
     const options = { ...DEFAULT_LADDER_OPTIONS, targetGrade: 15, minAscents: 25 };
 
     expect(singleBlockSelection(options, 'only')).toEqual({
-      blocks: [workout('only', options)],
-      filters: expect.objectContaining({ minAscents: 25, climbBias: 'unfamiliar' }),
+      blocks: [workout('only', options, { ...DEFAULT_WORKOUT_FILTERS, minAscents: 25 })],
     });
+  });
+
+  it('takes the filters it is given over the copies in the options', () => {
+    const options = { ...DEFAULT_LADDER_OPTIONS, targetGrade: 15 };
+
+    expect(singleBlockSelection(options, 'only', STRICT).blocks[0].filters).toBe(STRICT);
   });
 });

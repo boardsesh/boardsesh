@@ -2,8 +2,19 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, useState, type ReactNode, type Ref } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PYRAMID_OPTIONS, DEFAULT_VOLUME_OPTIONS, type GeneratorOptions } from '@boardsesh/playlist-generator';
-import { NO_WORKOUT, type GeneratorSelection, type WorkoutBlock } from '../workout-blocks';
+import {
+  DEFAULT_LADDER_OPTIONS,
+  DEFAULT_PYRAMID_OPTIONS,
+  DEFAULT_VOLUME_OPTIONS,
+  type GeneratorOptions,
+} from '@boardsesh/playlist-generator';
+import {
+  DEFAULT_WORKOUT_FILTERS,
+  NO_WORKOUT,
+  type GeneratorSelection,
+  type WorkoutBlock,
+  type WorkoutFilters,
+} from '../workout-blocks';
 
 const uuids = vi.hoisted(() => {
   let counter = 0;
@@ -14,7 +25,7 @@ const layouts = vi.hoisted(() => ({ byTestId: new Map<string, () => void>() }));
 const menus = vi.hoisted(() => ({
   byLabel: new Map<string, { labels: string[]; onSelectIndex: (index: number) => void }>(),
 }));
-const segments = vi.hoisted(() => ({ onSelect: null as ((key: string) => void) | null }));
+const segments = vi.hoisted(() => ({ byLabel: new Map<string, (key: string) => void>() }));
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => uuids.next() }));
 vi.mock('react-i18next', () => ({
@@ -95,11 +106,24 @@ vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../SegmentedControl', () => ({
-  SegmentedControl: ({ onSelect }: { onSelect: (key: string) => void }) => {
-    segments.onSelect = onSelect;
+  SegmentedControl: ({
+    accessibilityLabel,
+    onSelect,
+  }: {
+    accessibilityLabel: string;
+    onSelect: (key: string) => void;
+  }) => {
+    segments.byLabel.set(accessibilityLabel, onSelect);
     return null;
   },
 }));
+// Open, so a card's filter controls mount under its fields.
+vi.mock('../../../CollapsibleSection', () => ({
+  CollapsibleSection: ({ title, summary, children }: { title: string; summary?: string; children?: ReactNode }) =>
+    createElement('div', { 'data-filters': title, 'data-summary': summary }, children),
+}));
+vi.mock('../../../StarRating', () => ({ StarRating: () => null }));
+vi.mock('../../../SwitchRow', () => ({ SwitchRow: () => null }));
 vi.mock('../../../SectionDisclosureChevron', () => ({ SectionDisclosureChevron: () => null }));
 vi.mock('../../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../grade', () => ({ GradeSingleSelectRail: () => null }));
@@ -109,7 +133,7 @@ vi.mock('../generator-controls', () => ({
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
   GroupedSteppers: () => null,
   workoutStepperRows: () => [],
-  generatorControlStyles: { chipRow: {} },
+  generatorControlStyles: { chipRow: {}, groupedCard: {}, groupDivider: {} },
   getDefaultTargetGrade: () => 15,
   toRailGrades: () => [],
 }));
@@ -119,7 +143,7 @@ vi.mock('../../../../hooks/use-grade-format', () => ({
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: {} }));
 vi.mock('../../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: {} }),
+  useTheme: () => ({ systemColors: {}, brandColors: {}, variant: 'liquidGlass', m3: {} }),
 }));
 
 import { WorkoutBlockList } from '../WorkoutBlockList';
@@ -127,8 +151,19 @@ import { WorkoutBlockList } from '../WorkoutBlockList';
 const changes = vi.fn<(selection: GeneratorSelection) => void>();
 const revealBlock = vi.fn();
 
-const workout = (id: string, options: GeneratorOptions): WorkoutBlock => ({ id, kind: 'workout', options });
-const warmUp = (id: string): WorkoutBlock => ({ id, kind: 'warmUp', warmUpType: 'standard' });
+const STRICT: WorkoutFilters = { ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any', minAscents: 50 };
+const workout = (id: string, options: GeneratorOptions, filters = DEFAULT_WORKOUT_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'workout',
+  options,
+  filters,
+});
+const warmUp = (id: string, filters = DEFAULT_WORKOUT_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'warmUp',
+  warmUpType: 'standard',
+  filters,
+});
 const pyramid = (id: string, targetGrade: number) => workout(id, { ...DEFAULT_PYRAMID_OPTIONS, targetGrade });
 
 // Holds the selection like PreSessionView does, so taps re-render the list.
@@ -136,6 +171,7 @@ function Harness({ initial }: { initial: GeneratorSelection }) {
   const [selection, setSelection] = useState(initial);
   return createElement(WorkoutBlockList, {
     boardName: 'kilter',
+    sizeFilters: { tall: false, wide: false },
     selection,
     onChange: (next: GeneratorSelection) => {
       changes(next);
@@ -176,7 +212,7 @@ beforeEach(() => {
   revealBlock.mockClear();
   layouts.byTestId.clear();
   menus.byLabel.clear();
-  segments.onSelect = null;
+  segments.byLabel.clear();
 });
 
 describe('WorkoutBlockList', () => {
@@ -254,8 +290,8 @@ describe('WorkoutBlockList', () => {
     fireEvent.click(headers(screen.container)[1]);
     expect(screen.getByText('mobile.session.preGeneratorWarmUpNoTarget')).toBeTruthy();
 
-    act(() => segments.onSelect?.('extended'));
-    expect(lastSelection().blocks[1]).toEqual({ id: 'warm', kind: 'warmUp', warmUpType: 'extended' });
+    act(() => segments.byLabel.get('mobile.session.preGeneratorWarmUp')?.('extended'));
+    expect(lastSelection().blocks[1]).toEqual({ ...warmUp('warm'), warmUpType: 'extended' });
   });
 
   it('switches a block to a warm-up and back from its chips', () => {
@@ -267,6 +303,28 @@ describe('WorkoutBlockList', () => {
     // Back to a workout at the grade of the block after it.
     fireEvent.click(screen.getByLabelText('Block 1, mobile.session.preGeneratorVolume'));
     expect(lastSelection().blocks[0]).toEqual(workout('first', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 18 }));
+  });
+
+  it("sets the open block's own filters, leaving the other blocks' alone", () => {
+    const screen = renderList([pyramid('first', 20), pyramid('second', 18)]);
+
+    // Only the open card shows its filters.
+    expect(screen.container.querySelectorAll('[data-filters]')).toHaveLength(1);
+    act(() => segments.byLabel.get('mobile.session.preGeneratorClimbBias')?.('attempted'));
+
+    expect(lastSelection().blocks.map((block) => block.filters.climbBias)).toEqual(['attempted', 'unfamiliar']);
+  });
+
+  it("gives a new block the last block's filters, and keeps them through a type change", () => {
+    const screen = renderList([pyramid('first', 20), warmUp('warm', STRICT)]);
+
+    fireEvent.click(screen.getByLabelText('mobile.session.preGeneratorAddBlock'));
+    const addedId = lastSelection().blocks[2].id;
+    expect(lastSelection().blocks[2]).toEqual(workout(addedId, { ...DEFAULT_LADDER_OPTIONS, targetGrade: 20 }, STRICT));
+
+    // The new block opens on add; turning it into a warm-up keeps its filters.
+    fireEvent.click(screen.getByLabelText('Block 3, mobile.session.preWorkoutSectionWarmUp'));
+    expect(lastSelection().blocks[2]).toEqual(warmUp(addedId, STRICT));
   });
 
   it('greys out Add a block at five blocks', () => {

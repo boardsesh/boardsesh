@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { WorkoutRun } from '@boardsesh/playlist-generator';
-import { addWorkoutBlock, appendBlockToRun, defaultMidSessionBlock } from '../add-workout-block';
+import type { WorkoutRun, WorkoutStageFilters } from '@boardsesh/playlist-generator';
+import { DEFAULT_WORKOUT_FILTERS } from '../../pre-session/workout-blocks';
+import {
+  addWorkoutBlock,
+  appendBlockToRun,
+  defaultMidSessionBlock,
+  defaultMidSessionFilters,
+} from '../add-workout-block';
+
+const STRICT: WorkoutStageFilters = {
+  climbBias: 'any',
+  minAscents: 50,
+  minRating: 3,
+  onlyTallClimbs: true,
+  onlyWideClimbs: false,
+};
 
 const item = (uuid: string) => ({ uuid, climb: { uuid: `climb-${uuid}` } }) as unknown as ClimbQueueItem;
 
@@ -90,6 +104,52 @@ describe('appendBlockToRun', () => {
     );
 
     expect(run.stages[2]).toEqual({ id: 'stage-new', kind: 'volume', itemUuids: ['v1'] });
+  });
+
+  it("keeps the block's filters on its stage", () => {
+    const run = appendBlockToRun(
+      existingRun,
+      { stages: [{ id: 'stage-new', kind: 'volume', itemUuids: ['v1'], targetGrade: 16, filters: STRICT }] },
+      ['v1'],
+    );
+
+    expect(run.stages[2]).toEqual({
+      id: 'stage-new',
+      kind: 'volume',
+      itemUuids: ['v1'],
+      targetGrade: 16,
+      filters: STRICT,
+    });
+  });
+});
+
+describe('defaultMidSessionFilters', () => {
+  it("takes the last stage's filters, a warm-up's included", () => {
+    const run: WorkoutRun = {
+      stages: [
+        { id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18, filters: DEFAULT_WORKOUT_FILTERS },
+        { id: 'late-warm', kind: 'warmUp', itemUuids: ['w9'], filters: STRICT },
+      ],
+    };
+
+    expect(defaultMidSessionFilters(run)).toEqual(STRICT);
+    expect(defaultMidSessionFilters(run)).not.toBe(STRICT);
+  });
+
+  it('skips a stage stored without filters for an earlier one that kept them', () => {
+    const run: WorkoutRun = {
+      stages: [
+        { id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18, filters: STRICT },
+        { id: 'old', kind: 'volume', itemUuids: ['v1'] },
+      ],
+    };
+
+    expect(defaultMidSessionFilters(run)).toEqual(STRICT);
+  });
+
+  it('falls back to the generator defaults with no run, or a run stored before stages kept filters', () => {
+    expect(defaultMidSessionFilters(null)).toEqual(DEFAULT_WORKOUT_FILTERS);
+    expect(defaultMidSessionFilters(existingRun)).toEqual(DEFAULT_WORKOUT_FILTERS);
   });
 });
 

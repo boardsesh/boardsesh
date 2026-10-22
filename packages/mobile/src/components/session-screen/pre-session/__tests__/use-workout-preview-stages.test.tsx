@@ -13,6 +13,7 @@ import {
   planFromBlocks,
   summarizePlanFill,
   type GeneratorGradeScale,
+  type GeneratorOptions,
   type PyramidOptions,
   type VolumeOptions,
 } from '@boardsesh/playlist-generator';
@@ -21,8 +22,10 @@ import {
   addBlock,
   moveBlock,
   removeBlock,
+  updateBlockFilters,
   type GeneratorSelection,
   type WorkoutBlock,
+  type WorkoutFilters,
 } from '../workout-blocks';
 import type { FetchGradePool } from '../workout-preview-pool';
 
@@ -60,8 +63,20 @@ const ANY_FILTERS = {
   onlyWideClimbs: false,
   climbBias: 'any',
 } as const;
-const warmUpBlock = (id: string): WorkoutBlock => ({ id, kind: 'warmUp', warmUpType: 'standard' });
-const selectionOf = (blocks: WorkoutBlock[]): GeneratorSelection => ({ blocks, filters: ANY_FILTERS });
+const STRICT_FILTERS: WorkoutFilters = { ...ANY_FILTERS, minAscents: 50, minRating: 3 };
+const warmUpBlock = (id: string, filters: WorkoutFilters = ANY_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'warmUp',
+  warmUpType: 'standard',
+  filters,
+});
+const workoutBlock = (id: string, options: GeneratorOptions, filters: WorkoutFilters = ANY_FILTERS): WorkoutBlock => ({
+  id,
+  kind: 'workout',
+  options,
+  filters,
+});
+const selectionOf = (blocks: WorkoutBlock[]): GeneratorSelection => ({ blocks });
 
 // A deep pool at every grade, with climb uuids unique across grades.
 const fetchPool: FetchGradePool = async (grade) =>
@@ -71,7 +86,7 @@ describe('useWorkoutPreview stages', () => {
   it('plans the same slots as before and groups the queued climbs by stage', async () => {
     const selection = selectionOf([
       warmUpBlock('warm'),
-      { id: 'volume', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } },
+      workoutBlock('volume', { ...volumeWithWarmUp, warmUp: 'none' }),
     ]);
     const { result } = renderHook(() =>
       useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
@@ -107,8 +122,8 @@ describe('useWorkoutPreview stages', () => {
     const volume: VolumeOptions = { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 4 };
     const selection = selectionOf([
       warmUpBlock('warm'),
-      { id: 'block-pyramid', kind: 'workout', options: pyramid },
-      { id: 'block-volume', kind: 'workout', options: volume },
+      workoutBlock('block-pyramid', pyramid),
+      workoutBlock('block-volume', volume),
     ]);
     const countingFetchPool = vi.fn(fetchPool);
     const { result } = renderHook(() =>
@@ -125,7 +140,7 @@ describe('useWorkoutPreview stages', () => {
     expect(result.current.plannedSlots.map(({ grade, section, index }) => ({ grade, section, index }))).toEqual(
       expectedSlots,
     );
-    // The volume block's fetch carries the shared filters, not its options' own
+    // The volume block's fetch carries the block's filters, not its options' own
     // defaults, and asks for as many climbs as its four slots need.
     expect(countingFetchPool).toHaveBeenCalledWith(
       15,
@@ -180,15 +195,77 @@ describe('useWorkoutPreview stages', () => {
     expect(result.current.toStagedQueueItems().run?.stages[2].itemUuids).toContain(volumeRow.item.uuid);
   });
 
+  it('fetches blocks with different filters at one grade apart, and blocks with equal filters together', async () => {
+    const volume: VolumeOptions = { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 4 };
+    const selection = selectionOf([
+      workoutBlock('loose-a', volume),
+      workoutBlock('strict', { ...volume, mainSetClimbs: 2 }, STRICT_FILTERS),
+      // Its own copy of the same filters as the first block.
+      workoutBlock('loose-b', { ...volume, mainSetClimbs: 3 }, { ...ANY_FILTERS }),
+    ]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    // One pool for the two loose blocks, sized for both; one for the strict block.
+    expect(countingFetchPool).toHaveBeenCalledTimes(2);
+    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: ANY_FILTERS }), 7);
+    expect(countingFetchPool).toHaveBeenCalledWith(15, expect.objectContaining({ filters: STRICT_FILTERS }), 2);
+    // The fake hands both pools the same climbs, and still no climb fills two slots.
+    const climbUuids = result.current.items.map((preview) => preview.item.climb.uuid);
+    expect(climbUuids).toHaveLength(9);
+    expect(new Set(climbUuids).size).toBe(9);
+  });
+
+  it("keeps each stage's filters in the run Start writes, warm-ups included", async () => {
+    const selection = selectionOf([
+      warmUpBlock('warm', STRICT_FILTERS),
+      workoutBlock('volume', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 2 }),
+    ]);
+    const { result } = renderHook(() =>
+      useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool, grades }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    expect(result.current.toStagedQueueItems().run?.stages.map((stage) => stage.filters)).toEqual([
+      STRICT_FILTERS,
+      ANY_FILTERS,
+    ]);
+  });
+
+  it("rebuilds when one block's filters change", async () => {
+    const committed = selectionOf([
+      workoutBlock('volume', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 15, mainSetClimbs: 2 }),
+    ]);
+    const countingFetchPool = vi.fn(fetchPool);
+    const { result, rerender } = renderHook(
+      ({ selection }: { selection: GeneratorSelection }) =>
+        useWorkoutPreview(selection, board, { isAuthenticated: false }, { fetchPool: countingFetchPool, grades }),
+      { initialProps: { selection: committed } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    rerender({ selection: updateBlockFilters(committed, 'volume', { minAscents: 100 }) });
+    expect(result.current.status).toBe('loading');
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(countingFetchPool).toHaveBeenLastCalledWith(
+      15,
+      expect.objectContaining({ filters: { ...ANY_FILTERS, minAscents: 100 } }),
+      2,
+    );
+  });
+
   it.each([
     ['moved', (selection: GeneratorSelection) => moveBlock(selection, 'block-a', 'down')],
     ['added', (selection: GeneratorSelection) => addBlock(selection, () => 'block-c', 15)],
     ['removed', (selection: GeneratorSelection) => removeBlock(selection, 'block-b')],
   ] as const)('hands Start nothing while a %s block rebuilds the preview', async (_change, changeBlocks) => {
     const committed = selectionOf([
-      { id: 'block-first', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } },
-      { id: 'block-a', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 } },
-      { id: 'block-b', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 14, mainSetClimbs: 3 } },
+      workoutBlock('block-first', { ...volumeWithWarmUp, warmUp: 'none' }),
+      workoutBlock('block-a', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 }),
+      workoutBlock('block-b', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 14, mainSetClimbs: 3 }),
     ]);
     const { result, rerender } = renderHook(
       ({ selection }: { selection: GeneratorSelection }) =>
@@ -210,9 +287,9 @@ describe('useWorkoutPreview stages', () => {
 
   it("ramps a warm-up at position 2 to block 3's grade and plans none for a trailing warm-up", async () => {
     const selection = selectionOf([
-      { id: 'focus', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 2 } },
+      workoutBlock('focus', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 2 }),
       warmUpBlock('middle'),
-      { id: 'pyramid', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 22, numberOfSteps: 3 } },
+      workoutBlock('pyramid', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 22, numberOfSteps: 3 }),
       warmUpBlock('trailing'),
     ]);
     const { result } = renderHook(() =>
@@ -255,7 +332,7 @@ describe('useWorkoutPreview stages', () => {
   });
 
   it('keeps the preview when the selection is re-created with the same blocks', async () => {
-    const selection = selectionOf([{ id: 'only', kind: 'workout', options: { ...volumeWithWarmUp, warmUp: 'none' } }]);
+    const selection = selectionOf([workoutBlock('only', { ...volumeWithWarmUp, warmUp: 'none' })]);
     const countingFetchPool = vi.fn(fetchPool);
     const { result, rerender } = renderHook(
       ({ current }: { current: GeneratorSelection }) =>

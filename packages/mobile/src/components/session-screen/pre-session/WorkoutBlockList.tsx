@@ -21,9 +21,12 @@ import {
   moveBlock,
   removeBlock,
   updateBlock,
+  updateBlockFilters,
   warmUpTarget,
   type GeneratorSelection,
+  type SizeFilterAvailability,
   type WorkoutBlockType,
+  type WorkoutFilters,
 } from './workout-blocks';
 
 // Block ids key the cards on this screen. Uuids, like the stage ids: a module
@@ -33,6 +36,8 @@ const makeBlockId = () => randomUUID();
 
 type WorkoutBlockListProps = {
   boardName: BoardName | null;
+  /** Which size filters the board offers. Keep its identity stable: the cards are memoised. */
+  sizeFilters: SizeFilterAvailability;
   selection: GeneratorSelection;
   onChange: (selection: GeneratorSelection) => void;
   /** Scrolls a card that was just added or opened clear of the bottom chrome. */
@@ -45,7 +50,13 @@ type WorkoutBlockListProps = {
  * Which card is open is this list's own state, not part of the selection, so
  * opening one never rebuilds the preview.
  */
-export function WorkoutBlockList({ boardName, selection, onChange, onRevealBlock }: WorkoutBlockListProps) {
+export function WorkoutBlockList({
+  boardName,
+  sizeFilters,
+  selection,
+  onChange,
+  onRevealBlock,
+}: WorkoutBlockListProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
@@ -78,6 +89,11 @@ export function WorkoutBlockList({ boardName, selection, onChange, onRevealBlock
   );
   const handleBlockChange = useCallback(
     (blockId: string, spec: WorkoutBlockSpec) => onChange(updateBlock(selectionRef.current, blockId, spec)),
+    [onChange],
+  );
+  const handleFiltersChange = useCallback(
+    (blockId: string, patch: Partial<WorkoutFilters>) =>
+      onChange(updateBlockFilters(selectionRef.current, blockId, patch)),
     [onChange],
   );
   const handleRemove = useCallback(
@@ -134,9 +150,11 @@ export function WorkoutBlockList({ boardName, selection, onChange, onRevealBlock
               warmUpTargetBlockNumber={target?.blockNumber ?? null}
               boardName={boardName}
               railGrades={railGrades}
+              sizeFilters={sizeFilters}
               onToggle={handleToggle}
               onTypeChange={handleTypeChange}
               onBlockChange={handleBlockChange}
+              onFiltersChange={handleFiltersChange}
               onMove={handleMove}
               onRemove={handleRemove}
               onCardLayout={handleCardLayout}

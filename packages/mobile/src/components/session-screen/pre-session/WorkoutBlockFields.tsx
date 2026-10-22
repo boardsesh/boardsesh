@@ -1,6 +1,6 @@
 // One block's own settings: the type chips, then a target grade and the count
 // steppers for a workout, or the warm-up length and what it ramps to for a
-// warm-up. The Record tab shows it under a block card's header; the in-session
+// warm-up, then the block's climb filters, folded. The Record tab shows it under a block card's header; the in-session
 // "Add a block" sheet can show it alone with workout types only. It sits in a
 // container that already insets it 16pt (a Card does), and the grade rail
 // bleeds back out to that container's edges.
@@ -19,7 +19,14 @@ import { spacing } from '../../../theme/tokens';
 import { ShowcaseAnchorView } from '../../../lib/showcase-anchor';
 import { workoutStageName } from '../../../lib/workout-run-readout';
 import { Chip, GroupedSteppers, generatorControlStyles, workoutStepperRows } from './generator-controls';
-import { WORKOUT_BLOCK_TYPES, blockType, type WorkoutBlockType } from './workout-blocks';
+import { WorkoutBlockFilters } from './WorkoutBlockFilters';
+import {
+  WORKOUT_BLOCK_TYPES,
+  blockType,
+  type SizeFilterAvailability,
+  type WorkoutBlockType,
+  type WorkoutFilters,
+} from './workout-blocks';
 
 // Chips draw ~34pt tall; this brings each touch target to 44pt.
 const CHIP_HIT_SLOP: Insets = { top: 6, bottom: 6 };
@@ -48,8 +55,13 @@ type WorkoutBlockFieldsProps = {
   warmUpTargetGrade?: number | null;
   /** For a warm-up: the 1-based number of the block it ramps to. */
   warmUpTargetBlockNumber?: number | null;
+  /** The block's own climb filters. */
+  filters: WorkoutFilters;
+  /** Which size filters the board offers. */
+  sizeFilters: SizeFilterAvailability;
   onTypeChange: (type: WorkoutBlockType) => void;
   onBlockChange: (block: WorkoutBlockSpec) => void;
+  onFiltersChange: (patch: Partial<WorkoutFilters>) => void;
 };
 
 export function WorkoutBlockFields({
@@ -60,8 +72,11 @@ export function WorkoutBlockFields({
   blockTypes = WORKOUT_BLOCK_TYPES,
   warmUpTargetGrade = null,
   warmUpTargetBlockNumber = null,
+  filters,
+  sizeFilters,
   onTypeChange,
   onBlockChange,
+  onFiltersChange,
 }: WorkoutBlockFieldsProps) {
   const { t } = useTranslation('session');
   const selectedType = blockType(block);
@@ -106,6 +121,8 @@ export function WorkoutBlockFields({
           onBlockChange={onBlockChange}
         />
       )}
+
+      <WorkoutBlockFilters filters={filters} sizeFilters={sizeFilters} onFiltersChange={onFiltersChange} />
     </View>
   );
 }

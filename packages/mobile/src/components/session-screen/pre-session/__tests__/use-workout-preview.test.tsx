@@ -67,7 +67,7 @@ const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', ang
 const grades: GeneratorGradeScale = [{ difficulty_id: 10 }, { difficulty_id: 11 }];
 
 const OFF: GeneratorSelection = NO_WORKOUT;
-// One Volume block; filter overrides land in the selection's shared filters.
+// One Volume block; filter overrides land in the block's own filters.
 function on(targetGrade: number, overrides?: Partial<VolumeOptions>): GeneratorSelection {
   return singleBlockSelection(
     {

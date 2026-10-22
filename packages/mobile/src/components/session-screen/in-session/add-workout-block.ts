@@ -18,7 +18,7 @@ import {
   type WorkoutType,
 } from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import { buildDefaultOptions } from '../pre-session/workout-blocks';
+import { DEFAULT_WORKOUT_FILTERS, buildDefaultOptions, type WorkoutFilters } from '../pre-session/workout-blocks';
 
 /** The queue's append, as the session's queue provider exposes it. */
 export type AppendQueueItems = (items: ClimbQueueItem[]) => number;
@@ -104,4 +104,19 @@ export function defaultMidSessionBlock(run: WorkoutRun | null, fallbackGrade: nu
     break;
   }
   return { ...buildDefaultOptions(type, targetGrade), warmUp: 'none' };
+}
+
+/**
+ * The climb filters "Add a block" opens on: those of the run's last stage that
+ * kept any, warm-up or not, so the new block fetches the same kind of climbs as
+ * the block before it. A run with none (none yet, or stored before stages kept
+ * their filters) falls back to the generator defaults.
+ */
+export function defaultMidSessionFilters(run: WorkoutRun | null): WorkoutFilters {
+  const stages = run?.stages ?? [];
+  for (let position = stages.length - 1; position >= 0; position--) {
+    const { filters } = stages[position];
+    if (filters) return { ...filters };
+  }
+  return { ...DEFAULT_WORKOUT_FILTERS };
 }

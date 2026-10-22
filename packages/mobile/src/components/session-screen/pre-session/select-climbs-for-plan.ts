@@ -111,11 +111,9 @@ export async function selectClimbsForPlan(
   board: UserBoard,
   options?: SelectClimbsForPlanOptions,
 ): Promise<ClimbQueueItem[]> {
-  const ctx: PreviewFetchContext = {
-    board,
-    isAuthenticated: options?.isAuthenticated ?? false,
-    filters: options?.filters,
-  };
-  const pools = await buildPools(slots, ctx, fetchGradePool);
-  return selectItemsFromPools(slots, pools).items.map((preview) => preview.item);
+  const ctx: PreviewFetchContext = { board, isAuthenticated: options?.isAuthenticated ?? false };
+  // Every slot shares the one set of filters; the pools read them from the slot.
+  const filteredSlots = slots.map((slot) => ({ ...slot, filters: options?.filters }));
+  const pools = await buildPools(filteredSlots, ctx, fetchGradePool);
+  return selectItemsFromPools(filteredSlots, pools).items.map((preview) => preview.item);
 }

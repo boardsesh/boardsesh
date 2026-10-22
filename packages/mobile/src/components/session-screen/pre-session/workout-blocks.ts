@@ -1,7 +1,7 @@
 // The pre-session workout as an ordered list of blocks (#5379). Every block is
 // the same kind of thing, a warm-up or a workout of one type, and any block can
-// sit anywhere, the first one included. The climb filters are set once and apply
-// to every block. No blocks means no workout: the climber picks every climb.
+// sit anywhere, the first one included. Each block, warm-ups included, has its
+// own climb filters. No blocks means no workout: the climber picks every climb.
 // Pure: every helper returns a new selection, so the picker and the preview hook
 // can share them and tests need no React.
 
@@ -12,24 +12,26 @@ import {
   DEFAULT_VOLUME_OPTIONS,
   type GeneratorOptions,
   type WorkoutBlockSpec,
+  type WorkoutStageFilters,
   type WorkoutStageKind,
   type WorkoutType,
 } from '@boardsesh/playlist-generator';
 
-/** The filters every block's climbs share. A block's own copies of these fields are ignored. */
-export type WorkoutFilters = Pick<
-  GeneratorOptions,
-  'climbBias' | 'minAscents' | 'minRating' | 'onlyTallClimbs' | 'onlyWideClimbs'
->;
+/**
+ * One block's climb filters. A workout block's options carry copies of these
+ * fields; the block's `filters` win and the copies are ignored.
+ */
+export type WorkoutFilters = WorkoutStageFilters;
 
-/** One block on the picker. `id` keys its card; stage ids are minted when the plan is built. */
-export type WorkoutBlock = WorkoutBlockSpec & { id: string };
+/**
+ * One block on the picker. `id` keys its card; stage ids are minted when the
+ * plan is built. `filters` are its own climb filters, which pass to its stage.
+ */
+export type WorkoutBlock = WorkoutBlockSpec & { id: string; filters: WorkoutFilters };
 
 export type GeneratorSelection = {
   /** Blocks in the order they run. Empty means no workout. */
   blocks: readonly WorkoutBlock[];
-  /** Kept with no blocks too, so a climber who removes every block finds their filters again. */
-  filters: WorkoutFilters;
 };
 
 /** A block's type as its chips name it: a warm-up or one workout type. */
@@ -54,8 +56,22 @@ export function filtersOf({
   return { climbBias, minAscents, minRating, onlyTallClimbs, onlyWideClimbs };
 }
 
-/** No blocks, with the shared generator defaults as filters. */
-export const NO_WORKOUT: GeneratorSelection = { blocks: [], filters: filtersOf(DEFAULT_VOLUME_OPTIONS) };
+/** The generator's default climb filters: what the first block starts with. */
+export const DEFAULT_WORKOUT_FILTERS: WorkoutFilters = filtersOf(DEFAULT_VOLUME_OPTIONS);
+
+/** No blocks: the climber picks every climb. */
+export const NO_WORKOUT: GeneratorSelection = { blocks: [] };
+
+/** True when two sets of filters fetch the same climbs. */
+export function sameFilters(first: WorkoutFilters, second: WorkoutFilters): boolean {
+  return (
+    first.climbBias === second.climbBias &&
+    first.minAscents === second.minAscents &&
+    first.minRating === second.minRating &&
+    first.onlyTallClimbs === second.onlyTallClimbs &&
+    first.onlyWideClimbs === second.onlyWideClimbs
+  );
+}
 
 export function hasWorkoutBlocks(selection: GeneratorSelection): boolean {
   return selection.blocks.length > 0;
@@ -78,9 +94,13 @@ export function buildDefaultOptions(type: WorkoutType, targetGrade: number): Gen
   }
 }
 
-/** One workout block, with the filters its options carry. */
-export function singleBlockSelection(options: GeneratorOptions, blockId: string): GeneratorSelection {
-  return { blocks: [{ id: blockId, kind: 'workout', options }], filters: filtersOf(options) };
+/** One workout block, with `filters`, else the filters its options carry. */
+export function singleBlockSelection(
+  options: GeneratorOptions,
+  blockId: string,
+  filters: WorkoutFilters = filtersOf(options),
+): GeneratorSelection {
+  return { blocks: [{ id: blockId, kind: 'workout', options, filters }] };
 }
 
 /** The workout type after `type` in picker order, wrapping round, so a new block never repeats the last one. */
@@ -125,8 +145,10 @@ export function canAddBlock(selection: GeneratorSelection): boolean {
 /**
  * Appends a workout block. It takes the type after the last workout block's, so
  * it never repeats it, and that block's grade; with no workout block yet it is
- * Volume at `fallbackTargetGrade`. A warm-up is picked from a block's chips, never
- * added directly. Returns the same selection at the cap.
+ * Volume at `fallbackTargetGrade`. Its filters are a copy of the last block's,
+ * warm-up or not; the first block gets the generator defaults. A warm-up is
+ * picked from a block's chips, never added directly. Returns the same selection
+ * at the cap.
  */
 export function addBlock(
   selection: GeneratorSelection,
@@ -138,7 +160,8 @@ export function addBlock(
   const options = lastOptions
     ? buildDefaultOptions(nextBlockType(lastOptions.type), lastOptions.targetGrade)
     : buildDefaultOptions('volume', fallbackTargetGrade);
-  return { ...selection, blocks: [...selection.blocks, { id: makeBlockId(), kind: 'workout', options }] };
+  const filters = { ...(selection.blocks[selection.blocks.length - 1]?.filters ?? DEFAULT_WORKOUT_FILTERS) };
+  return { ...selection, blocks: [...selection.blocks, { id: makeBlockId(), kind: 'workout', options, filters }] };
 }
 
 export function removeBlock(selection: GeneratorSelection, blockId: string): GeneratorSelection {
@@ -160,7 +183,7 @@ export function moveBlock(
   return { ...selection, blocks };
 }
 
-/** Replaces a block's settings, keeping its id and place. */
+/** Replaces a block's settings, keeping its id, place and filters. */
 export function updateBlock(
   selection: GeneratorSelection,
   blockId: string,
@@ -169,13 +192,64 @@ export function updateBlock(
   if (!selection.blocks.some((block) => block.id === blockId)) return selection;
   return {
     ...selection,
-    blocks: selection.blocks.map((block) => (block.id === blockId ? { ...spec, id: blockId } : block)),
+    blocks: selection.blocks.map((block) =>
+      block.id === blockId ? { ...spec, id: blockId, filters: block.filters } : block,
+    ),
   };
 }
 
+/** Changes some of one block's filters. Returns the same selection when nothing changes. */
+export function updateBlockFilters(
+  selection: GeneratorSelection,
+  blockId: string,
+  patch: Partial<WorkoutFilters>,
+): GeneratorSelection {
+  const block = selection.blocks.find((candidate) => candidate.id === blockId);
+  if (!block) return selection;
+  const filters = { ...block.filters, ...patch };
+  if (sameFilters(filters, block.filters)) return selection;
+  return {
+    ...selection,
+    blocks: selection.blocks.map((candidate) => (candidate.id === blockId ? { ...candidate, filters } : candidate)),
+  };
+}
+
+/** Which size filters the board offers: tall needs shorter sizes of its layout, wide narrower ones. */
+export type SizeFilterAvailability = { tall: boolean; wide: boolean };
+
+/** `filters` with any size filter the board does not offer turned off. The same object when none is. */
+export function withAvailableSizeFilters(
+  filters: WorkoutFilters,
+  { tall, wide }: SizeFilterAvailability,
+): WorkoutFilters {
+  const clearTall = filters.onlyTallClimbs && !tall;
+  const clearWide = filters.onlyWideClimbs && !wide;
+  if (!clearTall && !clearWide) return filters;
+  return {
+    ...filters,
+    ...(clearTall ? { onlyTallClimbs: false } : {}),
+    ...(clearWide ? { onlyWideClimbs: false } : {}),
+  };
+}
+
+/** Turns off, on every block, the size filters the board does not offer. The same selection when none is on. */
+export function clearUnavailableSizeFilters(
+  selection: GeneratorSelection,
+  availability: SizeFilterAvailability,
+): GeneratorSelection {
+  let changed = false;
+  const blocks = selection.blocks.map((block) => {
+    const filters = withAvailableSizeFilters(block.filters, availability);
+    if (filters === block.filters) return block;
+    changed = true;
+    return { ...block, filters };
+  });
+  return changed ? { ...selection, blocks } : selection;
+}
+
 /**
- * Switches a block to another type with that type's defaults. A workout block
- * keeps its target grade. A warm-up has none, so a warm-up turned into a workout
+ * Switches a block to another type with that type's defaults, keeping its
+ * filters. A workout block keeps its target grade. A warm-up has none, so a warm-up turned into a workout
  * takes the grade of the next workout block, else of the one before it, else
  * `fallbackTargetGrade`.
  */
@@ -196,10 +270,6 @@ export function changeBlockType(
         lastWorkoutOptions(selection.blocks.slice(0, position))?.targetGrade ??
         fallbackTargetGrade);
   return updateBlock(selection, blockId, { kind: 'workout', options: buildDefaultOptions(type, targetGrade) });
-}
-
-export function updateFilters(selection: GeneratorSelection, patch: Partial<WorkoutFilters>): GeneratorSelection {
-  return { ...selection, filters: { ...selection.filters, ...patch } };
 }
 
 /**

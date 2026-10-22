@@ -3,16 +3,17 @@ import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PYRAMID_OPTIONS, DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
-import { NO_WORKOUT, type GeneratorSelection } from '../workout-blocks';
+import { DEFAULT_WORKOUT_FILTERS, NO_WORKOUT, type GeneratorSelection } from '../workout-blocks';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 // What the card hands the block list, and the list's onChange to drive it.
 const blockList = vi.hoisted(() => ({
-  latest: null as { selection: unknown; onChange: (selection: unknown) => void } | null,
+  latest: null as {
+    selection: unknown;
+    sizeFilters: unknown;
+    onChange: (selection: unknown) => void;
+  } | null,
 }));
-const chips = vi.hoisted(() => ({ byLabel: new Map<string, () => void>() }));
-const segments = vi.hoisted(() => ({ byLabel: new Map<string, (key: string) => void>() }));
-const collapsible = vi.hoisted(() => ({ titles: [] as string[] }));
 const tallWide = vi.hoisted(() => ({ hasShorter: false, hasNarrower: false }));
 
 vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
@@ -21,17 +22,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: Record<string, string | number>) => {
-      if (key === 'mobile.session.preGeneratorOptionAccessibilityLabel' && options) {
-        return `${options.group}, ${options.value}`;
-      }
-      if (key === 'mobile.session.preGeneratorMinAscentsOption' && options) return `${options.value}+`;
-      return key;
-    },
-  }),
-}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/board-constants', () => ({
   getTallWideScope: () => ({ ...tallWide, narrowerSizeIds: [], shorterSizeIds: [] }),
 }));
@@ -41,40 +32,18 @@ vi.mock('@boardsesh/climb-filters', () => ({
   getMinRatingPickerValue: (value: number | null | undefined) => (value != null && value > 0 ? value : null),
 }));
 vi.mock('../WorkoutBlockList', () => ({
-  WorkoutBlockList: (props: { selection: unknown; onChange: (selection: unknown) => void }) => {
+  WorkoutBlockList: (props: { selection: unknown; sizeFilters: unknown; onChange: (selection: unknown) => void }) => {
     blockList.latest = props;
     return null;
   },
 }));
-vi.mock('../generator-controls', () => ({
-  Chip: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel?: string }) => {
-    if (accessibilityLabel) chips.byLabel.set(accessibilityLabel, onPress);
-    return null;
-  },
-  generatorControlStyles: { chipRow: {}, groupedCard: {}, groupDivider: {} },
-}));
+// Only `sizeFilterAvailability` is used here; the controls behind it stay out.
+vi.mock('../generator-controls', () => ({ Chip: () => null, generatorControlStyles: {} }));
 vi.mock('../../../SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
-vi.mock('../../../SegmentedControl', () => ({
-  SegmentedControl: ({
-    accessibilityLabel,
-    onSelect,
-  }: {
-    accessibilityLabel?: string;
-    onSelect: (key: string) => void;
-  }) => {
-    if (accessibilityLabel) segments.byLabel.set(accessibilityLabel, onSelect);
-    return null;
-  },
-}));
-vi.mock('../../../CollapsibleSection', () => ({
-  // Render children so the filter controls mount.
-  CollapsibleSection: ({ title, children }: { title: string; children?: ReactNode }) => {
-    collapsible.titles.push(title);
-    return createElement('div', null, children);
-  },
-}));
+vi.mock('../../../SegmentedControl', () => ({ SegmentedControl: () => null }));
+vi.mock('../../../CollapsibleSection', () => ({ CollapsibleSection: () => null }));
 vi.mock('../../../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../../../SwitchRow', () => ({ SwitchRow: () => null }));
 vi.mock('../../../Text', () => ({
@@ -88,8 +57,14 @@ vi.mock('../../../../theme/tokens', () => ({ spacing: {} }));
 import { GeneratorPickerCard } from '../GeneratorPickerCard';
 
 const ONE_BLOCK: GeneratorSelection = {
-  ...NO_WORKOUT,
-  blocks: [{ id: 'block-1', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 20 } }],
+  blocks: [
+    {
+      id: 'block-1',
+      kind: 'workout',
+      options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 20 },
+      filters: DEFAULT_WORKOUT_FILTERS,
+    },
+  ],
 };
 
 function renderCard(selection: GeneratorSelection, onChange = vi.fn()) {
@@ -113,9 +88,6 @@ function changeBlocks(next: GeneratorSelection) {
 beforeEach(() => {
   analytics.track.mockClear();
   blockList.latest = null;
-  chips.byLabel.clear();
-  segments.byLabel.clear();
-  collapsible.titles = [];
   tallWide.hasShorter = false;
   tallWide.hasNarrower = false;
 });
@@ -143,7 +115,12 @@ describe('GeneratorPickerCard', () => {
       ...ONE_BLOCK,
       blocks: [
         ...ONE_BLOCK.blocks,
-        { id: 'block-2', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 } },
+        {
+          id: 'block-2',
+          kind: 'workout',
+          options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 },
+          filters: DEFAULT_WORKOUT_FILTERS,
+        },
       ],
     });
     changeBlocks(NO_WORKOUT);
@@ -151,34 +128,39 @@ describe('GeneratorPickerCard', () => {
     expect(analytics.track).not.toHaveBeenCalled();
   });
 
-  it('hides the climb filters until there is a block for them to apply to', () => {
-    renderCard(NO_WORKOUT);
-    expect(collapsible.titles).toEqual([]);
+  it('has no climb filters of its own: each block carries them', () => {
+    const screen = renderCard(ONE_BLOCK);
 
+    expect(screen.queryByText('mobile.session.preGeneratorClimbFilters')).toBeNull();
+  });
+
+  it('tells the blocks which size filters the board offers', () => {
     renderCard(ONE_BLOCK);
-    expect(collapsible.titles).toContain('mobile.session.preGeneratorClimbFilters');
+    expect(blockList.latest?.sizeFilters).toEqual({ tall: false, wide: false });
+
+    tallWide.hasShorter = true;
+    renderCard(ONE_BLOCK);
+    expect(blockList.latest?.sizeFilters).toEqual({ tall: true, wide: false });
   });
 
-  it('sets the filters once for the whole selection, leaving the blocks alone', () => {
-    const { onChange } = renderCard(ONE_BLOCK);
-
-    act(() => segments.byLabel.get('mobile.session.preGeneratorClimbBias')?.('attempted'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      blocks: ONE_BLOCK.blocks,
-      filters: { ...ONE_BLOCK.filters, climbBias: 'attempted' },
-    });
-
-    act(() => chips.byLabel.get('mobile.session.preGeneratorMinAscents, 10+')?.());
-    expect(onChange).toHaveBeenLastCalledWith({
-      blocks: ONE_BLOCK.blocks,
-      filters: { ...ONE_BLOCK.filters, minAscents: 10 },
-    });
-  });
-
-  it('clears a tall-climbs filter the board size cannot use', () => {
-    const tallOnly: GeneratorSelection = { ...ONE_BLOCK, filters: { ...ONE_BLOCK.filters, onlyTallClimbs: true } };
+  it('clears a tall-climbs filter the board size cannot use, on every block that has it', () => {
+    const tallFilters = { ...DEFAULT_WORKOUT_FILTERS, onlyTallClimbs: true };
+    const [onlyBlock] = ONE_BLOCK.blocks;
+    const tallOnly: GeneratorSelection = {
+      blocks: [
+        { ...onlyBlock, filters: tallFilters },
+        { ...onlyBlock, id: 'block-2' },
+        { ...onlyBlock, id: 'block-3', filters: tallFilters },
+      ],
+    };
     const { onChange } = renderCard(tallOnly);
 
-    expect(onChange).toHaveBeenCalledWith({ ...tallOnly, filters: { ...tallOnly.filters, onlyTallClimbs: false } });
+    expect(onChange).toHaveBeenCalledWith({
+      blocks: [
+        { ...onlyBlock, filters: DEFAULT_WORKOUT_FILTERS },
+        tallOnly.blocks[1],
+        { ...onlyBlock, id: 'block-3', filters: DEFAULT_WORKOUT_FILTERS },
+      ],
+    });
   });
 });

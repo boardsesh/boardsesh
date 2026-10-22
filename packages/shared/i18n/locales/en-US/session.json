@@ -649,7 +649,7 @@
       "preGeneratorBlockSummaryPerStep": "{{count}} per step",
       "preGeneratorWarmUpSummaryRamps": "ramps to {{grade}}",
       "preGeneratorWarmUpSummaryNoTarget": "needs a block after it",
-      "preGeneratorClimbFilters": "Climb filters · all blocks",
+      "preGeneratorClimbFilters": "Climb filters",
       "preWorkoutPreviewNothingPlanned": "A warm-up on its own has nothing to ramp to. Add a block after it to plan climbs.",
       "preStart": "Start",
       "preStarting": "Starting…",

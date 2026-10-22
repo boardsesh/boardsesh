@@ -649,7 +649,7 @@
       "preGeneratorBlockSummaryPerStep": "{{count}} por paso",
       "preGeneratorWarmUpSummaryRamps": "sube hasta {{grade}}",
       "preGeneratorWarmUpSummaryNoTarget": "falta una fase después",
-      "preGeneratorClimbFilters": "Filtros de bloques · todas las fases",
+      "preGeneratorClimbFilters": "Filtros de bloques",
       "preWorkoutPreviewNothingPlanned": "Un calentamiento solo no tiene hacia dónde subir. Añade una fase después para planificar bloques.",
       "preStart": "Empezar",
       "preStarting": "Empezando…",

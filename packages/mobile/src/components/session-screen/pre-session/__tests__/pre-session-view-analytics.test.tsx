@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PYRAMID_OPTIONS, DEFAULT_VOLUME_OPTIONS, type WorkoutRun } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
-import { NO_WORKOUT, singleBlockSelection } from '../workout-blocks';
+import { DEFAULT_WORKOUT_FILTERS, NO_WORKOUT, singleBlockSelection } from '../workout-blocks';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
@@ -418,10 +418,25 @@ describe('PreSessionView analytics', () => {
         picker.onChange?.({
           ...NO_WORKOUT,
           blocks: [
-            { id: 'block-warm', kind: 'warmUp', warmUpType: 'standard' },
-            { id: 'block-1', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10 } },
-            { id: 'block-2', kind: 'workout', options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8 } },
-            { id: 'block-3', kind: 'workout', options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 } },
+            { id: 'block-warm', kind: 'warmUp', warmUpType: 'standard', filters: DEFAULT_WORKOUT_FILTERS },
+            {
+              id: 'block-1',
+              kind: 'workout',
+              options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10 },
+              filters: DEFAULT_WORKOUT_FILTERS,
+            },
+            {
+              id: 'block-2',
+              kind: 'workout',
+              options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8 },
+              filters: DEFAULT_WORKOUT_FILTERS,
+            },
+            {
+              id: 'block-3',
+              kind: 'workout',
+              options: { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 12 },
+              filters: DEFAULT_WORKOUT_FILTERS,
+            },
           ],
         }),
       );

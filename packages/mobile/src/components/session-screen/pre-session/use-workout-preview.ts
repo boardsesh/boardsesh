@@ -20,15 +20,17 @@ import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import { fetchGradePool } from './select-climbs-for-plan';
 import {
   buildPools,
+  filtersSignature,
   refreshSlotInState,
   reshufflePools,
   selectItemsFromPools,
   type FetchGradePool,
   type PreviewFetchContext,
   type PreviewItem,
+  type PreviewSlot,
   type WorkoutPreviewData,
 } from './workout-preview-pool';
-import { hasWorkoutBlocks, type GeneratorSelection, type WorkoutFilters } from './workout-blocks';
+import { hasWorkoutBlocks, type GeneratorSelection, type WorkoutBlock } from './workout-blocks';
 
 const DEBOUNCE_MS = 300;
 
@@ -68,6 +70,15 @@ const EMPTY_STAGED_QUEUE_ITEMS: StagedQueueItems = { items: [], run: null };
 /** Stage ids are uuids so a stage added mid-session can never collide with one already in the run. */
 const makeStageId = () => randomUUID();
 
+/** A planned slot, with the filters its stage's climbs are fetched with. */
+type FilteredStagedSlot = StagedSlot & Pick<PreviewSlot, 'filters'>;
+
+/** Stamps every slot with its stage's filters, so the pools can key and fetch by them. */
+function withStageFilters(slots: readonly StagedSlot[], workoutPlan: WorkoutPlan): FilteredStagedSlot[] {
+  const filtersByStageId = new Map(workoutPlan.stages.map((stage) => [stage.id, stage.filters]));
+  return slots.map((slot) => ({ ...slot, filters: filtersByStageId.get(slot.stageId) }));
+}
+
 type UseWorkoutPreviewDeps = {
   /** Injectable fetcher (tests pass a fake; production defaults to the GraphQL one). */
   fetchPool?: FetchGradePool;
@@ -90,8 +101,9 @@ const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
 const EMPTY_DATA = (): WorkoutPreviewData => ({ items: [], pools: new Map(), usedUuids: new Set() });
 const EMPTY_STAGES: readonly WorkoutStage[] = [];
 
-// A block's own filter fields are left out: the selection's filters apply to every block.
-function getBlockGenerationKey(block: WorkoutBlockSpec): string {
+// The filter copies inside a workout block's options are left out: the block's
+// own `filters` are the ones its climbs are fetched with.
+function getBlockSettingsKey(block: WorkoutBlockSpec): string {
   if (block.kind === 'warmUp') return `warmUp:${block.warmUpType}`;
   const { options } = block;
   const commonKey = `${options.type}:${options.targetGrade}`;
@@ -107,20 +119,15 @@ function getBlockGenerationKey(block: WorkoutBlockSpec): string {
   }
 }
 
-function getFiltersGenerationKey(filters: WorkoutFilters): string {
-  return [
-    filters.minAscents,
-    filters.minRating,
-    filters.onlyTallClimbs,
-    filters.onlyWideClimbs,
-    filters.climbBias,
-  ].join(':');
+function getBlockGenerationKey(block: WorkoutBlock): string {
+  return `${getBlockSettingsKey(block)}/${filtersSignature(block.filters)}`;
 }
 
 function getSelectionGenerationKey(selection: GeneratorSelection): string {
   if (!hasWorkoutBlocks(selection)) return 'off';
-  // Every block in run order: adding, removing or moving one rebuilds the preview.
-  return `${selection.blocks.map(getBlockGenerationKey).join('+')}|${getFiltersGenerationKey(selection.filters)}`;
+  // Every block in run order: adding, removing or moving one, or changing its
+  // filters, rebuilds the preview.
+  return selection.blocks.map(getBlockGenerationKey).join('+');
 }
 
 function getBoardGenerationKey(board: UserBoard | null): string {
@@ -164,7 +171,7 @@ export function useWorkoutPreview(
   const dataRef = useRef<WorkoutPreviewData>(EMPTY_DATA());
   // The committed plan, for a shuffle to re-fill without regenerating it. Its
   // slots carry their stage id; `workoutPlanRef` is the stage list they came from.
-  const planRef = useRef<readonly StagedSlot[]>([]);
+  const planRef = useRef<readonly FilteredStagedSlot[]>([]);
   const workoutPlanRef = useRef<WorkoutPlan | null>(null);
   // Monotonic token: a build/clear only commits if it's still the latest.
   const genTokenRef = useRef(0);
@@ -199,8 +206,8 @@ export function useWorkoutPreview(
     const currentBoard = boardRef.current;
     const currentSelection = selectionRef.current;
     if (!currentBoard || !hasWorkoutBlocks(currentSelection)) return null;
-    // One set of filters for every block's pool.
-    return { board: currentBoard, isAuthenticated: isAuthRef.current, filters: currentSelection.filters };
+    // No filters here: each fetch takes the filters of the slot it fills.
+    return { board: currentBoard, isAuthenticated: isAuthRef.current };
   }, []);
 
   const resolveGrades = useCallback((targetBoard: UserBoard): GeneratorGradeScale | null => {
@@ -244,13 +251,16 @@ export function useWorkoutPreview(
     const token = ++genTokenRef.current;
     setStatus('loading'); // keep prior items mounted so the list doesn't jump
     try {
-      // One stage per block, warm-ups included. Every stage shares the pools
-      // below: they are fetched once per unique grade with the shared filters,
-      // so a second block at another grade only adds the grades it needs, and
-      // one climb never fills two slots across stages.
+      // One stage per block, warm-ups included, each carrying its block's
+      // filters. The pools below are fetched once per grade and filter set:
+      // blocks with equal filters share them, a block with its own filters gets
+      // its own, and one climb never fills two slots across any of them.
       const workoutPlan = planFromBlocks(currentSelection.blocks, makeStageId);
       // Start can never queue more than the party backend's setQueue accepts.
-      const plan = generateStagedPlan(workoutPlan, grades).slice(0, MAX_SYNCED_QUEUE_ITEMS);
+      const plan = withStageFilters(
+        generateStagedPlan(workoutPlan, grades).slice(0, MAX_SYNCED_QUEUE_ITEMS),
+        workoutPlan,
+      );
       const ctx = buildCtx();
       if (!ctx || token !== genTokenRef.current) return; // selection/board changed underneath
       if (plan.length === 0) {
