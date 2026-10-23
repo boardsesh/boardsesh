@@ -66,6 +66,11 @@
       "import": "./src/queries/index.ts",
       "default": "./src/queries/index.ts"
     },
+    "./queries/constants": {
+      "default": "./src/queries/constants.ts",
+      "import": "./src/queries/constants.ts",
+      "types": "./src/queries/constants.ts"
+    },
     "./jobs": {
       "types": "./src/jobs/index.ts",
       "import": "./src/jobs/index.ts",

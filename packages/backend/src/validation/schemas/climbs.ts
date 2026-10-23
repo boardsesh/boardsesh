@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
+import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ClimbUuidSchema, ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';

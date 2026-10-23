@@ -428,7 +428,7 @@ function toPlaylistFilterParams(view: ParsedPlaylistClimbView, sortBy: PlaylistS
  */
 function viewOrderBy(
   sortBy: PlaylistSortOption,
-  sortOrder: string,
+  sortOrder: 'asc' | 'desc',
   filterParams: PlaylistFilterParams,
   personalGrades: boolean,
 ): SQL[] {
@@ -686,6 +686,8 @@ export const playlistClimbs = async (
   const playlistId = await verifyPlaylistAccess(input.playlistId, ctx.userId ?? null);
 
   if (!parsedInput.view) {
+    // The raw input on purpose: this is the pre-view path, byte for byte, and
+    // its fetchers read only fields the schema passes through unchanged.
     return input.boardName
       ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize, ctx.userId)
       : fetchAllBoardsClimbs(playlistId, input, page, pageSize, ctx.userId);

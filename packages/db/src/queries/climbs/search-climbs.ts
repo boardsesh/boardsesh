@@ -29,6 +29,7 @@ import {
   type ClimbRow,
   type ClimbSearchResult,
 } from './types';
+import { MAX_SEARCH_PAGE } from './search-limits';
 
 // Runtime shape of a search row. postgres.js returns numeric/bigint columns as
 // JS strings (no `types` parser is configured), so the ROUND(...::numeric) and
@@ -143,14 +144,7 @@ type TransactionDb = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
 type SearchDb = DbInstance | TransactionDb;
 export type StatsDrivenSort = 'ascents' | 'quality';
 
-/**
- * Upper bound on the page index. 500 pages × the 100-row pageSize cap is a 50k-row
- * worst-case OFFSET on the index-ordered path — bounded and cheap; legitimate UI
- * paging never approaches it. The API layer rejects pages past this; the shared
- * query clamps as a backstop for SSR/direct callers that bypass that validation,
- * so a crafted `page=10_000_000` can't force an OFFSET-200M serial scan per request.
- */
-export const MAX_SEARCH_PAGE = 500;
+export { MAX_SEARCH_PAGE };
 
 export function clampSearchPage(page: number | undefined): number {
   if (!Number.isFinite(page)) return 0;
