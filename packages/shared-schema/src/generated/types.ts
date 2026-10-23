@@ -6290,7 +6290,11 @@ export type PlaylistGradeSummary = {
   p90Difficulty: Scalars['Int']['output'];
 };
 
-/** A setter of the climbs in a playlist, with how many of them they set. */
+/**
+ * A setter of the climbs in a playlist, with how many of them they set.
+ * playlistSetters returns at most 200, those with the most climbs, and says
+ * nothing when it cut the list: search by username prefix reaches the rest.
+ */
 export type PlaylistSetter = {
   __typename?: 'PlaylistSetter';
   /** How many of the playlist's climbs the viewer can see were set by them */
@@ -7156,8 +7160,9 @@ export type Query = {
   /**
    * Setters of the climbs in a playlist, or a logbook smart list, that the viewer
    * can see: the same climbs as playlistClimbs or smartPlaylist without a view.
-   * Most climbs first, then by username, at most 200. Powers the setter picker in
-   * a playlist's filter sheet.
+   * Most climbs first, then by username. Capped at the 200 with the most climbs,
+   * with no sign that the list was cut; search by username prefix reaches the
+   * rest. Powers the setter picker in a playlist's filter sheet.
    */
   playlistSetters: Array<PlaylistSetter>;
   /** Get IDs of playlists that contain a specific climb. */

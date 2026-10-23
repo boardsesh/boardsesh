@@ -389,6 +389,8 @@ export const playlistsTypeDefs = /* GraphQL */ `
 
   """
   A setter of the climbs in a playlist, with how many of them they set.
+  playlistSetters returns at most 200, those with the most climbs, and says
+  nothing when it cut the list: search by username prefix reaches the rest.
   """
   type PlaylistSetter {
     "Setter username, exactly as a view's setter filter matches it"

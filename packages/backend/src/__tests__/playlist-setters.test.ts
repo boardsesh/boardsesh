@@ -14,8 +14,14 @@ import type { PlaylistSettersInput } from '../graphql/resolvers/playlists/querie
 const PUBLIC_PLAYLIST = 'pl-setters-public';
 const PRIVATE_PLAYLIST = 'pl-setters-private';
 const CROWDED_PLAYLIST = 'pl-setters-crowded';
+const SPRAY_PLAYLIST = 'pl-setters-spray';
 const OWNER = 'pl-setters-owner';
 const STRANGER = 'pl-setters-stranger';
+// A private profile with a heart and a five-star tick, so a leak would name alice.
+const PRIVATE_PROFILE = 'pl-setters-private-profile';
+// The owner's private spray wall.
+const WALL_BOARD = 'pl-setters-wall';
+const WALL_LAYOUT = 987_654;
 
 function makeCtx(userId: string | null): ConnectionContext {
   const overrides: Partial<ConnectionContext> = { isAuthenticated: userId !== null, userId: userId ?? undefined };
@@ -55,9 +61,10 @@ describe('playlistSetters (real DB, #6651)', () => {
     await db.execute(sql`TRUNCATE TABLE playlist_climbs, playlist_ownership, playlists RESTART IDENTITY CASCADE`);
     await db
       .insert(users)
-      .values([OWNER, STRANGER].map((id) => ({ id, email: `${id}@test.invalid` })))
+      .values([OWNER, STRANGER, PRIVATE_PROFILE].map((id) => ({ id, email: `${id}@test.invalid` })))
       .onConflictDoNothing();
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id = ${OWNER}`);
+    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_PROFILE})`);
+    await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${PRIVATE_PROFILE}, true)`);
 
     // alice: two Kilter climbs and a Tension one; bob two; dora two drafts of
     // the owner's; bob_x and bobby one each; two climbs with no setter.
@@ -77,11 +84,39 @@ describe('playlistSetters (real DB, #6651)', () => {
       INSERT INTO playlists (id, uuid, board_type, layout_id, name, is_public)
       VALUES (1, ${PUBLIC_PLAYLIST}, 'kilter', 1, 'Setters', true),
              (2, ${PRIVATE_PLAYLIST}, 'kilter', 1, 'Private', false),
-             (3, ${CROWDED_PLAYLIST}, 'kilter', 1, 'Crowded', true)
+             (3, ${CROWDED_PLAYLIST}, 'kilter', 1, 'Crowded', true),
+             (4, ${SPRAY_PLAYLIST}, 'kilter', 1, 'Spray', true)
     `);
     await db
       .insert(playlistOwnership)
-      .values([1, 2, 3].map((playlistId) => ({ playlistId: BigInt(playlistId), userId: OWNER, role: 'owner' })));
+      .values([1, 2, 3, 4].map((playlistId) => ({ playlistId: BigInt(playlistId), userId: OWNER, role: 'owner' })));
+
+    // A public playlist holding one of alice's climbs and a climb on the owner's
+    // PRIVATE spray wall, set by "sprayer".
+    await db.execute(sql`
+      INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public)
+      VALUES (${WALL_BOARD}, ${WALL_BOARD}, ${OWNER}, 'spray', ${WALL_LAYOUT}, ${WALL_LAYOUT}, '1', 'Garage', false)
+    `);
+    await db.execute(sql`INSERT INTO spray_walls (board_uuid, layout_id) VALUES (${WALL_BOARD}, ${WALL_LAYOUT})`);
+    await seedClimb('ps-spray', 'sprayer', { boardType: 'spray', layoutId: WALL_LAYOUT });
+    await db.execute(sql`
+      INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position) VALUES (4, 'ps-1', 40, 0), (4, 'ps-spray', 40, 1)
+    `);
+
+    // Five-star ticks: the owner's on alice's ps-1, and one on bob's ps-3 they
+    // keep to themselves; the private profile's on ps-1, with a heart there too.
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, quality, climbed_at) VALUES
+        ('ps-tick-1', ${OWNER}, 'kilter', 'ps-1', 40, 'send', 1, 5, '2026-06-01'),
+        ('ps-tick-2', ${OWNER}, 'kilter', 'ps-3', 40, 'send', 1, 5, '2026-06-02'),
+        ('ps-tick-3', ${PRIVATE_PROFILE}, 'kilter', 'ps-1', 40, 'send', 1, 5, '2026-06-03')
+    `);
+    await db.execute(sql`
+      INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience) VALUES ('tick', 'ps-tick-2', ${OWNER}, 'only_me')
+    `);
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle) VALUES (${PRIVATE_PROFILE}, 'kilter', 'ps-1', 40)
+    `);
     const members = ['ps-1', 'ps-2', 'ps-t1', 'ps-3', 'ps-4', 'ps-d1', 'ps-d2', 'ps-5', 'ps-6', 'ps-7', 'ps-8'];
     for (const [position, climbUuid] of members.entries()) {
       await db.execute(sql`
@@ -109,7 +144,11 @@ describe('playlistSetters (real DB, #6651)', () => {
   });
 
   afterAll(async () => {
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id = ${OWNER}`);
+    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_PROFILE})`);
+    await db.execute(sql`DELETE FROM content_privacy WHERE entity_id = 'ps-tick-2'`);
+    await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid = ${WALL_BOARD}`);
+    await db.execute(sql`DELETE FROM user_boards WHERE uuid = ${WALL_BOARD}`);
+    await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${PRIVATE_PROFILE}`);
   });
 
   it('counts each setter’s climbs, most first, and leaves out climbs with no setter', async () => {
@@ -202,6 +241,45 @@ describe('playlistSetters (real DB, #6651)', () => {
     expect(await setters({ smartType: 'LIKED_CLIMBS', userId: OWNER, boardName: 'tension' })).toEqual([
       { username: 'alice', climbCount: 1 },
     ]);
+  });
+
+  describe('privacy', () => {
+    it('a private profile’s logbook lists name no setters for a stranger', async () => {
+      for (const smartType of ['LIKED_CLIMBS', 'FIVE_STARS'] as const) {
+        await expect(setters({ smartType, userId: PRIVATE_PROFILE }, stranger), smartType).rejects.toThrow(
+          'Playlist not found',
+        );
+        await expect(setters({ smartType, userId: PRIVATE_PROFILE }, anonymous), smartType).rejects.toThrow(
+          'Playlist not found',
+        );
+        // Its owner still reads them.
+        expect(await setters({ smartType, userId: PRIVATE_PROFILE }, makeCtx(PRIVATE_PROFILE))).toEqual([
+          { username: 'alice', climbCount: 1 },
+        ]);
+      }
+    });
+
+    it('a five-star tick the owner keeps to themselves names its setter to the owner only', async () => {
+      expect(await setters({ smartType: 'FIVE_STARS', userId: OWNER }, owner)).toEqual([
+        { username: 'alice', climbCount: 1 },
+        { username: 'bob', climbCount: 1 },
+      ]);
+      for (const ctx of [stranger, anonymous]) {
+        expect(await setters({ smartType: 'FIVE_STARS', userId: OWNER }, ctx)).toEqual([
+          { username: 'alice', climbCount: 1 },
+        ]);
+      }
+    });
+
+    it('a climb on a private spray wall names its setter to the wall’s owner only', async () => {
+      expect(await setters({ playlistId: SPRAY_PLAYLIST }, owner)).toEqual([
+        { username: 'alice', climbCount: 1 },
+        { username: 'sprayer', climbCount: 1 },
+      ]);
+      for (const ctx of [stranger, anonymous]) {
+        expect(await setters({ playlistId: SPRAY_PLAYLIST }, ctx)).toEqual([{ username: 'alice', climbCount: 1 }]);
+      }
+    });
   });
 
   it('refuses a recommendation, and input that names no list or two', async () => {

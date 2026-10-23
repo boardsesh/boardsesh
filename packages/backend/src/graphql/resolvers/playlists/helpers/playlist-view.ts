@@ -300,6 +300,7 @@ export function buildPlaylistViewQueries(
     countJoins,
   ).where(filteredWhere);
 
+  // Paid on every filtering page 0, the play drawer's too: accepted (~40 ms on 6k ticks, <1 ms on playlists).
   const unfilteredCountQuery =
     filters.hasFilters && page === 0
       ? executor
