@@ -195,6 +195,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
+  usePreviewedClimbUuid: () => null,
   useDrawerHost: () => ({
     boardConfig: null,
     openClimbActions: ctrl.openClimbActions,
@@ -204,6 +205,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
 vi.mock('../../../../src/providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
   useIsSharedSession: () => ctrl.shared,
+  useActiveClimbUuid: () => null,
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queued-climb-uuid' }));
 

@@ -5,7 +5,7 @@ import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/u
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
-import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
+import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -44,7 +44,7 @@ import {
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { boardSupportsMirroring, getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../../src/providers/climb-progress-provider';
-import { ClimbListRow } from '../../../src/components/ClimbListRow';
+import { ActiveAwareClimbListRow } from '../../../src/components/ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import {
   DEFAULT_CLIMB_ROW_SURFACE,
@@ -89,10 +89,10 @@ import {
 } from '../../../src/lib/dimension-chips';
 import { shouldShowQuickActionsTip } from '../../../src/lib/onboarding/quick-actions-tip';
 import { hapticMedium } from '../../../src/lib/haptics';
-import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
+import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
-import { useActiveClimbUuid, useIsSharedSession, useQueueActions } from '../../../src/providers/queue-provider';
+import { useIsSharedSession, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
 import { setSetting, useSetting } from '../../../src/settings';
 import { climbToQueueItem } from '../../../src/lib/climb-to-queue-item';
@@ -247,26 +247,6 @@ export default function ClimbList() {
     </ClimbSearchProvider>
   );
 }
-
-// Reads the active-climb selector itself, so navigating climbs re-renders only
-// these cheap row wrappers (and the two ClimbListRows whose `selected` flips) —
-// never ClimbListInner or the FlashList. ClimbListRow stays presentational (a
-// plain `selected` prop), so PlaylistDetailView's rows are unaffected.
-const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
-  props: Omit<ComponentProps<typeof ClimbListRow>, 'selected'>,
-) {
-  const activeClimbUuid = useActiveClimbUuid();
-  // The highlight means "the climb you last had up", which is not always the
-  // queue's current climb. A row tap can open a view-only preview that never
-  // writes the queue, and `activeClimbUuid` by construction only moves when the
-  // queue does — so keying the highlight on it alone left a climber tapping down
-  // a filtered list with no feedback that anything had been selected at all.
-  // The previewed uuid clears itself on the next committing open, so exactly one
-  // row is ever selected.
-  const previewedClimbUuid = usePreviewedClimbUuid();
-  const selectedClimbUuid = previewedClimbUuid ?? activeClimbUuid;
-  return <ClimbListRow {...props} selected={props.climb.uuid === selectedClimbUuid} />;
-});
 
 function ClimbListInner() {
   const {

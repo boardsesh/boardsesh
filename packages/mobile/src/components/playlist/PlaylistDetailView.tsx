@@ -34,7 +34,7 @@ import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
-import { ClimbListRow } from '../ClimbListRow';
+import { ActiveAwareClimbListRow } from '../ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
 import { ProgressiveBlur } from '../ProgressiveBlur';
@@ -591,8 +591,9 @@ export function PlaylistDetailView({
         );
       }
 
+      // The climb you last had up is highlighted, as in the Climbs list (#6671 QA).
       return (
-        <ClimbListRow
+        <ActiveAwareClimbListRow
           climb={toSchemaClimb(item)}
           boardName={resolvedRow.renderBoard.boardName as BoardName}
           layoutId={resolvedRow.renderBoard.layoutId}

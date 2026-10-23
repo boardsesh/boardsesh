@@ -19,6 +19,9 @@ import type { Climb } from '@boardsesh/queue';
 import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 
 const ctrl = vi.hoisted(() => ({
+  // The queue's current climb and a view-only preview's, for the row highlight.
+  activeClimbUuid: null as string | null,
+  previewedClimbUuid: null as string | null,
   back: vi.fn(),
   setOptions: vi.fn(),
   navigation: null as unknown as { setOptions: (options: Record<string, unknown>) => void },
@@ -46,6 +49,7 @@ type CapturedClimbListRowProps = {
   onPress?: (climb: { uuid: string; name: string }) => void;
   onAddToQueue?: (climb: SchemaClimb) => void;
   onOpenPlaylist?: (climb: SchemaClimb) => void;
+  selected?: boolean;
 };
 
 type CapturedPlaylistEditClimbRowProps = {
@@ -221,6 +225,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
+  usePreviewedClimbUuid: () => ctrl.previewedClimbUuid,
   useDrawerHost: () => ({
     boardConfig: null,
     openClimbActions: ctrl.openClimbActions,
@@ -229,6 +234,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
+  useActiveClimbUuid: () => ctrl.activeClimbUuid,
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queued-climb-uuid' }));
 
@@ -462,6 +468,8 @@ describe('PlaylistDetailView', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.fontScale = 1;
     capturedClimbRows.length = 0;
+    ctrl.activeClimbUuid = null;
+    ctrl.previewedClimbUuid = null;
     capturedEditRows.length = 0;
     resetClimbRowDisplayForTests();
   });
@@ -698,6 +706,27 @@ describe('PlaylistDetailView', () => {
       unsupported: false,
       showProgress: true,
     });
+  });
+
+  // The playlist being played marks the climb you're on, as the Climbs list does (#6671 QA).
+  it('highlights the climb you last had up, the previewed one first', () => {
+    const props = makeProps({ climbs: [KILTER_CLIMB, TENSION_CLIMB] });
+    ctrl.activeClimbUuid = TENSION_CLIMB.uuid;
+    const view = render(<PlaylistDetailView {...props} />);
+    expect(capturedClimbRows.map(({ climb, selected }) => [climb.uuid, selected])).toEqual([
+      [KILTER_CLIMB.uuid, false],
+      [TENSION_CLIMB.uuid, true],
+    ]);
+
+    // A preview of another climb takes the highlight. (In the app the preview
+    // context re-renders the rows; the mocked hook can't, so render again.)
+    view.unmount();
+    capturedClimbRows.length = 0;
+    ctrl.previewedClimbUuid = KILTER_CLIMB.uuid;
+    render(<PlaylistDetailView {...props} />);
+    expect(capturedClimbRows.filter(({ selected }) => selected).map(({ climb }) => climb.uuid)).toEqual([
+      KILTER_CLIMB.uuid,
+    ]);
   });
 
   it('renders incompatible mixed-board rows on their own board and dims them', () => {
