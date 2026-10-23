@@ -52,7 +52,9 @@ export const playlistSetters = async (
       : allBoardsScope(playlistId, parsedInput, ctx.userId);
   } else {
     // `smartPlaylist`'s viewer and activity-audience check. The schema pairs
-    // smartType with userId, and the recommendation types were refused above.
+    // smartType with userId, and the recommendation types were refused above;
+    // the repeat check here narrows `smartType` to the logbook types for
+    // `logbookViewSource` (TypeScript does not carry the earlier guard over).
     const viewerUserId = ctx.isAuthenticated ? ctx.userId : null;
     const { smartType, userId } = parsedInput;
     if (!smartType || !userId || isRecommendationType(smartType)) throw new Error('Playlist not found');

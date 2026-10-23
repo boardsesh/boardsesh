@@ -464,6 +464,8 @@ export async function fetchPlaylistSetters(
     .groupBy(setter)
     .orderBy(desc(sql`count(*)`), asc(setter))
     .limit(limit);
+  // The WHERE already drops null and empty names; this only narrows the
+  // column's nullable type to string.
   return rows.flatMap((row) => (row.username ? [{ username: row.username, climbCount: row.climbCount }] : []));
 }
 
