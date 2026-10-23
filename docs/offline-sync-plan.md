@@ -1803,3 +1803,15 @@ Progress frames, queued-board promotion, and reopening do not restore the card.
 A person starting or retrying a download clears the preference. An unfinished
 board that already imported a snapshot can also offer the existing faster-retry
 confirmation, preserving completed boards and the imported-watermark guard.
+
+
+Simulator evidence for the reported MoonBoard layout 5 / size 1 at 40°:
+
+| Before | After |
+| --- | --- |
+| ![Download remains at 98 percent during repeated grade paging](images/issue-6653-before.png) | ![Download shows live processed items and an accessible Hide control](images/issue-6653-after.png) |
+
+An explicit faster retry yields an active crawl after its current committed page,
+then releases the scheduler so the queued verified-snapshot retry can begin. A
+retry arriving on the final page is checked inside the completion transaction.
+Already-attempted retries with no artifact still use ordinary paging.

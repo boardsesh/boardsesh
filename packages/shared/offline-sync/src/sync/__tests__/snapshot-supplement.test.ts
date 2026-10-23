@@ -21,10 +21,12 @@ import {
 import {
   bootstrapScopeFromSnapshot,
   bootstrapScopeGradesFromSnapshot,
+  markBootstrapDone,
   type SnapshotSource,
 } from '../snapshot-bootstrap';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from '../snapshot-manifest';
 import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '../sync-scheduler';
+import { restoreBootstrapRetryBudget } from '../bootstrap-retry';
 
 const SCOPE_KEY = 'kilter:1:5';
 const SCOPE = { boardType: 'kilter', layoutId: 1, sizeId: 5 };
@@ -118,6 +120,39 @@ function buildArtifact(filePath: string, grades = false, builtAt = BUILT_AT): vo
   }
 }
 
+function sourceWithArtifact(filePath: string, beforeDownload?: () => Promise<void>): SnapshotSource {
+  const tableStats = {
+    watermarkUpdatedAt: ARTIFACT_CURSOR.updatedAt,
+    watermarkSyncSeq: ARTIFACT_CURSOR.syncSeq,
+    rowCount: 1,
+  };
+  return {
+    fetchManifest: async () => ({
+      formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+      generatedAt: BUILT_AT,
+      entries: [
+        {
+          boardType: 'kilter',
+          layoutId: 1,
+          key: 'retry-layout',
+          url: 'https://example.test/retry-layout.db',
+          bytes: 1024,
+          contentEncoding: 'identity',
+          builtAt: BUILT_AT,
+          schemaVersion: LATEST_SCHEMA_VERSION,
+          privacyVersion: 1,
+          tables: { board_climbs: tableStats, board_climb_stats: tableStats },
+        },
+      ],
+    }),
+    downloadArtifact: async () => {
+      await beforeDownload?.();
+      return { filePath };
+    },
+    deleteArtifact: async () => {},
+  };
+}
+
 describe('one-time snapshot supplementation', () => {
   let db: TestSqliteDb;
   let scratchDirectory: string;
@@ -150,6 +185,101 @@ describe('one-time snapshot supplementation', () => {
       snapshotSupplementViewerId: VIEWER,
     });
   }
+
+  it.each([true, false])('yields an active legacy page (hasMore=%s) to the queued faster retry', async (hasMore) => {
+    await setCheckpoint(db, CLIMBS_KEY, OLD_CURSOR);
+    await markBootstrapDone(db, SCOPE_KEY);
+    const pageCursor = { updatedAt: '2024-01-02T00:00:00.000Z', syncSeq: '21' };
+    const committedAuthored = { ...climb('committed-authored', pageCursor), user_id: VIEWER };
+    const artifactPath = join(scratchDirectory, 'retry-layout.db');
+    buildArtifact(artifactPath);
+    let snapshotDownloads = 0;
+    const snapshotSource = sourceWithArtifact(artifactPath, async () => {
+      snapshotDownloads += 1;
+      expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(pageCursor);
+      expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(false);
+      expect(
+        await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['committed-authored']),
+      ).not.toBeNull();
+    });
+    let firstPageStarted!: () => void;
+    let releaseFirstPage!: () => void;
+    const firstPage = new Promise<void>((resolve) => {
+      firstPageStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseFirstPage = resolve;
+    });
+    const legacyCursors: unknown[] = [];
+    const fetch = mockGraphqlFetch(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (fieldName(query) !== 'syncClimbs') return response<T>(query);
+      if (variables?.audience) return response<T>(query, [committedAuthored], pageCursor);
+      const cursor = variables?.cursor as SyncCheckpoint | undefined;
+      if (cursor?.updatedAt !== ARTIFACT_CURSOR.updatedAt) {
+        legacyCursors.push(cursor);
+        if (legacyCursors.length === 1) {
+          firstPageStarted();
+          await release;
+          return response<T>(query, [committedAuthored], pageCursor, hasMore);
+        }
+      }
+      return response<T>(query);
+    });
+    const options = { viewerUserId: VIEWER, snapshotSource };
+    triggerSync(
+      db,
+      queryClient,
+      fetch,
+      () => [SCOPE_KEY],
+      async () => {},
+      options,
+    );
+    await firstPage;
+    await restoreBootstrapRetryBudget(db, SCOPE_KEY);
+    triggerSync(
+      db,
+      queryClient,
+      fetch,
+      () => [SCOPE_KEY],
+      async () => {},
+      options,
+    );
+    releaseFirstPage();
+    await vi.waitFor(() => expect(isSyncInFlight()).toBe(false));
+    expect(legacyCursors).toEqual([OLD_CURSOR]);
+    expect(snapshotDownloads).toBe(1);
+    expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(ARTIFACT_CURSOR);
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+    expect(
+      await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', ['committed-authored']),
+    ).not.toBeNull();
+  });
+
+  it('keeps ordinary paging when the already-requested faster retry has no available artifact', async () => {
+    await setCheckpoint(db, CLIMBS_KEY, OLD_CURSOR);
+    await markBootstrapDone(db, SCOPE_KEY);
+    await restoreBootstrapRetryBudget(db, SCOPE_KEY);
+    const pageCursor = { updatedAt: '2024-01-02T00:00:00.000Z', syncSeq: '21' };
+    const requestedCursors: unknown[] = [];
+    const fetch = mockGraphqlFetch(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (fieldName(query) !== 'syncClimbs') return response<T>(query);
+      requestedCursors.push(variables?.cursor);
+      return requestedCursors.length === 1
+        ? response<T>(query, [climb('ordinary-fallback', pageCursor)], pageCursor, true)
+        : response<T>(query);
+    });
+    const snapshotSource: SnapshotSource = {
+      fetchManifest: async () => null,
+      downloadArtifact: async () => {
+        throw new Error('No artifact should download');
+      },
+      deleteArtifact: async () => {},
+    };
+    await pullSync(db, queryClient, fetch, { enabledBoards: [SCOPE_KEY], viewerUserId: VIEWER, snapshotSource });
+    expect(requestedCursors).toEqual([OLD_CURSOR, pageCursor]);
+    expect(await getCheckpoint(db, CLIMBS_KEY)).toEqual(pageCursor);
+    expect(await isScopeDownloadComplete(db, SCOPE_KEY)).toBe(true);
+  });
 
   it('uses the fast supplement through the real scheduler and fresh artifact import path', async () => {
     const artifactPath = join(scratchDirectory, 'scheduled-layout.db');

@@ -790,3 +790,11 @@ export async function restoreBootstrapRetryBudget(
   await clearBootstrapPagedFallback(db, scopeKey);
   return written;
 }
+
+/** Cheap page-boundary check; a retry never needs to reset or remove downloaded rows. */
+export async function hasUserRequestedBootstrapRetry(db: SqlExecutor, scopeKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+    `${BOOTSTRAP_RETRY_PREFIX}${scopeKey}`,
+  ]);
+  return row !== null && parseBootstrapRetryState(row.value)?.userRequested === true;
+}

@@ -68,6 +68,7 @@ import {
   rearmForNewArtifact,
   recordBackgroundPause,
   shouldSkipPagedPull,
+  hasUserRequestedBootstrapRetry,
   spendUserRequest,
   writeBootstrapRetryState,
   type BootstrapFailureKind,
@@ -897,6 +898,7 @@ async function syncTable(
   onDocumentsPulled?: DocumentsPulledSink,
   onEmptyPage?: () => Promise<boolean>,
   viewerUserId?: string,
+  shouldContinueScope?: () => Promise<boolean>,
 ): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
@@ -972,7 +974,13 @@ async function syncTable(
     while (hasMore) {
       // Sign-out is wiping local data: stop before this page writes the old
       // user's rows back (mirrors the drainer's guard).
-      if (!canWrite() || (refresh && !(await refresh.shouldContinue())) || !canWrite()) return finish(false);
+      if (
+        !canWrite() ||
+        (refresh && !(await refresh.shouldContinue())) ||
+        (shouldContinueScope && !(await shouldContinueScope())) ||
+        !canWrite()
+      )
+        return finish(false);
       const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
       if (config.isPerBoard && boardScope) {
         variables.boardType = boardScope.boardType;
@@ -1140,6 +1148,9 @@ async function syncTable(
       }
     }
 
+    // A retry can arrive during the terminal page too. Its rows remain committed,
+    // but the queued snapshot retry must run before this scope declares completion.
+    if (shouldContinueScope && !(await shouldContinueScope())) return finish(false);
     if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
       let completed = false;
       // The read-then-upgrade case runPullWrite's docblock names: in `'refresh'`
@@ -1710,6 +1721,7 @@ async function runBootstrapPhase(params: {
   emitScopeDownloadStartOnce: (info: ScopeDownloadStartInfo) => Promise<void>;
   /** Per-scope download/import timings + payload size, read back by the Completed event. */
   bootstrapTimings: Map<string, { bytes: number; downloadMs?: number; importMs?: number; rowCount?: number }>;
+  retryRequestsAtBootstrap: Map<string, boolean>;
   stampScopeStart: (scopeKey: string) => Promise<void>;
   phaseTimings: (scopeKey: string) => ScopeDownloadPhaseBreakdown;
   options: SyncOptions | undefined;
@@ -2168,6 +2180,7 @@ async function runBootstrapPhase(params: {
           hasBoardCheckpoint,
         );
         let retryState = migratedState;
+        params.retryRequestsAtBootstrap.set(scope.scopeKey, retryState.userRequested);
         // Persist the derived state on first touch so the spread-out post-OTA
         // retryAfter is stable across launches instead of being re-rolled every
         // cycle. The legacy ROWS survive (a rolled-back bundle still finds them),
@@ -2414,6 +2427,7 @@ async function runBootstrapPhase(params: {
         // metered-link override that keeps pulling ~100 MB over cellular.
         if (isUserRequested) {
           retryState = await writeBootstrapRetryState(db, scope.scopeKey, spendUserRequest(retryState));
+          params.retryRequestsAtBootstrap.set(scope.scopeKey, false);
           metadataSettled = true;
         }
 
@@ -3484,6 +3498,7 @@ async function performPullSync(
     // Phase 0: snapshot bootstrap (BEFORE deletions). Only when an adapter injected
     // snapshot I/O; otherwise this is a pure paged pull, byte-identical to before.
     let skipBootstrapPagedPull: Set<string> = new Set();
+    const retryRequestsAtBootstrap = new Map<string, boolean>();
     if (options?.snapshotSource && boardScopes.length > 0) {
       onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
       const bootstrapPhase = await runBootstrapPhase({
@@ -3496,6 +3511,7 @@ async function performPullSync(
         stampScopeStart,
         emitScopeDownloadStartOnce,
         bootstrapTimings,
+        retryRequestsAtBootstrap,
         phaseTimings,
         options,
         now: options.now ?? Date.now,
@@ -3637,6 +3653,20 @@ async function performPullSync(
       // into a heal. Never a scope the bootstrap has finished with (#6306).
       if (skipBootstrapPagedPull.has(scopeKey)) continue;
       let allTablesReachedTail = true;
+      let yieldedForRetry = false;
+      let observedNoRetryRequest = retryRequestsAtBootstrap.get(scopeKey) !== true;
+      const continuePagedScope =
+        options?.snapshotSource && pendingDownloads.has(scopeKey)
+          ? async (executor: SqlExecutor = db): Promise<boolean> => {
+              if (yieldedForRetry) return false;
+              const requested = await hasUserRequestedBootstrapRetry(executor, scopeKey);
+              if (!requested) observedNoRetryRequest = true;
+              // A request this cycle already tried may have fallen back because
+              // the artifact is absent. It must keep paging rather than yield forever.
+              if (requested && observedNoRetryRequest) yieldedForRetry = true;
+              return !yieldedForRetry;
+            }
+          : undefined;
       let scopeRowsProcessed = 0;
       const emitBoardProgress = (rowsProcessed = 0): void =>
         reportDownload(scopeKey, snapshotDownloads.has(scopeKey) ? 'finishing' : 'downloading', null, {
@@ -3688,6 +3718,7 @@ async function performPullSync(
           options?.onDocumentsPulled,
           tableName === 'spray_walls' ? () => confirmWallRemoval(boardScope) : undefined,
           options?.viewerUserId,
+          continuePagedScope,
         );
         emitBoardProgress(rowsProcessed);
         scopeRowsProcessed += rowsProcessed;
@@ -3712,6 +3743,9 @@ async function performPullSync(
           allTablesReachedTail = false;
           allPullsReachedTail = false;
         }
+        // Release the single-flight owner now; another queued board must not
+        // turn the explicit snapshot retry back into a wait behind a long crawl.
+        if (yieldedForRetry) return reportInterruptedCycle();
         if (retiredWalls.has(scopeKey)) break;
       }
       // Gate for local-first reads: only a scope whose climbs, stats AND grades
@@ -3735,8 +3769,27 @@ async function performPullSync(
         // write is one statement rather than one await.
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) continue;
-        // Clears the persisted start stamp as well as writing the complete marker.
-        await markScopeDownloadComplete(db, scopeKey);
+        // Serialize the final retry read with completion: a request arriving on
+        // the terminal page must not lose to a completed marker before its queued run.
+        if (continuePagedScope) {
+          let completionCommitted = false;
+          await runPullWrite(db, async (transaction) => {
+            completionCommitted = false;
+            if (cycleAborted() || scopePurged(boardScope)) return;
+            if (!(await continuePagedScope(transaction))) return;
+            if (cycleAborted() || scopePurged(boardScope)) return;
+            await markScopeDownloadComplete(transaction, scopeKey);
+            completionCommitted = true;
+          });
+          if (!completionCommitted) {
+            if (yieldedForRetry) return reportInterruptedCycle();
+            allPullsReachedTail = false;
+            continue;
+          }
+        } else {
+          // Clears the persisted start stamp as well as writing the complete marker.
+          await markScopeDownloadComplete(db, scopeKey);
+        }
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) continue;
         if (wasScopeComplete) continue;
