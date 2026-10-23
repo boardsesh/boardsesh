@@ -85,6 +85,9 @@ export default function DiscoverLayout() {
             name="zone"
             options={{ title: tCommon('mobile.nav.zoneFilter'), headerShown: true, headerTransparent: false }}
           />
+          {/* A For You setter card's list. The Climbs tab's setter route renders the
+              same screen on the same stack defaults, and its view sets the header. */}
+          <Stack.Screen name="setter/[username]" />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
         </Stack>
       </NativeTabletContent>

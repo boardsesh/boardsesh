@@ -588,8 +588,9 @@ describe('DiscoverLibrary followed setter playlists', () => {
     expect(queryByText('Empty setter')).toBeNull();
     expect(container.querySelector('[aria-label="pin-Setter / One"]')).toBeNull();
     fireEvent.click(getByLabelText('open-Setter / One'));
+    // Pushed inside Discover, never into the Climbs tab, so Back stays in Discover.
     expect(router.push).toHaveBeenLastCalledWith({
-      pathname: '/(tabs)/climbs/setter/[username]',
+      pathname: '/(tabs)/discover/setter/[username]',
       params: { username: 'Setter / One' },
     });
   });

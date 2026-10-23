@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { normalizeSetIdsForCompare, type UserBoard } from '@boardsesh/shared-schema';
 import { track } from '../analytics';
-import type { BoardReturnTo } from './board-return-to';
+import { boardReturnToRoute, type BoardReturnTo } from './board-return-to';
 import type { BoundBoard } from './use-activate-board';
 
 /**
@@ -53,9 +53,7 @@ export function useBoardPickerAnalytics({
           : returnTo === '/(tabs)/record'
             ? 'session'
             : 'board_picker';
-  const analyticsReturnTo = returnTo.startsWith('/(tabs)/climbs/setter/')
-    ? '/(tabs)/climbs/setter/[username]'
-    : returnTo;
+  const analyticsReturnTo = boardReturnToRoute(returnTo);
 
   useEffect(() => {
     if (!trackOpened || opened.current || (activeBoard === undefined && !restoreFailed)) return;

@@ -123,7 +123,10 @@ export type ClimbFilterSheetSections = {
  */
 export type ClimbFilterSheetPickers =
   | { stack: 'climbs'; heatmap: boolean }
-  | { stack: 'discover'; heatmap: boolean; setterList: PlaylistSetterSource };
+  // `setterList` is the list whose setters the Discover setters picker shows;
+  // null for a Discover page with no such list (a setter's own page, which
+  // hides the Setters row).
+  | { stack: 'discover'; heatmap: boolean; setterList: PlaylistSetterSource | null };
 
 const CLIMBS_LIST_PICKERS: ClimbFilterSheetPickers = { stack: 'climbs', heatmap: true };
 
@@ -788,6 +791,9 @@ export function ClimbFilterSheet({
       });
       return;
     }
+    // Discover's setters picker lists one list's setters; with no list there
+    // is nothing for it to show, and the catalogue picker lives in Climbs.
+    if (pickers.stack === 'discover') return;
     if (!boardConfig) return;
     beginSubPickerSuspend();
     router.push({
@@ -821,6 +827,7 @@ export function ClimbFilterSheet({
     isCurrentPresentation,
     router,
     setterList,
+    pickers.stack,
     pickerPaths,
     handoffId,
   ]);

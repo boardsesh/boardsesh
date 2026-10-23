@@ -379,8 +379,10 @@ export default function DiscoverLibrary() {
     router.push(smartPlaylistHref(smartPlaylistType, 'discover'));
   }, []);
 
+  // Discover's own copy of the setter route, so the list opens in this stack and
+  // Back returns here instead of into the Climbs tab.
   const goToSetterPlaylist = useCallback((username: string) => {
-    router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } });
+    router.push({ pathname: '/(tabs)/discover/setter/[username]', params: { username } });
   }, []);
 
   const renderForYouCard = useCallback(

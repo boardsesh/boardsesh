@@ -1,18 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { resolveBoardReturnTo, setterPlaylistReturnTo } from '../board-return-to';
+import { boardReturnToRoute, resolveBoardReturnTo, setterPlaylistReturnTo } from '../board-return-to';
 
 describe('resolveBoardReturnTo', () => {
-  it.each(['accountless', 'Émilie & friends'])('returns to the requested setter %s', (username) => {
-    const destination = setterPlaylistReturnTo(username);
+  it.each([
+    ['climbs', 'accountless'],
+    ['climbs', 'Émilie & friends'],
+    ['discover', 'accountless'],
+    ['discover', 'Émilie & friends'],
+  ] as const)('returns to the requested %s setter %s', (tab, username) => {
+    const destination = setterPlaylistReturnTo(username, tab);
+    expect(destination.startsWith(`/(tabs)/${tab}/setter/`)).toBe(true);
     expect(resolveBoardReturnTo(destination)).toBe(destination);
     expect(decodeURIComponent(destination.split('/').at(-1)!)).toBe(username);
   });
-  it.each(['', '..', '%2E%2E', '..%2F..%2Fsettings', 'alice/../settings', 'alice?next=settings', '%bad'])(
-    'rejects an invalid setter return segment: %s',
-    (segment) => {
-      expect(resolveBoardReturnTo(`/(tabs)/climbs/setter/${segment}`)).toBe('/(tabs)/climbs');
-    },
-  );
+  it.each(['climbs', 'discover'])('rejects an invalid %s setter return segment', (tab) => {
+    for (const segment of [
+      '',
+      '..',
+      '%2E%2E',
+      '..%2F..%2Fsettings',
+      'alice/../settings',
+      'alice?next=settings',
+      '%bad',
+    ]) {
+      expect(resolveBoardReturnTo(`/(tabs)/${tab}/setter/${segment}`)).toBe('/(tabs)/climbs');
+    }
+  });
+  it('does not accept a setter return from a tab without a setter route', () => {
+    expect(resolveBoardReturnTo('/(tabs)/home/setter/alice')).toBe('/(tabs)/climbs');
+    expect(resolveBoardReturnTo('/(tabs)/profile/setter/alice')).toBe('/(tabs)/climbs');
+  });
+  it('names a setter return by its route pattern, never the username', () => {
+    expect(boardReturnToRoute(setterPlaylistReturnTo('alice', 'climbs'))).toBe('/(tabs)/climbs/setter/[username]');
+    expect(boardReturnToRoute(setterPlaylistReturnTo('alice', 'discover'))).toBe('/(tabs)/discover/setter/[username]');
+    expect(boardReturnToRoute('/(tabs)/discover')).toBe('/(tabs)/discover');
+  });
   it('defaults to climbs for undefined', () => {
     expect(resolveBoardReturnTo(undefined)).toBe('/(tabs)/climbs');
   });

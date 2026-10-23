@@ -88,7 +88,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Surface | How you get there | Tap (solo) | Next after the tap | End of the list |
 | --- | --- | --- | --- | --- |
 | Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1326`). With Light on tap off: a trackless preview (`:1313-1318`). | Walks the results | Track end. The first load holds about 250 climbs after the tapped one (rounded up to a page of 100); since F1 one more page loads as the climber nears its end, up to the first 1,000 results. |
-| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Replaces the queue with the setter's climbs this board can draw; "Start playlist?" first if anything is queued after the current climb (`app/(tabs)/climbs/setter/[username].tsx`). | Walks the list, which the queue now holds climb for climb, under the setter's name | Track end |
+| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Replaces the queue with the setter's climbs this board can draw; "Start playlist?" first if anything is queued after the current climb (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). | Walks the list, which the queue now holds climb for climb, under the setter's name | Track end |
 | Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The Material app bar's play button does the same with the first climb. The **Add to queue** row appends instead. With a sort or filter on, all three use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
 | For You and smart lists (Projects, Liked Climbs and the rest) | Discover › For You | As the setter page (`app/(tabs)/discover/smart/[type].tsx:119-128`) | As the setter page | As the setter page |
 | Logbook | You › Logbook | Commits, no track, not flagged `suggested` (`src/components/you/LogbookTab.tsx:504-510`, then `use-play-selection-controller.ts:184-186`) | Walks the queue | Stops at the end of the queue |
@@ -232,7 +232,7 @@ Same gesture, five outcomes, depending on which screen the row is on.
   `app/(tabs)/climbs/index.tsx:1291-1326`, `src/lib/playlists/use-playlist-activation.ts:976-989`.
 - **Replace the queue.** Playlists, For You lists and setter pages swap the whole queue for the
   list, after a "Start playlist?" prompt if anything is queued after the current climb:
-  `use-playlist-activation.ts:910-948`, `app/(tabs)/climbs/setter/[username].tsx:62-69`. The
+  `use-playlist-activation.ts:910-948`, `src/components/SetterPlaylistScreen.tsx:65-72`. The
   replace also drops your History, which the prompt doesn't mention, and with nothing queued
   after the current climb there is no prompt at all (`use-playlist-activation.ts:926`).
 - **Insert, no track.** Logbook, sessions and profile climbs insert the climb with no list to
@@ -386,10 +386,20 @@ _Tapping a playlist climb with 3 climbs queued after the current one. (1) Start 
 
 ### 8. Getting back
 
-- Closing the player from a playlist can land you on the all-playlists page instead of the
-  playlist (#5924).
-- A setter list in For You opens in the Climbs tab, not Discover, so Back goes somewhere else:
-  `app/(tabs)/discover/index.tsx:382-384`.
+Fixed by F5 (#6668):
+
+- Closing the player from a playlist landed on Discover's main page instead of the playlist
+  (#5924). Discover reset its stack on every `blur`, and opening the player blurs the tab
+  under it. #5927 made the reset wait for a real tab change (`usePopToTopOnTabBlur`), and a
+  test now checks that one close pops only the player (`use-play-swipe-dismiss.test.tsx`).
+- The player is a `transparentModal` over the live tab on every shell (native tabs, JS tabs,
+  the iPad compact player and the browser app), so the list under it never unmounts and keeps
+  its scroll position. No list in [Before and after](#before-and-after) remounts, re-keys or
+  resets its query when the player opens or closes.
+- A setter list in For You opened in the Climbs tab, so Back left Discover. It now opens
+  Discover's own copy of the route, `app/(tabs)/discover/setter/[username].tsx`, which renders
+  the same screen as the Climbs one. The setter's name in the player and Home's "See all"
+  still open the Climbs copy; #6572 (the Climbs stack has no anchor) is unchanged.
 
 ### 9. Similar climbs
 

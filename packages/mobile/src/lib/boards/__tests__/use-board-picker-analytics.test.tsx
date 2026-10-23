@@ -71,20 +71,24 @@ describe('board picker analytics', () => {
     expect(track).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ hadActiveBoard: null }));
   });
 
-  it('normalizes setter destinations instead of sending usernames', async () => {
-    const { result } = renderHook(() =>
-      useBoardPickerAnalytics({
-        activeBoard: board,
-        restoreFailed: false,
-        returnTo: '/(tabs)/climbs/setter/example-climber',
-        fromOnboarding: false,
-      }),
-    );
-    await result.current(board, picked);
-    for (const [, properties] of track.mock.calls) {
-      expect(properties.returnTo).toBe('/(tabs)/climbs/setter/[username]');
-    }
-  });
+  it.each(['climbs', 'discover'] as const)(
+    'normalizes %s setter destinations instead of sending usernames',
+    async (tab) => {
+      const { result } = renderHook(() =>
+        useBoardPickerAnalytics({
+          activeBoard: board,
+          restoreFailed: false,
+          returnTo: `/(tabs)/${tab}/setter/example-climber`,
+          fromOnboarding: false,
+        }),
+      );
+      await result.current(board, picked);
+      expect(track).toHaveBeenCalled();
+      for (const [, properties] of track.mock.calls) {
+        expect(properties.returnTo).toBe(`/(tabs)/${tab}/setter/[username]`);
+      }
+    },
+  );
 
   it('distinguishes the same physical board from a matching configuration', async () => {
     const { result } = renderHook(() =>

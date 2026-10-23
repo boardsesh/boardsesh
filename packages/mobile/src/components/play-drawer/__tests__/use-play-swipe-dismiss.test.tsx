@@ -225,3 +225,43 @@ describe('play swipe dismissal target ownership', () => {
     expect(router.dismiss).toHaveBeenCalledTimes(1);
   });
 });
+
+// #5924: a second pop after the player is gone lands on the navigator under it,
+// which pops the playlist and shows the page before it. One close is one pop.
+describe('closing the player pops only the player', () => {
+  function renderPlayer() {
+    const scrollY = { value: 0 } as SharedValue<number>;
+    return renderHook(() => {
+      const motion = usePlaySwipeDismiss(1);
+      useDrawerDismissGesture({ onDismiss: motion.close, swipeDismiss: motion.swipeDismiss, scrollYSV: scrollY });
+      return motion;
+    });
+  }
+
+  it('ignores a chevron tap while a released swipe slides the player away', () => {
+    const { result } = renderPlayer();
+    releaseGesture();
+    act(() => result.current.close());
+    act(() => bridge.springs[0](true));
+    flushBridge();
+    flushFrame();
+    flushFrame();
+    act(() => result.current.close());
+    flushBridge();
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a swipe and a second chevron tap after the chevron closed it', () => {
+    const { result } = renderPlayer();
+    act(() => result.current.close());
+    flushBridge();
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+    releaseGesture();
+    act(() => result.current.close());
+    flushBridge();
+    flushFrame();
+    flushFrame();
+    expect(bridge.springs).toHaveLength(0);
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+  });
+});
