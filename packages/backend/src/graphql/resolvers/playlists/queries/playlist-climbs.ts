@@ -20,6 +20,7 @@ import { verifyPlaylistAccess } from '../helpers/enrichment';
 import { hydrateClimbsByRefs, type HydrateClimbsOptions } from '../helpers/hydrate-climbs';
 import {
   activeBoardFromFields,
+  allBoardsHydrateOptions,
   fetchPlaylistView,
   paginateResults,
   type PlaylistPage,
@@ -153,25 +154,6 @@ function allBoardsWhereConditions(playlistId: bigint, viewerUserId: string | nul
       viewerUserId,
     ),
   ];
-}
-
-/**
- * All-boards hydration: climbs on the active board render their grade at the
- * user's selected angle; every other climb keeps its added-at angle
- * (most-ascents when null). The hydrator drops back to most-ascents if a climb
- * has no stats at the override angle, so the selected angle never blanks a grade.
- */
-function allBoardsHydrateOptions(
-  input: PlaylistBoardInput,
-  items: ReadonlyArray<PlaylistRefRow>,
-): HydrateClimbsOptions {
-  const { activeBoardName, activeAngle } = input;
-  const angleOverrides = new Map<string, number | null>();
-  for (const row of items) {
-    const useActiveAngle = activeBoardName != null && activeAngle != null && row.boardType === activeBoardName;
-    angleOverrides.set(`${row.boardType}:${row.climbUuid}`, useActiveAngle ? activeAngle : (row.playlistAngle ?? null));
-  }
-  return { angleOverrides };
 }
 
 /**

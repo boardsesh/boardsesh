@@ -108,6 +108,27 @@ export function activeBoardFromFields(fields: ActiveBoardFields): PlaylistActive
   };
 }
 
+/**
+ * All-boards hydration: climbs on the active board render their grade at the
+ * user's selected angle; every other climb keeps the angle its list stored for
+ * it (most-ascents when null, and always for a smart list, which stores none).
+ * The hydrator drops back to most-ascents if a climb has no stats at the
+ * override angle, so the selected angle never blanks a grade. Shared by a
+ * playlist in all-boards mode and a logbook smart list under a view.
+ */
+export function allBoardsHydrateOptions(
+  input: Pick<ActiveBoardFields, 'activeBoardName' | 'activeAngle'>,
+  items: ReadonlyArray<PlaylistRefRow>,
+): HydrateClimbsOptions {
+  const { activeBoardName, activeAngle } = input;
+  const angleOverrides = new Map<string, number | null>();
+  for (const row of items) {
+    const useActiveAngle = activeBoardName != null && activeAngle != null && row.boardType === activeBoardName;
+    angleOverrides.set(`${row.boardType}:${row.climbUuid}`, useActiveAngle ? activeAngle : (row.playlistAngle ?? null));
+  }
+  return { angleOverrides };
+}
+
 export type PlaylistPage = {
   climbs: Climb[];
   totalCount: number;

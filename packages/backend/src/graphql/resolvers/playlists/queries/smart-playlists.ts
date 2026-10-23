@@ -28,6 +28,7 @@ import {
 } from '../helpers/recommendation-refs';
 import {
   activeBoardFromFields,
+  allBoardsHydrateOptions,
   fetchPlaylistView,
   naturalRankOrder,
   type ActiveBoardFields,
@@ -404,9 +405,10 @@ function logbookRowsSql(
 }
 
 /**
- * A logbook list under a view. Rows display at their most-ascended angle, as
- * they do without one (the hydrator is given no angle), and the active-board
- * filters read the request's active* board. The hydrator's own visibility rules
+ * A logbook list under a view. A row on the active board's type displays, and
+ * sorts and filters, at the active angle, the angle the app reads its live
+ * stats at; any other row at its most-ascended angle, as without a view. The
+ * active-board filters read the request's active* board. The hydrator's own visibility rules
  * (the draft rule and the spray-wall rule) apply before paging, so a row it
  * would drop never takes a page slot or a place in the counts: under a view,
  * `totalCount` is the rows a client can page through. Exported for the EXPLAIN
@@ -419,6 +421,8 @@ export function logbookViewSource(
 ): PlaylistViewSource {
   const climbs = UNIFIED_TABLES.climbs;
   const rowsSql = logbookRowsSql(type, input.userId, input.boardName, viewerUserId);
+  const activeBoard = activeBoardFromFields(input);
+  const { activeAngle } = input;
   return {
     rows: sql`(${rowsSql}) AS ${sql.identifier(SMART_ROWS)}`,
     climbJoin: and(
@@ -433,10 +437,17 @@ export function logbookViewSource(
       climbUuid: sql<string>`${smartRowsColumn('climb_uuid')}`,
       playlistAngle: sql<number | null>`NULL::int`,
     },
-    preferredAngle: null,
-    activeBoard: activeBoardFromFields(input),
+    // What the app shows: a climb on the active board's type at the wall angle
+    // (the row reads its live stats there), any other at its most-ascended
+    // angle. The sort and the grade filters read the same angle, so the order
+    // matches the grade on the row (`allBoardsScope`'s rule, with no stored angle).
+    preferredAngle:
+      activeBoard != null && activeAngle != null
+        ? sql`CASE WHEN ${climbs.boardType} = ${activeBoard.boardName} THEN ${activeAngle}::int ELSE NULL::int END`
+        : null,
+    activeBoard,
     order: naturalRankOrder(smartRowsColumn('natural_rank')),
-    hydrateOptions: () => ({}),
+    hydrateOptions: (items) => allBoardsHydrateOptions(input, items),
   };
 }
 

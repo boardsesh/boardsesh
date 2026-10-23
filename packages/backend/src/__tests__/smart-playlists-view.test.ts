@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext, PlaylistClimbViewInput } from '@boardsesh/shared-schema';
 import { users } from '@boardsesh/db/schema';
-import { withSerialPlan } from '@boardsesh/db/queries';
+import { getGradeLabel, withSerialPlan } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
@@ -28,6 +28,8 @@ const PRIVATE_OWNER = 'smart-view-private';
 const GUARDED_OWNER = 'smart-view-guarded';
 // A logbook whose attempt totals tie, for the tie-break.
 const TIE_OWNER = 'smart-view-ties';
+// A logbook holding a climb whose most-ascended angle is a tie, for the display angle.
+const ANGLE_OWNER = 'smart-view-angles';
 
 function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -142,7 +144,10 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
     await db
       .insert(users)
       .values(
-        [OWNER, STRANGER, PRIVATE_OWNER, GUARDED_OWNER, TIE_OWNER].map((id) => ({ id, email: `${id}@test.invalid` })),
+        [OWNER, STRANGER, PRIVATE_OWNER, GUARDED_OWNER, TIE_OWNER, ANGLE_OWNER].map((id) => ({
+          id,
+          email: `${id}@test.invalid`,
+        })),
       )
       .onConflictDoNothing();
     await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${PRIVATE_OWNER}, true)`);
@@ -279,6 +284,23 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       });
     }
 
+    // ANGLE_OWNER: k-tie has 8 ascents at both 15° (a 10) and 30° (a 16), and is
+    // a 20 at 40°; beside it k-1 (12 at 40°) and k-2 (18 at 40°).
+    await seedClimb('k-tie', 'kilter', 1, 'India');
+    await seedStats('kilter', 'k-tie', 15, 10, 3.0, 8);
+    await seedStats('kilter', 'k-tie', 30, 16, 3.0, 8);
+    await seedStats('kilter', 'k-tie', 40, 20, 3.0, 2);
+    for (const [index, climbUuid] of ['k-tie', 'k-1', 'k-2'].entries()) {
+      await seedTick({
+        uuid: `sv-a${index}`,
+        userId: ANGLE_OWNER,
+        climbUuid,
+        status: 'attempt',
+        attempts: 2,
+        climbedAt: `2026-06-0${index + 1} 10:00`,
+      });
+    }
+
     // k-2 liked twice (two angles): the later like is when it entered the list.
     await db.execute(sql`
       INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at) VALUES
@@ -381,6 +403,37 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
         't-1',
         'k-1',
       ]);
+    });
+
+    it('the grade a row shows is the one it sorted by, on a tied most-ascended angle and at the wall angle', async () => {
+      const sorted = async (board: Partial<SmartInput>) =>
+        fetchSmart({
+          type: 'MOST_REPEATED',
+          userId: ANGLE_OWNER,
+          ...board,
+          view: { sortBy: 'difficulty' },
+          pageSize: 100,
+        });
+      const tied = (climbs: Awaited<ReturnType<typeof sorted>>['climbs']) =>
+        climbs.find((climb) => climb.uuid === 'k-tie');
+
+      // No active board: the tie goes to the lower angle, 15° (a 10), for the
+      // sort and the row alike, and the list without a view shows the same.
+      const mostAscended = await sorted({});
+      expect(mostAscended.climbs.map((climb) => climb.uuid)).toEqual(['k-tie', 'k-1', 'k-2']);
+      expect(tied(mostAscended.climbs)?.statsAngle).toBe(15);
+      expect(tied(mostAscended.climbs)?.difficulty).toBe(getGradeLabel(10, 'kilter'));
+      const plain = await fetchSmart({ type: 'MOST_REPEATED', userId: ANGLE_OWNER, pageSize: 100 });
+      expect(tied(plain.climbs)?.statsAngle).toBe(15);
+      expect(tied(plain.climbs)?.difficulty).toBe(getGradeLabel(10, 'kilter'));
+
+      // On the active board the row shows its 40° grade, the angle the app reads
+      // its live stats at, and sorts by it.
+      const atTheWall = await sorted(ACTIVE_KILTER);
+      expect(atTheWall.climbs.map((climb) => climb.uuid)).toEqual(['k-1', 'k-2', 'k-tie']);
+      expect(tied(atTheWall.climbs)?.statsAngle).toBe(40);
+      expect(tied(atTheWall.climbs)?.angle).toBe(40);
+      expect(tied(atTheWall.climbs)?.difficulty).toBe(getGradeLabel(20, 'kilter'));
     });
 
     it('a random order is stable across pages for one seed, and another seed reshuffles', async () => {

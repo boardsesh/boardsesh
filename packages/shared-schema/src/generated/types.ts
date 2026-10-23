@@ -2933,7 +2933,8 @@ export type GetSmartPlaylistInput = {
    * five-star climb first, most attempts first, or most recently liked first.
    * added is when the climb entered the list where the list records it (the like,
    * on LIKED_CLIMBS), and the list's own order elsewhere. Grades and stats read
-   * each row's most-ascended angle, the angle it displays.
+   * the angle each row displays: activeAngle on activeBoardName's board type,
+   * else the most-ascended angle (the lower angle on a tie).
    */
   view?: InputMaybe<PlaylistClimbViewInput>;
 };
