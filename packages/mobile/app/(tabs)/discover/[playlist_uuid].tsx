@@ -175,7 +175,7 @@ export default function PlaylistDetail() {
   // opens once those rows are on screen (see the effect below).
   const [pendingEdit, setPendingEdit] = useState(false);
   // The sheet's live count. The session hook runs before the query that answers
-  // it, so the count is mirrored here (during render, below) and kept while a
+  // it, so the count is mirrored here (in an effect, below) and kept while a
   // new view loads.
   const [sheetMatchCount, setSheetMatchCount] = useState<number | null>(null);
   const filterScopeKey = playlistUuid
@@ -256,7 +256,10 @@ export default function PlaylistDetail() {
   const totalCount = firstPage?.totalCount;
   // Only a filtering view carries it, so it also says "the rows on screen are filtered".
   const unfilteredCount = firstPage?.unfilteredCount ?? null;
-  if (totalCount !== undefined && totalCount !== sheetMatchCount) setSheetMatchCount(totalCount);
+  // The sheet subtitle can trail the list by a frame, so this needs no render-time update.
+  useEffect(() => {
+    if (totalCount !== undefined) setSheetMatchCount(totalCount);
+  }, [totalCount]);
 
   // Suggestion-refresh fetcher: pages the same playlist scoped to the active
   // board so the play-drawer swipe walks the whole playlist on that board.
@@ -947,6 +950,8 @@ export default function PlaylistDetail() {
   const hero = useMemo(
     () => ({
       name: playlist?.name ?? t('metadata.detail.fallbackTitle'),
+      // `unfilteredCount` is null exactly when no filter is on, and then
+      // `totalCount` is the whole playlist, so this never shows a filtered count.
       climbCount: playlist?.climbCount ?? unfilteredCount ?? totalCount ?? allClimbs.length,
       color: playlist?.color,
       icon: playlist?.icon,
