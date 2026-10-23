@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { Fragment, createElement, type ReactElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WorkoutBlockSpec, WorkoutRun } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection } from '../../pre-session/workout-blocks';
@@ -36,7 +36,9 @@ type PreviewArgs = {
 const preview = vi.hoisted(() => ({
   calls: [] as PreviewArgs[],
   status: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
-  items: [] as Array<{ item: ClimbQueueItem; slot: { grade: number; index: number } }>,
+  items: [] as Array<{ item: ClimbQueueItem; slot: { grade: number; index: number; section: string } }>,
+  refreshingUuids: new Set<string>(),
+  refreshSlot: vi.fn(),
   plannedCount: 0,
   staged: { items: [] as ClimbQueueItem[], run: null as WorkoutRun | null },
 }));
@@ -47,13 +49,13 @@ vi.mock('../../pre-session/use-workout-preview', () => ({
     return {
       status: on ? preview.status : 'idle',
       items: on ? preview.items : [],
-      refreshingUuids: new Set(),
+      refreshingUuids: preview.refreshingUuids,
       plannedCount: on ? preview.plannedCount : 0,
       plannedSlots: [],
       plannedStages: [],
       regenerate: vi.fn(),
       shuffle: vi.fn(),
-      refreshSlot: vi.fn(),
+      refreshSlot: preview.refreshSlot,
       toStagedQueueItems: () => preview.staged,
     };
   },
@@ -100,6 +102,53 @@ vi.mock('../../pre-session/WorkoutBlockFields', () => ({
 vi.mock('../../pre-session/WorkoutPreviewSummary', () => ({
   WorkoutPreviewSummary: () => createElement('div', null, 'summary'),
 }));
+// The sheet's list renders every row it is given, header first, like a short
+// FlatList does on device.
+type MockListProps = {
+  testID?: string;
+  data: readonly unknown[];
+  renderItem: (info: { item: unknown; index: number }) => ReactElement | null;
+  keyExtractor: (row: unknown) => string;
+  ListHeaderComponent?: ReactElement | null;
+};
+vi.mock('@expo/ui/community/bottom-sheet', () => ({
+  BottomSheetFlatList: ({ testID, data, renderItem, keyExtractor, ListHeaderComponent }: MockListProps) =>
+    createElement(
+      'div',
+      { 'data-testid': testID },
+      ListHeaderComponent,
+      data.map((row, index) => createElement(Fragment, { key: keyExtractor(row) }, renderItem({ item: row, index }))),
+    ),
+}));
+type MockRowProps = {
+  item: ClimbQueueItem;
+  board: { boardName: string; angle: number };
+  isActive: boolean;
+  isRefreshing: boolean;
+  refreshDisabled: boolean;
+  onPress?: (item: ClimbQueueItem) => void;
+  onRefresh: (uuid: string) => void;
+};
+const rows = vi.hoisted(() => ({ rendered: [] as MockRowProps[] }));
+vi.mock('../../pre-session/WorkoutPreviewRow', () => ({
+  WorkoutPreviewRow: (props: MockRowProps) => {
+    rows.rendered.push(props);
+    return createElement(
+      'div',
+      { 'data-testid': `preview-row-${props.item.uuid}` },
+      props.item.climb.name,
+      createElement('button', { onClick: () => props.onRefresh(props.item.uuid) }, `refresh ${props.item.uuid}`),
+    );
+  },
+}));
+vi.mock('../../pre-session/WorkoutPreviewSectionHeading', () => ({
+  WorkoutPreviewSectionHeading: ({ section, count }: { section: string; count: number }) =>
+    createElement('h3', null, `section ${section}:${count}`),
+}));
+vi.mock('../../pre-session/WorkoutPreviewStageHeading', () => ({
+  WorkoutPreviewStageHeading: ({ stageKind, count }: { stageKind: string; count: number }) =>
+    createElement('h3', null, `stage ${stageKind}:${count}`),
+}));
 vi.mock('../../pre-session/generator-controls', () => ({
   getDefaultTargetGrade: () => 15,
   toRailGrades: () => [],
@@ -113,9 +162,6 @@ vi.mock('../../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 } }),
 }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../../../../hooks/use-grade-format', () => ({
-  useGradeFormat: () => ({ formatGrade: (difficulty: string) => difficulty }),
-}));
 vi.mock('../../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
@@ -158,10 +204,13 @@ import { AddWorkoutBlockSheet } from '../AddWorkoutBlockSheet';
 const climbItem = (uuid: string) =>
   ({ uuid, climb: { uuid: `climb-${uuid}`, name: `Climb ${uuid}`, difficulty: '6a/V3' } }) as unknown as ClimbQueueItem;
 
-function readyPreview(uuids: string[], stageId = 'new-stage-uuid'): void {
+function readyPreview(uuids: string[], stageId = 'new-stage-uuid', sections?: string[]): void {
   const items = uuids.map(climbItem);
   preview.status = 'ready';
-  preview.items = items.map((queueItem, index) => ({ item: queueItem, slot: { grade: 20, index } }));
+  preview.items = items.map((queueItem, index) => ({
+    item: queueItem,
+    slot: { grade: 20, index, section: sections?.[index] ?? 'main' },
+  }));
   preview.plannedCount = uuids.length + 1;
   preview.staged = { items, run: { stages: [{ id: stageId, kind: 'pyramid', itemUuids: uuids, targetGrade: 20 }] } };
 }
@@ -191,6 +240,9 @@ beforeEach(() => {
   preview.calls = [];
   preview.status = 'ready';
   preview.items = [];
+  preview.refreshingUuids = new Set();
+  preview.refreshSlot.mockReset();
+  rows.rendered = [];
   preview.plannedCount = 0;
   preview.staged = { items: [], run: null };
   sheet.modal = null;
@@ -392,5 +444,60 @@ describe('AddWorkoutBlockSheet', () => {
       'stage-start',
       'new-stage-uuid',
     ]);
+  });
+  it('lists every climb of the block with the preview rows, thumbnails and all', () => {
+    const uuids = Array.from({ length: 12 }, (_unused, index) => `v${index + 1}`);
+    readyPreview(uuids);
+    renderSheet(true);
+
+    const list = screen.getByTestId('add-workout-block-preview');
+    for (const uuid of uuids) {
+      expect(list.querySelector(`[data-testid="preview-row-${uuid}"]`)).toBeTruthy();
+    }
+    expect(screen.queryByText(/addBlockPreviewMore/)).toBeNull();
+    // The rows draw the climb on the active board (thumbnail and grade colours).
+    expect(rows.rendered.at(-1)?.board).toMatchObject({ boardName: 'kilter', angle: 40 });
+  });
+
+  it('shows a pyramid going up and down, as the Record tab does for one block', () => {
+    readyPreview(['p1', 'p2', 'p3', 'p4'], 'new-stage-uuid', ['increasing', 'increasing', 'peak', 'decreasing']);
+    renderSheet(true);
+
+    expect(screen.getByText('section increasing:2')).toBeTruthy();
+    expect(screen.getByText('section peak:1')).toBeTruthy();
+    expect(screen.getByText('section decreasing:1')).toBeTruthy();
+  });
+
+  it('regenerates only the row whose refresh was tapped', () => {
+    readyPreview(['v1', 'v2', 'v3']);
+    renderSheet(true);
+
+    act(() => {
+      screen.getByText('refresh v2').click();
+    });
+
+    expect(preview.refreshSlot.mock.calls).toEqual([['v2']]);
+  });
+
+  it('holds the other rows while one regenerates, and Add to session with them', () => {
+    readyPreview(['v1', 'v2']);
+    preview.refreshingUuids = new Set(['v1']);
+    renderSheet(true);
+
+    const latestRow = (uuid: string) => rows.rendered.filter((row) => row.item.uuid === uuid).at(-1);
+    expect(latestRow('v1')).toMatchObject({ isRefreshing: true, refreshDisabled: false });
+    expect(latestRow('v2')).toMatchObject({ isRefreshing: false, refreshDisabled: true });
+    expect(sheet.topBar?.trailing.disabled).toBe(true);
+  });
+
+  it('never opens the player from a row, which would land under the sheet', () => {
+    readyPreview(['v1', 'v2']);
+    renderSheet(true);
+
+    expect(rows.rendered.length).toBeGreaterThan(0);
+    for (const row of rows.rendered) {
+      expect(row.onPress).toBeUndefined();
+      expect(row.isActive).toBe(false);
+    }
   });
 });

@@ -44,9 +44,7 @@ import {
   singleBlockSelection,
   type GeneratorSelection,
 } from './workout-blocks';
-import { WorkoutPreviewRow } from './WorkoutPreviewRow';
-import { WorkoutPreviewSectionHeading } from './WorkoutPreviewSectionHeading';
-import { WorkoutPreviewStageHeading } from './WorkoutPreviewStageHeading';
+import { WorkoutPreviewListRow } from './WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from './WorkoutPreviewSummary';
 import { useWorkoutPreview } from './use-workout-preview';
 import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sections';
@@ -200,9 +198,8 @@ export function PreSessionView({
     [plannedSlots, previewItems],
   );
 
-  // Refreshes run one at a time, so once any row is regenerating every row's
-  // refresh button is disabled (the rows dim it). Derived as a primitive so
-  // renderItem keeps a stable, length-free dep.
+  // Refreshes run one at a time, so Shuffle waits while any row regenerates.
+  // Derived as a primitive so the list header keeps a stable, length-free dep.
   const isRefreshingAnyRow = refreshingUuids.size > 0;
   const hasPreviewItems = previewItems.length > 0;
 
@@ -242,25 +239,17 @@ export function PreSessionView({
   );
 
   const renderPreviewRow = useCallback(
-    ({ item: row }: { item: PreviewListRow }) => {
-      if (row.kind === 'stage') return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} />;
-      if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
-      if (!previewBoard) return null;
-      const previewItem = row.preview;
-      const isRefreshing = refreshingUuids.has(previewItem.item.uuid);
-      return (
-        <WorkoutPreviewRow
-          item={previewItem.item}
-          board={previewBoard}
-          isActive={previewItem.item.uuid === activePreviewUuid}
-          isRefreshing={isRefreshing}
-          refreshDisabled={isRefreshingAnyRow && !isRefreshing}
-          onPress={handlePreviewPress}
-          onRefresh={refreshSlot}
-        />
-      );
-    },
-    [previewBoard, activePreviewUuid, refreshingUuids, isRefreshingAnyRow, handlePreviewPress, refreshSlot],
+    ({ item: row }: { item: PreviewListRow }) => (
+      <WorkoutPreviewListRow
+        row={row}
+        board={previewBoard}
+        activeUuid={activePreviewUuid}
+        refreshingUuids={refreshingUuids}
+        onPress={handlePreviewPress}
+        onRefresh={refreshSlot}
+      />
+    ),
+    [previewBoard, activePreviewUuid, refreshingUuids, handlePreviewPress, refreshSlot],
   );
 
   const handleStart = useCallback(async () => {

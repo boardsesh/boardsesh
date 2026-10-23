@@ -18,7 +18,22 @@ const surfaces = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({
+    children,
+    accessible,
+    accessibilityLabel,
+    accessibilityRole,
+  }: {
+    children?: ReactNode;
+    accessible?: boolean;
+    accessibilityLabel?: string;
+    accessibilityRole?: string;
+  }) =>
+    createElement(
+      'div',
+      accessible ? { 'aria-label': accessibilityLabel, 'data-role': accessibilityRole ?? 'none' } : null,
+      children,
+    ),
   ActivityIndicator: () => createElement('span', { 'data-testid': 'refresh-spinner' }),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
@@ -96,7 +111,12 @@ const flattenStyle = (style: unknown): Record<string, unknown> => {
   return {};
 };
 
-function renderRow(overrides: { isRefreshing: boolean; refreshDisabled: boolean; item?: ClimbQueueItem }) {
+function renderRow(overrides: {
+  isRefreshing: boolean;
+  refreshDisabled: boolean;
+  item?: ClimbQueueItem;
+  onPress?: (item: ClimbQueueItem) => void;
+}) {
   return render(
     createElement(WorkoutPreviewRow, {
       item: overrides.item ?? item,
@@ -196,5 +216,16 @@ describe('WorkoutPreviewRow refresh button', () => {
     expect(getByTestId('refresh-spinner')).toBeTruthy();
     expect(refreshButton()?.disabled).toBe(true);
     expect(refreshButton()?.accessibilityState).toMatchObject({ disabled: true, busy: true });
+  });
+
+  // The add-block sheet leaves onPress out: a tap would open the player under it.
+  it('is plain content, not a button, without onPress, and keeps its label and refresh', () => {
+    const { getByLabelText } = renderRow({ isRefreshing: false, refreshDisabled: false, onPress: undefined });
+
+    expect(rowButton()).toBeUndefined();
+    expect(surfaces.entries.map((entry) => entry.label)).toEqual([REFRESH_LABEL]);
+    expect(refreshButton()?.disabled).toBe(false);
+    const climbArea = getByLabelText('Test Climb, V4, 12 sends, 4 stars, setter');
+    expect(climbArea.getAttribute('data-role')).toBe('none');
   });
 });

@@ -4,8 +4,9 @@
 //
 // A ModalSheet, not a route (docs/mobile-sheets-vs-routes.md): it is a short
 // task over the session screen, opened by a button, and it opens no sheet of
-// its own. Preview rows are text, not the tappable rows the Record tab uses, so
-// nothing in it can push the player over the sheet.
+// its own. Its preview lists every climb with the Record tab's rows (thumbnail,
+// per-row refresh, the same stage and section headings), but a row tap does
+// nothing: the play drawer would open under the sheet.
 //
 // It reuses the pre-session generator end to end: the block card's fields with
 // the workout types only (mid-session the climber is already warm, so no
@@ -16,12 +17,12 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { summarizePlanFill, type GeneratorOptions, type WorkoutBlockSpec } from '@boardsesh/playlist-generator';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { BoardName } from '@boardsesh/shared-schema';
 import { Card } from '../../Card';
 import { ModalSheet } from '../../ModalSheet';
 import { SectionHeader } from '../../SectionHeader';
@@ -37,12 +38,12 @@ import {
   setWorkoutRun,
   useWorkoutRun,
 } from '../../../lib/workout-run-store';
-import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { track } from '../../../lib/analytics';
 import { hapticSuccess } from '../../../lib/haptics';
 import { spacing } from '../../../theme/tokens';
 import { getDefaultTargetGrade, toRailGrades } from '../pre-session/generator-controls';
 import { WorkoutBlockFields } from '../pre-session/WorkoutBlockFields';
+import { WorkoutPreviewListRow } from '../pre-session/WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from '../pre-session/WorkoutPreviewSummary';
 import { useWorkoutPreview } from '../pre-session/use-workout-preview';
 import {
@@ -53,11 +54,9 @@ import {
   type GeneratorSelection,
   type WorkoutBlockType,
 } from '../pre-session/workout-blocks';
-import type { PreviewItem } from '../pre-session/workout-preview-pool';
+import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workout-preview-sections';
+import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { addWorkoutBlock, defaultMidSessionBlock } from './add-workout-block';
-
-/** Climbs listed by name before the rest fold into "and N more". */
-export const ADD_BLOCK_PREVIEW_ROWS = 5;
 
 /** Workout types only: mid-session the climber is already warm. */
 export const ADD_BLOCK_TYPES: readonly WorkoutBlockType[] = WORKOUT_BLOCK_TYPES.filter((type) => type !== 'warmUp');
@@ -65,6 +64,10 @@ export const ADD_BLOCK_TYPES: readonly WorkoutBlockType[] = WORKOUT_BLOCK_TYPES.
 // fixed id never reaches the run.
 const ADD_BLOCK_ID = 'add-block';
 const SNAP_POINTS = ['90%'];
+
+function previewKeyExtractor(row: PreviewListRow): string {
+  return row.key;
+}
 
 type AddWorkoutBlockSheetProps = {
   visible: boolean;
@@ -138,11 +141,19 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     }
     return queuedClimbUuids;
   }, [getQueueSnapshot]);
-  const { items, status, refreshingUuids, plannedCount, plannedSlots, shuffle, toStagedQueueItems } = useWorkoutPreview(
-    selection,
-    activeBoard ?? null,
-    { isAuthenticated, getAvoidedClimbUuids },
-  );
+  const {
+    items,
+    status,
+    refreshingUuids,
+    plannedCount,
+    plannedSlots,
+    plannedStages,
+    refreshSlot,
+    shuffle,
+    toStagedQueueItems,
+  } = useWorkoutPreview(selection, activeBoard ?? null, { isAuthenticated, getAvoidedClimbUuids });
+  // A pyramid shows its way up and down, exactly as the Record tab would for one block.
+  const previewRows = useMemo(() => buildPreviewListRows(items, plannedStages), [items, plannedStages]);
   const planSummary = useMemo(
     () =>
       summarizePlanFill(
@@ -267,16 +278,41 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
             ? t('mobile.session.addBlockPreviewEmpty')
             : null;
 
-  return (
-    <ModalSheet
-      visible={visible}
-      snapPoints={SNAP_POINTS}
-      onClose={onClose}
-      onFullyDismissed={handleFullyDismissed}
-      scrollable
-      header={header}
-    >
-      <View style={styles.body} testID="add-workout-block-sheet">
+  // Board context for the preview rows (thumbnails + grade colours).
+  const previewBoard = useMemo<QueueItemRowBoard | null>(() => {
+    if (!activeBoard || !boardName) return null;
+    return {
+      boardName,
+      layoutId: activeBoard.layoutId,
+      sizeId: activeBoard.sizeId,
+      setIds: activeBoard.setIds,
+      angle: activeBoard.angle,
+    };
+  }, [activeBoard, boardName]);
+  // Primitives, so the list header keeps stable, length-free deps.
+  const isRefreshingAnyRow = refreshingUuids.size > 0;
+  const hasPreviewItems = items.length > 0;
+
+  // No row is ever active and no onPress: a row tap would open the play drawer
+  // under this sheet. The refresh button still regenerates its own climb.
+  const renderPreviewRow = useCallback(
+    ({ item: row }: { item: PreviewListRow }) => (
+      <WorkoutPreviewListRow
+        row={row}
+        board={previewBoard}
+        activeUuid={null}
+        refreshingUuids={refreshingUuids}
+        onRefresh={refreshSlot}
+      />
+    ),
+    [previewBoard, refreshingUuids, refreshSlot],
+  );
+
+  // Everything above the climbs scrolls with them, so the block's fields don't
+  // pin half the sheet while the climber reads the list.
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.header} testID="add-workout-block-sheet">
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.inset}>
           {t('mobile.session.addBlockIntro')}
         </Text>
@@ -297,16 +333,13 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
 
         <View>
           <SectionHeader title={t('mobile.session.addBlockPreviewTitle')} />
-          {boardName && items.length > 0 ? (
-            <>
-              <WorkoutPreviewSummary
-                summary={planSummary}
-                boardName={boardName}
-                onShuffle={shuffle}
-                shuffleDisabled={status !== 'ready' || refreshingUuids.size > 0}
-              />
-              <AddBlockPreviewList items={items} boardName={boardName} />
-            </>
+          {boardName && hasPreviewItems ? (
+            <WorkoutPreviewSummary
+              summary={planSummary}
+              boardName={boardName}
+              onShuffle={shuffle}
+              shuffleDisabled={status !== 'ready' || isRefreshingAnyRow}
+            />
           ) : null}
           {previewStateMessage ? (
             <View style={styles.inset}>
@@ -319,61 +352,65 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
           ) : null}
         </View>
       </View>
+    ),
+    [
+      systemColors.secondaryLabel,
+      t,
+      block,
+      boardName,
+      railGrades,
+      title,
+      handleTypeChange,
+      handleBlockChange,
+      hasPreviewItems,
+      planSummary,
+      shuffle,
+      status,
+      isRefreshingAnyRow,
+      previewStateMessage,
+    ],
+  );
+
+  // Not `scrollable`: the list is the sheet's scroll, inside the body ModalSheet
+  // pads for the window's bottom inset, so the last row clears the home
+  // indicator and the Android navigation bar.
+  return (
+    <ModalSheet
+      visible={visible}
+      snapPoints={SNAP_POINTS}
+      onClose={onClose}
+      onFullyDismissed={handleFullyDismissed}
+      header={header}
+    >
+      <BottomSheetFlatList
+        testID="add-workout-block-preview"
+        style={styles.list}
+        data={previewRows}
+        renderItem={renderPreviewRow}
+        keyExtractor={previewKeyExtractor}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      />
     </ModalSheet>
   );
 });
 
-/**
- * The first few climbs by name and grade, then a count of the rest. Bounded to
- * `ADD_BLOCK_PREVIEW_ROWS` rows, so it maps instead of virtualising.
- */
-function AddBlockPreviewList({ items, boardName }: { items: readonly PreviewItem[]; boardName: BoardName }) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
-  const { formatGrade } = useGradeFormat();
-  const hiddenCount = items.length - ADD_BLOCK_PREVIEW_ROWS;
-  return (
-    <View style={[styles.inset, styles.previewList]} testID="add-workout-block-preview">
-      {items.slice(0, ADD_BLOCK_PREVIEW_ROWS).map(({ item }) => (
-        <View key={item.uuid} style={styles.previewRow}>
-          <Text variant="body" numberOfLines={1} style={styles.previewName}>
-            {item.climb.name}
-          </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel} numeric>
-            {formatGrade(item.climb.difficulty, boardName) ?? item.climb.difficulty}
-          </Text>
-        </View>
-      ))}
-      {hiddenCount > 0 ? (
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {t('mobile.session.addBlockPreviewMore', { count: hiddenCount })}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: spacing[4],
+  },
   // No horizontal padding: the SectionHeader brings its own 16pt gutter, and the
   // block fields sit in `inset`, whose padding their grade rail bleeds back out of.
-  body: {
+  header: {
     paddingTop: spacing[2],
-    paddingBottom: spacing[4],
     gap: spacing[3],
   },
   inset: {
     paddingHorizontal: spacing[4],
-  },
-  previewList: {
-    marginTop: spacing[2],
-    gap: spacing[2],
-  },
-  previewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  previewName: {
-    flex: 1,
   },
 });

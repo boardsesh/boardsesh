@@ -30,7 +30,12 @@ type WorkoutPreviewRowProps = {
    * instead of silently swallowing the tap.
    */
   refreshDisabled: boolean;
-  onPress: (item: ClimbQueueItem) => void;
+  /**
+   * Opens the climb in the play drawer. Left out where the drawer would open
+   * under a modal sheet (the add-block sheet): the climb area is then plain
+   * content, not a button, and only the refresh button responds.
+   */
+  onPress?: (item: ClimbQueueItem) => void;
   onRefresh: (uuid: string) => void;
 };
 
@@ -64,6 +69,7 @@ function WorkoutPreviewRowComponent({
   itemRef.current = item;
 
   const handlePress = useCallback(() => {
+    if (!onPress) return;
     hapticSelection();
     onPress(itemRef.current);
   }, [onPress]);
@@ -96,6 +102,20 @@ function WorkoutPreviewRowComponent({
         .filter(Boolean)
         .join(', ')
     : climbName;
+  const climbContent = climb ? (
+    <ClimbListItemContent
+      climb={climb}
+      boardName={board.boardName}
+      layoutId={board.layoutId}
+      sizeId={board.sizeId}
+      setIds={board.setIds}
+      angle={board.angle}
+    />
+  ) : (
+    <Text variant="body" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.missingClimbText}>
+      {climbName}
+    </Text>
+  );
 
   return (
     <View>
@@ -106,29 +126,23 @@ function WorkoutPreviewRowComponent({
           isActive && { backgroundColor: `${brandColors.primary}14` },
         ]}
       >
-        <PressableSurface
-          onPress={handlePress}
-          feedback="opacity"
-          accessibilityRole="button"
-          accessibilityLabel={rowAccessibilityLabel}
-          accessibilityState={{ selected: isActive }}
-          style={styles.rowButton}
-        >
-          {climb ? (
-            <ClimbListItemContent
-              climb={climb}
-              boardName={board.boardName}
-              layoutId={board.layoutId}
-              sizeId={board.sizeId}
-              setIds={board.setIds}
-              angle={board.angle}
-            />
-          ) : (
-            <Text variant="body" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.missingClimbText}>
-              {climbName}
-            </Text>
-          )}
-        </PressableSurface>
+        {onPress ? (
+          <PressableSurface
+            onPress={handlePress}
+            feedback="opacity"
+            accessibilityRole="button"
+            accessibilityLabel={rowAccessibilityLabel}
+            accessibilityState={{ selected: isActive }}
+            style={styles.rowButton}
+          >
+            {climbContent}
+          </PressableSurface>
+        ) : (
+          // One stop for a screen reader, with the same label, but no button role.
+          <View accessible accessibilityLabel={rowAccessibilityLabel} style={styles.rowButton}>
+            {climbContent}
+          </View>
+        )}
 
         <PressableSurface
           onPress={handleRefresh}
@@ -165,10 +179,11 @@ function WorkoutPreviewRowComponent({
   );
 }
 
-// Memoized: PreSessionView re-renders on every preview rebuild and refresh-state
-// change. Each prop is referentially stable except `item` (a fresh reference
-// only for the row that actually changed), so a shallow compare lets untouched
-// rows skip re-rendering.
+// Memoized: the preview lists (pre-session and the add-block sheet) re-render on
+// every preview rebuild and refresh-state change. Each prop is referentially
+// stable except `item` (a fresh reference only for the row that actually
+// changed), so a shallow compare lets untouched rows skip re-rendering. An
+// absent `onPress` compares equal to itself, so a sheet row stays memoized too.
 export const WorkoutPreviewRow = memo(WorkoutPreviewRowComponent, (prev, next) => {
   return (
     prev.item.uuid === next.item.uuid &&

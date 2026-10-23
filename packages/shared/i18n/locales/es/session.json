@@ -686,8 +686,6 @@
       "addBlockIntro": "Estos bloques van al final de tu cola. El bloque del muro no cambia.",
       "addBlockPreviewTitle": "Bloques que se añaden",
       "addBlockPreviewEmpty": "Ningún bloque encaja en esta fase. Prueba otro grado.",
-      "addBlockPreviewMore_one": "+{{count}} más",
-      "addBlockPreviewMore_other": "+{{count}} más",
       "addBlockQueueFull": "Tu cola está llena. Quita algunos bloques y vuelve a intentarlo.",
       "addWorkoutPromptTitle": "Añadir una fase de entrenamiento",
       "addWorkoutPromptSubtitle": "Pon en cola una pirámide, una escalera o volumen después de tus bloques",
