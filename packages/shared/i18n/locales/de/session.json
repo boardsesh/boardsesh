@@ -161,6 +161,9 @@
     "removeItems_other": "{{count}} Einträge entfernen"
   },
   "queueList": {
+    "sectionHistory": "Historie",
+    "sectionUpNext": "Als Nächstes",
+    "sectionSuggestions": "Vorschläge",
     "showFullHistory_one": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistory_other": "Ganze Historie zeigen (noch {{count}})",
     "showFullHistoryAria_one": "{{count}} weiteren Eintrag aus der Historie zeigen",

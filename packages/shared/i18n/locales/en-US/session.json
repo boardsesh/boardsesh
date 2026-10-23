@@ -161,6 +161,9 @@
     "removeItems_other": "Remove {{count}} items"
   },
   "queueList": {
+    "sectionHistory": "History",
+    "sectionUpNext": "Up next",
+    "sectionSuggestions": "Suggestions",
     "showFullHistory_one": "Show full history ({{count}} more)",
     "showFullHistory_other": "Show full history ({{count}} more)",
     "showFullHistoryAria_one": "Show {{count}} more item from history",

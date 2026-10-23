@@ -97,6 +97,10 @@ vi.mock('../../providers/theme-provider', () => ({
     },
     brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
     opacity: { disabled: 0.5 },
+    // The queue sheet's section headers (History, Up next, Suggestions).
+    variant: 'liquidGlass',
+    m3: { onSurfaceVariant: '#666' },
+    sectionCaption: { uppercase: false, opacity: 1, letterSpacing: 0 },
   }),
 }));
 

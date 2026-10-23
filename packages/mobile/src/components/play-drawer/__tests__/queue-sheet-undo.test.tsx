@@ -81,10 +81,18 @@ vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement(
 
 // Header: Clear + an edit toggle. List: one select button per row.
 vi.mock('../QueueSheetHeader', () => ({
-  QueueSheetHeader: ({ onClearAll, onToggleEditMode }: { onClearAll: () => void; onToggleEditMode: () => void }) =>
+  QueueSheetHeader: ({
+    onClearAll,
+    onToggleEditMode,
+    queueCount,
+  }: {
+    onClearAll: () => void;
+    onToggleEditMode: () => void;
+    queueCount: number;
+  }) =>
     createElement(
       'div',
-      null,
+      { 'data-testid': 'header', 'data-count': String(queueCount) },
       createElement('button', { 'data-testid': 'clear', onClick: onClearAll }),
       createElement('button', { 'data-testid': 'edit', onClick: onToggleEditMode }),
     ),
@@ -209,6 +217,20 @@ beforeEach(() => {
           ? null
           : live.current.currentClimbQueueItem,
     };
+  });
+});
+
+describe('QueueSheet count', () => {
+  it('counts only what is ahead of the current climb, matching the Up next title', () => {
+    // beforeEach: queue a, b, c with b current -> one climb (c) is up next.
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('header').getAttribute('data-count')).toBe('1');
+  });
+
+  it('counts the whole queue when no climb is current', () => {
+    live.current = { queue: ['a', 'b', 'c'].map(item), currentClimbQueueItem: null };
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('header').getAttribute('data-count')).toBe('3');
   });
 });
 

@@ -130,6 +130,7 @@ vi.mock('../use-queue-drag', () => ({
     },
   }),
 }));
+vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('span', null, children) }));
 vi.mock('../../ClimbListItemContent', () => ({ ClimbListItemContent: () => createElement('span', null) }));
 

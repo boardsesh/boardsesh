@@ -161,6 +161,9 @@
     "removeItems_other": "Retirer {{count}} éléments"
   },
   "queueList": {
+    "sectionHistory": "Historique",
+    "sectionUpNext": "À suivre",
+    "sectionSuggestions": "Suggestions",
     "showFullHistory_one": "Afficher l'historique complet ({{count}} de plus)",
     "showFullHistory_other": "Afficher l'historique complet ({{count}} de plus)",
     "showFullHistoryAria_one": "Afficher {{count}} element de plus de l'historique",

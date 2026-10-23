@@ -286,6 +286,13 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   );
 
   const viewOnlyMode = queue.length === 0;
+  // The header is titled "Up next", so it counts what is still ahead: everything
+  // after the current climb (the whole queue when none is current), not History
+  // or the current climb itself.
+  const upNextCount = useMemo(() => {
+    const currentIndex = currentItemUuid ? queue.findIndex((item) => item.uuid === currentItemUuid) : -1;
+    return queue.length - (currentIndex + 1);
+  }, [queue, currentItemUuid]);
 
   const sheetContent = (
     <>
@@ -293,7 +300,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
         isEditMode={isEditMode}
         showHistory={showHistory}
         selectedCount={selectedItems.size}
-        queueCount={queue.length}
+        queueCount={upNextCount}
         viewOnlyMode={viewOnlyMode}
         onToggleEditMode={handleToggleEditMode}
         onToggleHistory={handleToggleHistory}

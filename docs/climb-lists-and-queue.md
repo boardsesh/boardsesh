@@ -424,22 +424,21 @@ previews instead (`:325`).
 
 ### 11. The queue sheet
 
-- It shows the last 2 History rows (`src/components/play-drawer/QueueList.tsx:42`); the shared
-  model's default is 5 (`packages/shared/play-view/src/queue-list-model.ts:3`).
-- Suggestions follow Up next with no header and no divider (`QueueList.tsx:142-190`), so they
-  read as queued climbs.
-- The sheet is titled Up next (`QueueSheetHeader.tsx:110`), but its climb count is the whole
-  queue, History and the current climb included (`QueueSheet.tsx:296`).
+- It shows the last 2 History rows. That is the shared model's default
+  (`packages/shared/play-view/src/queue-list-model.ts`); a QA follow-up cut it from 5 on purpose.
+- The sheet labels its sections History, Up next and Suggestions, each only when it has rows,
+  with a divider before Suggestions (`QueueList.tsx`), so suggestions no longer read as queued
+  climbs.
+- The count in the sheet header is the Up next count: the climbs after the current one
+  (`QueueSheet.tsx`).
 - Tapping a queue row clears the track (`use-queue-sheet-handlers.ts:65`); tapping a suggestion
   sets one (`:94`).
 - A workout queues as one flat run: the preview's sections (warm-up and so on) don't survive
   into the queue (`src/components/session-screen/pre-session/use-workout-preview.ts:269-273`).
-- The comment at `src/components/queue-control/persistent-queue-bar.tsx:10` still describes a
-  swipe on the mini-player that was removed; the bar only has a tap. Fix it in F6.
 
 <img src="images/list-model/queue-sheet.png" alt="The queue sheet: History, the current climb, Up next and unlabelled suggestions" width="320">
 
-_The queue sheet. (1) History. (2) The current climb. (3) Up next. (4) Suggestions, with no header or divider; with no playlist playing they are the board's most-sent climbs. The title says Up next, but its count of 4 includes History and the current climb._
+_The queue sheet. (1) History. (2) The current climb. (3) Up next. (4) Suggestions; with no playlist playing they are the board's most-sent climbs. This screenshot predates F6: it shows no section labels or divider, and a count of 4 that includes History and the current climb._
 
 ## The model: play from a list, queue on purpose
 

@@ -138,7 +138,7 @@ describe('buildQueueListModel', () => {
     expect(historyRow.item.climb.uuid).toBe('shared-climb');
   });
 
-  it('uses default history limit of 5', () => {
+  it('uses default history limit of 2', () => {
     const queue = Array.from({ length: 12 }, (_, i) => makeItem(`q${i}`, `c${i}`));
     const result = buildQueueListModel(queue, 'q10', { showHistory: true, showFullHistory: false });
 
@@ -146,9 +146,9 @@ describe('buildQueueListModel', () => {
       | Extract<QueueFlatRow, { type: 'history-show-all' }>
       | undefined;
     expect(showAllRow).toBeDefined();
-    expect(showAllRow!.hiddenCount).toBe(5);
+    expect(showAllRow!.hiddenCount).toBe(8);
 
     const historyRows = result.flatRows.filter((row) => row.type === 'history-item');
-    expect(historyRows).toHaveLength(5);
+    expect(historyRows).toHaveLength(2);
   });
 });

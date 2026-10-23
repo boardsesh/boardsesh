@@ -18,6 +18,7 @@ import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
+import { SectionHeader } from '../SectionHeader';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbRowDisplay } from '../../lib/climb-row-display-preference';
@@ -36,10 +37,11 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 const QUEUE_SUGGESTION_SOURCE_ID = 'queue-suggestions';
 
 type SuggestionRow = { type: 'suggestion'; climb: Climb };
-type QueueListRow = QueueFlatRow | SuggestionRow;
-
-// Show only the last 2 climbed by default; "show full history" expands the rest.
-const HISTORY_DISPLAY_LIMIT = 2;
+type SectionKey = 'history' | 'upNext' | 'suggestions';
+// A label row above a section. Suggestions also gets a divider so they stop
+// reading as queued climbs.
+type SectionHeaderRow = { type: 'section-header'; section: SectionKey };
+type QueueListRow = QueueFlatRow | SuggestionRow | SectionHeaderRow;
 
 type QueueListProps = {
   queue: ClimbQueueItem[];
@@ -134,13 +136,12 @@ function QueueListComponent({
       buildQueueListModel(queue, currentItemUuid, {
         showHistory,
         showFullHistory,
-        historyDisplayLimit: HISTORY_DISPLAY_LIMIT,
       }),
     [queue, currentItemUuid, showHistory, showFullHistory],
   );
 
-  // Suggested climbs flow directly after the queue rows — NO header, NO divider
-  // (the intentional divergence from web). Playlist suggestions (when a playlist
+  // Suggested climbs follow the queue rows under a "Suggestions" header with a
+  // divider above it. Playlist suggestions (when a playlist
   // is active) come first, then a popular (by-ascents) feed for the board tops
   // the list up. The feed query is gated on `active` (sheet presented), not on
   // the playlist source: the sheet stays mounted for the imperative present(),
@@ -184,10 +185,32 @@ function QueueListComponent({
     return { suggestions: merged, feedSuggestions: fromFeed };
   }, [playlistSuggestions, boardContinuationClimbs, queue]);
 
-  const rows = useMemo<QueueListRow[]>(
-    () => [...flatRows, ...suggestions.map((climb): SuggestionRow => ({ type: 'suggestion', climb }))],
-    [flatRows, suggestions],
-  );
+  // Section labels are inserted here rather than in the shared model: they are a
+  // presentation choice of this sheet. A header exists only when its section has
+  // rows. History's header sits above the "show all" row; Up next's above the
+  // first upcoming climb (the current climb has its own row and no label).
+  const { rows, currentRowIndex } = useMemo(() => {
+    const labelled: QueueListRow[] = [];
+    let scrollIndex = -1;
+    let upNextLabelled = false;
+    flatRows.forEach((row, index) => {
+      if (index === 0 && (row.type === 'history-show-all' || row.type === 'history-item')) {
+        labelled.push({ type: 'section-header', section: 'history' });
+      }
+      if (row.type === 'future-item' && !upNextLabelled) {
+        labelled.push({ type: 'section-header', section: 'upNext' });
+        upNextLabelled = true;
+      }
+      // The model's index counts rows without headers; re-find it in this list.
+      if (index === currentItemFlatIndex) scrollIndex = labelled.length;
+      labelled.push(row);
+    });
+    if (suggestions.length > 0) {
+      labelled.push({ type: 'section-header', section: 'suggestions' });
+      for (const climb of suggestions) labelled.push({ type: 'suggestion', climb });
+    }
+    return { rows: labelled, currentRowIndex: scrollIndex };
+  }, [flatRows, currentItemFlatIndex, suggestions]);
 
   const reorderRowHeight = useMemo(() => {
     const futureRows = [];
@@ -241,10 +264,10 @@ function QueueListComponent({
   }, [isDragging, onDraggingChange]);
 
   useEffect(() => {
-    if (autoScrollOnMount && currentItemFlatIndex >= 0 && rows.length > 0) {
+    if (autoScrollOnMount && currentRowIndex >= 0 && rows.length > 0) {
       const timer = setTimeout(() => {
         flatListRef.current?.scrollToIndex?.({
-          index: currentItemFlatIndex,
+          index: currentRowIndex,
           animated: true,
           viewPosition: 0.3,
         });
@@ -252,7 +275,7 @@ function QueueListComponent({
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [autoScrollOnMount, currentItemFlatIndex, rows.length]);
+  }, [autoScrollOnMount, currentRowIndex, rows.length]);
 
   const keyExtractor = useCallback((row: QueueListRow, index: number): string => {
     switch (row.type) {
@@ -260,6 +283,8 @@ function QueueListComponent({
         return 'history-show-all';
       case 'history-divider':
         return 'history-divider';
+      case 'section-header':
+        return `section-${row.section}`;
       case 'history-item':
         return `history-${row.item.uuid}`;
       case 'current-item':
@@ -321,6 +346,28 @@ function QueueListComponent({
                 {t('queueList.showFullHistory', { count: row.hiddenCount })}
               </Text>
             </PressableSurface>
+          );
+
+        case 'section-header':
+          return (
+            <View>
+              {row.section === 'suggestions' ? (
+                <View
+                  testID="queue-suggestions-divider"
+                  style={[styles.sectionDivider, { backgroundColor: systemColors.separator }]}
+                />
+              ) : null}
+              {/* Literal keys, so the i18n orphan check can see each one. */}
+              <SectionHeader
+                title={
+                  row.section === 'history'
+                    ? t('queueList.sectionHistory')
+                    : row.section === 'upNext'
+                      ? t('queueList.sectionUpNext')
+                      : t('queueList.sectionSuggestions')
+                }
+              />
+            </View>
           );
 
         case 'history-divider':
@@ -492,6 +539,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[4],
     alignItems: 'center',
+  },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: spacing[2],
+    marginHorizontal: spacing[4],
   },
   divider: {
     height: StyleSheet.hairlineWidth,

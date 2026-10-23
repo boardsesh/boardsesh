@@ -1,6 +1,9 @@
 import type { ClimbQueue, ClimbQueueItem } from '@boardsesh/queue';
 
-const DEFAULT_HISTORY_DISPLAY_LIMIT = 5;
+// The last 2 climbed. The mobile queue sheet (the only consumer) trialled 5 and
+// cut it to 2 in its QA pass so Up next stays on screen at the 70% detent;
+// "Show full history" expands the rest. Callers may pass their own limit.
+const DEFAULT_HISTORY_DISPLAY_LIMIT = 2;
 
 export type QueueFlatRow =
   | { type: 'history-show-all'; hiddenCount: number }

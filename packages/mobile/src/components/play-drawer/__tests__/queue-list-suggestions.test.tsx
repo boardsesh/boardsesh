@@ -93,6 +93,7 @@ vi.mock('../use-queue-drag', () => ({
     controls: { shared: {}, onRowHeight: vi.fn(), makeHandleGesture: vi.fn() },
   }),
 }));
+vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('span', null, children) }));
 vi.mock('../../ClimbListItemContent', () => ({ ClimbListItemContent: () => createElement('span', null) }));
 vi.mock('../../QueueItemRow', () => ({

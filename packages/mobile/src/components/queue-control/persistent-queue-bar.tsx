@@ -7,7 +7,7 @@
  * then lays it out per variant via {@link ActiveContextBar}:
  *
  *   Liquid Glass / fallback   [ grade · name ]        [ ✓ tick ]
- *     centered capsule + standalone hero tick (tap = PlayDrawer, swipe = prev/next)
+ *     centered capsule + standalone hero tick (tap = PlayDrawer)
  *
  *   Material                  [ ▢ grade · name              ✓ ]
  *     one full-width opaque active-context bar docked above the tab bar
