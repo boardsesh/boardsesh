@@ -1,30 +1,37 @@
+import { createAddressedHandoff } from './addressed-handoff';
+
 // Hands the picked setters back from the Logbook's setter picker route to the
 // Logbook that pushed it. Two Logbooks can be mounted at once (your own in the
 // You tab, someone else's in another tab's stack), so every push carries the
 // opener's `handoffId` (minted by lib/filter-picker-handoff-id.ts) and a
-// Logbook only takes a selection addressed to it.
+// selection reaches the Logbook subscribed under that id alone
+// (lib/addressed-handoff.ts). An empty id reaches nobody.
 //
 // `apply: true` is the route's "Show climbs" button: take the picks and return
 // to the list (a suspended filter sheet closes instead of coming back). The
 // back chevron or swipe-back hands the picks back without it.
 
-export type LogbookSetterSelection = {
-  handoffId: string;
+/** The picks, as the Logbook that pushed the route receives them. */
+export type LogbookSetterPicks = {
   setterUsernames: string[];
   apply: boolean;
 };
 
-type LogbookSetterListener = (selection: LogbookSetterSelection) => void;
+export type LogbookSetterSelection = LogbookSetterPicks & {
+  /** The Logbook the picks go back to. */
+  handoffId: string;
+};
 
-const listeners = new Set<LogbookSetterListener>();
+const logbookSettersHandoff = createAddressedHandoff<LogbookSetterPicks>();
 
-export function emitLogbookSetterSelection(selection: LogbookSetterSelection): void {
-  for (const listener of listeners) listener(selection);
+export function emitLogbookSetterSelection({ handoffId, ...picks }: LogbookSetterSelection): void {
+  logbookSettersHandoff.emit(handoffId, picks);
 }
 
-export function subscribeToLogbookSetterSelection(listener: LogbookSetterListener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+/** Listens for the picks handed back to `handoffId` only. */
+export function subscribeToLogbookSetterSelection(
+  handoffId: string,
+  listener: (picks: LogbookSetterPicks) => void,
+): () => void {
+  return logbookSettersHandoff.subscribe(handoffId, listener);
 }

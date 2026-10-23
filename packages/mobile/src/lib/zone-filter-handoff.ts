@@ -1,10 +1,12 @@
 import type { HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
+import { createAddressedHandoff } from './addressed-handoff';
 
 /**
  * Hands the edited board-region (zone) filter back from the route-based board
  * sub-screen to the filter sheet that pushed it. The sheet suspends and pushes
  * that route with its `handoffId` (lib/filter-picker-handoff-id.ts), then merges
- * the result into its draft when the route hands it back to that id on pop.
+ * the result into its draft when the route hands it back to that id on pop
+ * (lib/addressed-handoff.ts).
  *
  * The zone screen can also prune out-of-zone hold filters (the `allHolds`
  * backend filter discards a climb if any hold is outside the box), so it hands
@@ -22,22 +24,16 @@ export type AddressedZoneFilterSelection = ZoneFilterSelection & {
   handoffId: string;
 };
 
-type ZoneFilterListener = (selection: ZoneFilterSelection) => void;
-
-const zoneFilterListeners = new Set<{ handoffId: string; listener: ZoneFilterListener }>();
+const zoneHandoff = createAddressedHandoff<ZoneFilterSelection>();
 
 export function emitZoneFilterSelection({ handoffId, ...selection }: AddressedZoneFilterSelection): void {
-  if (!handoffId) return;
-  for (const subscription of zoneFilterListeners) {
-    if (subscription.handoffId === handoffId) subscription.listener(selection);
-  }
+  zoneHandoff.emit(handoffId, selection);
 }
 
 /** Listens for the zone handed back to `handoffId` only. */
-export function subscribeToZoneFilterSelection(handoffId: string, listener: ZoneFilterListener): () => void {
-  const subscription = { handoffId, listener };
-  zoneFilterListeners.add(subscription);
-  return () => {
-    zoneFilterListeners.delete(subscription);
-  };
+export function subscribeToZoneFilterSelection(
+  handoffId: string,
+  listener: (selection: ZoneFilterSelection) => void,
+): () => void {
+  return zoneHandoff.subscribe(handoffId, listener);
 }

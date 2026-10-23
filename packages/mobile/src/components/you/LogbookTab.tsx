@@ -313,8 +313,7 @@ export function LogbookTab({
 
   useEffect(
     () =>
-      subscribeToLogbookSetterSelection(({ handoffId, setterUsernames, apply }) => {
-        if (handoffId !== setterHandoffId) return;
+      subscribeToLogbookSetterSelection(setterHandoffId, ({ setterUsernames, apply }) => {
         releaseSetterPush();
         const current = filtersRef.current.setterUsernames;
         const unchanged =

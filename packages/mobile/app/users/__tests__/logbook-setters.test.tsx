@@ -7,10 +7,7 @@ import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SetterPickerListProps } from '../../../src/components/filter-sheet/SetterPickerList';
-import {
-  subscribeToLogbookSetterSelection,
-  type LogbookSetterSelection,
-} from '../../../src/lib/logbook-setter-handoff';
+import { subscribeToLogbookSetterSelection, type LogbookSetterPicks } from '../../../src/lib/logbook-setter-handoff';
 
 const params = vi.hoisted(() => ({ current: {} as Record<string, string | undefined> }));
 const navigation = vi.hoisted(() => ({
@@ -72,7 +69,7 @@ vi.mock('../../../src/lib/graphql/hooks/use-user-logged-setters', () => ({
 
 import LogbookSettersScreen from '../[userId]/logbook-setters';
 
-const received: LogbookSetterSelection[] = [];
+const received: LogbookSetterPicks[] = [];
 let unsubscribe: () => void = () => {};
 
 beforeEach(() => {
@@ -92,7 +89,7 @@ beforeEach(() => {
   settersHook.result.isError = false;
   settersHook.result.refetch.mockReset();
   received.length = 0;
-  unsubscribe = subscribeToLogbookSetterSelection((selection) => received.push(selection));
+  unsubscribe = subscribeToLogbookSetterSelection('logbook-setters-7', (picks) => received.push(picks));
 });
 
 afterEach(() => unsubscribe());
@@ -151,7 +148,7 @@ describe('LogbookSettersScreen', () => {
     act(() => picker.props?.onToggle('alex'));
     expect(received).toEqual([]);
     act(() => navigation.beforeRemove?.());
-    expect(received).toEqual([{ handoffId: 'logbook-setters-7', setterUsernames: ['sam', 'alex'], apply: false }]);
+    expect(received).toEqual([{ setterUsernames: ['sam', 'alex'], apply: false }]);
   });
 
   it('"Show climbs" hands the picks back with apply and leaves, without a second hand-back', () => {
@@ -161,7 +158,14 @@ describe('LogbookSettersScreen', () => {
     act(() => header.trailing?.onPress());
     expect(navigation.goBack).toHaveBeenCalledTimes(1);
     act(() => navigation.beforeRemove?.());
-    expect(received).toEqual([{ handoffId: 'logbook-setters-7', setterUsernames: ['sam'], apply: true }]);
+    expect(received).toEqual([{ setterUsernames: ['sam'], apply: true }]);
+  });
+
+  it('hands the picks to nobody when opened without a Logbook to return to', () => {
+    params.current = { ...params.current, handoffId: undefined };
+    render(createElement(LogbookSettersScreen));
+    act(() => navigation.beforeRemove?.());
+    expect(received).toEqual([]);
   });
 
   it('offers a retry when the setters fail to load', () => {
