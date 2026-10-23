@@ -140,7 +140,8 @@ type QueueContextValue = {
   /** Replace the playlist suggestion source that drives swipe-through climbs. */
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   /** Refresh the suggestion source in place (no-op unless it matches the active one). */
-  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => void;
+  /** True when the source replaced the active one; false when it was stale and ignored. */
+  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => boolean;
   /**
    * Reset the active session locally. Pass `{ notifyServer: true }` on an
    * intentional leave (e.g. switching sessions) to emit LEAVE_SESSION so peers

@@ -2365,15 +2365,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   // No-op unless the incoming source matches the active one (same playlist +
   // activated climb + board) — so a late async refresh can't clobber a newer
-  // activation. Mirrors the reducer's REFRESH semantics.
+  // activation. Mirrors the reducer's REFRESH semantics. Says whether it took
+  // the source, so a caller waiting on the refresh knows its track is the one
+  // the climber walks (#6664).
   const refreshPlaylistSuggestionSource = useCallback(
-    (source: PlaylistSuggestionSource) => {
+    (source: PlaylistSuggestionSource): boolean => {
+      const sameAccount = privacyRevocationGeneration === getPrivacyRevocationGeneration();
       setPlaylistSuggestionSourceState((current) =>
-        privacyRevocationGeneration === getPrivacyRevocationGeneration() &&
-        playlistSuggestionSourceMatches(current, source)
-          ? source
-          : current,
+        sameAccount && playlistSuggestionSourceMatches(current, source) ? source : current,
       );
+      return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);
     },
     [privacyRevocationGeneration],
   );

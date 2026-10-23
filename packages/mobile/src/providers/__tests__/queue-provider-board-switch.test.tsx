@@ -231,6 +231,7 @@ type Snapshot = {
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
   previousClimb: ReturnType<typeof useQueue>['previousClimb'];
+  refreshPlaylistSuggestionSource: ReturnType<typeof useQueue>['refreshPlaylistSuggestionSource'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -243,8 +244,17 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       setCurrentClimb: queue.setCurrentClimb,
       nextClimb: queue.nextClimb,
       previousClimb: queue.previousClimb,
+      refreshPlaylistSuggestionSource: queue.refreshPlaylistSuggestionSource,
     });
-  }, [queue.state, playlistSuggestionSource, queue.setCurrentClimb, queue.nextClimb, queue.previousClimb, onSnapshot]);
+  }, [
+    queue.state,
+    playlistSuggestionSource,
+    queue.setCurrentClimb,
+    queue.nextClimb,
+    queue.previousClimb,
+    queue.refreshPlaylistSuggestionSource,
+    onSnapshot,
+  ]);
   return null;
 }
 
@@ -340,6 +350,30 @@ describe('QueueProvider board switch (#5099)', () => {
     await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(KILTER_BOARD_KEY));
     return { activatedClimb, nextKilterClimb };
   }
+
+  // A pending track settles on this answer (#6664): a refresh the provider
+  // ignored must not count as the track the climber walks.
+  it('says whether it took a refreshed track', async () => {
+    const { activatedClimb, nextKilterClimb } = await activateKilterBrowse();
+    const third = makeClimb('kilter-third', 'kilter', 1);
+
+    let accepted: boolean | undefined;
+    act(() => {
+      accepted = latest().refreshPlaylistSuggestionSource(
+        kilterSource([activatedClimb, nextKilterClimb, third], activatedClimb),
+      );
+    });
+    expect(accepted).toBe(true);
+    await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(3));
+
+    // A refresh for another activation (the track was re-anchored meanwhile).
+    let ignored: boolean | undefined;
+    act(() => {
+      ignored = latest().refreshPlaylistSuggestionSource(kilterSource([nextKilterClimb], nextKilterClimb));
+    });
+    expect(ignored).toBe(false);
+    expect(latest().playlistSuggestionSource?.climbs).toHaveLength(3);
+  });
 
   it('masks a suggestion source stamped with the board the climber left', async () => {
     await activateKilterBrowse();

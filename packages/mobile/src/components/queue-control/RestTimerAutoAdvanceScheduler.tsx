@@ -264,14 +264,17 @@ export function RestTimerAutoAdvanceScheduler() {
 
   // The page a due beat was waiting for has landed (or the track ended): try the
   // beat again. Only for the cycle it was due in; a manual Next or a new tick
-  // starts another cycle, and the claim inside would refuse it anyway.
+  // starts another cycle, and the claim inside would refuse it anyway. Only
+  // while the beat would still be scheduled: pausing, switching auto-advance
+  // off or handing the wall to a crewmate meanwhile drops it, so a late page
+  // can't move a shared queue from a passenger's phone.
   useEffect(() => {
     const awaiting = awaitingPageRef.current;
     if (!awaiting) return;
     awaitingPageRef.current = null;
-    if (!armed || cycleId !== awaiting.cycleId) return;
+    if (!wantsAdvance || cycleId !== awaiting.cycleId) return;
     fireAdvance(awaiting.cycleId, awaiting.deadlineMs, true);
-  }, [playlistSuggestionSource, armed, cycleId, fireAdvance]);
+  }, [playlistSuggestionSource, wantsAdvance, cycleId, fireAdvance]);
 
   // The queue was refilled (or the board switched) while the dead-end latch was
   // set. Pick the beat back up instead of staying dead until the next tick. Only

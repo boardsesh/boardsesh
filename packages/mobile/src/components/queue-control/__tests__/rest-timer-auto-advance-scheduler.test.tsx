@@ -332,6 +332,28 @@ describe('the end of a list', () => {
     expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 
+  it('drops the waiting beat if the climber stops driving the wall before the page lands', () => {
+    // A late page must not move a crew's shared queue from a passenger's phone.
+    isSharedSession = true;
+    inAppBoardConnection = 'connectedByMe';
+    suggestionSource = { playlistUuid: 'playlist:projects' };
+    canNext = false;
+    atTrackEnd = true;
+    moreToLoad = true;
+    armWithTick();
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+    advance(60_000);
+
+    inAppBoardConnection = 'heldByPeer';
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    suggestionSource = { playlistUuid: 'playlist:projects' };
+    canNext = true;
+    atTrackEnd = false;
+    moreToLoad = false;
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
   it('says the list ended once the page it waited for ends the track', () => {
     suggestionSource = { playlistUuid: 'playlist:projects' };
     canNext = false;

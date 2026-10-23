@@ -159,13 +159,17 @@ describe('prepared climb activation', () => {
       return { activate: result.current, settled };
     }
 
-    function committingQueueApi() {
+    // `accepts`: whether the provider takes the fuller track. It ignores one
+    // whose track was re-anchored on another climb meanwhile.
+    function committingQueueApi({ accepts = true }: { accepts?: boolean } = {}) {
       return {
         setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async (selected) => ({
           uuid: selected.uuid,
           climb: selected,
         })),
-        refreshPlaylistSuggestionSource: vi.fn(),
+        refreshPlaylistSuggestionSource: vi.fn<PlaylistActivationQueueApi['refreshPlaylistSuggestionSource']>(
+          () => accepts,
+        ),
       };
     }
 
@@ -185,6 +189,19 @@ describe('prepared climb activation', () => {
       expect(fuller?.climbs.map(({ uuid }: Climb) => uuid)).toEqual(['a', 'b', 'c']);
       // The fuller track is the whole list: it is not waiting on anything.
       expect(queueApi.refreshPlaylistSuggestionSource.mock.calls[0]?.[0]).not.toHaveProperty('continuation');
+    });
+
+    it('settles false when the provider ignores the fuller track, so the surviving track can end', async () => {
+      // A queue-sheet tap re-anchored the track on another climb before this
+      // refresh landed. That track keeps this pending continuation, so settling
+      // true would leave it waiting forever, with Next dead and no end card.
+      const queueApi = committingQueueApi({ accepts: false });
+      const refresh = deferred<ActivationTrackLoad>();
+      const { activate, settled } = renderWithPending(queueApi, () => refresh.promise);
+
+      await activate(climbs[1]);
+      refresh.resolve({ climbs });
+      await expect(settled[0]).resolves.toBe(false);
     });
 
     it('settles false when the refresh fails, so the first track can end', async () => {

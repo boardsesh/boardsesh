@@ -19,7 +19,8 @@ export type PlaylistActivationQueueApi = {
     climb: Climb,
     options: { playlistSuggestionSource: PlaylistSuggestionSource | null },
   ) => Promise<ClimbQueueItem | null>;
-  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => void;
+  /** True when the source replaced the active one; false when it was stale and ignored. */
+  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => boolean;
 };
 
 /** The board a playlist activation is bound to, resolved per-climb by the caller. */
@@ -184,8 +185,12 @@ export function usePlaylistClimbActivation({
             total: trackLoad.total,
             continuation: trackLoad.continuation,
           });
-          queueApi.refreshPlaylistSuggestionSource(refreshedSource);
-          refreshed = true;
+          // Settled as refreshed only when the provider took it. A queue-sheet tap
+          // can re-anchor the track on another climb meanwhile, keeping this
+          // activation's pending continuation; the provider then ignores this
+          // refresh, and that surviving track must end where it is rather than
+          // wait on a load that will never land on it.
+          refreshed = queueApi.refreshPlaylistSuggestionSource(refreshedSource);
         } catch (err: unknown) {
           if (isAbortError(err)) return;
           console.error(refreshErrorMessage, err);

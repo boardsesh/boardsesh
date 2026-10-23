@@ -410,8 +410,8 @@ export function usePlaylistActivation({
         return item;
       },
       refreshPlaylistSuggestionSource: (source: Parameters<typeof refreshPlaylistSuggestionSource>[0]) => {
-        if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
-        refreshPlaylistSuggestionSource(source);
+        if (privacyGeneration !== getPrivacyRevocationGeneration()) return false;
+        return refreshPlaylistSuggestionSource(source);
       },
     }),
     [
