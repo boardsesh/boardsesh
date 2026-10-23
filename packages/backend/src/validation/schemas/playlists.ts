@@ -1,7 +1,9 @@
 import { PrivacyPublicationInputSchema } from './privacy-publication';
 import { z } from 'zod';
 import { isValidPlaylistColor } from '@boardsesh/shared-schema';
+import { PLAYLIST_SORT_OPTIONS } from '@boardsesh/climb-filters';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ClimbSearchInputSchema } from './climbs';
 
 export const PlaylistNameSchema = z.string().min(1, 'Playlist name cannot be empty').max(100, 'Playlist name too long');
 
@@ -93,6 +95,47 @@ export const GetPlaylistsForClimbsInputSchema = z.object({
   climbUuids: z.array(ExternalUUIDSchema).min(1).max(500),
 });
 
+/**
+ * A playlist's sort and filters (`GetPlaylistClimbsInput.view`). The filter
+ * fields are the climb search's own validators, picked rather than redeclared,
+ * so a bound tightened for search (the holds-filter cap, the seed format, the
+ * zone box) tightens here too.
+ */
+export const PlaylistClimbViewInputSchema = ClimbSearchInputSchema.pick({
+  sortOrder: true,
+  sortSeed: true,
+  name: true,
+  minGrade: true,
+  maxGrade: true,
+  gradeAccuracy: true,
+  gradeSource: true,
+  useMyGrades: true,
+  minAscents: true,
+  minRating: true,
+  onlyBenchmarks: true,
+  setter: true,
+  onlyFollowedAuthors: true,
+  onlyTallClimbs: true,
+  onlyWideClimbs: true,
+  onlyWithBetaVideos: true,
+  boulders: true,
+  routes: true,
+  projectsOnly: true,
+  hideAttempted: true,
+  hideCompleted: true,
+  showOnlyAttempted: true,
+  showOnlyCompleted: true,
+  minUserRating: true,
+  onlyRatedByMe: true,
+  onlyFavorited: true,
+  holdsFilter: true,
+  zoneBox: true,
+  zoneMode: true,
+}).extend({
+  sortBy: z.enum(PLAYLIST_SORT_OPTIONS).optional(),
+  onlyActiveBoard: z.boolean().optional(),
+});
+
 export const GetPlaylistClimbsInputSchema = z
   .object({
     playlistId: z.string().min(1),
@@ -107,13 +150,29 @@ export const GetPlaylistClimbsInputSchema = z
     activeBoardName: BoardNameSchema.optional(),
     // Live board angle; Aurora supports negative tilt.
     activeAngle: z.number().int().min(-90).max(90).optional(),
+    // The rest of the active board, for the view's active-board filters in
+    // all-boards mode. Each needs activeBoardName: a layout with no board type
+    // names nothing.
+    activeLayoutId: z.number().int().positive().optional(),
+    activeSizeId: z.number().int().positive().optional(),
+    activeSetIds: z.string().min(1).max(500).optional(),
+    view: PlaylistClimbViewInputSchema.optional(),
     page: z.number().int().min(0).optional(),
     pageSize: z.number().int().min(1).max(100).optional(),
   })
   .refine((input) => (input.activeBoardName == null) === (input.activeAngle == null), {
     message: 'activeBoardName and activeAngle must be provided together',
     path: ['activeAngle'],
-  });
+  })
+  .refine(
+    (input) =>
+      input.activeBoardName != null ||
+      (input.activeLayoutId == null && input.activeSizeId == null && input.activeSetIds == null),
+    {
+      message: 'activeLayoutId, activeSizeId and activeSetIds need activeBoardName',
+      path: ['activeBoardName'],
+    },
+  );
 
 export const DiscoverPlaylistsInputSchema = z
   .object({

@@ -6,12 +6,11 @@ import { withSerialPlan } from '../util/serial-plan';
 import { isClimbPopularityReady } from './climb-popularity';
 import {
   createClimbFilters,
-  effectiveDifficultySql,
   gradeInRangeSql,
-  gradeValueSql,
   personalGradeColumnSql,
   type PersonalGradeJoinTarget,
 } from './create-climb-filters';
+import { climbSortColumns, directedSortSql, randomSortKeySql } from './sort-expressions';
 import {
   boardClimbStatsAtSetAngle,
   effectiveStatsColumn,
@@ -952,45 +951,23 @@ async function runStandardSearch(
   // whether the feature is on for this search.
   const personalGradeJoin = filters.getPersonalGradeJoin();
 
-  // Under the Boardsesh source the sort keys on the grade the row is labelled
-  // with, the same value the grade-range filter reads (issue #5643). The upstream
-  // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
-  const crowdDifficultySort =
-    searchParams.gradeSource === 'boardsesh'
-      ? gradeValueSql(statsCol('displayDifficulty'), 'boardsesh')
-      : sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`;
-
+  // The sort keys are shared with a playlist's view (./sort-expressions), so the
+  // two lists rank a climb the same way. `popular` is untouched: it already sums
+  // ascents across every angle, so it was never angle-blind in the way the
+  // cross-angle fix addresses.
   const allowedSortColumns: Record<string, ReturnType<typeof sql>> = {
-    // `popular` is untouched: it already sums ascents across every angle, so it was
-    // never angle-blind in the way this fix addresses.
-    ascents: sql`${statsCol('ascensionistCount')}`,
-    // With personal grades on the difficulty sort orders by COALESCE(my clamped
-    // grade, the crowd sort above) — so a climb the climber re-graded to V10
-    // lands among the V10s instead of staying with the V0s (#4828). Climbs they
-    // never graded keep their crowd position, so the list is one ordered
-    // sequence, not two interleaved ones.
-    difficulty: personalGradeJoin ? effectiveDifficultySql(crowdDifficultySort) : crowdDifficultySort,
-    name: sql`${boardClimbs.name}`,
-    quality: sql`${statsCol('qualityAverage')}`,
-    creation: sql`${boardClimbs.createdAt}`,
+    ...climbSortColumns({
+      crossAngle,
+      gradeSource: searchParams.gradeSource,
+      personalGrades: personalGradeJoin !== null,
+    }),
     ...(popularCountsSubquery ? { popular: sql`${popularCountsSubquery.totalAscensionistCount}` } : {}),
   };
 
   const sortColumn = allowedSortColumns[sortBy] || sql`${boardClimbs.createdAt}`;
 
-  // Random sort: hash the uuid with a per-search seed so one shuffle is stable
-  // across OFFSET-paginated pages, while a new seed reshuffles. Empty seed falls
-  // back to a constant salt (md5 is never NULL, so pagination is still stable).
-  //
-  // Perf: md5(uuid || seed) is non-SARGable — no index satisfies it, so this is a
-  // full scan + sort of the filtered set (the whole board when unfiltered). That's
-  // inherent to "shuffle everything"; the LIMIT keeps the returned rows small but
-  // the sort still touches every matching row. It bypasses the SSR cache (see the
-  // web cachedSearchClimbs guard), so each request re-sorts. Acceptable at current
-  // catalog sizes; if it ever bites, gate on a filter threshold or a sampling
-  // strategy (e.g. TABLESAMPLE / a precomputed random column) rather than md5.
-  const randomOrderExpr =
-    sortBy === 'random' ? sql`md5(${boardClimbs.uuid} || ${searchParams.sortSeed || 'boardsesh'})` : null;
+  // Random sort: see `randomSortKeySql` for the seed and the cost.
+  const randomOrderExpr = sortBy === 'random' ? randomSortKeySql(searchParams.sortSeed) : null;
 
   const whereConditions = [
     ...filters.getClimbWhereConditions(),
@@ -1054,11 +1031,7 @@ async function runStandardSearch(
     ...(personalGradeJoin ? { my_difficulty: sql<number | string | null>`${personalGradeColumnSql()}` } : {}),
   };
 
-  const orderByClause = randomOrderExpr
-    ? sql`${randomOrderExpr} ASC`
-    : sortOrder === 'asc'
-      ? sql`${sortColumn} ASC NULLS FIRST`
-      : sql`${sortColumn} DESC NULLS LAST`;
+  const orderByClause = randomOrderExpr ? sql`${randomOrderExpr} ASC` : directedSortSql(sortColumn, sortOrder);
 
   // Stats-presence key, used ONLY by the stats-driven fallback (issue #1971). It
   // pins every climb that has a board_climb_stats row at this angle ahead of every

@@ -2,6 +2,11 @@ export { searchClimbs, MAX_SEARCH_PAGE, clampSearchPage } from './search-climbs'
 export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
 export {
   createClimbFilters,
+  createPlaylistClimbFilters,
+  climbTypeConditions,
+  onPlaylistActiveBoardSql,
+  playlistBoardScopeConditions,
+  PLAYLIST_FILTER_SCOPE,
   gradeValueSql,
   hiddenClimbCondition,
   personalGradeRangeCondition,
@@ -14,7 +19,17 @@ export {
   PERSONAL_GRADE_MAX_ID,
   PERSONAL_GRADE_ALIAS,
 } from './create-climb-filters';
-export type { PersonalGradeScope, PersonalGradeSubquery, PersonalGradeJoinTarget } from './create-climb-filters';
+export type {
+  PersonalGradeScope,
+  PersonalGradeSubquery,
+  PersonalGradeJoinTarget,
+  PlaylistActiveBoard,
+  PlaylistClimbFilters,
+  PlaylistFilterParamKey,
+  PlaylistFilterParams,
+  PlaylistFilterScope,
+} from './create-climb-filters';
+export { climbSortColumns, directedSortSql, randomSortKeySql, type ClimbSortColumnOptions } from './sort-expressions';
 export {
   boardClimbStatsAtSetAngle,
   browsedAngleRestrictionSql,
@@ -42,7 +57,7 @@ export {
 } from './followed-authors';
 export type { SetterStat } from './setter-stats';
 export type { BoardRouteParams, ClimbSearchParams, ClimbSearchInputLike, ClimbRow, ClimbSearchResult } from './types';
-export { mapSearchInputToParams } from './types';
+export { mapSearchInputToParams, normalizeGradeSource } from './types';
 
 export { applyWoodsRuleUpdates, type WoodsRuleUpdate } from './woods-rule-repair';
 export * from './spray-visibility';

@@ -91,12 +91,46 @@ export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
 };
 
 /**
- * Returns true when any filter field differs from the default state.
+ * {@link ClimbFilterState} under any list's sort keys. The Climbs list sorts by
+ * {@link SortOption}; a playlist has sorts of its own (`PlaylistSortOption`) but
+ * the same filters, so the helpers that only read filters take this shape.
  */
-export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
-  if (state.sortBy !== DEFAULT_CLIMB_FILTER_STATE.sortBy) return true;
-  if (state.sortOrder !== DEFAULT_CLIMB_FILTER_STATE.sortOrder) return true;
-  if (state.status !== DEFAULT_CLIMB_FILTER_STATE.status) return true;
+export type AnySortClimbFilterState = Omit<ClimbFilterState, 'sortBy'> & { sortBy: string };
+
+/** The climb-type toggles as `[boulders, routes]`, an unset toggle reading as its default. */
+export function climbTypeSelection(
+  state: Pick<ClimbFilterState, 'boulders' | 'routes'>,
+  defaults: Pick<ClimbFilterState, 'boulders' | 'routes'> = DEFAULT_CLIMB_FILTER_STATE,
+): [boolean, boolean] {
+  const defaultBoulders = defaults.boulders ?? true;
+  const defaultRoutes = defaults.routes ?? false;
+  return [state.boulders ?? defaultBoulders, state.routes ?? defaultRoutes];
+}
+
+/** True when the climb-type toggles differ from `defaults` (boulders-only on the Climbs list). */
+export function isClimbTypeFilterActive(
+  state: Pick<ClimbFilterState, 'boulders' | 'routes'>,
+  defaults: Pick<ClimbFilterState, 'boulders' | 'routes'> = DEFAULT_CLIMB_FILTER_STATE,
+): boolean {
+  const [boulders, routes] = climbTypeSelection(state, defaults);
+  const [defaultBoulders, defaultRoutes] = climbTypeSelection(defaults, defaults);
+  return boulders !== defaultBoulders || routes !== defaultRoutes;
+}
+
+/**
+ * Returns true when any filter field differs from the default state.
+ *
+ * `defaults` is the list's own starting state: the Climbs list's
+ * ({@link DEFAULT_CLIMB_FILTER_STATE}) unless a caller passes another, so a list
+ * that starts with both climb types on (a playlist) doesn't read as filtered.
+ */
+export function hasActiveClimbFilters(
+  state: AnySortClimbFilterState,
+  defaults: AnySortClimbFilterState = DEFAULT_CLIMB_FILTER_STATE,
+): boolean {
+  if (state.sortBy !== defaults.sortBy) return true;
+  if (state.sortOrder !== defaults.sortOrder) return true;
+  if (state.status !== defaults.status) return true;
   if (state.minGrade != null) return true;
   if (state.maxGrade != null) return true;
   if (state.minAscents != null) return true;
@@ -115,9 +149,9 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
   if (state.onlyFavorited) return true;
-  // Default is boulders-only, so "active" means routes turned on or boulders off.
-  if ((state.boulders ?? true) !== true) return true;
-  if ((state.routes ?? false) !== false) return true;
+  // The Climbs list defaults to boulders-only, so there "active" means routes
+  // turned on or boulders off; a list with other defaults compares to its own.
+  if (isClimbTypeFilterActive(state, defaults)) return true;
   return false;
 }
 
@@ -192,6 +226,126 @@ export type BoardSearchConfig = {
 export type SearchPagination = { page: number; pageSize: number };
 
 /**
+ * The filter fields {@link ClimbSearchInput} shares with a playlist's view input
+ * (`PlaylistClimbViewInput`), under the same names.
+ */
+export type SharedClimbFilterInputFields = Pick<
+  ClimbSearchInput,
+  | 'sortSeed'
+  | 'minGrade'
+  | 'maxGrade'
+  | 'minAscents'
+  | 'minRating'
+  | 'gradeAccuracy'
+  | 'setter'
+  | 'onlyFollowedAuthors'
+  | 'onlyTallClimbs'
+  | 'onlyWideClimbs'
+  | 'onlyWithBetaVideos'
+  | 'hideAttempted'
+  | 'hideCompleted'
+  | 'showOnlyAttempted'
+  | 'showOnlyCompleted'
+  | 'minUserRating'
+  | 'onlyRatedByMe'
+  | 'onlyFavorited'
+  | 'useMyGrades'
+  | 'boulders'
+  | 'routes'
+  | 'projectsOnly'
+  | 'name'
+>;
+
+export type SharedClimbFilterInputOptions = {
+  name?: string;
+  personalGrades?: boolean;
+  /** Whether the list sorts by difficulty, which is when personal grades change the order. */
+  sortsByDifficulty: boolean;
+  /** Whether the list is shuffled, which is when `sortSeed` is sent. */
+  shuffled: boolean;
+  /** The list's climb-type defaults, which decide what an unset toggle means. */
+  climbTypeDefaults?: Pick<ClimbFilterState, 'boulders' | 'routes'>;
+};
+
+/**
+ * Maps the filter state onto the input fields the Climbs search and a playlist's
+ * view share. One mapping, so the two lists cannot read the same filter state
+ * differently. `toClimbSearchInput` adds the Climbs-only fields on top.
+ */
+export function toSharedClimbFilterInputFields(
+  state: AnySortClimbFilterState,
+  options: SharedClimbFilterInputOptions,
+): SharedClimbFilterInputFields {
+  const fields: SharedClimbFilterInputFields = {};
+
+  if (options.shuffled && state.sortSeed) fields.sortSeed = state.sortSeed;
+  if (state.minGrade != null) fields.minGrade = state.minGrade;
+  if (state.maxGrade != null) fields.maxGrade = state.maxGrade;
+  if (state.minAscents != null) fields.minAscents = state.minAscents;
+  if (state.minRating != null) fields.minRating = state.minRating;
+  if (state.gradeAccuracy != null) fields.gradeAccuracy = state.gradeAccuracy;
+  if (state.setter != null && state.setter.length > 0) fields.setter = state.setter;
+  if (state.onlyFollowedAuthors) fields.onlyFollowedAuthors = true;
+  if (state.onlyTallClimbs) fields.onlyTallClimbs = true;
+  if (state.onlyWideClimbs) fields.onlyWideClimbs = true;
+  if (state.onlyWithBetaVideos) fields.onlyWithBetaVideos = true;
+  if (state.hideAttempted) fields.hideAttempted = true;
+  if (state.hideCompleted) fields.hideCompleted = true;
+  if (state.showOnlyAttempted) fields.showOnlyAttempted = true;
+  if (state.showOnlyCompleted) fields.showOnlyCompleted = true;
+  if (state.minUserRating != null) fields.minUserRating = state.minUserRating;
+  if (state.onlyRatedByMe) fields.onlyRatedByMe = true;
+  // Off is omitted, not sent as false: the flag is user-specific, so sending it
+  // at all would move the everyday search out of the shared cache.
+  if (state.onlyFavorited) fields.onlyFavorited = true;
+  // Personal grades (#4796, #4828): the climber's own grade drives the grade
+  // range and the difficulty sort, so a climb they re-graded lands in the band
+  // the row already shows them.
+  //
+  // Sent ONLY when it can change the answer. Everywhere else the param would buy
+  // nothing and cost the Redis cache: `useMyGrades` is user-specific, so a search
+  // carrying it resolves a userId and leaves the cacheable set. Plain browse —
+  // the app's busiest query — therefore stays byte-identical and stays cached.
+  const gradeBoundSet = state.minGrade != null || state.maxGrade != null;
+  if (options.personalGrades && (gradeBoundSet || options.sortsByDifficulty)) {
+    fields.useMyGrades = true;
+  }
+
+  // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
+  // the frames_count constraint, but they must NOT be handled the same way:
+  //
+  // - Both-off is genuinely omitted (unreachable via any current UI — web's
+  //   never-both-off toggle and mobile's boulders/routes/both selector never
+  //   produce it — kept as-is, out of scope for this fix).
+  // - Both-on ("All") sends explicit boulders: true, routes: true rather than
+  //   omitting both fields. Omission and explicit true/true are behaviourally
+  //   identical (both parse to no frames_count constraint): the backend's
+  //   ClimbSearchInputSchema has no `.default()` on these fields (#3975
+  //   removed the dead-code default that searchClimbs's discarded
+  //   validateInput() return used to make unreachable), and
+  //   mapSearchInputToParams passes `undefined` through unchanged. Sending
+  //   explicit true/true here is still the right call — it keeps this
+  //   contract independent of the backend schema's defaulting choices. See
+  //   create-climb-filters.ts for the SQL this maps to.
+  const [bouldersOn, routesOn] = climbTypeSelection(state, options.climbTypeDefaults);
+  if (bouldersOn && routesOn) {
+    fields.boulders = true;
+    fields.routes = true;
+  } else if (bouldersOn !== routesOn) {
+    if (bouldersOn) fields.boulders = true;
+    if (routesOn) fields.routes = true;
+  }
+
+  if (statusToFlags(state.status).projectsOnly) fields.projectsOnly = true;
+
+  if (options.name && options.name.length > 0) {
+    fields.name = options.name;
+  }
+
+  return fields;
+}
+
+/**
  * Builds a {@link ClimbSearchInput} for the GraphQL search query from the
  * in-app filter state, board config, and pagination.
  */
@@ -211,78 +365,20 @@ export function toClimbSearchInput(
     pageSize: pagination.pageSize,
     sortBy: state.sortBy,
     sortOrder: state.sortOrder,
+    ...toSharedClimbFilterInputFields(state, {
+      name: options?.name,
+      personalGrades: options?.personalGrades,
+      sortsByDifficulty: state.sortBy === 'difficulty',
+      shuffled: state.sortBy === 'random',
+    }),
   };
 
-  if (state.sortBy === 'random' && state.sortSeed) input.sortSeed = state.sortSeed;
-  if (state.minGrade != null) input.minGrade = state.minGrade;
-  if (state.maxGrade != null) input.maxGrade = state.maxGrade;
-  if (state.minAscents != null) input.minAscents = state.minAscents;
-  if (state.minRating != null) input.minRating = state.minRating;
-  if (state.gradeAccuracy != null) input.gradeAccuracy = state.gradeAccuracy;
-  if (state.setter != null && state.setter.length > 0) input.setter = state.setter;
-  if (state.onlyFollowedAuthors) input.onlyFollowedAuthors = true;
-  if (state.onlyTallClimbs) input.onlyTallClimbs = true;
-  if (state.onlyWideClimbs) input.onlyWideClimbs = true;
-  if (state.onlyWithBetaVideos) input.onlyWithBetaVideos = true;
   // Off is omitted, not sent as false: an angle-bound board already treats an
   // absent value as "browsed angle only", and omitting keeps the cache key of
   // the everyday search unchanged.
   if (state.includeOtherAngles) input.crossAngleStats = true;
-  if (state.hideAttempted) input.hideAttempted = true;
-  if (state.hideCompleted) input.hideCompleted = true;
-  if (state.showOnlyAttempted) input.showOnlyAttempted = true;
-  if (state.showOnlyCompleted) input.showOnlyCompleted = true;
-  if (state.minUserRating != null) input.minUserRating = state.minUserRating;
-  if (state.onlyRatedByMe) input.onlyRatedByMe = true;
-  // Off is omitted, not sent as false: the flag is user-specific, so sending it
-  // at all would move the everyday search out of the shared cache.
-  if (state.onlyFavorited) input.onlyFavorited = true;
-  // Personal grades (#4796, #4828): the climber's own grade drives the grade
-  // range and the difficulty sort, so a climb they re-graded lands in the band
-  // the row already shows them.
-  //
-  // Sent ONLY when it can change the answer. Everywhere else the param would buy
-  // nothing and cost the Redis cache: `useMyGrades` is user-specific, so a search
-  // carrying it resolves a userId and leaves the cacheable set. Plain browse —
-  // the app's busiest query — therefore stays byte-identical and stays cached.
-  const gradeBoundSet = state.minGrade != null || state.maxGrade != null;
-  if (options?.personalGrades && (gradeBoundSet || state.sortBy === 'difficulty')) {
-    input.useMyGrades = true;
-  }
-
-  // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
-  // the frames_count constraint, but they must NOT be handled the same way:
-  //
-  // - Both-off is genuinely omitted (unreachable via any current UI — web's
-  //   never-both-off toggle and mobile's boulders/routes/both selector never
-  //   produce it — kept as-is, out of scope for this fix).
-  // - Both-on ("All") sends explicit boulders: true, routes: true rather than
-  //   omitting both fields. Omission and explicit true/true are behaviourally
-  //   identical (both parse to no frames_count constraint): the backend's
-  //   ClimbSearchInputSchema has no `.default()` on these fields (#3975
-  //   removed the dead-code default that searchClimbs's discarded
-  //   validateInput() return used to make unreachable), and
-  //   mapSearchInputToParams passes `undefined` through unchanged. Sending
-  //   explicit true/true here is still the right call — it keeps this
-  //   contract independent of the backend schema's defaulting choices. See
-  //   create-climb-filters.ts for the SQL this maps to.
-  const bouldersOn = state.boulders ?? true;
-  const routesOn = state.routes ?? false;
-  if (bouldersOn && routesOn) {
-    input.boulders = true;
-    input.routes = true;
-  } else if (bouldersOn !== routesOn) {
-    if (bouldersOn) input.boulders = true;
-    if (routesOn) input.routes = true;
-  }
-
-  const statusFlags = statusToFlags(state.status);
-  if (statusFlags.onlyDrafts) input.onlyDrafts = true;
-  if (statusFlags.projectsOnly) input.projectsOnly = true;
-
-  if (options?.name && options.name.length > 0) {
-    input.name = options.name;
-  }
+  // A playlist has no drafts view, so this status flag is the Climbs list's own.
+  if (statusToFlags(state.status).onlyDrafts) input.onlyDrafts = true;
 
   return input;
 }

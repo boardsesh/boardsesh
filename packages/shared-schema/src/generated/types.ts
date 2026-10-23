@@ -2841,6 +2841,12 @@ export type GetPlaylistClimbsInput = {
   activeAngle?: InputMaybe<Scalars['Int']['input']>;
   /** Active board type for grade rendering in all-boards mode (omit in specific-board mode). On-board climbs render their grade at activeAngle. */
   activeBoardName?: InputMaybe<Scalars['String']['input']>;
+  /** Active board layout in all-boards mode. Needs activeBoardName. Used by the view's active-board filters. */
+  activeLayoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** Active board's comma-separated set IDs in all-boards mode. Needs activeBoardName. Used by the view's active-board filters. */
+  activeSetIds?: InputMaybe<Scalars['String']['input']>;
+  /** Active board size in all-boards mode. Needs activeBoardName. Used by the view's active-board filters. */
+  activeSizeId?: InputMaybe<Scalars['Int']['input']>;
   /** Board angle */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Board name for climb lookup (omit for all-boards mode) */
@@ -2857,6 +2863,8 @@ export type GetPlaylistClimbsInput = {
   setIds?: InputMaybe<Scalars['String']['input']>;
   /** Size ID */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  /** Sort and filters. Omitted means the playlist's own order with no filter. */
+  view?: InputMaybe<PlaylistClimbViewInput>;
 };
 
 /** Input for getting playlist creators. */
@@ -6123,6 +6131,95 @@ export type PlaylistClimb = {
   wasAlreadyInPlaylist?: Maybe<Scalars['Boolean']['output']>;
 };
 
+/**
+ * How a playlist's climbs are ordered.
+ * position is the playlist's own order (the default), added is when each climb
+ * was added to the playlist. The others rank on the grade, quality and ascents
+ * each row displays, or shuffle with a seed.
+ */
+export type PlaylistClimbSort = 'added' | 'ascents' | 'difficulty' | 'name' | 'position' | 'quality' | 'random';
+
+/**
+ * Sort and filters for a playlist's climbs: the Climbs list's filters, applied to
+ * the playlist's own climbs. Every filter narrows the playlist and never adds a
+ * climb to it.
+ *
+ * Grade, quality, ascents and benchmark filters (and the matching sorts) read
+ * each row's stats at the angle the row displays: on the active board's type the
+ * wall angle, elsewhere the angle the climb was added at, and in both cases the
+ * most-ascended angle when the climb has no stats at that one.
+ *
+ * The personal and board-shaped filters (progress, your rating, liked, followed
+ * authors, beta videos, tall, wide, holds, zone and onlyActiveBoard) only pass
+ * climbs on the active board: the specific board in specific-board mode, the
+ * active* fields in all-boards mode. They need its board type, layout and angle;
+ * without them they match nothing.
+ */
+export type PlaylistClimbViewInput = {
+  /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types. */
+  boulders?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Grade accuracy filter (maximum gap between the displayed grade and the average grade) */
+  gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
+  /** Which grade minGrade and maxGrade (and the difficulty sort) read. Omitted means UPSTREAM. */
+  gradeSource?: InputMaybe<ClimbGradeSource>;
+  /** Hide climbs the user has attempted on the active board (requires auth) */
+  hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Hide climbs the user has completed on the active board (requires auth) */
+  hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Hold filter object: { holdId: { STATE: 'include' | 'exclude' } }, matched on the active board */
+  holdsFilter?: InputMaybe<Scalars['JSON']['input']>;
+  /** Maximum difficulty grade ID */
+  maxGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Minimum number of ascents */
+  minAscents?: InputMaybe<Scalars['Int']['input']>;
+  /** Minimum difficulty grade ID */
+  minGrade?: InputMaybe<Scalars['Int']['input']>;
+  /** Minimum quality rating */
+  minRating?: InputMaybe<Scalars['Float']['input']>;
+  /** Hide climbs whose latest rating from the user, at the active angle, is below this many stars. 0 means no minimum. (requires auth) */
+  minUserRating?: InputMaybe<Scalars['Int']['input']>;
+  /** Filter by climb name (partial match) */
+  name?: InputMaybe<Scalars['String']['input']>;
+  /** Only climbs that fit the active board: its board type, layout, size and hold sets */
+  onlyActiveBoard?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only show benchmark climbs */
+  onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs the user has hearted on the active board (requires auth) */
+  onlyFavorited?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs by followed setters or followed users, on the active board. (requires auth) */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs the user has rated at the active angle (requires auth) */
+  onlyRatedByMe?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs on the active board that need its full height */
+  onlyTallClimbs?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs on the active board that need its full width */
+  onlyWideClimbs?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs on the active board that have a beta video */
+  onlyWithBetaVideos?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs with no ascents at the displayed angle */
+  projectsOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types. */
+  routes?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Filter by setter usernames */
+  setter?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Only climbs the user has attempted on the active board (requires auth) */
+  showOnlyAttempted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs the user has completed on the active board (requires auth) */
+  showOnlyCompleted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Order of the climbs. Omitted means position (the playlist's own order). */
+  sortBy?: InputMaybe<PlaylistClimbSort>;
+  /** Sort direction ('asc' or 'desc'). Omitted means the sort's natural direction: asc for position, difficulty and name, desc for added, quality and ascents. */
+  sortOrder?: InputMaybe<Scalars['String']['input']>;
+  /** Seed for the 'random' sort; keeps OFFSET pagination stable across pages for one shuffle */
+  sortSeed?: InputMaybe<Scalars['String']['input']>;
+  /** Key the grade filter and the difficulty sort off the climber's own grade on the active board, falling back to the crowd's grade elsewhere. (requires auth) */
+  useMyGrades?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Restrict to climbs on the active board inside this drawn zone */
+  zoneBox?: InputMaybe<ZoneBoxInput>;
+  /** How the zone should match climb holds. Defaults to allHolds when omitted. */
+  zoneMode?: InputMaybe<ZoneMatchMode>;
+};
+
 /** Result of fetching playlist climbs. */
 export type PlaylistClimbsResult = {
   __typename?: 'PlaylistClimbsResult';
@@ -6130,8 +6227,10 @@ export type PlaylistClimbsResult = {
   climbs: Array<Climb>;
   /** Whether more are available */
   hasMore: Scalars['Boolean']['output'];
-  /** Total number of climbs matching the supplied board, layout, size, and hold-set filters before pagination */
+  /** Total number of climbs matching the supplied board, layout, size, and hold-set scope and the view's filters, before pagination */
   totalCount: Scalars['Int']['output'];
+  /** Climbs the playlist shows in this board scope with no view filter applied. Null unless the view carries a filter (a sort alone leaves it null). */
+  unfilteredCount?: Maybe<Scalars['Int']['output']>;
 };
 
 /** A user who has created public playlists. */
@@ -12136,6 +12235,8 @@ export type ResolversTypes = ResolversObject<{
   PlaybackStateInput: PlaybackStateInput;
   Playlist: ResolverTypeWrapper<Playlist>;
   PlaylistClimb: ResolverTypeWrapper<PlaylistClimb>;
+  PlaylistClimbSort: PlaylistClimbSort;
+  PlaylistClimbViewInput: PlaylistClimbViewInput;
   PlaylistClimbsResult: ResolverTypeWrapper<PlaylistClimbsResult>;
   PlaylistCreator: ResolverTypeWrapper<PlaylistCreator>;
   PlaylistGradeSummary: ResolverTypeWrapper<PlaylistGradeSummary>;
@@ -12655,6 +12756,7 @@ export type ResolversParentTypes = ResolversObject<{
   PlaybackStateInput: PlaybackStateInput;
   Playlist: Playlist;
   PlaylistClimb: PlaylistClimb;
+  PlaylistClimbViewInput: PlaylistClimbViewInput;
   PlaylistClimbsResult: PlaylistClimbsResult;
   PlaylistCreator: PlaylistCreator;
   PlaylistGradeSummary: PlaylistGradeSummary;
@@ -16156,6 +16258,7 @@ export type PlaylistClimbsResultResolvers<
   climbs?: Resolver<Array<ResolversTypes['Climb']>, ParentType, ContextType>;
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  unfilteredCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 

@@ -9,3 +9,4 @@ export * from './active-filter-count';
 export * from './climb-zone-math';
 export * from './hold-filter-options';
 export * from './climb-name-pattern';
+export * from './playlist-view';

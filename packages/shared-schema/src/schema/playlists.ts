@@ -241,6 +241,103 @@ export const playlistsTypeDefs = /* GraphQL */ `
   }
 
   """
+  How a playlist's climbs are ordered.
+  position is the playlist's own order (the default), added is when each climb
+  was added to the playlist. The others rank on the grade, quality and ascents
+  each row displays, or shuffle with a seed.
+  """
+  enum PlaylistClimbSort {
+    position
+    added
+    difficulty
+    quality
+    ascents
+    name
+    random
+  }
+
+  """
+  Sort and filters for a playlist's climbs: the Climbs list's filters, applied to
+  the playlist's own climbs. Every filter narrows the playlist and never adds a
+  climb to it.
+
+  Grade, quality, ascents and benchmark filters (and the matching sorts) read
+  each row's stats at the angle the row displays: on the active board's type the
+  wall angle, elsewhere the angle the climb was added at, and in both cases the
+  most-ascended angle when the climb has no stats at that one.
+
+  The personal and board-shaped filters (progress, your rating, liked, followed
+  authors, beta videos, tall, wide, holds, zone and onlyActiveBoard) only pass
+  climbs on the active board: the specific board in specific-board mode, the
+  active* fields in all-boards mode. They need its board type, layout and angle;
+  without them they match nothing.
+  """
+  input PlaylistClimbViewInput {
+    "Order of the climbs. Omitted means position (the playlist's own order)."
+    sortBy: PlaylistClimbSort
+    "Sort direction ('asc' or 'desc'). Omitted means the sort's natural direction: asc for position, difficulty and name, desc for added, quality and ascents."
+    sortOrder: String
+    "Seed for the 'random' sort; keeps OFFSET pagination stable across pages for one shuffle"
+    sortSeed: String
+    "Filter by climb name (partial match)"
+    name: String
+    "Minimum difficulty grade ID"
+    minGrade: Int
+    "Maximum difficulty grade ID"
+    maxGrade: Int
+    "Grade accuracy filter (maximum gap between the displayed grade and the average grade)"
+    gradeAccuracy: String
+    "Which grade minGrade and maxGrade (and the difficulty sort) read. Omitted means UPSTREAM."
+    gradeSource: ClimbGradeSource
+    "Key the grade filter and the difficulty sort off the climber's own grade on the active board, falling back to the crowd's grade elsewhere. (requires auth)"
+    useMyGrades: Boolean
+    "Minimum number of ascents"
+    minAscents: Int
+    "Minimum quality rating"
+    minRating: Float
+    "Only show benchmark climbs"
+    onlyBenchmarks: Boolean
+    "Filter by setter usernames"
+    setter: [String!]
+    "Only climbs by followed setters or followed users, on the active board. (requires auth)"
+    onlyFollowedAuthors: Boolean
+    "Only climbs on the active board that need its full height"
+    onlyTallClimbs: Boolean
+    "Only climbs on the active board that need its full width"
+    onlyWideClimbs: Boolean
+    "Only climbs on the active board that have a beta video"
+    onlyWithBetaVideos: Boolean
+    "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types."
+    boulders: Boolean
+    "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types."
+    routes: Boolean
+    "Only climbs with no ascents at the displayed angle"
+    projectsOnly: Boolean
+    "Hide climbs the user has attempted on the active board (requires auth)"
+    hideAttempted: Boolean
+    "Hide climbs the user has completed on the active board (requires auth)"
+    hideCompleted: Boolean
+    "Only climbs the user has attempted on the active board (requires auth)"
+    showOnlyAttempted: Boolean
+    "Only climbs the user has completed on the active board (requires auth)"
+    showOnlyCompleted: Boolean
+    "Hide climbs whose latest rating from the user, at the active angle, is below this many stars. 0 means no minimum. (requires auth)"
+    minUserRating: Int
+    "Only climbs the user has rated at the active angle (requires auth)"
+    onlyRatedByMe: Boolean
+    "Only climbs the user has hearted on the active board (requires auth)"
+    onlyFavorited: Boolean
+    "Hold filter object: { holdId: { STATE: 'include' | 'exclude' } }, matched on the active board"
+    holdsFilter: JSON
+    "Restrict to climbs on the active board inside this drawn zone"
+    zoneBox: ZoneBoxInput
+    "How the zone should match climb holds. Defaults to allHolds when omitted."
+    zoneMode: ZoneMatchMode
+    "Only climbs that fit the active board: its board type, layout, size and hold sets"
+    onlyActiveBoard: Boolean
+  }
+
+  """
   Input for getting climbs in a playlist with full data.
   """
   input GetPlaylistClimbsInput {
@@ -260,6 +357,14 @@ export const playlistsTypeDefs = /* GraphQL */ `
     activeBoardName: String
     "Selected wall angle to render grades at for on-active-board climbs in all-boards mode"
     activeAngle: Int
+    "Active board layout in all-boards mode. Needs activeBoardName. Used by the view's active-board filters."
+    activeLayoutId: Int
+    "Active board size in all-boards mode. Needs activeBoardName. Used by the view's active-board filters."
+    activeSizeId: Int
+    "Active board's comma-separated set IDs in all-boards mode. Needs activeBoardName. Used by the view's active-board filters."
+    activeSetIds: String
+    "Sort and filters. Omitted means the playlist's own order with no filter."
+    view: PlaylistClimbViewInput
     "Page number"
     page: Int
     "Page size"
@@ -272,8 +377,10 @@ export const playlistsTypeDefs = /* GraphQL */ `
   type PlaylistClimbsResult {
     "List of climbs with full data"
     climbs: [Climb!]!
-    "Total number of climbs matching the supplied board, layout, size, and hold-set filters before pagination"
+    "Total number of climbs matching the supplied board, layout, size, and hold-set scope and the view's filters, before pagination"
     totalCount: Int!
+    "Climbs the playlist shows in this board scope with no view filter applied. Null unless the view carries a filter (a sort alone leaves it null)."
+    unfilteredCount: Int
     "Whether more are available"
     hasMore: Boolean!
   }

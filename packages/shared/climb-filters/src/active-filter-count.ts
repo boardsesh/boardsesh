@@ -1,4 +1,4 @@
-import { DEFAULT_CLIMB_FILTER_STATE, type ClimbFilterState } from './filter-state';
+import { DEFAULT_CLIMB_FILTER_STATE, isClimbTypeFilterActive, type AnySortClimbFilterState } from './filter-state';
 import { isProgressFilterActive } from './progress-filter';
 import type { ClimbBoardFilterState } from './board-filter-state';
 
@@ -7,15 +7,23 @@ import type { ClimbBoardFilterState } from './board-filter-state';
  * badge built on this reads as "extra refinements are on". Sort counts as one
  * when it differs from the default; each active board filter (benchmark, holds,
  * zone, setter) counts as one. Shared so web and mobile can't disagree.
+ *
+ * `defaults` is the list's own starting state (the Climbs list's unless given),
+ * so a list that starts with other climb types or another sort (a playlist)
+ * doesn't count its own defaults as a filter.
  */
-export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFilters?: ClimbBoardFilterState): number {
+export function countActiveFiltersBeyondGrade(
+  filters: AnySortClimbFilterState,
+  boardFilters?: ClimbBoardFilterState,
+  defaults: AnySortClimbFilterState = DEFAULT_CLIMB_FILTER_STATE,
+): number {
   let count = 0;
   if (filters.setter && filters.setter.length > 0) count += 1;
   if (filters.onlyFollowedAuthors) count += 1;
   if (filters.minAscents != null) count += 1;
   if (filters.minRating != null) count += 1;
   if (filters.gradeAccuracy != null) count += 1;
-  if (filters.status !== DEFAULT_CLIMB_FILTER_STATE.status) count += 1;
+  if (filters.status !== defaults.status) count += 1;
   if (filters.onlyTallClimbs) count += 1;
   if (filters.onlyWideClimbs) count += 1;
   if (filters.onlyWithBetaVideos) count += 1;
@@ -28,12 +36,10 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   if (filters.minUserRating != null) count += 1;
   if (filters.onlyRatedByMe) count += 1;
   if (filters.onlyFavorited) count += 1;
-  // Climb-type defaults to boulders-only; "active" = routes on or boulders off.
-  if ((filters.boulders ?? true) !== true || (filters.routes ?? false) !== false) count += 1;
-  if (
-    filters.sortBy !== DEFAULT_CLIMB_FILTER_STATE.sortBy ||
-    filters.sortOrder !== DEFAULT_CLIMB_FILTER_STATE.sortOrder
-  ) {
+  // Climb-type defaults to boulders-only on the Climbs list; "active" = routes on
+  // or boulders off there, and a difference from its own defaults elsewhere.
+  if (isClimbTypeFilterActive(filters, defaults)) count += 1;
+  if (filters.sortBy !== defaults.sortBy || filters.sortOrder !== defaults.sortOrder) {
     count += 1;
   }
   if (boardFilters) {
@@ -46,7 +52,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
 }
 
 /** True when a grade bound is set (either endpoint), matching hasActiveClimbFilters. */
-export function isGradeFilterActive(filters: ClimbFilterState): boolean {
+export function isGradeFilterActive(filters: Pick<AnySortClimbFilterState, 'minGrade' | 'maxGrade'>): boolean {
   return filters.minGrade != null || filters.maxGrade != null;
 }
 
@@ -57,6 +63,10 @@ export function isGradeFilterActive(filters: ClimbFilterState): boolean {
  * disagree on what the badge counts. Use {@link countActiveFiltersBeyondGrade}
  * instead when grade has its own visible control and should be excluded.
  */
-export function countActiveFilters(filters: ClimbFilterState, boardFilters?: ClimbBoardFilterState): number {
-  return countActiveFiltersBeyondGrade(filters, boardFilters) + (isGradeFilterActive(filters) ? 1 : 0);
+export function countActiveFilters(
+  filters: AnySortClimbFilterState,
+  boardFilters?: ClimbBoardFilterState,
+  defaults: AnySortClimbFilterState = DEFAULT_CLIMB_FILTER_STATE,
+): number {
+  return countActiveFiltersBeyondGrade(filters, boardFilters, defaults) + (isGradeFilterActive(filters) ? 1 : 0);
 }

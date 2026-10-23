@@ -1,9 +1,10 @@
 import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
-import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
+import { getMoonBoardGeometryByLayoutId, isSizeScopedBoard, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { climbNameLikePattern } from '@boardsesh/climb-filters';
+import { USER_SPECIFIC_SEARCH_PARAMS, type BoardName } from '@boardsesh/shared-schema';
 import {
   boardClimbs,
   boardClimbStats,
@@ -337,6 +338,31 @@ export function retiredByResetCondition(boardName: string, searchParams: ClimbSe
   return [sql`COALESCE(${boardClimbs.retiredByReset}, false) = false`];
 }
 
+/**
+ * The climb-type filter: boulders only, routes only, or no preference.
+ *
+ * Both selected (or both falsy — treated as "no preference") → no frames_count
+ * constraint at all. Boulders only → `frames_count = 1`. Routes only →
+ * `frames_count > 1`.
+ *
+ * frames_count is currently NULLABLE in the schema; NULL is legacy
+ * pre-migration data and should be treated as single-frame (boulder). The
+ * boulders-only branch therefore OR-includes NULL. Follow-up migration (tracked
+ * separately) will backfill NULLs to 1 and add NOT NULL, after which the
+ * isNull() branch can be dropped.
+ *
+ * Its own function because two lists apply it: the Climbs search (inside
+ * `baseConditions`) and a playlist's view (`createPlaylistClimbFilters`), which
+ * takes none of the other base conditions.
+ */
+export function climbTypeConditions(searchParams: Pick<ClimbSearchParams, 'boulders' | 'routes'>): SQL[] {
+  const wantsBoulders = !!searchParams.boulders;
+  const wantsRoutes = !!searchParams.routes;
+  if (wantsBoulders && !wantsRoutes) return [or(eq(boardClimbs.framesCount, 1), isNull(boardClimbs.framesCount))!];
+  if (wantsRoutes && !wantsBoulders) return [gt(boardClimbs.framesCount, 1)];
+  return [];
+}
+
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
   const geometry = getMoonBoardGeometryByLayoutId(layoutId);
   const { leftMargin, rightMargin, topMargin, bottomMargin } = geometry.calibration;
@@ -551,23 +577,8 @@ export const createClimbFilters = (
   const isBrowsedAngleRestricted = options?.restrictToBrowsedAngle === true && !isOnlyDrafts && !crossAngle;
   const browsedAngleConditions: SQL[] = isBrowsedAngleRestricted ? [browsedAngleRestrictionSql(params.angle)] : [];
 
-  // Boulders / routes filter. Both selected (or both falsy — treated as "no
-  // preference") → omit the frames_count constraint entirely. Boulders only →
-  // `frames_count = 1`. Routes only → `frames_count > 1`.
-  //
-  // frames_count is currently NULLABLE in the schema; NULL is legacy
-  // pre-migration data and should be treated as single-frame (boulder). The
-  // boulders-only branch therefore OR-includes NULL. Follow-up migration
-  // (tracked separately) will backfill NULLs to 1 and add NOT NULL, after
-  // which the isNull() branch can be dropped.
-  const wantsBoulders = !!searchParams.boulders;
-  const wantsRoutes = !!searchParams.routes;
-  const climbTypeCondition: SQL | null =
-    wantsBoulders && !wantsRoutes
-      ? or(eq(boardClimbs.framesCount, 1), isNull(boardClimbs.framesCount))!
-      : wantsRoutes && !wantsBoulders
-        ? gt(boardClimbs.framesCount, 1)
-        : null;
+  // Boulders / routes filter — see `climbTypeConditions`.
+  const climbTypeFilterConditions = climbTypeConditions(searchParams);
 
   // Base conditions for filtering climbs
   const baseConditions: SQL[] = [
@@ -578,7 +589,7 @@ export const createClimbFilters = (
     ...hiddenClimbCondition(searchParams),
     ...holdIntegrityCondition(searchParams),
     ...retiredByResetCondition(params.board_name, searchParams),
-    ...(climbTypeCondition ? [climbTypeCondition] : []),
+    ...climbTypeFilterConditions,
   ];
 
   // Size filter: check if this climb fits on the selected board size.
@@ -1245,6 +1256,8 @@ export const createClimbFilters = (
     ],
     // Raw parts
     baseConditions,
+    /** The boulders / routes predicate on its own. Also inside `baseConditions`. */
+    climbTypeConditions: climbTypeFilterConditions,
     browsedAngleConditions,
     climbStatsConditions,
     gradeRangeConditions,
@@ -1265,3 +1278,308 @@ export const createClimbFilters = (
     holdStateFilters,
   };
 };
+
+// ---------------------------------------------------------------------------
+// Playlist views (#6651): the Climbs list's filters over a playlist's climbs.
+//
+// A playlist is a hand-curated list, so its view may only NARROW it: none of
+// `baseConditions` (listed, not a draft, not community-hidden, the spray
+// integrity rules), the size and hold-set filters, or the browsed-angle
+// restriction apply. The playlist resolver keeps its own draft and spray
+// visibility rules, and this builder adds filters on top of them.
+//
+// A playlist can also hold climbs from several boards, and some filters only
+// mean something on one board: "not sent yet" reads the climber's ticks at the
+// active board's angle, "tall" compares against the active board's size, a hold
+// filter names the active board's placements. Those are wrapped so they only
+// pass climbs on the active board; the rest apply to every row.
+// ---------------------------------------------------------------------------
+
+/**
+ * The board a playlist's view filters against: the specific board in
+ * specific-board mode, or the client's active board in all-boards mode. Size and
+ * sets narrow "on the active board" when given; the active-board filters need
+ * the board type, layout and angle.
+ */
+export type PlaylistActiveBoard = {
+  boardName: BoardName;
+  layoutId: number | null;
+  sizeId: number | null;
+  setIds: number[];
+  angle: number | null;
+};
+
+/**
+ * Layout, size and hold-set scope for a playlist's climbs on one board, from a
+ * query that joins `board_climbs`. The playlist resolver's specific-board join
+ * and `onPlaylistActiveBoardSql` both use it, so "fits the board in front of
+ * you" means the same thing in both. The board type itself is the caller's
+ * predicate.
+ *
+ * Size-scope only boards that actually have size variants. MoonBoard has one
+ * fixed product size, so its climbs carry NULL `compatible_size_ids` — and
+ * `sizeId = ANY(NULL)` is NULL, never true, which silently dropped every
+ * MoonBoard row from the playlist join (#3891). `isSizeScopedBoard` is the one
+ * guard for that; the sibling call sites are the main climb search (above) and
+ * the sync pull (`sync/queries.ts`). Array containment (`@>`) rather than
+ * `= ANY` so the board_climbs_compatible_size_ids_idx GIN index applies.
+ *
+ * Hold-set scoping is the same `required_set_ids <@ selected sets` containment
+ * the main climb search applies. MoonBoard is exactly the board whose optional
+ * wooden / screw-on add-on sets are encoded in `required_set_ids` — without
+ * this, a wall built without those sets is handed climbs it cannot light in full.
+ *
+ * NULL is tolerated on every board here, where search only tolerates it for
+ * MoonBoard and drafts: `required_set_ids` is denormalised and backfilled
+ * asynchronously, and a playlist is a list the climber curated by hand. Missing
+ * provenance should not make one of their own climbs disappear — only a climb we
+ * positively know needs an uninstalled set is dropped. The blast radius of the
+ * more permissive choice is small: in prod (2026-07-31) 1,223 of 408,035 Kilter
+ * climbs (0.30%) and 776 of 153,370 Tension climbs (0.51%) still have a NULL
+ * `required_set_ids`.
+ */
+export function playlistBoardScopeConditions(board: {
+  boardName: string;
+  layoutId: number | null | undefined;
+  sizeId: number | null | undefined;
+  setIds: readonly number[];
+}): SQL[] {
+  const conditions: SQL[] = [];
+  if (board.layoutId != null) conditions.push(eq(boardClimbs.layoutId, board.layoutId));
+  if (board.sizeId != null && isSizeScopedBoard(board.boardName)) {
+    conditions.push(sql`${boardClimbs.compatibleSizeIds} @> ARRAY[${board.sizeId}]::int[]`);
+  }
+  if (board.setIds.length > 0) {
+    conditions.push(
+      sql`(${boardClimbs.requiredSetIds} IS NULL OR ${boardClimbs.requiredSetIds} <@ ARRAY[${sql.join(
+        board.setIds.map((setId) => sql`${setId}`),
+        sql`, `,
+      )}]::int[])`,
+    );
+  }
+  return conditions;
+}
+
+/** True for a `board_climbs` row that fits the active board: its type, layout, size and sets. */
+export function onPlaylistActiveBoardSql(board: PlaylistActiveBoard): SQL {
+  return and(eq(boardClimbs.boardType, board.boardName), ...playlistBoardScopeConditions(board))!;
+}
+
+/** The filter params a playlist view reads: the search params plus "only climbs that fit my board". */
+export type PlaylistFilterParams = ClimbSearchParams & {
+  /** Only the climbs that fit the active board (`onPlaylistActiveBoardSql`). */
+  onlyActiveBoard?: boolean;
+};
+
+/** Every named key of `ClimbSearchParams` (not the `hold_<id>` index signature), plus the playlist's own. */
+export type PlaylistFilterParamKey =
+  | keyof { [Key in keyof ClimbSearchParams as Key extends `hold_${number}` ? never : Key]: true }
+  | 'onlyActiveBoard';
+
+/**
+ * Where a playlist view applies each filter param:
+ *
+ *  - `allRows`: on every playlist row, whichever board it is on. Stats-shaped
+ *    filters read the stats row at the angle the row displays.
+ *  - `activeBoardOnly`: only climbs on the active board pass (see
+ *    `createPlaylistClimbFilters`).
+ *  - `modifier`: changes how another filter or the order reads; matches nothing
+ *    on its own.
+ *  - `unsupported`: never applied to a playlist.
+ *
+ * Typed against every key of `ClimbSearchParams`, so a filter added there fails
+ * to compile until it is classified here, and the test beside this file checks
+ * each class against what the builder actually emits.
+ */
+export const PLAYLIST_FILTER_SCOPE = {
+  name: 'allRows',
+  settername: 'allRows',
+  boulders: 'allRows',
+  routes: 'allRows',
+  projectsOnly: 'allRows',
+  minAscents: 'allRows',
+  minRating: 'allRows',
+  gradeAccuracy: 'allRows',
+  onlyBenchmarks: 'allRows',
+  minGrade: 'allRows',
+  maxGrade: 'allRows',
+  hideAttempted: 'activeBoardOnly',
+  hideCompleted: 'activeBoardOnly',
+  showOnlyAttempted: 'activeBoardOnly',
+  showOnlyCompleted: 'activeBoardOnly',
+  minUserRating: 'activeBoardOnly',
+  onlyRatedByMe: 'activeBoardOnly',
+  onlyFavorited: 'activeBoardOnly',
+  onlyFollowedAuthors: 'activeBoardOnly',
+  onlyWithBetaVideos: 'activeBoardOnly',
+  onlyTallClimbs: 'activeBoardOnly',
+  onlyWideClimbs: 'activeBoardOnly',
+  holdsFilter: 'activeBoardOnly',
+  zoneBox: 'activeBoardOnly',
+  onlyActiveBoard: 'activeBoardOnly',
+  gradeSource: 'modifier',
+  useMyGrades: 'modifier',
+  zoneMode: 'modifier',
+  sortBy: 'modifier',
+  sortOrder: 'modifier',
+  sortSeed: 'modifier',
+  page: 'modifier',
+  pageSize: 'modifier',
+  // A playlist has no drafts view of its own (its drafts follow the resolver's
+  // draft rule), no spray hold-integrity filter, and no cross-angle switch: each
+  // row already reads its own angle. The setter suggestion is UI text.
+  onlyDrafts: 'unsupported',
+  holdIntegrity: 'unsupported',
+  crossAngleStats: 'unsupported',
+  setternameSuggestion: 'unsupported',
+} as const satisfies Record<PlaylistFilterParamKey, 'allRows' | 'activeBoardOnly' | 'modifier' | 'unsupported'>;
+
+export type PlaylistFilterScope = (typeof PLAYLIST_FILTER_SCOPE)[PlaylistFilterParamKey];
+
+function paramKeysWithScope(scope: PlaylistFilterScope): PlaylistFilterParamKey[] {
+  return (Object.keys(PLAYLIST_FILTER_SCOPE) as PlaylistFilterParamKey[]).filter(
+    (key) => PLAYLIST_FILTER_SCOPE[key] === scope,
+  );
+}
+
+const ACTIVE_BOARD_ONLY_PARAM_KEYS = paramKeysWithScope('activeBoardOnly');
+const UNSUPPORTED_PARAM_KEYS = paramKeysWithScope('unsupported');
+
+/** Whether a param value would switch its filter on, by the builder's own truthiness rules. */
+function isFilterParamSet(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value !== null && typeof value === 'object') return Object.keys(value).length > 0;
+  return Boolean(value);
+}
+
+/**
+ * Stand-in route params for building the all-rows filters when there is no
+ * complete active board. Every param that would read them (the active-board
+ * filters and personal grades) is stripped first, so nothing built from these
+ * reaches the query.
+ */
+const NO_ACTIVE_BOARD_PARAMS: BoardRouteParams = {
+  board_name: 'kilter',
+  layout_id: 0,
+  size_id: 0,
+  set_ids: [],
+  angle: 0,
+};
+
+export type PlaylistClimbFilters = {
+  /** Predicates for every playlist row: name, setter, climb type, projects, stats and grade range. */
+  allRows: SQL[];
+  /**
+   * At most one predicate: the active-board filters AND-ed behind
+   * `onPlaylistActiveBoardSql`, so a climb on another board never passes them.
+   * `[false]` when such a filter is set with no complete active board.
+   */
+  activeBoardOnly: SQL[];
+  /** Whether a predicate reads `board_climb_stats`, which the caller must then join at the row's display angle. */
+  needsStats: boolean;
+  /** Whether a predicate reads `board_climb_grades` (the grade range), joined at the same angle as the stats. */
+  needsGrades: boolean;
+  /** The personal-grade subquery to LEFT JOIN, or null when personal grades are off. */
+  personalGradeJoin: PersonalGradeJoinTarget | null;
+  /** Whether any predicate narrows the playlist (a sort alone does not). */
+  hasFilters: boolean;
+};
+
+/**
+ * The filter predicates for a playlist's view, built from this file's own
+ * condition builders (via `createClimbFilters`) so a filter reads the same in a
+ * playlist as on the Climbs list. See the section comment above for what is left
+ * out and why some predicates only pass climbs on the active board.
+ *
+ * The active-board filters need a complete active board (type, layout, angle).
+ * Without one nothing can be on it, so they match nothing, and personal grades
+ * fall back to the crowd's grade. Signed out, the climber-specific filters
+ * (`USER_SPECIFIC_SEARCH_PARAMS`) are ignored in both cases.
+ *
+ * The caller joins `board_climb_stats` (when `needsStats`) and
+ * `board_climb_grades` (when `needsGrades`) at each row's display angle, unaliased,
+ * so the stats-shaped predicates read the row the climber sees.
+ */
+export function createPlaylistClimbFilters(
+  activeBoard: PlaylistActiveBoard | null,
+  searchParams: PlaylistFilterParams,
+  userId?: string,
+): PlaylistClimbFilters {
+  const activeBoardParams: BoardRouteParams | null =
+    activeBoard && activeBoard.layoutId != null && activeBoard.angle != null
+      ? {
+          board_name: activeBoard.boardName,
+          layout_id: activeBoard.layoutId,
+          // 0 is no size: the tall/wide scope fails closed on it, as it does on
+          // any size it doesn't know.
+          size_id: activeBoard.sizeId ?? 0,
+          set_ids: activeBoard.setIds,
+          angle: activeBoard.angle,
+        }
+      : null;
+
+  const { onlyActiveBoard, ...climbSearchParams } = searchParams;
+  const buildParams: ClimbSearchParams = { ...climbSearchParams };
+  for (const key of UNSUPPORTED_PARAM_KEYS) {
+    if (key !== 'onlyActiveBoard') delete buildParams[key];
+  }
+  // Signed out, the filters that read one climber's ticks, hearts, ratings or
+  // follows have nobody to read, so they are dropped rather than matching
+  // nothing: the playlist reads as unfiltered, the same with or without an
+  // active board. The app hides those controls when signed out anyway.
+  if (!userId) {
+    for (const key of USER_SPECIFIC_SEARCH_PARAMS) delete buildParams[key];
+  }
+  const requestsActiveBoardFilter =
+    !!onlyActiveBoard ||
+    ACTIVE_BOARD_ONLY_PARAM_KEYS.some((key) => key !== 'onlyActiveBoard' && isFilterParamSet(buildParams[key]));
+  if (!activeBoardParams) {
+    for (const key of ACTIVE_BOARD_ONLY_PARAM_KEYS) {
+      if (key !== 'onlyActiveBoard') delete buildParams[key];
+    }
+    delete buildParams.useMyGrades;
+  }
+
+  const filters = createClimbFilters(activeBoardParams ?? NO_ACTIVE_BOARD_PARAMS, buildParams, userId);
+
+  const allRows: SQL[] = [
+    ...filters.nameCondition,
+    ...filters.setterNameCondition,
+    ...filters.climbTypeConditions,
+    ...filters.projectsOnlyConditions,
+    ...filters.climbStatsConditions,
+    ...filters.gradeRangeConditions,
+  ];
+
+  const activeBoardConditions: SQL[] = [
+    ...(buildParams.onlyFollowedAuthors ? [followedAuthorCondition(userId)] : []),
+    ...filters.personalProgressConditions,
+    ...filters.betaVideosConditions,
+    ...filters.tallClimbsConditions,
+    ...filters.wideClimbsConditions,
+    ...filters.holdConditions,
+    ...filters.holdStateConditions,
+    ...filters.zoneConditions,
+  ];
+
+  let activeBoardOnly: SQL[] = [];
+  if (activeBoard && activeBoardParams) {
+    if (activeBoardConditions.length > 0 || onlyActiveBoard) {
+      activeBoardOnly = [and(onPlaylistActiveBoardSql(activeBoard), ...activeBoardConditions)!];
+    }
+  } else if (requestsActiveBoardFilter) {
+    activeBoardOnly = [sql`false`];
+  }
+
+  return {
+    allRows,
+    activeBoardOnly,
+    needsStats:
+      filters.climbStatsConditions.length > 0 ||
+      filters.gradeRangeConditions.length > 0 ||
+      filters.projectsOnlyConditions.length > 0,
+    needsGrades: filters.gradeRangeConditions.length > 0,
+    personalGradeJoin: filters.getPersonalGradeJoin(),
+    hasFilters: allRows.length > 0 || activeBoardOnly.length > 0,
+  };
+}

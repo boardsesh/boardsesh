@@ -1,4 +1,4 @@
-import type { PrivacyPublicationInput } from '@boardsesh/shared-schema';
+import type { PlaylistClimbViewInput, PrivacyPublicationInput } from '@boardsesh/shared-schema';
 import { gql } from 'graphql-request';
 
 // Fragment for playlist fields
@@ -425,6 +425,15 @@ export type GetPlaylistClimbsInput = {
   // selected angle instead of the added-at / most-ascents fallback.
   activeBoardName?: string;
   activeAngle?: number;
+  // All-boards mode only: the rest of the active board, read by the view's
+  // active-board filters. Each needs activeBoardName.
+  activeLayoutId?: number;
+  activeSizeId?: number;
+  activeSetIds?: string;
+  // Sort and filters. Omit for the playlist's own order; `toPlaylistClimbViewInput`
+  // (@boardsesh/climb-filters) returns undefined for a fresh playlist so the
+  // default request stays as it was.
+  view?: PlaylistClimbViewInput;
   page?: number;
   pageSize?: number;
 };
@@ -458,6 +467,10 @@ export type PlaylistClimbsResult = {
     is_no_match?: boolean | null;
   }>;
   totalCount: number;
+  // The playlist's count with no view filter applied (null unless the view
+  // filters). Not in GET_PLAYLIST_CLIMBS's selection yet: clients ship before the
+  // backend that answers it, so the field joins the query once that is live.
+  unfilteredCount?: number | null;
   hasMore: boolean;
 };
 

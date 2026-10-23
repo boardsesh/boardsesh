@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useInfiniteQuery, type UseInfiniteQueryResult, type InfiniteData } from '@tanstack/react-query';
+import { useInfiniteQuery, type QueryKey, type UseInfiniteQueryResult, type InfiniteData } from '@tanstack/react-query';
 import {
   GET_PLAYLIST_CLIMBS,
   type GetPlaylistClimbsInput,
@@ -12,7 +12,32 @@ import { usePlaylistsAdapter, type ExecutePlaylistsGraphQL } from './adapter';
 /** Board-scoping fields merged into the per-page query input. Omit for the
  *  all-boards view; supply when a specific board is selected. `playlistId`,
  *  `page`, and `pageSize` are added by the hook. */
-export type PlaylistClimbsBoardInput = Omit<GetPlaylistClimbsInput, 'playlistId' | 'page' | 'pageSize'>;
+export type PlaylistClimbsBoardInput = Omit<GetPlaylistClimbsInput, 'playlistId' | 'page' | 'pageSize' | 'view'>;
+
+/** The sort and filters, as `toPlaylistClimbViewInput` (@boardsesh/climb-filters) builds them. */
+export type PlaylistClimbsView = NonNullable<GetPlaylistClimbsInput['view']>;
+
+/** Where the view sits in the query key: after the playlist, board and angle, before the refresh key. */
+const VIEW_KEY_INDEX = 4;
+
+/**
+ * The `placeholderData` rule: while a new view's first page loads, keep showing
+ * the rows of the same playlist, board, angle and refresh under the previous
+ * view, so changing the sort or a filter never flashes an empty list. Any other
+ * difference (another playlist, board or angle, a refresh) shows nothing stale.
+ */
+export function keepPreviousViewResults<TData>(
+  queryKey: QueryKey,
+  previousData: TData | undefined,
+  previousQueryKey: QueryKey | undefined,
+): TData | undefined {
+  if (previousData === undefined || !previousQueryKey) return undefined;
+  if (previousQueryKey.length !== queryKey.length) return undefined;
+  const onlyTheViewDiffers = queryKey.every(
+    (segment, index) => index === VIEW_KEY_INDEX || segment === previousQueryKey[index],
+  );
+  return onlyTheViewDiffers ? previousData : undefined;
+}
 
 export type UsePlaylistClimbsOptions = {
   playlistUuid: string;
@@ -23,6 +48,9 @@ export type UsePlaylistClimbsOptions = {
   refreshKey?: number;
   /** Board-scoping query input. When omitted, climbs are fetched all-boards. */
   boardInput?: PlaylistClimbsBoardInput;
+  /** Sort and filters. Omit (or pass undefined) for the playlist's own order:
+   *  the request then carries no `view` at all, exactly as before views. */
+  view?: PlaylistClimbsView;
   /** Page size per page. Defaults to 20. */
   pageSize?: number;
   /** True while the token is still resolving — disables the query until ready.
@@ -56,6 +84,7 @@ export function usePlaylistClimbs({
   boardUuid,
   refreshKey = 0,
   boardInput,
+  view,
   pageSize = 20,
   tokenLoading = false,
   initialData,
@@ -72,15 +101,35 @@ export function usePlaylistClimbs({
   // React Query serves stale grades until staleTime lapses. Covers all-boards
   // mode (activeAngle) and specific-board mode (angle).
   const angleKey = boardInput?.activeAngle ?? boardInput?.angle ?? null;
+  // The view object itself, which React Query hashes with its keys sorted, so a
+  // re-built view with the same content keeps the same cache entry. After the
+  // playlist uuid, so `invalidateQueries({ queryKey: ['playlistClimbs', uuid] })`
+  // still clears every view of the playlist.
+  const viewKey = view ?? 'default';
+  const queryKey = useMemo(
+    () => ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, viewKey, refreshKey] as const,
+    [playlistUuid, boardUuid, angleKey, viewKey, refreshKey],
+  );
+  // A new function whenever anything but the view changes: React Query keeps a
+  // showing placeholder without asking again while this identity holds. The
+  // view segment is left null because the rule never reads it.
+  const placeholderData = useMemo(() => {
+    const keyAroundView: QueryKey = ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, null, refreshKey];
+    return (
+      previousData: InfiniteData<PlaylistClimbsResult, number> | undefined,
+      previousQuery: { queryKey: QueryKey } | undefined,
+    ) => keepPreviousViewResults(keyAroundView, previousData, previousQuery?.queryKey);
+  }, [playlistUuid, boardUuid, angleKey, refreshKey]);
 
   const query = useInfiniteQuery({
-    queryKey: ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, refreshKey],
+    queryKey,
     queryFn: async ({ pageParam }) => {
       const input: GetPlaylistClimbsInput = {
         playlistId: playlistUuid,
         page: pageParam,
         pageSize,
         ...boardInput,
+        ...(view ? { view } : {}),
       };
       const response = await executeGraphQL<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
         GET_PLAYLIST_CLIMBS,
@@ -98,6 +147,7 @@ export function usePlaylistClimbs({
       return allPages.length;
     },
     staleTime: 5 * 60 * 1000,
+    placeholderData,
     initialData:
       initialDataApplicable && initialData
         ? {

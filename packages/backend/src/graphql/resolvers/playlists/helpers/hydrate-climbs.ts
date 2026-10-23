@@ -1,5 +1,5 @@
 import { climbDraftVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, type SQL } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
@@ -36,7 +36,92 @@ export type HydrateClimbsOptions = {
    * each ref genuinely carries its own angle.
    */
   wallAngle?: number;
+  /**
+   * The angles each ref's row was ALREADY resolved to by the caller's own query
+   * (a playlist view, which sorts and filters on that row). When given, the
+   * stats and grades joins read exactly these angles instead of re-resolving
+   * them, so the grade a row shows is the one it was sorted and filtered by.
+   * `wallAngle` / `angleOverrides` still decide the returned `angle`, exactly as
+   * without this. Every ref must have an entry.
+   */
+  resolvedAngles?: Map<string, ResolvedRowAngles>;
+  /**
+   * The climber's own grade per ref, from the caller's personal-grade join. Given
+   * only when the caller filtered or sorted by it, and then every row carries
+   * `myDifficulty` (null where they never graded the climb), so a row never
+   * disagrees with its own position. Omitted, `myDifficulty` stays undefined.
+   */
+  myDifficulties?: Map<string, number | null>;
 };
+
+export type ResolvedRowAngles = {
+  /** The stats row's angle (`displayStatsAngleSql`); NULL when the climb has no stats row. */
+  statsAngle: number | null;
+  /**
+   * The angle the Boardsesh grade is read at: the stats angle, or the preferred
+   * angle when there is no stats row there, the Climbs list's fallback
+   * (`gradeJoinAngleSql`). NULL when neither exists.
+   */
+  gradeAngle: number | null;
+};
+
+/**
+ * `angle` when the climb has a `board_climb_stats` row there, else NULL — the
+ * guard that keeps a preferred angle from blanking the grade of a climb nobody
+ * logged at it. Correlates to the unaliased `board_climbs` of the outer query.
+ */
+export function angleWithStatsSql(angle: SQL): SQL {
+  return sql`(SELECT ${angle} WHERE EXISTS (
+            SELECT 1 FROM board_climb_stats s_ov
+            WHERE s_ov.board_type = ${UNIFIED_TABLES.climbs.boardType}
+              AND s_ov.climb_uuid = ${UNIFIED_TABLES.climbs.uuid}
+              AND s_ov.angle = ${angle}
+          ))`;
+}
+
+/**
+ * The angle a playlist row displays its stats at: the guarded preferred angle
+ * (`angleWithStatsSql`, or any expression that is NULL when the climb has no
+ * stats there), else the angle the most climbers logged it at (the lower angle
+ * on a tie, so every resolution picks the same row), else NULL for a climb with
+ * no stats row at all.
+ *
+ * THE one definition. The hydrator joins stats at it, and a playlist view's ref
+ * query joins, filters and sorts on it, then hands the result back here through
+ * `resolvedStatsAngles` so the shown grade and the order cannot drift.
+ *
+ * The inner self-correlated subquery aliases its copy of the stats table as `s`
+ * and names `board_climb_stats` in plain text rather than interpolating the
+ * drizzle table, so the correlation stays alias-stable: a future drizzle release
+ * that aliases an outer stats join wouldn't silently rebind it.
+ */
+export function displayStatsAngleSql(guardedPreferredAngle: SQL): SQL {
+  return sql`COALESCE(${guardedPreferredAngle}, (
+            SELECT s.angle FROM board_climb_stats s
+            WHERE s.board_type = ${UNIFIED_TABLES.climbs.boardType}
+              AND s.climb_uuid = ${UNIFIED_TABLES.climbs.uuid}
+            ORDER BY s.ascensionist_count DESC NULLS LAST, s.angle ASC
+            LIMIT 1
+          ))`;
+}
+
+/** `(board_type, climb_uuid, ...values)` VALUES rows from a map keyed `${boardType}:${climbUuid}`. */
+function refValuesSql<Entry>(entries: Array<[string, Entry]>, valuesOf: (entry: Entry) => SQL[]): SQL {
+  return sql.join(
+    entries.map(([key, entry]) => {
+      const separator = key.indexOf(':');
+      const boardType = key.slice(0, separator);
+      const climbUuid = key.slice(separator + 1);
+      return sql`(${boardType}::text, ${climbUuid}::text, ${sql.join(valuesOf(entry), sql`, `)})`;
+    }),
+    sql`, `,
+  );
+}
+
+/** A `(board_type, climb_uuid, angle)` VALUES list from a ref-keyed angle map. */
+function refAngleValuesSql(entries: Array<[string, number | null]>): SQL {
+  return refValuesSql(entries, (angle) => [sql`${angle}::int`]);
+}
 
 /**
  * Hydrate `(climbUuid, boardType)` refs into full Climb objects in caller-supplied order.
@@ -70,25 +155,9 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
   // (a climb with no ascents at the user's selected angle still shows one).
   // One wall angle for every ref needs no VALUES list — just the same guard
   // around a constant.
-  const wallAngleExpr =
-    wallAngle == null
-      ? null
-      : sql`(SELECT ${wallAngle}::int WHERE EXISTS (
-            SELECT 1 FROM board_climb_stats s_ov
-            WHERE s_ov.board_type = ${tables.climbs.boardType}
-              AND s_ov.climb_uuid = ${tables.climbs.uuid}
-              AND s_ov.angle = ${wallAngle}::int
-          ))`;
+  const wallAngleExpr = wallAngle == null ? null : angleWithStatsSql(sql`${wallAngle}::int`);
   const overrideAngleExpr = overrideEntries.length
-    ? sql`(SELECT ov.angle FROM (VALUES ${sql.join(
-        overrideEntries.map(([key, angle]) => {
-          const separator = key.indexOf(':');
-          const boardType = key.slice(0, separator);
-          const climbUuid = key.slice(separator + 1);
-          return sql`(${boardType}::text, ${climbUuid}::text, ${angle}::int)`;
-        }),
-        sql`, `,
-      )}) AS ov(board_type, climb_uuid, angle)
+    ? sql`(SELECT ov.angle FROM (VALUES ${refAngleValuesSql(overrideEntries)}) AS ov(board_type, climb_uuid, angle)
         WHERE ov.board_type = ${tables.climbs.boardType} AND ov.climb_uuid = ${tables.climbs.uuid}
           AND EXISTS (
             SELECT 1 FROM board_climb_stats s_ov
@@ -97,6 +166,22 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
               AND s_ov.angle = ov.angle
           ))`
     : (wallAngleExpr ?? sql`NULL::int`);
+
+  // A caller that already resolved each row's angles (a playlist view) hands
+  // them over, and the joins read them verbatim. Every ref is in the map, so a
+  // NULL here is a climb that had no such row in the caller's query either.
+  const resolvedEntries = [...(options?.resolvedAngles ?? new Map<string, ResolvedRowAngles>())];
+  const resolvedAngleSql = (column: 'stats_angle' | 'grade_angle') =>
+    sql`(SELECT ${sql.identifier('resolved')}.${sql.identifier(column)} FROM (VALUES ${refValuesSql(
+      resolvedEntries,
+      (angles) => [sql`${angles.statsAngle}::int`, sql`${angles.gradeAngle}::int`],
+    )}) AS resolved(board_type, climb_uuid, stats_angle, grade_angle)
+        WHERE resolved.board_type = ${tables.climbs.boardType} AND resolved.climb_uuid = ${tables.climbs.uuid})`;
+  const statsAngleExpr =
+    resolvedEntries.length > 0 ? resolvedAngleSql('stats_angle') : displayStatsAngleSql(overrideAngleExpr);
+  // Without resolved angles the grade is read at the stats row's angle, as it
+  // always was here.
+  const gradeAngleExpr = resolvedEntries.length > 0 ? resolvedAngleSql('grade_angle') : sql`${tables.climbStats.angle}`;
 
   const rows = await db
     .select({
@@ -146,32 +231,20 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       and(
         eq(tables.climbStats.boardType, tables.climbs.boardType),
         eq(tables.climbStats.climbUuid, tables.climbs.uuid),
-        // Inner self-correlated subquery: the outer leftJoin target is
-        // `board_climb_stats` (unaliased), and we alias the inner copy as
-        // `s`. Using a bare `FROM board_climb_stats s` rather than
-        // `${tables.climbStats}` interpolation makes the correlation
-        // alias-stable — a future Drizzle release that aliases the outer
-        // target wouldn't silently break the resolution to it.
-        eq(
-          tables.climbStats.angle,
-          sql`COALESCE(${overrideAngleExpr}, (
-            SELECT s.angle FROM board_climb_stats s
-            WHERE s.board_type = ${tables.climbs.boardType}
-              AND s.climb_uuid = ${tables.climbs.uuid}
-            ORDER BY s.ascensionist_count DESC NULLS LAST
-            LIMIT 1
-          ))`,
-        ),
+        // The override / most-ascended angle (`displayStatsAngleSql`), or the
+        // angle the caller's own query already resolved.
+        eq(tables.climbStats.angle, statsAngleExpr),
       ),
     )
     // Grades join reuses climbStats.angle (the effective override / most-ascended
-    // angle resolved just above) so the grade matches the difficulty being shown.
+    // angle resolved just above) so the grade matches the difficulty being shown,
+    // or the grade angle a caller resolved alongside it.
     .leftJoin(
       boardClimbGrades,
       and(
         eq(boardClimbGrades.boardType, tables.climbs.boardType),
         eq(boardClimbGrades.climbUuid, tables.climbs.uuid),
-        eq(boardClimbGrades.angle, tables.climbStats.angle),
+        eq(boardClimbGrades.angle, gradeAngleExpr),
       ),
     )
     .where(
@@ -250,6 +323,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       boardType: boardName,
       boardseshDifficulty: row.boardsesh_difficulty == null ? null : Number(row.boardsesh_difficulty),
       boardseshConfidence: toConfidenceTier(row.boardsesh_confidence),
+      ...(options?.myDifficulties ? { myDifficulty: options.myDifficulties.get(key) ?? null } : {}),
     });
   }
 
