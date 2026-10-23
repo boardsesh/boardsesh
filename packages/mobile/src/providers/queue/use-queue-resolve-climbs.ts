@@ -8,7 +8,7 @@ type UseQueueResolveClimbsParams = {
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
   currentClimbQueueItem?: ClimbQueueItem | null;
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   climbReads: QueueClimbReads;
   dispatch: React.Dispatch<QueueAction>;
 };
@@ -18,7 +18,7 @@ export function useQueueResolveClimbs({
   activeBoard,
   queue,
   currentClimbQueueItem,
-  privacyRevocationGeneration,
+  credentialGeneration,
   climbReads,
   dispatch,
 }: UseQueueResolveClimbsParams): void {
@@ -63,5 +63,5 @@ export function useQueueResolveClimbs({
     }
     climbReads.register('resolve', demands);
     return () => climbReads.unregister('resolve');
-  }, [queue, currentClimbQueueItem, activeBoard, dispatch, privacyRevocationGeneration, climbReads]);
+  }, [queue, currentClimbQueueItem, activeBoard, dispatch, credentialGeneration, climbReads]);
 }

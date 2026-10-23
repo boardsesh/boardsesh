@@ -239,7 +239,7 @@ Not changed by either PR, on `main` the same day: the app reads each queued clim
 
 ### Saved queue reads (#6325)
 
-Queue restoration and angle regrading share a provider-owned read tracker. A read is identified by the credential/privacy generation, board type, layout, size, sets, climb and requested angle. Replacing one queue row no longer cancels reads for the other rows. Thin references are resolved at the current board angle, except history, which retains its climbed angle; regrading handles resolved current/upcoming climbs and displayed playlist suggestions.
+Queue restoration and angle regrading share a provider-owned read tracker. A read is identified by the credential generation, board type, layout, size, sets, climb and requested angle. Replacing one queue row no longer cancels reads for the other rows. Thin references are resolved at the current board angle, except history, which retains its climbed angle; regrading handles resolved current/upcoming climbs and displayed playlist suggestions.
 
 Answers address the queue's current slot and climb object, with the current-item representation handled separately. A new thin FullSync object can request details immediately, even if an answer already filled an earlier object for the same climb. Removed or replaced slots, changed scopes and older credentials cannot receive the old answer. Mirror settings, crew attribution and ticks come from the latest target.
 

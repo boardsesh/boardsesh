@@ -19,7 +19,7 @@ vi.mock('../analytics', () => ({
   setPersonProperties: mocks.properties,
 }));
 vi.mock('../preference-store', () => ({ getPreference: mocks.read, setPreference: mocks.write }));
-vi.mock('../privacy/privacy-cache', () => ({ invalidatePrivacySnapshots: vi.fn() }));
+vi.mock('../privacy/privacy-cache', () => ({ invalidateCredentialSnapshots: vi.fn() }));
 vi.mock('../keychain-namespace-migration', () => ({
   createOnceRunner: () => async () => {},
   deferredReconcileKeys: () => [],

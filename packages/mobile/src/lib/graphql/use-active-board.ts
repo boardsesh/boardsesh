@@ -16,7 +16,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
 import { getCurrentUserStorageOwner, type UserStorageOwner } from '../user-storage-owner';
 import { authorizeActiveBoardProjection, currentActiveBoardProjection } from '../active-board-privacy';
-import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 
@@ -31,7 +31,7 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 //    queued behind it and therefore remains the final persisted value.
 let activeBoardWriteGeneration = 0;
 let activeBoardWriteQueue: Promise<void> = Promise.resolve();
-subscribeToPrivacyRevocations(() => {
+subscribeToCredentialChanges(() => {
   activeBoardWriteGeneration += 1;
 });
 
@@ -53,9 +53,9 @@ function enqueueActiveBoardWrite(
   retireOnPrivacyChange = true,
   isStillCurrent: () => boolean = () => true,
 ): Promise<boolean> {
-  const privacyGeneration = getPrivacyRevocationGeneration();
+  const credentialGeneration = getCredentialGeneration();
   const operation = activeBoardWriteQueue.then(async () => {
-    if (retireOnPrivacyChange && privacyGeneration !== getPrivacyRevocationGeneration()) return false;
+    if (retireOnPrivacyChange && credentialGeneration !== getCredentialGeneration()) return false;
     // Always execute queued storage operations in intent order. In particular,
     // auth cleanup may target the previous user's scoped key and must not be
     // skipped merely because the next user already selected a board.
@@ -65,7 +65,7 @@ function enqueueActiveBoardWrite(
     // write is queued next, so do not briefly roll the React Query cache back.
     if (
       generation !== activeBoardWriteGeneration ||
-      privacyGeneration !== getPrivacyRevocationGeneration() ||
+      credentialGeneration !== getCredentialGeneration() ||
       !isStillCurrent()
     )
       return false;
@@ -120,7 +120,7 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
-  useSyncExternalStore(subscribeToPrivacyRevocations, getPrivacyRevocationGeneration, getPrivacyRevocationGeneration);
+  useSyncExternalStore(subscribeToCredentialChanges, getCredentialGeneration, getCredentialGeneration);
   const query = useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
     queryFn: () => getStoredActiveBoard(),
@@ -145,14 +145,14 @@ export function useActiveBoard() {
  */
 export function useSetActiveBoard() {
   const queryClient = useQueryClient();
-  const privacyGeneration = useSyncExternalStore(
-    subscribeToPrivacyRevocations,
-    getPrivacyRevocationGeneration,
-    getPrivacyRevocationGeneration,
+  const credentialGeneration = useSyncExternalStore(
+    subscribeToCredentialChanges,
+    getCredentialGeneration,
+    getCredentialGeneration,
   );
   return useCallback(
     async (board: UserBoard, isOperationCurrent?: () => boolean): Promise<boolean> => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration() || (isOperationCurrent && !isOperationCurrent()))
+      if (credentialGeneration !== getCredentialGeneration() || (isOperationCurrent && !isOperationCurrent()))
         return false;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
@@ -170,7 +170,7 @@ export function useSetActiveBoard() {
         isOperationCurrent,
       );
     },
-    [queryClient, privacyGeneration],
+    [queryClient, credentialGeneration],
   );
 }
 

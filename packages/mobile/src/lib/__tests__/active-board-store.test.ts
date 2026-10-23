@@ -69,11 +69,11 @@ describe('active-board-store', () => {
 
   it('withdraws protected metadata while preserving the offline wall configuration', async () => {
     const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
-    const { invalidatePrivacySnapshots } = await import('../privacy/privacy-cache');
+    const { invalidateCredentialSnapshots } = await import('../privacy/privacy-cache');
     const protectedBoard = { ...board, ownerId: 'setter', name: 'Private wall', gymName: 'Home gym', latitude: 52 };
     await setStoredActiveBoard(protectedBoard);
     expect(await getStoredActiveBoard()).toEqual(protectedBoard);
-    invalidatePrivacySnapshots();
+    invalidateCredentialSnapshots();
     expect(await getStoredActiveBoard()).toMatchObject({
       uuid: board.uuid,
       boardType: board.boardType,
@@ -132,7 +132,7 @@ describe('active-board-store', () => {
   it('does not authorize a write completed after a privacy boundary', async () => {
     const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
     const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
-    const { invalidatePrivacySnapshots } = await import('../privacy/privacy-cache');
+    const { invalidateCredentialSnapshots } = await import('../privacy/privacy-cache');
     const writeStored = vi.spyOn(asyncStorage, 'setItem');
     const originalWrite = writeStored.getMockImplementation();
     let releaseWrite: (() => void) | undefined;
@@ -143,7 +143,7 @@ describe('active-board-store', () => {
       await originalWrite?.(...args);
     });
     const saving = setStoredActiveBoard({ ...board, name: 'Withdrawn wall' });
-    invalidatePrivacySnapshots();
+    invalidateCredentialSnapshots();
     releaseWrite?.();
     await saving;
     expect(await getStoredActiveBoard()).toMatchObject({ uuid: board.uuid, angle: board.angle, name: '' });

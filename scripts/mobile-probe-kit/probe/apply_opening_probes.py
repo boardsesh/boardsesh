@@ -138,8 +138,8 @@ if candidate:
     activation = "src/lib/playlists/use-playlist-activation.ts"
     add_import(activation, "import { probeOpeningRejected } from '../perf-probe';")
     replace(activation,
-        "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
-        """      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) {
+        "      if (!loadedSnapshotCurrent || privacyGeneration !== getCredentialGeneration()) return Promise.resolve();",
+        """      if (!loadedSnapshotCurrent || privacyGeneration !== getCredentialGeneration()) {
         probeOpeningRejected(requestedClimb.uuid,
           !loadedSnapshotCurrent ? 'withdrawn-loaded-snapshot' : 'stale-activation-scope', suppliedClimbs.length);
         return Promise.resolve();

@@ -4,8 +4,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../../../hooks/use-privacy-scoped-state';
-import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
-import { sanitizeClimbTarget } from '../../../lib/queue-privacy';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 import { PlayCoreSheetHosts, type PlayCoreSheetHostsProps } from '../PlayCoreSheetHosts';
 
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
@@ -112,7 +111,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
 }
 
 function ScopedHosts({ open }: { open: boolean }) {
-  const [target] = usePrivacyScopedState({ climb: pinnedClimb, boardConfig: pinnedBoard }, sanitizeClimbTarget);
+  const [target] = usePrivacyScopedState({ climb: pinnedClimb, boardConfig: pinnedBoard });
   const credentialScope = usePrivacyCredentialScope();
   return (
     <PlayCoreSheetHosts
@@ -153,26 +152,14 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
     expect(recorded.unmounts).toHaveBeenCalledTimes(9);
   });
 
-  it('withdraws pinned metadata without remounting drafts, but remounts only composers for new credentials', () => {
-    const { container, getByLabelText, rerender } = render(<ScopedHosts open />);
-    const originalInputs = [...container.children];
+  it('remounts only composers for new credentials', () => {
+    const { getByLabelText, rerender } = render(<ScopedHosts open />);
     for (const name of ['beta', 'playlist', 'report', 'tick']) {
       fireEvent.change(getByLabelText(name), { target: { value: `Draft ${name}` } });
       expect(recorded.props.get(name)).toMatchObject({ climb: pinnedClimb, boardName: 'tension', angle: 35 });
     }
     rerender(<ScopedHosts open={false} />);
-    act(() => invalidatePrivacySnapshots());
-    expect([...container.children]).toEqual(originalInputs);
-    for (const name of ['beta', 'playlist', 'report', 'tick']) {
-      expect(getByLabelText(name)).toHaveProperty('value', `Draft ${name}`);
-      expect(recorded.props.get(name)).toMatchObject({
-        climb: { uuid: 'pinned-climb', name: '', frames: '' },
-        boardName: 'tension',
-        angle: 35,
-      });
-    }
-    expect(recorded.unmounts).not.toHaveBeenCalled();
-    act(() => invalidatePrivacySnapshots('credential'));
+    act(() => invalidateCredentialSnapshots());
     expect(recorded.unmounts.mock.calls.map(([name]) => name).sort()).toEqual(['beta', 'playlist', 'report', 'tick']);
     expect(recorded.mounts).toHaveBeenCalledTimes(13);
     for (const name of ['beta', 'playlist', 'report', 'tick']) {

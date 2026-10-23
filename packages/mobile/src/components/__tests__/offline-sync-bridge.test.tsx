@@ -191,7 +191,7 @@ import { OfflineSyncBridge, OfflineEngineFlagSync } from '../offline-sync-bridge
 import { FeatureFlagsProvider, type FeatureFlags } from '../../providers/feature-flags-provider';
 import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/offline-engine';
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
-import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 function Harness({ flags, queryClient }: { flags: FeatureFlags; queryClient: QueryClient }) {
   return (
@@ -328,7 +328,7 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
     await renderSignedIn();
     // `storeTokens` → `advanceCredentialGeneration` moves the generation.
     await act(async () => {
-      invalidatePrivacySnapshots('credential');
+      invalidateCredentialSnapshots();
     });
     expectNoCull();
   });

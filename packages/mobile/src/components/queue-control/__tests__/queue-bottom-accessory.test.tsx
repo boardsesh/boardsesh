@@ -49,7 +49,7 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
     }),
 }));
 import { QueueBottomAccessory } from '../QueueBottomAccessory';
-import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 describe('QueueBottomAccessory', () => {
   beforeEach(() => {
@@ -142,7 +142,7 @@ describe('QueueBottomAccessory', () => {
 
   it('withdraws its retained copy even before the provider clears the old current climb', () => {
     const { container, rerender } = render(<QueueBottomAccessory />);
-    act(() => invalidatePrivacySnapshots());
+    act(() => invalidateCredentialSnapshots());
     expect(container.querySelector('[data-native-row]')).toBeNull();
     cfg.currentClimbQueueItem = null;
     rerender(<QueueBottomAccessory />);

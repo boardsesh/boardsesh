@@ -16,7 +16,7 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => `selection-${++authority.uuid}` }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getPrivacyRevocationGeneration: () => authority.privacy }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => authority.privacy }));
 
 type SelectionInputs = Parameters<typeof usePlaySelectionController>[0];
 function item(uuid: string): ClimbQueueItem {

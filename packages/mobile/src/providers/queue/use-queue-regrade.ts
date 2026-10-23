@@ -1,4 +1,4 @@
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useLayoutEffect } from 'react';
 import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type {
@@ -14,7 +14,7 @@ import { isClimbResolved } from '../../lib/queue-climb-resolution';
 import type { QueueClimbReads, QueueClimbReadDemand } from './use-queue-climb-reads';
 
 type UseQueueRegradeParams = {
-  privacyRevocationGeneration?: number;
+  credentialGeneration?: number;
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
@@ -29,7 +29,7 @@ type UseQueueRegradeParams = {
 
 /** Current/upcoming grades and displayed playlist peeks follow the live angle. */
 export function useQueueRegrade({
-  privacyRevocationGeneration,
+  credentialGeneration,
   activeBoard,
   queue,
   currentClimbQueueItem,
@@ -43,7 +43,7 @@ export function useQueueRegrade({
   useLayoutEffect(() => {
     const demands: QueueClimbReadDemand[] = [];
     if (activeBoard) {
-      const generation = getPrivacyRevocationGeneration();
+      const generation = getCredentialGeneration();
       const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
       const boardKey = `${boardType}:${layoutId}:${sizeId}:${setIds}`;
       const source = playlistSuggestionSourceRef.current;
@@ -93,7 +93,7 @@ export function useQueueRegrade({
             } else if (backingSource) {
               setPlaylistSuggestionSourceState((previous) => {
                 if (
-                  generation !== getPrivacyRevocationGeneration() ||
+                  generation !== getCredentialGeneration() ||
                   !previous ||
                   previous.boardKey !== boardKey ||
                   previous.boardKey !== backingSource.boardKey ||
@@ -135,7 +135,7 @@ export function useQueueRegrade({
     activeBoard,
     playlistSuggestionSource,
     rawPlaylistSuggestionSource,
-    privacyRevocationGeneration,
+    credentialGeneration,
     playlistSuggestionSourceRef,
     climbReads,
     dispatch,
