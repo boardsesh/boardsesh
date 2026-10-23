@@ -180,9 +180,13 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({ useSearchClimbsCount: mock
 vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: mocks.request }));
 // The player's list count reads the query cache, and these screens render
 // without a QueryClientProvider. No test here reads the count.
+const countRequests = vi.hoisted(() => [] as ClimbSearchInput[]);
 vi.mock('../../../../src/lib/graphql/hooks/search-climbs-count-query', () => {
-  const countNothing = async () => 0;
-  return { useFetchCachedSearchClimbsCount: () => countNothing };
+  const countAndRecord = async (input: ClimbSearchInput) => {
+    countRequests.push(input);
+    return 0;
+  };
+  return { useFetchCachedSearchClimbsCount: () => countAndRecord };
 });
 
 beforeEach(() => {
@@ -325,6 +329,22 @@ describe('setter page sort and filters (#6651)', () => {
       sortOrder: 'desc',
       page: 1,
       pageSize: 20,
+    });
+  });
+
+  // The player's "4 of 30" counts the list the drawer walks: the view's filters,
+  // at the default sort (a sort hides nothing). Counting the plain setter list
+  // would print the unfiltered total under a filtered track (#6664).
+  it("counts the player's list with the view's filters, at the default sort", async () => {
+    render(<SetterPlaylist />);
+    act(() => filterSession.setSelection?.({ ...plainSelection(), name: 'crimp', sort: HARDEST_FIRST }));
+
+    await mocks.activation!.fetchTotal!({ board, signal: new AbortController().signal });
+    expect(countRequests.at(-1)).toMatchObject({
+      setter: ['accountless-setter'],
+      name: 'crimp',
+      sortBy: 'creation',
+      sortOrder: 'desc',
     });
   });
 
