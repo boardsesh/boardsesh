@@ -1815,3 +1815,10 @@ An explicit faster retry yields an active crawl after its current committed page
 then releases the scheduler so the queued verified-snapshot retry can begin. A
 retry arriving on the final page is checked inside the completion transaction.
 Already-attempted retries with no artifact still use ordinary paging.
+
+
+The feedback keyboard report did not reproduce on the current iOS branch: the
+existing sheet expands on focus and keeps multiline text and its submit control
+above the keyboard. [Simulator capture](images/issue-6653-feedback-keyboard.png).
+The unsent-report discard confirmation also remains reachable; no report was
+submitted. Android keyboard behavior remains a device QA check.
