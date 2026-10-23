@@ -212,6 +212,40 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(translationCalls.calls).toContainEqual({ key: 'mobile.offline.pill.rows', options: { count: 1500 } });
   });
 
+  it.each([
+    { downloadState: 'downloading' as const, downloadNotice: null },
+    { downloadState: 'finalizing' as const, downloadNotice: null },
+    { downloadState: 'downloading' as const, downloadNotice: 'paged-fallback' as const },
+  ])('keeps finishing counts in an existing text row ($downloadState, $downloadNotice)', (stateProps) => {
+    const { container, queryByText, rerender } = render(
+      <BoardManageRow
+        {...rowProps}
+        {...stateProps}
+        downloadProgress={{ stage: 'import', phase: 'grades', fraction: 0.9, bytesDone: null, bytesTotal: null }}
+      />,
+    );
+    const textRowsBeforeFinishing = container.querySelectorAll('span').length;
+
+    rerender(
+      <BoardManageRow
+        {...rowProps}
+        {...stateProps}
+        downloadProgress={{
+          stage: 'import',
+          phase: 'finishing',
+          fraction: null,
+          bytesDone: null,
+          bytesTotal: null,
+          rowsProcessed: 1500,
+        }}
+      />,
+    );
+
+    expect(queryByText('mobile.offline.pill.rows')).not.toBeNull();
+    expect(queryByText('mobile.offline.pill.rows')?.getAttribute('data-number-of-lines')).toBe('1');
+    expect(container.querySelectorAll('span').length).toBe(textRowsBeforeFinishing);
+  });
+
   it('shows the bootstrapping caption (not the climb count) during the snapshot warm-up', () => {
     const { queryByText } = render(
       <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadCount={0} />,

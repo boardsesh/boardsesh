@@ -32,6 +32,12 @@ vi.mock('@boardsesh/board-react', () => ({ useBoardAdapter: () => ({ isAuthentic
 // The hooks barrel re-exports siblings that pull in react-native / expo-router.
 // The two search hooks touch none of them.
 vi.mock('react-native', () => ({}));
+// The barrel reaches the sync adapter; cache-key checks do not use native credentials.
+vi.mock('../../../auth-store', () => ({
+  getAuthToken: async () => null,
+  captureAuthCredentialGeneration: () => 1,
+  isAuthCredentialGenerationCurrent: () => true,
+}));
 vi.mock('../use-infinite-search-climbs', () => ({ useInfiniteSearchClimbs: vi.fn() }));
 vi.mock('../use-similar-climbs', () => ({ useSimilarClimbs: vi.fn() }));
 vi.mock('../use-beta-link-preview', () => ({ useBetaLinkPreview: vi.fn() }));

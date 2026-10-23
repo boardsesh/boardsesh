@@ -141,6 +141,15 @@ function BoardManageRowComponent({
   const effectiveDownloadNotice = isBootstrapping ? null : downloadNotice;
   const showsPagedFallbackCount = effectiveDownloadNotice === 'paged-fallback' && downloadState === 'downloading';
 
+  // Keep live finishing counts in the existing caption rather than adding a
+  // text row after FlashList has measured the board.
+  const finishingRowsStatus =
+    downloadProgress?.phase === 'finishing' &&
+    downloadProgress.fraction === null &&
+    downloadProgress.rowsProcessed !== undefined
+      ? t('mobile.offline.pill.rows', { count: downloadProgress.rowsProcessed })
+      : null;
+
   // The staged bootstrap caption (issue #4311). Every byte figure comes from the
   // engine on the WIRE scale, so this renders the same number the enable-confirm
   // dialog quoted. Falls back to the plain "Downloading board…" string whenever
@@ -150,7 +159,7 @@ function BoardManageRowComponent({
     ? downloadProgress.phase === 'grades'
       ? t('mobile.offline.bootstrapGrades')
       : downloadProgress.phase === 'finishing'
-        ? t('mobile.offline.finalizing')
+        ? (finishingRowsStatus ?? t('mobile.offline.finalizing'))
         : downloadProgress.stage === 'manifest'
           ? t('mobile.offline.bootstrapPreparing')
           : downloadProgress.stage === 'import'
@@ -182,7 +191,7 @@ function BoardManageRowComponent({
           : downloadState === 'downloaded'
             ? t('mobile.offline.available')
             : downloadState === 'finalizing'
-              ? t('mobile.offline.finalizing')
+              ? (finishingRowsStatus ?? t('mobile.offline.finalizing'))
               : downloadState === 'pending'
                 ? t('mobile.offline.pending')
                 : null;
@@ -196,7 +205,7 @@ function BoardManageRowComponent({
           : t('mobile.offline.pagedFallbackPendingAria', { name: board.name })
         : undefined;
   const pagedFallbackProgress = showsPagedFallbackCount
-    ? t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+    ? (finishingRowsStatus ?? t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 }))
     : null;
 
   // Android's polite live region handles semantic notice transitions. React
@@ -292,13 +301,6 @@ function BoardManageRowComponent({
         {pagedFallbackProgress ? (
           <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
             {pagedFallbackProgress}
-          </Text>
-        ) : null}
-        {downloadProgress?.phase === 'finishing' &&
-        downloadProgress.fraction === null &&
-        downloadProgress.rowsProcessed !== undefined ? (
-          <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="none">
-            {t('mobile.offline.pill.rows', { count: downloadProgress.rowsProcessed })}
           </Text>
         ) : null}
         {/* Rendered unconditionally when the row can download at all, so the
