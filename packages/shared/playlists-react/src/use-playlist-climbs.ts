@@ -17,8 +17,10 @@ export type PlaylistClimbsBoardInput = Omit<GetPlaylistClimbsInput, 'playlistId'
 /** The sort and filters, as `toPlaylistClimbViewInput` (@boardsesh/climb-filters) builds them. */
 export type PlaylistClimbsView = NonNullable<GetPlaylistClimbsInput['view']>;
 
-/** Where the view sits in the query key: after the playlist, board and angle, before the refresh key. */
-const VIEW_KEY_INDEX = 4;
+/** Where the board geometry sits in the query key: after the playlist, board and angle. */
+const GEOMETRY_KEY_INDEX = 4;
+/** Where the view sits in the query key: after the geometry, before the refresh key. */
+const VIEW_KEY_INDEX = 5;
 
 /** What a playlist climbs query key is built from. */
 export type PlaylistClimbsQueryKeyParts = {
@@ -26,6 +28,8 @@ export type PlaylistClimbsQueryKeyParts = {
   boardUuid?: string | null;
   /** The angle the grades resolve at (`activeAngle` in all-boards mode, `angle` for one board). */
   angle?: number | null;
+  /** The board geometry the request sends (`playlistClimbsGeometryKey`), or null when it sends none. */
+  geometry?: string | null;
   view?: PlaylistClimbsView;
   refreshKey?: number;
 };
@@ -35,18 +39,45 @@ export type PlaylistClimbsQueryKeyParts = {
  * invalidate exactly one view (the playlist's own order, before the editor reads
  * it) without rebuilding the key by hand. The view is the object itself, which
  * React Query hashes with its keys sorted, so a re-built view with the same
- * content keeps the same cache entry. It sits after the playlist uuid, so
- * `invalidateQueries({ queryKey: ['playlistClimbs', uuid] })` still clears every
- * view of the playlist.
+ * content keeps the same cache entry. Every segment sits after the playlist
+ * uuid, so `invalidateQueries({ queryKey: ['playlistClimbs', uuid] })` still
+ * clears every view of the playlist.
  */
 export function playlistClimbsQueryKey({
   playlistUuid,
   boardUuid,
   angle,
+  geometry,
   view,
   refreshKey = 0,
 }: PlaylistClimbsQueryKeyParts) {
-  return ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angle ?? null, view ?? 'default', refreshKey] as const;
+  return [
+    'playlistClimbs',
+    playlistUuid,
+    boardUuid ?? 'all',
+    angle ?? null,
+    geometry ?? null,
+    view ?? 'default',
+    refreshKey,
+  ] as const;
+}
+
+/**
+ * The geometry segment of the key: the board, layout, size and hold sets the
+ * request sends (`boardName` / `layoutId` / `sizeId` / `setIds` for one board,
+ * the `active*` fields in all-boards mode), or null when it sends none. A board
+ * keeps its uuid when its size or sets are edited, so without this a request
+ * that reads them (a view's board-only filters) would be served from the old
+ * configuration's cache.
+ */
+export function playlistClimbsGeometryKey(boardInput: PlaylistClimbsBoardInput | undefined): string | null {
+  if (!boardInput) return null;
+  const boardName = boardInput.boardName ?? boardInput.activeBoardName;
+  const layoutId = boardInput.layoutId ?? boardInput.activeLayoutId;
+  const sizeId = boardInput.sizeId ?? boardInput.activeSizeId;
+  const setIds = boardInput.setIds ?? boardInput.activeSetIds;
+  if (layoutId == null && sizeId == null && setIds == null) return null;
+  return [boardName ?? '', layoutId ?? '', sizeId ?? '', setIds ?? ''].join('|');
 }
 
 /**
@@ -60,8 +91,9 @@ export function playlistClimbsAngleKey(boardInput: PlaylistClimbsBoardInput | un
 /**
  * The key `usePlaylistClimbs` uses for these exact options. A screen that needs
  * to touch one view's cache (the editor marking the playlist's own order stale)
- * calls this with the options it passes the hook, so the two can never disagree
- * about the angle.
+ * calls this with the options that view's hook call gets (its own `boardInput`,
+ * which for a plain request carries no geometry), so the two never disagree
+ * about the angle or the geometry.
  */
 export function playlistClimbsQueryKeyFor({
   playlistUuid,
@@ -74,6 +106,7 @@ export function playlistClimbsQueryKeyFor({
     playlistUuid,
     boardUuid,
     angle: playlistClimbsAngleKey(boardInput),
+    geometry: playlistClimbsGeometryKey(boardInput),
     view,
     refreshKey,
   });
@@ -81,9 +114,12 @@ export function playlistClimbsQueryKeyFor({
 
 /**
  * The `placeholderData` rule: while a new view's first page loads, keep showing
- * the rows of the same playlist, board, angle and refresh under the previous
- * view, so changing the sort or a filter never flashes an empty list. Any other
- * difference (another playlist, board or angle, a refresh) shows nothing stale.
+ * the rows of the same playlist, board, angle, geometry and refresh under the
+ * previous view, so changing the sort or a filter never flashes an empty list.
+ * Any other difference (another playlist, board or angle, a refresh) shows
+ * nothing stale. Geometry is a different board only when both requests send
+ * it: a plain request sends none and its rows do not depend on it, so turning a
+ * view on or off keeps the rows up, while an edited size or set list does not.
  */
 export function keepPreviousViewResults<TData>(
   queryKey: QueryKey,
@@ -92,10 +128,13 @@ export function keepPreviousViewResults<TData>(
 ): TData | undefined {
   if (previousData === undefined || !previousQueryKey) return undefined;
   if (previousQueryKey.length !== queryKey.length) return undefined;
-  const onlyTheViewDiffers = queryKey.every(
-    (segment, index) => index === VIEW_KEY_INDEX || segment === previousQueryKey[index],
-  );
-  return onlyTheViewDiffers ? previousData : undefined;
+  const sameListOnSameBoard = queryKey.every((segment, index) => {
+    if (index === VIEW_KEY_INDEX) return true;
+    const previousSegment = previousQueryKey[index];
+    if (index === GEOMETRY_KEY_INDEX && (segment === null || previousSegment === null)) return true;
+    return segment === previousSegment;
+  });
+  return sameListOnSameBoard ? previousData : undefined;
 }
 
 export type UsePlaylistClimbsOptions = {
@@ -160,20 +199,29 @@ export function usePlaylistClimbs({
   // React Query serves stale grades until staleTime lapses. Covers all-boards
   // mode (activeAngle) and specific-board mode (angle).
   const angleKey = playlistClimbsAngleKey(boardInput);
+  // The geometry the request sends, so an edited size or set list on the same
+  // board (same uuid) is a new cache entry rather than the old one served fresh.
+  const geometryKey = playlistClimbsGeometryKey(boardInput);
   const queryKey = useMemo(
-    () => playlistClimbsQueryKey({ playlistUuid, boardUuid, angle: angleKey, view, refreshKey }),
-    [playlistUuid, boardUuid, angleKey, view, refreshKey],
+    () => playlistClimbsQueryKey({ playlistUuid, boardUuid, angle: angleKey, geometry: geometryKey, view, refreshKey }),
+    [playlistUuid, boardUuid, angleKey, geometryKey, view, refreshKey],
   );
   // A new function whenever anything but the view changes: React Query keeps a
   // showing placeholder without asking again while this identity holds. The
-  // view segment is left null because the rule never reads it.
+  // view segment is the default because the rule never reads it.
   const placeholderData = useMemo(() => {
-    const keyAroundView: QueryKey = ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, null, refreshKey];
+    const keyAroundView: QueryKey = playlistClimbsQueryKey({
+      playlistUuid,
+      boardUuid,
+      angle: angleKey,
+      geometry: geometryKey,
+      refreshKey,
+    });
     return (
       previousData: InfiniteData<PlaylistClimbsResult, number> | undefined,
       previousQuery: { queryKey: QueryKey } | undefined,
     ) => keepPreviousViewResults(keyAroundView, previousData, previousQuery?.queryKey);
-  }, [playlistUuid, boardUuid, angleKey, refreshKey]);
+  }, [playlistUuid, boardUuid, angleKey, geometryKey, refreshKey]);
 
   const query = useInfiniteQuery({
     queryKey,

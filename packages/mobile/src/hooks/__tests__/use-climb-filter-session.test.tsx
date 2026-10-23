@@ -362,4 +362,21 @@ describe('useClimbFilterSession', () => {
     act(() => result.current.state.chipRowProps.sortControl?.onSelect('difficulty'));
     expect(result.current.state.querySelection.sort).toEqual({ sortBy: 'difficulty', sortOrder: 'desc' });
   });
+
+  it('keeps the climb type neutral on a spray wall: no chip, and no climb-type filter sent', () => {
+    pinState.pinned = ['grade', 'climbType', 'sort'];
+    const { result, rerender, initialProps } = renderSession();
+    act(() => result.current.state.chipRowProps.onChangeClimbType('routes'));
+    expect(result.current.state.querySelection.filters.routes).toBe(true);
+    expect(result.current.state.querySelection.filters.boulders).toBe(false);
+
+    const sprayWall = { boardName: 'spray', layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    rerender({ ...initialProps, boardConfig: sprayWall, gradeBoardName: 'spray' });
+
+    expect(result.current.state.chipRowProps.pinnedChips).toEqual(['grade', 'sort']);
+    expect(result.current.state.querySelection.filters.boulders).toBe(PLAYLIST_FILTER_DEFAULTS.boulders);
+    expect(result.current.state.querySelection.filters.routes).toBe(PLAYLIST_FILTER_DEFAULTS.routes);
+    expect(result.current.state.activeFilterCount).toBe(0);
+    expect(result.current.state.tokens).toEqual([]);
+  });
 });

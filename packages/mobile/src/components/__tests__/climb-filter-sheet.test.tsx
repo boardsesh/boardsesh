@@ -2016,6 +2016,18 @@ describe('ClimbFilterSheet on a spray wall', () => {
     expect(getByTestId('segment-routes').getAttribute('data-selected')).toBe('true');
   });
 
+  it('drops the climb type on a spray-wall playlist, whose resting value is both types', () => {
+    const playlistDefaults: ClimbFilters = { ...currentFilters, routes: true, setter: undefined };
+    const { queryByTestId } = renderFilterSheet({
+      boardConfig: sprayBoardConfig,
+      defaultFilters: playlistDefaults,
+      currentFilters: playlistDefaults,
+    });
+
+    expect(queryByTestId('segment-routes')).toBeNull();
+    expect(queryByTestId('segment-both')).toBeNull();
+  });
+
   it('keeps an active Benchmarks filter on screen so it can be undone', () => {
     const { getByTestId } = renderFilterSheet({
       boardConfig: sprayBoardConfig,

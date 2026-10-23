@@ -55,6 +55,7 @@ export {
   keepPreviousViewResults,
   playlistClimbsQueryKey,
   playlistClimbsQueryKeyFor,
+  playlistClimbsGeometryKey,
   playlistClimbsAngleKey,
 } from './use-playlist-climbs';
 export type {

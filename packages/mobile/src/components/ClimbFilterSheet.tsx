@@ -640,7 +640,12 @@ export function ClimbFilterSheet({
   // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
   // Same derivation as the chip row (getClimbTypeFilter) so they never disagree.
   const climbTypeKey = getClimbTypeFilter(selectedFilters, defaultFilters);
-  const showClimbTypeControl = !isSprayWall || climbTypeKey !== 'boulders';
+  // On a spray wall every climb is a boulder, so the control shows only while it
+  // carries a real route filter to undo. Boulders, and a list's own resting
+  // value (both, on a playlist), are the same neutral state there.
+  const climbTypeIsNeutralOnSpray =
+    climbTypeKey === 'boulders' || climbTypeKey === getClimbTypeFilter(defaultFilters, defaultFilters);
+  const showClimbTypeControl = !isSprayWall || !climbTypeIsNeutralOnSpray;
   const handleClimbTypeChange = useCallback(
     (key: ClimbTypeFilter) => setFiltersPatch(climbTypePatch(key)),
     [setFiltersPatch],

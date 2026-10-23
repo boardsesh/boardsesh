@@ -179,12 +179,20 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   // dropped, as on the Climbs list. With no active board the active-board-only
   // filters, "Fits my board" among them, are dropped too: they would match
   // nothing, and their controls are hidden, so they must not filter unseen.
+  // On a spray wall every climb is a boulder: the climb type rests on the list's
+  // default, so no climb-type filter is sent and its control and chip go.
+  const isSprayWall = boardConfig?.boardName === SPRAY_BOARD_NAME;
   const { filters, boardFilters } = useMemo(() => {
     const signedInFilters = statusForAuth(normalizeRetiredFilters(session.filters), isAuthenticated);
+    const climbTypeFilters =
+      isSprayWall &&
+      (signedInFilters.boulders !== defaultFilters.boulders || signedInFilters.routes !== defaultFilters.routes)
+        ? { ...signedInFilters, boulders: defaultFilters.boulders, routes: defaultFilters.routes }
+        : signedInFilters;
     return activeBoardAvailable
-      ? { filters: signedInFilters, boardFilters: session.boardFilters }
-      : withoutPlaylistActiveBoardOnlyFilters(signedInFilters, session.boardFilters);
-  }, [session.filters, session.boardFilters, isAuthenticated, activeBoardAvailable]);
+      ? { filters: climbTypeFilters, boardFilters: session.boardFilters }
+      : withoutPlaylistActiveBoardOnlyFilters(climbTypeFilters, session.boardFilters);
+  }, [session.filters, session.boardFilters, isAuthenticated, isSprayWall, defaultFilters, activeBoardAvailable]);
   const boardFit = session.boardFit && activeBoardAvailable;
 
   // --- Actions (each only dispatches) ----------------------------------------
@@ -430,10 +438,12 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   const { pinned: storedPins, isPinned, togglePin } = pinStore.usePinnedChips();
   // A chip whose control needs an active board stays pinned, but leaves the row
   // while there is none (its filter is dropped above).
-  const pinned = useMemo(
-    () => (activeBoardAvailable ? storedPins : storedPins.filter((kind) => !activeBoardOnlyChips.includes(kind))),
-    [activeBoardAvailable, storedPins, activeBoardOnlyChips],
-  );
+  // The climb-type chip leaves a spray wall's row too: it has nothing to offer.
+  const pinned = useMemo(() => {
+    const hiddenKinds = new Set<FilterChipKind>(activeBoardAvailable ? [] : activeBoardOnlyChips);
+    if (isSprayWall) hiddenKinds.add('climbType');
+    return hiddenKinds.size === 0 ? storedPins : storedPins.filter((kind) => !hiddenKinds.has(kind));
+  }, [activeBoardAvailable, storedPins, activeBoardOnlyChips, isSprayWall]);
   const filterTokens = useMemo(
     () =>
       getActiveFilterTokens({
@@ -512,7 +522,6 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   const collection = getCollectionFilter(filters, boardFilters);
   const climbType = getClimbTypeFilter(filters, defaultFilters);
   const defaultClimbType = getClimbTypeFilter(defaultFilters, defaultFilters);
-  const isSprayWall = boardConfig?.boardName === SPRAY_BOARD_NAME;
   const accuracyValue = filters.gradeAccuracy ?? 'off';
   const betaActive = !!filters.onlyWithBetaVideos;
   const chipRowProps = useMemo<FilterChipRowProps>(

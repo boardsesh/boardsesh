@@ -211,19 +211,25 @@ export default function PlaylistDetail() {
   const viewKey = useMemo(() => playlistViewKey(viewInput), [viewInput]);
   const hasView = viewInput !== undefined;
   // The view's board-only filters (progress, ratings, "fits my board") read the
-  // rest of the active board; a plain request stays as it was.
-  const playlistClimbsBoardInput = useMemo<PlaylistClimbsBoardInput | undefined>(() => {
-    if (!activeBoard) return undefined;
-    const allBoardsInput = { activeBoardName: activeBoard.boardType, activeAngle: activeBoard.angle };
-    return hasView
-      ? {
-          ...allBoardsInput,
-          activeLayoutId: activeBoard.layoutId,
-          activeSizeId: activeBoard.sizeId,
-          activeSetIds: activeBoard.setIds,
-        }
-      : allBoardsInput;
-  }, [activeBoard, hasView]);
+  // rest of the active board; a plain request stays as it was. The plain input
+  // is kept on its own: the editor marks the plain order's cache entry, whose
+  // key is built from it (no geometry), whatever view is on screen.
+  const plainBoardInput = useMemo<PlaylistClimbsBoardInput | undefined>(
+    () => (activeBoard ? { activeBoardName: activeBoard.boardType, activeAngle: activeBoard.angle } : undefined),
+    [activeBoard],
+  );
+  const playlistClimbsBoardInput = useMemo<PlaylistClimbsBoardInput | undefined>(
+    () =>
+      activeBoard && plainBoardInput && hasView
+        ? {
+            ...plainBoardInput,
+            activeLayoutId: activeBoard.layoutId,
+            activeSizeId: activeBoard.sizeId,
+            activeSetIds: activeBoard.setIds,
+          }
+        : plainBoardInput,
+    [activeBoard, plainBoardInput, hasView],
+  );
   const { query, allClimbs } = usePlaylistClimbs({
     playlistUuid,
     // Key the cache by the active board so switching board/angle refetches at
@@ -422,12 +428,13 @@ export default function PlaylistDetail() {
   // many rows as the sorted list showed. Seeding at once would freeze the sorted
   // rows, or old plain rows whose indices are off by one.
   const editTargetRowsRef = useRef(0);
-  // Built from the same options the list's usePlaylistClimbs call gets, minus
-  // the view, so the editor marks exactly the cache entry the plain order lives in.
+  // Built from the options the list's usePlaylistClimbs call gets for the plain
+  // order (no view, so no geometry either), so the editor marks exactly the
+  // cache entry the plain order lives in.
   const activeBoardUuid = activeBoard?.uuid ?? null;
   const plainOrderQueryKey = useMemo(
-    () => playlistClimbsQueryKeyFor({ playlistUuid, boardUuid: activeBoardUuid, boardInput: playlistClimbsBoardInput }),
-    [playlistUuid, activeBoardUuid, playlistClimbsBoardInput],
+    () => playlistClimbsQueryKeyFor({ playlistUuid, boardUuid: activeBoardUuid, boardInput: plainBoardInput }),
+    [playlistUuid, activeBoardUuid, plainBoardInput],
   );
   const enterEditMode = useCallback(() => {
     if (privacyGeneration !== getPrivacyRevocationGeneration()) return;

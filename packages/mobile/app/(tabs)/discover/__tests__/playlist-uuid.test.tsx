@@ -1211,7 +1211,7 @@ describe('PlaylistDetail sort and filters', () => {
     fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
 
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: ['playlistClimbs', 'p-1', 'all', null, 'default', 0],
+      queryKey: ['playlistClimbs', 'p-1', 'all', null, null, 'default', 0],
       exact: true,
       refetchType: 'none',
     });
