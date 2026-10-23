@@ -188,6 +188,7 @@ function renderActivation(
     replaceQueueOnActivate?: boolean;
     label?: string;
     fetchTotal?: UsePlaylistActivationOptions['fetchTotal'];
+    snapshotFetchPage?: UsePlaylistActivationOptions['snapshotFetchPage'];
     loadedRowsArePages?: boolean;
   } = {},
 ) {
@@ -197,6 +198,7 @@ function renderActivation(
       allClimbs: options.allClimbs ?? [],
       fetchPage,
       fetchTotal: options.fetchTotal,
+      snapshotFetchPage: options.snapshotFetchPage,
       loadedRowsArePages: options.loadedRowsArePages,
       label: options.label,
       viewOnlyBoard: options.viewOnlyBoard,
@@ -616,6 +618,32 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         expect(fetchPage.mock.calls[0][0]).toMatchObject({ page: firstPage });
       },
     );
+
+    // Search reads a frozen basis that every row tap re-captures, crew and
+    // preview taps included. A track's later pages must keep the search it was
+    // built from, or they walk another search's climbs (#6664 second review).
+    it('pages a track with the list as it was when the track was built', async () => {
+      const rows = Array.from({ length: 250 }, (_, index) => makeClimb(`row-${index}`));
+      let liveSearch = 'search-a';
+      const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+        climbs: [makeClimb(`${liveSearch}-${page}`)],
+        hasMore: true,
+      }));
+      const snapshotFetchPage = vi.fn(() => {
+        const search = liveSearch;
+        return async ({ page }: { page: number }) => ({ climbs: [makeClimb(`${search}-${page}`)], hasMore: true });
+      });
+      const { result } = renderActivation(fetchPage, { allClimbs: rows, previewOnly: true, snapshotFetchPage });
+
+      await result.current.activate(rows[240]);
+      // A later tap on the same screen re-captures a different search.
+      liveSearch = 'search-b';
+
+      const previewTrack = mocks.openPlayDrawer.mock.calls[0][1].playlistSuggestionSource;
+      const page = await loadNextTrackPage(previewTrack);
+      expect(page?.climbs.map(({ uuid }) => uuid)).toEqual(['search-a-0']);
+      expect(fetchPage).not.toHaveBeenCalled();
+    });
 
     it('passes no board override, so the drawer stays on the board the climber is at', async () => {
       const climb = makeClimb('a');

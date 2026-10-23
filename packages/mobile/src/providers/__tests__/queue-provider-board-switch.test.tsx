@@ -204,8 +204,26 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
   useReachableBoardKeys: () => new Set<string>(),
 }));
 
+// "Start playlist" runs the real activation hook against the real provider.
+// Only the shared React hook is stubbed (the replace path never calls it; the
+// paged drain is the real module); the drawer and the prompt are seams the
+// replace below never needs.
+vi.mock('../drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
+vi.mock('../dialog-provider', () => ({ useChoose: () => async () => 'cancel' }));
+vi.mock('@boardsesh/playlists-react', async () => ({
+  ...(await vi.importActual<typeof import('@boardsesh/playlists-react/fetch-playlist-suggestion-climbs')>(
+    '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs',
+  )),
+  usePlaylistClimbActivation: () => async () => {},
+}));
+
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
 import { SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../queue/use-queue-persistence';
+import {
+  usePlaylistActivation,
+  type PlaylistActivationResult,
+  type UsePlaylistActivationOptions,
+} from '../../lib/playlists/use-playlist-activation';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -904,5 +922,114 @@ describe('QueueProvider cross-board swipe skip (#5099)', () => {
     await act(async () => {});
     expect(toast.showToast).toHaveBeenCalledTimes(1);
     expect(latest().playlistSuggestionSource).toBeNull();
+  });
+});
+
+// Issue #6664: a list's track and the queue both hold only what this board can
+// draw. The climb the climber is on stays where it is, whichever board it is for.
+describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', () => {
+  let snapshots: Snapshot[];
+  const latest = () => {
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('provider never rendered');
+    return snapshot;
+  };
+
+  beforeEach(() => {
+    snapshots = [];
+    activeBoardStore.setPending(false);
+    activeBoardStore.set(boards.kilter);
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
+      mutation.mockReset();
+      mutation.mockResolvedValue(undefined);
+    }
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue(null);
+    queueSnapshotStore.getStoredQueueSnapshot.mockReset();
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+    toast.showToast.mockClear();
+    analytics.track.mockClear();
+  });
+
+  it('walks the queue after "Start playlist" from a climb this board cannot draw, adding no copies', async () => {
+    // A smart list is fetched by board name, so a climb from another layout
+    // comes back dimmed, and dimmed rows stay tappable. Kept as the track, the
+    // provider masks it down to this board and re-anchors at its head, so the
+    // first swipe queued a copy of every list climb before the tapped one.
+    const before = ['c0', 'c1', 'c2', 'c3', 'c4'].map((uuid) => makeClimb(uuid, 'kilter', 1));
+    const otherLayout = makeClimb('other-layout', 'kilter', 8);
+    const after = ['c5', 'c6'].map((uuid) => makeClimb(uuid, 'kilter', 1));
+    const list = [...before, otherLayout, ...after];
+    let releaseList: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+    const fetchPage = vi.fn<UsePlaylistActivationOptions['fetchPage']>(
+      () =>
+        new Promise((resolve) => {
+          releaseList = resolve;
+        }),
+    );
+    let activation: PlaylistActivationResult | null = null;
+    function ActivationProbe() {
+      activation = usePlaylistActivation({
+        sourceId: 'smart:projects',
+        allClimbs: list,
+        fetchPage,
+        label: 'Projects',
+        refreshErrorMessage: 'refresh failed',
+        replaceQueueOnActivate: true,
+      });
+      return null;
+    }
+    render(
+      createElement(
+        QueueProvider,
+        null,
+        createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+        createElement(ActivationProbe),
+      ),
+    );
+    await waitFor(() => expect(activation).not.toBeNull());
+
+    act(() => {
+      void activation?.activate(otherLayout);
+    });
+    await act(async () => {
+      releaseList({ climbs: list, hasMore: false });
+    });
+    await waitFor(() => expect(latest().state.queue).toHaveLength(list.length));
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('other-layout');
+
+    act(() => latest().nextClimb());
+
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('c5');
+    expect(latest().state.queue.map(({ climb }) => climb.uuid)).toEqual(list.map(({ uuid }) => uuid));
+  });
+
+  it("steps back onto the list's previous climb past a queued one this board cannot draw", async () => {
+    // The track left the other-layout climb out, so its two neighbours on the
+    // list are not neighbours in the queue. Previous must find the queued entry
+    // rather than queue a copy of it.
+    const first = makeClimb('first', 'kilter', 1);
+    const otherLayout = makeClimb('other-layout', 'kilter', 8);
+    const second = makeClimb('second', 'kilter', 1);
+    const queue = [
+      makeItem('item-first', first),
+      makeItem('item-other-layout', otherLayout),
+      makeItem('item-second', second),
+    ];
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue,
+      currentClimbQueueItem: queue[2],
+      playlistSuggestionSource: kilterSource([first, second], second),
+      savedAt: '2026-06-10T00:00:00.000Z',
+    });
+    render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s) => snapshots.push(s) })));
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-second'));
+
+    act(() => latest().previousClimb());
+
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-first');
+    expect(latest().state.queue).toHaveLength(3);
   });
 });

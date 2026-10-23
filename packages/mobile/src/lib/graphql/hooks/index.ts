@@ -49,6 +49,7 @@ import {
 } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
+import { searchClimbsCountQueryKey } from './search-climbs-count-query';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
@@ -973,7 +974,7 @@ export function useSearchClimbsCount(requestedInput: ClimbSearchInput, enabled =
   const input = useGradeSourceSearchInput(requestedInput);
   const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
-    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
+    queryKey: searchClimbsCountQueryKey(input, userId),
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),

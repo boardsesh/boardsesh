@@ -14,7 +14,7 @@ import {
 } from '@boardsesh/play-view';
 import { toBoardName } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
-import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
+import { canLoadMoreOfTrack, trackForCounting } from '../../lib/playlists/track-pager';
 import type { BoardConfig } from './play-drawer-types';
 import { resolveTrackEndCard } from './track-end';
 
@@ -160,20 +160,21 @@ export function usePlayNavigationModel({
   // following it. Each neighbour carries its own position, so a swipe slides
   // "5 of 23" in rather than changing the number on landing.
   const displayedClimbUuid = displayedClimb?.uuid;
+  // A track that can't load the rest of its list ends early, so it shows no count.
+  const labelSource = useMemo(() => trackForCounting(navigationSuggestionSource), [navigationSuggestionSource]);
   const currentTrackLabel = useMemo(
-    () => resolveTrackLabel(navigationSuggestionSource, displayedClimbUuid),
-    [navigationSuggestionSource, displayedClimbUuid],
+    () => resolveTrackLabel(labelSource, displayedClimbUuid),
+    [labelSource, displayedClimbUuid],
   );
   const nextHeaderClimbUuid = nextHeaderClimb?.uuid;
   const previousHeaderClimbUuid = previousHeaderClimb?.uuid;
   const nextTrackLabel = useMemo(
-    () => (nextHeaderClimbUuid ? resolveTrackLabel(navigationSuggestionSource, nextHeaderClimbUuid) : NO_TRACK_LABEL),
-    [navigationSuggestionSource, nextHeaderClimbUuid],
+    () => (nextHeaderClimbUuid ? resolveTrackLabel(labelSource, nextHeaderClimbUuid) : NO_TRACK_LABEL),
+    [labelSource, nextHeaderClimbUuid],
   );
   const previousTrackLabel = useMemo(
-    () =>
-      previousHeaderClimbUuid ? resolveTrackLabel(navigationSuggestionSource, previousHeaderClimbUuid) : NO_TRACK_LABEL,
-    [navigationSuggestionSource, previousHeaderClimbUuid],
+    () => (previousHeaderClimbUuid ? resolveTrackLabel(labelSource, previousHeaderClimbUuid) : NO_TRACK_LABEL),
+    [labelSource, previousHeaderClimbUuid],
   );
 
   // Past the list's last climb: the end card, and where "Keep going with your

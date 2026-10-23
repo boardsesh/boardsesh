@@ -669,6 +669,8 @@ describe('fetchPlaylistTrackPage', () => {
 
     expect(load.climbs).toHaveLength(5);
     expect(load.nextPage).toBeNull();
+    // The list itself ended, so its count still fits the track.
+    expect(load.cappedBeforeListEnd).toBe(false);
   });
 
   it('stops at the 1,000-climb bound even when the server has more', async () => {
@@ -680,13 +682,15 @@ describe('fetchPlaylistTrackPage', () => {
       fetchPage,
     });
     expect(last.nextPage).toBeNull();
+    // The server had more: the track is now shorter than the list it counts.
+    expect(last.cappedBeforeListEnd).toBe(true);
 
     const past = await fetchPlaylistTrackPage({
       page: MAX_PLAYLIST_TRACK_PAGES,
       signal: new AbortController().signal,
       fetchPage,
     });
-    expect(past).toEqual({ climbs: [], nextPage: null });
+    expect(past).toEqual({ climbs: [], nextPage: null, cappedBeforeListEnd: true });
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
 

@@ -71,6 +71,12 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({ useSearchClimbsCount: mocks.count }));
 vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+// The player's list count reads the query cache, and these screens render
+// without a QueryClientProvider. No test here reads the count.
+vi.mock('../../../../src/lib/graphql/hooks/search-climbs-count-query', () => {
+  const countNothing = async () => 0;
+  return { useFetchCachedSearchClimbsCount: () => countNothing };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

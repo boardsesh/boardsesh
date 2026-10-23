@@ -126,14 +126,21 @@ export function RestTimerAutoAdvanceScheduler() {
     listEndedMessage,
   };
 
+  // A beat that came due at the end of what is loaded while more of the list is
+  // still on its way. Taken when the page lands (see the effect below).
+  const awaitingPageRef = useRef<{ cycleId: number; deadlineMs: number } | null>(null);
+
   const fireAdvance = useCallback(
-    (expectedCycleId: number, scheduledDeadlineMs: number) => {
+    (expectedCycleId: number, scheduledDeadlineMs: number, afterPage = false) => {
+      // A beat that waited for a page came due while the climber watched, so
+      // its deadline is late on purpose, not stale.
+      //
       // ORDERING-PROOF background guard. Nothing orders the AppState 'active'
       // listener ahead of the timer queue on resume — RN flushes both off the
       // same UIApplicationDidBecomeActive, in no guaranteed order — so a timeout
       // that came due while the phone was in a pocket can land here first. Check
       // the deadline rather than trusting the listener to have re-anchored.
-      if (isAutoAdvanceDeadlineStale(scheduledDeadlineMs, nowMs())) {
+      if (!afterPage && isAutoAdvanceDeadlineStale(scheduledDeadlineMs, nowMs())) {
         reanchorRestTimerAfterBackground(nowMs(), scheduledDeadlineMs);
         return;
       }
@@ -158,10 +165,15 @@ export function RestTimerAutoAdvanceScheduler() {
       );
 
       if (!canNext) {
+        // More of the list is still on its way: wait for it without a word, and
+        // take this beat when it lands. Latching "ended" instead would say "End
+        // of the list" meanwhile, and clearing the latch re-anchors the rest, so
+        // the climber would wait one whole rest more (#6664 second review).
+        if (atTrackEnd && canLoadMoreOfTrack(inputs.playlistSuggestionSource)) {
+          awaitingPageRef.current = { cycleId: expectedCycleId, deadlineMs: scheduledDeadlineMs };
+          return;
+        }
         noteRestTimerQueueEnded({ listEnded: atTrackEnd });
-        // More of the list is still on its way: wait for it without a word.
-        // The latch clears below once the page lands and the beat goes on.
-        if (atTrackEnd && canLoadMoreOfTrack(inputs.playlistSuggestionSource)) return;
         inputs.showToast(atTrackEnd ? inputs.listEndedMessage : inputs.queueEndedMessage, 'info');
         return;
       }
@@ -249,6 +261,17 @@ export function RestTimerAutoAdvanceScheduler() {
     }, remainingMs);
     return () => clearTimeout(timeout);
   }, [anchorMs, armed, cycleId, isRunning, scheduled, targetSeconds]);
+
+  // The page a due beat was waiting for has landed (or the track ended): try the
+  // beat again. Only for the cycle it was due in; a manual Next or a new tick
+  // starts another cycle, and the claim inside would refuse it anyway.
+  useEffect(() => {
+    const awaiting = awaitingPageRef.current;
+    if (!awaiting) return;
+    awaitingPageRef.current = null;
+    if (!armed || cycleId !== awaiting.cycleId) return;
+    fireAdvance(awaiting.cycleId, awaiting.deadlineMs, true);
+  }, [playlistSuggestionSource, armed, cycleId, fireAdvance]);
 
   // The queue was refilled (or the board switched) while the dead-end latch was
   // set. Pick the beat back up instead of staying dead until the next tick. Only

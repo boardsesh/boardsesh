@@ -9,20 +9,13 @@ import {
   type PlaylistDetailEmptyState,
   type PlaylistFilterStatus,
 } from './playlist';
-import {
-  ClimbFilterSheet,
-  type ClimbFilterSheetPickers,
-  type ClimbFilterSheetSections,
-} from './ClimbFilterSheet';
+import { ClimbFilterSheet, type ClimbFilterSheetPickers, type ClimbFilterSheetSections } from './ClimbFilterSheet';
 import { SetterFollowButton } from './SetterFollowButton';
 import { Button } from './Button';
 import { Text } from './Text';
 import { useClimbFilterSession } from '../hooks/use-climb-filter-session';
 import { usePersonalGradesActive } from '../hooks/use-personal-grades';
-import {
-  usePlaylistActivation,
-  type UsePlaylistActivationOptions,
-} from '../lib/playlists/use-playlist-activation';
+import { usePlaylistActivation, type UsePlaylistActivationOptions } from '../lib/playlists/use-playlist-activation';
 import { usePlaylistRenderBoard } from '../lib/playlists/use-playlist-render-board';
 import {
   SETTER_FILTER_DEFAULTS,
@@ -51,13 +44,9 @@ import { PLAYLIST_PINNABLE_CHIP_KINDS } from '../lib/playlist-pinnable-chips';
 import { boardConfigKey } from '../lib/last-search-store';
 import { useInfiniteSearchClimbs } from '../lib/graphql/hooks/use-infinite-search-climbs';
 import { useSearchClimbsCount } from '../lib/graphql/hooks';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../lib/graphql/operations';
+import { useFetchCachedSearchClimbsCount } from '../lib/graphql/hooks/search-climbs-count-query';
 import { useSearchGradeSourceActive, withGradeSource } from '../lib/graphql/hooks/search-grade-source';
-import {
-  SEARCH_CLIMBS,
-  SEARCH_CLIMBS_COUNT,
-  type SearchClimbsCountQueryResponse,
-  type SearchClimbsQueryResponse,
-} from '../lib/graphql/operations';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { toQueueClimbs } from '../lib/climb-types';
 import { useAuth } from '../providers/auth-provider';
@@ -231,17 +220,24 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     },
     [username, settledView.view, boardseshGrades],
   );
-  // The pages carry no count, so the player's "4 of 120" asks for it once, with
-  // the same input the pages use.
+  // The pages carry no count, so the player's "4 of 120" asks for one: the view
+  // on screen, the same filters the pages walk, at the default sort (a sort
+  // hides nothing, so this is the input the page's own view count sends).
+  // Through the count cache, so a tap reuses the count this page already holds.
+  const fetchCachedCount = useFetchCachedSearchClimbsCount();
   const fetchTotal = useCallback<NonNullable<UsePlaylistActivationOptions['fetchTotal']>>(
-    async ({ board, signal }) => {
+    async ({ board: activatedBoard, signal }) => {
       if (signal.aborted) throw createAbortError('Setter playlist count was cancelled');
-      const response = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
-        input: setterPlaylistInput(username, board),
-      });
-      return response.searchClimbs.totalCount;
+      const pageView = settledView.view;
+      const countView = pageView
+        ? { ...pageView, selection: { ...pageView.selection, sort: DEFAULT_SETTER_SORT } }
+        : undefined;
+      return fetchCachedCount(
+        withGradeSource(setterPlaylistInput(username, activatedBoard, countView), boardseshGrades),
+        null,
+      );
     },
-    [username],
+    [boardseshGrades, fetchCachedCount, settledView.view, username],
   );
   const isSharedSession = useIsSharedSession();
   const activation = usePlaylistActivation({

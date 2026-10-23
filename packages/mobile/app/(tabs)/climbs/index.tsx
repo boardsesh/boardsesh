@@ -123,12 +123,9 @@ import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/us
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { OfflineState } from '../../../src/components/OfflineState';
-import {
-  SEARCH_CLIMBS,
-  SEARCH_CLIMBS_COUNT,
-  type SearchClimbsCountQueryResponse,
-  type SearchClimbsQueryResponse,
-} from '../../../src/lib/graphql/operations';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
+import { useFetchCachedSearchClimbsCount } from '../../../src/lib/graphql/hooks/search-climbs-count-query';
+import { useStoredUserId } from '../../../src/hooks/use-current-user-id';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
@@ -1268,8 +1265,8 @@ function ClimbListInner() {
   // drain cannot straddle two orderings and the callback identity stays stable
   // across list refetches.
   const searchInputForPage = useCallback(
-    (page: number, pageSize: number) => {
-      const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
+    (basis: ReturnType<typeof searchBasis.read>, page: number, pageSize: number) => {
+      const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = basis;
       return withGradeSource(
         mergeBoardFilters(
           toClimbSearchInput(
@@ -1283,14 +1280,14 @@ function ClimbListInner() {
         boardseshGradesActive,
       );
     },
-    [searchBasis, boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
+    [boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
   );
-  const fetchSearchPage = useCallback(
-    async ({ page, pageSize }: { page: number; pageSize: number }) => {
+  const fetchSearchPageFor = useCallback(
+    async (basis: ReturnType<typeof searchBasis.read>, page: number, pageSize: number) => {
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
       const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
-        input: searchInputForPage(page, pageSize),
+        input: searchInputForPage(basis, page, pageSize),
       });
       return {
         climbs: toQueueClimbs(response.searchClimbs.climbs),
@@ -1299,15 +1296,26 @@ function ClimbListInner() {
     },
     [searchInputForPage],
   );
+  const fetchSearchPage = useCallback(
+    ({ page, pageSize }: { page: number; pageSize: number }) => fetchSearchPageFor(searchBasis.read(), page, pageSize),
+    [fetchSearchPageFor, searchBasis],
+  );
+  // Every row tap re-captures the basis, crew and preview taps included, which
+  // leave the committed track alone. A track's later pages keep the search it
+  // was built from.
+  const snapshotSearchPageFetcher = useCallback(() => {
+    const basis = searchBasis.read();
+    return ({ page, pageSize }: { page: number; pageSize: number }) => fetchSearchPageFor(basis, page, pageSize);
+  }, [fetchSearchPageFor, searchBasis]);
   // The search pages carry no count (counting every page would cost the server
-  // a count per page), so the player's "4 of 230" asks for it once per tap, for
-  // the same frozen search the pages walk.
-  const fetchSearchTotal = useCallback(async () => {
-    const response = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
-      input: searchInputForPage(0, 1),
-    });
-    return response.searchClimbs.totalCount;
-  }, [searchInputForPage]);
+  // a count per page), so the player's "4 of 230" asks for one per tap, for the
+  // same frozen search the pages walk, through the count cache.
+  const fetchCachedCount = useFetchCachedSearchClimbsCount();
+  const { userId: storedUserId } = useStoredUserId(true);
+  const fetchSearchTotal = useCallback(() => {
+    const { page: _page, pageSize: _pageSize, ...countInput } = searchInputForPage(searchBasis.read(), 0, 1);
+    return fetchCachedCount(countInput, storedUserId);
+  }, [fetchCachedCount, searchBasis, searchInputForPage, storedUserId]);
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
 
@@ -1315,6 +1323,7 @@ function ClimbListInner() {
     sourceId: 'climblist',
     allClimbs: allQueueClimbs,
     fetchPage: fetchSearchPage,
+    snapshotFetchPage: snapshotSearchPageFetcher,
     fetchTotal: fetchSearchTotal,
     label: tSession('playView.track.searchResults'),
     // The rows are this same search's pages, from the top, on the active board.

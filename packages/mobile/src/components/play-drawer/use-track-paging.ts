@@ -5,7 +5,7 @@ import {
   type PlaylistSuggestionSource,
   type PlaylistTrackPage,
 } from '@boardsesh/queue';
-import { canLoadMoreOfTrack, loadNextTrackPage } from '../../lib/playlists/track-pager';
+import { canLoadMoreOfTrack, loadNextTrackPage, pinTrackLoader } from '../../lib/playlists/track-pager';
 
 /**
  * How close to the end of what is loaded the climber gets before the next page
@@ -55,6 +55,13 @@ export function useTrackPaging({
   getCommittedSource,
   refreshCommittedSource,
 }: TrackPagingInputs): void {
+  // The track the player walks keeps its loader, however many other lists the
+  // climber taps meanwhile. A committed walk releases the preview's.
+  useEffect(() => {
+    pinTrackLoader(previewTrack ? 'preview' : 'committed', source);
+    if (!previewTrack) pinTrackLoader('preview', null);
+  }, [source, previewTrack]);
+
   useEffect(() => {
     if (!source?.continuation || !displayedClimbUuid) return;
     const index = findPlaylistClimbIndex(source, displayedClimbUuid);

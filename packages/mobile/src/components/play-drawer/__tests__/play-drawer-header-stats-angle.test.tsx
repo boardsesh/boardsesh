@@ -160,7 +160,8 @@ describe('PlayDrawerHeader track label (#6664)', () => {
     expect(subtitle(container)).toBe('From Projects · 4 of 23 · 12 sends');
   });
 
-  it('puts the list ahead of a workout position', () => {
+  // The workout stage leads so truncation never hides it (#5379); the list follows.
+  it('puts a workout position ahead of the list', () => {
     const { container } = render(
       createElement(PlayDrawerHeader, {
         ...baseProps,
@@ -168,7 +169,7 @@ describe('PlayDrawerHeader track label (#6664)', () => {
         workoutStageLabel: 'Warm-up · 2 of 5',
       }),
     );
-    expect(subtitle(container)).toBe('From Projects · Warm-up · 2 of 5');
+    expect(subtitle(container)).toBe('Warm-up · 2 of 5 · From Projects');
   });
 
   it('keeps the stats line when there is nothing to print on it', () => {

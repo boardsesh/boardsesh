@@ -8,8 +8,10 @@ import {
   _resetTrackPagerForTests,
   canLoadMoreOfTrack,
   loadNextTrackPage,
+  pinTrackLoader,
   registerPendingTrackLoader,
   registerTrackPageLoader,
+  trackForCounting,
   type TrackPageLoader,
 } from '../track-pager';
 
@@ -121,15 +123,49 @@ describe('track pager', () => {
     expect(canLoadMoreOfTrack(track(first))).toBe(false);
   });
 
-  it('keeps the loader of a track the climber is walking, however many lists they peek at', () => {
-    // A committed search track, then a run of crew-preview taps that each
-    // register their own loader. The walked track asks after its loader as the
-    // climber goes, which keeps it from being the one evicted.
-    const walked = registerTrackPageLoader(async (pageIndex) => page(pageIndex));
-    for (let index = 0; index < 40; index += 1) {
-      registerTrackPageLoader(async (pageIndex) => page(pageIndex));
-      expect(canLoadMoreOfTrack(track(walked))).toBe(true);
-    }
+  it('keeps the loaders of the tracks the climber can reach, however many lists they peek at', () => {
+    // A committed search track and a preview, then a run of crew-preview taps
+    // that each register their own loader and never touch either track.
+    const committed = track(registerTrackPageLoader(async (pageIndex) => page(pageIndex)));
+    const preview = track(registerTrackPageLoader(async (pageIndex) => page(pageIndex)));
+    pinTrackLoader('committed', committed);
+    pinTrackLoader('preview', preview);
+    for (let index = 0; index < 40; index += 1) registerTrackPageLoader(async (pageIndex) => page(pageIndex));
+    expect(canLoadMoreOfTrack(committed)).toBe(true);
+    expect(canLoadMoreOfTrack(preview)).toBe(true);
+  });
+
+  it('lets a released track be evicted', () => {
+    const preview = track(registerTrackPageLoader(async (pageIndex) => page(pageIndex)));
+    pinTrackLoader('preview', preview);
+    pinTrackLoader('preview', null);
+    for (let index = 0; index < 32; index += 1) registerTrackPageLoader(async (pageIndex) => page(pageIndex));
+    expect(canLoadMoreOfTrack(preview)).toBe(false);
+  });
+
+  it('ends a track whose page failed without its count', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const source = track(
+      registerTrackPageLoader(async () => {
+        throw new Error('offline');
+      }),
+    );
+    await expect(loadNextTrackPage(source)).resolves.toMatchObject({ nextPage: null, filteredOut: true });
+  });
+});
+
+// "250 of 600" must never sit next to "That's the whole list" (#6664 review).
+describe('trackForCounting', () => {
+  it("drops the count of a track that has more but can't load it", () => {
+    const restored = { ...track('track-pages-from-last-week-1'), total: 600 };
+    expect(trackForCounting(restored)).not.toHaveProperty('total');
+  });
+
+  it('keeps the count while the rest can still load, and once the list is all loaded', () => {
+    const loading = { ...track(registerTrackPageLoader(async (pageIndex) => page(pageIndex))), total: 600 };
+    const complete = { ...track(null), total: 1 };
+    expect(trackForCounting(loading)).toBe(loading);
+    expect(trackForCounting(complete)).toBe(complete);
   });
 });
 
@@ -150,13 +186,14 @@ describe('a track whose list is still loading', () => {
     await expect(answer).resolves.toBeNull();
   });
 
-  it('ends the track where it is when the load did not replace it', async () => {
+  it('ends the track where it is, without its count, when the load did not replace it', async () => {
     const source = track(registerPendingTrackLoader(Promise.resolve(false)), 0);
+    // `filteredOut` drops the count: the track stops short of the list it counted.
     await expect(loadNextTrackPage(source)).resolves.toEqual({
       page: 0,
       pageSize: 0,
       climbs: [],
-      filteredOut: false,
+      filteredOut: true,
       nextPage: null,
     });
   });

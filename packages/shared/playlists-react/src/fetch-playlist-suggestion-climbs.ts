@@ -360,6 +360,11 @@ export type PlaylistTrackPageLoad = {
   climbs: Climb[];
   /** The page after this one, or null when the list (or the track's bound) ended here. */
   nextPage: number | null;
+  /**
+   * True when the track's bound ended it while the server still had more: the
+   * track is then shorter than the list, so a count of the list no longer fits.
+   */
+  cappedBeforeListEnd: boolean;
   totalCount?: number;
 };
 
@@ -389,7 +394,7 @@ export async function fetchPlaylistTrackPage({
   DrainPlaylistPagesArgs,
   'isRetryable' | 'parseRetryAfterSeconds' | 'sleep' | 'random'
 >): Promise<PlaylistTrackPageLoad> {
-  if (page >= MAX_PLAYLIST_TRACK_PAGES) return { climbs: [], nextPage: null };
+  if (page >= MAX_PLAYLIST_TRACK_PAGES) return { climbs: [], nextPage: null, cappedBeforeListEnd: true };
   const { climbs, stopReason, totalCount } = await drainPlaylistPages({
     fetchPage,
     signal,
@@ -403,6 +408,12 @@ export async function fetchPlaylistTrackPage({
   });
   if (stopReason === 'aborted') throw createAbortError();
   // `page-cap` here means "the server has more after this one page".
-  const nextPage = stopReason === 'page-cap' && page + 1 < MAX_PLAYLIST_TRACK_PAGES ? page + 1 : null;
-  return { climbs, nextPage, ...(totalCount === undefined ? {} : { totalCount }) };
+  const serverHasMore = stopReason === 'page-cap';
+  const nextPage = serverHasMore && page + 1 < MAX_PLAYLIST_TRACK_PAGES ? page + 1 : null;
+  return {
+    climbs,
+    nextPage,
+    cappedBeforeListEnd: serverHasMore && nextPage === null,
+    ...(totalCount === undefined ? {} : { totalCount }),
+  };
 }

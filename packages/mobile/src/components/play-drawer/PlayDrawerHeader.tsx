@@ -89,8 +89,8 @@ type PlayDrawerHeaderProps = {
    *  5", #5379). Leads the subtitle so truncation never hides it. */
   workoutStageLabel?: string | null;
   /**
-   * The list the player is walking, "From Projects · 4 of 23" (#6664). Leads
-   * the stats line rather than taking a line of its own: the first screen is a
+   * The list the player is walking, "From Projects · 4 of 23" (#6664). On the
+   * stats line, after a workout stage, rather than a line of its own: the first screen is a
    * fixed height and the board is `flex: 1` inside it, so a new line would come
    * straight off the holds. The name, the stats and the 2pt gap fit inside the
    * 44pt row the wall-state pill already reserves, so the label costs no board
@@ -144,9 +144,10 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
-  // Where swipes go first: truncation takes the stats from the end, never this.
-  if (trackLabel) subtitleParts.push(trackLabel);
+  // The workout stage, then where swipes go: truncation takes the stats from
+  // the end, never these two.
   if (workoutStageLabel) subtitleParts.push(workoutStageLabel);
+  if (trackLabel) subtitleParts.push(trackLabel);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);

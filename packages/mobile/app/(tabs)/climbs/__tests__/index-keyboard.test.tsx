@@ -741,6 +741,12 @@ vi.mock('../../../../src/lib/graphql/client', () => ({ getHttpClient: () => ({ r
 // registered document from `operations`, so loading the real module would make
 // this test's partial operations mock load-bearing for future registrations.
 vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+// The player's list count reads the query cache, and these screens render
+// without a QueryClientProvider. No test here reads the count.
+vi.mock('../../../../src/lib/graphql/hooks/search-climbs-count-query', () => {
+  const countNothing = async () => 0;
+  return { useFetchCachedSearchClimbsCount: () => countNothing };
+});
 // Has its own render suite (src/components/offline/__tests__).
 vi.mock('../../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCatalogCta: () => null }));
 vi.mock('../../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));

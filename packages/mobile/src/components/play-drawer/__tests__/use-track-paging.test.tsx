@@ -7,6 +7,7 @@ vi.mock('../../../lib/privacy/privacy-cache', () => ({ getPrivacyRevocationGener
 
 import {
   _resetTrackPagerForTests,
+  canLoadMoreOfTrack,
   registerTrackPageLoader,
   type TrackPageLoader,
 } from '../../../lib/playlists/track-pager';
@@ -77,6 +78,17 @@ describe('useTrackPaging', () => {
     render(source, farFromEnd);
 
     expect(loadPage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the walked track pageable however many other lists register loaders', () => {
+    // The player sits mid-list, nowhere near the end, while crew-preview taps
+    // elsewhere each register a loader (#6664 second review).
+    const source = trackWith(registerTrackPageLoader(loadPage));
+    render(source, source.climbs[0].uuid);
+
+    for (let index = 0; index < 40; index += 1) registerTrackPageLoader(loadPage);
+
+    expect(canLoadMoreOfTrack(source)).toBe(true);
   });
 
   it('asks for the next page near the end and lands it on the committed track', async () => {

@@ -179,6 +179,14 @@ export type UsePlaylistActivationOptions = {
     signal: AbortSignal;
   }) => Promise<PlaylistActivationPage>;
   /**
+   * For a screen whose `fetchPage` reads state that a later tap can change
+   * (search reads its frozen basis, which every row tap re-captures): return a
+   * `fetchPage` bound to the list as it is now. A track's page loader keeps
+   * that one, so its later pages walk the list it was built from. Omit it when
+   * `fetchPage` already pages one fixed list.
+   */
+  snapshotFetchPage?: () => UsePlaylistActivationOptions['fetchPage'];
+  /**
    * What the player calls this list while it walks it: "From {label} · 4 of 23"
    * (issue #6664). Already translated. Omit it and the player names nothing.
    */
@@ -292,6 +300,7 @@ export function usePlaylistActivation({
   sourceId,
   allClimbs,
   fetchPage,
+  snapshotFetchPage,
   label,
   fetchTotal,
   viewOnlyBoard,
@@ -488,12 +497,14 @@ export function usePlaylistActivation({
    */
   const registerPageLoader = useCallback(
     (board: ActivationFetchBoard, isClimbable: (climb: Climb) => boolean): string => {
+      // Bound now, at the tap that built the track, not when a page is asked for.
+      const trackFetchPage = snapshotFetchPage?.() ?? fetchPage;
       const loadPage: TrackPageLoader = async (page, signal) => {
         const load = await fetchPlaylistTrackPage({
           page,
           signal,
           fetchPage: ({ page: pageIndex, pageSize, signal: pageSignal }) =>
-            fetchPage({ page: pageIndex, pageSize, board, signal: pageSignal }),
+            trackFetchPage({ page: pageIndex, pageSize, board, signal: pageSignal }),
           ...PLAYLIST_DRAIN_RETRY_POLICY,
         });
         const climbs = load.climbs.filter(isClimbable);
@@ -501,14 +512,15 @@ export function usePlaylistActivation({
           page,
           pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
           climbs,
-          filteredOut: climbs.length !== load.climbs.length,
+          // Either breaks the one-for-one mapping a count needs.
+          filteredOut: climbs.length !== load.climbs.length || load.cappedBeforeListEnd,
           nextPage: load.nextPage,
           ...(load.totalCount === undefined ? {} : { total: load.totalCount }),
         };
       };
       return registerTrackPageLoader(loadPage);
     },
-    [fetchPage],
+    [fetchPage, snapshotFetchPage],
   );
 
   const fetchClimbsForBoard = useCallback(
@@ -979,8 +991,15 @@ export function usePlaylistActivation({
         // so a climb that sits in both an older list and this playlist cannot
         // steer swipes into the older one. Built from the whole list with the
         // same filter, so a count that the filter makes wrong is dropped.
-        setPlaylistSuggestionSource(
-          activationTarget
+        //
+        // Only from a climb this board can draw. The provider masks the track
+        // down to this board and re-anchors a current climb the mask drops at
+        // the head of what is left, so the first swipe would walk from the
+        // list's first climb and queue a copy of every climb before the tapped
+        // one. Without a track the swipes walk the queue, which holds the same
+        // climbs in the same order.
+        const track =
+          activationTarget && activationTarget.isClimbable(landingClimb)
             ? createPlaylistSuggestionSource({
                 playlistUuid: sourceId,
                 activatedClimb: landingClimb,
@@ -990,9 +1009,9 @@ export function usePlaylistActivation({
                 label,
                 total: listTotal,
               })
-            : null,
-        );
-        trackReplaced = activationTarget !== null;
+            : null;
+        setPlaylistSuggestionSource(track);
+        trackReplaced = track !== null;
         // The activate path already opened the drawer (committedExternally) on the
         // seed queue; the confirm path opens it now that the climb is current.
         if (!options.previewQueueItem) {

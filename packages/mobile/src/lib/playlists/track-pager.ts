@@ -31,11 +31,15 @@ type RegisteredLoader = {
 // reach (the provider's and the player's preview) use theirs. A loader is a
 // closure over a screen's query, so a few dozen cost nothing; the cap is there
 // so a long session of taps can't grow the map without end. The one evicted is
-// the one used longest ago, so a track the climber is walking keeps its loader
-// however many lists they peek at in between.
+// the one used longest ago that no reachable track holds (see pinTrackLoader).
 const MAX_REGISTERED_LOADERS = 32;
 
 const loaders = new Map<string, RegisteredLoader>();
+// The loaders of the tracks the climber can still reach: the committed climb's
+// and the player's preview. A crew preview tap registers a loader without
+// touching the committed track, so recency alone would let 32 of them evict the
+// track the climber is walking.
+const pinnedLoaderIds = new Map<'committed' | 'preview', string>();
 const inFlight = new Map<string, Promise<PlaylistTrackPage | null>>();
 let loaderSequence = 0;
 // Ids are stamped on tracks the queue snapshot persists, and the sequence starts
@@ -49,12 +53,24 @@ export function registerTrackPageLoader(load: TrackPageLoader): string {
   loaderSequence += 1;
   const loaderId = `track-pages-${launchId}-${loaderSequence}`;
   loaders.set(loaderId, { load, privacyGeneration: getPrivacyRevocationGeneration() });
+  const pinned = new Set(pinnedLoaderIds.values());
   while (loaders.size > MAX_REGISTERED_LOADERS) {
-    const oldest = loaders.keys().next().value;
-    if (oldest === undefined) break;
-    loaders.delete(oldest);
+    const oldestUnpinned = [...loaders.keys()].find((id) => !pinned.has(id));
+    if (oldestUnpinned === undefined) break;
+    loaders.delete(oldestUnpinned);
   }
   return loaderId;
+}
+
+/**
+ * Keep the loader of a track the climber can still reach. The player calls it
+ * for the track it walks: `committed` for the committed climb's, `preview` for
+ * the drawer's own. A null source releases that role's loader.
+ */
+export function pinTrackLoader(role: 'committed' | 'preview', source: PlaylistSuggestionSource | null): void {
+  const loaderId = source?.continuation?.loaderId;
+  if (loaderId) pinnedLoaderIds.set(role, loaderId);
+  else pinnedLoaderIds.delete(role);
 }
 
 /**
@@ -71,7 +87,8 @@ export function registerTrackPageLoader(load: TrackPageLoader): string {
 export function registerPendingTrackLoader(settled: Promise<boolean>): string {
   return registerTrackPageLoader(async (page) => {
     const replaced = await settled.catch(() => false);
-    return replaced ? null : { page, pageSize: 0, climbs: [], filteredOut: false, nextPage: null };
+    // Ends the track short of its list, so the count no longer fits it.
+    return replaced ? null : { page, pageSize: 0, climbs: [], filteredOut: true, nextPage: null };
   });
 }
 
@@ -100,6 +117,18 @@ export function canLoadMoreOfTrack(source: PlaylistSuggestionSource | null): boo
 }
 
 /**
+ * The track as the header may count it. A track that still has more of its
+ * list but no loader to fetch it (restored after a restart, or registered under
+ * an account that signed out) ends where it is, so "250 of 600" would sit next
+ * to "That's the whole list". Such a track loses its count.
+ */
+export function trackForCounting(source: PlaylistSuggestionSource | null): PlaylistSuggestionSource | null {
+  if (!source?.continuation || source.total === undefined || canLoadMoreOfTrack(source)) return source;
+  const { total: _total, ...uncounted } = source;
+  return uncounted;
+}
+
+/**
  * Fetch the page after `source`'s last loaded climb, once: a second ask for the
  * same page while the first is out shares it. Resolves null when there is
  * nothing to load.
@@ -125,7 +154,9 @@ export function loadNextTrackPage(source: PlaylistSuggestionSource): Promise<Pla
     .catch((error: unknown): PlaylistTrackPage | null => {
       if (registered.privacyGeneration !== getPrivacyRevocationGeneration()) return null;
       console.warn('Loading more of the swipe track failed:', error);
-      return { page: continuation.nextPage, pageSize: 0, climbs: [], filteredOut: false, nextPage: null };
+      // The page already had the drain's network retries. Ending here leaves the
+      // track short of its list, so the count no longer fits it.
+      return { page: continuation.nextPage, pageSize: 0, climbs: [], filteredOut: true, nextPage: null };
     })
     .finally(() => {
       inFlight.delete(requestKey);
@@ -138,5 +169,6 @@ export function loadNextTrackPage(source: PlaylistSuggestionSource): Promise<Pla
 export function _resetTrackPagerForTests(): void {
   loaders.clear();
   inFlight.clear();
+  pinnedLoaderIds.clear();
   loaderSequence = 0;
 }
