@@ -164,9 +164,7 @@
       "roleLabel": "Role",
       "boardTypeLabel": "Board Type (optional)",
       "boardTypeOptions": {
-        "global": "Global (all boards)",
-        "kilter": "Kilter",
-        "tension": "Tension"
+        "global": "Global (all boards)"
       },
       "roleOptions": {
         "communityLeader": "Community Leader",

@@ -32,6 +32,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import Snackbar from '@mui/material/Snackbar';
 import { useTranslation } from 'react-i18next';
+import { boardTypeLabel, isCatalogueBoardType } from '@boardsesh/board-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -41,9 +42,11 @@ import {
   type SearchUsersQueryResponse,
   type SearchUsersQueryVariables,
 } from '@boardsesh/graphql/operations/social';
-import type { CommunityRoleAssignment, CommunityRoleType } from '@boardsesh/shared-schema';
+import { BOARD_DISPLAY_ORDER, type CommunityRoleAssignment, type CommunityRoleType } from '@boardsesh/shared-schema';
 
 type UserResult = SearchUsersQueryResponse['searchUsers']['results'][number]['user'];
+
+const ROLE_BOARD_TYPES = BOARD_DISPLAY_ORDER.filter(isCatalogueBoardType);
 
 // Chip accent per role: admins read as the destructive/error colour, testers as
 // the cool info slate, community leaders as brand primary. Returns a scheme-aware
@@ -353,8 +356,11 @@ export default function RoleManagement() {
                 onChange={(e) => setGrantBoardType(e.target.value)}
               >
                 <MenuItem value="">{t('roles.dialog.boardTypeOptions.global')}</MenuItem>
-                <MenuItem value="kilter">{t('roles.dialog.boardTypeOptions.kilter')}</MenuItem>
-                <MenuItem value="tension">{t('roles.dialog.boardTypeOptions.tension')}</MenuItem>
+                {ROLE_BOARD_TYPES.map((boardType) => (
+                  <MenuItem key={boardType} value={boardType}>
+                    {boardTypeLabel(boardType)}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Box>

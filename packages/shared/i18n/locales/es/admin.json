@@ -51,9 +51,7 @@
       "roleLabel": "Rol",
       "boardTypeLabel": "Tipo de plafón (opcional)",
       "boardTypeOptions": {
-        "global": "Global (todos los plafones)",
-        "kilter": "Kilter",
-        "tension": "Tension"
+        "global": "Global (todos los plafones)"
       },
       "roleOptions": {
         "communityLeader": "Líder de comunidad",
