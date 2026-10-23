@@ -4,8 +4,8 @@ How every list of climbs in the mobile app behaves today, where those lists disa
 each other, and the one model we are moving to. Issue #6230, part of the climbing-experience
 epic #6238.
 
-This page is documentation only. Nothing here changes the app. The changes are the
-follow-ups at the bottom (F1 to F6), filed once climbers have read this page.
+This page started as documentation only. The changes are the follow-ups at the bottom
+(F1 to F6), filed on 2026-10-23.
 
 Code references are to `main` at `1f9bc776a3` (2026-10-18). Mobile paths are under
 `packages/mobile/`, shared paths under `packages/shared/`. Line numbers drift; the function
@@ -26,6 +26,13 @@ Three in-app bug reports say the same thing in their own words:
   that I did multiple sessions ago."
 - #5924 (app 2.5.0, 2026-10-01): "When swiping down a climb in a playlist it returns to the
   all playlists page instead of the playlist you were on."
+
+And after this page went up, a climber answered the Discord check below (2026-10-23):
+
+> "The playlist is more of a conceptual misalignment for me. When I'm on a list view and I select
+> a climb I always think swipe left/right is relative to that list I just came from."
+
+That is rules 1 and 2 of the model, so the follow-ups are now filed.
 
 Three fixes have already shipped against this, and the model below builds on them:
 
@@ -444,12 +451,13 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
 ![Lists feed the player as tracks; the queue only fills on purpose; Put on the wall lights the board](diagrams/climb-lists-model.svg)
 
 Only rule 3 needs a sync design choice, because the current climb lives inside the queue
-today. Two ways to do it, decided in F3 rather than here:
+today. Two ways to do it:
 
 - **(a)** Run the existing browse-origin cleanup whenever no crewmate is connected (today it
   only runs with no session at all), and send the removals to the server when a solo session
-  exists. Smaller. Recommended.
+  exists. Smaller, but it cleans up after the cause instead of removing it.
 - **(b)** Let the current climb live outside the queue. This is the blocker named on #3841.
+  **Chosen (2026-10-23)**, in F3 (#6666). It needs its own sync design in `docs/` before code.
 
 The other direction we considered, "playing a list makes it the queue", was rejected: in a
 crew it rewrites everyone's queue on every tap, and a long list runs past the 500-climb queue
@@ -532,13 +540,14 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 
 ## Follow-ups
 
-Not filed yet. They are filed, and linked here, after the Discord check above.
+Filed on 2026-10-23 under #6238: F1 #6664, F2 #6665, F3 #6666, F4 #6667, F5 #6668, F6 #6669.
+A race found while filing them is #6670: swiping before a playlist finishes loading can jump back to the tapped climb.
 
 | ID | What changes for the climber                                                                                             | Closes or rescopes             | Notes                                                                          |
 | -- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------ |
 | F1 | The player names the list it is walking and stops at its end with "Keep going with your queue (N)".                     | Closes #3841                   | Header wording with #6229. Removes the 250-climb track cap or pages past it. Today only a committed climb falls back into the queue at a list's end; previews (wrong board, crew) stop dead, so the end card needs its own way into the queue for them. |
 | F2 | Every list opens a climb the same way. Record history and the board history sheet stop taking a crew's wall.            | Closes #5157                   | Home taps follow F2 (#6289). The crew half only reaches climbers once `shared-session-browse` is turned on; that ramp is its own decision. |
-| F3 | Looking at a climb stops adding it to Up next, opening a climb that is already queued stops adding a second copy, and connecting after a long gap doesn't light an old climb. | #4979                          | Risk 4/5: changes what the server's queue holds. Pick (a) or (b) above.       |
+| F3 | Looking at a climb stops adding it to Up next, opening a climb that is already queued stops adding a second copy, and connecting after a long gap doesn't light an old climb. | #4979                          | Risk 4/5: changes what the server's queue holds. Option (b) above.            |
 | F4 | Playlists, For You and setter pages play from the list without wiping the queue. The iOS playlist header gets a play button. | Rescopes #3511              | Adds the "Tapping a playlist loads it into my queue" switch, default off.     |
 | F5 | Closing the player returns you to the list and scroll position you came from.                                            | Closes #5924                   |                                                                                |
 | F6 | The queue sheet labels Up next, History and Suggestions.                                                                 | —                              | Also fixes the stale swipe comment in `persistent-queue-bar.tsx:10`.          |
