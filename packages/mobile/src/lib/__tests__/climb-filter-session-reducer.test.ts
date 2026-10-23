@@ -132,20 +132,46 @@ describe('climbFilterSessionReducer', () => {
     expect(state.boardFilters.onlyBenchmarks).toBe(false);
   });
 
-  it('keeps the direction when the key in force is picked again, and reshuffles Random', () => {
+  it('keeps the direction when the key in force is picked again, and reshuffles a shuffling key', () => {
     const hardest = freshState(HARDEST_FIRST);
     expect(
-      climbFilterSessionReducer(hardest, { type: 'selectSortKey', sort: { sortBy: 'difficulty', sortOrder: 'asc' } }),
+      climbFilterSessionReducer(hardest, {
+        type: 'selectSortKey',
+        sort: { sortBy: 'difficulty', sortOrder: 'asc' },
+        shuffles: false,
+      }),
     ).toBe(hardest);
     const switched = climbFilterSessionReducer(hardest, {
       type: 'selectSortKey',
       sort: { sortBy: 'position', sortOrder: 'asc' },
+      shuffles: false,
     });
     expect(switched.sort).toEqual(DEFAULT_SORT);
     const shuffled = climbFilterSessionReducer(freshState({ sortBy: 'random', sortOrder: 'asc', sortSeed: '1' }), {
       type: 'selectSortKey',
       sort: { sortBy: 'random', sortOrder: 'asc', sortSeed: '2' },
+      shuffles: true,
     });
     expect(shuffled.sort.sortSeed).toBe('2');
+  });
+
+  it('decides a re-tap by the shuffle flag, not by whether a seed came along', () => {
+    // A shuffling key re-picked without a seed still takes the new sort...
+    const random = freshState({ sortBy: 'random', sortOrder: 'asc', sortSeed: '1' });
+    const reshuffled = climbFilterSessionReducer(random, {
+      type: 'selectSortKey',
+      sort: { sortBy: 'random', sortOrder: 'asc' },
+      shuffles: true,
+    });
+    expect(reshuffled).not.toBe(random);
+    // ...and a key that does not shuffle keeps its sort even if a seed is attached.
+    const hardest = freshState(HARDEST_FIRST);
+    expect(
+      climbFilterSessionReducer(hardest, {
+        type: 'selectSortKey',
+        sort: { sortBy: 'difficulty', sortOrder: 'asc', sortSeed: '9' },
+        shuffles: false,
+      }),
+    ).toBe(hardest);
   });
 });

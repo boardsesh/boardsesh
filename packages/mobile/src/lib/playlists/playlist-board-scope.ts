@@ -64,14 +64,30 @@ const PLAYLIST_SHEET_SECTIONS: ClimbFilterSheetSections = {
   otherAngles: false,
 };
 
-/** The rows hidden as well while there is no active board. */
-const PLAYLIST_SHEET_SECTIONS_WITHOUT_BOARD: ClimbFilterSheetSections = {
-  ...PLAYLIST_SHEET_SECTIONS,
-  progress: !needsActiveBoard(PROGRESS_FIELDS),
-  liked: !needsActiveBoard(['onlyFavorited']),
-  following: !needsActiveBoard(['onlyFollowedAuthors']),
-  beta: !needsActiveBoard(['onlyWithBetaVideos']),
-};
+/** The sheet rows whose filters may need an active board, and the fields each one sets. */
+const BOARD_SCOPED_SECTION_FIELDS = {
+  progress: PROGRESS_FIELDS,
+  liked: ['onlyFavorited'],
+  following: ['onlyFollowedAuthors'],
+  beta: ['onlyWithBetaVideos'],
+} as const satisfies Partial<Record<keyof ClimbFilterSheetSections, readonly PlaylistFilterField[]>>;
+
+/**
+ * The rows hidden as well while there is no active board: each row above whose
+ * filter passes only active-board climbs. Today that is all four; a filter that
+ * moved to every row in `PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS` would bring its row
+ * back here on its own.
+ */
+const PLAYLIST_SHEET_SECTIONS_WITHOUT_BOARD: ClimbFilterSheetSections = (() => {
+  const sections: ClimbFilterSheetSections = { ...PLAYLIST_SHEET_SECTIONS };
+  for (const [section, fields] of Object.entries(BOARD_SCOPED_SECTION_FIELDS) as [
+    keyof typeof BOARD_SCOPED_SECTION_FIELDS,
+    readonly PlaylistFilterField[],
+  ][]) {
+    if (needsActiveBoard(fields)) sections[section] = false;
+  }
+  return sections;
+})();
 
 /** The playlist sheet's rows, for a screen with or without an active board. Same object each call. */
 export function playlistSheetSections(hasActiveBoard: boolean): ClimbFilterSheetSections {

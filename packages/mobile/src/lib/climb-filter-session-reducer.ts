@@ -84,8 +84,13 @@ export type ClimbFilterSessionAction<K extends string> =
   | { type: 'toggleBeta' }
   | { type: 'setName'; name: string }
   | { type: 'setSort'; sort: SessionSort<K> }
-  /** A tap on a sort key: its opening sort, except a re-tap keeps the direction (a shuffle reshuffles). */
-  | { type: 'selectSortKey'; sort: SessionSort<K> }
+  /**
+   * A tap on a sort key: its opening sort. A re-tap of the key in force keeps the
+   * climber's direction, unless the key shuffles (`model.isShuffle`), where a
+   * re-tap is a new shuffle. The flag is required, so the reducer never has to
+   * guess a shuffle from whether a seed came along.
+   */
+  | { type: 'selectSortKey'; sort: SessionSort<K>; shuffles: boolean }
   | { type: 'setSortOrder'; sortOrder: SortOrder }
   | { type: 'reshuffle'; sortSeed: string }
   | { type: 'setBoardFit'; boardFit: boolean }
@@ -189,10 +194,8 @@ export function climbFilterSessionReducer<K extends string>(
       return { ...state, sort: action.sort };
     case 'selectSortKey':
       // Re-picking the key in force keeps the climber's direction, as on the
-      // Climbs list. A seeded sort (Random) takes the fresh seed: a new shuffle.
-      return state.sort.sortBy === action.sort.sortBy && action.sort.sortSeed === undefined
-        ? state
-        : { ...state, sort: action.sort };
+      // Climbs list. A shuffling key (Random) takes the new sort: a new shuffle.
+      return state.sort.sortBy === action.sort.sortBy && !action.shuffles ? state : { ...state, sort: action.sort };
     case 'setSortOrder':
       return state.sort.sortOrder === action.sortOrder
         ? state

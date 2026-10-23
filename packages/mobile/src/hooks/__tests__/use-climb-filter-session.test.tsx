@@ -379,4 +379,49 @@ describe('useClimbFilterSession', () => {
     expect(result.current.state.activeFilterCount).toBe(0);
     expect(result.current.state.tokens).toEqual([]);
   });
+
+  // Switching the active board while a filtered playlist is open: the sort is the
+  // playlist's and stays (never re-read from storage mid-screen); the filters
+  // stay for the screen's life; the active-board-only ones follow the new board,
+  // and drop from the query while there is none; a sheet opened for the old
+  // board closes, so it cannot write into the new one.
+  it('keeps the sort and filters across a board switch, and closes a sheet opened for the old board', () => {
+    const { result, rerender, initialProps, onSortCommit } = renderSession();
+    act(() => result.current.state.chipRowProps.sortControl?.onSelect('difficulty'));
+    act(() => result.current.state.chipRowProps.onChangeRating(3));
+    act(() => result.current.state.chipRowProps.onChangeProgress('unsent'));
+    act(() => result.current.actions.openFilters());
+    expect(result.current.state.sheetProps).not.toBeNull();
+    onSortCommit.mockClear();
+
+    const tension = { boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '8,9', angle: 40 };
+    rerender({
+      ...initialProps,
+      scopeKey: 'playlist:p-1|tension|true',
+      boardConfig: tension,
+      gradeBoardName: 'tension',
+    });
+
+    expect(result.current.state.sheetProps).toBeNull();
+    expect(result.current.state.querySelection.sort).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
+    expect(result.current.state.querySelection.filters.minRating).toBe(3);
+    expect(result.current.state.querySelection.filters.hideCompleted).toBe(true);
+    expect(onSortCommit).not.toHaveBeenCalled();
+
+    // No board at all: the progress pick drops from the query, the rest stays.
+    rerender({
+      ...initialProps,
+      scopeKey: 'playlist:p-1|none|true',
+      boardConfig: null,
+      gradeBoardName: '',
+      activeBoardAvailable: false,
+    });
+    expect(result.current.state.querySelection.sort.sortBy).toBe('difficulty');
+    expect(result.current.state.querySelection.filters.minRating).toBe(3);
+    expect(result.current.state.querySelection.filters.hideCompleted).toBeUndefined();
+
+    // A sheet opens again under the new scope.
+    act(() => result.current.actions.openFilters());
+    expect(result.current.state.sheetProps).not.toBeNull();
+  });
 });

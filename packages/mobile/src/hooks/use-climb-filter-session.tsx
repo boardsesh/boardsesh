@@ -233,7 +233,9 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   const handleToggleBoardFit = useCallback(() => dispatch({ type: 'toggleBoardFit' }), []);
   const handleChipSortSelect = useCallback((value: string) => {
     const model = optionsRef.current.sortModel;
-    if (model.isOption(value)) dispatch({ type: 'selectSortKey', sort: model.patchFor(value) });
+    if (model.isOption(value)) {
+      dispatch({ type: 'selectSortKey', sort: model.patchFor(value), shuffles: model.isShuffle(value) });
+    }
   }, []);
   const resetSort = useCallback(
     () => dispatch({ type: 'setSort', sort: optionsRef.current.sortModel.defaultSort }),
@@ -619,7 +621,9 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       showReshuffle: sortModel.isShuffle(sortBy),
       onSelect: (key: string) =>
         runWhileOpen(() => {
-          if (sortModel.isOption(key)) dispatch({ type: 'selectSortKey', sort: sortModel.patchFor(key) });
+          if (sortModel.isOption(key)) {
+            dispatch({ type: 'selectSortKey', sort: sortModel.patchFor(key), shuffles: sortModel.isShuffle(key) });
+          }
         }),
       onOrderChange: (order: SortOrder) => runWhileOpen(() => dispatch({ type: 'setSortOrder', sortOrder: order })),
       onReshuffle: () => runWhileOpen(() => dispatch({ type: 'reshuffle', sortSeed: newSortSeed() })),
