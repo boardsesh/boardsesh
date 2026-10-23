@@ -70,14 +70,17 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
     if (setterUsername) {
       // Carry the group's board: the setter page filters by board, and without
       // this it would filter by whatever board the viewer is on.
-      router.push({
-        pathname: '/(tabs)/climbs/setter/[username]',
-        params: {
-          username: setterUsername,
-          ...(lead?.boardType ? { boardType: lead.boardType } : {}),
-          ...(lead?.layoutId != null ? { layoutId: String(lead.layoutId) } : {}),
+      router.push(
+        {
+          pathname: '/(tabs)/climbs/setter/[username]',
+          params: {
+            username: setterUsername,
+            ...(lead?.boardType ? { boardType: lead.boardType } : {}),
+            ...(lead?.layoutId != null ? { layoutId: String(lead.layoutId) } : {}),
+          },
         },
-      });
+        { withAnchor: true },
+      );
       return;
     }
     if (lead?.actorId) router.push({ pathname: '/users/[userId]', params: { userId: lead.actorId } });

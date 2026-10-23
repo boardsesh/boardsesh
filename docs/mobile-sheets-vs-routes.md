@@ -669,6 +669,14 @@ version is `useCreateClimbNavigation`
 points (`useClimbActions`, behind both the long-press reaction menu and the player's ⋯) go through
 it.
 
+**Keep the destination tab’s list underneath a cross-tab push.** The Climbs stack
+exports `unstable_settings = { initialRouteName: 'index' }`. A link from another tab,
+the player, or a root surface into a nested Climbs route passes `{ withAnchor: true }`
+to `router.push`. Both parts are required: Android, the iPad shell and the browser
+can open a tab before its stack has mounted. Without the anchor, that destination
+becomes its only screen, so Back leaves the tab and the climb list stays missing.
+Same-tab pushes keep their existing history.
+
 Two things that are easy to get wrong:
 
 - **Let the route own its close waiter.** The actual `/play` route subscribes to its native

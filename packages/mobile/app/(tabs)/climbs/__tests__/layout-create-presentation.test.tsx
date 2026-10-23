@@ -47,7 +47,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
 
-import ClimbsLayout from '../_layout';
+import ClimbsLayout, { unstable_settings } from '../_layout';
 
 function createOptions() {
   render(createElement(ClimbsLayout));
@@ -62,6 +62,12 @@ beforeEach(() => {
   platform.isPad = false;
 });
 afterEach(cleanup);
+
+describe('the Climbs stack', () => {
+  it('keeps the climb list underneath a first cross-tab destination', () => {
+    expect(unstable_settings.initialRouteName).toBe('index');
+  });
+});
 
 describe('the New climb route', () => {
   it('is a headerless modal sheet on iOS, with swipe-down off so the board keeps its drags', () => {

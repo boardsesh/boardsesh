@@ -9,6 +9,10 @@ import { NativeTabContentInsetProbe } from '../../../src/components/navigation/N
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 
+// Cross-tab links can open this stack before its list has mounted. Keep the
+// list underneath those destinations so Back always returns to Climbs.
+export const unstable_settings = { initialRouteName: 'index' };
+
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();

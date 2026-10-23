@@ -59,15 +59,18 @@ export function sessionTickToClimb(tick: SessionDetailTick): ClimbListItemClimb 
 export function navigateToSessionClimb(router: Router, tick: SessionDetailTick): void {
   const config = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
   if (!config) return;
-  router.push({
-    pathname: '/(tabs)/climbs/[climbUuid]',
-    params: {
-      climbUuid: tick.climbUuid,
-      boardName: config.boardName,
-      layoutId: String(config.layoutId),
-      sizeId: String(config.sizeId),
-      setIds: config.setIds.join(','),
-      angle: String(tick.angle),
+  router.push(
+    {
+      pathname: '/(tabs)/climbs/[climbUuid]',
+      params: {
+        climbUuid: tick.climbUuid,
+        boardName: config.boardName,
+        layoutId: String(config.layoutId),
+        sizeId: String(config.sizeId),
+        setIds: config.setIds.join(','),
+        angle: String(tick.angle),
+      },
     },
-  });
+    { withAnchor: true },
+  );
 }

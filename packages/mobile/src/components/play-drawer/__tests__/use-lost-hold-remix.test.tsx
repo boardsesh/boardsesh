@@ -42,10 +42,13 @@ describe('useLostHoldRemix', () => {
     act(() => result.current.onRemix?.());
     await act(async () => {});
 
-    expect(router.push).toHaveBeenCalledExactlyOnceWith({
-      pathname: '/(tabs)/climbs/create',
-      params: expect.objectContaining({ forkParentUuid: 'a', forkFrames: 'p1r12', layoutId: '4200' }),
-    });
+    expect(router.push).toHaveBeenCalledExactlyOnceWith(
+      {
+        pathname: '/(tabs)/climbs/create',
+        params: expect.objectContaining({ forkParentUuid: 'a', forkFrames: 'p1r12', layoutId: '4200' }),
+      },
+      { withAnchor: true },
+    );
     expect(track).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ properties: { lostHoldCount: 2, source: 'play_drawer' } }),
     );

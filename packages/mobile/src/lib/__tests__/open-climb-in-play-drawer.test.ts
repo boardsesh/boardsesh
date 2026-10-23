@@ -98,18 +98,21 @@ describe('openClimbInPlayDrawer', () => {
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'tick', tick: makeTick({ frames: null, climbUuid: 'c-2', angle: 45 }) }, deps);
     expect(deps.openPlayDrawer).not.toHaveBeenCalled();
-    expect(deps.router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/[climbUuid]',
-      params: {
-        climbUuid: 'c-2',
-        boardName: 'kilter',
-        layoutId: '1',
-        sizeId: '10',
-        setIds: '1,20,33',
-        angle: '45',
-        activationIntent: 'preview-uuid',
+    expect(deps.router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/[climbUuid]',
+        params: {
+          climbUuid: 'c-2',
+          boardName: 'kilter',
+          layoutId: '1',
+          sizeId: '10',
+          setIds: '1,20,33',
+          angle: '45',
+          activationIntent: 'preview-uuid',
+        },
       },
-    });
+      { withAnchor: true },
+    );
   });
 
   it('kind:tick without frames keeps a preview open view-only through the fallback', () => {
@@ -137,20 +140,26 @@ describe('openClimbInPlayDrawer', () => {
       deps,
     );
     expect(mockedGetDefaultBoardConfig).not.toHaveBeenCalled();
-    expect(deps.router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/[climbUuid]',
-      params: { climbUuid: 'c-3', boardName: 'kilter', layoutId: '1', sizeId: '12', setIds: '1,2', angle: '40' },
-    });
+    expect(deps.router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/[climbUuid]',
+        params: { climbUuid: 'c-3', boardName: 'kilter', layoutId: '1', sizeId: '12', setIds: '1,2', angle: '40' },
+      },
+      { withAnchor: true },
+    );
   });
 
   it('kind:ref without size/sets resolves the board config then pushes', () => {
     mockedGetDefaultBoardConfig.mockReturnValue(KILTER_CONFIG);
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'ref', climbUuid: 'c-4', boardType: 'kilter', layoutId: 1, angle: 35 }, deps);
-    expect(deps.router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/[climbUuid]',
-      params: { climbUuid: 'c-4', boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,20,33', angle: '35' },
-    });
+    expect(deps.router.push).toHaveBeenCalledWith(
+      {
+        pathname: '/(tabs)/climbs/[climbUuid]',
+        params: { climbUuid: 'c-4', boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,20,33', angle: '35' },
+      },
+      { withAnchor: true },
+    );
   });
 
   // The three direct `ref` callers (moderation feed, notification rows, the

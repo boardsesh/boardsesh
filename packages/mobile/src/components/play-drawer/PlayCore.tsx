@@ -542,7 +542,9 @@ export function PlayCore({
   const openSetterPlaylist = useCallback(() => {
     const username = displayedClimb?.setter_username;
     if (!username) return;
-    pushAfterSetterDismiss(() => router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } }));
+    pushAfterSetterDismiss(() =>
+      router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } }, { withAnchor: true }),
+    );
   }, [displayedClimb?.setter_username, pushAfterSetterDismiss]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
