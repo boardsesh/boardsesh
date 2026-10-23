@@ -12,6 +12,8 @@ type WorkoutPreviewListRowProps = {
   /** The climb open in the play drawer, highlighted. Null when none is. */
   activeUuid: string | null;
   refreshingUuids: ReadonlySet<string>;
+  /** Hold every row's refresh, e.g. while the list is being queued. */
+  refreshLocked?: boolean;
   /** Left out where the play drawer can't open (the add-block sheet). */
   onPress?: (item: ClimbQueueItem) => void;
   onRefresh: (uuid: string) => void;
@@ -27,6 +29,7 @@ export function WorkoutPreviewListRow({
   board,
   activeUuid,
   refreshingUuids,
+  refreshLocked = false,
   onPress,
   onRefresh,
 }: WorkoutPreviewListRowProps) {
@@ -42,7 +45,7 @@ export function WorkoutPreviewListRow({
       isActive={item.uuid === activeUuid}
       isRefreshing={isRefreshing}
       // Refreshes run one at a time, so another row's refresh blocks this one.
-      refreshDisabled={refreshingUuids.size > 0 && !isRefreshing}
+      refreshDisabled={refreshLocked || (refreshingUuids.size > 0 && !isRefreshing)}
       onPress={onPress}
       onRefresh={onRefresh}
     />

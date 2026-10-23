@@ -100,7 +100,10 @@ vi.mock('../../pre-session/WorkoutBlockFields', () => ({
   },
 }));
 vi.mock('../../pre-session/WorkoutPreviewSummary', () => ({
-  WorkoutPreviewSummary: () => createElement('div', null, 'summary'),
+  WorkoutPreviewSummary: ({ shuffleDisabled }: { shuffleDisabled: boolean }) => {
+    summary.shuffleDisabled = shuffleDisabled;
+    return createElement('div', null, 'summary');
+  },
 }));
 // The sheet's list renders every row it is given, header first, like a short
 // FlatList does on device.
@@ -130,6 +133,7 @@ type MockRowProps = {
   onRefresh: (uuid: string) => void;
 };
 const rows = vi.hoisted(() => ({ rendered: [] as MockRowProps[] }));
+const summary = vi.hoisted(() => ({ shuffleDisabled: null as boolean | null }));
 vi.mock('../../pre-session/WorkoutPreviewRow', () => ({
   WorkoutPreviewRow: (props: MockRowProps) => {
     rows.rendered.push(props);
@@ -243,6 +247,7 @@ beforeEach(() => {
   preview.refreshingUuids = new Set();
   preview.refreshSlot.mockReset();
   rows.rendered = [];
+  summary.shuffleDisabled = null;
   preview.plannedCount = 0;
   preview.staged = { items: [], run: null };
   sheet.modal = null;
@@ -454,7 +459,6 @@ describe('AddWorkoutBlockSheet', () => {
     for (const uuid of uuids) {
       expect(list.querySelector(`[data-testid="preview-row-${uuid}"]`)).toBeTruthy();
     }
-    expect(screen.queryByText(/addBlockPreviewMore/)).toBeNull();
     // The rows draw the climb on the active board (thumbnail and grade colours).
     expect(rows.rendered.at(-1)?.board).toMatchObject({ boardName: 'kilter', angle: 40 });
   });
@@ -499,5 +503,32 @@ describe('AddWorkoutBlockSheet', () => {
       expect(row.onPress).toBeUndefined();
       expect(row.isActive).toBe(false);
     }
+  });
+
+  // The confirm takes the climbs before it awaits the store, so a refresh or a
+  // shuffle in that gap would change rows that are no longer the ones queued.
+  it('holds every refresh and Shuffle while Add to session runs', async () => {
+    let finishRead: (value: string | null) => void = () => undefined;
+    storage.getItem.mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    readyPreview(['v1', 'v2']);
+    renderSheet(true);
+    const latestRow = (uuid: string) => rows.rendered.filter((row) => row.item.uuid === uuid).at(-1);
+    expect(latestRow('v1')?.refreshDisabled).toBe(false);
+    expect(summary.shuffleDisabled).toBe(false);
+
+    await press();
+
+    expect(latestRow('v1')?.refreshDisabled).toBe(true);
+    expect(latestRow('v2')?.refreshDisabled).toBe(true);
+    expect(summary.shuffleDisabled).toBe(true);
+
+    await act(async () => {
+      finishRead(null);
+    });
   });
 });

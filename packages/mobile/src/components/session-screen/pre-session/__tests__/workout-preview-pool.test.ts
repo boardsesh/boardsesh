@@ -245,6 +245,48 @@ describe('refreshSlotInState', () => {
     expect(changed).toBe(false);
   });
 
+  // Mid-session the avoided set is the live queue: a refresh must not re-pick a
+  // climb an earlier block already queued while the pool has others.
+  it('passes over avoided climbs while the pool has others', async () => {
+    const state = buildState({ 10: ['a', 'b', 'c', 'd'] }, [[10, 0]]); // shows 'a'
+    const targetUuid = state.items[0].item.uuid;
+    const fetchPool = vi.fn();
+
+    for (let refresh = 0; refresh < 10; refresh++) {
+      const { state: next, changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool, new Set(['b', 'c']));
+      expect(changed).toBe(true);
+      expect(next.items[0].item.climb.uuid).toBe('d');
+    }
+    expect(fetchPool).not.toHaveBeenCalled();
+  });
+
+  it('falls back to an avoided climb when only avoided ones are left, without refetching', async () => {
+    const state = buildState({ 10: ['a', 'b'] }, [[10, 0]]); // shows 'a'
+    const targetUuid = state.items[0].item.uuid;
+    const fetchPool = vi.fn();
+
+    const { state: next, changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool, new Set(['b']));
+
+    expect(changed).toBe(true);
+    expect(next.items[0].item.climb.uuid).toBe('b');
+    // An avoided climb is still unused, so the cache is not exhausted.
+    expect(fetchPool).not.toHaveBeenCalled();
+  });
+
+  it('prefers a non-avoided climb from the refetch once the cache is exhausted', async () => {
+    const state = buildState({ 10: ['a', 'b'] }, [
+      [10, 0],
+      [10, 1],
+    ]);
+    const targetUuid = state.items[0].item.uuid; // 'a'
+    const fetchPool = vi.fn(async () => ['a', 'b', 'c', 'd'].map(makeClimb));
+
+    const { state: next } = await refreshSlotInState(state, targetUuid, ctx, fetchPool, new Set(['c']));
+
+    expect(fetchPool).toHaveBeenCalledTimes(1);
+    expect(next.items[0].item.climb.uuid).toBe('d');
+  });
+
   it('no-ops for a stale uuid that is no longer in the list', async () => {
     const state = buildState({ 10: ['a', 'b'] }, [[10, 0]]);
     const fetchPool = vi.fn();

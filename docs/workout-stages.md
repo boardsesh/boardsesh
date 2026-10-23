@@ -103,10 +103,12 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   the workout types as `blockTypes`), the preview hook, the summary with Shuffle. The
   preview passes over climbs already in the queue while the pool has others.
 - The preview lists every climb of the block with the Record tab's rows
-  (`WorkoutPreviewListRow`): thumbnail, refresh button, and the same section headings, so
-  a pyramid shows its way up and down. The rows sit in a `BottomSheetFlatList` whose header
+  (`WorkoutPreviewListRow`): thumbnail, refresh button, and section headings, so a
+  pyramid shows its way up and down. The rows sit in a `BottomSheetFlatList` whose header
   holds the fields and the summary. Tapping a row does nothing here, because the play
-  drawer would open under the sheet. Only the refresh button responds.
+  drawer would open under the sheet. Only the refresh button responds, and it and Shuffle
+  hold while "Add to session" runs. A refresh passes over climbs already in the queue,
+  like the build does.
 - "Add to session" appends the climbs to the end of the queue with no
   `activateFirstWhenIdle`, the same way the playlist "Add to queue" row does, so it does
   not move the wall on this phone. Then the block's stage is appended to the run (or

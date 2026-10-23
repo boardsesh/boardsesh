@@ -5,8 +5,8 @@
 // A ModalSheet, not a route (docs/mobile-sheets-vs-routes.md): it is a short
 // task over the session screen, opened by a button, and it opens no sheet of
 // its own. Its preview lists every climb with the Record tab's rows (thumbnail,
-// per-row refresh, the same stage and section headings), but a row tap does
-// nothing: the play drawer would open under the sheet.
+// per-row refresh, the same section headings), but a row tap does nothing: the
+// play drawer would open under the sheet.
 //
 // It reuses the pre-session generator end to end: the block card's fields with
 // the workout types only (mid-session the climber is already warm, so no
@@ -294,7 +294,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const hasPreviewItems = items.length > 0;
 
   // No row is ever active and no onPress: a row tap would open the play drawer
-  // under this sheet. The refresh button still regenerates its own climb.
+  // under this sheet. The refresh button still regenerates its own climb, except
+  // while Add to session runs: it has already taken the climbs it will queue.
   const renderPreviewRow = useCallback(
     ({ item: row }: { item: PreviewListRow }) => (
       <WorkoutPreviewListRow
@@ -302,10 +303,11 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
         board={previewBoard}
         activeUuid={null}
         refreshingUuids={refreshingUuids}
+        refreshLocked={isSubmitting}
         onRefresh={refreshSlot}
       />
     ),
-    [previewBoard, refreshingUuids, refreshSlot],
+    [previewBoard, refreshingUuids, isSubmitting, refreshSlot],
   );
 
   // Everything above the climbs scrolls with them, so the block's fields don't
@@ -338,7 +340,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               summary={planSummary}
               boardName={boardName}
               onShuffle={shuffle}
-              shuffleDisabled={status !== 'ready' || isRefreshingAnyRow}
+              shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isSubmitting}
             />
           ) : null}
           {previewStateMessage ? (
@@ -367,6 +369,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       shuffle,
       status,
       isRefreshingAnyRow,
+      isSubmitting,
       previewStateMessage,
     ],
   );

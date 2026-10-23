@@ -296,7 +296,10 @@ export function useWorkoutPreview(
       inFlightSlotsRef.current.add(itemUuid);
       setRefreshingUuids((prev) => new Set(prev).add(itemUuid));
       try {
-        const result = await refreshSlotInState(dataRef.current, itemUuid, ctx, fetchPoolRef.current);
+        // Read at tap time, like a build: climbs queued since the preview was built
+        // are passed over too.
+        const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
+        const result = await refreshSlotInState(dataRef.current, itemUuid, ctx, fetchPoolRef.current, avoided);
         if (token !== genTokenRef.current) return;
         if (result.changed) {
           dataRef.current = result.state;

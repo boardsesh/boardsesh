@@ -162,12 +162,17 @@ export type RefreshSlotResult = { state: WorkoutPreviewData; changed: boolean };
  * unused climbs; allows a differing repeat only as a last resort. Keeps the
  * queue-item uuid (swaps `.climb`) so the row keeps its identity and highlight —
  * mirroring DELTA_REPLACE_QUEUE_ITEM.
+ *
+ * `avoidClimbUuids` is the same preference `selectItemsFromPools` takes: the
+ * refresh passes over those climbs while the pool has others, and falls back to
+ * one of them before calling the grade exhausted.
  */
 export async function refreshSlotInState(
   state: WorkoutPreviewData,
   targetUuid: string,
   ctx: PreviewFetchContext,
   fetchPool: FetchGradePool,
+  avoidClimbUuids: ReadonlySet<string> = NO_AVOIDED_CLIMBS,
 ): Promise<RefreshSlotResult> {
   const index = state.items.findIndex((preview) => preview.item.uuid === targetUuid);
   if (index === -1) return { state, changed: false }; // row gone (e.g. regenerated under a stale tap)
@@ -180,7 +185,12 @@ export async function refreshSlotInState(
   const cachedPool = pools.get(grade) ?? [];
   // Exclude every climb currently shown (including this row's own) so the refresh
   // lands on a genuinely different climb that isn't already on screen elsewhere.
-  let nextClimb = pickRandomUnused(cachedPool, state.usedUuids, screenshotModeRandom());
+  // Avoided climbs only if nothing else is left; null means nothing unused at all.
+  const usedOrAvoided = avoidClimbUuids.size > 0 ? new Set([...state.usedUuids, ...avoidClimbUuids]) : state.usedUuids;
+  const pickPreferred = (pool: readonly Climb[]): Climb | null =>
+    pickRandomUnused(pool, usedOrAvoided, screenshotModeRandom()) ??
+    (usedOrAvoided === state.usedUuids ? null : pickRandomUnused(pool, state.usedUuids, screenshotModeRandom()));
+  let nextClimb = pickPreferred(cachedPool);
   let refreshedPool: Climb[] | null = null;
 
   // 1) Cache exhausted of unused climbs → refetch + reshuffle this grade once.
@@ -189,7 +199,7 @@ export async function refreshSlotInState(
     const rowsAtGrade = state.items.filter((preview) => preview.slot.grade === grade).length;
     refreshedPool = shuffleInPlace((await fetchPool(grade, ctx, rowsAtGrade + 1)).slice(), screenshotModeRandom());
     pools.set(grade, refreshedPool);
-    nextClimb = pickRandomUnused(refreshedPool, state.usedUuids, screenshotModeRandom());
+    nextClimb = pickPreferred(refreshedPool);
   }
 
   // 2) Tiny catalog: everything at this grade is already shown somewhere. Accept
