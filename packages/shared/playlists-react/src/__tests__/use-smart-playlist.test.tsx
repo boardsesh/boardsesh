@@ -2,9 +2,73 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import type { GetSmartPlaylistInput } from '@boardsesh/graphql/operations/playlists';
 import { PlaylistsAdapterProvider, type ExecutePlaylistsGraphQL, type PlaylistsAdapter } from '../adapter';
 import { noopRecentsAdapter } from '../recents-adapter';
-import { useSmartPlaylist } from '../use-smart-playlist';
+import type { PlaylistClimbsView } from '../use-playlist-climbs';
+import {
+  smartPlaylistGeometryKey,
+  smartPlaylistQueryKey,
+  useSmartPlaylist,
+  type SmartPlaylistActiveBoardInput,
+} from '../use-smart-playlist';
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function smartPage(uuids: string[]) {
+  return {
+    smartPlaylist: {
+      meta: {
+        type: 'LIKED_CLIMBS',
+        userId: 'climber',
+        userName: 'Climber',
+        userAvatar: null,
+        climbCount: uuids.length,
+      },
+      climbs: uuids.map((uuid) => ({ uuid, name: uuid })),
+      totalCount: uuids.length,
+      unfilteredCount: null,
+      hasMore: false,
+    },
+  };
+}
+
+function renderWithAdapter(execute: ReturnType<typeof vi.fn>) {
+  const adapter: PlaylistsAdapter = {
+    executeGraphQL: execute as unknown as ExecutePlaylistsGraphQL,
+    recents: noopRecentsAdapter,
+  };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <PlaylistsAdapterProvider value={adapter}>{children}</PlaylistsAdapterProvider>
+    </QueryClientProvider>
+  );
+  return { client, wrapper };
+}
+
+/** The `input` variable of the `call`-th request the hook sent. */
+function sentInput(execute: ReturnType<typeof vi.fn>, call: number): GetSmartPlaylistInput | undefined {
+  const variables = (execute.mock.calls[call] as unknown[] | undefined)?.[1] as
+    | { input: GetSmartPlaylistInput }
+    | undefined;
+  return variables?.input;
+}
+
+const KILTER: SmartPlaylistActiveBoardInput = {
+  activeBoardName: 'kilter',
+  activeAngle: 40,
+  activeLayoutId: 1,
+  activeSizeId: 10,
+  activeSetIds: '1,20',
+};
+const HARDEST_FIRST: PlaylistClimbsView = { sortBy: 'difficulty', sortOrder: 'desc' };
 
 describe('smart playlist board-scoped requests', () => {
   it('forwards genuine board geometry and separates board or angle changes in the cache', async () => {
@@ -49,6 +113,121 @@ describe('smart playlist board-scoped requests', () => {
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
     rerender({ boardUuid: 'bowlo', angle: 45 });
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    client.clear();
+  });
+});
+
+describe('smart playlist views (#6651)', () => {
+  it('sends no view and no active board without a view, so the request is the one sent before views', async () => {
+    const execute = vi.fn(async () => smartPage(['a']));
+    const { client, wrapper } = renderWithAdapter(execute);
+    const { result } = renderHook(
+      () => useSmartPlaylist({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'climber', activeBoardInput: KILTER }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+    expect(sentInput(execute, 0)).toEqual({ type: 'LIKED_CLIMBS', userId: 'climber', page: 0, pageSize: 20 });
+    client.clear();
+  });
+
+  it('sends the view with the active board, and keys the view and the board', async () => {
+    const execute = vi.fn(async () => smartPage(['a']));
+    const { client, wrapper } = renderWithAdapter(execute);
+    const { result } = renderHook(
+      () =>
+        useSmartPlaylist({
+          smartPlaylistType: 'LIKED_CLIMBS',
+          userId: 'climber',
+          view: HARDEST_FIRST,
+          activeBoardInput: KILTER,
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+    expect(sentInput(execute, 0)).toEqual({
+      type: 'LIKED_CLIMBS',
+      userId: 'climber',
+      page: 0,
+      pageSize: 20,
+      ...KILTER,
+      view: HARDEST_FIRST,
+    });
+    expect(client.getQueryCache().getAll()[0]?.queryKey).toEqual([
+      'smartPlaylist',
+      'LIKED_CLIMBS',
+      'climber',
+      'all',
+      null,
+      null,
+      'kilter|40|1|10|1,20',
+      HARDEST_FIRST,
+    ]);
+    client.clear();
+  });
+
+  it('keeps one fixed key length, the geometry only with a board and the view last', () => {
+    expect(smartPlaylistQueryKey({ smartPlaylistType: 'FIVE_STARS', userId: 'u' })).toEqual([
+      'smartPlaylist',
+      'FIVE_STARS',
+      'u',
+      'all',
+      null,
+      null,
+      null,
+      'default',
+    ]);
+    expect(smartPlaylistGeometryKey(undefined)).toBeNull();
+    expect(smartPlaylistGeometryKey({ activeBoardName: 'tension', activeAngle: 30 })).toBe('tension|30|||');
+  });
+
+  it('keeps the previous rows up while a new view of the same list loads', async () => {
+    const nextPage = deferred<ReturnType<typeof smartPage>>();
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce(smartPage(['newest-like']))
+      .mockReturnValueOnce(nextPage.promise);
+    const { client, wrapper } = renderWithAdapter(execute);
+    const { result, rerender } = renderHook(
+      ({ view }: { view?: PlaylistClimbsView }) =>
+        useSmartPlaylist({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'climber', view, activeBoardInput: KILTER }),
+      { wrapper, initialProps: {} as { view?: PlaylistClimbsView } },
+    );
+    await waitFor(() => expect(result.current.allClimbs.map((climb) => climb.uuid)).toEqual(['newest-like']));
+
+    rerender({ view: HARDEST_FIRST });
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(result.current.query.isPlaceholderData).toBe(true);
+    expect(result.current.allClimbs.map((climb) => climb.uuid)).toEqual(['newest-like']);
+
+    nextPage.resolve(smartPage(['hardest']));
+    await waitFor(() => expect(result.current.allClimbs.map((climb) => climb.uuid)).toEqual(['hardest']));
+    client.clear();
+  });
+
+  it('shows nothing stale for another board under a view, or for another list', async () => {
+    const nextPage = deferred<ReturnType<typeof smartPage>>();
+    const otherList = deferred<ReturnType<typeof smartPage>>();
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce(smartPage(['on-kilter']))
+      .mockReturnValueOnce(nextPage.promise)
+      .mockReturnValueOnce(otherList.promise);
+    const { client, wrapper } = renderWithAdapter(execute);
+    type Props = { activeBoardInput: SmartPlaylistActiveBoardInput; type: 'LIKED_CLIMBS' | 'FIVE_STARS' };
+    const { result, rerender } = renderHook(
+      ({ activeBoardInput, type }: Props) =>
+        useSmartPlaylist({ smartPlaylistType: type, userId: 'climber', view: HARDEST_FIRST, activeBoardInput }),
+      { wrapper, initialProps: { activeBoardInput: KILTER, type: 'LIKED_CLIMBS' } as Props },
+    );
+    await waitFor(() => expect(result.current.allClimbs.map((climb) => climb.uuid)).toEqual(['on-kilter']));
+
+    rerender({ activeBoardInput: { ...KILTER, activeSizeId: 12 }, type: 'LIKED_CLIMBS' });
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(result.current.allClimbs).toEqual([]);
+
+    rerender({ activeBoardInput: KILTER, type: 'FIVE_STARS' });
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
+    expect(result.current.allClimbs).toEqual([]);
     client.clear();
   });
 });

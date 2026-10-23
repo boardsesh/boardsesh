@@ -17,10 +17,14 @@ export type PlaylistClimbsBoardInput = Omit<GetPlaylistClimbsInput, 'playlistId'
 /** The sort and filters, as `toPlaylistClimbViewInput` (@boardsesh/climb-filters) builds them. */
 export type PlaylistClimbsView = NonNullable<GetPlaylistClimbsInput['view']>;
 
-/** Where the board geometry sits in the query key: after the playlist, board and angle. */
-const GEOMETRY_KEY_INDEX = 4;
-/** Where the view sits in the query key: after the geometry, before the refresh key. */
-const VIEW_KEY_INDEX = 5;
+/** Where a list's query key holds its board geometry and its view, for `keepPreviousViewResults`. */
+export type ViewQueryKeyLayout = {
+  geometryIndex: number;
+  viewIndex: number;
+};
+
+/** A playlist's key: the geometry after the playlist, board and angle; the view before the refresh key. */
+const PLAYLIST_CLIMBS_KEY_LAYOUT: ViewQueryKeyLayout = { geometryIndex: 4, viewIndex: 5 };
 
 /** What a playlist climbs query key is built from. */
 export type PlaylistClimbsQueryKeyParts = {
@@ -114,24 +118,28 @@ export function playlistClimbsQueryKeyFor({
 
 /**
  * The `placeholderData` rule: while a new view's first page loads, keep showing
- * the rows of the same playlist, board, angle, geometry and refresh under the
+ * the rows of the same list, board, angle, geometry and refresh under the
  * previous view, so changing the sort or a filter never flashes an empty list.
- * Any other difference (another playlist, board or angle, a refresh) shows
- * nothing stale. Geometry is a different board only when both requests send
- * it: a plain request sends none and its rows do not depend on it, so turning a
- * view on or off keeps the rows up, while an edited size or set list does not.
+ * Any other difference (another list, board or angle, a refresh) shows nothing
+ * stale. Geometry is a different board only when both requests send it: a plain
+ * request sends none and its rows do not depend on it, so turning a view on or
+ * off keeps the rows up, while an edited size or set list does not.
+ *
+ * `layout` says where the list's key holds the geometry and the view: a
+ * playlist's by default, a smart list's from `smartPlaylistQueryKey`.
  */
 export function keepPreviousViewResults<TData>(
   queryKey: QueryKey,
   previousData: TData | undefined,
   previousQueryKey: QueryKey | undefined,
+  layout: ViewQueryKeyLayout = PLAYLIST_CLIMBS_KEY_LAYOUT,
 ): TData | undefined {
   if (previousData === undefined || !previousQueryKey) return undefined;
   if (previousQueryKey.length !== queryKey.length) return undefined;
   const sameListOnSameBoard = queryKey.every((segment, index) => {
-    if (index === VIEW_KEY_INDEX) return true;
+    if (index === layout.viewIndex) return true;
     const previousSegment = previousQueryKey[index];
-    if (index === GEOMETRY_KEY_INDEX && (segment === null || previousSegment === null)) return true;
+    if (index === layout.geometryIndex && (segment === null || previousSegment === null)) return true;
     return segment === previousSegment;
   });
   return sameListOnSameBoard ? previousData : undefined;

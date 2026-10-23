@@ -10,7 +10,6 @@
 type Segments = readonly string[];
 
 const TABS_GROUP = '(tabs)';
-const CLIMBS_TAB = 'climbs';
 const PLAYER_ROUTE = 'play';
 // The replayable walkthrough. Like the player, a transparentModal with an opaque
 // backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
@@ -64,11 +63,6 @@ export function isTabsChromeRoute(segments: Segments): boolean {
     segments[0] === ONBOARDING_ROUTE ||
     segments[0] === 'privacy-consent'
   );
-}
-
-/** True when the focused route is the Climbs tab (or one of its sub-routes). */
-export function isClimbsTabRoute(segments: Segments): boolean {
-  return segments[0] === TABS_GROUP && segments[1] === CLIMBS_TAB;
 }
 
 /**
@@ -145,11 +139,16 @@ export function isAccessoryHostRoute(segments: Segments): boolean {
 }
 
 /**
- * Climbs-tab sub-routes whose bottom controls sit where the accessory platter draws:
- * the full-screen hold-type and zone filter boards. Their mode toggle and chip row
+ * Tab sub-routes whose bottom controls sit where the accessory platter draws: the
+ * full-screen hold-type and zone filter boards, in the two stacks that push them
+ * (Climbs, and Discover for a playlist's filters). Their mode toggle and chip row
  * live at the bottom of the screen, and on iOS 26 the platter covered them.
  */
-const ACCESSORY_HIDDEN_CLIMBS_ROUTES: ReadonlySet<string> = new Set(['holds', 'zone']);
+const FILTER_BOARD_ROUTES: ReadonlySet<string> = new Set(['holds', 'zone']);
+const ACCESSORY_HIDDEN_TAB_ROUTES: Readonly<Record<string, ReadonlySet<string>>> = {
+  climbs: FILTER_BOARD_ROUTES,
+  discover: FILTER_BOARD_ROUTES,
+};
 
 /**
  * True where the native accessory platter must be HIDDEN while its host stays
@@ -160,7 +159,8 @@ const ACCESSORY_HIDDEN_CLIMBS_ROUTES: ReadonlySet<string> = new Set(['holds', 'z
  * narrow exception to `isAccessoryHostRoute`, never a replacement for it.
  */
 export function isAccessoryHiddenRoute(segments: Segments): boolean {
-  return isClimbsTabRoute(segments) && ACCESSORY_HIDDEN_CLIMBS_ROUTES.has(segments[2] ?? '');
+  const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[tabsActiveSegment(segments) ?? ''];
+  return !!hiddenRoutes && hiddenRoutes.has(segments[2] ?? '');
 }
 
 /**

@@ -392,7 +392,51 @@ vi.mock('../../../../src/components/playlist', async () => ({
     )
   ).PlaylistDetailView,
   PlaylistStateHeader: () => null,
+  PlaylistFilterBar: () => null,
 }));
+// The page's filter session at rest (its own behaviour is covered by
+// use-climb-filter-session.test): no sort or filter, so no view is sent.
+vi.mock('../../../../src/hooks/use-climb-filter-session', async () => {
+  const { SETTER_FILTER_DEFAULTS } = await import('../../../../src/lib/playlists/setter-playlist-input');
+  const state = {
+    querySelection: {
+      filters: SETTER_FILTER_DEFAULTS,
+      boardFilters: {},
+      name: '',
+      sort: { sortBy: 'creation', sortOrder: 'desc' },
+      boardFit: false,
+    },
+    activeFilterCount: 0,
+    sortDescription: 'Newest first',
+    chipRowProps: {},
+    tokens: [],
+    gradeRail: null,
+    sheetProps: null,
+  };
+  const actions = {
+    openFilters: () => {},
+    clearFilters: () => {},
+    resetToDefault: () => {},
+    pauseView: () => {},
+    resumeView: () => {},
+  };
+  return { useClimbFilterSession: () => ({ state, actions }) };
+});
+vi.mock('../../../../src/components/ClimbFilterSheet', () => ({ ClimbFilterSheet: () => null }));
+vi.mock('../../../../src/lib/playlist-pinned-chips-store', () => ({ playlistPinnedChipsStore: {} }));
+vi.mock('../../../../src/lib/playlists/playlist-sort-memory', () => ({
+  readListSort: () => ({ sortBy: 'creation', sortOrder: 'desc' }),
+  writeListSort: () => {},
+}));
+vi.mock('../../../../src/lib/last-search-store', () => ({
+  boardConfigKey: (config: { boardName: string }) => config.boardName,
+}));
+vi.mock('../../../../src/hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => false }));
+vi.mock('../../../../src/lib/graphql/hooks/search-grade-source', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/lib/graphql/hooks/search-grade-source')>()),
+  useSearchGradeSourceActive: () => false,
+}));
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: () => createElement('span', null, 'Follow'),
 }));

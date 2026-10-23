@@ -66,6 +66,9 @@ import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-h
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
 import { subscribeToZoneFilterSelection, type ZoneFilterSelection } from '../lib/zone-filter-handoff';
 import { subscribeToSetterFilterSelection, type SetterFilterHandoffOptions } from '../lib/setter-filter-handoff';
+import { createFilterPickerHandoffId } from '../lib/filter-picker-handoff-id';
+import { playlistSetterSourceParams } from '../lib/playlists/playlist-setter-source';
+import type { PlaylistSetterSource } from '@boardsesh/playlists-react';
 import { buildCountPreviewInput } from '../lib/climb-count-preview-input';
 import { visibleSearchTextNeedsSync } from '../lib/search-name';
 import { useAuth } from '../providers/auth-provider';
@@ -81,11 +84,12 @@ export { DEFAULT_FILTERS };
 
 /**
  * Which optional rows the sheet shows. Each defaults to on; the Climbs list uses
- * them all. A playlist hides Recent, the Collection's My drafts option, Other
- * angles and the three picker rows (Setters, Hold types, Board region). With no
- * active board it also hides the rows whose filters need one: Your progress
- * (with My rating), the Collection's Liked option, Following and Beta videos.
- * A hidden option still shows while it is the active value, so it can be undone.
+ * them all. A playlist hides Recent, the Collection's My drafts option and Other
+ * angles. With no active board it also hides the rows whose filters need one:
+ * Your progress (with My rating), the Collection's Liked option, Following, Hold
+ * types, Board region and Beta videos. A smart list also hides the row its own
+ * rows already pass (My rating on Five Stars). A hidden option still shows while
+ * it is the active value, so it can be undone.
  */
 export type ClimbFilterSheetSections = {
   recent?: boolean;
@@ -95,10 +99,47 @@ export type ClimbFilterSheetSections = {
   zone?: boolean;
   otherAngles?: boolean;
   progress?: boolean;
+  /** My rating and "Only climbs I've rated", inside Your progress. */
+  myRating?: boolean;
   liked?: boolean;
   following?: boolean;
   beta?: boolean;
 };
+
+/**
+ * Where the Setters, Hold types and Board region rows push their routes, and
+ * what those routes may offer. The routes push onto the stack the list lives in,
+ * so Back from a picker returns to the list's sheet, never to another tab.
+ *
+ * - `climbs`: the Climbs stack. The Setters row lists the catalogue's setters on
+ *   the board (`climbs/setters`), so it needs a board.
+ * - `discover`: the Discover stack, for a list with setters of its own (a
+ *   playlist, a smart list). The Setters row lists that list's setters
+ *   (`discover/playlist-setters`) and works with no board: a setter filter reads
+ *   every row.
+ *
+ * `heatmap: false` leaves the flame off Hold types: the heatmap counts the
+ * board's catalogue, which is not what a playlist holds.
+ */
+export type ClimbFilterSheetPickers =
+  | { stack: 'climbs'; heatmap: boolean }
+  | { stack: 'discover'; heatmap: boolean; setterList: PlaylistSetterSource };
+
+const CLIMBS_LIST_PICKERS: ClimbFilterSheetPickers = { stack: 'climbs', heatmap: true };
+
+/** Each stack's picker routes. */
+const PICKER_PATHS = {
+  climbs: {
+    setters: '/(tabs)/climbs/setters',
+    holds: '/(tabs)/climbs/holds',
+    zone: '/(tabs)/climbs/zone',
+  },
+  discover: {
+    setters: '/(tabs)/discover/playlist-setters',
+    holds: '/(tabs)/discover/holds',
+    zone: '/(tabs)/discover/zone',
+  },
+} as const satisfies Record<ClimbFilterSheetPickers['stack'], Record<'setters' | 'holds' | 'zone', string>>;
 
 /**
  * The pins of a list other than Climbs, which keeps its own pin store. Pass the
@@ -144,6 +185,7 @@ const ALL_SECTIONS: Required<ClimbFilterSheetSections> = {
   zone: true,
   otherAngles: true,
   progress: true,
+  myRating: true,
   liked: true,
   following: true,
   beta: true,
@@ -207,6 +249,8 @@ export type ClimbFilterSheetProps = {
   gradeBoardName?: string;
   /** The name field's placeholder. Defaults to the Climbs search placeholder. */
   namePlaceholder?: string;
+  /** Where the picker rows push (see ClimbFilterSheetPickers). Defaults to the Climbs list's. */
+  pickers?: ClimbFilterSheetPickers;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -260,6 +304,7 @@ export function ClimbFilterSheet({
   boardFit,
   gradeBoardName,
   namePlaceholder,
+  pickers = CLIMBS_LIST_PICKERS,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
   const theme = useTheme();
@@ -288,9 +333,18 @@ export function ClimbFilterSheet({
   const gradesBoardName = gradeBoardName ?? boardName;
   const { data: grades } = useGrades(gradesBoardName);
   const shownSections = useMemo(() => ({ ...ALL_SECTIONS, ...sections }), [sections]);
-  // The three picker rows open Climbs-tab routes and hand their picks back
-  // through the handoff stores; a list that hides all three skips that wiring.
+  // The three picker rows open routes and hand their picks back through the
+  // handoff stores, addressed to this sheet: one id for the sheet's life, sent
+  // with every push, so a picker opened from another sheet (a setter page's,
+  // pushed over this suspended one) never writes into this one. A list that
+  // hides all three rows skips that wiring.
   const showsPickerRows = shownSections.setters || shownSections.holds || shownSections.zone;
+  const [handoffId] = useState(createFilterPickerHandoffId);
+  const pickerPaths = PICKER_PATHS[pickers.stack];
+  const heatmapOffered = pickers.heatmap;
+  const setterList = pickers.stack === 'discover' ? pickers.setterList : null;
+  // A list's own setters need no board; the catalogue's do.
+  const settersRowNeedsBoard = setterList === null;
   const onResetRef = useRef(onReset);
   onResetRef.current = onReset;
   // A spray wall has no benchmarks and no routes: every climb on it is a
@@ -596,6 +650,8 @@ export function ClimbFilterSheet({
   // active value, so a status carried in can be undone.
   const offerDrafts = shownSections.drafts || collectionFilter === 'drafts';
   const offerLiked = shownSections.liked || collectionFilter === 'liked';
+  const showMyRating =
+    shownSections.myRating || selectedFilters.minUserRating != null || !!selectedFilters.onlyRatedByMe;
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
@@ -722,17 +778,28 @@ export function ClimbFilterSheet({
   // scroll offset for the post-remount restore, then dismisses the native sheet
   // without unmounting (see useSheetSubRoute).
   const openSetters = useCallback(() => {
-    if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+    if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+    const selectedSetters = JSON.stringify(selectedFiltersRef.current.setter ?? []);
+    if (setterList) {
+      beginSubPickerSuspend();
+      router.push({
+        pathname: pickerPaths.setters,
+        params: { ...playlistSetterSourceParams(setterList), setters: selectedSetters, handoffId },
+      });
+      return;
+    }
+    if (!boardConfig) return;
     beginSubPickerSuspend();
     router.push({
-      pathname: '/(tabs)/climbs/setters',
+      pathname: pickerPaths.setters,
       params: {
         boardName: boardConfig.boardName,
         layoutId: String(boardConfig.layoutId),
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        setters: JSON.stringify(selectedFiltersRef.current.setter ?? []),
+        setters: selectedSetters,
+        handoffId,
         // The current count input, so the route's "Show N climbs" button counts
         // the same search, with its own picks swapped in.
         // Read from the latest-selection refs so this callback stays stable across
@@ -747,13 +814,22 @@ export function ClimbFilterSheet({
         ),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
+  }, [
+    beginSubPickerSuspend,
+    boardConfig,
+    isAwaitingReturn,
+    isCurrentPresentation,
+    router,
+    setterList,
+    pickerPaths,
+    handoffId,
+  ]);
 
   const openHoldFilter = useCallback(() => {
     if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
-      pathname: '/(tabs)/climbs/holds',
+      pathname: pickerPaths.holds,
       params: {
         boardName: boardConfig.boardName,
         layoutId: String(boardConfig.layoutId),
@@ -761,22 +837,37 @@ export function ClimbFilterSheet({
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
         holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
+        handoffId,
         // The selection the heatmap counts over (it drops the hold picks itself).
         // Read from the latest-selection refs, like the setters route's count input.
-        heatmapSearch: JSON.stringify({
-          filters: selectedFiltersRef.current,
-          boardFilters: selectedBoardFiltersRef.current,
-          searchText: nameDraftRef.current,
-        }),
+        // A list the heatmap cannot describe sends none, and turns the flame off.
+        ...(heatmapOffered
+          ? {
+              heatmapSearch: JSON.stringify({
+                filters: selectedFiltersRef.current,
+                boardFilters: selectedBoardFiltersRef.current,
+                searchText: nameDraftRef.current,
+              }),
+            }
+          : { heatmap: 'off' }),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
+  }, [
+    beginSubPickerSuspend,
+    boardConfig,
+    isAwaitingReturn,
+    isCurrentPresentation,
+    router,
+    pickerPaths,
+    handoffId,
+    heatmapOffered,
+  ]);
 
   const openZoneFilter = useCallback(() => {
     if (!boardConfig || !isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
     beginSubPickerSuspend();
     router.push({
-      pathname: '/(tabs)/climbs/zone',
+      pathname: pickerPaths.zone,
       params: {
         boardName: boardConfig.boardName,
         layoutId: String(boardConfig.layoutId),
@@ -786,9 +877,10 @@ export function ClimbFilterSheet({
         zoneBox: JSON.stringify(selectedBoardFiltersRef.current.zoneBox ?? null),
         zoneMode: selectedBoardFiltersRef.current.zoneMode ?? 'allHolds',
         holdsFilter: JSON.stringify(selectedBoardFiltersRef.current.holdsFilter ?? {}),
+        handoffId,
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router]);
+  }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router, pickerPaths, handoffId]);
 
   // useSheetSubRoute re-presents the sheet when a sub-picker route pops (back
   // chevron OR swipe-back both re-focus this screen). The setters route's "Show N
@@ -850,18 +942,18 @@ export function ClimbFilterSheet({
   // back through these handoffs when it pops (focus-cleanup), committing the
   // picks immediately. The setters route can also ask to return to the list.
   // Kept subscribed while the sheet is suspended so results still arrive with
-  // the route on top.
+  // the route on top. Only results addressed to this sheet's id arrive.
   useEffect(() => {
     if (!showsPickerRows) return;
-    const unsubscribeSetters = subscribeToSetterFilterSelection(handleSelectedSettersChange);
-    const unsubscribeHolds = subscribeToHoldsFilterSelection(handleHoldsFilterChange);
-    const unsubscribeZone = subscribeToZoneFilterSelection(handleZoneFilterChange);
+    const unsubscribeSetters = subscribeToSetterFilterSelection(handoffId, handleSelectedSettersChange);
+    const unsubscribeHolds = subscribeToHoldsFilterSelection(handoffId, handleHoldsFilterChange);
+    const unsubscribeZone = subscribeToZoneFilterSelection(handoffId, handleZoneFilterChange);
     return () => {
       unsubscribeSetters();
       unsubscribeHolds();
       unsubscribeZone();
     };
-  }, [showsPickerRows, handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
+  }, [showsPickerRows, handoffId, handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
 
   const holdFilterCount = countFilteredHolds(selectedBoardFilters.holdsFilter);
   const zoneActive = selectedBoardFilters.zoneBox != null;
@@ -1064,30 +1156,36 @@ export function ClimbFilterSheet({
                 </FilterChipGroup>
 
                 {/* My rating — the stars you gave, at the angle you're browsing.
-                    The star row keeps climbs you never rated; the switch drops them. */}
-                <View style={filterSheetStyles.subsectionGap} />
-                <FilterLabelRow
-                  label={t('mobile.filter.myRating')}
-                  description={t('mobile.filter.myRatingDescription')}
-                />
-                <View style={filterSheetStyles.ratingRow}>
-                  <FilterChip
-                    label={t('mobile.filter.anyRating')}
-                    value={undefined}
-                    selected={selectedFilters.minUserRating == null}
-                    onPress={handleClearMyRating}
-                  />
-                  <StarRating
-                    value={selectedFilters.minUserRating}
-                    onChange={(value) => setFiltersPatch({ minUserRating: value })}
-                    clearValue={undefined}
-                  />
-                </View>
-                <SwitchRow
-                  label={t('mobile.filter.onlyRatedByMe')}
-                  value={!!selectedFilters.onlyRatedByMe}
-                  onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
-                />
+                    The star row keeps climbs you never rated; the switch drops them.
+                    A list whose rows all carry your stars (Five Stars) hides it,
+                    unless a rating filter is already on. */}
+                {showMyRating ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow
+                      label={t('mobile.filter.myRating')}
+                      description={t('mobile.filter.myRatingDescription')}
+                    />
+                    <View style={filterSheetStyles.ratingRow}>
+                      <FilterChip
+                        label={t('mobile.filter.anyRating')}
+                        value={undefined}
+                        selected={selectedFilters.minUserRating == null}
+                        onPress={handleClearMyRating}
+                      />
+                      <StarRating
+                        value={selectedFilters.minUserRating}
+                        onChange={(value) => setFiltersPatch({ minUserRating: value })}
+                        clearValue={undefined}
+                      />
+                    </View>
+                    <SwitchRow
+                      label={t('mobile.filter.onlyRatedByMe')}
+                      value={!!selectedFilters.onlyRatedByMe}
+                      onValueChange={(value) => setFiltersPatch({ onlyRatedByMe: value || undefined })}
+                    />
+                  </>
+                ) : null}
               </FilterSheetSection>
             ) : null}
 
@@ -1223,7 +1321,7 @@ export function ClimbFilterSheet({
                         : t('mobile.filter.none')
                     }
                     onPress={openSetters}
-                    disabled={!boardConfig}
+                    disabled={settersRowNeedsBoard && !boardConfig}
                   />
                 </>
               ) : null}

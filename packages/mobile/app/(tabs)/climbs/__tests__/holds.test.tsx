@@ -262,7 +262,10 @@ describe('HoldFilterScreen', () => {
     focus.cleanup?.();
 
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith({ [String(TAPPED_HOLD_ID)]: { STARTING: 'include' } });
+    expect(emitMock).toHaveBeenCalledWith({
+      handoffId: '',
+      holdsFilter: { [String(TAPPED_HOLD_ID)]: { STARTING: 'include' } },
+    });
   });
 
   // Woods hold ids match `board_climb_holds.hold_id` and the `p<id>r` frames token
@@ -282,6 +285,23 @@ describe('HoldFilterScreen', () => {
 
     fireEvent.click(getByText('mobile.heatmap.toggle'));
     expect(heatmapMock.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('echoes the handoffId route param in the handoff', () => {
+    routeParams.current = { ...routeParams.current, handoffId: 'filter-picker-6' };
+    render(<HoldFilterScreen />);
+
+    focus.cleanup?.();
+
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith({ handoffId: 'filter-picker-6', holdsFilter: {} });
+  });
+
+  it('shows no flame to a signed-in climber when the opener turned the heatmap off', () => {
+    routeParams.current = { ...routeParams.current, heatmap: 'off' };
+    const { queryByText } = render(<HoldFilterScreen />);
+
+    expect(queryByText('mobile.heatmap.toggle')).toBeNull();
   });
 
   it('shows no flame to a signed-out climber', () => {

@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSmartPlaylist } from '@boardsesh/playlists-react';
+import {
+  smartPlaylistGeometryKey,
+  useSmartPlaylist,
+  type SmartPlaylistActiveBoardInput,
+} from '@boardsesh/playlists-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import {
   GET_SMART_PLAYLIST,
@@ -17,17 +21,53 @@ import {
   PlaylistDetailView,
   SKELETON_PLACEHOLDERS,
   PlaylistStateHeader,
+  PlaylistFilterBar,
   type PlaylistDetailEmptyState,
+  type PlaylistFilterStatus,
 } from '../../../../src/components/playlist';
+import { ClimbFilterSheet, type ClimbFilterSheetPickers } from '../../../../src/components/ClimbFilterSheet';
+import { useClimbFilterSession } from '../../../../src/hooks/use-climb-filter-session';
+import { usePersonalGradesActive } from '../../../../src/hooks/use-personal-grades';
 import { getHttpClient } from '../../../../src/lib/graphql/client';
+import { useSearchGradeSourceActive } from '../../../../src/lib/graphql/hooks/search-grade-source';
+import { boardConfigKey } from '../../../../src/lib/last-search-store';
+import { playlistPinnedChipsStore } from '../../../../src/lib/playlist-pinned-chips-store';
+import { PLAYLIST_PINNABLE_CHIP_KINDS } from '../../../../src/lib/playlist-pinnable-chips';
+import {
+  PLAYLIST_ACTIVE_BOARD_ONLY_CHIPS,
+  playlistSheetSections,
+} from '../../../../src/lib/playlists/playlist-board-scope';
+import { readListSort, writeListSort } from '../../../../src/lib/playlists/playlist-sort-memory';
+import {
+  PLAYLIST_FILTER_DEFAULTS,
+  listSourceId,
+  playlistEmptyKind,
+  playlistViewKey,
+  type PlaylistEmptyKind,
+} from '../../../../src/lib/playlists/playlist-view';
+import { listAddToQueueCount } from '../../../../src/lib/playlists/list-add-to-queue-count';
+import {
+  smartListHiddenChips,
+  smartListSheetSections,
+  smartListSortModelFor,
+  smartListViewInput,
+  smartSortMemoryKey,
+  type SmartListSelection,
+} from '../../../../src/lib/playlists/smart-list-view';
 import { usePlaylistActivation } from '../../../../src/lib/playlists/use-playlist-activation';
 import { usePlaylistRenderBoard } from '../../../../src/lib/playlists/use-playlist-render-board';
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
-import { parseSmartPlaylistOpenSource, smartPlaylistByType } from '../../../../src/lib/smart-playlists';
+import {
+  isLogbookSmartType,
+  parseSmartPlaylistOpenSource,
+  smartPlaylistByType,
+  type SmartPlaylistPresentation,
+} from '../../../../src/lib/smart-playlists';
 import { track } from '../../../../src/lib/analytics';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../../src/lib/graphql/use-active-board';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
+import { useAuth } from '../../../../src/providers/auth-provider';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
 import { useTheme } from '../../../../src/providers/theme-provider';
 
@@ -37,19 +77,22 @@ type SmartParams = {
   source?: string;
 };
 
+/**
+ * The view whose rows are on screen: what the play drawer, Add to queue and the
+ * empty state use (the playlist screen's rule). `selection` is what was asked
+ * for (null for the list's own order) and `activeBoardInput` the board the view
+ * read, so the drawer's pages ask exactly what the rows on screen asked.
+ */
+type SettledSmartView = {
+  view: GetSmartPlaylistInput['view'];
+  key: string | null;
+  selection: SmartListSelection | null;
+  activeBoardInput: SmartPlaylistActiveBoardInput | undefined;
+};
+const PLAIN_SMART_VIEW: SettledSmartView = { view: undefined, key: null, selection: null, activeBoardInput: undefined };
+
 export default function SmartPlaylistDetail() {
   const { type, source } = useLocalSearchParams<SmartParams>();
-  const { t } = useTranslation('playlists');
-  const { systemColors } = useTheme();
-  const { data: profile } = useProfile();
-  const { isLoading: tokenLoading } = useAuthToken();
-  const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
-  const cppCapture = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
-  // "Is anyone else here" — one boolean off a dedicated selector context, so the
-  // session-stats push doesn't re-render this screen's list.
-  const isSharedSession = useIsSharedSession();
-
-  const userId = profile?.id ?? '';
   const preset = smartPlaylistByType(type);
   const smartType = (preset?.type ?? type) as SmartPlaylistType;
 
@@ -64,6 +107,122 @@ export default function SmartPlaylistDetail() {
     track(SHARED_EVENTS.SmartPlaylistOpened, { type: knownType, source: parseSmartPlaylistOpenSource(source) });
   }, [knownType, source]);
 
+  // One body per list: its sort model, remembered sort and filter session belong
+  // to that list, so a param change to another list starts them fresh.
+  return <SmartPlaylistBody key={smartType} smartType={smartType} preset={preset} />;
+}
+
+function SmartPlaylistBody({
+  smartType,
+  preset,
+}: {
+  smartType: SmartPlaylistType;
+  preset: SmartPlaylistPresentation | null;
+}) {
+  const { t } = useTranslation('playlists');
+  const { systemColors } = useTheme();
+  const { data: profile } = useProfile();
+  const { isLoading: tokenLoading } = useAuthToken();
+  const { isAuthenticated } = useAuth();
+  const { data: activeBoard, isPending: activeBoardPending } = useActiveBoard();
+  const cppCapture = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+  // "Is anyone else here" — one boolean off a dedicated selector context, so the
+  // session-stats push doesn't re-render this screen's list.
+  const isSharedSession = useIsSharedSession();
+
+  const userId = profile?.id ?? '';
+  // Sort and filters run on the logbook lists only (#6651). A recommendation is
+  // already ranked for the climber and the server rejects a view on one, so it
+  // gets no filter bar: every hook below still runs, with the session shut.
+  const logbookType = isLogbookSmartType(smartType) ? smartType : null;
+
+  const activeBoardConfig = useMemo(
+    () =>
+      activeBoard
+        ? {
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          }
+        : null,
+    [activeBoard],
+  );
+  // The board a view's active-board filters read. Sent only with a view.
+  const activeBoardInput = useMemo<SmartPlaylistActiveBoardInput | undefined>(
+    () =>
+      activeBoard
+        ? {
+            activeBoardName: activeBoard.boardType,
+            activeAngle: activeBoard.angle,
+            activeLayoutId: activeBoard.layoutId,
+            activeSizeId: activeBoard.sizeId,
+            ...(activeBoard.setIds ? { activeSetIds: activeBoard.setIds } : {}),
+          }
+        : undefined,
+    [activeBoard],
+  );
+
+  // The sort a climber picked on this list is remembered per list type (a
+  // synchronous read, so the first request already carries it); filters start
+  // empty on every visit.
+  const sortModel = smartListSortModelFor(smartType);
+  const sortMemoryKey = smartSortMemoryKey(smartType);
+  const [initialSort] = useState(() => readListSort(sortMemoryKey, sortModel));
+  const rememberSort = useCallback(
+    (sort: SmartListSelection['sort']) => writeListSort(sortMemoryKey, sort, sortModel),
+    [sortMemoryKey, sortModel],
+  );
+  // The sheet's live count and the rail's grade board both come from the query,
+  // which runs after the session: each is mirrored here once known.
+  const [sheetMatchCount, setSheetMatchCount] = useState<number | null>(null);
+  const [listBoardType, setListBoardType] = useState('');
+  const filterScopeKey =
+    logbookType && userId
+      ? `smart:${smartType}:${userId}|${activeBoardConfig ? boardConfigKey(activeBoardConfig) : 'none'}|${isAuthenticated}`
+      : null;
+  // The pickers push onto the Discover stack, and Setters lists this list's
+  // setters. Hold types offers no heatmap: it counts the board, not this list.
+  const filterPickers = useMemo<ClimbFilterSheetPickers>(
+    () => ({ stack: 'discover', heatmap: false, setterList: { kind: 'smart', smartType, userId } }),
+    [smartType, userId],
+  );
+  const { state: filterState, actions: filterActions } = useClimbFilterSession({
+    scopeKey: filterScopeKey,
+    boardConfig: activeBoardConfig,
+    gradeBoardName: activeBoard?.boardType ?? listBoardType,
+    defaultFilters: PLAYLIST_FILTER_DEFAULTS,
+    sortModel,
+    initialSort,
+    onSortCommit: rememberSort,
+    pinStore: playlistPinnedChipsStore,
+    pinnable: PLAYLIST_PINNABLE_CHIP_KINDS,
+    sections: logbookType ? smartListSheetSections(logbookType, !!activeBoard) : playlistSheetSections(!!activeBoard),
+    activeBoardAvailable: !!activeBoard,
+    activeBoardOnlyChips: PLAYLIST_ACTIVE_BOARD_ONLY_CHIPS,
+    hiddenChips: smartListHiddenChips(smartType),
+    pickers: filterPickers,
+    liveCount: sheetMatchCount,
+    disabled: !logbookType,
+    namePlaceholder: t('detail.view.namePlaceholder'),
+  });
+  const personalGrades = usePersonalGradesActive();
+  const boardseshGrades = useSearchGradeSourceActive();
+  // Undefined for a recommendation, and for the list's own order with no filter:
+  // the request then goes out exactly as it did before views existed.
+  const viewInput = useMemo(
+    () => smartListViewInput(smartType, filterState.querySelection, { personalGrades, boardseshGrades }),
+    [smartType, filterState.querySelection, personalGrades, boardseshGrades],
+  );
+  // A view's rows depend on the active board it reads (progress and ratings at
+  // its angle, "Fits my board"), so the board is part of the view's key: a
+  // board switch under a view is a new track, settled once its rows are up.
+  const viewKey = useMemo(() => {
+    const filterKey = playlistViewKey(viewInput);
+    return filterKey === null ? null : `${filterKey}|${smartPlaylistGeometryKey(activeBoardInput) ?? 'no-board'}`;
+  }, [viewInput, activeBoardInput]);
+
   const { query, allClimbs, meta } = useSmartPlaylist({
     smartPlaylistType: smartType,
     userId,
@@ -77,10 +236,39 @@ export default function SmartPlaylistDetail() {
           pageSize: 10,
         }
       : {}),
+    view: viewInput,
+    activeBoardInput,
   });
 
+  // While a new sort or filter loads, the previous view's rows stay up. The
+  // settled view is the one those rows belong to, updated during render in the
+  // same pass that shows the new rows (see the playlist screen), so the drawer's
+  // track, the activation source and Add to queue always follow what is on
+  // screen. The guard compares keys, so it cannot loop. Rows a failed refetch
+  // kept count as on screen too: they are what the climber sees.
+  const [settledView, setSettledView] = useState<SettledSmartView>(PLAIN_SMART_VIEW);
+  const viewRowsOnScreen = query.data !== undefined && !query.isPlaceholderData;
+  if (viewRowsOnScreen && settledView.key !== viewKey) {
+    setSettledView(
+      viewKey === null
+        ? PLAIN_SMART_VIEW
+        : { view: viewInput, key: viewKey, selection: filterState.querySelection, activeBoardInput },
+    );
+  }
+  const firstPage = query.data?.pages[0];
+  const totalCount = firstPage?.totalCount;
+  // Only a filtering view carries it, so it also says "the rows on screen are filtered".
+  const unfilteredCount = firstPage?.unfilteredCount ?? null;
+  useEffect(() => {
+    if (totalCount !== undefined) setSheetMatchCount(totalCount);
+  }, [totalCount]);
+  // With no active board, the grade rail and tokens read the list's own board.
+  const firstClimbBoardType = allClimbs[0]?.boardType ?? '';
+  if (!listBoardType && firstClimbBoardType) setListBoardType(firstClimbBoardType);
+
   // Suggestion-refresh fetcher pages the smart playlist scoped to the active
-  // board name so the play-drawer swipe walks the full computed list.
+  // board name so the play-drawer swipe walks the full computed list, under the
+  // view on screen.
   const fetchPage = useCallback(
     async ({
       page,
@@ -99,6 +287,9 @@ export default function SmartPlaylistDetail() {
         boardName: board.boardName,
         page,
         pageSize,
+        // The view on screen, so the drawer swipes and Add to queue walk the
+        // same sorted, filtered rows the climber sees.
+        ...(settledView.view ? { ...settledView.activeBoardInput, view: settledView.view } : {}),
       };
       // `signal` is what makes backing out of a playlist actually cancel the
       // load. Without it the drain only skipped the NEXT page; the in-flight
@@ -113,11 +304,11 @@ export default function SmartPlaylistDetail() {
         hasMore: response.smartPlaylist.hasMore,
       };
     },
-    [smartType, userId],
+    [smartType, userId, settledView.view, settledView.activeBoardInput],
   );
 
   const playlistActivation = usePlaylistActivation({
-    sourceId: `smart:${smartType}:${userId}`,
+    sourceId: listSourceId(`smart:${smartType}:${userId}`, settledView.key),
     allClimbs,
     fetchPage,
     // Same rule as the playlist screen above: with a crew present a row tap is a
@@ -134,6 +325,7 @@ export default function SmartPlaylistDetail() {
   const hero = useMemo(
     () => ({
       name: preset ? t(preset.titleI18nKey) : (meta?.userName ?? ''),
+      // Under a filtering view, page 0's meta counts the list before the filters.
       climbCount: meta?.climbCount ?? allClimbs.length,
       color: preset?.color,
       icon: preset?.icon,
@@ -142,18 +334,95 @@ export default function SmartPlaylistDetail() {
     [preset, meta, allClimbs.length, t],
   );
 
-  // The liked-climbs surface gets a climber-voice empty state (heart prompt) on
-  // the Material branch; other smart playlists fall back to the generic message.
-  const emptyState = useMemo<PlaylistDetailEmptyState | undefined>(
+  // The empty state follows the response on screen. A failed load (a view can
+  // be rate limited, and a big Liked list costs more to sort) says so and offers
+  // a retry. A list filtered to nothing is worded for the filter, and wins over
+  // the Liked heart prompt, which is for a list with no likes at all.
+  const { clearFilters, openFilters } = filterActions;
+  const climbsFailed = query.isError && allClimbs.length === 0;
+  const settledSelection = settledView.selection;
+  const emptyKind: PlaylistEmptyKind | null =
+    !climbsFailed && unfilteredCount != null && settledSelection ? playlistEmptyKind(settledSelection) : null;
+  const { refetch: retryClimbs } = query;
+  const queriedName = settledSelection?.name ?? '';
+  const emptyMessage = useMemo(() => {
+    if (climbsFailed) return t('detail.errors.loadTitle');
+    switch (emptyKind) {
+      case 'noName':
+        return t('detail.view.empty.noName', { name: queriedName });
+      case 'noBoardFit':
+        return t('detail.view.empty.noBoardFit');
+      case 'allSent':
+        return t('detail.view.empty.allSent');
+      case 'noMatch':
+        return t('detail.view.empty.noMatch');
+      case null:
+        return t('library.smart.empty');
+    }
+  }, [climbsFailed, emptyKind, queriedName, t]);
+  const emptyState = useMemo<PlaylistDetailEmptyState | undefined>(() => {
+    if (climbsFailed) return { icon: 'error', title: emptyMessage, supporting: t('detail.errors.loadDescription') };
+    if (emptyKind) return { icon: 'filter', title: emptyMessage };
+    // The liked-climbs surface gets a climber-voice empty state (heart prompt) on
+    // the Material branch; other smart playlists fall back to the generic message.
+    return preset?.type === 'LIKED_CLIMBS'
+      ? {
+          icon: 'favorite',
+          title: t('library.smart.likedClimbs.empty.title'),
+          supporting: t('library.smart.likedClimbs.empty.supporting'),
+        }
+      : undefined;
+  }, [climbsFailed, emptyKind, emptyMessage, preset, t]);
+  const emptyIcon = climbsFailed ? 'error' : emptyKind ? 'filter' : undefined;
+  const emptyAction = useMemo(() => {
+    if (climbsFailed) return { label: t('detail.errors.tryAgain'), onPress: () => void retryClimbs() };
+    if (emptyKind) return { label: t('detail.view.clearFilters'), onPress: clearFilters };
+    return undefined;
+  }, [climbsFailed, retryClimbs, emptyKind, clearFilters, t]);
+
+  // The filter chrome under the hero, on the logbook lists that hold anything.
+  const showFilterControls = !!logbookType && meta?.climbCount !== 0;
+  // "12 of 117 climbs · Clear filters", from the rows on screen. Hidden at zero,
+  // where the empty state carries its own Clear filters.
+  const filterStatus = useMemo<PlaylistFilterStatus | null>(
     () =>
-      preset?.type === 'LIKED_CLIMBS'
-        ? {
-            icon: 'favorite',
-            title: t('library.smart.likedClimbs.empty.title'),
-            supporting: t('library.smart.likedClimbs.empty.supporting'),
-          }
-        : undefined,
-    [preset, t],
+      unfilteredCount != null && totalCount !== undefined && totalCount > 0
+        ? { shown: totalCount, total: unfilteredCount, onClear: clearFilters }
+        : null,
+    [unfilteredCount, totalCount, clearFilters],
+  );
+  const filterBar = useMemo(
+    () =>
+      showFilterControls ? (
+        <PlaylistFilterBar
+          chipRowProps={filterState.chipRowProps}
+          tokens={filterState.tokens}
+          gradeRail={filterState.gradeRail}
+          status={filterStatus}
+          editing={false}
+        />
+      ) : null,
+    [showFilterControls, filterState.chipRowProps, filterState.tokens, filterState.gradeRail, filterStatus],
+  );
+  const activeFilterCount = filterState.activeFilterCount;
+  const filterAction = useMemo(
+    () => (showFilterControls ? { activeCount: activeFilterCount, onPress: openFilters } : null),
+    [showFilterControls, activeFilterCount, openFilters],
+  );
+  // "Add 12 to queue" while the rows on screen are filtered (`listAddToQueueCount`).
+  const settledFitsBoard = !!settledView.view?.onlyActiveBoard;
+  const { hasNextPage } = query;
+  const addToQueueCount = useMemo(
+    () =>
+      listAddToQueueCount({
+        unfilteredCount,
+        totalCount,
+        fitsBoard: settledFitsBoard,
+        hasNextPage: !!hasNextPage,
+        renderBoard,
+        climbs: allClimbs,
+      }),
+    [unfilteredCount, totalCount, settledFitsBoard, hasNextPage, renderBoard, allClimbs],
   );
 
   if (!preset && !query.isLoading) {
@@ -195,12 +464,20 @@ export default function SmartPlaylistDetail() {
         hasNextPage={query.hasNextPage ?? false}
         fetchNextPage={query.fetchNextPage}
         onActivateClimb={playlistActivation.activate}
-        emptyMessage={t('library.smart.empty')}
+        emptyMessage={emptyMessage}
+        emptyIcon={emptyIcon}
         emptyState={emptyState}
+        emptyAction={emptyAction}
         onAddAllToQueue={playlistActivation.addToQueue.append}
         isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        addToQueueCount={addToQueueCount}
         onRefresh={query.refetch}
+        filterBar={filterBar}
+        filterAction={filterAction}
+        scrollResetKey={settledView.key}
       />
+
+      {filterState.sheetProps ? <ClimbFilterSheet key={filterScopeKey} {...filterState.sheetProps} /> : null}
     </>
   );
 }

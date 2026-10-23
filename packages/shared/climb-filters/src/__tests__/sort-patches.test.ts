@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { CLIMB_TYPE_VALUES, climbTypePatch, getClimbTypeFilter } from '../climb-type-filter';
 import { DEFAULT_CLIMB_FILTER_STATE } from '../filter-state';
-import { DEFAULT_PLAYLIST_VIEW_STATE, PLAYLIST_SORT_OPTIONS } from '../playlist-view';
-import { playlistSortPatch, sortKeyPatch } from '../sort-patches';
+import { DEFAULT_PLAYLIST_VIEW_STATE } from '../playlist-view';
+import { sortKeyPatch } from '../sort-patches';
 
 describe('sortKeyPatch', () => {
   it('mints a fresh seed for Random, so every tap is a new shuffle', () => {
@@ -16,25 +16,6 @@ describe('sortKeyPatch', () => {
   it('clears the seed for every other key and leaves the direction alone', () => {
     expect(sortKeyPatch('difficulty')).toEqual({ sortBy: 'difficulty', sortSeed: undefined });
     expect(sortKeyPatch('difficulty')).not.toHaveProperty('sortOrder');
-  });
-});
-
-describe('playlistSortPatch', () => {
-  it('opens each key on its own direction', () => {
-    expect(playlistSortPatch('position')).toEqual({ sortBy: 'position', sortOrder: 'asc' });
-    expect(playlistSortPatch('difficulty')).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
-    expect(playlistSortPatch('name')).toEqual({ sortBy: 'name', sortOrder: 'asc' });
-    expect(playlistSortPatch('added')).toEqual({ sortBy: 'added', sortOrder: 'desc' });
-    expect(playlistSortPatch('quality')).toEqual({ sortBy: 'quality', sortOrder: 'desc' });
-    expect(playlistSortPatch('ascents')).toEqual({ sortBy: 'ascents', sortOrder: 'desc' });
-  });
-
-  it('gives Random a seed and no other key one', () => {
-    for (const sortBy of PLAYLIST_SORT_OPTIONS) {
-      const sort = playlistSortPatch(sortBy);
-      if (sortBy === 'random') expect(sort.sortSeed).toMatch(/^\d+$/);
-      else expect(sort).not.toHaveProperty('sortSeed');
-    }
   });
 });
 

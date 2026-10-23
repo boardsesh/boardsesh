@@ -125,3 +125,20 @@ export function smartPlaylistHref(type: SmartPlaylistType, source: SmartPlaylist
 export function smartPlaylistByType(type: string): SmartPlaylistPresentation | null {
   return BY_TYPE.get(type as SmartPlaylistType) ?? null;
 }
+
+/**
+ * The smart lists computed from a climber's own logbook. Only these take a sort
+ * and filters, and only these list their setters (#6651): the RECOMMENDED_*
+ * lists are already ranked for the climber, and the server rejects a view on one.
+ */
+export const LOGBOOK_SMART_TYPES = [
+  'LIKED_CLIMBS',
+  'FIVE_STARS',
+  'PROJECTS',
+  'MOST_REPEATED',
+] as const satisfies readonly SmartPlaylistType[];
+export type LogbookSmartType = (typeof LOGBOOK_SMART_TYPES)[number];
+
+export function isLogbookSmartType(type: string): type is LogbookSmartType {
+  return (LOGBOOK_SMART_TYPES as readonly string[]).includes(type);
+}

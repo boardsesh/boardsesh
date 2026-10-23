@@ -229,6 +229,10 @@
       "loadTitle": "Unable to Load Playlist",
       "loadDescription": "There was an error loading this playlist. Please try again.",
       "tryAgain": "Try Again"
+    },
+    "setterPicker": {
+      "showClimbs": "Show climbs",
+      "error": "Couldn't load this list's setters."
     }
   },
   "editClimbs": {

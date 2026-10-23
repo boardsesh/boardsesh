@@ -73,6 +73,11 @@ export type ClimbFilterSessionState<K extends string> = {
   defaultFilters: ClimbFilters;
   /** The list's own starting sort: what Reset goes back to. Constant. */
   defaultSort: SessionSort<K>;
+  /**
+   * The board the hold and zone picks were made on (`boardGeometryKey`), or null
+   * before any board. Hold ids and a region belong to one board's geometry.
+   */
+  boardGeometry: string | null;
 };
 
 export type ClimbFilterSessionAction<K extends string> =
@@ -98,12 +103,32 @@ export type ClimbFilterSessionAction<K extends string> =
   | { type: 'clearFilters' }
   | { type: 'resetToDefault' }
   | { type: 'pauseView' }
-  | { type: 'resumeView' };
+  | { type: 'resumeView' }
+  /**
+   * The list now shows `geometry`'s board. A different board drops the hold and
+   * zone picks: hold ids from one board must never filter another. No board
+   * (null) keeps them, so they come back with the same board.
+   */
+  | { type: 'boardGeometry'; geometry: string | null };
+
+/**
+ * The part of a board its hold ids and regions belong to: the board, layout,
+ * size and hold sets. The angle is left out: tilting the wall keeps the holds.
+ */
+export function boardGeometryKey(board: {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+}): string {
+  return `${board.boardName}|${board.layoutId}|${board.sizeId}|${board.setIds}`;
+}
 
 export function createClimbFilterSessionState<K extends string>(options: {
   defaultFilters: ClimbFilters;
   defaultSort: SessionSort<K>;
   initialSort: SessionSort<K>;
+  boardGeometry?: string | null;
 }): ClimbFilterSessionState<K> {
   return {
     filters: options.defaultFilters,
@@ -114,7 +139,22 @@ export function createClimbFilterSessionState<K extends string>(options: {
     pausedSort: null,
     defaultFilters: options.defaultFilters,
     defaultSort: options.defaultSort,
+    boardGeometry: options.boardGeometry ?? null,
   };
+}
+
+/** The board filters without the hold and zone picks. Same reference when there are none. */
+function withoutGeometryFilters(boardFilters: ClimbBoardFilterState): ClimbBoardFilterState {
+  if (boardFilters.holdsFilter === undefined && boardFilters.zoneBox == null && boardFilters.zoneMode === undefined) {
+    return boardFilters;
+  }
+  const {
+    holdsFilter: _droppedHoldsFilter,
+    zoneBox: _droppedZoneBox,
+    zoneMode: _droppedZoneMode,
+    ...otherBoardFilters
+  } = boardFilters;
+  return Object.keys(otherBoardFilters).length === 0 ? DEFAULT_CLIMB_BOARD_FILTER_STATE : otherBoardFilters;
 }
 
 /** The filters with their sort fields back on the list's inert defaults. Same reference when they already are. */
@@ -221,6 +261,14 @@ export function climbFilterSessionReducer<K extends string>(
       };
     case 'resumeView':
       return state.pausedSort ? { ...state, sort: state.pausedSort, pausedSort: null } : state;
+    case 'boardGeometry':
+      if (action.geometry === null || action.geometry === state.boardGeometry) return state;
+      return {
+        ...state,
+        boardGeometry: action.geometry,
+        // The first board just records itself: nothing was picked on another.
+        boardFilters: state.boardGeometry === null ? state.boardFilters : withoutGeometryFilters(state.boardFilters),
+      };
     default:
       return state;
   }

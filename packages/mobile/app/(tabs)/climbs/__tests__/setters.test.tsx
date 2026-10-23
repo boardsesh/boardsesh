@@ -30,6 +30,7 @@ const params = vi.hoisted(() => ({
     setIds: '1,2',
     angle: '40',
     setters: undefined as string | undefined,
+    handoffId: undefined as string | undefined,
     countInput: undefined as string | undefined,
   },
 }));
@@ -280,6 +281,7 @@ beforeEach(() => {
   params.value.boardName = 'kilter';
   params.value.sizeId = '10';
   params.value.setters = undefined;
+  params.value.handoffId = undefined;
   params.value.countInput = JSON.stringify(sheetCountInput);
 });
 
@@ -361,7 +363,7 @@ describe('SettersFilterScreen', () => {
 
     expect(emitMock).toHaveBeenCalledTimes(1);
     // Exactly one argument: back keeps the picks as a sheet draft.
-    expect(emitMock.mock.calls[0]).toEqual([['alice']]);
+    expect(emitMock.mock.calls[0]).toEqual([{ handoffId: '', setters: ['alice'] }]);
     expect(navMock.goBack).not.toHaveBeenCalled();
   });
 
@@ -449,13 +451,25 @@ describe('SettersFilterScreen', () => {
     }
   });
 
+  it('echoes the handoffId route param in the back handoff and in Show climbs', () => {
+    params.value.handoffId = 'filter-picker-4';
+    params.value.setters = JSON.stringify(['bob']);
+    render(<SettersFilterScreen />);
+
+    focus.cleanup?.();
+    expect(emitMock).toHaveBeenLastCalledWith({ handoffId: 'filter-picker-4', setters: ['bob'] });
+
+    pressHeaderApply();
+    expect(emitMock).toHaveBeenLastCalledWith({ handoffId: 'filter-picker-4', setters: ['bob'], apply: true });
+  });
+
   it('seeds the selection from the route param', () => {
     params.value.setters = JSON.stringify(['bob']);
     render(<SettersFilterScreen />);
 
     focus.cleanup?.();
 
-    expect(emitMock).toHaveBeenCalledWith(['bob']);
+    expect(emitMock).toHaveBeenCalledWith({ handoffId: '', setters: ['bob'] });
   });
 
   it('toggles a seeded setter off', () => {
@@ -465,7 +479,7 @@ describe('SettersFilterScreen', () => {
     fireEvent.click(getByLabelText('alice'));
     focus.cleanup?.();
 
-    expect(emitMock).toHaveBeenCalledWith([]);
+    expect(emitMock).toHaveBeenCalledWith({ handoffId: '', setters: [] });
   });
 
   it('falls back to an empty selection for a malformed setters param', () => {
@@ -474,7 +488,7 @@ describe('SettersFilterScreen', () => {
 
     focus.cleanup?.();
 
-    expect(emitMock).toHaveBeenCalledWith([]);
+    expect(emitMock).toHaveBeenCalledWith({ handoffId: '', setters: [] });
   });
 
   describe('Show N climbs header action', () => {
@@ -526,7 +540,7 @@ describe('SettersFilterScreen', () => {
       pressHeaderApply();
 
       expect(emitMock).toHaveBeenCalledTimes(1);
-      expect(emitMock).toHaveBeenCalledWith(['alice'], { apply: true });
+      expect(emitMock).toHaveBeenCalledWith({ handoffId: '', setters: ['alice'], apply: true });
       expect(navMock.goBack).toHaveBeenCalledTimes(1);
     });
 

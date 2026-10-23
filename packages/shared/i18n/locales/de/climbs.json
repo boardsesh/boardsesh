@@ -9,7 +9,7 @@
     "following": "Gefolgt",
     "allSetters": "Alle Routenbauer*innen",
     "followingClimbs": "Boulder von Leuten, denen ich folge",
-    "playlistSubtitle": "Alle Boulder auf diesem Board · Neueste zuerst",
+    "playlistSubtitleSort": "Alle Boulder auf diesem Board · {{sort}}",
     "signIn": "Melde dich an, um zu folgen",
     "syncNeeded": "Verbinde dich, um deine Abos und verknüpften Routenbauer*innen zu synchronisieren.",
     "followError": "Folgen konnte nicht aktualisiert werden. Versuch es erneut.",
@@ -514,6 +514,9 @@
         "name": "Name",
         "popular": "Beliebt",
         "creation": "Neueste",
+        "recentlyLiked": "Zuletzt gelikt",
+        "recentlyClimbed": "Zuletzt geklettert",
+        "mostTries": "Meiste Versuche",
         "random": "Zufall",
         "reshuffle": "Neu mischen"
       },
@@ -528,6 +531,10 @@
           "desc": "Schwerste zuerst"
         },
         "added": {
+          "desc": "Neueste zuerst",
+          "asc": "Älteste zuerst"
+        },
+        "creation": {
           "desc": "Neueste zuerst",
           "asc": "Älteste zuerst"
         },

@@ -14265,6 +14265,7 @@ export type GetSmartPlaylistQuery = {
   smartPlaylist: {
     __typename?: 'SmartPlaylistResult';
     totalCount: number;
+    unfilteredCount?: number | null;
     hasMore: boolean;
     meta: {
       __typename?: 'SmartPlaylistMeta';
@@ -22300,6 +22301,7 @@ export const GetSmartPlaylistDocument = {
                   },
                 },
                 { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'unfilteredCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
               ],
             },

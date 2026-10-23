@@ -229,6 +229,10 @@
       "loadTitle": "Impossible de charger la playlist",
       "loadDescription": "Erreur lors du chargement de cette playlist. Réessayez.",
       "tryAgain": "Réessayer"
+    },
+    "setterPicker": {
+      "showClimbs": "Voir les blocs",
+      "error": "Impossible de charger les ouvreurs de cette liste."
     }
   },
   "editClimbs": {

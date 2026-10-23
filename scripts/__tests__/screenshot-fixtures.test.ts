@@ -221,6 +221,66 @@ describe('legacy DiscoverPlaylists replay compatibility', () => {
   });
 });
 
+describe('legacy GetSmartPlaylist replay compatibility', () => {
+  const legacy =
+    'query GetSmartPlaylist($input: GetSmartPlaylistInput!) { smartPlaylist(input: $input) { meta { type } climbs { uuid } totalCount hasMore } }';
+  const current = legacy.replace('totalCount hasMore', 'totalCount unfilteredCount hasMore');
+  const fixture = (smartPlaylist: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetSmartPlaylist',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { input: { type: 'RECOMMENDED_CROWD_FAVORITES', userId: 'screenshots' } },
+    response: { data: { smartPlaylist } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('replays the recorded list with no unfiltered count, without mutating the recording', () => {
+    const recorded = fixture({
+      meta: { type: 'RECOMMENDED_CROWD_FAVORITES' },
+      climbs: [{ uuid: 'c-1' }],
+      totalCount: 1,
+      hasMore: false,
+    });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          smartPlaylist: {
+            meta: { type: 'RECOMMENDED_CROWD_FAVORITES' },
+            climbs: [{ uuid: 'c-1' }],
+            totalCount: 1,
+            unfilteredCount: null,
+            hasMore: false,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture({ meta: { type: 'FIVE_STARS' }, climbs: [], totalCount: 0, hasMore: false });
+    expect(
+      replayCompatibleFixtureResponse(current.replace('climbs { uuid }', 'climbs { uuid name }'), recorded),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries the count, or holds no list', () => {
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        fixture({ climbs: [], totalCount: 0, unfilteredCount: 4, hasMore: false }),
+      ),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(current, fixture(null))).toBeNull();
+  });
+});
+
 describe('canonicalJson', () => {
   it('sorts object keys at every depth', () => {
     expect(canonicalJson({ zebra: 1, alpha: { yak: 2, bison: 3 } })).toBe('{"alpha":{"bison":3,"yak":2},"zebra":1}');

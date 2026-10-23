@@ -768,6 +768,10 @@ export type SmartPlaylistResult = {
   meta: SmartPlaylistMeta;
   climbs: PlaylistClimbsResult['climbs'];
   totalCount: number;
+  // The list's count with no view filter applied (null unless the view filters):
+  // the "12 of 117 climbs" line. GET_SMART_PLAYLIST selects it, so a client
+  // sending it needs a backend that has the field (#6651, PR 3a).
+  unfilteredCount?: number | null;
   hasMore: boolean;
 };
 
@@ -781,6 +785,18 @@ export type GetSmartPlaylistInput = {
   sizeId?: number;
   /** Recommendation board-angle override. */
   angle?: number;
+  // The active board, read only by a view's active-board filters (progress,
+  // ratings, holds, "fits my board"). activeBoardName and activeAngle go
+  // together; the rest each need activeBoardName.
+  activeBoardName?: string;
+  activeAngle?: number;
+  activeLayoutId?: number;
+  activeSizeId?: number;
+  activeSetIds?: string;
+  // Sort and filters, on the logbook lists only (Liked, Five Stars, Projects,
+  // Most repeated); a recommendation rejects one. Omit for the list's own order
+  // with no filter, so the default request stays as it was.
+  view?: PlaylistClimbViewInput;
   page?: number;
   pageSize?: number;
 };
@@ -836,6 +852,7 @@ export const GET_SMART_PLAYLIST = gql`
         is_no_match
       }
       totalCount
+      unfilteredCount
       hasMore
     }
   }

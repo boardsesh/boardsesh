@@ -245,6 +245,16 @@ describe('ZoneFilterScreen', () => {
     expect(selection.zoneBox).toEqual({ edgeLeft: 20, edgeRight: 80, edgeBottom: 20, edgeTop: 80 });
   });
 
+  it('echoes the handoffId route param in the handoff, and sends an empty id without one', () => {
+    routeParams.current = baseParams({ handoffId: 'filter-picker-9' });
+    render(<ZoneFilterScreen />).unmount();
+    expect(emitZoneFilterSelection.mock.calls.at(-1)?.[0]).toMatchObject({ handoffId: 'filter-picker-9' });
+
+    routeParams.current = baseParams();
+    render(<ZoneFilterScreen />).unmount();
+    expect(emitZoneFilterSelection.mock.calls.at(-1)?.[0]).toMatchObject({ handoffId: '' });
+  });
+
   // Route params arrive as strings from the navigator and can be malformed
   // (manual deep link, stale handoff, the "null" string the sheet sends for an
   // empty zone). The parse helpers must fall back to safe defaults, never crash.

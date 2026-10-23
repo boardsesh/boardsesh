@@ -11,22 +11,30 @@ describe('playlist board scope', () => {
       expect(playlistSheetSections(hasActiveBoard)).toMatchObject({
         recent: false,
         drafts: false,
-        setters: false,
-        holds: false,
-        zone: false,
         otherAngles: false,
       });
     }
   });
 
-  it('hides progress, Liked, Following and beta videos only without an active board', () => {
+  it('offers the Setters, Hold types and Board region pickers on an active board', () => {
+    const sections = playlistSheetSections(true);
+    expect(sections).not.toHaveProperty('setters');
+    expect(sections).not.toHaveProperty('holds');
+    expect(sections).not.toHaveProperty('zone');
+  });
+
+  it('hides the board-only rows without an active board, and keeps Setters, which reads every row', () => {
+    const sections = playlistSheetSections(false);
     expect(playlistSheetSections(true)).not.toHaveProperty('progress');
-    expect(playlistSheetSections(false)).toMatchObject({
+    expect(sections).toMatchObject({
       progress: false,
       liked: false,
       following: false,
       beta: false,
+      holds: false,
+      zone: false,
     });
+    expect(sections).not.toHaveProperty('setters');
   });
 
   it('hands back the same object each time, so the sheet props stay put', () => {

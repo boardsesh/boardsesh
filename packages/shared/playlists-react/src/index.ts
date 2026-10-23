@@ -47,8 +47,21 @@ export type { UsePinnedPlaylistsOptions, UsePinnedPlaylistsResult, PinnedSource 
 export { SMART_PLAYLIST_COUNTS_QUERY_KEY, useSmartPlaylistCounts } from './use-smart-playlist-counts';
 export type { UseSmartPlaylistCountsOptions } from './use-smart-playlist-counts';
 
-export { useSmartPlaylist } from './use-smart-playlist';
-export type { UseSmartPlaylistOptions, UseSmartPlaylistResult } from './use-smart-playlist';
+export { useSmartPlaylist, smartPlaylistQueryKey, smartPlaylistGeometryKey } from './use-smart-playlist';
+export type {
+  UseSmartPlaylistOptions,
+  UseSmartPlaylistResult,
+  SmartPlaylistActiveBoardInput,
+  SmartPlaylistQueryKeyParts,
+} from './use-smart-playlist';
+
+export {
+  usePlaylistSetters,
+  playlistSettersInput,
+  playlistSettersQueryKey,
+  PLAYLIST_SETTERS_ANSWER_LIMIT,
+} from './use-playlist-setters';
+export type { PlaylistSetterSource, UsePlaylistSettersOptions, UsePlaylistSettersResult } from './use-playlist-setters';
 
 export {
   usePlaylistClimbs,
@@ -64,6 +77,7 @@ export type {
   UsePlaylistClimbsResult,
   PlaylistClimbsBoardInput,
   PlaylistClimbsView,
+  ViewQueryKeyLayout,
 } from './use-playlist-climbs';
 
 export { usePlaylistClimbActivation } from './use-playlist-climb-activation';

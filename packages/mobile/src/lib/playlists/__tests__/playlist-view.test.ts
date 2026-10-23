@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
 import {
   PLAYLIST_FILTER_DEFAULTS,
+  hasActiveSessionFilters,
+  listSourceId,
   playlistEmptyKind,
   playlistSourceId,
   playlistViewKey,
@@ -9,7 +11,7 @@ import {
   toPlaylistViewInput,
   type PlaylistSelection,
 } from '../playlist-view';
-import { playlistSortDirectionLabel, playlistSortKeyLabel, playlistSortModel } from '../playlist-sort-model';
+import { listSortDirectionLabel, listSortKeyLabel, playlistSortModel } from '../playlist-sort-model';
 
 function selection(overrides: Partial<PlaylistSelection> = {}): PlaylistSelection {
   return {
@@ -102,9 +104,54 @@ describe('playlistSortModel', () => {
   });
 
   it('words each direction for what it means', () => {
-    expect(playlistSortDirectionLabel('difficulty', 'asc', echoT)).toBe('mobile.filter.sortDirection.difficulty.asc');
-    expect(playlistSortDirectionLabel('added', 'desc', echoT)).toBe('mobile.filter.sortDirection.added.desc');
-    expect(playlistSortDirectionLabel('random', 'asc', echoT)).toBe('mobile.filter.sort.random');
-    expect(playlistSortKeyLabel('position', echoT)).toBe('mobile.filter.sort.position');
+    expect(listSortDirectionLabel('difficulty', 'asc', echoT)).toBe('mobile.filter.sortDirection.difficulty.asc');
+    expect(listSortDirectionLabel('added', 'desc', echoT)).toBe('mobile.filter.sortDirection.added.desc');
+    expect(listSortDirectionLabel('creation', 'desc', echoT)).toBe('mobile.filter.sortDirection.creation.desc');
+    expect(listSortDirectionLabel('random', 'asc', echoT)).toBe('mobile.filter.sort.random');
+    expect(listSortKeyLabel('position', echoT)).toBe('mobile.filter.sort.position');
+  });
+
+  it('opens each key on its own direction, and gives Random alone a fresh seed', () => {
+    expect(playlistSortModel.patchFor('position')).toEqual({ sortBy: 'position', sortOrder: 'asc' });
+    expect(playlistSortModel.patchFor('difficulty')).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
+    expect(playlistSortModel.patchFor('added')).toEqual({ sortBy: 'added', sortOrder: 'desc' });
+    expect(playlistSortModel.patchFor('quality')).toEqual({ sortBy: 'quality', sortOrder: 'desc' });
+    expect(playlistSortModel.patchFor('name')).toEqual({ sortBy: 'name', sortOrder: 'asc' });
+    expect(playlistSortModel.patchFor('random').sortSeed).toMatch(/^\d+$/);
+    expect(playlistSortModel.patchFor('ascents')).not.toHaveProperty('sortSeed');
+  });
+});
+
+describe('list source ids and sort-blind filter rules', () => {
+  it('adds the view key to any list base, and reports name the base alone', () => {
+    expect(listSourceId('smart:LIKED_CLIMBS:u-1', null)).toBe('smart:LIKED_CLIMBS:u-1');
+    const sorted = listSourceId('smart:LIKED_CLIMBS:u-1', '{"sortBy":"name"}');
+    expect(sorted).toBe('smart:LIKED_CLIMBS:u-1|{"sortBy":"name"}');
+    expect(sourceIdForReports(sorted)).toBe('smart:LIKED_CLIMBS:u-1');
+  });
+
+  it('counts filters, a name and "fits my board", never the sort, whatever the list sorts by', () => {
+    const setterSort = { sortBy: 'creation', sortOrder: 'asc' } as const;
+    expect(hasActiveSessionFilters({ ...selection(), sort: setterSort }, PLAYLIST_FILTER_DEFAULTS)).toBe(false);
+    expect(hasActiveSessionFilters(selection({ name: ' crimp ' }), PLAYLIST_FILTER_DEFAULTS)).toBe(true);
+    expect(hasActiveSessionFilters(selection({ boardFit: true }), PLAYLIST_FILTER_DEFAULTS)).toBe(true);
+    expect(
+      hasActiveSessionFilters(
+        selection({ filters: { ...PLAYLIST_FILTER_DEFAULTS, minRating: 3 } }),
+        PLAYLIST_FILTER_DEFAULTS,
+      ),
+    ).toBe(true);
+    expect(
+      hasActiveSessionFilters(
+        selection({ boardFilters: { holdsFilter: { '1': { HAND: 'include' } } } }),
+        PLAYLIST_FILTER_DEFAULTS,
+      ),
+    ).toBe(true);
+  });
+
+  it('words the empty state the same for a list with sorts of its own', () => {
+    expect(
+      playlistEmptyKind({ ...selection({ name: 'crimp' }), sort: { sortBy: 'creation', sortOrder: 'desc' } }),
+    ).toBe('noName');
   });
 });

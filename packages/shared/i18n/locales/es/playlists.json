@@ -229,6 +229,10 @@
       "loadTitle": "No se pudo cargar la playlist",
       "loadDescription": "Hubo un error al cargar esta playlist. Inténtalo de nuevo.",
       "tryAgain": "Reintentar"
+    },
+    "setterPicker": {
+      "showClimbs": "Ver bloques",
+      "error": "No se pudieron cargar los creadores de esta lista."
     }
   },
   "editClimbs": {

@@ -229,6 +229,10 @@
       "loadTitle": "Playlist lädt nicht",
       "loadDescription": "Beim Laden dieser Playlist ist etwas schiefgegangen. Versuch's nochmal.",
       "tryAgain": "Nochmal versuchen"
+    },
+    "setterPicker": {
+      "showClimbs": "Boulder anzeigen",
+      "error": "Die Setter dieser Liste konnten nicht geladen werden."
     }
   },
   "editClimbs": {

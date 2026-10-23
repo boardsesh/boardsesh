@@ -13,6 +13,7 @@ export const unstable_settings = { initialRouteName: 'index' };
 
 export default function DiscoverLayout() {
   const { t } = useTranslation('playlists');
+  const { t: tCommon } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
   const nativeRootHeader = useNativeRootHeader();
   usePopToTopOnTabBlur('discover');
@@ -67,6 +68,22 @@ export default function DiscoverLayout() {
             options={{
               headerShown: false,
             }}
+          />
+          {/* A playlist's and a smart list's filter pickers (#6651): pushed routes
+              over the suspended filter sheet, as on the Climbs stack (native
+              sheets can't stack). Native header (title + back chevron), opaque
+              so the board or the search bar sits below the bar. */}
+          <Stack.Screen
+            name="playlist-setters"
+            options={{ title: tCommon('mobile.nav.setters'), headerShown: true, headerTransparent: false }}
+          />
+          <Stack.Screen
+            name="holds"
+            options={{ title: tCommon('mobile.nav.holdFilter'), headerShown: true, headerTransparent: false }}
+          />
+          <Stack.Screen
+            name="zone"
+            options={{ title: tCommon('mobile.nav.zoneFilter'), headerShown: true, headerTransparent: false }}
           />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
         </Stack>

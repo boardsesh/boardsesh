@@ -5,12 +5,16 @@ import {
   type PlaylistPinnableChipKind,
 } from './playlist-pinnable-chips';
 
-/** The preference-store key for the playlist screen's pins. Never shared with another surface. */
+/**
+ * The preference-store key for the playlist-style lists' pins (playlists, smart
+ * lists, setter pages: one row layout for all three). Never shared with the
+ * Climbs tab or the Logbook.
+ */
 export const PLAYLIST_PINNED_CHIPS_STORAGE_KEY = 'pinnedPlaylistChips';
 
 /**
  * Which playlist capsules the climber has pinned. Device-global like the climbs
- * and Logbook pins: one layout for every playlist. Unknown kinds in a stored
+ * and Logbook pins: one layout for every playlist, smart list and setter page. Unknown kinds in a stored
  * payload drop out (the factory's default normalize), so the catalog can grow
  * without a migration.
  */

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render } from '@testing-library/react';
+import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
+import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import type { UsePlaylistActivationOptions } from '../../../../src/lib/playlists/use-playlist-activation';
+import type { SetterSelection } from '../../../../src/lib/playlists/setter-sort-model';
 import SetterPlaylist from '../setter/[username]';
 
 const board = { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '1,2', angle: 40 };
@@ -22,12 +24,94 @@ const mocks = vi.hoisted(() => ({
   isAppending: false,
   activation: null as UsePlaylistActivationOptions | null,
   detail: null as {
-    hero: { name: string; climbCount: number };
+    hero: { name: string; climbCount: number; subtitle?: string };
     renderBoard: typeof board;
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    addToQueueCount?: number;
+    filterBar?: ReactNode;
+    filterAction?: { activeCount: number; onPress: () => void } | null;
+    emptyMessage?: string;
+    emptyState?: { icon: string; title: string };
+    scrollResetKey?: string | null;
   } | null,
 }));
+
+// The filter session, reduced to a selection a test can set. Its own behaviour
+// is covered by use-climb-filter-session.test.
+const filterSession = vi.hoisted(() => ({
+  setSelection: null as null | ((selection: SetterSelection) => void),
+  options: null as null | Record<string, unknown>,
+  clearFilters: vi.fn(),
+}));
+vi.mock('../../../../src/hooks/use-climb-filter-session', async () => {
+  const { useMemo, useState } = await import('react');
+  const { SETTER_FILTER_DEFAULTS } = await import('../../../../src/lib/playlists/setter-playlist-input');
+  const plainSelection: SetterSelection = {
+    filters: SETTER_FILTER_DEFAULTS,
+    boardFilters: {},
+    name: '',
+    sort: { sortBy: 'creation', sortOrder: 'desc' },
+    boardFit: false,
+  };
+  return {
+    useClimbFilterSession: (options: Record<string, unknown>) => {
+      filterSession.options = options;
+      const [selection, setSelection] = useState<SetterSelection>(plainSelection);
+      filterSession.setSelection = setSelection;
+      const actions = useMemo(
+        () => ({
+          openFilters: vi.fn(),
+          clearFilters: filterSession.clearFilters,
+          resetToDefault: vi.fn(),
+          pauseView: vi.fn(),
+          resumeView: vi.fn(),
+        }),
+        [],
+      );
+      const state = useMemo(
+        () => ({
+          querySelection: selection,
+          activeFilterCount: 0,
+          sortDescription: `${selection.sort.sortBy}.${selection.sort.sortOrder}`,
+          chipRowProps: {},
+          tokens: [],
+          gradeRail: null,
+          sheetProps: null,
+        }),
+        [selection],
+      );
+      return { state, actions };
+    },
+  };
+});
+vi.mock('../../../../src/components/ClimbFilterSheet', () => ({ ClimbFilterSheet: () => null }));
+vi.mock('../../../../src/lib/playlist-pinned-chips-store', () => ({ playlistPinnedChipsStore: {} }));
+vi.mock('../../../../src/lib/playlists/playlist-sort-memory', () => ({
+  readListSort: () => ({ sortBy: 'creation', sortOrder: 'desc' }),
+  writeListSort: vi.fn(),
+}));
+vi.mock('../../../../src/lib/last-search-store', () => ({
+  boardConfigKey: (config: { boardName: string }) => config.boardName,
+}));
+vi.mock('../../../../src/lib/playlists/playlist-climb-render-board', () => ({
+  resolvePlaylistClimbRenderBoard: () => null,
+}));
+vi.mock('../../../../src/hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => false }));
+vi.mock('../../../../src/lib/graphql/hooks/search-grade-source', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/lib/graphql/hooks/search-grade-source')>()),
+  useSearchGradeSourceActive: () => false,
+}));
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+
+/** The status the page hands its filter bar, or null without one. */
+function filterBarStatus(): { shown: number; total: number } | null {
+  const filterBar = mocks.detail?.filterBar;
+  if (!isValidElement(filterBar)) return null;
+  return (filterBar as ReactElement<{ status: { shown: number; total: number } | null }>).props.status;
+}
+
+const HARDEST_FIRST: SetterSelection['sort'] = { sortBy: 'difficulty', sortOrder: 'desc' };
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -37,7 +121,11 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ username: 'accountless-setter' }),
   useRouter: () => ({ push: mocks.push }),
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key),
+  }),
+}));
 vi.mock('../../../../src/theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
 vi.mock('../../../../src/components/Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) => <button onClick={onPress}>{title}</button>,
@@ -50,6 +138,7 @@ vi.mock('../../../../src/components/SetterFollowButton', () => ({
 }));
 vi.mock('../../../../src/components/playlist', () => ({
   PlaylistStateHeader: () => <span data-testid="native-state-header" />,
+  PlaylistFilterBar: () => null,
   PlaylistDetailView: (props: {
     hero: { name: string; climbCount: number };
     renderBoard: typeof board;
@@ -104,8 +193,10 @@ beforeEach(() => {
     fetchNextPage: mocks.fetchNext,
     refetch: mocks.refetch,
     isError: false,
+    isSuccess: true,
+    isPlaceholderData: false,
   });
-  mocks.count.mockReturnValue({ data: 8 });
+  mocks.count.mockReturnValue({ data: 8, isPlaceholderData: false });
   mocks.request.mockResolvedValue({ searchClimbs: { climbs: [climb], hasMore: true } });
 });
 
@@ -113,7 +204,7 @@ describe('setter smart playlist route', () => {
   it('disables both searches and offers board selection when no board is active', () => {
     mocks.board = null;
     const screen = render(<SetterPlaylist />);
-    expect(mocks.search).toHaveBeenCalledWith(expect.anything(), false);
+    expect(mocks.search).toHaveBeenCalledWith(expect.anything(), false, { keepPreviousResults: true });
     expect(mocks.count).toHaveBeenCalledWith(expect.anything(), false);
     expect(mocks.detail).toBeNull();
     // The native header (and its system back button) is still there.
@@ -132,7 +223,9 @@ describe('setter smart playlist route', () => {
     expect(mocks.detail).toMatchObject({ onAddAllToQueue: mocks.append, isAddingAllToQueue: false });
     expect(screen.getByText('follow:accountless-setter')).not.toBeNull();
     expect(mocks.activation).toMatchObject({ allClimbs: [climb], previewOnly: shared, replaceQueueOnActivate: true });
-    expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true);
+    expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true, {
+      keepPreviousResults: true,
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Activate climb' }));
     expect(mocks.activate).toHaveBeenCalledWith(climb);
     expect(screen.queryByTestId('replace-sheet')).toBeNull();
@@ -187,3 +280,153 @@ describe('setter smart playlist route', () => {
     expect(mocks.refetch).toHaveBeenCalledOnce();
   });
 });
+
+describe('setter page sort and filters (#6651)', () => {
+  it('names the sort in force under the board line', () => {
+    render(<SetterPlaylist />);
+    expect(mocks.detail?.hero.subtitle).toBe('authors.playlistSubtitleSort:{"sort":"creation.desc"}');
+    act(() => filterSession.setSelection?.({ ...plainSelection(), sort: HARDEST_FIRST }));
+    expect(mocks.detail?.hero.subtitle).toBe('authors.playlistSubtitleSort:{"sort":"difficulty.desc"}');
+  });
+
+  it('opens its sheet without Setters or "Fits my board", and with Climbs-stack pickers', () => {
+    render(<SetterPlaylist />);
+    expect(filterSession.options).toMatchObject({
+      scopeKey: 'setter:accountless-setter|kilter|true',
+      boardFitAvailable: false,
+      pickers: { stack: 'climbs', heatmap: false },
+      sections: expect.objectContaining({ setters: false, following: false }),
+    });
+    expect(filterSession.options?.sections).not.toHaveProperty('holds');
+  });
+
+  it('walks the drawer under the view whose rows are on screen', async () => {
+    render(<SetterPlaylist />);
+    act(() => filterSession.setSelection?.({ ...plainSelection(), sort: HARDEST_FIRST }));
+    expect(mocks.search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ setter: ['accountless-setter'], sortBy: 'difficulty', sortOrder: 'desc' }),
+      true,
+      { keepPreviousResults: true },
+    );
+    expect(mocks.activation?.sourceId).toMatch(/^setter:accountless-setter:.*\|/);
+
+    await mocks.activation!.fetchPage({ page: 1, pageSize: 20, board, signal: new AbortController().signal });
+    const sentInput = (mocks.request.mock.calls.at(-1) as unknown[] | undefined)?.[1] as { input: ClimbSearchInput };
+    expect(sentInput.input).toMatchObject({
+      ...board,
+      setter: ['accountless-setter'],
+      sortBy: 'difficulty',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+  });
+
+  it("keeps the old rows' order for the drawer while a new view loads", async () => {
+    render(<SetterPlaylist />);
+    mocks.search.mockReturnValue({
+      data: { pages: [{ climbs: [climb] }] },
+      isLoading: false,
+      hasNextPage: false,
+      fetchNextPage: mocks.fetchNext,
+      refetch: mocks.refetch,
+      isError: false,
+      isSuccess: true,
+      isPlaceholderData: true,
+    });
+    act(() => filterSession.setSelection?.({ ...plainSelection(), sort: HARDEST_FIRST }));
+    expect(mocks.activation?.sourceId).not.toContain('|');
+    await mocks.activation!.fetchPage({ page: 0, pageSize: 20, board, signal: new AbortController().signal });
+    const sentInput = (mocks.request.mock.calls.at(-1) as unknown[] | undefined)?.[1] as { input: ClimbSearchInput };
+    expect(sentInput.input).toMatchObject({ sortBy: 'creation', sortOrder: 'desc' });
+  });
+
+  it("counts the sheet, the status line and Add to queue from the view's own count", () => {
+    mocks.count.mockImplementation((input: ClimbSearchInput) => ({
+      data: input.minRating === 3 ? 3 : 8,
+      isPlaceholderData: false,
+    }));
+    mocks.search.mockReturnValue({
+      data: { pages: [{ climbs: [climb] }] },
+      isLoading: false,
+      hasNextPage: true,
+      fetchNextPage: mocks.fetchNext,
+      refetch: mocks.refetch,
+      isError: false,
+      isSuccess: true,
+      isPlaceholderData: false,
+    });
+    render(<SetterPlaylist />);
+    expect(filterBarStatus()).toBeNull();
+
+    act(() =>
+      filterSession.setSelection?.({ ...plainSelection(), filters: { ...plainSelection().filters, minRating: 3 } }),
+    );
+    expect(filterSession.options?.liveCount).toBe(3);
+    expect(filterBarStatus()).toMatchObject({ shown: 3, total: 8 });
+    // Every row is on this board, so the count is what the add takes.
+    expect(mocks.detail?.addToQueueCount).toBe(3);
+    // The hero still counts every climb the setter set here.
+    expect(mocks.detail?.hero.climbCount).toBe(8);
+  });
+
+  it('keeps "3 of 8" while the next view loads, and asks no new count for a new sort', () => {
+    mocks.count.mockImplementation((input: ClimbSearchInput) => ({
+      data: input.minRating === 3 ? 3 : 8,
+      isPlaceholderData: false,
+    }));
+    const rowsFor = (placeholder: boolean) => ({
+      data: { pages: [{ climbs: [climb] }] },
+      isLoading: false,
+      hasNextPage: false,
+      fetchNextPage: mocks.fetchNext,
+      refetch: mocks.refetch,
+      isError: false,
+      isSuccess: true,
+      isPlaceholderData: placeholder,
+    });
+    mocks.search.mockReturnValue(rowsFor(false));
+    render(<SetterPlaylist />);
+    const filtered = { ...plainSelection(), filters: { ...plainSelection().filters, minRating: 3 } };
+    act(() => filterSession.setSelection?.(filtered));
+    expect(filterBarStatus()).toMatchObject({ shown: 3, total: 8 });
+
+    // A new sort: its rows are loading, the old ones (and their count) stay up.
+    mocks.search.mockReturnValue(rowsFor(true));
+    mocks.count.mockClear();
+    act(() => filterSession.setSelection?.({ ...filtered, sort: HARDEST_FIRST }));
+    expect(filterBarStatus()).toMatchObject({ shown: 3, total: 8 });
+    expect(mocks.detail?.addToQueueCount).toBe(3);
+    // The count it asks for is the filters at the page's own order, as before the sort.
+    for (const [countInput] of mocks.count.mock.calls as [ClimbSearchInput][]) {
+      expect(countInput).toMatchObject({ sortBy: 'creation', sortOrder: 'desc' });
+    }
+  });
+
+  it('words a page filtered to nothing for the filter', () => {
+    mocks.search.mockReturnValue({
+      data: { pages: [{ climbs: [] }] },
+      isLoading: false,
+      hasNextPage: false,
+      fetchNextPage: mocks.fetchNext,
+      refetch: mocks.refetch,
+      isError: false,
+      isSuccess: true,
+      isPlaceholderData: false,
+    });
+    render(<SetterPlaylist />);
+    act(() => filterSession.setSelection?.({ ...plainSelection(), name: 'crimp' }));
+    expect(mocks.detail?.emptyState).toEqual({ icon: 'filter', title: mocks.detail?.emptyMessage });
+    expect(mocks.detail?.emptyMessage).toBe('detail.view.empty.noName:{"name":"crimp"}');
+  });
+});
+
+function plainSelection(): SetterSelection {
+  return {
+    filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: true },
+    boardFilters: {},
+    name: '',
+    sort: { sortBy: 'creation', sortOrder: 'desc' },
+    boardFit: false,
+  };
+}

@@ -41,6 +41,8 @@ type Params = {
   zoneBox?: string;
   zoneMode?: string;
   holdsFilter?: string;
+  /** Which filter sheet gets the zone back (see lib/filter-picker-handoff-id.ts). */
+  handoffId?: string;
 };
 
 // Chrome the board height budget must leave room for so the full board fits
@@ -170,15 +172,17 @@ export default function ZoneFilterScreen() {
 
   // Hand the current selection back to the sheet whenever this screen loses
   // focus (Done button pops, or swipe-back). Matches the hold filter handoff.
+  const handoffId = params.handoffId ?? '';
   useFocusEffect(
     useCallback(() => {
       return () =>
         emitZoneFilterSelection({
+          handoffId,
           zoneBox: selectionRef.current.zoneBox,
           zoneMode: selectionRef.current.zoneMode,
           holdsFilter: selectionRef.current.holdsFilter,
         });
-    }, []),
+    }, [handoffId]),
   );
 
   const handleEnable = useCallback(() => {

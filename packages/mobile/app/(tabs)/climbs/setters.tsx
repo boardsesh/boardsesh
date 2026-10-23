@@ -30,6 +30,8 @@ type Params = {
   setters?: string;
   /** The filter sheet's count input (JSON) for its draft at push time. */
   countInput?: string;
+  /** Which filter sheet gets the picks back (see lib/filter-picker-handoff-id.ts). */
+  handoffId?: string;
 };
 
 // Defensive parse of the serialized selection param: a malformed value falls back
@@ -84,6 +86,7 @@ export default function SettersFilterScreen() {
   const [followError, setFollowError] = useState(false);
   const [followingOnly, setFollowingOnly] = useState(false);
   const { t } = useTranslation('climbs');
+  const handoffId = params.handoffId ?? '';
 
   // A screenshot deep link (`://climbs/setters`) opens this route with none of
   // the params the filter sheet pushes, which would leave the setter query
@@ -115,9 +118,9 @@ export default function SettersFilterScreen() {
     () =>
       navigation.addListener('beforeRemove', () => {
         if (appliedRef.current) return;
-        emitSetterFilterSelection(selectedSettersRef.current);
+        emitSetterFilterSelection({ handoffId, setters: selectedSettersRef.current });
       }),
-    [navigation],
+    [navigation, handoffId],
   );
 
   const baseCountInput = useMemo(() => parseCountInput(params.countInput), [params.countInput]);
@@ -202,9 +205,9 @@ export default function SettersFilterScreen() {
   const handleApply = useCallback(() => {
     if (appliedRef.current) return;
     appliedRef.current = true;
-    emitSetterFilterSelection(selectedSettersRef.current, { apply: true });
+    emitSetterFilterSelection({ handoffId, setters: selectedSettersRef.current, apply: true });
     navigation.goBack();
-  }, [navigation]);
+  }, [navigation, handoffId]);
 
   // Apply ("Show N climbs") is the header's trailing action. "Clear all" sits
   // in the selection bar under the search, next to the count it clears: beside

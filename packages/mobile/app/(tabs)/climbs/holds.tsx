@@ -35,6 +35,13 @@ type Params = {
   holdsFilter?: string;
   /** The filter sheet's draft search, for the heatmap. */
   heatmapSearch?: string;
+  /**
+   * `off` from a list the heatmap cannot describe (a playlist): it counts the
+   * board's catalogue, not the list, so the flame is not offered.
+   */
+  heatmap?: string;
+  /** Which filter sheet gets the hold filter back (see lib/filter-picker-handoff-id.ts). */
+  handoffId?: string;
 };
 
 // Vertical space (px) reserved for the on-screen chrome around the board so the
@@ -104,8 +111,11 @@ export default function HoldFilterScreen() {
 
   // The hold heatmap, counting the climbs the sheet's other filters match. A
   // read that answers from a downloaded board (or offers the download), which a
-  // signed-out climber has no way to use, so they get no toggle.
+  // signed-out climber has no way to use, so they get no toggle. A list that is
+  // not the board's catalogue (a playlist) turns it off: the heat would count
+  // climbs the list does not hold.
   const { isAuthenticated } = useAuth();
+  const heatmapOffered = isAuthenticated && params.heatmap !== 'off';
   const [heatmapDraft] = useState(() => parseHeatmapSearch(params.heatmapSearch));
   const heatmap = useHoldFilterHeatmap({ boardName, layoutId, sizeId, setIds, angle, holds: boardHolds }, heatmapDraft);
   const { data: activeBoard } = useActiveBoard();
@@ -127,7 +137,7 @@ export default function HoldFilterScreen() {
     hapticMedium();
     toggleHeatmap();
   }, [toggleHeatmap]);
-  const heatmapToggle = isAuthenticated ? (
+  const heatmapToggle = heatmapOffered ? (
     <ActionButton
       size="sm"
       iconName={heatmap.enabled ? 'flame.fill' : 'flame'}
@@ -163,10 +173,11 @@ export default function HoldFilterScreen() {
 
   // Hand the current filter back to the sheet whenever this screen loses focus
   // (Done button pops, or swipe-back). Matches the setters handoff timing.
+  const handoffId = params.handoffId ?? '';
   useFocusEffect(
     useCallback(() => {
-      return () => emitHoldsFilterSelection(holdsFilterRef.current);
-    }, []),
+      return () => emitHoldsFilterSelection({ handoffId, holdsFilter: holdsFilterRef.current });
+    }, [handoffId]),
   );
 
   // Paint the selected brush (type + include/exclude) onto the tapped hold:

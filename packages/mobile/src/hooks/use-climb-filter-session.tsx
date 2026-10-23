@@ -1,7 +1,8 @@
 // One list's filter session for a screen other than the Climbs tab: the
 // selection, the chip row's props, the token row, the grade rail and the
-// filter sheet's props, all from one hook. The playlist screen is the first
-// consumer (#6651); setter pages follow.
+// filter sheet's props, all from one hook. Three screens use it (#6651): a
+// playlist, a smart list and a setter page. Each passes its own sorts, sheet
+// rows, hidden chips and picker routes; the rules below are the same for all.
 //
 // What it owns:
 // - The selection, in a reducer (lib/climb-filter-session-reducer.ts). The sort
@@ -13,6 +14,9 @@
 // - The grade rail's open state, held here and never in the global
 //   `gradeRowShown` setting, so opening it in a playlist leaves Climbs alone.
 //   A regular-width iPad shows it as a popover on the Grade chip.
+// - The board the hold and zone picks belong to: a different board drops them
+//   (render time, like the screens' settled view), so hold ids picked on one
+//   board never filter another.
 //
 // Memoisation: every action only dispatches (stable, `[]` deps), and
 // `chipRowProps` is one memo over plain values, so a page load, a refetch or a
@@ -38,6 +42,7 @@ import {
 import { GradeRangeRail } from '../components/grade';
 import type {
   ClimbFilterSheetBoardFit,
+  ClimbFilterSheetPickers,
   ClimbFilterSheetPins,
   ClimbFilterSheetProps,
   ClimbFilterSheetSections,
@@ -47,6 +52,7 @@ import type { FilterChipRowProps, FilterChipSortControl } from '../components/se
 import type { DimensionChip } from '../lib/dimension-chips';
 import { statusForAuth, type ClimbFilters } from '../lib/climb-filter-types';
 import {
+  boardGeometryKey,
   climbFilterSessionReducer,
   createClimbFilterSessionState,
   type ClimbFilterSessionSelection,
@@ -71,6 +77,7 @@ import { useLiveClimbFilters } from './use-live-climb-filters';
 /** Same wait as the Climbs search field before a typed name reaches the query. */
 const NAME_DEBOUNCE_MS = 300;
 const NO_DIMENSION_CHIPS: DimensionChip[] = [];
+const NO_HIDDEN_CHIPS: readonly FilterChipKind[] = [];
 const noop = () => {};
 
 export type UseClimbFilterSessionOptions<K extends string, P extends FilterChipKind> = {
@@ -106,6 +113,19 @@ export type UseClimbFilterSessionOptions<K extends string, P extends FilterChipK
   activeBoardAvailable: boolean;
   /** The chips whose control needs an active board, left off the row without one. */
   activeBoardOnlyChips: readonly FilterChipKind[];
+  /**
+   * Whether "Fits my board" is offered (chip, token and sheet switch). Defaults
+   * to `activeBoardAvailable`. A setter page lists one board's climbs only, so
+   * it turns the lever off: every row already fits.
+   */
+  boardFitAvailable?: boolean;
+  /**
+   * Chips the list leaves off its row whatever is pinned, because every row
+   * already passes them (Your progress on Projects). Keep it a module constant.
+   */
+  hiddenChips?: readonly FilterChipKind[];
+  /** Where the sheet's picker rows push (ClimbFilterSheetPickers). Keep it memoised. */
+  pickers?: ClimbFilterSheetPickers;
   /** The list's live match count for the sheet's subtitle; null while unknown. */
   liveCount: number | null;
   /** True while the list cannot be filtered (playlist edit mode): Filters stays shut. */
@@ -122,6 +142,11 @@ export type ClimbFilterSessionView<K extends string> = {
   querySelection: ClimbFilterSessionSelection<K>;
   /** Filters in force, the name and "Fits my board" included, the sort not. */
   activeFilterCount: number;
+  /**
+   * The sort in force in words, the default included: its direction where it
+   * has two ("Newest first", "Hardest first"), else its name ("Recently liked").
+   */
+  sortDescription: string;
   chipRowProps: FilterChipRowProps;
   /** The removable tokens for the filters no pinned chip shows. */
   tokens: FilterToken[];
@@ -158,17 +183,27 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     sections,
     activeBoardAvailable,
     activeBoardOnlyChips,
+    boardFitAvailable = activeBoardAvailable,
+    hiddenChips = NO_HIDDEN_CHIPS,
+    pickers,
     liveCount,
     disabled,
     namePlaceholder,
   } = options;
   const { t } = useTranslation('climbs');
   const { isAuthenticated } = useAuth();
+  const boardGeometry = boardConfig ? boardGeometryKey(boardConfig) : null;
   const [session, dispatch] = useReducer(
     climbFilterSessionReducer<K>,
-    { defaultFilters, defaultSort: sortModel.defaultSort, initialSort },
+    { defaultFilters, defaultSort: sortModel.defaultSort, initialSort, boardGeometry },
     createClimbFilterSessionState<K>,
   );
+  // A new board drops the hold and zone picks before anything reads them: at
+  // render time, so no query goes out with board A's hold ids on board B. The
+  // reducer ignores a repeat, so this costs one extra render per board switch.
+  if (boardGeometry !== null && boardGeometry !== session.boardGeometry) {
+    dispatch({ type: 'boardGeometry', geometry: boardGeometry });
+  }
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const disabledRef = useRef(disabled);
@@ -193,7 +228,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       ? { filters: climbTypeFilters, boardFilters: session.boardFilters }
       : withoutPlaylistActiveBoardOnlyFilters(climbTypeFilters, session.boardFilters);
   }, [session.filters, session.boardFilters, isAuthenticated, isSprayWall, defaultFilters, activeBoardAvailable]);
-  const boardFit = session.boardFit && activeBoardAvailable;
+  const boardFit = session.boardFit && boardFitAvailable;
 
   // --- Actions (each only dispatches) ----------------------------------------
   const patchFilters = useCallback((patch: Partial<ClimbFilters>) => dispatch({ type: 'patchFilters', patch }), []);
@@ -416,11 +451,10 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
 
   // --- Sort labels and controls ----------------------------------------------
   const sortLabels = sortModel.useLabels();
-  const sortLabel = sortActive
-    ? sortModel.hasDirection(session.sort.sortBy)
-      ? sortLabels.directionLabel(session.sort.sortBy, session.sort.sortOrder)
-      : sortLabels.keyLabel(session.sort.sortBy)
-    : sortLabels.resting;
+  const sortDescription = sortModel.hasDirection(session.sort.sortBy)
+    ? sortLabels.directionLabel(session.sort.sortBy, session.sort.sortOrder)
+    : sortLabels.keyLabel(session.sort.sortBy);
+  const sortLabel = sortActive ? sortDescription : sortLabels.resting;
   const chipSortOptions = useMemo(
     () => sortModel.options.map((sortBy) => ({ value: sortBy, label: sortLabels.keyLabel(sortBy) })),
     [sortModel, sortLabels],
@@ -441,11 +475,15 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   // A chip whose control needs an active board stays pinned, but leaves the row
   // while there is none (its filter is dropped above).
   // The climb-type chip leaves a spray wall's row too: it has nothing to offer.
+  // So do the list's own hidden chips, and "Fits my board" where it is not offered.
   const pinned = useMemo(() => {
-    const hiddenKinds = new Set<FilterChipKind>(activeBoardAvailable ? [] : activeBoardOnlyChips);
+    const hiddenKinds = new Set<FilterChipKind>(
+      activeBoardAvailable ? hiddenChips : [...activeBoardOnlyChips, ...hiddenChips],
+    );
     if (isSprayWall) hiddenKinds.add('climbType');
+    if (!boardFitAvailable) hiddenKinds.add('boardFit');
     return hiddenKinds.size === 0 ? storedPins : storedPins.filter((kind) => !hiddenKinds.has(kind));
-  }, [activeBoardAvailable, storedPins, activeBoardOnlyChips, isSprayWall]);
+  }, [activeBoardAvailable, storedPins, activeBoardOnlyChips, hiddenChips, isSprayWall, boardFitAvailable]);
   const filterTokens = useMemo(
     () =>
       getActiveFilterTokens({
@@ -516,8 +554,8 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
 
   // --- Chip row --------------------------------------------------------------
   const chipBoardFit = useMemo(
-    () => (activeBoardAvailable ? { active: boardFit, onToggle: handleToggleBoardFit } : undefined),
-    [activeBoardAvailable, boardFit, handleToggleBoardFit],
+    () => (boardFitAvailable ? { active: boardFit, onToggle: handleToggleBoardFit } : undefined),
+    [boardFitAvailable, boardFit, handleToggleBoardFit],
   );
   const gradeRailOpen = gradeUsesPopover ? gradePopoverOpen : gradeRowShown;
   const progress = flagsToProgress(filters);
@@ -631,13 +669,13 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   }, [session.sort, sortModel, sortLabels, sortActive, runWhileOpen]);
   const sheetBoardFit = useMemo<ClimbFilterSheetBoardFit | undefined>(
     () =>
-      activeBoardAvailable
+      boardFitAvailable
         ? {
             value: boardFit,
             onChange: (value: boolean) => runWhileOpen(() => dispatch({ type: 'setBoardFit', boardFit: value })),
           }
         : undefined,
-    [activeBoardAvailable, boardFit, runWhileOpen],
+    [boardFitAvailable, boardFit, runWhileOpen],
   );
   const sheetLiveCount = useMemo(() => ({ count: liveCount }), [liveCount]);
   const sheetProps = useMemo<ClimbFilterSheetProps | null>(
@@ -662,6 +700,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
             boardFit: sheetBoardFit,
             gradeBoardName,
             namePlaceholder,
+            pickers,
           }
         : null,
     [
@@ -684,6 +723,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       sheetBoardFit,
       gradeBoardName,
       namePlaceholder,
+      pickers,
     ],
   );
 
@@ -691,12 +731,13 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     () => ({
       querySelection,
       activeFilterCount,
+      sortDescription,
       chipRowProps,
       tokens,
       gradeRail,
       sheetProps,
     }),
-    [querySelection, activeFilterCount, chipRowProps, tokens, gradeRail, sheetProps],
+    [querySelection, activeFilterCount, sortDescription, chipRowProps, tokens, gradeRail, sheetProps],
   );
   const actions = useMemo<ClimbFilterSessionActions>(
     () => ({ openFilters, clearFilters, resetToDefault, pauseView, resumeView }),

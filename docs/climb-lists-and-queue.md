@@ -117,7 +117,8 @@ A playlist (#6651) has the Climbs chip row under its hero: Filters, Grade, Your 
 Sort by default, each pinnable from the filter sheet. Once the hero scrolls away, a ≡ button in
 the header opens the same sheet. With a filter on, a line under the chips reads "12 of 117
 climbs · Clear filters". Clear filters keeps the sort; the sheet's Reset clears the sort too.
-Smart lists and setter pages do not have this yet.
+Smart lists and setter pages have the same chip row, sheet and ≡ button; see
+[Smart lists and setter pages](#smart-lists-and-setter-pages) for what differs.
 
 - **The request.** `usePlaylistClimbs` gets a `view` only when the sort is not the playlist's
   own order or a filter is on. With neither, the request is the one sent before views existed.
@@ -150,6 +151,28 @@ Smart lists and setter pages do not have this yet.
   It is off here; instead, a new sort or filter scrolls back up to the filter bar only when the
   climber was below it.
 
+### Smart lists and setter pages
+
+Both reuse the playlist's chip row, filter sheet and ≡ button. A plain request (no sort, no
+filter) is byte-identical to before.
+
+- **Smart lists** (Liked, Five Stars, Projects, Most repeated). Sorts: the list's own order,
+  Difficulty, Quality, Ascents, Name, Random. The own order is named "Recently liked" (Liked),
+  "Recently climbed" (Five Stars) or "Most tries" (Projects, Most repeated). There is no
+  "Recently added". The sort is remembered per list type (`smart:<TYPE>`); filters reset on each
+  visit. Liked hides the Liked collection option, Projects hides Your progress (row and chip),
+  Five Stars hides My rating. The recommended lists (Crowd favorites, Hidden gems, At your level,
+  Fresh) get no controls and never send a view.
+- **Setter pages** (`climbs/setter/[username]`). Sorts: Newest (the default), Difficulty,
+  Quality, Ascents, Name, Random. One remembered sort covers every setter page (`setter-pages`).
+  The subtitle names the sort in force ("All climbs on this board · Hardest first"). Setters,
+  Following, Other angles and "Fits my board" are not offered; Hold types and Board region are.
+- **What you see is what you swipe and queue**, on all three surfaces. The play drawer's
+  `fetchPage`, the activation `sourceId` and Add to queue follow the settled view (the view whose
+  rows are on screen). Source ids are `playlist:<uuid>`, `smart:<TYPE>:<userId>` and
+  `setter:<username>:<board JSON>`, each followed by `|<view key>` while a sort or filter is on
+  (`listSourceId` in `src/lib/playlists/playlist-view.ts`).
+
 The climb menu is the same everywhere (`src/components/climb-actions/use-climb-actions.ts:299-372`):
 Preview, Add to queue, Open queue, Play next, Add to playlist, Favorite and the rest. In a
 crew, swiping right, Add to queue and Play next all write to the room's queue, with or without
@@ -163,7 +186,7 @@ the flag.
 | The queue in a session | The server. The track is never sent, so it lives on one phone only. | `queue-provider.tsx:1930-1932` |
 | Previews | Nowhere. | — |
 | Recently opened playlists | AsyncStorage key `boardsesh:recent-playlists`. | `src/lib/playlists/recents-store.ts:13` |
-| The sort picked inside each playlist | MMKV settings key `playlistSortsV1`, newest first, 100 playlists at most. A playlist on its own order has no entry, and Random is kept without its seed. Filters are never kept. | `src/lib/playlists/playlist-sort-memory.ts` |
+| The sort picked inside each playlist | MMKV settings key `playlistSortsV1`, newest first, 100 playlists at most. A playlist on its own order has no entry, and Random is kept without its seed. Filters are never kept. Smart lists key theirs `smart:<TYPE>` and setter pages share `setter-pages`. | `src/lib/playlists/playlist-sort-memory.ts` |
 | Which chips a playlist shows | AsyncStorage key `pinnedPlaylistChips`, one set for every playlist on the phone. | `src/lib/playlist-pinned-chips-store.ts` |
 | Ticks, wall history, playlists | The server. The lists above only read them. | — |
 

@@ -6,6 +6,7 @@ import type { PinnedChipsStore } from '../../lib/pinned-chips-store';
 import { PLAYLIST_PINNABLE_CHIP_KINDS, type PlaylistPinnableChipKind } from '../../lib/playlist-pinnable-chips';
 import { PLAYLIST_FILTER_DEFAULTS } from '../../lib/playlists/playlist-view';
 import { playlistSortModel, type PlaylistSessionSort } from '../../lib/playlists/playlist-sort-model';
+import { DEFAULT_SETTER_SORT, setterSortModel } from '../../lib/playlists/setter-sort-model';
 
 // One `t` for every render, as react-i18next hands out.
 const translation = vi.hoisted(() => ({
@@ -423,5 +424,100 @@ describe('useClimbFilterSession', () => {
     // A sheet opens again under the new scope.
     act(() => result.current.actions.openFilters());
     expect(result.current.state.sheetProps).not.toBeNull();
+  });
+
+  describe('seams for smart lists and setter pages (#6651)', () => {
+    it('offers no "fits my board" where the list turns it off, and keeps the board-only filters', () => {
+      pinState.pinned = ['grade', 'progress', 'boardFit', 'sort'];
+      const { result } = renderSession({ boardFitAvailable: false });
+      expect(result.current.state.chipRowProps.boardFit).toBeUndefined();
+      expect(result.current.state.chipRowProps.pinnedChips).toEqual(['grade', 'progress', 'sort']);
+      act(() => result.current.state.chipRowProps.onChangeProgress('unsent'));
+      expect(result.current.state.querySelection.filters.hideCompleted).toBe(true);
+      expect(result.current.state.tokens.map((token) => token.key)).not.toContain('boardFit');
+      act(() => result.current.actions.openFilters());
+      expect(result.current.state.sheetProps?.boardFit).toBeUndefined();
+    });
+
+    it("leaves the list's hidden chips off the row whatever is pinned", () => {
+      const { result } = renderSession({ hiddenChips: ['progress'] });
+      expect(result.current.state.chipRowProps.pinnedChips).toEqual(['grade', 'sort']);
+    });
+
+    it('words the sort in force, the default included', () => {
+      const { result } = renderSession();
+      expect(result.current.state.sortDescription).toBe('mobile.filter.sort.position');
+      act(() => result.current.state.chipRowProps.sortControl?.onSelect('difficulty'));
+      expect(result.current.state.sortDescription).toBe('mobile.filter.sortDirection.difficulty.asc');
+    });
+
+    it("words a setter page's resting sort as its direction", () => {
+      const { result } = renderHook(() =>
+        useClimbFilterSession({
+          scopeKey: 'setter:marco|kilter|true',
+          boardConfig: BOARD,
+          gradeBoardName: 'kilter',
+          defaultFilters: PLAYLIST_FILTER_DEFAULTS,
+          sortModel: setterSortModel,
+          initialSort: DEFAULT_SETTER_SORT,
+          pinStore: fakePinStore,
+          pinnable: PLAYLIST_PINNABLE_CHIP_KINDS,
+          sections: SECTIONS,
+          activeBoardAvailable: true,
+          activeBoardOnlyChips: [],
+          liveCount: null,
+          disabled: false,
+        }),
+      );
+      expect(result.current.state.sortDescription).toBe('mobile.filter.sortDirection.creation.desc');
+      expect(result.current.state.chipRowProps.sortControl).toMatchObject({
+        label: 'mobile.filter.sort.creation',
+        active: false,
+      });
+    });
+
+    it('hands the sheet the same pickers object across renders', () => {
+      const pickers = {
+        stack: 'discover',
+        heatmap: false,
+        setterList: { kind: 'playlist', playlistId: 'p-1' },
+      } as const;
+      const { result, rerender, initialProps } = renderSession({ pickers });
+      act(() => result.current.actions.openFilters());
+      const sheetProps = result.current.state.sheetProps;
+      expect(sheetProps?.pickers).toBe(pickers);
+      rerender({ ...initialProps, pickers });
+      expect(result.current.state.sheetProps).toBe(sheetProps);
+    });
+
+    it('drops the hold and zone picks when the board changes, before any query reads them', () => {
+      const { result, rerender, initialProps } = renderSession();
+      act(() => result.current.actions.openFilters());
+      act(() =>
+        result.current.state.sheetProps?.onSelectionChange(PLAYLIST_FILTER_DEFAULTS, {
+          holdsFilter: { '42': { HAND: 'include' } },
+          zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
+          zoneMode: 'anyHold',
+        }),
+      );
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(result.current.state.querySelection.boardFilters.holdsFilter).toEqual({ '42': { HAND: 'include' } });
+
+      // Same board at another angle: the holds stay.
+      rerender({ ...initialProps, boardConfig: { ...BOARD, angle: 50 } });
+      expect(result.current.state.querySelection.boardFilters.holdsFilter).toEqual({ '42': { HAND: 'include' } });
+
+      const tension = { boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '8,9', angle: 40 };
+      rerender({
+        ...initialProps,
+        scopeKey: 'playlist:p-1|tension|true',
+        boardConfig: tension,
+        gradeBoardName: 'tension',
+      });
+      expect(result.current.state.querySelection.boardFilters).toEqual({});
+      expect(result.current.state.activeFilterCount).toBe(0);
+    });
   });
 });

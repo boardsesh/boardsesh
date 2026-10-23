@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   isTabsRoute,
-  isClimbsTabRoute,
   isTopLevelTabRoute,
   isAccessorySurfaceRoute,
   isAccessoryHostRoute,
@@ -20,20 +19,6 @@ describe('isTabsRoute', () => {
     expect(isTabsRoute(['auth'])).toBe(false);
     expect(isTabsRoute(['(modal)', 'session'])).toBe(false);
     expect(isTabsRoute([])).toBe(false);
-  });
-});
-
-describe('isClimbsTabRoute', () => {
-  it('is true on the Climbs tab and its sub-routes', () => {
-    expect(isClimbsTabRoute(['(tabs)', 'climbs'])).toBe(true);
-    expect(isClimbsTabRoute(['(tabs)', 'climbs', 'create'])).toBe(true);
-  });
-
-  it('is false on other tabs or outside the tabs group', () => {
-    expect(isClimbsTabRoute(['(tabs)', 'boards'])).toBe(false);
-    expect(isClimbsTabRoute(['(tabs)'])).toBe(false);
-    expect(isClimbsTabRoute(['auth'])).toBe(false);
-    expect(isClimbsTabRoute([])).toBe(false);
   });
 });
 
@@ -155,9 +140,16 @@ describe('isAccessoryHiddenRoute', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'zone'])).toBe(true);
   });
 
+  it("is true on the Discover stack's copies, which a playlist's filters push", () => {
+    expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'holds'])).toBe(true);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'zone'])).toBe(true);
+  });
+
   it('is false everywhere else', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs'])).toBe(false);
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'setters'])).toBe(false);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'discover', '[playlist_uuid]'])).toBe(false);
+    expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'playlist-setters'])).toBe(false);
     expect(isAccessoryHiddenRoute(['(tabs)', 'home', 'holds'])).toBe(false);
     expect(isAccessoryHiddenRoute(['play'])).toBe(false);
     expect(isAccessoryHiddenRoute([])).toBe(false);

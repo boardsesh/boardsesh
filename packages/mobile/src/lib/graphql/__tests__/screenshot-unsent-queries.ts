@@ -67,6 +67,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetNotifications',
   'GetPlaylist',
   'GetPlaylistClimbs',
+  // A playlist's or smart list's setter picker (#6651): only a tap inside its filter sheet asks.
+  'GetPlaylistSetters',
   'GetPlaylistsForClimb',
   'GetPlaylistsForClimbs',
   'GetPopularBoardConfigs',

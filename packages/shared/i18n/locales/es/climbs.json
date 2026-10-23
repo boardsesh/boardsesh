@@ -9,7 +9,7 @@
     "following": "Siguiendo",
     "allSetters": "Todos los setters",
     "followingClimbs": "Bloques de personas que sigo",
-    "playlistSubtitle": "Todos los bloques de este plafón · Más recientes primero",
+    "playlistSubtitleSort": "Todos los bloques de este plafón · {{sort}}",
     "signIn": "Inicia sesión para seguir a este setter",
     "syncNeeded": "Conéctate para sincronizar a quienes sigues y sus setters vinculados.",
     "followError": "No se pudo actualizar. Inténtalo de nuevo.",
@@ -514,6 +514,9 @@
         "name": "Nombre",
         "popular": "Populares",
         "creation": "Más recientes",
+        "recentlyLiked": "Favoritos recientes",
+        "recentlyClimbed": "Escalados recientemente",
+        "mostTries": "Más intentos",
         "random": "Aleatorio",
         "reshuffle": "Mezclar de nuevo"
       },
@@ -528,6 +531,10 @@
           "desc": "Más difíciles primero"
         },
         "added": {
+          "desc": "Más recientes primero",
+          "asc": "Más antiguos primero"
+        },
+        "creation": {
           "desc": "Más recientes primero",
           "asc": "Más antiguos primero"
         },

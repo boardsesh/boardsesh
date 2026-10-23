@@ -564,6 +564,12 @@ function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet
   return { ...render(<ClimbFilterSheet {...props} />, { wrapper: CommittedSelectionHarness }), props };
 }
 
+/** The handoff id the sheet sent with its last picker push: where a route hands its picks back. */
+function pushedHandoffId(): string {
+  const push = routerPush.mock.calls.at(-1)?.[0] as { params?: { handoffId?: string } } | undefined;
+  return push?.params?.handoffId ?? '';
+}
+
 // Simulate the climbs screen regaining focus after a sub-picker route pops.
 function simulateScreenRefocus() {
   act(() => {
@@ -1053,6 +1059,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         setIds: '1,2',
         angle: '40',
         setters: JSON.stringify(['draft-setter']),
+        handoffId: expect.stringMatching(/^filter-picker-\d+$/),
         countInput: JSON.stringify({ draftFilters: currentFilters }),
       },
     });
@@ -1075,7 +1082,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
-      emitSetterFilterSelection(['route-setter'], { apply: true });
+      emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['route-setter'], apply: true });
     });
 
     expect(onSelectionChange).toHaveBeenCalledTimes(2);
@@ -1104,7 +1111,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
-      emitSetterFilterSelection([], { apply: true });
+      emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: [], apply: true });
     });
 
     expect(onSelectionChange).toHaveBeenCalledWith({ ...currentFilters, setter: undefined }, currentBoardFilters);
@@ -1123,7 +1130,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       <ClimbFilterSheet {...rendered.props} onSelectionChange={latestOnSelectionChange} onDismiss={latestOnDismiss} />,
     );
     act(() => {
-      emitSetterFilterSelection(['route-setter'], { apply: true });
+      emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['route-setter'], apply: true });
     });
 
     expect(latestOnSelectionChange).toHaveBeenCalledTimes(1);
@@ -1140,7 +1147,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       searchInputMocks.toClimbSearchInput.mockClear();
 
       act(() => {
-        emitSetterFilterSelection(['route-setter']);
+        emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['route-setter'] });
       });
 
       // No timer advanced: the count input already carries the handed-back picks.
@@ -1159,7 +1166,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       searchInputMocks.mergeBoardFilters.mockClear();
 
       act(() => {
-        emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+        emitHoldsFilterSelection({ handoffId: pushedHandoffId(), holdsFilter: { '99': { HAND: 'include' } } });
       });
 
       // No timer advanced: the count input already carries the handed-back holds.
@@ -1181,6 +1188,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
       act(() => {
         emitZoneFilterSelection({
+          handoffId: pushedHandoffId(),
           zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
           zoneMode: 'allHolds',
           holdsFilter: { '77': { FOOT: 'include' } },
@@ -1205,7 +1213,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
     act(() => {
-      emitSetterFilterSelection(['route-setter']);
+      emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['route-setter'] });
     });
     simulateScreenRefocus();
 
@@ -1229,7 +1237,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
       />,
     );
-    act(() => emitSetterFilterSelection(['route-setter']));
+    act(() => emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['route-setter'] }));
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
     expect(onSelectionChange).toHaveBeenCalledWith(
       { ...currentFilters, onlyRatedByMe: true, setter: ['route-setter'] },
@@ -1262,10 +1270,16 @@ describe('ClimbFilterSheet sub-pickers', () => {
     fireEvent.click(rendered.getByLabelText(label));
     rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 11 }} />);
     act(() => {
-      if (picker === 'setters') emitSetterFilterSelection(['old-board-setter'], { apply: true });
-      if (picker === 'holds') emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+      if (picker === 'setters')
+        emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: ['old-board-setter'], apply: true });
+      if (picker === 'holds')
+        emitHoldsFilterSelection({ handoffId: pushedHandoffId(), holdsFilter: { '99': { HAND: 'include' } } });
       if (picker === 'zone')
-        emitZoneFilterSelection({ zoneBox: currentBoardFilters.zoneBox ?? null, zoneMode: 'allHolds' });
+        emitZoneFilterSelection({
+          handoffId: pushedHandoffId(),
+          zoneBox: currentBoardFilters.zoneBox ?? null,
+          zoneMode: 'allHolds',
+        });
     });
     simulateScreenRefocus();
     expect(onSelectionChange).not.toHaveBeenCalled();
@@ -1288,6 +1302,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         setIds: '1,2',
         angle: '40',
         holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
+        handoffId: expect.stringMatching(/^filter-picker-\d+$/),
         // The committed selection used by the heatmap.
         heatmapSearch: JSON.stringify({
           filters: currentFilters,
@@ -1299,7 +1314,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(managedSheetProps.latest?.open).toBe(false);
 
     act(() => {
-      emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+      emitHoldsFilterSelection({ handoffId: pushedHandoffId(), holdsFilter: { '99': { HAND: 'include' } } });
     });
     simulateScreenRefocus();
     closeAndFinish(getByText('close'));
@@ -1327,11 +1342,13 @@ describe('ClimbFilterSheet sub-pickers', () => {
         zoneBox: JSON.stringify(currentBoardFilters.zoneBox),
         zoneMode: 'allHolds',
         holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
+        handoffId: expect.stringMatching(/^filter-picker-\d+$/),
       },
     });
 
     act(() => {
       emitZoneFilterSelection({
+        handoffId: pushedHandoffId(),
         zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
         zoneMode: 'allHolds',
         holdsFilter: { '77': { FOOT: 'include' } },
@@ -1411,6 +1428,138 @@ describe('ClimbFilterSheet sub-pickers', () => {
       expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
     },
   );
+});
+
+describe('ClimbFilterSheet picker routes and handoff ids (#6651)', () => {
+  const PLAYLIST_PICKERS = {
+    stack: 'discover',
+    heatmap: false,
+    setterList: { kind: 'playlist', playlistId: 'p-1' },
+  } as const;
+
+  it('pushes the Climbs routes by default, each with the same id for the sheet', () => {
+    const { getByLabelText } = renderFilterSheet();
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    const settersPush = routerPush.mock.calls.at(-1)?.[0] as { pathname: string; params: { handoffId: string } };
+    act(() => emitSetterFilterSelection({ handoffId: settersPush.params.handoffId, setters: [] }));
+    simulateScreenRefocus();
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    const holdsPush = routerPush.mock.calls.at(-1)?.[0] as { pathname: string; params: { handoffId: string } };
+
+    expect(settersPush.pathname).toBe('/(tabs)/climbs/setters');
+    expect(holdsPush.pathname).toBe('/(tabs)/climbs/holds');
+    expect(holdsPush.params.handoffId).toBe(settersPush.params.handoffId);
+  });
+
+  it("pushes the Discover routes for a playlist, and lists the playlist's own setters", () => {
+    const { getByLabelText } = renderFilterSheet({ pickers: PLAYLIST_PICKERS });
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    expect(routerPush).toHaveBeenLastCalledWith({
+      pathname: '/(tabs)/discover/playlist-setters',
+      params: {
+        playlistId: 'p-1',
+        setters: JSON.stringify(['draft-setter']),
+        handoffId: expect.stringMatching(/^filter-picker-\d+$/),
+      },
+    });
+    act(() => emitSetterFilterSelection({ handoffId: pushedHandoffId(), setters: [] }));
+    simulateScreenRefocus();
+
+    fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
+    expect(routerPush).toHaveBeenLastCalledWith(expect.objectContaining({ pathname: '/(tabs)/discover/zone' }));
+  });
+
+  it("names a smart list's setters by type and owner", () => {
+    const { getByLabelText } = renderFilterSheet({
+      pickers: {
+        stack: 'discover',
+        heatmap: false,
+        setterList: { kind: 'smart', smartType: 'FIVE_STARS', userId: 'u-1' },
+      },
+    });
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    expect(routerPush).toHaveBeenLastCalledWith({
+      pathname: '/(tabs)/discover/playlist-setters',
+      params: expect.objectContaining({ smartType: 'FIVE_STARS', userId: 'u-1' }),
+    });
+  });
+
+  it("opens a list's setters with no board: a setter filter reads every row", () => {
+    const { getByLabelText } = renderFilterSheet({ boardConfig: null, pickers: PLAYLIST_PICKERS });
+    const setters = getByLabelText('mobile.filter.setters') as HTMLButtonElement;
+    expect(setters.disabled).toBe(false);
+    fireEvent.click(setters);
+    expect(routerPush).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pathname: '/(tabs)/discover/playlist-setters' }),
+    );
+  });
+
+  it('turns the Hold types heatmap off for a list it cannot count', () => {
+    const { getByLabelText } = renderFilterSheet({ pickers: PLAYLIST_PICKERS });
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    const holdsPush = routerPush.mock.calls.at(-1)?.[0] as { pathname: string; params: Record<string, string> };
+    expect(holdsPush.pathname).toBe('/(tabs)/discover/holds');
+    expect(holdsPush.params.heatmap).toBe('off');
+    expect(holdsPush.params).not.toHaveProperty('heatmapSearch');
+  });
+
+  it('ignores a pick addressed to another sheet, and one with no address', () => {
+    const onSelectionChange = vi.fn();
+    const { getByLabelText } = renderFilterSheet({ onSelectionChange });
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    act(() => {
+      emitHoldsFilterSelection({ handoffId: 'filter-picker-someone-else', holdsFilter: { '99': { HAND: 'include' } } });
+      emitHoldsFilterSelection({ handoffId: '', holdsFilter: { '99': { HAND: 'include' } } });
+    });
+    expect(onSelectionChange).not.toHaveBeenCalled();
+
+    act(() => emitHoldsFilterSelection({ handoffId: pushedHandoffId(), holdsFilter: { '99': { HAND: 'include' } } }));
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+  });
+
+  // The collision the ids fix: the Climbs sheet stays mounted (suspended) under a
+  // setter page pushed from its setter picker; that page's own sheet then opens
+  // Hold types. Before the ids both sheets took the picks, so the Climbs list
+  // picked up holds chosen for one setter's page.
+  it('hands Hold types picks only to the sheet that opened it, with another sheet suspended under it', () => {
+    const climbsTabSelectionChange = vi.fn();
+    const climbsTabSheet = renderFilterSheet({ onSelectionChange: climbsTabSelectionChange });
+    fireEvent.click(climbsTabSheet.getByLabelText('mobile.filter.setters'));
+    const climbsTabHandoffId = pushedHandoffId();
+
+    const setterPageSelectionChange = vi.fn();
+    const setterPageSheet = renderFilterSheet({
+      onSelectionChange: setterPageSelectionChange,
+      sections: { setters: false, following: false, recent: false, drafts: false, otherAngles: false },
+      pickers: { stack: 'climbs', heatmap: false },
+    });
+    fireEvent.click(setterPageSheet.getAllByLabelText('mobile.holdFilter.title').at(-1) as HTMLElement);
+    const setterPageHandoffId = pushedHandoffId();
+    expect(setterPageHandoffId).not.toBe(climbsTabHandoffId);
+
+    act(() => emitHoldsFilterSelection({ handoffId: setterPageHandoffId, holdsFilter: { '42': { FOOT: 'include' } } }));
+
+    expect(setterPageSelectionChange).toHaveBeenCalledWith(currentFilters, {
+      ...currentBoardFilters,
+      holdsFilter: { '42': { FOOT: 'include' } },
+    });
+    expect(climbsTabSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('hides My rating where the list turns it off, unless a rating filter is on', () => {
+    const hidden = renderFilterSheet({ sections: { myRating: false } });
+    expect(hidden.queryByText('mobile.filter.myRating')).toBeNull();
+    expect(hidden.queryByTestId('switch-mobile.filter.onlyRatedByMe')).toBeNull();
+    // The progress chips around it stay.
+    expect(hidden.queryByText('mobile.filter.progress.label')).not.toBeNull();
+    hidden.unmount();
+
+    const active = renderFilterSheet({
+      sections: { myRating: false },
+      currentFilters: { ...currentFilters, onlyRatedByMe: true },
+    });
+    expect(active.queryByText('mobile.filter.myRating')).not.toBeNull();
+  });
 });
 
 describe('ClimbFilterSheet rows without a board config', () => {
@@ -2197,12 +2346,6 @@ describe('ClimbFilterSheet list seams', () => {
     // Following stays: it needs no picker.
     expect(queryByTestId('switch-authors.followingClimbs')).not.toBeNull();
     expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
-
-    // No handoff is listened to while the pickers are hidden.
-    const onSelectionChange = vi.fn();
-    renderFilterSheet({ sections: PLAYLIST_SECTIONS, onSelectionChange });
-    act(() => emitSetterFilterSelection(['someone'], { apply: false }));
-    expect(onSelectionChange).not.toHaveBeenCalled();
   });
 
   it('hides the rows that need an active board when the list has none', () => {

@@ -6,7 +6,6 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 
 // Hoisted, per-test-configurable view of the global state the bar reads.
 const cfg = vi.hoisted(() => ({
-  onClimbsTab: true,
   insideTabs: true,
   // The bar shows only on a top-level tab page; `onAccessorySurface` (top-level OR
   // player) additionally drives the bottom-chrome arbitration the bar reads.
@@ -53,7 +52,6 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 vi.mock('expo-router', () => ({ useSegments: () => [] }));
 vi.mock('../../../lib/route-segments', () => ({
-  isClimbsTabRoute: () => cfg.onClimbsTab,
   isTabsRoute: () => cfg.insideTabs,
   // The player route counts as chrome-mounted; these tests don't exercise /play,
   // so it tracks the same `insideTabs` config as the tab-chrome predicate.
@@ -175,7 +173,6 @@ const renderBar = () =>
 
 describe('PersistentQueueBar', () => {
   beforeEach(() => {
-    cfg.onClimbsTab = true;
     cfg.insideTabs = true;
     cfg.onTopLevelTab = true;
     cfg.onAccessorySurface = true;
@@ -284,7 +281,6 @@ describe('PersistentQueueBar', () => {
   it('shows the tick on every top-level tab — parity with the always-on native accessory', () => {
     // Even off the Climbs tab (e.g. the Profile tab index) the fallback keeps the
     // tick so an ascent can be logged, matching the iOS 26 bottom accessory.
-    cfg.onClimbsTab = false;
     const { container } = renderBar();
     expect(container.querySelector('[data-capsule]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).not.toBeNull();

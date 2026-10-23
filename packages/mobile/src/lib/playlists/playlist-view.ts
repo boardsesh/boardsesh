@@ -5,6 +5,8 @@
 
 import {
   DEFAULT_CLIMB_FILTER_STATE,
+  DEFAULT_PLAYLIST_VIEW_STATE,
+  countActiveFilters,
   countActivePlaylistFilters,
   flagsToProgress,
   toPlaylistClimbViewInput,
@@ -15,6 +17,8 @@ import type { ClimbFilters } from '../climb-filter-types';
 import type { ClimbFilterSessionSelection } from '../climb-filter-session-reducer';
 
 export type PlaylistSelection = ClimbFilterSessionSelection<PlaylistSortOption>;
+/** Any list's selection, whatever its sorts: what the sort-blind rules below read. */
+type AnyListSelection = ClimbFilterSessionSelection<string>;
 
 /**
  * The filters a playlist starts from: the Climbs defaults with routes on, since
@@ -63,18 +67,23 @@ export function playlistViewKey(view: PlaylistClimbViewInput | undefined): strin
 }
 
 /**
- * The play drawer's source id for a playlist. The plain `playlist:<uuid>` for
- * the playlist's own order; with a view the key rides along, so a sorted or
- * filtered track is a different source from the plain one and swiping follows
- * the rows on screen.
+ * The play drawer's source id for a list with views. The plain `base` for the
+ * list's own order; with a view the key rides along, so a sorted or filtered
+ * track is a different source from the plain one and swiping follows the rows on
+ * screen. `base` must not contain `|`: `sourceIdForReports` cuts there.
  */
+export function listSourceId(base: string, viewKey: string | null): string {
+  return viewKey ? `${base}|${viewKey}` : base;
+}
+
+/** A playlist's source id: `playlist:<uuid>`, with the view key when one is on. */
 export function playlistSourceId(playlistUuid: string, viewKey: string | null): string {
-  return viewKey ? `playlist:${playlistUuid}|${viewKey}` : `playlist:${playlistUuid}`;
+  return listSourceId(`playlist:${playlistUuid}`, viewKey);
 }
 
 /**
  * The source id error reports name a list by: the id without a view key (see
- * `playlistSourceId`). A view can carry the climber's typed name search.
+ * `listSourceId`). A view can carry the climber's typed name search.
  */
 export function sourceIdForReports(sourceId: string): string {
   const viewStart = sourceId.indexOf('|');
@@ -89,11 +98,17 @@ export type PlaylistEmptyKind = 'noMatch' | 'allSent' | 'noName' | 'noBoardFit';
  * - Only "Fits my board": "None of these fit your board."
  * - Only Your progress on Unsent: "You've sent everything on this list."
  * - Anything else: "Nothing here fits those filters."
+ *
+ * Any list's selection: the sort is never read.
  */
-export function playlistEmptyKind(selection: PlaylistSelection): PlaylistEmptyKind {
+export function playlistEmptyKind(selection: AnyListSelection): PlaylistEmptyKind {
   const hasName = selection.name.trim().length > 0;
   const filterCount = countActivePlaylistFilters(
-    { ...selection.filters, sortBy: selection.sort.sortBy, sortOrder: selection.sort.sortOrder },
+    {
+      ...selection.filters,
+      sortBy: DEFAULT_PLAYLIST_VIEW_STATE.sortBy,
+      sortOrder: DEFAULT_PLAYLIST_VIEW_STATE.sortOrder,
+    },
     selection.boardFilters,
   );
   if (hasName && !selection.boardFit && filterCount === 0) return 'noName';
@@ -102,4 +117,15 @@ export function playlistEmptyKind(selection: PlaylistSelection): PlaylistEmptyKi
     return 'allSent';
   }
   return 'noMatch';
+}
+
+/**
+ * True when the selection hides anything: a filter off the list's `defaults`, a
+ * name, or "Fits my board". A sort alone hides nothing, so it is never read.
+ * The setter page's "12 of 117" line and its plain request hang on this.
+ */
+export function hasActiveSessionFilters(selection: AnyListSelection, defaults: ClimbFilters): boolean {
+  if (selection.boardFit) return true;
+  if (selection.name.trim().length > 0) return true;
+  return countActiveFilters(selection.filters, selection.boardFilters, defaults) > 0;
 }

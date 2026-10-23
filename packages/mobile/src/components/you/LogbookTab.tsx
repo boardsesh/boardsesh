@@ -58,7 +58,8 @@ import { tickToClimb } from '../../lib/tick-to-climb';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { buildGradeRailStops } from '../../lib/grade-stops';
 import { useLogbookPinnedChips } from '../../lib/logbook-pinned-chips-store';
-import { createLogbookSetterHandoffId, subscribeToLogbookSetterSelection } from '../../lib/logbook-setter-handoff';
+import { subscribeToLogbookSetterSelection } from '../../lib/logbook-setter-handoff';
+import { createFilterPickerHandoffId } from '../../lib/filter-picker-handoff-id';
 import { useScopedRouter } from '../../lib/routing/scoped-navigation';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -272,7 +273,7 @@ export function LogbookTab({
   // The setter picker is a route (native sheets can't stack). The capsule pushes
   // it directly; the sheet suspends itself first. The picks come back through
   // the handoff below, addressed to this Logbook alone.
-  const [setterHandoffId] = useState(createLogbookSetterHandoffId);
+  const [setterHandoffId] = useState(createFilterPickerHandoffId);
   // One picker at a time: set on push, cleared when its picks come back (every
   // removal hands them back) or, should the push never land, after a beat.
   const setterPushInFlightRef = useRef(false);

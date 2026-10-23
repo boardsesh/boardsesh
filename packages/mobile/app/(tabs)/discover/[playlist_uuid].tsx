@@ -42,7 +42,7 @@ import {
   type PlaylistDetailEmptyState,
   type PlaylistFilterStatus,
 } from '../../../src/components/playlist';
-import { ClimbFilterSheet } from '../../../src/components/ClimbFilterSheet';
+import { ClimbFilterSheet, type ClimbFilterSheetPickers } from '../../../src/components/ClimbFilterSheet';
 import { useClimbFilterSession } from '../../../src/hooks/use-climb-filter-session';
 import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { useSearchGradeSourceActive } from '../../../src/lib/graphql/hooks/search-grade-source';
@@ -64,6 +64,7 @@ import {
   type PlaylistEmptyKind,
   type PlaylistSelection,
 } from '../../../src/lib/playlists/playlist-view';
+import { listAddToQueueCount } from '../../../src/lib/playlists/list-add-to-queue-count';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
 import { getHttpClient } from '../../../src/lib/graphql/client';
@@ -181,6 +182,13 @@ export default function PlaylistDetail() {
   const filterScopeKey = playlistUuid
     ? `playlist:${playlistUuid}|${activeBoardConfig ? boardConfigKey(activeBoardConfig) : 'none'}|${isAuthenticated}`
     : null;
+  // The sheet's pickers push onto the Discover stack, and its Setters row lists
+  // this playlist's setters. Hold types offers no heatmap: it counts the
+  // board's catalogue, not this playlist.
+  const filterPickers = useMemo<ClimbFilterSheetPickers>(
+    () => ({ stack: 'discover', heatmap: false, setterList: { kind: 'playlist', playlistId: playlistUuid } }),
+    [playlistUuid],
+  );
   const { state: filterState, actions: filterActions } = useClimbFilterSession({
     scopeKey: filterScopeKey,
     boardConfig: activeBoardConfig,
@@ -196,6 +204,7 @@ export default function PlaylistDetail() {
     sections: playlistSheetSections(!!activeBoard),
     activeBoardAvailable: !!activeBoard,
     activeBoardOnlyChips: PLAYLIST_ACTIVE_BOARD_ONLY_CHIPS,
+    pickers: filterPickers,
     liveCount: sheetMatchCount,
     disabled: editMode || pendingEdit,
     namePlaceholder: t('detail.view.namePlaceholder'),
@@ -248,7 +257,8 @@ export default function PlaylistDetail() {
   // tap in that frame would queue the wrong order. The guard compares keys, so
   // it costs one extra render per view change and cannot loop.
   const [settledView, setSettledView] = useState<SettledPlaylistView>(PLAIN_PLAYLIST_VIEW);
-  const viewRowsOnScreen = query.isSuccess && !query.isPlaceholderData;
+  // Rows a failed refetch kept count as on screen too: they are what the climber sees.
+  const viewRowsOnScreen = query.data !== undefined && !query.isPlaceholderData;
   if (viewRowsOnScreen && settledView.key !== viewKey) {
     setSettledView({ view: viewInput, key: viewKey, selection: viewKey === null ? null : filterState.querySelection });
   }
@@ -510,6 +520,8 @@ export default function PlaylistDetail() {
     setEditList([]);
     void queryClient.invalidateQueries({ queryKey: ['playlistClimbs', playlistUuid] });
     void queryClient.invalidateQueries({ queryKey: ['playlist', playlistUuid] });
+    // A removed climb can take its setter off the Setters picker.
+    void queryClient.invalidateQueries({ queryKey: ['playlistSetters', playlistUuid] });
     // The sort the climber had before editing comes back; filters stay cleared.
     filterActions.resumeView();
   }, [setEditList, queryClient, playlistUuid, filterActions]);
@@ -829,27 +841,23 @@ export default function PlaylistDetail() {
     () => (showFilterControls && !filterEditing ? { activeCount: activeFilterCount, onPress: openFilters } : null),
     [showFilterControls, filterEditing, activeFilterCount, openFilters],
   );
-  // "Add 12 to queue" while the rows on screen are filtered, and only when the
-  // number is exactly what the board-scoped add will take: with "Fits my board"
-  // on, every counted climb is on this board; otherwise only once every row is
-  // loaded, counting the ones this board can show (the rest are dimmed and left
-  // out by the add). Otherwise the label stays "Add to queue".
+  // "Add 12 to queue" while the rows on screen are filtered (`listAddToQueueCount`).
   // `totalCount` comes from the live query and `settledFitsBoard` from the
   // settled view. They agree: while a new view loads, the query's data IS the
   // settled view's placeholder rows, so both describe the same list.
   const settledFitsBoard = !!settledView.view?.onlyActiveBoard;
-  const addToQueueCount = useMemo(() => {
-    if (unfilteredCount == null || totalCount === undefined) return undefined;
-    if (settledFitsBoard) return totalCount;
-    if (hasNextPage || !renderBoard) return undefined;
-    let addableCount = 0;
-    for (const climb of visibleAllClimbs) {
-      const resolved = resolvePlaylistClimbRenderBoard(climb, renderBoard);
-      if (resolved && !resolved.incompatible) addableCount += 1;
-    }
-    // None addable keeps the plain label; the tap then says there is nothing for this board.
-    return addableCount > 0 ? addableCount : undefined;
-  }, [unfilteredCount, totalCount, settledFitsBoard, hasNextPage, renderBoard, visibleAllClimbs]);
+  const addToQueueCount = useMemo(
+    () =>
+      listAddToQueueCount({
+        unfilteredCount,
+        totalCount,
+        fitsBoard: settledFitsBoard,
+        hasNextPage: !!hasNextPage,
+        renderBoard,
+        climbs: visibleAllClimbs,
+      }),
+    [unfilteredCount, totalCount, settledFitsBoard, hasNextPage, renderBoard, visibleAllClimbs],
+  );
 
   // Header controls over the hero. Owners get a pin · edit · delete toolbar that
   // collapses to a single overflow ⋯ menu on scroll (and always on Material,

@@ -1,7 +1,8 @@
 // Hands the picked setters back from the Logbook's setter picker route to the
 // Logbook that pushed it. Two Logbooks can be mounted at once (your own in the
 // You tab, someone else's in another tab's stack), so every push carries the
-// opener's `handoffId` and a Logbook only takes a selection addressed to it.
+// opener's `handoffId` (minted by lib/filter-picker-handoff-id.ts) and a
+// Logbook only takes a selection addressed to it.
 //
 // `apply: true` is the route's "Show climbs" button: take the picks and return
 // to the list (a suspended filter sheet closes instead of coming back). The
@@ -26,12 +27,4 @@ export function subscribeToLogbookSetterSelection(listener: LogbookSetterListene
   return () => {
     listeners.delete(listener);
   };
-}
-
-let handoffCounter = 0;
-
-/** A fresh id for one mounted Logbook. */
-export function createLogbookSetterHandoffId(): string {
-  handoffCounter += 1;
-  return `logbook-setters-${handoffCounter}`;
 }

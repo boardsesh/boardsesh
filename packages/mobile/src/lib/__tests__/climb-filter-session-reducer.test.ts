@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CLIMB_BOARD_FILTER_STATE } from '@boardsesh/climb-filters';
 import {
+  boardGeometryKey,
   climbFilterSessionReducer,
   createClimbFilterSessionState,
   type ClimbFilterSessionState,
@@ -173,5 +174,68 @@ describe('climbFilterSessionReducer', () => {
         shuffles: false,
       }),
     ).toBe(hardest);
+  });
+
+  describe('board geometry (#6651)', () => {
+    const KILTER = boardGeometryKey({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' });
+    const TENSION = boardGeometryKey({ boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '8,9' });
+    const picked = (geometry: string | null) => {
+      let state = createClimbFilterSessionState<Key>({
+        defaultFilters: PLAYLIST_FILTER_DEFAULTS,
+        defaultSort: DEFAULT_SORT,
+        initialSort: DEFAULT_SORT,
+        boardGeometry: geometry,
+      });
+      state = climbFilterSessionReducer(state, {
+        type: 'patchBoardFilters',
+        patch: {
+          holdsFilter: { '42': { HAND: 'include' } },
+          zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
+          zoneMode: 'anyHold',
+          onlyBenchmarks: true,
+        },
+      });
+      return climbFilterSessionReducer(state, { type: 'patchFilters', patch: { minRating: 3 } });
+    };
+
+    it('leaves the angle out of the key: tilting the wall keeps the holds', () => {
+      expect(KILTER).toBe('kilter|1|10|1,20');
+    });
+
+    it('drops the hold and zone picks on another board, and keeps every other filter', () => {
+      const state = climbFilterSessionReducer(picked(KILTER), { type: 'boardGeometry', geometry: TENSION });
+      expect(state.boardGeometry).toBe(TENSION);
+      expect(state.boardFilters).toEqual({ onlyBenchmarks: true });
+      expect(state.filters.minRating).toBe(3);
+    });
+
+    it('keeps the picks with no board, so the same board brings them back', () => {
+      const withKilter = picked(KILTER);
+      const withoutBoard = climbFilterSessionReducer(withKilter, { type: 'boardGeometry', geometry: null });
+      expect(withoutBoard).toBe(withKilter);
+      expect(climbFilterSessionReducer(withoutBoard, { type: 'boardGeometry', geometry: KILTER })).toBe(withKilter);
+    });
+
+    it('records the first board without clearing anything', () => {
+      const state = picked(null);
+      const recorded = climbFilterSessionReducer(state, { type: 'boardGeometry', geometry: KILTER });
+      expect(recorded.boardGeometry).toBe(KILTER);
+      expect(recorded.boardFilters).toBe(state.boardFilters);
+    });
+
+    it('lands on the default board filters once only hold and zone picks were set', () => {
+      let state = createClimbFilterSessionState<Key>({
+        defaultFilters: PLAYLIST_FILTER_DEFAULTS,
+        defaultSort: DEFAULT_SORT,
+        initialSort: DEFAULT_SORT,
+        boardGeometry: KILTER,
+      });
+      state = climbFilterSessionReducer(state, {
+        type: 'patchBoardFilters',
+        patch: { holdsFilter: { '42': { HAND: 'include' } } },
+      });
+      state = climbFilterSessionReducer(state, { type: 'boardGeometry', geometry: TENSION });
+      expect(state.boardFilters).toBe(DEFAULT_CLIMB_BOARD_FILTER_STATE);
+    });
   });
 });

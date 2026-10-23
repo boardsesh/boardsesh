@@ -132,6 +132,13 @@ export function normalizeDocument(query: string): string {
  */
 const DISCOVER_PLAYLISTS_GRADE_SELECTION = 'gradeSummary { gradedClimbCount p10Difficulty p90Difficulty }';
 
+/**
+ * The selection a pinned GetSmartPlaylist recording predates: a view's count
+ * before its filters (#6651). Null on every request without a filtering view,
+ * which is every request a capture makes, so it replays as null.
+ */
+const SMART_PLAYLIST_UNFILTERED_COUNT_SELECTION = 'unfilteredCount';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -155,6 +162,7 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetBoard / GetMyBoards: the spray-only `sprayImport`, null on every
  *   manufacturer board.
  * - DiscoverPlaylists: each playlist's `gradeSummary`.
+ * - GetSmartPlaylist: the list's `unfilteredCount`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -174,6 +182,7 @@ export function replayCompatibleFixtureResponse(
     return { response: fixture.response };
   }
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
+  if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
@@ -234,6 +243,22 @@ function replayDiscoverPlaylistsWithoutGrades(
         },
       },
     },
+  };
+}
+
+function replaySmartPlaylistWithoutUnfilteredCount(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  if (!matchesWithoutSelection(requestQuery, SMART_PLAYLIST_UNFILTERED_COUNT_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const result = data.smartPlaylist;
+  // A recording that already carries the count is not one this shim was written for.
+  if (!isRecord(result) || result.unfilteredCount !== undefined) return null;
+  return {
+    response: { ...response, data: { ...data, smartPlaylist: { ...result, unfilteredCount: null } } },
   };
 }
 

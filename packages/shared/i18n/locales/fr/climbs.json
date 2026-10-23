@@ -9,7 +9,7 @@
     "following": "Abonnements",
     "allSetters": "Tous les ouvreurs",
     "followingClimbs": "Blocs des personnes que je suis",
-    "playlistSubtitle": "Tous les blocs sur cette board · Les plus récents d’abord",
+    "playlistSubtitleSort": "Tous les blocs sur cette board · {{sort}}",
     "signIn": "Connecte-toi pour suivre cet ouvreur",
     "syncNeeded": "Connecte-toi pour synchroniser tes abonnements et les ouvreurs associés.",
     "followError": "Impossible de modifier cet abonnement. Réessaie.",
@@ -514,6 +514,9 @@
         "name": "Nom",
         "popular": "Populaires",
         "creation": "Plus récentes",
+        "recentlyLiked": "Aimées récemment",
+        "recentlyClimbed": "Grimpées récemment",
+        "mostTries": "Plus d'essais",
         "random": "Aléatoire",
         "reshuffle": "Mélanger à nouveau"
       },
@@ -528,6 +531,10 @@
           "desc": "Plus durs d'abord"
         },
         "added": {
+          "desc": "Plus récents d'abord",
+          "asc": "Plus anciens d'abord"
+        },
+        "creation": {
           "desc": "Plus récents d'abord",
           "asc": "Plus anciens d'abord"
         },

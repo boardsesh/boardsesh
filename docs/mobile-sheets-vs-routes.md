@@ -556,8 +556,8 @@ every prop the playlist passes:
   A hidden option still shows while it is the value in force, so it can be undone.
   With all three picker rows hidden, the sheet also skips the hold prewarm and the setter /
   hold / zone handoff listeners.
-  The three pickers are pushed Climbs-tab routes, so they stay hidden in playlists until a
-  later change brings them over (#6651).
+  The Setters, Hold types and Board region rows are on in a playlist (see "The picker seam"
+  below); a smart list and a setter page hide the rows that do not apply to them.
 - `liveCount` turns the catalogue count query off and shows the playlist's own match count, the
   `totalCount` of the request on screen.
 - `defaultFilters` is the Reset target and what "anything to reset" is measured against (a
@@ -570,6 +570,36 @@ every prop the playlist passes:
   playlist's own store (`pinnedPlaylistChips`); a kind the playlist cannot pin shows no pin.
 - `gradeBoardName` and `namePlaceholder` cover a playlist with no active board, where the sheet
   has no `boardConfig` to read grades from.
+
+**The picker seam.** `ClimbFilterSheet` takes `pickers?: ClimbFilterSheetPickers`:
+`{ stack: 'climbs', heatmap }` or `{ stack: 'discover', heatmap, setterList }`. The Setters, Hold
+types and Board region rows push onto the stack the list lives in, from the `PICKER_PATHS` table
+in `ClimbFilterSheet.tsx`:
+
+| Stack | Setters | Hold types | Board region |
+| --- | --- | --- | --- |
+| Climbs | `/(tabs)/climbs/setters` | `/(tabs)/climbs/holds` | `/(tabs)/climbs/zone` |
+| Discover | `/(tabs)/discover/playlist-setters` | `/(tabs)/discover/holds` | `/(tabs)/discover/zone` |
+
+`discover/holds.tsx` and `discover/zone.tsx` are one-line re-exports of the Climbs screens.
+`discover/playlist-setters.tsx` is its own screen: it lists the setters of one playlist or smart
+list (`usePlaylistSetters` in `@boardsesh/playlists-react`), and is registered in
+`app/(tabs)/discover/_layout.tsx` with opaque headers. Its trailing button is "Show climbs".
+Why an explicit `pickers.stack` and not `useScopedRouter`: that hook only rewrites `/settings*`
+and `/users/*`, and only two stacks open these pickers.
+
+- **Handoff ids.** Every picker handoff (`src/lib/{setter,hold,zone}-filter-handoff.ts`) is
+  addressed. Each mounted sheet mints one id (`createFilterPickerHandoffId()` in
+  `src/lib/filter-picker-handoff-id.ts`; the Logbook uses the same counter), every push carries
+  `handoffId`, and `subscribe(handoffId, listener)` only receives picks addressed to it. A route
+  opened without an id hands its picks to nobody. The reason: the Climbs tab's sheet stays mounted
+  (suspended) under a setter page pushed from the setter picker. That setter page has its own
+  sheet, and before ids both sheets took the Hold types picks.
+- **Heatmap.** `heatmap: false` makes the sheet send `heatmap: 'off'` (and no `heatmapSearch`) to
+  Hold types, which then hides the flame toggle. The heatmap counts the board's catalogue, not a
+  playlist.
+- **Accessory.** `isAccessoryHiddenRoute` (`src/lib/route-segments.ts`) hides the bottom platter
+  on `climbs/holds|zone` and on `discover/holds|zone`.
 
 The playlist's ≡ filter button sits in the native header. Like any screen that sets `headerRight`
 itself, `PlaylistDetailView` wraps it in `ownHeaderRight()`.
