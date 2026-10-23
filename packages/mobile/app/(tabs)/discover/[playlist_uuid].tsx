@@ -8,7 +8,7 @@ import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  playlistClimbsQueryKey,
+  playlistClimbsQueryKeyFor,
   usePlaylistClimbs,
   usePlaylistMutations,
   usePlaylistItemMutations,
@@ -237,7 +237,10 @@ export default function PlaylistDetail() {
   // (placeholder data). The settled view is the one those rows belong to, so the
   // play drawer's track, the activation source and Add to queue always follow
   // what is on screen. Updated during render, in the same pass that shows the
-  // new rows.
+  // new rows: React's "adjust state while rendering" pattern. An effect would
+  // leave one committed frame where the new rows show under the old view, and a
+  // tap in that frame would queue the wrong order. The guard compares keys, so
+  // it costs one extra render per view change and cannot loop.
   const [settledView, setSettledView] = useState<SettledPlaylistView>(PLAIN_PLAYLIST_VIEW);
   const viewRowsOnScreen = query.isSuccess && !query.isPlaceholderData;
   if (viewRowsOnScreen && settledView.key !== viewKey) {
@@ -419,11 +422,12 @@ export default function PlaylistDetail() {
   // many rows as the sorted list showed. Seeding at once would freeze the sorted
   // rows, or old plain rows whose indices are off by one.
   const editTargetRowsRef = useRef(0);
+  // Built from the same options the list's usePlaylistClimbs call gets, minus
+  // the view, so the editor marks exactly the cache entry the plain order lives in.
   const activeBoardUuid = activeBoard?.uuid ?? null;
-  const activeBoardAngle = activeBoard?.angle ?? null;
   const plainOrderQueryKey = useMemo(
-    () => playlistClimbsQueryKey({ playlistUuid, boardUuid: activeBoardUuid, angle: activeBoardAngle }),
-    [playlistUuid, activeBoardUuid, activeBoardAngle],
+    () => playlistClimbsQueryKeyFor({ playlistUuid, boardUuid: activeBoardUuid, boardInput: playlistClimbsBoardInput }),
+    [playlistUuid, activeBoardUuid, playlistClimbsBoardInput],
   );
   const enterEditMode = useCallback(() => {
     if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
@@ -820,6 +824,9 @@ export default function PlaylistDetail() {
   // on, every counted climb is on this board; otherwise only once every row is
   // loaded, counting the ones this board can show (the rest are dimmed and left
   // out by the add). Otherwise the label stays "Add to queue".
+  // `totalCount` comes from the live query and `settledFitsBoard` from the
+  // settled view. They agree: while a new view loads, the query's data IS the
+  // settled view's placeholder rows, so both describe the same list.
   const settledFitsBoard = !!settledView.view?.onlyActiveBoard;
   const addToQueueCount = useMemo(() => {
     if (unfilteredCount == null || totalCount === undefined) return undefined;

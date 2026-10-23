@@ -50,7 +50,13 @@ export type { UseSmartPlaylistCountsOptions } from './use-smart-playlist-counts'
 export { useSmartPlaylist } from './use-smart-playlist';
 export type { UseSmartPlaylistOptions, UseSmartPlaylistResult } from './use-smart-playlist';
 
-export { usePlaylistClimbs, keepPreviousViewResults, playlistClimbsQueryKey } from './use-playlist-climbs';
+export {
+  usePlaylistClimbs,
+  keepPreviousViewResults,
+  playlistClimbsQueryKey,
+  playlistClimbsQueryKeyFor,
+  playlistClimbsAngleKey,
+} from './use-playlist-climbs';
 export type {
   PlaylistClimbsQueryKeyParts,
   UsePlaylistClimbsOptions,

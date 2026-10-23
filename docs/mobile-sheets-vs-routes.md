@@ -552,11 +552,12 @@ every prop the playlist passes:
 
 - `sections` hides rows. A playlist hides Recent, the Collection's My drafts option, Other angles,
   and the Setters, Hold types and Board region rows. With no active board it also hides Your
-  progress, Liked, Following and Beta videos, whose filters pass only active-board climbs. A
-  hidden option still shows while it is the value in force, so it can be undone. With all three picker rows hidden the sheet
-  also skips the hold prewarm and the setter / hold / zone handoff listeners. The three pickers
-  are pushed Climbs-tab routes, so they stay hidden in playlists until a later change brings
-  them over (#6651).
+  progress, Liked, Following and Beta videos, whose filters pass only active-board climbs.
+  A hidden option still shows while it is the value in force, so it can be undone.
+  With all three picker rows hidden, the sheet also skips the hold prewarm and the setter /
+  hold / zone handoff listeners.
+  The three pickers are pushed Climbs-tab routes, so they stay hidden in playlists until a
+  later change brings them over (#6651).
 - `liveCount` turns the catalogue count query off and shows the playlist's own match count, the
   `totalCount` of the request on screen.
 - `defaultFilters` is the Reset target and what "anything to reset" is measured against (a

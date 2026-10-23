@@ -151,7 +151,8 @@ const updatePlaylistMock = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('@boardsesh/playlists-react', async (importOriginal) => ({
   // The real key builder: the screen invalidates one view by it.
-  playlistClimbsQueryKey: (await importOriginal<typeof import('@boardsesh/playlists-react')>()).playlistClimbsQueryKey,
+  playlistClimbsQueryKeyFor: (await importOriginal<typeof import('@boardsesh/playlists-react')>())
+    .playlistClimbsQueryKeyFor,
   usePlaylistClimbs: ({ view }: { view?: PlaylistClimbViewInput }) => {
     playlistMocks.views.push(view);
     const page: TestPlaylistPage = playlistMocks.pageFor?.(view) ?? {

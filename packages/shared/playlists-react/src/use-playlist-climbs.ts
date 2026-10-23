@@ -50,6 +50,36 @@ export function playlistClimbsQueryKey({
 }
 
 /**
+ * The angle segment of the key: grades resolve at it, so it must be part of the
+ * key. All-boards mode sends `activeAngle`, specific-board mode sends `angle`.
+ */
+export function playlistClimbsAngleKey(boardInput: PlaylistClimbsBoardInput | undefined): number | null {
+  return boardInput?.activeAngle ?? boardInput?.angle ?? null;
+}
+
+/**
+ * The key `usePlaylistClimbs` uses for these exact options. A screen that needs
+ * to touch one view's cache (the editor marking the playlist's own order stale)
+ * calls this with the options it passes the hook, so the two can never disagree
+ * about the angle.
+ */
+export function playlistClimbsQueryKeyFor({
+  playlistUuid,
+  boardUuid,
+  boardInput,
+  view,
+  refreshKey,
+}: Pick<UsePlaylistClimbsOptions, 'playlistUuid' | 'boardUuid' | 'boardInput' | 'view' | 'refreshKey'>) {
+  return playlistClimbsQueryKey({
+    playlistUuid,
+    boardUuid,
+    angle: playlistClimbsAngleKey(boardInput),
+    view,
+    refreshKey,
+  });
+}
+
+/**
  * The `placeholderData` rule: while a new view's first page loads, keep showing
  * the rows of the same playlist, board, angle and refresh under the previous
  * view, so changing the sort or a filter never flashes an empty list. Any other
@@ -129,7 +159,7 @@ export function usePlaylistClimbs({
   // Without it, dialing to a new angle on the same board keeps the same key and
   // React Query serves stale grades until staleTime lapses. Covers all-boards
   // mode (activeAngle) and specific-board mode (angle).
-  const angleKey = boardInput?.activeAngle ?? boardInput?.angle ?? null;
+  const angleKey = playlistClimbsAngleKey(boardInput);
   const queryKey = useMemo(
     () => playlistClimbsQueryKey({ playlistUuid, boardUuid, angle: angleKey, view, refreshKey }),
     [playlistUuid, boardUuid, angleKey, view, refreshKey],
