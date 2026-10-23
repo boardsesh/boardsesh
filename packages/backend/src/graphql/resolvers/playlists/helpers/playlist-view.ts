@@ -419,7 +419,8 @@ export async function fetchPlaylistView(
  * filter), grouped on `board_climbs.setter_username`. That is the column the
  * view's setter filter matches, exactly (`inArray`), so filtering the list to a
  * returned username leaves `climbCount` rows. `search` is a case-insensitive
- * username prefix.
+ * username prefix. It needs no `withSerialPlan`: there are no LATERAL stats or
+ * grade lookups here, just one grouped scan of the source's rows.
  */
 export async function fetchPlaylistSetters(
   source: PlaylistViewSource,

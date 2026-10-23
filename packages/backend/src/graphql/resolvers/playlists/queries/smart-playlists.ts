@@ -599,6 +599,8 @@ export const smartPlaylist = async (
 
   if (view) {
     const viewPage = await fetchPlaylistView(
+      // `input.type`, not `parsedInput.type`: the recommendation early return
+      // above narrows this variable to the logbook types.
       logbookViewSource(input.type, parsedInput, viewerUserId),
       view,
       page,
