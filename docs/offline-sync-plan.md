@@ -1822,3 +1822,15 @@ existing sheet expands on focus and keeps multiline text and its submit control
 above the keyboard. [Simulator capture](images/issue-6653-feedback-keyboard.png).
 The unsent-report discard confirmation also remains reachable; no report was
 submitted. Android keyboard behavior remains a device QA check.
+
+
+The iOS faster-retry check used a backed-up simulator-only unfinished-checkpoint
+fixture after the original crawl had completed. No climbs or queued writes were
+removed. The retry imported 695,445 grade rows from the verified artifact, then
+pulled zero grade rows in its final catch-up (715 ms). Both snapshot transfers
+took under one second; these phase timings are not an end-to-end benchmark.
+A completion marker was committed, all 59,594 local climbs remained, and My Boards
+showed the board available offline. Hiding persisted through relaunch while an
+unfinished checkpoint kept advancing. With Offline mode enabled, a cold launch
+still displayed the downloaded MoonBoard climbs:
+[cold-start simulator capture](images/issue-6653-offline-cold-start.png).

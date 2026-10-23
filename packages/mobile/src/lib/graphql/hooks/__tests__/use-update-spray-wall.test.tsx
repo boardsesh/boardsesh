@@ -23,6 +23,12 @@ vi.mock('../../../spray/spray-wall-loader', () => ({
 // expo-router. usePinBoard is pure React Query and touches none of them, so stub
 // the heavy re-exports so the barrel parses under the node SSR transform.
 vi.mock('react-native', () => ({}));
+// The barrel reaches the sync adapter; these hook checks do not use native credentials.
+vi.mock('../../../auth-store', () => ({
+  getAuthToken: async () => null,
+  captureAuthCredentialGeneration: () => 1,
+  isAuthCredentialGenerationCurrent: () => true,
+}));
 vi.mock('../use-infinite-search-climbs', () => ({ useInfiniteSearchClimbs: vi.fn() }));
 vi.mock('../use-similar-climbs', () => ({ useSimilarClimbs: vi.fn() }));
 vi.mock('../use-beta-link-preview', () => ({ useBetaLinkPreview: vi.fn() }));

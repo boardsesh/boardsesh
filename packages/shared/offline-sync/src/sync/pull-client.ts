@@ -865,6 +865,9 @@ class RefreshColumnsMissingError extends Error {
 }
 
 /** Only schema validation can retire the optimization; transport/auth failures retain resumable coverage. */
+// GraphQL validation messages identify servers that predate these optional
+// arguments. This compatibility heuristic falls back to ordinary paging while
+// retaining the legacy cursor; it never claims missing artifact coverage.
 function rejectsSnapshotSupplement(error: unknown, depth = 0): boolean {
   if (typeof error !== 'object' || error === null || depth > 3) return false;
   const record = error as Record<string, unknown>;

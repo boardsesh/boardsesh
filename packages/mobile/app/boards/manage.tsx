@@ -635,9 +635,9 @@ export default function ManageBoards() {
               progressEnabled: downloadProgressEnabled,
             })
           : null;
-      // Offered only where it can actually help: a board that has settled onto
-      // the crawl and has not yet finished it. A completed scope already holds
-      // the whole catalog, so an artifact buys it nothing.
+      // An explicit retry can replace an active, unfinished imported download:
+      // the engine yields after its committed page and tries a verified snapshot.
+      // Completed scopes already hold the full catalogue and stay excluded.
       const canRetryFastDownload =
         offlineDownloadsEnabled &&
         snapshotSourceAvailable &&

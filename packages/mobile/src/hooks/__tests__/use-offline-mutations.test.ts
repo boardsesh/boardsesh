@@ -43,6 +43,12 @@ vi.mock('react-native', () => ({
 vi.mock('@react-native-community/netinfo', () => ({
   default: { addEventListener: () => () => {} },
 }));
+// Secure-store I/O belongs to the adapter's own tests, not these SQLite write checks.
+vi.mock('../../lib/auth-store', () => ({
+  getAuthToken: async () => null,
+  captureAuthCredentialGeneration: () => 1,
+  isAuthCredentialGenerationCurrent: () => true,
+}));
 
 // The reporter itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
 // here we prove the write primitives feed it the right enqueue outcome.
