@@ -389,7 +389,10 @@
         "failed": "Le téléchargement n’a pas abouti",
         "percent": "{{percent}} %",
         "more": "+{{count}} de plus",
-        "open": "Ouvre Mes boards pour {{name}}"
+        "open": "Ouvre Mes boards pour {{name}}",
+        "hide": "Masquer la progression du téléchargement",
+        "rows_one": "{{count}} élément chargé",
+        "rows_other": "{{count}} éléments chargés"
       },
       "snapshotRetrying": "Téléchargement rapide interrompu — nouvelle tentative à la prochaine synchronisation",
       "snapshotRetryingAria": "Le téléchargement rapide hors ligne de {{name}} a été interrompu. Une nouvelle tentative aura lieu lors de la prochaine synchronisation.",

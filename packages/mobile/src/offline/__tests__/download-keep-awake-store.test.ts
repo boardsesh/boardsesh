@@ -114,6 +114,17 @@ afterEach(() => {
 });
 
 describe('the user-started set', () => {
+  it('restores the indicator only when a person starts or retries a download', () => {
+    startDownloads(KILTER);
+    setSetting('offlineDownloadIndicatorHidden', true);
+    __resetDownloadKeepAwakeForTests();
+    getPendingUserStartedDownloads();
+    noteDownloadProgress(bootstrapFrame(KILTER));
+    expect(getSetting('offlineDownloadIndicatorHidden')).toBe(true);
+    markUserStartedDownload(KILTER);
+    expect(getSetting('offlineDownloadIndicatorHidden')).toBe(false);
+  });
+
   it('mirrors a marked download to settings and reports it pending', () => {
     startDownloads(KILTER);
 

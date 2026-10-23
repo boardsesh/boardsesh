@@ -643,8 +643,7 @@ export default function ManageBoards() {
         snapshotSourceAvailable &&
         enabledSet.has(scopeKey) &&
         !isDownloaded &&
-        (bootstrapMetadata?.isTerminal ?? false) &&
-        !(bootstrapMetadata?.isBootstrapDone ?? false);
+        ((bootstrapMetadata?.isTerminal ?? false) || (bootstrapMetadata?.isBootstrapDone ?? false));
       return (
         <BoardManageRow
           board={item.board}

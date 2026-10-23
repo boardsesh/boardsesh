@@ -8,6 +8,8 @@ export type SyncCursorInput = {
   syncSeq?: string | null;
 };
 
+export type SyncAudience = 'ALL' | 'SNAPSHOT_SUPPLEMENTAL';
+
 export type SyncCursor = {
   updatedAt: string;
   syncSeq: string;

@@ -54,6 +54,8 @@ export type AppSettings = {
    * download completes or its board leaves `syncEnabledBoards`.
    */
   offlineUserStartedDownloads: string[];
+  /** Hide the floating progress card until the next explicit download or retry. */
+  offlineDownloadIndicatorHidden: boolean;
   /**
    * When the server last said each archived spray wall was archived, keyed by
    * wall uuid (`rememberSprayWallArchive`). A downloaded wall opened with no

@@ -55,6 +55,9 @@ export type SchedulerTriggers = {
 };
 
 export type SchedulerOptions = {
+  viewerUserId?: SyncOptions['viewerUserId'];
+  /** Resolve secure-store credentials once for each cycle, after its queued writes drain. */
+  getViewerUserId?: () => Promise<SyncOptions['viewerUserId']>;
   getPriorityBoards?: SyncOptions['getPriorityBoards'];
   onProgress?: SyncProgressSink;
   /**
@@ -174,7 +177,9 @@ async function runSync(request: SyncRunRequest): Promise<void> {
   try {
     // Push first so the subsequent pull reflects our own just-flushed writes.
     await drainQueue();
+    const viewerUserId = options?.getViewerUserId ? await options.getViewerUserId() : options?.viewerUserId;
     await pullSync(db, queryClient, graphqlFetch, {
+      viewerUserId,
       enabledBoards: getEnabledBoards(),
       getPriorityBoards: options?.getPriorityBoards,
       isOnline: options?.isOnline,

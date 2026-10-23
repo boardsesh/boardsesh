@@ -1412,9 +1412,9 @@ describe('My Boards: retrying the fast download (#4313)', () => {
     expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('false');
   });
 
-  it('does not offer it to a board that already imported an artifact', () => {
+  it('offers faster retry after an artifact import while the download remains incomplete', () => {
     renderWithMetadata({ ...settledMetadata, isBootstrapDone: true });
-    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('false');
+    expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('true');
   });
 
   it('quotes the download size in the confirm and restores the budget only when accepted', async () => {

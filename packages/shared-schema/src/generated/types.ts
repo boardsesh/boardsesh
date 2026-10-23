@@ -8059,29 +8059,35 @@ export type QuerySyncClimbDocumentsArgs = {
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbGradesArgs = {
+  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
 };
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbStatsArgs = {
+  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
 };
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbsArgs = {
+  audience?: InputMaybe<SyncAudience>;
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
 };
 
 /** Root query type for all read operations. */
@@ -10839,6 +10845,9 @@ export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
+/** Rows needed by ordinary sync or to complete an imported public snapshot. */
+export type SyncAudience = 'ALL' | 'SNAPSHOT_SUPPLEMENTAL';
+
 /** Canonical saved-climb documents from one snapshot, without changing a pull cursor. */
 export type SyncClimbDocuments = {
   __typename?: 'SyncClimbDocuments';
@@ -12330,6 +12339,7 @@ export type ResolversTypes = ResolversObject<{
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
   SubmitQaVerdictInput: SubmitQaVerdictInput;
   Subscription: ResolverTypeWrapper<{}>;
+  SyncAudience: SyncAudience;
   SyncClimbDocuments: ResolverTypeWrapper<SyncClimbDocuments>;
   SyncCursor: ResolverTypeWrapper<SyncCursor>;
   SyncCursorInput: SyncCursorInput;
@@ -17185,19 +17195,19 @@ export type QueryResolvers<
     ResolversTypes['SyncResult'],
     ParentType,
     ContextType,
-    RequireFields<QuerySyncClimbGradesArgs, 'boardType' | 'limit'>
+    RequireFields<QuerySyncClimbGradesArgs, 'audience' | 'boardType' | 'limit'>
   >;
   syncClimbStats?: Resolver<
     ResolversTypes['SyncResult'],
     ParentType,
     ContextType,
-    RequireFields<QuerySyncClimbStatsArgs, 'boardType' | 'limit'>
+    RequireFields<QuerySyncClimbStatsArgs, 'audience' | 'boardType' | 'limit'>
   >;
   syncClimbs?: Resolver<
     ResolversTypes['SyncResult'],
     ParentType,
     ContextType,
-    RequireFields<QuerySyncClimbsArgs, 'boardType' | 'limit'>
+    RequireFields<QuerySyncClimbsArgs, 'audience' | 'boardType' | 'limit'>
   >;
   syncDeletions?: Resolver<
     ResolversTypes['SyncDeletionsResult'],

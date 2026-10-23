@@ -1135,7 +1135,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a
     downloaded board stays a fixed, cacheable superset. sizeId is ignored for moonboard.
     """
-    syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+    syncClimbs(
+      boardType: String!
+      layoutId: Int
+      sizeId: Int
+      cursor: SyncCursorInput
+      limit: Int! = 500
+      audience: SyncAudience = ALL
+      snapshotClimbWatermark: SyncCursorInput
+    ): SyncResult!
 
     """
     Pull board climb stats for a board type, changed since the cursor (reference data).
@@ -1147,6 +1155,8 @@ export const queriesTypeDefs = /* GraphQL */ `
       sizeId: Int
       cursor: SyncCursorInput
       limit: Int! = 500
+      audience: SyncAudience = ALL
+      snapshotClimbWatermark: SyncCursorInput
     ): SyncResult!
 
     """
@@ -1159,6 +1169,8 @@ export const queriesTypeDefs = /* GraphQL */ `
       sizeId: Int
       cursor: SyncCursorInput
       limit: Int! = 500
+      audience: SyncAudience = ALL
+      snapshotClimbWatermark: SyncCursorInput
     ): SyncResult!
 
     """

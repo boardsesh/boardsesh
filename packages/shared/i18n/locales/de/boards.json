@@ -389,7 +389,10 @@
         "failed": "Download nicht abgeschlossen",
         "percent": "{{percent}} %",
         "more": "+{{count}} weitere",
-        "open": "Öffne Meine Boards für {{name}}"
+        "open": "Öffne Meine Boards für {{name}}",
+        "hide": "Downloadfortschritt ausblenden",
+        "rows_one": "{{count}} Eintrag geladen",
+        "rows_other": "{{count}} Einträge geladen"
       },
       "snapshotRetrying": "Schnellerer Download unterbrochen — neuer Versuch beim nächsten Sync",
       "snapshotRetryingAria": "Der schnellere Offline-Download für {{name}} wurde unterbrochen. Beim nächsten Sync folgt ein neuer Versuch.",

@@ -9,6 +9,7 @@ import type { DownloadActivity } from '../../../sync/download-activity-store';
 const state = vi.hoisted(() => ({
   activity: null as DownloadActivity | null,
   pathname: '/you',
+  hidden: false,
   boards: [{ boardType: 'kilter', layoutId: 8, sizeId: 1, name: 'Garage wall' }],
 }));
 const spies = vi.hoisted(() => ({ push: vi.fn(), track: vi.fn(), publishHeight: vi.fn() }));
@@ -20,6 +21,7 @@ vi.mock('react-native', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
@@ -46,7 +48,22 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('expo-router', () => ({ usePathname: () => state.pathname, useRouter: () => ({ push: spies.push }) }));
 vi.mock('../../../sync/download-activity-store', () => ({ useDownloadActivity: () => state.activity }));
-vi.mock('../../../settings', () => ({ useOfflineBoards: () => state.boards }));
+vi.mock('../../../settings', async () => {
+  const { useState } = await import('react');
+  return {
+    useOfflineBoards: () => state.boards,
+    useSetting: () => {
+      const [hidden, setHidden] = useState(state.hidden);
+      return [
+        hidden,
+        (next: boolean) => {
+          state.hidden = next;
+          setHidden(next);
+        },
+      ];
+    },
+  };
+});
 vi.mock('../../../lib/analytics', () => ({ track: spies.track }));
 vi.mock('../../../lib/connectivity-banner-inset-store', () => ({
   publishBottomOverlayHeight: spies.publishHeight,
@@ -109,6 +126,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
   state.pathname = '/you';
+  state.hidden = false;
   state.activity = activity();
   publishSheetVisibility(false);
 });
@@ -146,7 +164,7 @@ describe('OfflineDownloadPill', () => {
 
   it('opens My Boards and records which download was tapped', () => {
     render(<ReadyPill />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: /^Open My Boards/ }));
 
     expect(spies.push).toHaveBeenCalledWith('/boards/manage');
     expect(spies.track).toHaveBeenCalledWith(SHARED_EVENTS.OfflineDownloadIndicatorTapped, {
@@ -165,14 +183,14 @@ describe('OfflineDownloadPill', () => {
 
   it('yields to a managed sheet and returns when it closes', () => {
     render(<ReadyPill />);
-    expect(screen.getByRole('button')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ })).toBeTruthy();
 
     act(() => publishSheetVisibility(true));
     expect(screen.queryByRole('button')).toBeNull();
     expect(spies.publishHeight).toHaveBeenCalledWith('download', 0);
 
     act(() => publishSheetVisibility(false));
-    expect(screen.getByRole('button')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ })).toBeTruthy();
   });
 
   it('waits for launch readiness before appearing', () => {
@@ -180,7 +198,7 @@ describe('OfflineDownloadPill', () => {
     expect(screen.queryByRole('button')).toBeNull();
 
     rerender(<ReadyPill ready />);
-    expect(screen.getByRole('button')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ })).toBeTruthy();
   });
 
   it('keeps waiting progress indeterminate instead of inventing a percentage', () => {
@@ -188,7 +206,7 @@ describe('OfflineDownloadPill', () => {
     render(<ReadyPill />);
 
     expect(screen.getByText('Waiting to download… · +2 more')).toBeTruthy();
-    expect(screen.getByRole('button').getAttribute('aria-valuenow')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ }).getAttribute('aria-valuenow')).toBeNull();
     expect(screen.queryByText(/%/)).toBeNull();
   });
 
@@ -204,5 +222,34 @@ describe('OfflineDownloadPill', () => {
     render(<ReadyPill />);
 
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('download progress dismissal', () => {
+  it.each(['active', 'waiting', 'failed', 'done'] as const)(
+    'hides a %s download without stopping its activity',
+    (status) => {
+      state.activity = activity({}, status);
+      const currentActivity = state.activity;
+      const { rerender, unmount } = render(<ReadyPill />);
+      fireEvent.click(screen.getByRole('button', { name: 'Hide download progress' }));
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(state.activity).toBe(currentActivity);
+      expect(spies.push).not.toHaveBeenCalled();
+      expect(spies.publishHeight).toHaveBeenCalledWith('download', 0);
+      state.activity = activity({ fraction: 0.9, queuedScopes: 1 }, status);
+      rerender(<ReadyPill />);
+      expect(screen.queryByRole('button')).toBeNull();
+      unmount();
+      render(<ReadyPill />);
+      expect(screen.queryByRole('button')).toBeNull();
+    },
+  );
+
+  it('shows a live count without a guessed percentage during final paging', () => {
+    state.activity = activity({ phase: 'finishing', fraction: null, rowsProcessed: 1500, queuedScopes: 0 });
+    render(<ReadyPill />);
+    expect(screen.getByText('Finishing download… · 1500 items loaded')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ }).hasAttribute('aria-valuenow')).toBe(false);
   });
 });

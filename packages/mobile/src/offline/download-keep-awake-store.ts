@@ -21,6 +21,7 @@ import {
   getSetting,
   getUserStartedDownloads,
   rememberUserStartedDownload,
+  setSetting,
   subscribeSettings,
 } from '../settings';
 import {
@@ -182,6 +183,7 @@ function userStarted(): Set<string> {
  * each one is a person asking again.
  */
 export function markUserStartedDownload(scopeKey: string): void {
+  setSetting('offlineDownloadIndicatorHidden', false);
   userStarted();
   heldMsByScope.delete(scopeKey);
   if (currentHold?.scopeKey === scopeKey) currentHold.startedAt = Date.now();

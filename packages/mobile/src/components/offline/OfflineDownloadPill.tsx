@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { offlineBoardKeyForBoard } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useDownloadActivity } from '../../sync/download-activity-store';
-import { useOfflineBoards } from '../../settings';
+import { useOfflineBoards, useSetting } from '../../settings';
 import { useAnySheetVisible } from '../../lib/sheet-visibility-store';
 import { publishBottomOverlayHeight, useConnectivityCardHeight } from '../../lib/connectivity-banner-inset-store';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -15,6 +15,7 @@ import { track } from '../../lib/analytics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { OfflineDownloadProgressBar } from '../board-discovery/OfflineDownloadProgressBar';
 
 const BOARD_NAMES: Record<string, string> = { kilter: 'Kilter', tension: 'Tension', moonboard: 'MoonBoard' };
@@ -23,6 +24,7 @@ const BOARD_NAMES: Record<string, string> = { kilter: 'Kilter', tension: 'Tensio
 export function OfflineDownloadPill() {
   const activity = useDownloadActivity();
   const boards = useOfflineBoards();
+  const [hidden, setHidden] = useSetting('offlineDownloadIndicatorHidden');
   const pathname = usePathname();
   const router = useRouter();
   const sheetVisible = useAnySheetVisible();
@@ -34,6 +36,7 @@ export function OfflineDownloadPill() {
   const visible =
     ready &&
     activity !== null &&
+    !hidden &&
     !sheetVisible &&
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' &&
     !pathname.startsWith('/boards') &&
@@ -54,6 +57,7 @@ export function OfflineDownloadPill() {
     });
     router.push('/boards/manage');
   }, [activity, router]);
+  const hideProgress = useCallback(() => setHidden(true), [setHidden]);
 
   if (!visible || !activity) return null;
   const frame = activity.progress;
@@ -88,27 +92,44 @@ export function OfflineDownloadPill() {
         },
       ]}
     >
-      <PressableSurface
-        onPress={openBoards}
+      <View
         onLayout={publishHeight}
-        accessibilityRole="button"
-        accessibilityLabel={`${t('mobile.offline.pill.open', { name: boardName })}. ${phaseLabel}`}
-        accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
         style={[
           styles.pill,
           { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
         ]}
       >
-        <Text variant="subheadline" numberOfLines={1}>
-          {boardName}
-        </Text>
-        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-          {phaseLabel}
-          {percent !== null ? ` · ${t('mobile.offline.pill.percent', { percent })}` : ''}
-          {frame.queuedScopes > 0 ? ` · ${t('mobile.offline.pill.more', { count: frame.queuedScopes })}` : ''}
-        </Text>
+        <View style={styles.actions}>
+          <PressableSurface
+            onPress={openBoards}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('mobile.offline.pill.open', { name: boardName })}. ${phaseLabel}`}
+            accessibilityValue={percent === null ? undefined : { min: 0, max: 100, now: percent }}
+            style={styles.details}
+          >
+            <Text variant="subheadline" numberOfLines={1}>
+              {boardName}
+            </Text>
+            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+              {phaseLabel}
+              {percent !== null ? ` · ${t('mobile.offline.pill.percent', { percent })}` : ''}
+              {frame.fraction === null && frame.rowsProcessed !== undefined
+                ? ` · ${t('mobile.offline.pill.rows', { count: frame.rowsProcessed })}`
+                : ''}
+              {frame.queuedScopes > 0 ? ` · ${t('mobile.offline.pill.more', { count: frame.queuedScopes })}` : ''}
+            </Text>
+          </PressableSurface>
+          <PressableSurface
+            onPress={hideProgress}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.offline.pill.hide')}
+            style={styles.hide}
+          >
+            <Icon name="close" size={18} color={systemColors.secondaryLabel} />
+          </PressableSurface>
+        </View>
         <OfflineDownloadProgressBar fraction={frame.fraction} />
-      </PressableSurface>
+      </View>
     </View>
   );
 }
@@ -129,4 +150,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
+  details: { flex: 1, minHeight: 44, justifyContent: 'center' },
+  hide: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 });

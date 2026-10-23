@@ -389,7 +389,10 @@
         "failed": "Download didn't finish",
         "percent": "{{percent}}%",
         "more": "+{{count}} more",
-        "open": "Open My Boards for {{name}}"
+        "open": "Open My Boards for {{name}}",
+        "hide": "Hide download progress",
+        "rows_one": "{{count}} item loaded",
+        "rows_other": "{{count}} items loaded"
       },
       "snapshotRetrying": "Faster download interrupted — will retry on the next sync",
       "snapshotRetryingAria": "The faster offline download for {{name}} was interrupted. It will retry on the next sync.",

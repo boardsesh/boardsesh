@@ -32,6 +32,7 @@ import {
   rewindDeletionsCheckpoint,
   SCOPE_COMPLETE_PREFIX,
   setCheckpoint,
+  snapshotSupplementCheckpoint,
   type SyncCheckpoint,
 } from './checkpoints';
 import { capturePurgeToken, hasPurgeLanded, isSigningOut } from '../mutation-queue/drainer';
@@ -331,6 +332,8 @@ export type SnapshotBootstrapErrorReporter = (report: SnapshotBootstrapErrorRepo
 export type SnapshotBootstrapResult = {
   climbsWatermark: SyncCheckpoint;
   statsWatermark: SyncCheckpoint;
+  /** Verified transaction identity used to pair a layout with its grades artifact. */
+  artifactBuiltAt?: string;
   /**
    * Rows this scope actually imported out of the layout artifact (issue #4316).
    * Both are INSERT OR REPLACE `changes` counts, so a re-import of the same
@@ -1325,6 +1328,8 @@ export async function bootstrapScopeFromSnapshot(params: {
   filePath: string;
   /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
   replayFromEpoch?: boolean;
+  /** Known signed-in viewer enables the one-time supplement instead of a full replay. */
+  snapshotSupplementViewerId?: string;
   onSchemaDrift?: SchemaDriftReporter;
   /**
    * The scope's CURRENT board-table checkpoints, when it already has any (the
@@ -1376,6 +1381,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   const purgeKey = purgeNamespaceKey(scope);
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
+  let artifactBuiltAt: string | undefined;
   let columns: Record<SnapshotTableName, string[]>;
   let deletionsReplayFrom: SyncCheckpoint | null = null;
   let imported = { climbsImported: 0, statsImported: 0, batches: 0 };
@@ -1409,6 +1415,7 @@ export async function bootstrapScopeFromSnapshot(params: {
         }
 
         const snapshotMeta = await verifySnapshotMeta(txn);
+        artifactBuiltAt = snapshotMeta.builtAt;
         columns = {
           board_climbs: await sharedColumns(txn, 'board_climbs', onSchemaDrift, snapshotMeta.schemaVersion),
           board_climb_stats: await sharedColumns(txn, 'board_climb_stats', onSchemaDrift, snapshotMeta.schemaVersion),
@@ -1453,7 +1460,20 @@ export async function bootstrapScopeFromSnapshot(params: {
       // vs a counted failure). The `.catch` covers the already-open case.
       try {
         const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = params.replayFromEpoch
-          ? { board_climbs: EPOCH_WATERMARK, board_climb_stats: EPOCH_WATERMARK }
+          ? params.snapshotSupplementViewerId
+            ? {
+                board_climbs: snapshotSupplementCheckpoint(
+                  watermarks.board_climbs,
+                  watermarks.board_climbs,
+                  params.snapshotSupplementViewerId,
+                ),
+                board_climb_stats: snapshotSupplementCheckpoint(
+                  watermarks.board_climb_stats,
+                  watermarks.board_climbs,
+                  params.snapshotSupplementViewerId,
+                ),
+              }
+            : { board_climbs: EPOCH_WATERMARK, board_climb_stats: EPOCH_WATERMARK }
           : watermarks;
 
         /** One short exclusive transaction: take the lock, re-check, write, let go. */
@@ -1569,6 +1589,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   return {
     climbsWatermark: finalWatermarks.board_climbs,
     statsWatermark: finalWatermarks.board_climb_stats,
+    artifactBuiltAt,
     climbsImported: imported.climbsImported,
     statsImported: imported.statsImported,
     importBatches: imported.batches,
@@ -1645,6 +1666,8 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   filePath: string;
   /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
   replayFromEpoch?: boolean;
+  /** Only a verified layout imported from this same export proves the grades' climb coverage. */
+  snapshotSupplement?: { viewerUserId: string; climbWatermark: SyncCheckpoint; artifactBuiltAt: string };
   onSchemaDrift?: SchemaDriftReporter;
   batchRows?: number;
   onBatch?: (progress: SnapshotImportBatchProgress) => void;
@@ -1683,6 +1706,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   const purgeKey = purgeNamespaceKey(scope);
 
   let watermark: SyncCheckpoint | null = null;
+  let canSupplement = false;
   let rowsImported = 0;
   let gradesVerifyMs = 0;
   let gradesLockMs = 0;
@@ -1705,6 +1729,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         // whole-layout SNAPSHOT_TABLES is untouched, which is what keeps this
         // change invisible to every pre-change artifact still on the CDN.
         const snapshotMeta = await verifySnapshotMeta(txn, GRADES_ALIAS, GRADES_SNAPSHOT_TABLES);
+        canSupplement = params.snapshotSupplement?.artifactBuiltAt === snapshotMeta.builtAt;
         gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, snapshotMeta.schemaVersion, GRADES_ALIAS);
 
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
@@ -1804,9 +1829,17 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         // Stamp only after every batch committed. A partial import safely replays.
         await runExclusive(async () => {
           if (!watermark) throw new Error('snapshot grades bootstrap: missing watermark');
-          if (params.replayFromEpoch) watermark = EPOCH_WATERMARK;
-          await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
-          await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, watermark);
+          const checkpoint = params.replayFromEpoch
+            ? canSupplement && params.snapshotSupplement
+              ? snapshotSupplementCheckpoint(
+                  watermark,
+                  params.snapshotSupplement.climbWatermark,
+                  params.snapshotSupplement.viewerUserId,
+                )
+              : EPOCH_WATERMARK
+            : watermark;
+          await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), checkpoint);
+          await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, checkpoint);
         });
         await txn.execAsync('BEGIN');
       } catch (gradesImportError) {
@@ -1819,5 +1852,10 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   }
 
   if (!watermark) throw new Error('snapshot grades bootstrap: transaction completed without a watermark');
-  return { gradesWatermark: watermark, rowsImported, gradesVerifyMs, gradesLockMs };
+  return {
+    gradesWatermark: params.replayFromEpoch && !canSupplement ? EPOCH_WATERMARK : watermark,
+    rowsImported,
+    gradesVerifyMs,
+    gradesLockMs,
+  };
 }

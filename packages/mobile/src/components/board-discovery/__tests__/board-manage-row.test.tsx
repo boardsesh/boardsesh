@@ -193,6 +193,25 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(offlineToggleProps.last?.state).toBe('finalizing');
   });
 
+  it('shows live work counts during indeterminate finishing', () => {
+    const { queryByText } = render(
+      <BoardManageRow
+        {...rowProps}
+        downloadState="finalizing"
+        downloadProgress={{
+          stage: 'import',
+          phase: 'finishing',
+          fraction: null,
+          bytesDone: null,
+          bytesTotal: null,
+          rowsProcessed: 1500,
+        }}
+      />,
+    );
+    expect(queryByText('mobile.offline.pill.rows')).not.toBeNull();
+    expect(translationCalls.calls).toContainEqual({ key: 'mobile.offline.pill.rows', options: { count: 1500 } });
+  });
+
   it('shows the bootstrapping caption (not the climb count) during the snapshot warm-up', () => {
     const { queryByText } = render(
       <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadCount={0} />,

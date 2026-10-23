@@ -116,6 +116,59 @@ describe('sync-scheduler', () => {
     );
   });
 
+  it('binds scheduled snapshot supplementation to the authenticated viewer', async () => {
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {
+      viewerUserId: 'viewer-supplement',
+    });
+    await flush();
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ viewerUserId: 'viewer-supplement' }),
+    );
+  });
+
+  it('resolves an asynchronous viewer once after draining, before starting the pull', async () => {
+    const lifecycle: string[] = [];
+    const drainQueue: DrainQueue = vi.fn(async () => {
+      lifecycle.push('drain');
+    });
+    const getViewerUserId = vi.fn(async () => {
+      lifecycle.push('viewer');
+      return 'resolved-viewer';
+    });
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {
+      viewerUserId: 'stale-viewer',
+      getViewerUserId,
+    });
+    await flush();
+    expect(lifecycle).toEqual(['drain', 'viewer']);
+    expect(getViewerUserId).toHaveBeenCalledTimes(1);
+    expect(mockPullSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.anything(),
+      mockGraphqlFetch,
+      expect.objectContaining({ viewerUserId: 'resolved-viewer' }),
+    );
+  });
+
+  it('reports a failed viewer resolution without falling back to an older viewer or pulling', async () => {
+    const cause = new Error('secure-store unavailable');
+    const getViewerUserId = vi.fn().mockRejectedValue(cause);
+    const onCycleError = vi.fn();
+    const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
+    triggerSync(mockDb, createMockQueryClient(), mockGraphqlFetch, getEnabledBoards, drainQueue, {
+      viewerUserId: 'stale-viewer',
+      getViewerUserId,
+      onCycleError,
+    });
+    await flush();
+    expect(mockPullSync).not.toHaveBeenCalled();
+    expect(onCycleError).toHaveBeenCalledWith(cause);
+  });
+
   it('forwards per-scope bootstrap metadata settlement to pullSync', async () => {
     const drainQueue: DrainQueue = vi.fn().mockResolvedValue(undefined);
     const onBootstrapMetadataChanged = vi.fn();

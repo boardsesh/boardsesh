@@ -1918,9 +1918,10 @@ must not import the filtered dataset with their old high-watermark logic: that
 would permanently skip older authorized authored rows. The separate reference
 catalog manifest retains its own format version. Old entries
 are rebuilt and excluded from manifest merges until rebuilt. Clients reject older
-artifacts and replay live scope sync from epoch after import so the snapshot
-watermark cannot skip older authorized authored climbs. This temporarily duplicates
-reference downloads; a separate authored-content cursor can optimize it later.
+artifacts. Clients supporting snapshot supplementation keep the legacy checkpoint
+at epoch while fetching authorized rows omitted from the artifact once, then
+promote it to the verified scoped artifact watermark and resume ordinary sync.
+Older clients and unsupported backends retain the safe full replay from epoch.
 
 Leaving drafts out (October 2026) kept `privacyVersion: 1` on purpose. Version 1
 already means "a subset of what the viewer may read; replay the live scope sync from
@@ -1939,3 +1940,32 @@ copies cannot be recalled from third-party consumers. Storage deletion requires
 operator authorization; code deployment alone does not complete this rollout gate.
 Policy reads use the primary database. Replicas must not make privacy decisions
 unless a verified replication watermark proves the latest revocation is visible.
+
+
+### One-time snapshot supplementation (#6653)
+
+`syncClimbs`, `syncClimbStats`, and `syncClimbGrades` accept optional
+`audience: SNAPSHOT_SUPPLEMENTAL` and `snapshotClimbWatermark`. Omission or `ALL`
+retains the existing API. Supplemental mode returns authorized climbs outside the
+exact artifact publication predicate, plus climbs newer than the imported scoped
+climb watermark. Stats and grades include all matching child rows, even when
+their own timestamps predate the artifact. This catches climbs omitted at export
+time that later become reference content. Visibility rules do not change.
+
+After all import batches commit, each existing checkpoint JSON can hold a
+versioned, viewer-bound `snapshotSupplement` alongside its legacy epoch cursor.
+Supplemental page rows and progress commit together. Only a committed terminal
+page promotes the ordinary checkpoint to the saved table watermark; an ordinary
+ALL delta must then reach its tail before the board becomes downloaded. Old
+bundles discard the extra JSON on their next ordinary checkpoint write and
+safely replay. Invalid state, a different viewer, or an older backend uses the
+ordinary saved cursor without advancing coverage. No local schema change is
+needed. Grade supplementation requires a verified layout import from the same
+export transaction; missing or independently retrofitted grades keep ordinary
+paging.
+
+Older partial imports did not persist their scoped artifact watermarks. They
+continue from their committed cursor until the climber explicitly chooses faster
+retry. Retry permits a verified snapshot import for an unfinished board and keeps
+the existing watermark-regression and local-write protections. Never infer old
+coverage from a newer manifest or local maximum timestamp.

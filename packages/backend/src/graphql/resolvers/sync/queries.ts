@@ -1,6 +1,13 @@
 import { climbDraftVisibilityCondition, privateSafeFirstAscentName } from '@boardsesh/db/queries';
 import { sql, type SQL } from 'drizzle-orm';
-import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
+import type {
+  ConnectionContext,
+  SyncResult,
+  SyncDeletionsResult,
+  SyncCursorInput,
+  SyncCursor,
+  SyncAudience,
+} from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -132,7 +139,12 @@ async function runSyncPage(params: {
     LIMIT ${limit}
   `);
 
-  const rows = rowsFromResult<RawRow>(result);
+  return syncPageResult(rowsFromResult<RawRow>(result), cursor, limit);
+}
+
+/** The same cursor and document contract for ordinary and snapshot-only pages. */
+function syncPageResult(rows: RawRow[], cursor: SyncCursorInput | null | undefined, limit: number): SyncResult {
+  const { ts, seq } = cursorBounds(cursor);
 
   const documents = rows.map((row) => {
     const normalized = normalizeRow(row);
@@ -242,6 +254,98 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
   );
 }
 
+/** A supplemental page must name the exact imported climb boundary, never a guessed latest manifest. */
+function prepareSnapshotSupplement(
+  audience: SyncAudience | null | undefined,
+  snapshotClimbWatermark: SyncCursorInput | null | undefined,
+): SyncCursor | undefined {
+  if (audience != null && audience !== 'ALL' && audience !== 'SNAPSHOT_SUPPLEMENTAL') {
+    throw new Error('Invalid audience: expected ALL or SNAPSHOT_SUPPLEMENTAL');
+  }
+  const watermark = validateInput(SyncCursorInputSchema, snapshotClimbWatermark, 'snapshotClimbWatermark');
+  if (audience !== 'SNAPSHOT_SUPPLEMENTAL') return undefined;
+  if (!watermark?.updatedAt || !watermark.syncSeq) {
+    throw new Error('Invalid snapshotClimbWatermark: both updatedAt and syncSeq are required');
+  }
+  if (BigInt(watermark.syncSeq) > 9_223_372_036_854_775_807n) {
+    throw new Error('Invalid snapshotClimbWatermark: syncSeq must fit a PostgreSQL bigint');
+  }
+  return { updatedAt: watermark.updatedAt, syncSeq: watermark.syncSeq };
+}
+
+/**
+ * Exact complement of the public artifact's climb predicate, plus changes since
+ * that artifact. The latter also pulls OLD stats/grades for a climb omitted at
+ * export time that became an imported reference climb afterward.
+ *
+ * Keep this aligned with CLIMBS_WHERE in export-board-snapshots.ts. Published
+ * unlisted climbs remain public; the existing draft and spray guards still
+ * decide authorization independently of artifact membership.
+ */
+function snapshotSupplementCondition(watermark: SyncCursor, prefix: SQL = sql``): SQL {
+  return sql`(
+    NOT (
+      ${prefix}user_id IS NULL AND NOT ${prefix}is_boardsesh_authored
+      AND ${prefix}is_draft IS NOT TRUE
+      AND NOT EXISTS (
+        SELECT 1 FROM content_privacy snapshot_privacy
+        WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = ${prefix}uuid
+      )
+    )
+    OR (${prefix}updated_at, ${prefix}sync_seq) > (${watermark.updatedAt}::timestamp, ${watermark.syncSeq}::bigint)
+  )`;
+}
+
+/** Sparse artifact omissions must drive PK lookups, not filter a full grade-cursor scan. */
+async function runSnapshotSupplementRefPage(params: {
+  table: SQL;
+  climbUuidColumn: SQL;
+  viewerUserId?: string;
+  selectList: SQL;
+  updatedAtColumn: SQL;
+  seqColumn: SQL;
+  boardType: string;
+  layoutId: number | null;
+  sizeId: number | null;
+  cursor: SyncCursorInput | null | undefined;
+  limit: number;
+  snapshotClimbWatermark: SyncCursor;
+}): Promise<SyncResult> {
+  const { table, climbUuidColumn, selectList, updatedAtColumn, seqColumn, boardType, layoutId, sizeId, cursor, limit } =
+    params;
+  const { ts, seq } = cursorBounds(cursor);
+  const candidates = sql.join(
+    [
+      sql`bc.board_type = ${boardType}`,
+      ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
+      climbDraftVisibilityCondition({ isDraft: sql`bc.is_draft`, userId: sql`bc.user_id` }, params.viewerUserId),
+      snapshotSupplementCondition(params.snapshotClimbWatermark, sql`bc.`),
+    ],
+    sql` AND `,
+  );
+  return withSerialPlan(db, async (transactionDb) => {
+    const result = await transactionDb.execute(sql`
+      WITH snapshot_candidates AS MATERIALIZED (
+        SELECT bc.uuid FROM board_climbs bc WHERE ${candidates}
+      )
+      SELECT supplemental_rows.*
+      FROM snapshot_candidates
+      CROSS JOIN LATERAL (
+        SELECT ${selectList}, ${updatedAtColumn} AS __updated_at, ${seqColumn} AS __seq
+        FROM ${table}
+        WHERE board_type = ${boardType} AND ${climbUuidColumn} = snapshot_candidates.uuid
+          AND (${updatedAtColumn}, ${seqColumn}) > (${ts}::timestamp, ${seq}::bigint)
+          AND ${updatedAtColumn} < now() - make_interval(secs => ${STABILITY_WINDOW_SECONDS})
+        ORDER BY ${updatedAtColumn} ASC, ${seqColumn} ASC
+        LIMIT ${limit}
+      ) supplemental_rows
+      ORDER BY supplemental_rows.__updated_at ASC, supplemental_rows.__seq ASC
+      LIMIT ${limit}
+    `);
+    return syncPageResult(rowsFromResult<RawRow>(result), cursor, limit);
+  });
+}
+
 /**
  * Run one page of a per-board reference table that has no layout_id of its own
  * (board_climb_stats, board_climb_grades) — building the correlated-EXISTS scope
@@ -275,9 +379,14 @@ async function runScopedBoardRefSyncPage(params: {
   sizeId: number | null;
   cursor: SyncCursorInput | null | undefined;
   limit: number;
+  snapshotClimbWatermark?: SyncCursor;
 }): Promise<SyncResult> {
   const { table, climbUuidColumn, selectList, updatedAtColumn, seqColumn, boardType, layoutId, sizeId, cursor, limit } =
     params;
+
+  if (params.snapshotClimbWatermark) {
+    return runSnapshotSupplementRefPage({ ...params, snapshotClimbWatermark: params.snapshotClimbWatermark });
+  }
 
   // The reference row has no layout_id, so scope it to the climbs of that
   // (layout, size) via a correlated EXISTS on board_climbs, reusing the same
@@ -556,12 +665,16 @@ export const syncQueries = {
       sizeId,
       cursor,
       limit,
+      audience,
+      snapshotClimbWatermark,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
       cursor?: SyncCursorInput | null;
       limit: number;
+      audience?: SyncAudience | null;
+      snapshotClimbWatermark?: SyncCursorInput | null;
     },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
@@ -571,6 +684,7 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const supplementalWatermark = prepareSnapshotSupplement(audience, snapshotClimbWatermark);
 
     // The board scope here is `board_type` + an optional `layout_id` and the
     // draft rule — no `is_listed`, no account privacy (a published climb is
@@ -593,7 +707,7 @@ export const syncQueries = {
         characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
         updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
-      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id` }, ctx.userId)}`,
+      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id` }, ctx.userId)}${supplementalWatermark ? sql` AND ${snapshotSupplementCondition(supplementalWatermark, sql`board_climbs.`)}` : sql``}`,
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,
@@ -616,12 +730,16 @@ export const syncQueries = {
       sizeId,
       cursor,
       limit,
+      audience,
+      snapshotClimbWatermark,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
       cursor?: SyncCursorInput | null;
       limit: number;
+      audience?: SyncAudience | null;
+      snapshotClimbWatermark?: SyncCursorInput | null;
     },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
@@ -631,6 +749,7 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const supplementalWatermark = prepareSnapshotSupplement(audience, snapshotClimbWatermark);
 
     // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
     // layout to decide which rows belong to the pull, so a private spray wall
@@ -642,6 +761,7 @@ export const syncQueries = {
 
     return runScopedBoardRefSyncPage({
       viewerUserId: ctx.userId,
+      snapshotClimbWatermark: supplementalWatermark,
       table: sql`board_climb_stats`,
       climbUuidColumn: sql`board_climb_stats.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
@@ -673,12 +793,16 @@ export const syncQueries = {
       sizeId,
       cursor,
       limit,
+      audience,
+      snapshotClimbWatermark,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
       cursor?: SyncCursorInput | null;
       limit: number;
+      audience?: SyncAudience | null;
+      snapshotClimbWatermark?: SyncCursorInput | null;
     },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
@@ -688,6 +812,7 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+    const supplementalWatermark = prepareSnapshotSupplement(audience, snapshotClimbWatermark);
 
     // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
     // layout to decide which rows belong to the pull, so a private spray wall
@@ -699,6 +824,7 @@ export const syncQueries = {
 
     return runScopedBoardRefSyncPage({
       viewerUserId: ctx.userId,
+      snapshotClimbWatermark: supplementalWatermark,
       table: sql`board_climb_grades`,
       climbUuidColumn: sql`board_climb_grades.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,

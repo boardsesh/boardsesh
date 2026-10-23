@@ -21,6 +21,12 @@ export const syncTypeDefs = /* GraphQL */ `
     syncSeq: String
   }
 
+  "Rows needed by ordinary sync or to complete an imported public snapshot."
+  enum SyncAudience {
+    ALL
+    SNAPSHOT_SUPPLEMENTAL
+  }
+
   """
   Composite sync cursor returned by a pull. Feed it back as SyncCursorInput on
   the next page.

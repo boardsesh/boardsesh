@@ -5,6 +5,16 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const authToken = vi.hoisted(() => ({
+  token: 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature' as string | null,
+  generationCurrent: true,
+}));
+vi.mock('../../lib/auth-store', () => ({
+  getAuthToken: async () => authToken.token,
+  captureAuthCredentialGeneration: () => 1,
+  isAuthCredentialGenerationCurrent: () => authToken.generationCurrent,
+}));
+
 const onlineManagerIsOnline = vi.fn(() => true);
 const onlineManagerSetOnline = vi.fn();
 // The adapter reads the persisted download-trigger attribution (issue #4316),
@@ -226,6 +236,7 @@ beforeEach(() => {
   connectivity.confirmBackendAvailability.mockResolvedValue(true);
   // The trigger store is persisted, so it survives between tests unless cleared.
   mockSettingsStorage.clear();
+  authToken.generationCurrent = true;
 });
 
 describe('drainMutationQueue binding', () => {
@@ -1855,5 +1866,41 @@ describe('triggerSync / pullSync bindings', () => {
     options.onSchemaDrift?.(drift);
     expect(customDrift).toHaveBeenCalledWith(drift);
     expect(reportHandledError).not.toHaveBeenCalled();
+  });
+});
+
+describe('snapshot viewer binding', () => {
+  it('resolves the authenticated viewer at cycle time for scheduler and explicit downloads', async () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const schedulerOptions = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    await expect(schedulerOptions.getViewerUserId?.()).resolves.toBe('viewer-6653');
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const triggerOptions = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    await expect(triggerOptions.getViewerUserId?.()).resolves.toBe('viewer-6653');
+  });
+
+  it('declines snapshot coverage if credentials change while the keychain is read', async () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    authToken.generationCurrent = false;
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    await expect(options.getViewerUserId?.()).resolves.toBeUndefined();
   });
 });

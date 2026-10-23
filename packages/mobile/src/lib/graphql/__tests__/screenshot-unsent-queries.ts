@@ -111,8 +111,11 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'SprayDetection',
   'SprayWallImportProgress',
   'SyncClimbGrades',
+  'SyncClimbGradesSnapshotSupplement',
   'SyncClimbStats',
+  'SyncClimbStatsSnapshotSupplement',
   'SyncClimbs',
+  'SyncClimbsSnapshotSupplement',
   'SyncSprayWalls',
   // Capture flows never open the nested board picker in the logbook edit sheet.
   'TickBoardOptions',

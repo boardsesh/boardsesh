@@ -389,7 +389,10 @@
         "failed": "La descarga no terminó",
         "percent": "{{percent}} %",
         "more": "+{{count}} más",
-        "open": "Abre Mis plafones para {{name}}"
+        "open": "Abre Mis plafones para {{name}}",
+        "hide": "Ocultar el progreso de la descarga",
+        "rows_one": "{{count}} elemento cargado",
+        "rows_other": "{{count}} elementos cargados"
       },
       "snapshotRetrying": "Descarga rápida interrumpida: se reintentará en la próxima sincronización",
       "snapshotRetryingAria": "La descarga rápida sin conexión de {{name}} se ha interrumpido. Se reintentará en la próxima sincronización.",

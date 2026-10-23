@@ -17,9 +17,24 @@ function declaredOperationName(document: string): string | null {
 describe('listSyncPullDocuments', () => {
   it('returns each table query plus deletions and wall visibility confirmation', () => {
     const documents = listSyncPullDocuments();
-    expect(documents).toHaveLength(Object.keys(TABLE_CONFIGS).length + 2);
+    expect(documents).toHaveLength(Object.keys(TABLE_CONFIGS).length + 5);
     expect(documents.map((entry) => entry.operationName)).toContain('SyncDeletions');
     expect(documents.map((entry) => entry.operationName)).toContain('ConfirmSprayWallVisibility');
+  });
+
+  it('enumerates one-time supplement documents separately from legacy sync', () => {
+    const supplements = listSyncPullDocuments().filter((entry) => entry.operationName.endsWith('SnapshotSupplement'));
+    expect(supplements.map((entry) => entry.operationName)).toEqual([
+      'SyncClimbsSnapshotSupplement',
+      'SyncClimbStatsSnapshotSupplement',
+      'SyncClimbGradesSnapshotSupplement',
+    ]);
+    for (const { document } of supplements) {
+      expect(document).toContain('$audience: SyncAudience!');
+      expect(document).toContain('$snapshotClimbWatermark: SyncCursorInput!');
+    }
+    const ordinary = listSyncPullDocuments().find((entry) => entry.operationName === 'SyncClimbs');
+    expect(ordinary?.document).not.toContain('audience:');
   });
 
   it('names every table config query exactly once', () => {

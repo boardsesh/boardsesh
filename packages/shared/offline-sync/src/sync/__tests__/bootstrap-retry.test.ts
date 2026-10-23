@@ -347,6 +347,17 @@ describe('evaluateBootstrapEligibility', () => {
     expect(evaluate({ isBootstrapDone: true })).toMatchObject({ eligible: false, reason: 'bootstrap-done' });
   });
 
+  it('allows an explicit faster retry after an artifact import, while keeping completed scopes settled', () => {
+    const requested = state({ userRequested: true });
+    expect(evaluate({ isBootstrapDone: true, hasBoardCheckpoint: true, retryState: requested })).toEqual({
+      eligible: true,
+      kind: 'heal-over-partial',
+    });
+    expect(
+      evaluate({ isBootstrapDone: true, isScopeComplete: true, hasBoardCheckpoint: true, retryState: requested }),
+    ).toMatchObject({ eligible: false, reason: 'scope-complete' });
+  });
+
   it('holds a scope until its scheduled retry, then admits it', () => {
     const cooling = state({ transportFailures: 1, hasPriorSnapshotFailure: true, retryAfter: NOW + 1 });
     expect(evaluate({ retryState: cooling })).toMatchObject({ eligible: false, reason: 'cooling-down' });

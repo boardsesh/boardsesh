@@ -1787,3 +1787,19 @@ without requiring another download-completed event.
 These progress and transfer changes use the existing single-cursor sync and
 snapshot compatibility rules. They introduce no privacy-event subscription, and
 the app has had no catalogue revalidation path since #6545.
+
+
+### Download progress and faster retry (#6653)
+
+Snapshot-backed downloads fetch omitted authorized content once before ordinary
+delta sync, as described in `docs/board-snapshots.md`. Paged finishing has no known
+denominator: it reports an indeterminate bar and the number of processed items
+instead of remaining at 98%. Completion is published only after committed tails.
+
+The floating download card has a Hide control in active, waiting, failed, and
+completed states. Hiding changes only `offlineDownloadIndicatorHidden`, a
+persisted preference; My Boards keeps its progress and the download continues.
+Progress frames, queued-board promotion, and reopening do not restore the card.
+A person starting or retrying a download clears the preference. An unfinished
+board that already imported a snapshot can also offer the existing faster-retry
+confirmation, preserving completed boards and the imported-watermark guard.

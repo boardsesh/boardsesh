@@ -6,7 +6,81 @@ import { BOARD_DATA_TABLES } from './table-config';
 export type SyncCheckpoint = {
   updatedAt: string;
   syncSeq: string;
+  /** One-time coverage for rows a verified public artifact deliberately omitted. */
+  snapshotSupplement?: SnapshotSupplementState;
 };
+
+export type SnapshotSupplementState = {
+  version: 1;
+  viewerUserId: string;
+  artifactWatermark: { updatedAt: string; syncSeq: string };
+  climbWatermark: { updatedAt: string; syncSeq: string };
+  cursor: { updatedAt: string; syncSeq: string };
+};
+
+export const SNAPSHOT_SUPPLEMENT_START = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
+
+/** Older bundles read the epoch cursor and safely replace this whole JSON on their first page. */
+export function snapshotSupplementCheckpoint(
+  artifactWatermark: SyncCheckpoint,
+  climbWatermark: SyncCheckpoint,
+  viewerUserId: string,
+): SyncCheckpoint {
+  return {
+    ...SNAPSHOT_SUPPLEMENT_START,
+    snapshotSupplement: {
+      version: 1,
+      viewerUserId,
+      artifactWatermark: { updatedAt: artifactWatermark.updatedAt, syncSeq: artifactWatermark.syncSeq },
+      climbWatermark: { updatedAt: climbWatermark.updatedAt, syncSeq: climbWatermark.syncSeq },
+      cursor: { ...SNAPSHOT_SUPPLEMENT_START },
+    },
+  };
+}
+
+function isStoredCursor(candidate: unknown): candidate is { updatedAt: string; syncSeq: string } {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const cursor = candidate as Record<string, unknown>;
+  return (
+    typeof cursor.updatedAt === 'string' &&
+    /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)$/.test(
+      cursor.updatedAt,
+    ) &&
+    Number.isFinite(
+      Date.parse(cursor.updatedAt.includes('T') ? cursor.updatedAt : `${cursor.updatedAt.replace(' ', 'T')}Z`),
+    ) &&
+    typeof cursor.syncSeq === 'string' &&
+    /^\d{1,19}$/.test(cursor.syncSeq) &&
+    BigInt(cursor.syncSeq) <= 9_223_372_036_854_775_807n
+  );
+}
+
+/** Corrupt, unbound, or another account's coverage must never advance the legacy cursor. */
+export function getSnapshotSupplement(
+  checkpoint: SyncCheckpoint | null,
+  viewerUserId: string | undefined,
+): SnapshotSupplementState | null {
+  if (!isStoredCursor(checkpoint) || !viewerUserId || compareCheckpoints(checkpoint, SNAPSHOT_SUPPLEMENT_START) !== 0)
+    return null;
+  const supplement: unknown = checkpoint.snapshotSupplement;
+  if (typeof supplement !== 'object' || supplement === null) return null;
+  const stored = supplement as Record<string, unknown>;
+  if (
+    stored.version !== 1 ||
+    stored.viewerUserId !== viewerUserId ||
+    !isStoredCursor(stored.artifactWatermark) ||
+    !isStoredCursor(stored.climbWatermark) ||
+    !isStoredCursor(stored.cursor)
+  )
+    return null;
+  return {
+    version: 1,
+    viewerUserId,
+    artifactWatermark: stored.artifactWatermark,
+    climbWatermark: stored.climbWatermark,
+    cursor: stored.cursor,
+  };
+}
 
 /**
  * Checkpoint key for a table. For per-board tables `scope` is the encoded board

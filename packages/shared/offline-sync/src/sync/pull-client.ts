@@ -19,6 +19,7 @@ import {
   ensureScopeDownloadStartedAt,
   SCOPE_DOWNLOAD_START_MAX_AGE_MS,
   DELETIONS_CHECKPOINT_KEY,
+  getSnapshotSupplement,
 } from './checkpoints';
 import { removeBoardScopeRows } from './scope-teardown';
 import { isUserDataComplete, markUserDataComplete } from './local-user-owner';
@@ -588,6 +589,8 @@ export type RowsDeletedSink = (info: {
 }) => void | Promise<void>;
 
 export type SyncOptions = {
+  /** Authenticated viewer captured for this cycle; absent retains legacy snapshot replay. */
+  viewerUserId?: string;
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
   /** User-started scopes go first in both bootstrap and board pulls. */
@@ -686,15 +689,20 @@ type BoardScope = OfflineBoardScope & { scopeKey: string };
 
 const PAGE_LIMIT = 500;
 
-function buildSyncQuery(queryName: string, isPerBoard: boolean): string {
+const SNAPSHOT_SUPPLEMENT_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
+
+function buildSyncQuery(queryName: string, isPerBoard: boolean, supplemental = false): string {
   // Per-board pulls carry the board type plus optional layout/size scope so a
   // downloaded board is a fixed (boardType, layout, size) superset — all sets.
   // layoutId/sizeId are nullable server-side, so passing them undefined is a no-op.
   const boardScopeParam = isPerBoard ? '$boardType: String!, $layoutId: Int, $sizeId: Int, ' : '';
   const boardScopeArg = isPerBoard ? 'boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, ' : '';
+  const supplementParams = supplemental ? '$audience: SyncAudience!, $snapshotClimbWatermark: SyncCursorInput!, ' : '';
+  const supplementArgs = supplemental ? 'audience: $audience, snapshotClimbWatermark: $snapshotClimbWatermark, ' : '';
+  const operationName = `${queryName[0].toUpperCase()}${queryName.slice(1)}${supplemental ? 'SnapshotSupplement' : ''}`;
   return `
-    query ${queryName[0].toUpperCase()}${queryName.slice(1)}(${boardScopeParam}$cursor: SyncCursorInput, $limit: Int! = ${PAGE_LIMIT}) {
-      ${queryName}(${boardScopeArg}cursor: $cursor, limit: $limit) {
+    query ${operationName}(${boardScopeParam}${supplementParams}$cursor: SyncCursorInput, $limit: Int! = ${PAGE_LIMIT}) {
+      ${queryName}(${boardScopeArg}${supplementArgs}cursor: $cursor, limit: $limit) {
         documents
         cursor {
           updatedAt
@@ -752,6 +760,13 @@ export function listSyncPullDocuments(): SyncPullDocument[] {
   }));
   return [
     ...tableDocuments,
+    ...SNAPSHOT_SUPPLEMENT_TABLES.map((tableName) => {
+      const config = TABLE_CONFIGS[tableName];
+      return {
+        operationName: `${config.queryName[0].toUpperCase()}${config.queryName.slice(1)}SnapshotSupplement`,
+        document: buildSyncQuery(config.queryName, true, true),
+      };
+    }),
     { operationName: 'SyncDeletions', document: SYNC_DELETIONS_QUERY },
     { operationName: 'ConfirmSprayWallVisibility', document: CONFIRM_SPRAY_WALL_VISIBILITY_QUERY },
   ];
@@ -848,6 +863,24 @@ class RefreshColumnsMissingError extends Error {
   }
 }
 
+/** Only schema validation can retire the optimization; transport/auth failures retain resumable coverage. */
+function rejectsSnapshotSupplement(error: unknown, depth = 0): boolean {
+  if (typeof error !== 'object' || error === null || depth > 3) return false;
+  const record = error as Record<string, unknown>;
+  if (
+    typeof record.message === 'string' &&
+    /Unknown (?:argument "(?:audience|snapshotClimbWatermark)"|type "SyncAudience")/.test(record.message)
+  )
+    return true;
+  if (
+    Array.isArray(record.errors) &&
+    record.errors.some((entry: unknown) => rejectsSnapshotSupplement(entry, depth + 1))
+  )
+    return true;
+  if (record.response && rejectsSnapshotSupplement(record.response, depth + 1)) return true;
+  return record.cause !== error && rejectsSnapshotSupplement(record.cause, depth + 1);
+}
+
 async function syncTable(
   db: OfflineDatabase,
   /** The cycle's batch; pullSync flushes it at the end of the phase. */
@@ -863,6 +896,7 @@ async function syncTable(
   /** Per-page side-effect sink; see DocumentsPulledSink. */
   onDocumentsPulled?: DocumentsPulledSink,
   onEmptyPage?: () => Promise<boolean>,
+  viewerUserId?: string,
 ): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
@@ -876,6 +910,8 @@ async function syncTable(
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
   const checkpoint = refresh?.state ?? (await getCheckpoint(db, checkpointKey));
+  let supplement =
+    !refresh && boardScope && boardScope.boardType !== 'spray' ? getSnapshotSupplement(checkpoint, viewerUserId) : null;
   const revision = boardScope ? refreshRevisionFor(tableName, boardScope.boardType) : undefined;
   const previousRefresh =
     revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
@@ -892,10 +928,12 @@ async function syncTable(
   // a checkpoint behind.
   const resumedFromCheckpoint = checkpoint !== null;
   const query = buildSyncQuery(config.queryName, config.isPerBoard);
+  const supplementalQuery = buildSyncQuery(config.queryName, config.isPerBoard, true);
 
   let cursor: SyncCursorInput | undefined = checkpoint
     ? { updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq }
     : undefined;
+  if (supplement) cursor = supplement.cursor;
   let totalProcessed = 0;
   let completedAtTail = false;
   const finish = (reachedTail: boolean) => {
@@ -916,6 +954,21 @@ async function syncTable(
 
   let hasMore = true;
   try {
+    // An older writer replaces this whole checkpoint. Missing/corrupt or another
+    // viewer's metadata always keeps the ordinary saved cursor, never artifact W.
+    if (checkpoint?.snapshotSupplement && !supplement && !refresh) {
+      let cleared = false;
+      await runPullWrite(db, async (transaction) => {
+        cleared = false;
+        if (!canWrite()) return;
+        await setCheckpoint(transaction, checkpointKey, {
+          updatedAt: checkpoint.updatedAt,
+          syncSeq: checkpoint.syncSeq,
+        });
+        cleared = true;
+      });
+      if (!cleared) return finish(false);
+    }
     while (hasMore) {
       // Sign-out is wiping local data: stop before this page writes the old
       // user's rows back (mirrors the drainer's guard).
@@ -926,8 +979,31 @@ async function syncTable(
         variables.layoutId = boardScope.layoutId;
         variables.sizeId = boardScope.sizeId;
       }
+      if (supplement) {
+        variables.audience = 'SNAPSHOT_SUPPLEMENTAL';
+        variables.snapshotClimbWatermark = supplement.climbWatermark;
+      }
 
-      const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
+      let response: Record<string, SyncResult>;
+      try {
+        response = await graphqlFetch<Record<string, SyncResult>>(supplement ? supplementalQuery : query, variables);
+      } catch (cause) {
+        if (!supplement || !rejectsSnapshotSupplement(cause)) throw cause;
+        let cleared = false;
+        await runPullWrite(db, async (transaction) => {
+          cleared = false;
+          if (!canWrite()) return;
+          await setCheckpoint(transaction, checkpointKey, {
+            updatedAt: checkpoint!.updatedAt,
+            syncSeq: checkpoint!.syncSeq,
+          });
+          cleared = true;
+        });
+        if (!cleared) return finish(false);
+        supplement = null;
+        cursor = { updatedAt: checkpoint!.updatedAt, syncSeq: checkpoint!.syncSeq };
+        continue;
+      }
       const result = response[config.queryName];
 
       // Re-check after the await: the wipe (or this scope's purge) may have
@@ -937,6 +1013,21 @@ async function syncTable(
 
       assertSyncPageProgress(result, cursor);
       if (result.documents.length === 0) {
+        if (supplement) {
+          const artifactWatermark = supplement.artifactWatermark;
+          let promoted = false;
+          await runPullWrite(db, async (transaction) => {
+            promoted = false;
+            if (!canWrite()) return;
+            await setCheckpoint(transaction, checkpointKey, artifactWatermark);
+            promoted = true;
+          });
+          if (!promoted) return finish(false);
+          supplement = null;
+          cursor = artifactWatermark;
+          lastCursor = artifactWatermark;
+          continue;
+        }
         if (onEmptyPage && (await onEmptyPage())) return finish(true);
         break;
       }
@@ -950,6 +1041,7 @@ async function syncTable(
       // Invalidate coverage even when this catalog already completed a refresh.
       const clearDownloadCoverage = !refresh && missingRefreshColumns.length > 0;
       if (clearDownloadCoverage) fullDownload = false;
+      const pageSupplement = supplement;
 
       const committed = await upsertDocuments(
         db,
@@ -962,6 +1054,7 @@ async function syncTable(
           canWrite,
           preserveNewerRows:
             !!refresh ||
+            !!pageSupplement ||
             (boardScope?.boardType === 'spray' && (tableName === 'board_climbs' || tableName === 'board_climb_stats')),
           afterUpsert: async (transaction) => {
             if (tableName === 'board_climbs' && boardScope?.boardType === 'spray') {
@@ -970,13 +1063,24 @@ async function syncTable(
               // layouts on next use, and fence in-flight index work atomically.
               await clearLayoutHoldIndex(transaction, boardScope.boardType, boardScope.layoutId);
             }
-            if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+            if (!refresh) {
+              const nextCheckpoint = pageSupplement
+                ? result.hasMore
+                  ? {
+                      updatedAt: checkpoint!.updatedAt,
+                      syncSeq: checkpoint!.syncSeq,
+                      snapshotSupplement: { ...pageSupplement, cursor: result.cursor },
+                    }
+                  : pageSupplement.artifactWatermark
+                : result.cursor;
+              await setCheckpoint(transaction, checkpointKey, nextCheckpoint);
+            }
             if (clearDownloadCoverage && boardScope) {
               await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
                 schemaRefreshKey(tableName, boardScope.scopeKey),
               ]);
             }
-            if (revision && boardScope && (refresh || fullDownload)) {
+            if (!pageSupplement && revision && boardScope && (refresh || fullDownload)) {
               if (!result.hasMore) {
                 await markSchemaRefreshComplete(
                   transaction,
@@ -999,7 +1103,7 @@ async function syncTable(
         },
       );
       if (!committed) return finish(false);
-      lastCursor = result.cursor;
+      lastCursor = pageSupplement && !result.hasMore ? pageSupplement.artifactWatermark : result.cursor;
 
       // Side effects that belong to the page but not to the row — today only the
       // spray-wall photo, fetched with the presigned URL the page carried and
@@ -1024,8 +1128,16 @@ async function syncTable(
       totalProcessed += result.documents.length;
       onProgress?.(totalProcessed);
 
-      cursor = { updatedAt: result.cursor.updatedAt, syncSeq: result.cursor.syncSeq };
-      hasMore = result.hasMore;
+      if (pageSupplement) {
+        supplement = result.hasMore ? { ...pageSupplement, cursor: result.cursor } : null;
+        cursor = result.hasMore ? result.cursor : pageSupplement.artifactWatermark;
+        // Artifact coverage plus supplementation is a prefix; ordinary deltas
+        // still owe the rows that changed after the artifact.
+        hasMore = true;
+      } else {
+        cursor = { updatedAt: result.cursor.updatedAt, syncSeq: result.cursor.syncSeq };
+        hasMore = result.hasMore;
+      }
     }
 
     if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
@@ -1862,6 +1974,7 @@ async function runBootstrapPhase(params: {
   const importGradesForScope = async (
     scope: BoardScope,
     entry: SnapshotManifestEntry,
+    importedLayout?: { climbWatermark: SyncCheckpoint; artifactBuiltAt?: string },
   ): Promise<TeardownVerdict['kind'] | null> => {
     const record = await prefetchGrades(scope, entry);
     if (!record) return teardownVerdict(scope.scopeKey)?.kind ?? null;
@@ -1916,6 +2029,14 @@ async function runBootstrapPhase(params: {
         scopeKey: scope.scopeKey,
         filePath: result.file.filePath,
         replayFromEpoch: entry.privacyVersion === 1,
+        snapshotSupplement:
+          options?.viewerUserId && importedLayout?.artifactBuiltAt
+            ? {
+                viewerUserId: options.viewerUserId,
+                climbWatermark: importedLayout.climbWatermark,
+                artifactBuiltAt: importedLayout.artifactBuiltAt,
+              }
+            : undefined,
         onSchemaDrift,
         onBatch: ({ rowsImported }) => {
           const rowCount = entry.grades?.tables.board_climb_grades.rowCount ?? 0;
@@ -2725,6 +2846,7 @@ async function runBootstrapPhase(params: {
             scopeKey: scope.scopeKey,
             filePath: download.filePath,
             replayFromEpoch: entry.privacyVersion === 1,
+            snapshotSupplementViewerId: options?.viewerUserId,
             onSchemaDrift,
             // Arms the watermark-regression guard on the heal path: the artifact
             // may not stamp a checkpoint BELOW what this scope already crawled.
@@ -2785,7 +2907,10 @@ async function runBootstrapPhase(params: {
           // Grades ride a second, small artifact and a second short exclusive
           // transaction, right after the climbs/stats one. See
           // importGradesForScope — every failure here is free.
-          const gradesVerdict = await importGradesForScope(scope, entry);
+          const gradesVerdict = await importGradesForScope(scope, entry, {
+            climbWatermark: imported.climbsWatermark,
+            artifactBuiltAt: imported.artifactBuiltAt,
+          });
           if (gradesVerdict === 'cycle') {
             cycleInterrupted = true;
             break;
@@ -3296,14 +3421,9 @@ async function performPullSync(
         download,
       });
     };
-    const finishGlobalStep = (step: number): void => {
+    const finishGlobalStep = (): void => {
       const scopeKey = pendingDownloads.values().next().value;
-      if (scopeKey)
-        reportDownload(
-          scopeKey,
-          snapshotDownloads.has(scopeKey) ? 'finishing' : 'preparing',
-          snapshotDownloads.has(scopeKey) ? step / (USER_DATA_TABLES.length + 1 + BOARD_DATA_TABLES.length) : null,
-        );
+      if (scopeKey) reportDownload(scopeKey, snapshotDownloads.has(scopeKey) ? 'finishing' : 'preparing', null);
     };
 
     // Per-scope start timestamp for ScopeDownloadCompleteInfo.durationMs, stamped
@@ -3415,8 +3535,7 @@ async function performPullSync(
     // purge, backgrounding) consumed an unknown prefix of the stream, so claiming a
     // fresh retention window off it would hide a real gap. See deletions-coverage.ts.
     if (deletionsResult.reachedTail) await setDeletionsCoverageAt(db, Date.now());
-    let globalFinishSteps = 1;
-    finishGlobalStep(globalFinishSteps);
+    finishGlobalStep();
 
     let allUserTablesReachedTail = true;
     for (const tableName of USER_DATA_TABLES) {
@@ -3437,8 +3556,7 @@ async function performPullSync(
         options?.onSchemaDrift,
       );
       if (!userTableResult.reachedTail) allUserTablesReachedTail = false;
-      globalFinishSteps += 1;
-      finishGlobalStep(globalFinishSteps);
+      finishGlobalStep();
     }
 
     // Only now are the user tables complete enough for a local reader to serve
@@ -3519,16 +3637,11 @@ async function performPullSync(
       // into a heal. Never a scope the bootstrap has finished with (#6306).
       if (skipBootstrapPagedPull.has(scopeKey)) continue;
       let allTablesReachedTail = true;
-      let scopeFinishSteps = globalFinishSteps;
       let scopeRowsProcessed = 0;
-      const finishSteps = globalFinishSteps + BOARD_DATA_TABLES.length;
       const emitBoardProgress = (rowsProcessed = 0): void =>
-        reportDownload(
-          scopeKey,
-          snapshotDownloads.has(scopeKey) ? 'finishing' : 'downloading',
-          snapshotDownloads.has(scopeKey) ? Math.min(0.99, scopeFinishSteps / finishSteps) : null,
-          { rowsProcessed: scopeRowsProcessed + rowsProcessed },
-        );
+        reportDownload(scopeKey, snapshotDownloads.has(scopeKey) ? 'finishing' : 'downloading', null, {
+          rowsProcessed: scopeRowsProcessed + rowsProcessed,
+        });
       for (const tableName of BOARD_DATA_TABLES) {
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) {
@@ -3574,8 +3687,8 @@ async function performPullSync(
           undefined,
           options?.onDocumentsPulled,
           tableName === 'spray_walls' ? () => confirmWallRemoval(boardScope) : undefined,
+          options?.viewerUserId,
         );
-        if (reachedTail) scopeFinishSteps += 1;
         emitBoardProgress(rowsProcessed);
         scopeRowsProcessed += rowsProcessed;
         const tableMs = Date.now() - tableStartedAt;

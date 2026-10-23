@@ -516,7 +516,8 @@ export function evaluateBootstrapEligibility(input: {
 }): BootstrapEligibility {
   const { retryState, hasBoardCheckpoint, isScopeComplete, isBootstrapDone, now } = input;
   if (isScopeComplete) return { eligible: false, reason: 'scope-complete', canRearm: false };
-  if (isBootstrapDone) return { eligible: false, reason: 'bootstrap-done', canRearm: false };
+  if (isBootstrapDone && !retryState.userRequested)
+    return { eligible: false, reason: 'bootstrap-done', canRearm: false };
   if (isTerminal(retryState)) {
     return { eligible: false, reason: 'terminal', canRearm: canRearmOnNewArtifact(retryState) };
   }

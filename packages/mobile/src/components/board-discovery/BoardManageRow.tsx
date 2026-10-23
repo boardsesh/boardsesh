@@ -294,6 +294,13 @@ function BoardManageRowComponent({
             {pagedFallbackProgress}
           </Text>
         ) : null}
+        {downloadProgress?.phase === 'finishing' &&
+        downloadProgress.fraction === null &&
+        downloadProgress.rowsProcessed !== undefined ? (
+          <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="none">
+            {t('mobile.offline.pill.rows', { count: downloadProgress.rowsProcessed })}
+          </Text>
+        ) : null}
         {/* Rendered unconditionally when the row can download at all, so the
             first progress frame cannot change the row's height inside the
             FlashList and jump the scroll position. */}

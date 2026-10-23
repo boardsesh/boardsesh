@@ -66,6 +66,8 @@ import {
 } from '../lib/connectivity/connectivity-store';
 import { reportHandledError, addErrorBreadcrumb } from '../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
+import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
+import { userIdFromJwt } from '../lib/jwt-user-id';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
 import { getSyncStatusSnapshot } from '../sync/sync-status';
@@ -837,6 +839,12 @@ export type SyncRunOptions = {
   snapshotSource?: SnapshotSource;
 };
 
+async function getSnapshotViewerUserId(): Promise<string | undefined> {
+  const generation = captureAuthCredentialGeneration();
+  const token = await getAuthToken();
+  return isAuthCredentialGenerationCurrent(generation) ? userIdFromJwt(token) : undefined;
+}
+
 export function startSyncScheduler(
   db: OfflineDatabase,
   queryClient: QueryClient,
@@ -846,6 +854,7 @@ export function startSyncScheduler(
   options?: SyncRunOptions,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
+    getViewerUserId: getSnapshotViewerUserId,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -879,6 +888,7 @@ export function triggerSync(
   options?: SyncRunOptions,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
+    getViewerUserId: getSnapshotViewerUserId,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -907,7 +917,7 @@ export function triggerSync(
 // (refresh-published-spray-climbs.ts) refreshes a wall after a publish; a board
 // download someone tapped starts through triggerSync or the scheduler, and both
 // feed the screen hold.
-export function pullSync(
+export async function pullSync(
   db: OfflineDatabase,
   queryClient: QueryClient,
   graphqlFetch: GraphQLFetch,
@@ -915,6 +925,7 @@ export function pullSync(
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
+    viewerUserId: options?.viewerUserId ?? (await getSnapshotViewerUserId()),
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
