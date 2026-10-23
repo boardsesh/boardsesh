@@ -1384,7 +1384,7 @@ describe('My Boards: retrying the fast download (#4313)', () => {
     retryAfter: null,
   };
 
-  function renderWithMetadata(metadata: Record<string, unknown>): void {
+  function renderWithMetadata(metadata: Record<string, unknown>) {
     state.profileId = 'me';
     state.myBoards = {
       data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
@@ -1394,7 +1394,7 @@ describe('My Boards: retrying the fast download (#4313)', () => {
     };
     state.enabledBoards = ['kilter:8:17'];
     state.bootstrapMetadataByScope = new Map([['kilter:8:17', metadata]]) as typeof state.bootstrapMetadataByScope;
-    render(createElement(ManageBoards));
+    return render(createElement(ManageBoards));
   }
 
   it('offers the retry only for a settled board that has not finished downloading', () => {
@@ -1416,6 +1416,99 @@ describe('My Boards: retrying the fast download (#4313)', () => {
     renderWithMetadata({ ...settledMetadata, isBootstrapDone: true });
     expect(document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast')).toBe('true');
   });
+
+  it('hides retry through active snapshot phases and restores it for paged or interrupted work', () => {
+    const { rerender } = renderWithMetadata({ ...settledMetadata, isBootstrapDone: true, isTerminal: false });
+    const canRetry = () => document.querySelector('[data-board="net-1"]')?.getAttribute('data-can-retry-fast');
+    expect(canRetry()).toBe('true');
+    for (const phase of ['preparing', 'downloading', 'unpacking', 'grades'] as const) {
+      state.syncStatus = {
+        ...state.syncStatus,
+        isSyncing: true,
+        progress: { phase: 'bootstrap', currentTable: 'kilter:8:17', download: downloadFrame('kilter:8:17', phase) },
+      };
+      rerender(createElement(ManageBoards));
+      expect(canRetry(), phase).toBe('false');
+    }
+    for (const phase of ['downloading', 'finishing'] as const) {
+      state.syncStatus = {
+        ...state.syncStatus,
+        isSyncing: true,
+        progress: {
+          phase: 'bootstrap',
+          currentTable: 'kilter:8:17',
+          download: downloadFrame('kilter:8:17', phase, 500),
+        },
+      };
+      rerender(createElement(ManageBoards));
+      expect(canRetry(), phase).toBe('true');
+    }
+    state.syncStatus = { ...state.syncStatus, isSyncing: false, progress: null };
+    rerender(createElement(ManageBoards));
+    expect(canRetry()).toBe('true');
+  });
+
+  it('does not open a stale retry prompt after this scope starts bootstrapping', async () => {
+    renderWithMetadata({ ...settledMetadata, isBootstrapDone: true });
+    state.syncStatus = {
+      ...state.syncStatus,
+      isSyncing: true,
+      progress: {
+        phase: 'bootstrap',
+        currentTable: 'kilter:8:17',
+        download: downloadFrame('kilter:8:17', 'unpacking'),
+      },
+    };
+    await act(async () => {
+      fireEvent.click(screen.getByText('retry-fast net-1'));
+    });
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(retryFastDownloadMock).not.toHaveBeenCalled();
+  });
+
+  it('coalesces rapid retry taps while a confirmation is pending', async () => {
+    const confirmation = deferred<boolean>();
+    confirmMock.mockReturnValue(confirmation.promise);
+    renderWithMetadata(settledMetadata);
+    fireEvent.click(screen.getByText('retry-fast net-1'));
+    fireEvent.click(screen.getByText('retry-fast net-1'));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      confirmation.resolve(false);
+    });
+    expect(retryFastDownloadMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['same-scope snapshot', 'kilter:8:17', 'unpacking', undefined, false],
+    ['sibling snapshot', 'kilter:8:18', 'unpacking', undefined, true],
+    ['same-scope paged tail', 'kilter:8:17', 'downloading', 500, true],
+    ['same-scope finishing', 'kilter:8:17', 'finishing', 500, true],
+  ] as const)(
+    'rechecks live %s after an awaiting confirmation',
+    async (_label, scopeKey, phase, rowsProcessed, shouldRetry) => {
+      const confirmation = deferred<boolean>();
+      confirmMock.mockReturnValue(confirmation.promise);
+      renderWithMetadata({ ...settledMetadata, isBootstrapDone: true });
+      fireEvent.click(screen.getByText('retry-fast net-1'));
+      await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+      // Deliberately do not re-render: the confirmation must inspect live state.
+      state.syncStatus = {
+        ...state.syncStatus,
+        isSyncing: true,
+        progress: {
+          phase: 'bootstrap',
+          currentTable: scopeKey,
+          download: downloadFrame(scopeKey, phase, rowsProcessed),
+        },
+      };
+      await act(async () => {
+        confirmation.resolve(true);
+      });
+      if (shouldRetry) await waitFor(() => expect(retryFastDownloadMock).toHaveBeenCalledTimes(1));
+      else expect(retryFastDownloadMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('quotes the download size in the confirm and restores the budget only when accepted', async () => {
     estimateScopeDownloadMock.mockReturnValue({ kind: 'snapshot', bytes: 103_000_000 } as { kind: string });

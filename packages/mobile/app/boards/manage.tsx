@@ -100,6 +100,21 @@ const keyExtractor = (item: ManageItem) => item.key;
 const MANAGE_RETURN_TO = resolveBoardReturnTo(undefined);
 const getItemType = (item: ManageItem) => item.type;
 
+/** A paged frame can temporarily carry the bootstrap envelope; its row count identifies it. */
+function isFastDownloadActive(scopeKey: string): boolean {
+  const { isSyncing, progress } = getSyncStatusSnapshot();
+  const download = progress?.download;
+  const isPagedFrame =
+    download?.phase === 'downloading' && download.wireBytes === null && download.rowsProcessed !== undefined;
+  return (
+    isSyncing &&
+    progress?.phase === 'bootstrap' &&
+    progress.currentTable === scopeKey &&
+    download?.phase !== 'finishing' &&
+    !isPagedFrame
+  );
+}
+
 export default function ManageBoards() {
   const router = useRouter();
   const { t, i18n } = useTranslation('boards');
@@ -345,50 +360,60 @@ export default function ManageBoards() {
   // The escape from a board that settled onto the slow crawl (issue #4313).
   // Consented and size-disclosed on purpose: this is the largest single download
   // in the app, and the automatic paths deliberately never ask.
+  const retryingScopeKeysRef = useRef(new Set<string>());
   const handleRetryFastDownload = useCallback(
     async (board: UserBoard) => {
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
-      const now = Date.now();
-      const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
-        getCheckpoint(db, getCheckpointKey('board_climbs', key)),
-        getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
-        isScopeDownloadComplete(db, key),
-        isBootstrapDone(db, key),
-      ]);
-      const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
-      const { state: retryState } = await readBootstrapRetryState(
-        db,
-        key,
-        { now, random: Math.random },
-        hasBoardCheckpoint,
-      );
-      const estimate = estimateScopeDownload({
-        manifest: snapshotManifestRef.current,
-        boardType: scope.boardType,
-        layoutId: scope.layoutId,
-        retryState,
-        hasBoardCheckpoint,
-        isScopeComplete: scopeComplete,
-        isBootstrapDone: bootstrapAlreadyDone,
-        now,
-        // Restoring the budget IS the action being confirmed, so the terminal
-        // state the row is showing must not suppress the size.
-        userRequested: true,
-      });
-      const confirmed = await confirm({
-        title: t('mobile.offline.retryFastDownloadTitle'),
-        message:
-          estimate.kind === 'snapshot'
-            ? t('mobile.offline.retryFastDownloadMessageWithSize', {
-                size: formatBytes(estimate.bytes, i18n.language),
-              })
-            : t('mobile.offline.retryFastDownloadMessage'),
-        confirmLabel: t('mobile.offline.retryFastDownloadConfirm'),
-        cancelLabel: t('mobile.manage.cancel'),
-      });
-      if (!confirmed) return;
-      await retryFastDownload(board);
+      if (retryingScopeKeysRef.current.has(key) || isFastDownloadActive(key)) return;
+      retryingScopeKeysRef.current.add(key);
+      try {
+        const now = Date.now();
+        const [climbsCheckpoint, statsCheckpoint, scopeComplete, bootstrapAlreadyDone] = await Promise.all([
+          getCheckpoint(db, getCheckpointKey('board_climbs', key)),
+          getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
+          isScopeDownloadComplete(db, key),
+          isBootstrapDone(db, key),
+        ]);
+        if (scopeComplete || isFastDownloadActive(key)) return;
+        const hasBoardCheckpoint = !!climbsCheckpoint || !!statsCheckpoint;
+        const { state: retryState } = await readBootstrapRetryState(
+          db,
+          key,
+          { now, random: Math.random },
+          hasBoardCheckpoint,
+        );
+        const estimate = estimateScopeDownload({
+          manifest: snapshotManifestRef.current,
+          boardType: scope.boardType,
+          layoutId: scope.layoutId,
+          retryState,
+          hasBoardCheckpoint,
+          isScopeComplete: scopeComplete,
+          isBootstrapDone: bootstrapAlreadyDone,
+          now,
+          // Restoring the budget IS the action being confirmed, so the terminal
+          // state the row is showing must not suppress the size.
+          userRequested: true,
+        });
+        if (isFastDownloadActive(key)) return;
+        const confirmed = await confirm({
+          title: t('mobile.offline.retryFastDownloadTitle'),
+          message:
+            estimate.kind === 'snapshot'
+              ? t('mobile.offline.retryFastDownloadMessageWithSize', {
+                  size: formatBytes(estimate.bytes, i18n.language),
+                })
+              : t('mobile.offline.retryFastDownloadMessage'),
+          confirmLabel: t('mobile.offline.retryFastDownloadConfirm'),
+          cancelLabel: t('mobile.manage.cancel'),
+        });
+        if (!confirmed) return;
+        if (isFastDownloadActive(key) || (await isScopeDownloadComplete(db, key)) || isFastDownloadActive(key)) return;
+        await retryFastDownload(board);
+      } finally {
+        retryingScopeKeysRef.current.delete(key);
+      }
     },
     [confirm, t, i18n.language, db, retryFastDownload],
   );
@@ -643,6 +668,7 @@ export default function ManageBoards() {
         snapshotSourceAvailable &&
         enabledSet.has(scopeKey) &&
         !isDownloaded &&
+        !isBootstrapping &&
         ((bootstrapMetadata?.isTerminal ?? false) || (bootstrapMetadata?.isBootstrapDone ?? false));
       return (
         <BoardManageRow
