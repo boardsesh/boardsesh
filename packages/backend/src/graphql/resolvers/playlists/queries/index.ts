@@ -1,6 +1,7 @@
 import { userPlaylists, allUserPlaylists } from './user-playlists';
 import { playlist, playlistsForClimb, playlistsForClimbs } from './playlist-detail';
 import { playlistClimbs } from './playlist-climbs';
+import { playlistSetters } from './playlist-setters';
 import { discoverPlaylists, playlistCreators } from './discover';
 import { searchPlaylists } from './search';
 import { myPinnedPlaylists } from './pinned';
@@ -13,6 +14,7 @@ export const playlistQueries = {
   playlistsForClimb,
   playlistsForClimbs,
   playlistClimbs,
+  playlistSetters,
   discoverPlaylists,
   playlistCreators,
   searchPlaylists,

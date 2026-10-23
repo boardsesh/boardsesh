@@ -2896,6 +2896,16 @@ export type GetPlaylistsForClimbsInput = {
 
 /** Input for fetching a smart playlist. */
 export type GetSmartPlaylistInput = {
+  /** Active board's wall angle, for the view's active-board filters. Needs activeBoardName. */
+  activeAngle?: InputMaybe<Scalars['Int']['input']>;
+  /** Active board type, for the view's active-board filters. Needs activeAngle. */
+  activeBoardName?: InputMaybe<Scalars['String']['input']>;
+  /** Active board layout, for the view's active-board filters. Needs activeBoardName. */
+  activeLayoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** Active board's comma-separated set IDs, for the view's active-board filters. Needs activeBoardName. */
+  activeSetIds?: InputMaybe<Scalars['String']['input']>;
+  /** Active board size, for the view's active-board filters. Needs activeBoardName. */
+  activeSizeId?: InputMaybe<Scalars['Int']['input']>;
   /** Recommendation board-angle override */
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Filter to a board type (optional) */
@@ -2912,6 +2922,17 @@ export type GetSmartPlaylistInput = {
   type: SmartPlaylistType;
   /** User whose logbook (or board) to compute from */
   userId: Scalars['ID']['input'];
+  /**
+   * Sort and filters, on the logbook lists only (FIVE_STARS, MOST_REPEATED,
+   * PROJECTS, LIKED_CLIMBS). The RECOMMENDED_* lists are already ranked for the
+   * climber and reject a view with BAD_USER_INPUT. Omitted means the list's own
+   * order with no filter. The position sort is the list's own order: latest
+   * five-star climb first, most attempts first, or most recently liked first.
+   * added is when the climb entered the list where the list records it (the like,
+   * on LIKED_CLIMBS), and the list's own order elsewhere. Grades and stats read
+   * each row's most-ascended angle, the angle it displays.
+   */
+  view?: InputMaybe<PlaylistClimbViewInput>;
 };
 
 /** Input for fetching user's ticks. */
@@ -6131,7 +6152,9 @@ export type PlaylistClimb = {
 /**
  * How a playlist's climbs are ordered.
  * position is the playlist's own order (the default), added is when each climb
- * was added to the playlist. The others rank on the grade, quality and ascents
+ * was added to the playlist. On the FIVE_STARS, PROJECTS and MOST_REPEATED smart
+ * lists, which record no time a climb entered them, added is the list's own
+ * order, the same as position. The others rank on the grade, quality and ascents
  * each row displays, or shuffle with a seed.
  */
 export type PlaylistClimbSort = 'added' | 'ascents' | 'difficulty' | 'name' | 'position' | 'quality' | 'random';
@@ -6226,7 +6249,7 @@ export type PlaylistClimbsResult = {
   hasMore: Scalars['Boolean']['output'];
   /** Total number of climbs matching the supplied board, layout, size, and hold-set scope and the view's filters, before pagination */
   totalCount: Scalars['Int']['output'];
-  /** Climbs the playlist shows in this board scope with no view filter applied. Null unless the view carries a filter (a sort alone leaves it null). */
+  /** Climbs the playlist shows in this board scope with no view filter applied. Set on page 0 of a view that carries a filter; null otherwise (a sort alone, and later pages). */
   unfilteredCount?: Maybe<Scalars['Int']['output']>;
 };
 
@@ -6262,6 +6285,38 @@ export type PlaylistGradeSummary = {
   p10Difficulty: Scalars['Int']['output'];
   /** 90th percentile: the high end of the band cards show and the grade filter checks */
   p90Difficulty: Scalars['Int']['output'];
+};
+
+/** A setter of the climbs in a playlist, with how many of them they set. */
+export type PlaylistSetter = {
+  __typename?: 'PlaylistSetter';
+  /** How many of the playlist's climbs the viewer can see were set by them */
+  climbCount: Scalars['Int']['output'];
+  /** Setter username, exactly as a view's setter filter matches it */
+  username: Scalars['String']['output'];
+};
+
+/**
+ * Input for the setters of a playlist's climbs. Name a user playlist with
+ * playlistId, or a logbook smart list with smartType and userId.
+ */
+export type PlaylistSettersInput = {
+  /** Board name. On a user playlist, the specific-board mode of playlistClimbs (omit for all boards); on a smart list, its board-type filter. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
+  /** Layout ID (user playlists only) */
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** User playlist ID. Omit for a smart list. */
+  playlistId?: InputMaybe<Scalars['ID']['input']>;
+  /** Only setters whose username starts with this, ignoring case */
+  search?: InputMaybe<Scalars['String']['input']>;
+  /** Set IDs (user playlists only) */
+  setIds?: InputMaybe<Scalars['String']['input']>;
+  /** Size ID (user playlists only) */
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
+  /** Smart list type, with userId: FIVE_STARS, MOST_REPEATED, PROJECTS or LIKED_CLIMBS. A recommendation is rejected. */
+  smartType?: InputMaybe<SmartPlaylistType>;
+  /** Whose smart list, with smartType */
+  userId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /**
@@ -7095,6 +7150,13 @@ export type Query = {
   playlistClimbs: PlaylistClimbsResult;
   /** Get playlist creators for autocomplete suggestions. */
   playlistCreators: Array<PlaylistCreator>;
+  /**
+   * Setters of the climbs in a playlist, or a logbook smart list, that the viewer
+   * can see: the same climbs as playlistClimbs or smartPlaylist without a view.
+   * Most climbs first, then by username, at most 200. Powers the setter picker in
+   * a playlist's filter sheet.
+   */
+  playlistSetters: Array<PlaylistSetter>;
   /** Get IDs of playlists that contain a specific climb. */
   playlistsForClimb: Array<Scalars['ID']['output']>;
   /** Get playlist memberships for multiple climbs in a single request. */
@@ -7919,6 +7981,11 @@ export type QueryPlaylistClimbsArgs = {
 /** Root query type for all read operations. */
 export type QueryPlaylistCreatorsArgs = {
   input: GetPlaylistCreatorsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryPlaylistSettersArgs = {
+  input: PlaylistSettersInput;
 };
 
 /** Root query type for all read operations. */
@@ -9839,7 +9906,7 @@ export type SmartPlaylistCount = {
 /** Metadata about a smart playlist (the user it belongs to + counts). */
 export type SmartPlaylistMeta = {
   __typename?: 'SmartPlaylistMeta';
-  /** Total number of climbs in the playlist */
+  /** Total number of climbs in the playlist. Under a view, read it from page 0: there it is the climbs the list shows with no view filter applied; a later page of a filtering view carries the filtered count. */
   climbCount: Scalars['Int']['output'];
   /** Smart playlist type */
   type: SmartPlaylistType;
@@ -9860,8 +9927,10 @@ export type SmartPlaylistResult = {
   hasMore: Scalars['Boolean']['output'];
   /** Playlist metadata */
   meta: SmartPlaylistMeta;
-  /** Total number of climbs (matches meta.climbCount) */
+  /** Total number of climbs. Under a view, the climbs that match its filters. */
   totalCount: Scalars['Int']['output'];
+  /** Climbs the playlist shows with no view filter applied. Set on page 0 of a view that carries a filter; null otherwise (a sort alone, and later pages). */
+  unfilteredCount?: Maybe<Scalars['Int']['output']>;
 };
 
 /**
@@ -14063,6 +14132,15 @@ export type GetPlaylistClimbsQuery = {
       is_no_match?: boolean | null;
     }>;
   };
+};
+
+export type GetPlaylistSettersQueryVariables = Exact<{
+  input: PlaylistSettersInput;
+}>;
+
+export type GetPlaylistSettersQuery = {
+  __typename?: 'Query';
+  playlistSetters: Array<{ __typename?: 'PlaylistSetter'; username: string; climbCount: number }>;
 };
 
 export type DiscoverPlaylistsQueryVariables = Exact<{
@@ -21792,6 +21870,49 @@ export const GetPlaylistClimbsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetPlaylistClimbsQuery, GetPlaylistClimbsQueryVariables>;
+export const GetPlaylistSettersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPlaylistSetters' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PlaylistSettersInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'playlistSetters' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'username' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPlaylistSettersQuery, GetPlaylistSettersQueryVariables>;
 export const DiscoverPlaylistsDocument = {
   kind: 'Document',
   definitions: [

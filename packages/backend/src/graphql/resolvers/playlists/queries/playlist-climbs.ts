@@ -1,42 +1,32 @@
-import { eq, and, asc, desc, getTableName, sql, type SQL } from 'drizzle-orm';
-import { QueryBuilder, type PgSelect } from 'drizzle-orm/pg-core';
-import type { z } from 'zod';
+import { eq, and, asc, desc, sql, type SQL } from 'drizzle-orm';
 import {
   type ConnectionContext,
-  type Climb,
   type BoardName,
   type PlaylistClimbViewInput,
   SUPPORTED_BOARDS,
 } from '@boardsesh/shared-schema';
 import { parseSetIds } from '@boardsesh/board-config';
-import { PLAYLIST_SORT_DEFAULT_ORDER, type PlaylistSortOption } from '@boardsesh/climb-filters';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   climbDraftVisibilityCondition,
-  climbSortColumns,
-  createPlaylistClimbFilters,
-  directedSortSql,
-  mapSearchInputToParams,
-  personalGradeColumnSql,
   playlistBoardScopeConditions,
-  randomSortKeySql,
   sprayClimbVisibilityCondition,
-  withSerialPlan,
-  type PlaylistActiveBoard,
-  type PlaylistFilterParams,
-  type SerialPlanDb,
 } from '@boardsesh/db/queries';
 import { applyRateLimit, validateInput } from '../../shared/helpers';
-import { GetPlaylistClimbsInputSchema, type PlaylistClimbViewInputSchema } from '../../../../validation/schemas';
+import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../../db/queries/util/table-select';
 import { verifyPlaylistAccess } from '../helpers/enrichment';
+import { hydrateClimbsByRefs, type HydrateClimbsOptions } from '../helpers/hydrate-climbs';
 import {
-  angleWithStatsSql,
-  displayStatsAngleSql,
-  hydrateClimbsByRefs,
-  type HydrateClimbsOptions,
-} from '../helpers/hydrate-climbs';
+  activeBoardFromFields,
+  fetchPlaylistView,
+  paginateResults,
+  type PlaylistPage,
+  type PlaylistRefRow,
+  type PlaylistViewOrder,
+  type PlaylistViewSource,
+} from '../helpers/playlist-view';
 
 export type PlaylistClimbsInput = {
   playlistId: string;
@@ -61,19 +51,6 @@ export type PlaylistClimbsInput = {
   pageSize?: number;
 };
 
-type PlaylistClimbsPage = {
-  climbs: Climb[];
-  totalCount: number;
-  /** Only with a filtering view: the count with no view filter applied. */
-  unfilteredCount?: number | null;
-  hasMore: boolean;
-};
-
-export type ParsedPlaylistClimbView = z.infer<typeof PlaylistClimbViewInputSchema>;
-
-/** A page row as the playlist reads it, before hydration. */
-type PlaylistRefRow = { climbUuid: string; boardType: string; playlistAngle: number | null };
-
 /** The board-scoping fields of the input, the only part the scope builders read. */
 type PlaylistBoardInput = Pick<
   PlaylistClimbsInput,
@@ -88,11 +65,6 @@ type PlaylistBoardInput = Pick<
   | 'activeSizeId'
   | 'activeSetIds'
 >;
-
-function paginateResults<T>(results: T[], pageSize: number) {
-  const hasMore = results.length > pageSize;
-  return { items: hasMore ? results.slice(0, pageSize) : results, hasMore };
-}
 
 /**
  * Build the climb join conditions for specific-board mode (board type, layout,
@@ -225,7 +197,7 @@ async function fetchSpecificBoardClimbs(
   page: number,
   pageSize: number,
   viewerUserId: string | null | undefined,
-): Promise<PlaylistClimbsPage> {
+): Promise<PlaylistPage> {
   const boardName = requireBoardName(input.boardName);
 
   const tables = UNIFIED_TABLES;
@@ -291,7 +263,7 @@ async function fetchAllBoardsClimbs(
   page: number,
   pageSize: number,
   viewerUserId: string | null | undefined,
-): Promise<PlaylistClimbsPage> {
+): Promise<PlaylistPage> {
   const tables = UNIFIED_TABLES;
 
   const [countResult] = await db
@@ -326,33 +298,51 @@ async function fetchAllBoardsClimbs(
 }
 
 // ---------------------------------------------------------------------------
-// Views (#6651): sort and filter a playlist's climbs on the server, over the
-// whole playlist, so the list, the play drawer's track and Add to queue all see
-// one order.
+// Views (#6651): the playlist's rows as a `PlaylistViewSource`, for the shared
+// view builder in `helpers/playlist-view.ts`.
 // ---------------------------------------------------------------------------
 
 /**
- * One request's board scope, shared by every query the view path runs: how
- * `board_climbs` joins the playlist, which rows the caller may see (the same
- * join and visibility the playlist-order path uses, so a view only narrows),
- * the angle each row displays, and the board the active-board filters read.
+ * A playlist's own orders: `position` (then added-at) as the owner arranged it,
+ * `added` the time each climb was added. Both end on `playlist_climbs.id`,
+ * which is unique.
  */
-export type PlaylistScope = {
-  climbJoin: SQL;
-  where: SQL;
-  /** The angle a row would like to display, before the stats guard of `displayStatsAngleSql`. */
-  preferredAngle: SQL;
-  activeBoard: PlaylistActiveBoard | null;
-  hydrateOptions: (items: ReadonlyArray<PlaylistRefRow>) => HydrateClimbsOptions;
+const PLAYLIST_ORDER: PlaylistViewOrder = {
+  own: (direction) => {
+    const directed = direction === 'desc' ? desc : asc;
+    const playlistRows = dbSchema.playlistClimbs;
+    return [directed(playlistRows.position), directed(playlistRows.addedAt), directed(playlistRows.id)];
+  },
+  added: (direction) => {
+    const directed = direction === 'asc' ? asc : desc;
+    return [directed(dbSchema.playlistClimbs.addedAt), directed(dbSchema.playlistClimbs.id)];
+  },
+  unique: [asc(dbSchema.playlistClimbs.id)],
 };
 
+/** The playlist-row half of every playlist source: its rows, their columns and orders. */
+const PLAYLIST_ROWS = {
+  rows: dbSchema.playlistClimbs,
+  refColumns: {
+    climbUuid: sql<string>`${dbSchema.playlistClimbs.climbUuid}`,
+    playlistAngle: sql<number | null>`${dbSchema.playlistClimbs.angle}`,
+  },
+  order: PLAYLIST_ORDER,
+} satisfies Partial<PlaylistViewSource>;
+
+/**
+ * One request's board scope as a view source: the same join and visibility the
+ * playlist-order path uses (so a view only narrows), the angle each row
+ * displays, and the board the active-board filters read.
+ */
 export function specificBoardScope(
   playlistId: bigint,
   input: PlaylistBoardInput,
   viewerUserId: string | null | undefined,
-): PlaylistScope {
+): PlaylistViewSource {
   const boardName = requireBoardName(input.boardName);
   return {
+    ...PLAYLIST_ROWS,
     climbJoin: and(...buildSpecificBoardClimbJoinConditions(UNIFIED_TABLES, boardName, input, viewerUserId))!,
     where: eq(dbSchema.playlistClimbs.playlistId, playlistId),
     // The hydrator's rule, as SQL: the wall angle for every row, or each row's
@@ -373,285 +363,21 @@ export function allBoardsScope(
   playlistId: bigint,
   input: PlaylistBoardInput,
   viewerUserId: string | null | undefined,
-): PlaylistScope {
-  const { activeBoardName, activeAngle } = input;
-  const activeBoardType = activeBoardName != null && isValidBoardName(activeBoardName) ? activeBoardName : null;
+): PlaylistViewSource {
+  const { activeAngle } = input;
+  const activeBoard = activeBoardFromFields(input);
   return {
+    ...PLAYLIST_ROWS,
     climbJoin: eq(UNIFIED_TABLES.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
     where: and(...allBoardsWhereConditions(playlistId, viewerUserId))!,
     // `allBoardsHydrateOptions` as SQL: the active angle on the active board's
     // type, the added-at angle everywhere else.
     preferredAngle:
-      activeBoardType != null && activeAngle != null
-        ? sql`CASE WHEN ${UNIFIED_TABLES.climbs.boardType} = ${activeBoardType} THEN ${activeAngle}::int ELSE ${dbSchema.playlistClimbs.angle} END`
+      activeBoard != null && activeAngle != null
+        ? sql`CASE WHEN ${UNIFIED_TABLES.climbs.boardType} = ${activeBoard.boardName} THEN ${activeAngle}::int ELSE ${dbSchema.playlistClimbs.angle} END`
         : sql`${dbSchema.playlistClimbs.angle}`,
-    activeBoard:
-      activeBoardType == null
-        ? null
-        : {
-            boardName: activeBoardType,
-            layoutId: input.activeLayoutId ?? null,
-            sizeId: input.activeSizeId ?? null,
-            setIds: input.activeSetIds == null ? [] : parseSetIds(input.activeSetIds),
-            angle: activeAngle ?? null,
-          },
+    activeBoard,
     hydrateOptions: (items) => allBoardsHydrateOptions(input, items),
-  };
-}
-
-/**
- * The view's filter fields as search params, through the climb search's own
- * mapper so a filter reads the same in a playlist as on the Climbs list.
- *
- * Personal grades and the grade source only matter to a grade band or the
- * difficulty sort (the client's `toSharedClimbFilterInputFields` sends them on
- * the same rule), so they are dropped otherwise and no personal-grade join is
- * built for nothing.
- */
-function toPlaylistFilterParams(view: ParsedPlaylistClimbView, sortBy: PlaylistSortOption): PlaylistFilterParams {
-  const sortsByDifficulty = sortBy === 'difficulty';
-  const gradeBoundSet = !!view.minGrade || !!view.maxGrade;
-  const searchParams = mapSearchInputToParams({
-    ...view,
-    // The playlist's own sort is read from the view; the mapper only needs to
-    // know whether the difficulty sort keeps the grade source.
-    sortBy: sortsByDifficulty ? 'difficulty' : null,
-    useMyGrades: view.useMyGrades && (gradeBoundSet || sortsByDifficulty) ? true : undefined,
-  });
-  return { ...searchParams, onlyActiveBoard: view.onlyActiveBoard || undefined };
-}
-
-/**
- * ORDER BY for a view. Every order ends on `playlist_climbs.id`, which is unique,
- * so OFFSET paging can neither repeat nor skip a row; the ranked sorts break
- * ties in playlist order first, so equal grades keep the owner's order.
- */
-function viewOrderBy(
-  sortBy: PlaylistSortOption,
-  sortOrder: 'asc' | 'desc',
-  filterParams: PlaylistFilterParams,
-  personalGrades: boolean,
-): SQL[] {
-  const playlistRows = dbSchema.playlistClimbs;
-  const playlistOrder = [asc(playlistRows.position), asc(playlistRows.addedAt), asc(playlistRows.id)];
-  switch (sortBy) {
-    case 'position':
-      return sortOrder === 'desc'
-        ? [desc(playlistRows.position), desc(playlistRows.addedAt), desc(playlistRows.id)]
-        : playlistOrder;
-    case 'added':
-      return sortOrder === 'asc'
-        ? [asc(playlistRows.addedAt), asc(playlistRows.id)]
-        : [desc(playlistRows.addedAt), desc(playlistRows.id)];
-    case 'random':
-      return [sql`${randomSortKeySql(filterParams.sortSeed)} ASC`, asc(playlistRows.id)];
-    case 'difficulty':
-    case 'quality':
-    case 'ascents':
-    case 'name': {
-      const sortColumns = climbSortColumns({
-        crossAngle: false,
-        gradeSource: filterParams.gradeSource,
-        personalGrades,
-      });
-      return [directedSortSql(sortColumns[sortBy], sortOrder), ...playlistOrder];
-    }
-  }
-}
-
-/**
- * The three queries a view page runs, built on `executor` and not yet awaited.
- * Exported so the EXPLAIN harness (`playlist-climbs-view-explain.test.ts`) can
- * plan exactly what runs here against a full-data database.
- *
- * One stats row per playlist row, at the angle the row DISPLAYS
- * (`displayStatsAngleSql` over the scope's preferred angle — the rule the
- * hydrator applies), so the grade filter and the difficulty sort read exactly
- * the grade the row shows. The Boardsesh grade is read at that angle, or at the
- * preferred angle when the climb has no stats row there (the Climbs list's
- * `gradeJoinAngleSql` fallback), so a climb graded only by the model still has a
- * grade to filter and sort on. Both are LATERAL lookups named after their tables,
- * so the climb search's own predicates and sort keys (`effectiveStatsColumn`
- * without cross-angle, `gradeValueSql`) apply unchanged.
- *
- * `countQuery` runs the same WHERE over the same rows, so it is also the live
- * match count. `unfilteredCountQuery` is the playlist-order count, built only
- * when the view filters (a sort alone leaves the count as it was).
- */
-export function buildPlaylistViewQueries(
-  executor: SerialPlanDb,
-  scope: PlaylistScope,
-  view: ParsedPlaylistClimbView,
-  page: number,
-  pageSize: number,
-  viewerUserId: string | null | undefined,
-) {
-  const tables = UNIFIED_TABLES;
-  const grades = dbSchema.boardClimbGrades;
-  const sortBy: PlaylistSortOption = view.sortBy ?? 'position';
-  const sortOrder = view.sortOrder ?? PLAYLIST_SORT_DEFAULT_ORDER[sortBy];
-  const filterParams = toPlaylistFilterParams(view, sortBy);
-  const filters = createPlaylistClimbFilters(scope.activeBoard, filterParams, viewerUserId ?? undefined);
-  const personalGradeJoin = filters.personalGradeJoin;
-
-  const sortReadsGrades = sortBy === 'difficulty' && filterParams.gradeSource === 'boardsesh';
-  const sortReadsStats = sortBy === 'difficulty' || sortBy === 'quality' || sortBy === 'ascents';
-  // The list joins whatever its WHERE or ORDER BY reads, and the grade row
-  // whenever it has the stats row, so the hydrator is handed the grade angle the
-  // filters would use. The count joins only what its WHERE reads. Every join is
-  // a LEFT JOIN to at most one row, so leaving one out of the count cannot
-  // change it. The grade lookup reads the stats row's angle, so it always comes
-  // with the stats lookup.
-  const listStats = filters.needsStats || filters.needsGrades || sortReadsStats || sortReadsGrades;
-  const listJoins = { stats: listStats, grades: listStats, personalGrade: personalGradeJoin !== null };
-  const countJoins = {
-    stats: filters.needsStats || filters.needsGrades,
-    grades: filters.needsGrades,
-    // Among the filters only the grade band reads the personal grade.
-    personalGrade: personalGradeJoin !== null && filters.needsGrades,
-  };
-
-  // The display row as a LATERAL lookup, one primary-key probe per playlist row.
-  // A plain LEFT JOIN on the same condition let the planner hash the whole stats
-  // table instead (measured: a full scan of board_climb_stats for a 600-climb
-  // playlist), and that table holds every climb at every angle. Named
-  // `board_climb_stats` so every `"board_climb_stats"."<column>"` reference
-  // outside resolves to this one row; inside, the same name is the table.
-  const displayStatsRow = new QueryBuilder()
-    .select()
-    .from(tables.climbStats)
-    .where(
-      and(
-        eq(tables.climbStats.boardType, tables.climbs.boardType),
-        eq(tables.climbStats.climbUuid, tables.climbs.uuid),
-        eq(tables.climbStats.angle, displayStatsAngleSql(angleWithStatsSql(scope.preferredAngle))),
-      ),
-    )
-    .limit(1)
-    .as(getTableName(tables.climbStats));
-  // The grade angle: the stats row's, else the preferred angle. Reads the
-  // lateral stats row above, so the grade lookup must come after it.
-  const gradeAngle = sql<number | null>`COALESCE(${tables.climbStats.angle}, ${scope.preferredAngle})`;
-  // Same LATERAL shape for the grades table (1.3 GB in production): a primary-key
-  // probe per row, never a hash over the table.
-  const displayGradeRow = new QueryBuilder()
-    .select()
-    .from(grades)
-    .where(
-      and(
-        eq(grades.boardType, tables.climbs.boardType),
-        eq(grades.climbUuid, tables.climbs.uuid),
-        eq(grades.angle, gradeAngle),
-      ),
-    )
-    .limit(1)
-    .as(getTableName(grades));
-
-  // Every column the queries select comes from `playlist_climbs` or the inner
-  // `board_climbs` join, or is a typed `sql` expression, so these LEFT JOINs
-  // leave the row type as it was; the cast back only restores that.
-  function withViewJoins<Query extends PgSelect>(query: Query, joins: typeof listJoins): Query {
-    let joined: PgSelect = query;
-    if (joins.stats) joined = joined.leftJoinLateral(displayStatsRow, sql`true`);
-    if (joins.grades) joined = joined.leftJoinLateral(displayGradeRow, sql`true`);
-    if (joins.personalGrade && personalGradeJoin) {
-      joined = joined.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on);
-    }
-    return joined as Query;
-  }
-
-  const filteredWhere = and(scope.where, ...filters.allRows, ...filters.activeBoardOnly)!;
-
-  const countQuery = withViewJoins(
-    executor
-      .select({ count: sql<number>`count(*)::int` })
-      .from(dbSchema.playlistClimbs)
-      .innerJoin(tables.climbs, scope.climbJoin)
-      .$dynamic(),
-    countJoins,
-  ).where(filteredWhere);
-
-  const unfilteredCountQuery = filters.hasFilters
-    ? executor
-        .select({ count: sql<number>`count(*)::int` })
-        .from(dbSchema.playlistClimbs)
-        .innerJoin(tables.climbs, scope.climbJoin)
-        .where(scope.where)
-    : null;
-
-  const nullInt = sql<number | null>`NULL::int`;
-  const refQuery = withViewJoins(
-    executor
-      .select({
-        climbUuid: dbSchema.playlistClimbs.climbUuid,
-        boardType: tables.climbs.boardType,
-        playlistAngle: dbSchema.playlistClimbs.angle,
-        statsAngle: listJoins.stats ? sql<number | null>`${tables.climbStats.angle}` : nullInt,
-        gradeAngle: listJoins.grades ? gradeAngle : nullInt,
-        myDifficulty: personalGradeJoin ? sql<number | null>`${personalGradeColumnSql()}` : nullInt,
-      })
-      .from(dbSchema.playlistClimbs)
-      .innerJoin(tables.climbs, scope.climbJoin)
-      .$dynamic(),
-    listJoins,
-  )
-    .where(filteredWhere)
-    .orderBy(...viewOrderBy(sortBy, sortOrder, filterParams, personalGradeJoin !== null))
-    .limit(pageSize + 1)
-    .offset(page * pageSize);
-
-  return { countQuery, unfilteredCountQuery, refQuery, listJoins, personalGrades: personalGradeJoin !== null };
-}
-
-/**
- * A playlist page under a view: `buildPlaylistViewQueries`, run under the
- * serial-plan guard, then hydrated with the angles the page was sorted and
- * filtered by.
- */
-async function fetchViewClimbs(
-  scope: PlaylistScope,
-  view: ParsedPlaylistClimbView,
-  page: number,
-  pageSize: number,
-  viewerUserId: string | null | undefined,
-): Promise<PlaylistClimbsPage> {
-  // One transaction, so one pooled connection for the three queries, with
-  // per-gather parallelism off: the view joins board_climb_stats and
-  // board_climb_grades per playlist row, the shape whose parallel plans
-  // exhausted /dev/shm in production (pgCode 53100, #4235). See `withSerialPlan`.
-  const { countRows, unfilteredRows, refRows, listJoins, personalGrades } = await withSerialPlan(db, async (tx) => {
-    const queries = buildPlaylistViewQueries(tx, scope, view, page, pageSize, viewerUserId);
-    return {
-      countRows: await queries.countQuery,
-      unfilteredRows: queries.unfilteredCountQuery ? await queries.unfilteredCountQuery : null,
-      refRows: await queries.refQuery,
-      listJoins: queries.listJoins,
-      personalGrades: queries.personalGrades,
-    };
-  });
-
-  const { items, hasMore } = paginateResults(refRows, pageSize);
-  const refKey = (row: PlaylistRefRow) => `${row.boardType}:${row.climbUuid}`;
-
-  const hydrateOptions: HydrateClimbsOptions = { ...scope.hydrateOptions(items), viewerUserId };
-  if (listJoins.stats) {
-    hydrateOptions.resolvedAngles = new Map(
-      items.map((row) => [refKey(row), { statsAngle: row.statsAngle ?? null, gradeAngle: row.gradeAngle ?? null }]),
-    );
-  }
-  if (personalGrades) {
-    hydrateOptions.myDifficulties = new Map(items.map((row) => [refKey(row), row.myDifficulty ?? null]));
-  }
-  const climbs = await hydrateClimbsByRefs(
-    items.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType })),
-    hydrateOptions,
-  );
-
-  return {
-    climbs,
-    totalCount: countRows[0]?.count ?? 0,
-    unfilteredCount: unfilteredRows ? (unfilteredRows[0]?.count ?? 0) : null,
-    hasMore,
   };
 }
 
@@ -671,7 +397,7 @@ export const playlistClimbs = async (
   _: unknown,
   { input }: { input: PlaylistClimbsInput },
   ctx: ConnectionContext,
-): Promise<PlaylistClimbsPage> => {
+): Promise<PlaylistPage> => {
   const parsedInput = validateInput(GetPlaylistClimbsInputSchema, input, 'input');
 
   const page = input.page ?? 0;
@@ -696,5 +422,5 @@ export const playlistClimbs = async (
   const scope = parsedInput.boardName
     ? specificBoardScope(playlistId, parsedInput, ctx.userId)
     : allBoardsScope(playlistId, parsedInput, ctx.userId);
-  return fetchViewClimbs(scope, parsedInput.view, page, pageSize, ctx.userId);
+  return fetchPlaylistView(scope, parsedInput.view, page, pageSize, ctx.userId);
 };

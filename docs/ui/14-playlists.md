@@ -160,11 +160,12 @@ Smart playlists are auto-generated from the user's logbook and are not editable.
 - `allUserPlaylists` / `useUserPlaylists` -- Paginated owned playlists with board filter.
 - `myPinnedPlaylists` / `usePinnedPlaylists` -- Server-side pins with IndexedDB recents fallback.
 - `playlist` / `GET_PLAYLIST` -- Single playlist fetch.
-- `playlistClimbs` / `GET_PLAYLIST_CLIMBS` -- Paginated climbs within a playlist (supports board-specific filtering).
+- `playlistClimbs` / `GET_PLAYLIST_CLIMBS` -- Paginated climbs within a playlist (supports board-specific filtering). An optional `view` sorts and filters the whole playlist on the server (#6651).
+- `playlistSetters` / `GET_PLAYLIST_SETTERS` -- Setters of the climbs a playlist (or a logbook smart list) shows the viewer, with counts, most first, at most 200. Feeds the setter picker in the filter sheet; each username is exactly what the view's `setter` filter matches.
 - `discoverPlaylists` / `useDiscoverPlaylists` -- Popular + recent community playlists.
 - `searchPlaylists` -- Text search across playlists.
 - `mySmartPlaylistCounts` / `GET_MY_SMART_PLAYLIST_COUNTS` -- Counts for each smart playlist type.
-- `smartPlaylist` -- Fetches climbs for a specific smart playlist type.
+- `smartPlaylist` / `GET_SMART_PLAYLIST` -- Fetches climbs for a specific smart playlist type. The four logbook lists (Liked, Five Stars, Projects, Most repeated) take the same optional `view` as `playlistClimbs`, whose `position` sort is the list's own order. The recommended lists are already ranked and reject a view.
 - `createPlaylist` / `CREATE_PLAYLIST` -- Creates a new playlist.
 - `updatePlaylist` / `UPDATE_PLAYLIST` -- Updates name, description, color, icon, visibility.
 - `deletePlaylist` / `DELETE_PLAYLIST` -- Deletes a playlist.

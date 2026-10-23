@@ -136,6 +136,45 @@ export const PlaylistClimbViewInputSchema = ClimbSearchInputSchema.pick({
   onlyActiveBoard: z.boolean().optional(),
 });
 
+/**
+ * The active board for a view's active-board filters (`activeBoardName` …
+ * `activeSetIds`). A playlist in all-boards mode and the smart playlists take
+ * the same fields under the same rules (`checkActiveBoardFields`).
+ */
+const ACTIVE_BOARD_FIELDS = {
+  activeBoardName: BoardNameSchema.optional(),
+  // Live board angle; Aurora supports negative tilt.
+  activeAngle: z.number().int().min(-90).max(90).optional(),
+  // The rest of the active board, for the view's active-board filters. Each
+  // needs activeBoardName: a layout with no board type names nothing.
+  activeLayoutId: z.number().int().positive().optional(),
+  activeSizeId: z.number().int().positive().optional(),
+  activeSetIds: z.string().min(1).max(500).optional(),
+};
+
+export type ActiveBoardFields = z.infer<z.ZodObject<typeof ACTIVE_BOARD_FIELDS>>;
+
+function checkActiveBoardFields(input: ActiveBoardFields, ctx: z.RefinementCtx) {
+  // Both are required together: one without the other would silently no-op.
+  if ((input.activeBoardName == null) !== (input.activeAngle == null)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'activeBoardName and activeAngle must be provided together',
+      path: ['activeAngle'],
+    });
+  }
+  if (
+    input.activeBoardName == null &&
+    (input.activeLayoutId != null || input.activeSizeId != null || input.activeSetIds != null)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'activeLayoutId, activeSizeId and activeSetIds need activeBoardName',
+      path: ['activeBoardName'],
+    });
+  }
+}
+
 export const GetPlaylistClimbsInputSchema = z
   .object({
     playlistId: z.string().min(1),
@@ -144,35 +183,16 @@ export const GetPlaylistClimbsInputSchema = z
     sizeId: z.number().int().positive().optional(),
     setIds: z.string().min(1).optional(),
     angle: z.number().int().optional(),
-    // All-boards mode only: render on-active-board climbs' grades at the user's
-    // selected angle instead of the added-at / most-ascents fallback. Both are
-    // required together — one without the other would silently no-op.
-    activeBoardName: BoardNameSchema.optional(),
-    // Live board angle; Aurora supports negative tilt.
-    activeAngle: z.number().int().min(-90).max(90).optional(),
-    // The rest of the active board, for the view's active-board filters in
-    // all-boards mode. Each needs activeBoardName: a layout with no board type
-    // names nothing.
-    activeLayoutId: z.number().int().positive().optional(),
-    activeSizeId: z.number().int().positive().optional(),
-    activeSetIds: z.string().min(1).max(500).optional(),
+    // All-boards mode only: activeBoardName + activeAngle render on-active-board
+    // climbs' grades at the user's selected angle instead of the added-at /
+    // most-ascents fallback; the rest of the active board feeds the view's
+    // active-board filters.
+    ...ACTIVE_BOARD_FIELDS,
     view: PlaylistClimbViewInputSchema.optional(),
     page: z.number().int().min(0).optional(),
     pageSize: z.number().int().min(1).max(100).optional(),
   })
-  .refine((input) => (input.activeBoardName == null) === (input.activeAngle == null), {
-    message: 'activeBoardName and activeAngle must be provided together',
-    path: ['activeAngle'],
-  })
-  .refine(
-    (input) =>
-      input.activeBoardName != null ||
-      (input.activeLayoutId == null && input.activeSizeId == null && input.activeSetIds == null),
-    {
-      message: 'activeLayoutId, activeSizeId and activeSetIds need activeBoardName',
-      path: ['activeBoardName'],
-    },
-  );
+  .superRefine(checkActiveBoardFields);
 
 export const DiscoverPlaylistsInputSchema = z
   .object({
@@ -231,14 +251,61 @@ export const SmartPlaylistTypeSchema = z.enum([
   'RECOMMENDED_FRESH',
 ]);
 
-export const GetSmartPlaylistInputSchema = z.object({
-  type: SmartPlaylistTypeSchema,
-  userId: z.string().min(1),
-  boardName: BoardNameSchema.optional(),
-  boardUuid: z.string().min(1).optional(),
-  sizeId: z.number().int().positive().optional(),
-  // Live board angle; Aurora supports negative tilt.
-  angle: z.number().int().min(-90).max(90).optional(),
-  page: z.number().int().min(0).optional(),
-  pageSize: z.number().int().min(1).max(100).optional(),
-});
+export const GetSmartPlaylistInputSchema = z
+  .object({
+    type: SmartPlaylistTypeSchema,
+    userId: z.string().min(1),
+    boardName: BoardNameSchema.optional(),
+    boardUuid: z.string().min(1).optional(),
+    sizeId: z.number().int().positive().optional(),
+    // Live board angle; Aurora supports negative tilt.
+    angle: z.number().int().min(-90).max(90).optional(),
+    // Only a view's active-board filters read these. Views are for the logbook
+    // types; the resolver rejects one on a recommendation.
+    ...ACTIVE_BOARD_FIELDS,
+    view: PlaylistClimbViewInputSchema.optional(),
+    page: z.number().int().min(0).optional(),
+    pageSize: z.number().int().min(1).max(100).optional(),
+  })
+  .superRefine(checkActiveBoardFields);
+
+/** The most setters `playlistSetters` returns. */
+export const PLAYLIST_SETTERS_LIMIT = 200;
+
+/**
+ * `playlistSetters`: a user playlist (playlistId, with playlistClimbs' board
+ * fields) or a logbook smart list (smartType + userId, with its board-type
+ * filter). The resolver rejects a recommendation type, as `smartPlaylist`
+ * rejects a view on one.
+ */
+export const PlaylistSettersInputSchema = z
+  .object({
+    playlistId: z.string().min(1).optional(),
+    smartType: SmartPlaylistTypeSchema.optional(),
+    userId: z.string().min(1).optional(),
+    boardName: BoardNameSchema.optional(),
+    layoutId: z.number().int().positive().optional(),
+    sizeId: z.number().int().positive().optional(),
+    setIds: z.string().min(1).max(500).optional(),
+    search: z.string().trim().max(100).optional(),
+  })
+  .superRefine((input, ctx) => {
+    const namesSmartList = input.smartType != null || input.userId != null;
+    if ((input.playlistId != null) === namesSmartList) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Name either playlistId or smartType with userId',
+        path: ['playlistId'],
+      });
+    }
+    if (namesSmartList && (input.smartType == null || input.userId == null)) {
+      ctx.addIssue({ code: 'custom', message: 'smartType and userId go together', path: ['smartType'] });
+    }
+    if (namesSmartList && (input.layoutId != null || input.sizeId != null || input.setIds != null)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A smart list takes boardName only, not layoutId, sizeId or setIds',
+        path: ['layoutId'],
+      });
+    }
+  });

@@ -101,6 +101,7 @@ type Documents = {
   '\n  mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) {\n    removeClimbFromPlaylist(input: $input)\n  }\n': typeof types.RemoveClimbFromPlaylistDocument;
   '\n  mutation ReorderPlaylistClimb($input: ReorderPlaylistClimbInput!) {\n    reorderPlaylistClimb(input: $input)\n  }\n': typeof types.ReorderPlaylistClimbDocument;
   '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetPlaylistClimbsDocument;
+  '\n  query GetPlaylistSetters($input: PlaylistSettersInput!) {\n    playlistSetters(input: $input) {\n      username\n      climbCount\n    }\n  }\n': typeof types.GetPlaylistSettersDocument;
   '\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n        isGeneratedRecommendation\n        gradeSummary {\n          gradedClimbCount\n          p10Difficulty\n          p90Difficulty\n        }\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.DiscoverPlaylistsDocument;
   '\n  query GetPlaylistCreators($input: GetPlaylistCreatorsInput!) {\n    playlistCreators(input: $input) {\n      userId\n      displayName\n      playlistCount\n    }\n  }\n': typeof types.GetPlaylistCreatorsDocument;
   '\n  mutation UpdatePlaylistLastAccessed($playlistId: ID!) {\n    updatePlaylistLastAccessed(playlistId: $playlistId)\n  }\n': typeof types.UpdatePlaylistLastAccessedDocument;
@@ -376,6 +377,8 @@ const documents: Documents = {
     types.ReorderPlaylistClimbDocument,
   '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetPlaylistClimbsDocument,
+  '\n  query GetPlaylistSetters($input: PlaylistSettersInput!) {\n    playlistSetters(input: $input) {\n      username\n      climbCount\n    }\n  }\n':
+    types.GetPlaylistSettersDocument,
   '\n  query DiscoverPlaylists($input: DiscoverPlaylistsInput!) {\n    discoverPlaylists(input: $input) {\n      playlists {\n        id\n        uuid\n        boardType\n        layoutId\n        name\n        description\n        color\n        icon\n        createdAt\n        updatedAt\n        climbCount\n        creatorId\n        creatorName\n        isGeneratedRecommendation\n        gradeSummary {\n          gradedClimbCount\n          p10Difficulty\n          p90Difficulty\n        }\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.DiscoverPlaylistsDocument,
   '\n  query GetPlaylistCreators($input: GetPlaylistCreatorsInput!) {\n    playlistCreators(input: $input) {\n      userId\n      displayName\n      playlistCount\n    }\n  }\n':
@@ -1110,6 +1113,12 @@ export function graphql(
 export function graphql(
   source: '\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n',
 ): (typeof documents)['\n  query GetPlaylistClimbs($input: GetPlaylistClimbsInput!) {\n    playlistClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetPlaylistSetters($input: PlaylistSettersInput!) {\n    playlistSetters(input: $input) {\n      username\n      climbCount\n    }\n  }\n',
+): (typeof documents)['\n  query GetPlaylistSetters($input: PlaylistSettersInput!) {\n    playlistSetters(input: $input) {\n      username\n      climbCount\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

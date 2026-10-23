@@ -3,11 +3,12 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { SerialPlanDb } from '@boardsesh/db/queries';
 import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
+import { allBoardsScope, specificBoardScope } from '../graphql/resolvers/playlists/queries/playlist-climbs';
+import { logbookViewSource, type LogbookPlaylistType } from '../graphql/resolvers/playlists/queries/smart-playlists';
 import {
-  allBoardsScope,
   buildPlaylistViewQueries,
-  specificBoardScope,
-} from '../graphql/resolvers/playlists/queries/playlist-climbs';
+  type PlaylistViewSource,
+} from '../graphql/resolvers/playlists/helpers/playlist-view';
 import { PlaylistClimbViewInputSchema } from '../validation/schemas';
 
 /**
@@ -27,6 +28,15 @@ import { PlaylistClimbViewInputSchema } from '../validation/schemas';
  * read-only connection, and asserts coarse invariants only: `board_climb_stats`
  * and `board_climb_grades` are reached by primary-key probes, never a scan or a
  * hash over the table, and no plan goes parallel. EXPLAIN_ANALYZE=1 logs timings.
+ *
+ * The smart playlists' logbook views run through the same builder and get the
+ * same gate, over the heaviest logbook in the DB (the heaviest favouriter's for
+ * LIKED_CLIMBS), with its first Kilter or Tension board as the active board.
+ * The page query carries its match count as `count(*) OVER ()`, so the gate
+ * also checks the window is there and the probes stay probes beneath it.
+ *
+ * Plan with `jit = off`, as production runs (docs/postgres-dr-architecture.md):
+ * with JIT on, compiling these plans takes longer than running them.
  */
 const EXPLAIN_DB_URL = process.env.EXPLAIN_DB_URL;
 const RUN_ANALYZE = process.env.EXPLAIN_ANALYZE === '1';
@@ -70,12 +80,18 @@ if (!EXPLAIN_DB_URL) {
     const { sql: text, params } = query.toSQL();
     const rows = await client.begin(async (tx) => {
       await tx.unsafe('SET LOCAL max_parallel_workers_per_gather = 0');
+      await tx.unsafe('SET LOCAL jit = off');
       const options = RUN_ANALYZE ? 'ANALYZE, BUFFERS, FORMAT JSON' : 'FORMAT JSON';
       return tx.unsafe(`EXPLAIN (${options}) ${text}`, params as never[]);
     });
     const [planWrapper] = rows[0]['QUERY PLAN'] as Array<{ Plan: Record<string, unknown>; 'Execution Time'?: number }>;
     return { nodes: collectNodes(planWrapper.Plan), executionMs: planWrapper['Execution Time'] };
   }
+
+  // Both suites below share the one read-only client.
+  afterAll(async () => {
+    await client.end();
+  });
 
   describe('playlist view EXPLAIN gate', () => {
     beforeAll(async () => {
@@ -104,10 +120,6 @@ if (!EXPLAIN_DB_URL) {
       console.info(
         `[playlist-view-explain] playlist ${playlist.id}: ${playlist.climbs} climbs on ${playlist.boardType}`,
       );
-    });
-
-    afterAll(async () => {
-      await client.end();
     });
 
     const cases: Array<[string, 'all' | 'specific', PlaylistClimbViewInput, number]> = [
@@ -159,31 +171,107 @@ if (!EXPLAIN_DB_URL) {
           20,
           VIEWER,
         );
-        const planned = [
-          queries.refQuery,
-          queries.countQuery,
-          ...(queries.unfilteredCountQuery ? [queries.unfilteredCountQuery] : []),
-        ];
-        for (const [index, query] of planned.entries()) {
-          const { nodes, executionMs } = await explain(query);
-          // Every case here sorts or filters on stats, so the list query must
-          // actually reach both tables: an assertion over no nodes proves nothing.
-          if (index === 0) {
-            expect(
-              new Set(nodes.flatMap((node) => (node.rel && PROBED_TABLES.has(node.rel) ? [node.rel] : []))),
-            ).toEqual(PROBED_TABLES);
-          }
-          if (RUN_ANALYZE) console.info(`[playlist-view-explain] ${label}: ${executionMs?.toFixed(1)} ms`);
-          for (const node of nodes) {
-            expect(node.type, 'serial-plan guard').not.toMatch(/^Gather/);
-            if (!node.rel || !PROBED_TABLES.has(node.rel)) continue;
-            expect(['Index Scan', 'Index Only Scan'], `${node.rel} must be probed, not scanned`).toContain(node.type);
-            // Primary key: `_pk` from drizzle migrations, `_pkey` from a plain CREATE TABLE.
-            expect(node.index, `${node.rel} probe index`).toMatch(/_pk(ey)?$/);
-            expect(node.ancestors, `${node.rel} must not feed a hash`).not.toContain('Hash');
-          }
-        }
+        await assertViewPlans(queries, label);
       });
     }
   });
+
+  describe('smart playlist view EXPLAIN gate', () => {
+    let logbookUserId: string;
+    let favouriterUserId: string;
+    let activeBoard: { boardType: string; layoutId: number; sizeId: number; angle: number };
+
+    beforeAll(async () => {
+      const [heaviest] = await client<Array<{ user_id: string; ticks: number }>>`
+        SELECT user_id, count(*)::int AS ticks FROM boardsesh_ticks GROUP BY user_id ORDER BY count(*) DESC LIMIT 1
+      `;
+      expect(heaviest, 'the EXPLAIN DB has no ticks').toBeDefined();
+      logbookUserId = heaviest.user_id;
+      const [favouriter] = await client<Array<{ user_id: string; likes: number }>>`
+        SELECT user_id, count(*)::int AS likes FROM user_favorites GROUP BY user_id ORDER BY count(*) DESC LIMIT 1
+      `;
+      // A DB with no hearts at all still plans the LIKED_CLIMBS shape, over nobody's likes.
+      favouriterUserId = favouriter?.user_id ?? logbookUserId;
+      console.info(
+        `[playlist-view-explain] likes: ${favouriter ? `${favouriter.likes} by ${favouriter.user_id}` : 'none'}`,
+      );
+      const [board] = await client<Array<{ board_type: string; layout_id: number; size_id: number; angle: number }>>`
+        SELECT board_type, layout_id::int, size_id::int, angle::int FROM user_boards
+        WHERE deleted_at IS NULL AND board_type IN ('kilter', 'tension')
+        ORDER BY id LIMIT 1
+      `;
+      expect(board, 'the EXPLAIN DB has no Kilter or Tension board').toBeDefined();
+      activeBoard = {
+        boardType: board.board_type,
+        layoutId: board.layout_id,
+        sizeId: board.size_id,
+        angle: board.angle,
+      };
+      console.info(
+        `[playlist-view-explain] logbook ${logbookUserId} (${heaviest.ticks} ticks) on ${activeBoard.boardType} ${activeBoard.layoutId}/${activeBoard.sizeId} at ${activeBoard.angle}°`,
+      );
+    });
+
+    const logbookCases: Array<[LogbookPlaylistType, PlaylistClimbViewInput]> = [
+      ['MOST_REPEATED', { sortBy: 'difficulty' }],
+      ['PROJECTS', { minGrade: 12, maxGrade: 20, gradeSource: 'BOARDSESH', hideCompleted: true }],
+      ['LIKED_CLIMBS', { sortBy: 'quality', onlyActiveBoard: true }],
+      ['FIVE_STARS', { sortBy: 'random', sortSeed: '9', minGrade: 12 }],
+    ];
+    for (const [type, view] of logbookCases) {
+      const label = `${type} ${JSON.stringify(view)}`;
+      it(`probes stats and grades by primary key: ${label}`, async () => {
+        const userId = type === 'LIKED_CLIMBS' ? favouriterUserId : logbookUserId;
+        const source = logbookViewSource(
+          type,
+          {
+            userId,
+            activeBoardName: activeBoard.boardType,
+            activeAngle: activeBoard.angle,
+            activeLayoutId: activeBoard.layoutId,
+            activeSizeId: activeBoard.sizeId,
+          },
+          userId,
+        );
+        await assertViewPlans(viewQueries(source, view, userId), label);
+      });
+    }
+  });
+
+  function viewQueries(source: PlaylistViewSource, view: PlaylistClimbViewInput, viewer: string) {
+    return buildPlaylistViewQueries(explainDb, source, PlaylistClimbViewInputSchema.parse(view), 0, 20, viewer);
+  }
+
+  /**
+   * Plan every query of a view page and check the invariants: no parallel plan,
+   * and every stats or grades node is a primary-key probe that feeds no hash.
+   */
+  async function assertViewPlans(queries: ReturnType<typeof buildPlaylistViewQueries>, label: string) {
+    const planned = [
+      queries.refQuery,
+      queries.countQuery,
+      ...(queries.unfilteredCountQuery ? [queries.unfilteredCountQuery] : []),
+    ];
+    for (const [index, query] of planned.entries()) {
+      const { nodes, executionMs } = await explain(query);
+      // Every case sorts or filters on stats, so the list query must actually
+      // reach both tables: an assertion over no nodes proves nothing.
+      if (index === 0) {
+        expect(new Set(nodes.flatMap((node) => (node.rel && PROBED_TABLES.has(node.rel) ? [node.rel] : [])))).toEqual(
+          PROBED_TABLES,
+        );
+        // The page carries its own match count.
+        expect(nodes.map((node) => node.type)).toContain('WindowAgg');
+      }
+      if (RUN_ANALYZE) console.info(`[playlist-view-explain] ${label}: ${executionMs?.toFixed(1)} ms`);
+      for (const node of nodes) {
+        expect(node.type, 'serial-plan guard').not.toMatch(/^Gather/);
+        if (!node.rel || !PROBED_TABLES.has(node.rel)) continue;
+        expect(['Index Scan', 'Index Only Scan'], `${node.rel} must be probed, not scanned`).toContain(node.type);
+        // Primary key: `_pk` from drizzle migrations, `_pkey` from a plain CREATE TABLE.
+        expect(node.index, `${node.rel} probe index`).toMatch(/_pk(ey)?$/);
+        expect(node.ancestors, `${node.rel} must not feed a hash`).not.toContain('Hash');
+      }
+    }
+  }
 }

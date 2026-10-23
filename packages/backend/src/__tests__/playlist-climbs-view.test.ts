@@ -445,6 +445,18 @@ describe('playlistClimbs — views (real DB, #6651)', () => {
       expect(firstPage.unfilteredCount).toBe(ANONYMOUS_ALL_BOARDS.length);
     });
 
+    it('unfilteredCount comes with page 0 only, and a page past the end still counts the matches', async () => {
+      const input = { ...ACTIVE_KILTER, view: { sortBy: 'difficulty' as const, minGrade: 14, maxGrade: 20 } };
+      const second = await fetchPage({ ...input, page: 1, pageSize: 2 });
+      expect(second.climbs.map((climb) => climb.uuid)).toEqual(['k-mid', 't-climb2']);
+      expect(second.totalCount).toBe(5);
+      expect(second.unfilteredCount).toBeNull();
+      const pastTheEnd = await fetchPage({ ...input, page: 9, pageSize: 2 });
+      expect(pastTheEnd.climbs).toEqual([]);
+      expect(pastTheEnd.totalCount).toBe(5);
+      expect(pastTheEnd.hasMore).toBe(false);
+    });
+
     it('a sort alone leaves unfilteredCount null and totalCount the playlist count', async () => {
       const result = await fetchPage({ view: { sortBy: 'quality' } });
       expect(result.unfilteredCount).toBeNull();

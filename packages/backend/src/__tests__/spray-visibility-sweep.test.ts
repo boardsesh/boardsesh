@@ -633,6 +633,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.playlistsForClimbs': 'playlist ids per uuid the caller sent',
   'Query.smartPlaylist':
     'the seeded tick is a send with no quality rating, so no smart list selects it; the visibility of its refs is pinned by spray-wall-api.test.ts',
+  'Query.playlistSetters':
+    "setter usernames and climb counts over a playlist's (or logbook smart list's) visible climbs, never a climb name, frames or layout, and the seeded climb carries no sentinel setter; it reads the playlistClimbs / smartPlaylist view sources, whose spray rule playlist-climbs-view.test.ts and smart-playlists-view.test.ts pin, and playlist-setters.test.ts pins its access and draft cases",
 
   // --- materialised feeds: a private wall is never fanned out -----------------
   // `saveClimb` and `saveTick` announce only for a PUBLIC wall, so `feed_items`

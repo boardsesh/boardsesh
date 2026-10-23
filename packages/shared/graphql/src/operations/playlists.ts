@@ -478,6 +478,37 @@ export type GetPlaylistClimbsQueryResponse = {
   playlistClimbs: PlaylistClimbsResult;
 };
 
+// The setter picker in a playlist's filter sheet (#6651). A user playlist by
+// playlistId, or a logbook smart list by smartType + userId.
+export const GET_PLAYLIST_SETTERS = gql`
+  query GetPlaylistSetters($input: PlaylistSettersInput!) {
+    playlistSetters(input: $input) {
+      username
+      climbCount
+    }
+  }
+`;
+
+export type PlaylistSettersInput = {
+  playlistId?: string;
+  smartType?: SmartPlaylistType;
+  userId?: string;
+  boardName?: string;
+  layoutId?: number;
+  sizeId?: number;
+  setIds?: string;
+  search?: string;
+};
+
+export type PlaylistSetter = {
+  username: string;
+  climbCount: number;
+};
+
+export type GetPlaylistSettersQueryResponse = {
+  playlistSetters: PlaylistSetter[];
+};
+
 // ============================================
 // Discover Playlists Types and Operations
 // ============================================
