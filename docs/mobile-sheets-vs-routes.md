@@ -545,6 +545,34 @@ sheet that pushes a picker route (setters, holds, zone) suspends and re-presents
 coordinator, and wire `scrollRef` / `onScroll` / `onContentSizeChange` to the scroll body so the
 offset comes back. A setter picker route renders `SetterPickerList` and feeds it its own query.
 
+**The playlist screen is `ClimbFilterSheet`'s second consumer** (#6651). It does not copy the
+sheet; it opens the Climbs one through optional props, and the Climbs tab passes none of them, so
+its sheet is unchanged. `useClimbFilterSession` (`src/hooks/use-climb-filter-session.tsx`) builds
+every prop the playlist passes:
+
+- `sections` hides rows. A playlist hides Recent, the Collection's My drafts option, Other angles,
+  and the Setters, Hold types and Board region rows. With no active board it also hides Your
+  progress, Liked, Following and Beta videos, whose filters pass only active-board climbs. A
+  hidden option still shows while it is the value in force, so it can be undone. With all three picker rows hidden the sheet
+  also skips the hold prewarm and the setter / hold / zone handoff listeners. The three pickers
+  are pushed Climbs-tab routes, so they stay hidden in playlists until a later change brings
+  them over (#6651).
+- `liveCount` turns the catalogue count query off and shows the playlist's own match count, the
+  `totalCount` of the request on screen.
+- `defaultFilters` is the Reset target and what "anything to reset" is measured against (a
+  playlist starts with both climb types on). `onReset` hands Reset to the list, which also owns
+  the sort, the name and "Fits my board".
+- `sortControl` swaps the Climbs sort chips for the list's own keys and spells each direction out
+  ("Easiest first" / "Hardest first"); the playlist's own order has no direction, and Random
+  shows Shuffle again instead.
+- `boardFit` adds the "Fits my board" switch under The climb. `pins` points the pin toggles at the
+  playlist's own store (`pinnedPlaylistChips`); a kind the playlist cannot pin shows no pin.
+- `gradeBoardName` and `namePlaceholder` cover a playlist with no active board, where the sheet
+  has no `boardConfig` to read grades from.
+
+The playlist's ≡ filter button sits in the native header. Like any screen that sets `headerRight`
+itself, `PlaylistDetailView` wraps it in `ownHeaderRight()`.
+
 - **Sheets.** Pass `<SheetTopBar>` (`src/components/SheetTopBar.tsx`) through the `header` prop of
   `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Trailing is the
   confirm. Mark it `prominent` for the sheet's main action, `disabled` until the form is valid,

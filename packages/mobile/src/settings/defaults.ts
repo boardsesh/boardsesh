@@ -44,4 +44,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playerPreviousNext: true,
   playerButtonsPosition: 'below',
   homeSectionsV1: null,
+  playlistSortsV1: null,
 };

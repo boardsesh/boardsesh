@@ -8,7 +8,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => (options?.count === undefined ? key : `${key}(${options.count})`),
+  }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -121,5 +123,13 @@ describe('PlaylistAddToQueueRow', () => {
     expect(row.getAttribute('data-haptic')).toBe('false');
     fireEvent.click(row);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('says how many a filtered playlist adds, and reads it out the same', () => {
+    const { container } = render(<PlaylistAddToQueueRow onPress={vi.fn()} isAppending={false} count={12} />);
+    expect(container.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.actionCount(12)');
+    expect(container.querySelector('[data-list-row]')?.getAttribute('aria-label')).toBe(
+      'detail.addToQueue.actionCount(12)',
+    );
   });
 });

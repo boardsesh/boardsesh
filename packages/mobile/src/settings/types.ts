@@ -16,6 +16,13 @@ export type OwnedSprayWallPinLedger = {
   wallUuids: string[];
 };
 
+/** One remembered list sort in `playlistSortsV1`. Values are validated on read. */
+export type StoredListSort = {
+  listKey: string;
+  sortBy: string;
+  sortOrder: string;
+};
+
 /** The tab an ordinary launch opens on (Settings › Home, #6289). */
 export type StartupScreen = 'climbs' | 'home';
 
@@ -240,6 +247,16 @@ export type AppSettings = {
    * keeps its own snapshot. Per device; it survives sign-out.
    */
   homeSectionsV1: SectionLayoutRecord | null;
+  /**
+   * The sort a climber last picked inside each playlist (#6651), newest first
+   * and capped at 100 lists. A playlist on its own order has no entry, and
+   * Random is kept without its seed so every visit is a new shuffle. Filters
+   * are never remembered. `null` until the first non-default sort.
+   *
+   * Read once per screen mount with `getSetting`, written only by
+   * `lib/playlists/playlist-sort-memory.ts`; never `useSetting` this key.
+   */
+  playlistSortsV1: { entries: StoredListSort[] } | null;
 };
 
 export type SettingsKey = keyof AppSettings;

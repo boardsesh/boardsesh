@@ -35,6 +35,14 @@ export const PINNABLE_CHIP_KINDS = [
 
 export type PinnableChipKind = (typeof PINNABLE_CHIP_KINDS)[number];
 
+/**
+ * Every chip a capsule row or the filter sheet can pin, across surfaces: the
+ * climbs list's kinds plus "Fits my board", which only a playlist offers (see
+ * lib/playlist-pinnable-chips.ts). The climbs catalog above stays as it is, so a
+ * climbs pin set can never hold a playlist-only kind.
+ */
+export type FilterChipKind = PinnableChipKind | 'boardFit';
+
 // Fixed canonical order the chips render in, regardless of pin/unpin sequence.
 // Recent leads, right after the fixed Filters button, as it always has. The rest
 // mirror the sheet's section order: accuracy sits by grade, climbType by
@@ -145,7 +153,7 @@ export function toStoredPinnedChips(kinds: readonly PinnableChipKind[]): string[
  * `status` is shared with "My drafts" (a sheet-only control). Matches today's
  * behaviour — flag in the PR.
  */
-export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
+export function chipKindToTokenKeys(kind: FilterChipKind): readonly string[] {
   switch (kind) {
     case 'recent':
       // Saved searches, not a filter: there is no token to claim.
@@ -177,5 +185,7 @@ export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
       return ['minAscents'];
     case 'rating':
       return ['minRating'];
+    case 'boardFit':
+      return ['boardFit'];
   }
 }

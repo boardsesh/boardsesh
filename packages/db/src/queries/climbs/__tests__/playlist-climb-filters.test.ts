@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS } from '@boardsesh/climb-filters';
 import {
   PLAYLIST_FILTER_SCOPE,
   createClimbFilters,
@@ -220,5 +221,14 @@ void describe('playlistBoardScopeConditions', () => {
       playlistBoardScopeConditions({ boardName: 'kilter', layoutId: null, sizeId: null, setIds: [] }),
       [],
     );
+  });
+});
+
+void describe('the active-board-only filters the app hides without a board', () => {
+  void it('match the activeBoardOnly class here, so the app and the query cannot drift', () => {
+    const activeBoardOnly = (Object.keys(PLAYLIST_FILTER_SCOPE) as PlaylistFilterParamKey[])
+      .filter((key) => PLAYLIST_FILTER_SCOPE[key] === 'activeBoardOnly')
+      .sort();
+    assert.deepEqual([...PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS].sort(), activeBoardOnly);
   });
 });

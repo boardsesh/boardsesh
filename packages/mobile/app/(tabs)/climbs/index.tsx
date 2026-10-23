@@ -32,7 +32,8 @@ import {
   normalizeRetiredFilters,
   flagsToProgress,
   progressToFlags,
-  newSortSeed,
+  sortKeyPatch,
+  climbTypePatch,
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
@@ -1863,24 +1864,14 @@ function ClimbListInner() {
   // a chip and the sheet never diverge. ---
   // Sort: picking Random reseeds a fresh shuffle (matches the sheet); every other
   // key clears the seed. Direction (asc/desc) stays a sheet-only refinement.
-  const handleChangeSort = useCallback(
-    (value: SortOption) =>
-      patchFilters(
-        value === 'random' ? { sortBy: value, sortSeed: newSortSeed() } : { sortBy: value, sortSeed: undefined },
-      ),
-    [patchFilters],
-  );
+  const handleChangeSort = useCallback((value: SortOption) => patchFilters(sortKeyPatch(value)), [patchFilters]);
   const handleChangeAccuracy = useCallback(
     (value: GradeAccuracyValue | 'off') => patchFilters({ gradeAccuracy: value === 'off' ? undefined : value }),
     [patchFilters],
   );
-  // Climb type — same three-way mapping as the sheet's handleClimbTypeChange.
+  // Climb type — the same shared mapping as the sheet's handleClimbTypeChange.
   const handleChangeClimbType = useCallback(
-    (value: ClimbTypeFilter) => {
-      if (value === 'routes') patchFilters({ boulders: false, routes: true });
-      else if (value === 'both') patchFilters({ boulders: true, routes: true });
-      else patchFilters({ boulders: true, routes: false });
-    },
+    (value: ClimbTypeFilter) => patchFilters(climbTypePatch(value)),
     [patchFilters],
   );
   const handleToggleBeta = useCallback(

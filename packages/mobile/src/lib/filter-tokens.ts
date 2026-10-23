@@ -18,6 +18,8 @@ import {
   countFilteredHolds,
   flagsToProgress,
   progressToFlags,
+  getClimbTypeFilter,
+  isClimbTypeFilterActive,
   DEFAULT_CLIMB_FILTER_STATE,
   type ClimbFilterState,
   type ClimbBoardFilterState,
@@ -51,6 +53,13 @@ type GetActiveFilterTokensArgs = {
   patchFilters: (patch: Partial<ClimbFilterState>) => void;
   patchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
   setGrade: (grade: GradeBound) => void;
+  /**
+   * The list's own starting state, which decides when the sort and the climb
+   * type count as set and what their tokens clear back to. The Climbs list's
+   * unless given; a playlist starts with both climb types on, so without this a
+   * fresh playlist would show a "Boulders & routes" token.
+   */
+  defaults?: ClimbFilterState;
 };
 
 /**
@@ -67,6 +76,7 @@ export function getActiveFilterTokens({
   patchFilters,
   patchBoardFilters,
   setGrade,
+  defaults = DEFAULT_CLIMB_FILTER_STATE,
 }: GetActiveFilterTokensArgs): FilterToken[] {
   const labels = buildFilterLabels(t);
   const sortLabel = buildSortLabel(t);
@@ -105,10 +115,7 @@ export function getActiveFilterTokens({
   }
 
   // Sort — when either the field or direction differs from the default.
-  if (
-    filters.sortBy !== DEFAULT_CLIMB_FILTER_STATE.sortBy ||
-    filters.sortOrder !== DEFAULT_CLIMB_FILTER_STATE.sortOrder
-  ) {
+  if (filters.sortBy !== defaults.sortBy || filters.sortOrder !== defaults.sortOrder) {
     const label = sortLabel(filters.sortBy);
     if (label) {
       tokens.push({
@@ -116,8 +123,8 @@ export function getActiveFilterTokens({
         label,
         clear: () =>
           patchFilters({
-            sortBy: DEFAULT_CLIMB_FILTER_STATE.sortBy,
-            sortOrder: DEFAULT_CLIMB_FILTER_STATE.sortOrder,
+            sortBy: defaults.sortBy,
+            sortOrder: defaults.sortOrder,
             sortSeed: undefined,
           }),
       });
@@ -229,13 +236,22 @@ export function getActiveFilterTokens({
     });
   }
 
-  // Climb type — default is boulders-only; a token appears when routes are on or
-  // boulders are off. Clearing returns to the boulders-only default.
-  const bouldersOn = filters.boulders ?? true;
-  const routesOn = filters.routes ?? false;
-  if (bouldersOn !== true || routesOn !== false) {
-    const label = routesOn && !bouldersOn ? t('search.summary.routesOnly') : t('search.summary.bouldersAndRoutes');
-    tokens.push({ key: 'climbType', label, clear: () => patchFilters({ boulders: true, routes: false }) });
+  // Climb type — a token appears when the pick differs from the list's default
+  // (boulders only on the Climbs list, both on a playlist). Clearing returns to
+  // that default.
+  if (isClimbTypeFilterActive(filters, defaults)) {
+    const climbType = getClimbTypeFilter(filters, defaults);
+    const label =
+      climbType === 'routes'
+        ? t('search.summary.routesOnly')
+        : climbType === 'boulders'
+          ? t('search.summary.bouldersOnly')
+          : t('search.summary.bouldersAndRoutes');
+    tokens.push({
+      key: 'climbType',
+      label,
+      clear: () => patchFilters({ boulders: defaults.boulders ?? true, routes: defaults.routes ?? false }),
+    });
   }
 
   // Board-renderer filters: benchmark, hold types, and board region are all

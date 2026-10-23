@@ -1,7 +1,7 @@
 import { ReadableColumn } from '../ReadableColumn';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
-import { type ReactNode, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import {
   type ColorValue,
@@ -24,7 +24,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
@@ -41,6 +41,8 @@ import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
 import { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
+import { PlaylistFilterHeaderButton } from './PlaylistFilterHeaderButton';
+import { ownHeaderRight } from '../../hooks/use-header-actions';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
@@ -125,6 +127,12 @@ export type PlaylistDetailHero = {
   showBoardBackdrop?: boolean;
 };
 
+/** The ≡ filter button in the header: what it shows and what it opens. */
+export type PlaylistDetailFilterAction = {
+  activeCount: number;
+  onPress: () => void;
+};
+
 export type PlaylistDetailViewProps = {
   hero: PlaylistDetailHero;
   climbs: Climb[];
@@ -146,6 +154,12 @@ export type PlaylistDetailViewProps = {
   onActivateClimb: (climb: Climb) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
+  /**
+   * The empty state's icon in both looks, when the list is empty for a reason
+   * other than having no climbs (filtered to nothing, a failed load). Defaults to
+   * the playlist icon; Material's `emptyState.icon` still wins there.
+   */
+  emptyIcon?: IconName;
   /** Richer Material-branch empty state (e.g. the liked-climbs heart prompt).
    *  Glass branch ignores this and keeps `emptyMessage`. */
   emptyState?: PlaylistDetailEmptyState;
@@ -182,9 +196,34 @@ export type PlaylistDetailViewProps = {
   onAddAllToQueue?: () => void;
   /** True while that append is in flight (spinner in the row's trailing slot). */
   isAddingAllToQueue?: boolean;
+  /** "Add 12 to queue": how many a filtered playlist would add. Omit for the plain label. */
+  addToQueueCount?: number;
+  /**
+   * The playlist's filter chrome (chip row, tokens, status line), placed right
+   * under the hero and outside its measured view, so the collapse point stays
+   * the hero's edge. Smart playlists leave it out.
+   */
+  filterBar?: ReactNode;
+  /**
+   * The header's ≡ filter button. Liquid Glass shows it once the filter bar has
+   * scrolled under the header; Material keeps it in the app bar. Never in edit
+   * mode. Omit, or pass null, for no button.
+   */
+  filterAction?: PlaylistDetailFilterAction | null;
+  /**
+   * Changes whenever new rows replace the list (a new sort or filter). A list
+   * scrolled past the hero then jumps back to just above the rows, so the
+   * climber lands on the top of the new order rather than mid-list.
+   */
+  scrollResetKey?: string | null;
 };
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
+// FlashList keeps the first visible row in place across data changes by
+// default. Here a new sort or filter is new rows, not more of the same: anchoring
+// a row that moved down the order scrolled the list away from the top, and
+// scrolled the header's native buttons above the screen while it did.
+const KEEP_SCROLL_OFFSET_ON_NEW_ROWS = { disabled: true } as const;
 const noopRefresh = () => undefined;
 // A null custom title lets native-stack fall back to `title`, duplicating the
 // name drawn by the hero/collapsed header. Keep a real, empty centre view.
@@ -228,6 +267,7 @@ export function PlaylistDetailView({
   fetchNextPage,
   onActivateClimb,
   emptyMessage,
+  emptyIcon = 'playlist',
   emptyState,
   emptyAction,
   actions,
@@ -238,7 +278,11 @@ export function PlaylistDetailView({
   headerSlot,
   onAddAllToQueue,
   isAddingAllToQueue = false,
+  addToQueueCount,
   onRefresh,
+  filterBar,
+  filterAction,
+  scrollResetKey = null,
 }: PlaylistDetailViewProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
@@ -272,6 +316,16 @@ export function PlaylistDetailView({
     },
     [heroBannerHeight],
   );
+  // Where the filter bar ends in the list's content, 0 until it is laid out (or
+  // when there is none). The header's ≡ button waits until the bar is out of view.
+  const filterBarBottom = useSharedValue(0);
+  const handleFilterBarLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      filterBarBottom.value = y + height;
+    },
+    [filterBarBottom],
+  );
   const headerBarStyle = useAnimatedStyle(() => {
     const banner = heroBannerHeight.value;
     if (banner <= 0) return { opacity: 0 };
@@ -280,19 +334,24 @@ export function PlaylistDetailView({
     return { opacity: interpolate(scrollY.value, [threshold - 24, threshold], [0, 1], Extrapolation.CLAMP) };
   });
 
-  // `collapsed` flips when the colour header bar takes over, so action FABs (e.g.
-  // follow) can swap to their compact icon form. On Material it drives the app-bar
-  // title fade-in.
-  const [collapsed, setCollapsed] = useState(false);
+  // How far the list has scrolled, in steps: 0 the hero is in view; 1 the
+  // colour header bar has taken over, so action FABs (e.g. follow) swap to their
+  // compact icon form and Material fades its app-bar title in; 2 the filter bar
+  // under the hero has gone under the header too, so the glass header shows ≡.
+  const [scrollStage, setScrollStage] = useState<0 | 1 | 2>(0);
   useAnimatedReaction(
-    () => {
+    (): 0 | 1 | 2 => {
       const banner = heroBannerHeight.value;
-      return banner > 0 && scrollY.value >= banner - headerBarHeight;
+      if (banner <= 0 || scrollY.value < banner - headerBarHeight) return 0;
+      const barBottom = filterBarBottom.value;
+      return barBottom > 0 && scrollY.value >= barBottom - headerBarHeight ? 2 : 1;
     },
-    (isCollapsed, wasCollapsed) => {
-      if (isCollapsed !== wasCollapsed) runOnJS(setCollapsed)(isCollapsed);
+    (stage, previousStage) => {
+      if (stage !== previousStage) runOnJS(setScrollStage)(stage);
     },
   );
+  const collapsed = scrollStage >= 1;
+  const filterBarScrolledAway = scrollStage === 2;
 
   // Liquid Glass shows the NATIVE header (HIG Navigation bars): its back button
   // keeps the long-press history menu and the edge-swipe a hand-built chevron
@@ -312,6 +371,10 @@ export function PlaylistDetailView({
       navigation.setOptions({ headerShown: false, headerRight: undefined });
       return;
     }
+    // The ≡ filter button joins the capsule once the filter bar under the hero
+    // has scrolled away (the chips it stands in for are out of view); edit mode
+    // has no filters to open.
+    const showFilterButton = filterBarScrolledAway && !!filterAction && !editMode;
     navigation.setOptions({
       headerShown: true,
       headerLargeTitle: false,
@@ -319,13 +382,40 @@ export function PlaylistDetailView({
       headerBlurEffect: 'none',
       title: headerTitle,
       headerTitle: renderNoHeaderTitle,
-      // Keyed on the memoised `actions` and `collapsed`, never on a rendered node:
-      // a fresh element each render would re-set the options on every render.
-      headerRight: actions
-        ? () => <ButtonSurfaceProvider surface="glass">{actions(collapsed)}</ButtonSurfaceProvider>
-        : undefined,
+      // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
+      // a rendered node: a fresh element each render would re-set the options on
+      // every render. `ownHeaderRight` also clears any native bar item.
+      ...ownHeaderRight(
+        actions || filterAction
+          ? () => (
+              <ButtonSurfaceProvider surface="glass">
+                {showFilterButton && filterAction ? (
+                  <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
+                ) : null}
+                {actions?.(collapsed)}
+              </ButtonSurfaceProvider>
+            )
+          : undefined,
+      ),
     });
-  }, [navigation, isMaterial, headerTitle, actions, collapsed]);
+  }, [navigation, isMaterial, headerTitle, actions, collapsed, filterBarScrolledAway, filterAction, editMode]);
+
+  // A new sort or filter lands while the climber is scrolled down past the
+  // filter bar: bring them back up to it (the hero just tucked under the bar), so
+  // they start at the top of the new order. Higher up there is nothing to do,
+  // and the list never scrolls down.
+  const listRef = useRef<FlashListRef<Climb>>(null);
+  const lastScrollResetKeyRef = useRef(scrollResetKey);
+  useEffect(() => {
+    if (lastScrollResetKeyRef.current === scrollResetKey) return;
+    lastScrollResetKeyRef.current = scrollResetKey;
+    const barBottom = filterBarBottom.value;
+    const heroTucked = heroBannerHeight.value - headerBarHeight;
+    if (barBottom <= 0 || heroTucked <= 0) return;
+    if (scrollY.value > barBottom - headerBarHeight && heroTucked < scrollY.value) {
+      listRef.current?.scrollToOffset({ offset: heroTucked, animated: false });
+    }
+  }, [scrollResetKey, filterBarBottom, heroBannerHeight, scrollY, headerBarHeight]);
 
   const pullRefresh = usePullRefresh(onRefresh ?? noopRefresh);
   const refreshControl = onRefresh ? (
@@ -556,7 +646,7 @@ export function PlaylistDetailView({
     </View>
   ) : isMaterial ? (
     <MaterialEmptyState
-      icon={emptyState?.icon ?? 'playlist'}
+      icon={emptyState?.icon ?? emptyIcon}
       title={emptyState?.title ?? emptyMessage}
       supporting={emptyState?.supporting}
       action={emptyAction}
@@ -565,7 +655,7 @@ export function PlaylistDetailView({
     />
   ) : (
     <View style={styles.stateContainer}>
-      <Icon name="playlist" size={44} color={systemColors.tertiaryLabel} />
+      <Icon name={emptyIcon} size={44} color={systemColors.tertiaryLabel} />
       <Text variant="subheadline" style={styles.emptyText}>
         {emptyMessage}
       </Text>
@@ -576,6 +666,7 @@ export function PlaylistDetailView({
           size="medium"
           icon={emptyAction.icon}
           style={styles.emptyActionButton}
+          ignoreContainerSafeArea
         />
       ) : null}
     </View>
@@ -587,6 +678,9 @@ export function PlaylistDetailView({
     </View>
   ) : null;
 
+  // The filter bar, measured so the header knows when it has scrolled away.
+  const filterBarNode = filterBar ? <View onLayout={handleFilterBarLayout}>{filterBar}</View> : null;
+
   // Switch-board banner shown when the playlist's board differs from the active
   // one. Sits inside the list header so it scrolls with the hero in both variants.
   const bannerNode = boardBanner ? <BoardMismatchBanner banner={boardBanner} systemColors={systemColors} /> : null;
@@ -597,7 +691,7 @@ export function PlaylistDetailView({
   // when there is no active board, since the board-scoped fetch would be empty).
   const addToQueueNode =
     onAddAllToQueue && climbs.length > 0 && !boardBanner && !editMode ? (
-      <PlaylistAddToQueueRow onPress={onAddAllToQueue} isAppending={isAddingAllToQueue} />
+      <PlaylistAddToQueueRow onPress={onAddAllToQueue} isAppending={isAddingAllToQueue} count={addToQueueCount} />
     ) : null;
 
   // ── Material 3 branch ───────────────────────────────────────────────────────
@@ -608,7 +702,9 @@ export function PlaylistDetailView({
         <ReadableColumn style={styles.container}>
           <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
             <FlashList
+              ref={listRef}
               data={climbs}
+              maintainVisibleContentPosition={KEEP_SCROLL_OFFSET_ON_NEW_ROWS}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
               extraData={editMode}
@@ -674,6 +770,7 @@ export function PlaylistDetailView({
                       </View>
                     ) : null}
                   </View>
+                  {filterBarNode}
                   {bannerNode}
                   {addToQueueNode}
                   {headerSlot}
@@ -701,9 +798,13 @@ export function PlaylistDetailView({
           <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
             <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
           </Animated.View>
-          {/* Owner / follow / pin controls. The app bar is always present on Material,
-              so we ask for the compact icon form (`actions(true)`) — `GlassIconButton`
-              routes to a Paper `IconButton` here, fitting the bar. */}
+          {/* The ≡ filter button, then the owner / follow / pin controls. The app bar
+              is always present on Material, so we ask for the compact icon form
+              (`actions(true)`) — `GlassIconButton` routes to a Paper `IconButton`
+              here, fitting the bar. */}
+          {filterAction && !editMode ? (
+            <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
+          ) : null}
           {actions?.(true)}
           {climbs.length > 0 && !boardBanner && !editMode ? (
             <Appbar.Action
@@ -816,7 +917,9 @@ export function PlaylistDetailView({
       <ReadableColumn style={styles.container}>
         <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
           <FlashList
+            ref={listRef}
             data={climbs}
+            maintainVisibleContentPosition={KEEP_SCROLL_OFFSET_ON_NEW_ROWS}
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             extraData={editMode}
@@ -836,6 +939,7 @@ export function PlaylistDetailView({
             ListHeaderComponent={
               <>
                 {header}
+                {filterBarNode}
                 {bannerNode}
                 {addToQueueNode}
                 {headerSlot}
@@ -903,6 +1007,7 @@ function MaterialEmptyState({
           size="medium"
           icon={action.icon}
           style={styles.emptyActionButton}
+          ignoreContainerSafeArea
         />
       ) : null}
     </View>
@@ -942,7 +1047,16 @@ function BoardMismatchBanner({
           </Text>
         </View>
       </View>
-      <Button title={banner.cta} onPress={banner.onPress} size="medium" style={styles.bannerButton} />
+      {/* The banner scrolls with the list, so its native button can sit above
+          the screen; without this it keeps the top safe-area inset and draws
+          its label below its own frame once scrolled back. */}
+      <Button
+        title={banner.cta}
+        onPress={banner.onPress}
+        size="medium"
+        style={styles.bannerButton}
+        ignoreContainerSafeArea
+      />
     </View>
   );
 }

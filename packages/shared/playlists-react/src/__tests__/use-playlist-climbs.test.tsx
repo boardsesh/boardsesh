@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GetPlaylistClimbsInput } from '@boardsesh/graphql/operations/playlists';
 import { PlaylistsAdapterProvider, type ExecutePlaylistsGraphQL, type PlaylistsAdapter } from '../adapter';
 import { noopRecentsAdapter } from '../recents-adapter';
-import { keepPreviousViewResults, usePlaylistClimbs, type PlaylistClimbsView } from '../use-playlist-climbs';
+import {
+  keepPreviousViewResults,
+  playlistClimbsQueryKey,
+  usePlaylistClimbs,
+  type PlaylistClimbsView,
+} from '../use-playlist-climbs';
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
@@ -73,6 +78,34 @@ describe('usePlaylistClimbs', () => {
       .findAll({ queryKey: ['playlistClimbs', 'p-1'] })
       .map((query) => query.queryKey);
     expect(cachedKeys).toEqual([['playlistClimbs', 'p-1', 'all', null, view, 0]]);
+    client.clear();
+  });
+
+  it('builds the same key the hook caches under, so one view can be invalidated on its own', async () => {
+    const execute = vi.fn(async () => climbPage(['a']));
+    const { client, wrapper } = renderWithAdapter(execute);
+    const view: PlaylistClimbsView = { sortBy: 'name', sortOrder: 'asc' };
+    const { result } = renderHook(
+      () =>
+        usePlaylistClimbs({
+          playlistUuid: 'p-1',
+          boardUuid: 'board-1',
+          boardInput: { activeBoardName: 'kilter', activeAngle: 40 },
+          view,
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+    const key = playlistClimbsQueryKey({ playlistUuid: 'p-1', boardUuid: 'board-1', angle: 40, view: { ...view } });
+    expect(client.getQueryCache().find({ queryKey: key, exact: true })).toBeDefined();
+    expect(playlistClimbsQueryKey({ playlistUuid: 'p-1' })).toEqual([
+      'playlistClimbs',
+      'p-1',
+      'all',
+      null,
+      'default',
+      0,
+    ]);
     client.clear();
   });
 

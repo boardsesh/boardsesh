@@ -5,7 +5,10 @@
 //
 // Order: [Angle] Filters · N, then the pinnable chips in catalog order
 // (lib/pinnable-chips.ts): Recent, Grade, Grade accuracy, Your progress,
-// Collection, Climb type, Tall, Wide, Beta videos, Popularity, Min rating, Sort.
+// Collection, Climb type, Tall, Wide, Beta videos, Popularity, Min rating,
+// [Fits my board], Sort. "Fits my board" is playlist-only (its own catalog in
+// lib/playlist-pinnable-chips.ts), as is a `sortControl` replacing the Climbs
+// sort menu.
 //   • Angle is the Material first capsule (Liquid Glass keeps its toolbar angle
 //     button); the caller passes it, or null.
 //   • Recent shows only while pinned (the default) and there are saved
@@ -18,7 +21,12 @@
 // never worded two ways.
 
 import type { TFunction } from 'i18next';
-import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import {
+  CLIMB_TYPE_VALUES,
+  PROGRESS_FILTER_VALUES,
+  SORT_OPTIONS,
+  GRADE_ACCURACY_VALUES,
+} from '@boardsesh/climb-filters';
 import { applyRecentFilterById, findCurrentRecentFilter } from '../../lib/recent-filter-selection';
 import {
   POPULARITY_BUCKETS,
@@ -52,8 +60,6 @@ export type ClimbAngleCapsule = {
   accessibilityLabel: string;
   onPress: () => void;
 };
-
-const CLIMB_TYPE_VALUES = ['boulders', 'routes', 'both'] as const;
 
 /** Builds the climbs capsule row. Memoise the call on the props it reads. */
 export function buildClimbCapsules(
@@ -95,8 +101,11 @@ export function buildClimbCapsules(
     onChangeAccuracy,
     climbType,
     onChangeClimbType,
+    defaultClimbType = 'boulders',
     betaActive,
     onToggleBeta,
+    sortControl,
+    boardFit,
   } = props;
   const isPinned = (kind: (typeof pinnedChips)[number]) => pinnedChips.includes(kind);
   const capsules: Capsule[] = [];
@@ -129,8 +138,8 @@ export function buildClimbCapsules(
 
   // Recent ▾: shown while pinned and there are saved searches. Each one is
   // something to apply, so a tap re-applies even the checked (current) one.
-  if (isPinned('recent') && recentFilters.length > 0) {
-    const current = findCurrentRecentFilter(recentFilters, currentFilters, currentSearchText);
+  if (isPinned('recent') && recentFilters && recentFilters.length > 0 && onApplyRecent && currentFilters) {
+    const current = findCurrentRecentFilter(recentFilters, currentFilters, currentSearchText ?? '');
     capsules.push({
       kind: 'menu',
       key: 'recent',
@@ -141,9 +150,9 @@ export function buildClimbCapsules(
       options: recentFilters.map((recent) => ({ value: recent.id, label: recent.label })),
       selected: current?.id,
       onSelect: (id) => applyRecentFilterById(recentFilters, id, onApplyRecent),
-      actions: [
-        { key: 'clear', label: t('mobile.search.clearRecentSearches'), destructive: true, onPress: onClearRecent },
-      ],
+      actions: onClearRecent
+        ? [{ key: 'clear', label: t('mobile.search.clearRecentSearches'), destructive: true, onPress: onClearRecent }]
+        : [],
     });
   }
 
@@ -212,13 +221,14 @@ export function buildClimbCapsules(
     });
   }
 
-  // Climb type ▾: boulders-only is the default, so it rests as "Climb type".
+  // Climb type ▾: rests as "Climb type" on the list's own default (boulders
+  // only on the Climbs list, both on a playlist).
   if (isPinned('climbType')) {
     capsules.push({
       kind: 'menu',
       key: 'climbType',
-      label: climbType === 'boulders' ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t),
-      active: climbType !== 'boulders',
+      label: climbType === defaultClimbType ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t),
+      active: climbType !== defaultClimbType,
       options: CLIMB_TYPE_VALUES.map((value) => ({ value, label: climbTypeChipLabel(value, t) })),
       selected: climbType,
       onSelect: (value) => {
@@ -292,15 +302,38 @@ export function buildClimbCapsules(
     });
   }
 
+  // Fits my board: a plain toggle, playlist-only and only with an active board.
+  if (boardFit && isPinned('boardFit')) {
+    capsules.push({
+      kind: 'toggle',
+      key: 'boardFit',
+      label: t('mobile.filter.boardFit.label'),
+      active: boardFit.active,
+      onPress: boardFit.onToggle,
+    });
+  }
+
   // Sort ▾: the sort key only (direction stays in the sheet). Picking Random
-  // reseeds a fresh shuffle. Sits last.
-  if (isPinned('sort')) {
-    const sortLabelFor = buildSortLabel(t);
+  // reseeds a fresh shuffle. Sits last. A list with sorts of its own hands over
+  // its whole capsule in `sortControl`.
+  if (isPinned('sort') && sortControl) {
     capsules.push({
       kind: 'menu',
       key: 'sort',
-      label: sortActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy'),
-      active: sortActive,
+      label: sortControl.label,
+      active: sortControl.active,
+      options: sortControl.options,
+      selected: sortControl.selected,
+      onSelect: sortControl.onSelect,
+    });
+  } else if (isPinned('sort') && sortBy !== undefined && onChangeSort) {
+    const sortLabelFor = buildSortLabel(t);
+    const sortIsActive = sortActive ?? false;
+    capsules.push({
+      kind: 'menu',
+      key: 'sort',
+      label: sortIsActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy'),
+      active: sortIsActive,
       options: SORT_OPTIONS.map((value) => ({ value, label: sortLabelFor(value) ?? value })),
       selected: sortBy,
       onSelect: (value) => {

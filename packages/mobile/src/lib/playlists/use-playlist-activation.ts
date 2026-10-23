@@ -56,6 +56,7 @@ import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
 import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
+import { sourceIdForReports } from './playlist-view';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
@@ -258,6 +259,9 @@ export function usePlaylistActivation({
   const choose = useChoose();
   const { t } = useTranslation('playlists');
   const activeBoard = useActiveBoard().data ?? null;
+  // Error reports name the playlist without its view: the view can carry a typed
+  // name search, and the canary stays once per playlist rather than per sort.
+  const reportSourceId = sourceIdForReports(sourceId);
   // Bumped at credential boundaries (sign-in, sign-out). Work started for one
   // account checks it after every await, so a late page, prompt answer or
   // callback cannot write that account's playlist into the next one's queue.
@@ -470,7 +474,7 @@ export function usePlaylistActivation({
   const reportEmptyBoardFetchOnce = useCallback(
     (op: EmptyBoardFetchOp) => {
       if (!activeBoard) return;
-      const reportKey = `${op}|${sourceId}`;
+      const reportKey = `${op}|${reportSourceId}`;
       if (reportedEmptyBoardFetches.has(reportKey)) return;
       const renderableCount = countClimbsThisBoardCanRender(loadedClimbsRef.current, {
         boardName: activeBoard.boardType,
@@ -483,10 +487,10 @@ export function usePlaylistActivation({
       reportedEmptyBoardFetches.add(reportKey);
       reportHandledError(new Error('Playlist board-scoped fetch returned no climbs'), {
         tags: { source: 'playlist', op },
-        extra: { sourceId, renderableCount, loadedCount: loadedClimbsRef.current.length },
+        extra: { sourceId: reportSourceId, renderableCount, loadedCount: loadedClimbsRef.current.length },
       });
     },
-    [activeBoard, sourceId],
+    [activeBoard, reportSourceId],
   );
 
   useEffect(() => {
@@ -629,7 +633,7 @@ export function usePlaylistActivation({
           if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
             reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
               tags: { source: 'playlist', op: `append-queue-${drainStopReason}` },
-              extra: { sourceId, pagesFetched, climbCount: fetchedClimbs.length },
+              extra: { sourceId: reportSourceId, pagesFetched, climbCount: fetchedClimbs.length },
             });
           }
         }
@@ -705,6 +709,7 @@ export function usePlaylistActivation({
       showQueueAddedSnackbar,
       showToast,
       sourceId,
+      reportSourceId,
       t,
       privacyGeneration,
     ],
@@ -741,7 +746,7 @@ export function usePlaylistActivation({
         if ((drainStopReason === 'page-cap' || drainStopReason === 'no-progress') && !options.loadedClimbs) {
           reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
             tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
-            extra: { sourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
+            extra: { sourceId: reportSourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
           });
         }
         if (climbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
@@ -796,7 +801,7 @@ export function usePlaylistActivation({
         console.error('Playlist queue replacement failed:', error);
         reportHandledError(error, {
           tags: { source: 'playlist', op: 'replace-queue' },
-          extra: { sourceId, reason: drainStopReason ?? 'error', pagesFetched: drainPagesFetched },
+          extra: { sourceId: reportSourceId, reason: drainStopReason ?? 'error', pagesFetched: drainPagesFetched },
         });
         showToast(t('detail.queueReplace.loadFailed'), 'error');
       } finally {
@@ -814,6 +819,7 @@ export function usePlaylistActivation({
       reportEmptyBoardFetchOnce,
       setQueue,
       showToast,
+      reportSourceId,
       t,
       privacyGeneration,
     ],

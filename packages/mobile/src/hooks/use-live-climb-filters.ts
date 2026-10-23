@@ -9,16 +9,22 @@ export type ClimbFilterSelection = {
 
 type FilterSession = { id: number; scopeKey: string };
 
-type LiveClimbFiltersOptions = {
+/**
+ * `S` is the whole selection the query reads. The Climbs list's is the filter
+ * pair; a list with more in it (a playlist's sort and "Fits my board") passes a
+ * wider object, so those wait out the same debounce as the filters and one
+ * settled change is one request.
+ */
+type LiveClimbFiltersOptions<S extends ClimbFilterSelection> = {
   scopeKey: string | null;
-  selection: ClimbFilterSelection;
+  selection: S;
   onSelectionChange: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
-  onDismiss: (selection: ClimbFilterSelection) => void;
+  onDismiss: (selection: S) => void;
 };
 
 /** Keeps presentation separate from committed preferences. An old sheet cannot
  * close a newly opened one or publish a selection into a different board/login. */
-export function useLiveClimbFilters(options: LiveClimbFiltersOptions) {
+export function useLiveClimbFilters<S extends ClimbFilterSelection>(options: LiveClimbFiltersOptions<S>) {
   const [session, setSession] = useState<FilterSession | null>(null);
   const sessionRef = useRef<FilterSession | null>(null);
   const nextSessionIdRef = useRef(0);
@@ -66,7 +72,7 @@ export function useLiveClimbFilters(options: LiveClimbFiltersOptions) {
         return;
       // Synchronous snapshot: a last tap followed by a close in the same batch
       // must finalize the selection even before the parent's next render.
-      selectionRef.current = { filters, boardFilters };
+      selectionRef.current = { ...selectionRef.current, filters, boardFilters };
       optionsRef.current.onSelectionChange(filters, boardFilters);
     },
     [session?.id],
@@ -106,14 +112,15 @@ export function useLiveClimbFilters(options: LiveClimbFiltersOptions) {
 
 const FILTER_QUERY_DEBOUNCE_MS = 250;
 
-/** Only the filter pair waits. The screen's existing name debounce is not
- * repeated here. Closing and board/login changes use the latest pair at once. */
-export function useDebouncedClimbFilterSelection(
-  selection: ClimbFilterSelection,
+/** Only the selection waits (the filter pair, plus whatever else a list put in
+ * it). The screen's existing name debounce is not repeated here. Closing and
+ * board/login changes use the latest selection at once. */
+export function useDebouncedClimbFilterSelection<S extends ClimbFilterSelection>(
+  selection: S,
   editing: boolean,
   scopeKey: string | null,
   sessionId: number | null,
-): ClimbFilterSelection {
+): S {
   const [settled, setSettled] = useState(() => ({ scopeKey, sessionId, selection }));
   const sessionStartRef = useRef({ scopeKey, sessionId, selection });
   if (!editing || sessionStartRef.current.scopeKey !== scopeKey || sessionStartRef.current.sessionId !== sessionId) {

@@ -304,10 +304,22 @@ vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
   countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
 }));
 
-const countPreviewMock = vi.hoisted(() => ({ count: 12 as number | undefined }));
+const countPreviewMock = vi.hoisted(() => ({
+  count: 12 as number | undefined,
+  // The `enabled` argument of every catalogue-count call, newest last.
+  enabled: [] as boolean[],
+  // The board every grades lookup asked for, newest last.
+  gradeBoards: [] as string[],
+}));
 vi.mock('../../lib/graphql/hooks', () => ({
-  useGrades: () => ({ data: [] }),
-  useSearchClimbsCount: () => ({ data: countPreviewMock.count }),
+  useGrades: (boardName: string) => {
+    countPreviewMock.gradeBoards.push(boardName);
+    return { data: [] };
+  },
+  useSearchClimbsCount: (_input: unknown, enabled: boolean) => {
+    countPreviewMock.enabled.push(enabled);
+    return { data: countPreviewMock.count };
+  },
 }));
 
 const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
@@ -575,6 +587,8 @@ function closeAndFinish(closeButton: HTMLElement) {
 
 beforeEach(() => {
   countPreviewMock.count = 12;
+  countPreviewMock.enabled = [];
+  countPreviewMock.gradeBoards = [];
   vi.clearAllMocks();
   filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => false);
   filterActivityMocks.hasActiveBoardFilters.mockImplementation(() => false);
@@ -2104,5 +2118,213 @@ describe('ClimbFilterSheet saved searches under Recent', () => {
     const { getByLabelText } = renderFilterSheet({ recentFilters: recents });
     fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
     expect(pinStore.togglePin.mock.calls).toEqual([['recent']]);
+  });
+});
+
+// The playlist screen is the sheet's second consumer (#6651). Its seams are all
+// optional; every suite above renders without them, which is the Climbs sheet.
+describe('ClimbFilterSheet list seams', () => {
+  const PLAYLIST_SECTIONS = {
+    recent: false,
+    drafts: false,
+    setters: false,
+    holds: false,
+    zone: false,
+    otherAngles: false,
+  } as const;
+  const playlistDefaults: ClimbFilters = { ...currentFilters, routes: true, setter: undefined };
+
+  function sortControl(overrides: Partial<NonNullable<FilterSheetProps['sortControl']>> = {}) {
+    return {
+      options: [
+        { key: 'position', label: 'Playlist order' },
+        { key: 'difficulty', label: 'Difficulty' },
+        { key: 'random', label: 'Random' },
+      ],
+      selected: 'difficulty',
+      active: true,
+      orderOptions: [
+        { key: 'asc' as const, label: 'Easiest first' },
+        { key: 'desc' as const, label: 'Hardest first' },
+      ],
+      order: 'asc' as const,
+      showReshuffle: false,
+      onSelect: vi.fn(),
+      onOrderChange: vi.fn(),
+      onReshuffle: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it('reads a list’s own live count and turns the catalogue count off', () => {
+    const { getByText, container, props, rerender } = renderFilterSheet({ liveCount: { count: 3 } });
+    expect(getByText('mobile.filter.matchingCount3')).toBeDefined();
+    expect(countPreviewMock.enabled.every((enabled) => !enabled)).toBe(true);
+
+    rerender(<ClimbFilterSheet {...props} liveCount={{ count: null }} />);
+    expect(container.querySelector('[data-subtitle="true"]')).toBeNull();
+  });
+
+  it('keeps the catalogue count on for the Climbs sheet', () => {
+    renderFilterSheet();
+    expect(countPreviewMock.enabled.at(-1)).toBe(true);
+  });
+
+  it('hides the rows a list turns off, and skips their picker wiring', () => {
+    const { queryByLabelText, queryByText, queryByTestId } = renderFilterSheet({
+      sections: PLAYLIST_SECTIONS,
+      boardConfig: { ...boardConfig, boardName: 'woods' },
+    });
+    expect(queryByLabelText('mobile.filter.setters')).toBeNull();
+    expect(queryByLabelText('mobile.holdFilter.title')).toBeNull();
+    expect(queryByLabelText('mobile.zoneFilter.title')).toBeNull();
+    expect(queryByText('mobile.search.recentFilters')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.otherAngles')).toBeNull();
+    expect(queryByTestId('segment-drafts')).toBeNull();
+    expect(queryByTestId('segment-liked')).not.toBeNull();
+    // Following stays: it needs no picker.
+    expect(queryByTestId('switch-authors.followingClimbs')).not.toBeNull();
+    expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
+
+    // No handoff is listened to while the pickers are hidden.
+    const onSelectionChange = vi.fn();
+    renderFilterSheet({ sections: PLAYLIST_SECTIONS, onSelectionChange });
+    act(() => emitSetterFilterSelection(['someone'], { apply: false }));
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('hides the rows that need an active board when the list has none', () => {
+    const { queryByText, queryByTestId } = renderFilterSheet({
+      boardConfig: null,
+      sections: { ...PLAYLIST_SECTIONS, progress: false, liked: false, following: false, beta: false },
+    });
+    expect(queryByText('mobile.filter.progress.label')).toBeNull();
+    expect(queryByText('mobile.filter.myRating')).toBeNull();
+    expect(queryByTestId('segment-liked')).toBeNull();
+    expect(queryByTestId('switch-authors.followingClimbs')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.betaVideosDescription')).toBeNull();
+    // Rows that apply to every climb stay.
+    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    expect(queryByText('mobile.filter.minRating')).not.toBeNull();
+  });
+
+  it('keeps Liked on offer while it is the active collection, board or not', () => {
+    const { queryByTestId } = renderFilterSheet({
+      sections: { ...PLAYLIST_SECTIONS, liked: false },
+      currentFilters: { ...currentFilters, onlyFavorited: true },
+    });
+    expect(queryByTestId('segment-liked')).not.toBeNull();
+  });
+
+  it('keeps My drafts on offer while it is the active collection, so it can be undone', () => {
+    const { queryByTestId } = renderFilterSheet({
+      sections: PLAYLIST_SECTIONS,
+      currentFilters: { ...currentFilters, status: 'drafts' },
+    });
+    expect(queryByTestId('segment-drafts')).not.toBeNull();
+  });
+
+  it('shows a list’s own sorts with their directions in words', () => {
+    const control = sortControl();
+    const { getByLabelText, queryByLabelText, getByTestId, queryByText } = renderFilterSheet({ sortControl: control });
+    expect(queryByLabelText('mobile.filter.sort.popular')).toBeNull();
+    expect(getByLabelText('Difficulty').getAttribute('aria-pressed')).toBe('true');
+    expect(getByTestId('segment-asc').textContent).toBe('Easiest first');
+    expect(getByTestId('segment-asc').getAttribute('data-selected')).toBe('true');
+    expect(queryByText('mobile.filter.sort.reshuffle')).toBeNull();
+
+    fireEvent.click(getByLabelText('Playlist order'));
+    expect(control.onSelect).toHaveBeenCalledWith('position');
+    fireEvent.click(getByTestId('segment-desc'));
+    expect(control.onOrderChange).toHaveBeenCalledWith('desc');
+  });
+
+  it('swaps the directions for Shuffle again, and shows neither for a one-way key', () => {
+    const shuffle = sortControl({ selected: 'random', orderOptions: null, showReshuffle: true });
+    const { getByText, queryByTestId, unmount } = renderFilterSheet({ sortControl: shuffle });
+    expect(queryByTestId('segment-asc')).toBeNull();
+    fireEvent.click(getByText('mobile.filter.sort.reshuffle'));
+    expect(shuffle.onReshuffle).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const oneWay = sortControl({ selected: 'position', active: false, orderOptions: null });
+    const rendered = renderFilterSheet({ sortControl: oneWay });
+    expect(rendered.queryByTestId('segment-asc')).toBeNull();
+    expect(rendered.queryByText('mobile.filter.sort.reshuffle')).toBeNull();
+  });
+
+  it('enables Reset for a list’s sort alone, and hands Reset to the list', () => {
+    const onReset = vi.fn();
+    const onSelectionChange = vi.fn();
+    const onClearName = vi.fn();
+    const { getByText } = renderFilterSheet({ sortControl: sortControl(), onReset, onSelectionChange, onClearName });
+    const reset = getByText('mobile.filter.reset') as HTMLButtonElement;
+    expect(reset.disabled).toBe(false);
+    fireEvent.click(reset);
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onClearName).not.toHaveBeenCalled();
+  });
+
+  it('leaves Reset off for a list at its own defaults', () => {
+    const { getByText } = renderFilterSheet({
+      sortControl: sortControl({ selected: 'position', active: false, orderOptions: null }),
+      boardFit: { value: false, onChange: vi.fn() },
+      onReset: vi.fn(),
+    });
+    expect((getByText('mobile.filter.reset') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('measures and resets against the list’s defaults when it brings no Reset of its own', () => {
+    const onSelectionChange = vi.fn();
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const { getByText } = renderFilterSheet({ defaultFilters: playlistDefaults, onSelectionChange });
+    expect(filterActivityMocks.hasActiveClimbFilters).toHaveBeenCalledWith(expect.anything(), playlistDefaults);
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(playlistDefaults, {});
+  });
+
+  it('shows "Fits my board" with its own pin, and switches it', () => {
+    const onChange = vi.fn();
+    const pins = {
+      isPinned: (kind: string) => kind === 'boardFit',
+      togglePin: vi.fn(),
+      pinnable: ['boardFit', 'grade'] as const,
+    };
+    const { getByTestId, getByLabelText } = renderFilterSheet({ boardFit: { value: false, onChange }, pins });
+    const boardFitSwitch = getByTestId('switch-mobile.filter.boardFit.switch');
+    expect(boardFitSwitch.getAttribute('data-description')).toBe('mobile.filter.boardFit.description');
+    fireEvent.click(boardFitSwitch);
+    expect(onChange).toHaveBeenCalledWith(true);
+    fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
+    expect(pins.togglePin).toHaveBeenCalledWith('boardFit');
+  });
+
+  it('shows no "Fits my board" when the list leaves it out', () => {
+    const { queryByTestId } = renderFilterSheet();
+    expect(queryByTestId('switch-mobile.filter.boardFit.switch')).toBeNull();
+  });
+
+  it('pins through the list’s own store, and only the kinds it can pin', () => {
+    const pins = {
+      isPinned: (kind: string) => kind === 'grade',
+      togglePin: vi.fn(),
+      pinnable: ['grade', 'sort'] as const,
+    };
+    const { getByLabelText, getAllByLabelText } = renderFilterSheet({ pins });
+    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(1);
+    fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
+    expect(pins.togglePin).toHaveBeenCalledWith('grade');
+    expect(pinStore.togglePin).not.toHaveBeenCalled();
+  });
+
+  it('reads grades from the list’s board and uses its name placeholder', () => {
+    const { getByPlaceholderText } = renderFilterSheet({
+      boardConfig: null,
+      gradeBoardName: 'tension',
+      namePlaceholder: 'Climb name',
+    });
+    expect(countPreviewMock.gradeBoards.at(-1)).toBe('tension');
+    expect(getByPlaceholderText('Climb name')).toBeDefined();
   });
 });

@@ -281,3 +281,48 @@ describe('getActiveFilterTokens', () => {
     expect(keys(tokens)).toEqual(['grade', 'minAscents', 'status', 'climbType']);
   });
 });
+
+// A list with other defaults (a playlist: both climb types on, its own sort kept
+// apart) passes them, so its own starting state never reads as a filter.
+describe('getActiveFilterTokens with a list’s own defaults', () => {
+  const PLAYLIST_DEFAULTS: ClimbFilters = { ...DEFAULT_FILTERS, routes: true };
+
+  function buildWithDefaults(filters: ClimbFilters) {
+    const patchFilters = vi.fn();
+    const tokens = getActiveFilterTokens({
+      filters,
+      boardFilters: {},
+      grades: mockGrades,
+      t: mockT,
+      formatGradeByDifficultyId: mockFormatGradeById,
+      patchFilters,
+      patchBoardFilters: vi.fn(),
+      setGrade: vi.fn(),
+      defaults: PLAYLIST_DEFAULTS,
+    });
+    return { tokens, patchFilters };
+  }
+
+  it('shows no climb-type token for both types on, the playlist default', () => {
+    expect(buildWithDefaults(PLAYLIST_DEFAULTS).tokens).toEqual([]);
+  });
+
+  it('names boulders only, and clears back to both', () => {
+    const { tokens, patchFilters } = buildWithDefaults({ ...PLAYLIST_DEFAULTS, boulders: true, routes: false });
+    expect(keys(tokens)).toEqual(['climbType']);
+    expect(tokens[0]?.label).toBe('search.summary.bouldersOnly');
+    tokens[0]?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ boulders: true, routes: true });
+  });
+
+  it('measures the sort against the given defaults', () => {
+    expect(buildWithDefaults({ ...PLAYLIST_DEFAULTS, sortBy: 'quality' }).tokens.map((token) => token.key)).toEqual([
+      'sort',
+    ]);
+  });
+
+  it('still names a both-types pick on the Climbs list', () => {
+    const { tokens } = build({ ...DEFAULT_FILTERS, routes: true });
+    expect(tokens.find((token) => token.key === 'climbType')?.label).toBe('Boulders & routes');
+  });
+});

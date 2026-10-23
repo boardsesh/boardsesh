@@ -20,6 +20,35 @@ export type PlaylistClimbsView = NonNullable<GetPlaylistClimbsInput['view']>;
 /** Where the view sits in the query key: after the playlist, board and angle, before the refresh key. */
 const VIEW_KEY_INDEX = 4;
 
+/** What a playlist climbs query key is built from. */
+export type PlaylistClimbsQueryKeyParts = {
+  playlistUuid: string;
+  boardUuid?: string | null;
+  /** The angle the grades resolve at (`activeAngle` in all-boards mode, `angle` for one board). */
+  angle?: number | null;
+  view?: PlaylistClimbsView;
+  refreshKey?: number;
+};
+
+/**
+ * The React Query key `usePlaylistClimbs` caches one view under, so a screen can
+ * invalidate exactly one view (the playlist's own order, before the editor reads
+ * it) without rebuilding the key by hand. The view is the object itself, which
+ * React Query hashes with its keys sorted, so a re-built view with the same
+ * content keeps the same cache entry. It sits after the playlist uuid, so
+ * `invalidateQueries({ queryKey: ['playlistClimbs', uuid] })` still clears every
+ * view of the playlist.
+ */
+export function playlistClimbsQueryKey({
+  playlistUuid,
+  boardUuid,
+  angle,
+  view,
+  refreshKey = 0,
+}: PlaylistClimbsQueryKeyParts) {
+  return ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angle ?? null, view ?? 'default', refreshKey] as const;
+}
+
 /**
  * The `placeholderData` rule: while a new view's first page loads, keep showing
  * the rows of the same playlist, board, angle and refresh under the previous
@@ -101,14 +130,9 @@ export function usePlaylistClimbs({
   // React Query serves stale grades until staleTime lapses. Covers all-boards
   // mode (activeAngle) and specific-board mode (angle).
   const angleKey = boardInput?.activeAngle ?? boardInput?.angle ?? null;
-  // The view object itself, which React Query hashes with its keys sorted, so a
-  // re-built view with the same content keeps the same cache entry. After the
-  // playlist uuid, so `invalidateQueries({ queryKey: ['playlistClimbs', uuid] })`
-  // still clears every view of the playlist.
-  const viewKey = view ?? 'default';
   const queryKey = useMemo(
-    () => ['playlistClimbs', playlistUuid, boardUuid ?? 'all', angleKey, viewKey, refreshKey] as const,
-    [playlistUuid, boardUuid, angleKey, viewKey, refreshKey],
+    () => playlistClimbsQueryKey({ playlistUuid, boardUuid, angle: angleKey, view, refreshKey }),
+    [playlistUuid, boardUuid, angleKey, view, refreshKey],
   );
   // A new function whenever anything but the view changes: React Query keeps a
   // showing placeholder without asking again while this identity holds. The

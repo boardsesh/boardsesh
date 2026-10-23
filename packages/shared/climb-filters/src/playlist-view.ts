@@ -133,6 +133,78 @@ export function countActivePlaylistFilters(
   return filterCount + (state.onlyActiveBoard ? 1 : 0);
 }
 
+/** The filter-state fields a playlist applies only to climbs on the active board. */
+const ACTIVE_BOARD_ONLY_STATE_FIELDS = [
+  'hideAttempted',
+  'hideCompleted',
+  'showOnlyAttempted',
+  'showOnlyCompleted',
+  'minUserRating',
+  'onlyRatedByMe',
+  'onlyFavorited',
+  'onlyFollowedAuthors',
+  'onlyWithBetaVideos',
+  'onlyTallClimbs',
+  'onlyWideClimbs',
+] as const satisfies ReadonlyArray<keyof ClimbFilterState>;
+
+/** The board filters a playlist applies only to climbs on the active board. */
+const ACTIVE_BOARD_ONLY_BOARD_FIELDS = ['holdsFilter', 'zoneBox'] as const satisfies ReadonlyArray<
+  keyof ClimbBoardFilterState
+>;
+
+/**
+ * Every playlist filter that passes only climbs on the active board, by its
+ * search-param name: progress and your ratings read your ticks on one board,
+ * Liked and Following read one board's rows, Tall / Wide / holds / zone read
+ * one board's geometry, and "Fits my board" is the board itself. With no active
+ * board each matches nothing, so a screen hides their controls.
+ *
+ * Mirrors the `activeBoardOnly` class of `PLAYLIST_FILTER_SCOPE` in
+ * `@boardsesh/db` (create-climb-filters.ts); a test there keeps the two equal.
+ */
+export const PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS = [
+  ...ACTIVE_BOARD_ONLY_STATE_FIELDS,
+  ...ACTIVE_BOARD_ONLY_BOARD_FIELDS,
+  'onlyActiveBoard',
+] as const;
+export type PlaylistActiveBoardOnlyFilter = (typeof PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS)[number];
+
+/**
+ * The filters with every active-board-only field dropped, for a playlist with
+ * no active board: those filters would match nothing, so a selection kept from
+ * before the board went away must not go on filtering with no control showing.
+ * ("Fits my board" is the screen's own flag, off without a board.) Returns the
+ * same references when nothing is set.
+ */
+export function withoutPlaylistActiveBoardOnlyFilters(
+  filters: ClimbFilterState,
+  boardFilters: ClimbBoardFilterState,
+): { filters: ClimbFilterState; boardFilters: ClimbBoardFilterState } {
+  const filtersSet = ACTIVE_BOARD_ONLY_STATE_FIELDS.some((field) => filters[field] !== undefined);
+  const boardSet = ACTIVE_BOARD_ONLY_BOARD_FIELDS.some((field) => boardFilters[field] != null);
+  if (!filtersSet && !boardSet) return { filters, boardFilters };
+  const {
+    hideAttempted: _hideAttempted,
+    hideCompleted: _hideCompleted,
+    showOnlyAttempted: _showOnlyAttempted,
+    showOnlyCompleted: _showOnlyCompleted,
+    minUserRating: _minUserRating,
+    onlyRatedByMe: _onlyRatedByMe,
+    onlyFavorited: _onlyFavorited,
+    onlyFollowedAuthors: _onlyFollowedAuthors,
+    onlyWithBetaVideos: _onlyWithBetaVideos,
+    onlyTallClimbs: _onlyTallClimbs,
+    onlyWideClimbs: _onlyWideClimbs,
+    ...allRowsFilters
+  } = filters;
+  const { holdsFilter: _holdsFilter, zoneBox: _zoneBox, zoneMode: _zoneMode, ...allRowsBoardFilters } = boardFilters;
+  return {
+    filters: filtersSet ? allRowsFilters : filters,
+    boardFilters: boardSet ? allRowsBoardFilters : boardFilters,
+  };
+}
+
 export type PlaylistViewInputOptions = {
   /** The name search, which lives in the sheet as a token. */
   name?: string;

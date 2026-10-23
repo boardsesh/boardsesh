@@ -79,6 +79,7 @@
     },
     "summary": {
       "routesOnly": "Solo vías",
+      "bouldersOnly": "Solo bloques",
       "bouldersAndRoutes": "Bloques y vías"
     },
     "holds": {
@@ -505,6 +506,8 @@
       "matchingCount_one": "{{count, number}} bloque",
       "matchingCount_other": "{{count, number}} bloques",
       "sort": {
+        "position": "Orden de la playlist",
+        "added": "Añadidos recientemente",
         "ascents": "Ascensos",
         "quality": "Calidad",
         "difficulty": "Dificultad",
@@ -518,6 +521,28 @@
       "sortOrder": {
         "asc": "Ascendente",
         "desc": "Descendente"
+      },
+      "sortDirection": {
+        "difficulty": {
+          "asc": "Más fáciles primero",
+          "desc": "Más difíciles primero"
+        },
+        "added": {
+          "desc": "Más recientes primero",
+          "asc": "Más antiguos primero"
+        },
+        "quality": {
+          "desc": "Mejor valorados primero",
+          "asc": "Peor valorados primero"
+        },
+        "ascents": {
+          "desc": "Más encadenes primero",
+          "asc": "Menos encadenes primero"
+        },
+        "name": {
+          "asc": "De la A a la Z",
+          "desc": "De la Z a la A"
+        }
       },
       "status": {
         "drafts": "Borradores",
@@ -552,11 +577,17 @@
       "betaVideos": "Solo con vídeos de beta",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Solo vías con un vídeo de beta",
+      "boardFit": {
+        "label": "Encaja en mi plafón",
+        "switch": "Solo bloques que encajan en mi plafón",
+        "description": "Oculta los bloques de otro plafón o de otro tamaño."
+      },
       "otherAngles": "Otros ángulos",
       "otherAnglesDescription": "Muestra bloques montados en otro ángulo",
       "searchSetters": "Buscar equipadores",
       "noSetters": "Sin equipadores",
       "clearAll": "Borrar todo",
+      "nameToken": "«{{name}}»",
       "drafts": "Mis borradores",
       "popularityUnrepeated": "Sin repetir"
     },

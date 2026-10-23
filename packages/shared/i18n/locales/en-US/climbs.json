@@ -79,6 +79,7 @@
     },
     "summary": {
       "routesOnly": "Routes only",
+      "bouldersOnly": "Boulders only",
       "bouldersAndRoutes": "Boulders & routes"
     },
     "holds": {
@@ -505,6 +506,8 @@
       "matchingCount_one": "{{count, number}} climb",
       "matchingCount_other": "{{count, number}} climbs",
       "sort": {
+        "position": "Playlist order",
+        "added": "Recently added",
         "ascents": "Ascents",
         "quality": "Quality",
         "difficulty": "Difficulty",
@@ -518,6 +521,28 @@
       "sortOrder": {
         "asc": "Ascending",
         "desc": "Descending"
+      },
+      "sortDirection": {
+        "difficulty": {
+          "asc": "Easiest first",
+          "desc": "Hardest first"
+        },
+        "added": {
+          "desc": "Newest first",
+          "asc": "Oldest first"
+        },
+        "quality": {
+          "desc": "Best rated first",
+          "asc": "Lowest rated first"
+        },
+        "ascents": {
+          "desc": "Most sends first",
+          "asc": "Fewest sends first"
+        },
+        "name": {
+          "asc": "A to Z",
+          "desc": "Z to A"
+        }
       },
       "status": {
         "drafts": "Drafts",
@@ -552,11 +577,17 @@
       "betaVideos": "Beta videos only",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
+      "boardFit": {
+        "label": "Fits my board",
+        "switch": "Only climbs that fit my board",
+        "description": "Hides climbs set for another board or size."
+      },
       "otherAngles": "Other angles",
       "otherAnglesDescription": "Show climbs set at a different angle",
       "searchSetters": "Search setters",
       "noSetters": "No setters yet",
       "clearAll": "Clear all",
+      "nameToken": "“{{name}}”",
       "drafts": "My drafts",
       "popularityUnrepeated": "Unrepeated"
     },

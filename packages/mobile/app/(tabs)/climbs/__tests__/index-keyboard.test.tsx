@@ -348,26 +348,37 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 
-vi.mock('@boardsesh/climb-filters', async (importOriginal) => ({
-  hasActiveClimbFilters: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).hasActiveClimbFilters,
-  normalizeRetiredFilters: (await importOriginal<typeof import('@boardsesh/climb-filters')>()).normalizeRetiredFilters,
-  DEFAULT_CLIMB_FILTER_STATE: {},
-  DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
-  // Carries the filters through, so a changed filter is a changed search.
-  toClimbSearchInput: (filters: unknown, board: BoardSearchConfig, _page: unknown, options: { name: string }) => ({
-    filters,
-    ...(mocks.carrySearchGeometry ? board : {}),
-    name: options.name,
-  }),
-  mergeBoardFilters: (input: { filters: unknown; name: string }, boardFilters: unknown) => ({ ...input, boardFilters }),
-  countActiveFilters: () => 0,
-  hasActiveBoardFilters: () => false,
-  // Consumed by filter-chip-menus (imported via index.tsx for the chip row).
-  SORT_OPTIONS: ['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation'],
-  // "Your progress" selector wiring for the persistent chip row.
-  flagsToProgress: () => 'all',
-  progressToFlags: () => ({}),
-}));
+vi.mock('@boardsesh/climb-filters', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@boardsesh/climb-filters')>();
+  return {
+    hasActiveClimbFilters: original.hasActiveClimbFilters,
+    normalizeRetiredFilters: original.normalizeRetiredFilters,
+    DEFAULT_CLIMB_FILTER_STATE: {},
+    DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
+    // Carries the filters through, so a changed filter is a changed search.
+    toClimbSearchInput: (filters: unknown, board: BoardSearchConfig, _page: unknown, options: { name: string }) => ({
+      filters,
+      ...(mocks.carrySearchGeometry ? board : {}),
+      name: options.name,
+    }),
+    mergeBoardFilters: (input: { filters: unknown; name: string }, boardFilters: unknown) => ({
+      ...input,
+      boardFilters,
+    }),
+    countActiveFilters: () => 0,
+    hasActiveBoardFilters: () => false,
+    // Consumed by filter-chip-menus (imported via index.tsx for the chip row).
+    SORT_OPTIONS: ['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation'],
+    // "Your progress" selector wiring for the persistent chip row.
+    flagsToProgress: () => 'all',
+    progressToFlags: () => ({}),
+    // The shared climb-type and sort patches the chip row and sheet commit through.
+    getClimbTypeFilter: original.getClimbTypeFilter,
+    climbTypePatch: original.climbTypePatch,
+    sortKeyPatch: original.sortKeyPatch,
+    CLIMB_TYPE_VALUES: original.CLIMB_TYPE_VALUES,
+  };
+});
 
 vi.mock('@boardsesh/board-react', () => ({
   // The screen's screenshot-mode whole-list stats prefetch reads the adapter.
@@ -2264,7 +2275,7 @@ describe('ClimbList with the Recent chip unpinned', () => {
       expect(mocks.filterSheetProps?.recentFilters).toEqual([savedSearch]);
       expect(mocks.filterSheetProps?.onApplyRecent).toBe(chipRowProps().onApplyRecent);
       mocks.replaceSearch.mockClear();
-      act(() => mocks.filterSheetProps?.onApplyRecent(savedSearch.filters, savedSearch.searchText));
+      act(() => mocks.filterSheetProps?.onApplyRecent?.(savedSearch.filters, savedSearch.searchText));
       expect(mocks.replaceSearch).toHaveBeenCalledTimes(1);
       expect(mocks.replaceSearch.mock.calls[0]?.[1]).toBe('crimp');
     },

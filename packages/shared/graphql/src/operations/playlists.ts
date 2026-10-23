@@ -183,6 +183,7 @@ export const GET_PLAYLIST_CLIMBS = gql`
         is_no_match
       }
       totalCount
+      unfilteredCount
       hasMore
     }
   }
@@ -468,8 +469,8 @@ export type PlaylistClimbsResult = {
   }>;
   totalCount: number;
   // The playlist's count with no view filter applied (null unless the view
-  // filters). Not in GET_PLAYLIST_CLIMBS's selection yet: clients ship before the
-  // backend that answers it, so the field joins the query once that is live.
+  // filters): the "12 of 117 climbs" line. GET_PLAYLIST_CLIMBS selects it, so a
+  // client sending it needs a backend that has the field (#6651, PR 1).
   unfilteredCount?: number | null;
   hasMore: boolean;
 };

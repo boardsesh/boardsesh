@@ -68,17 +68,7 @@ export function collectionPatch(
   };
 }
 
-// "Climb type" is a single-select over the boulders/routes flags. Boulders-only
-// is the default; routes-only and both-on are the other two picks (both-off is
-// treated as "both" — no frames_count constraint). One derivation, shared by the
-// chip row and the sheet so they can't show a different selected value.
-export type ClimbTypeFilter = 'boulders' | 'routes' | 'both';
-
-/** Reads the current Climb type choice out of the boulders/routes flags. */
-export function getClimbTypeFilter(filters: Pick<ClimbFilterState, 'boulders' | 'routes'>): ClimbTypeFilter {
-  const bouldersOn = filters.boulders ?? true;
-  const routesOn = filters.routes ?? false;
-  if (bouldersOn && !routesOn) return 'boulders';
-  if (!bouldersOn && routesOn) return 'routes';
-  return 'both';
-}
+// "Climb type" is a single-select over the boulders/routes flags. The type, its
+// values, the reader and the patch live in @boardsesh/climb-filters so the chip
+// row, the filter sheet and every list read and write it the same way.
+export { CLIMB_TYPE_VALUES, climbTypePatch, getClimbTypeFilter, type ClimbTypeFilter } from '@boardsesh/climb-filters';

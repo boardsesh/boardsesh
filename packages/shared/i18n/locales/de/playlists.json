@@ -155,6 +155,8 @@
     "activateAll": "Playlist starten",
     "addToQueue": {
       "action": "Zur Warteschlange hinzufügen",
+      "actionCount_one": "{{count}} zur Warteschlange hinzufügen",
+      "actionCount_other": "{{count}} zur Warteschlange hinzufügen",
       "subtitle": "Deine Warteschlange bleibt",
       "queueFull": "Deine Warteschlange ist mit {{max}} Bouldern voll",
       "nothingToAdd": "Hier ist noch nichts für dein Board",
@@ -202,6 +204,19 @@
     },
     "discussion": "Diskussion",
     "empty": "Noch keine Boulder in dieser Playlist",
+    "view": {
+      "status_one": "{{shown}} von {{count}} Boulder",
+      "status_other": "{{shown}} von {{count}} Bouldern",
+      "clearFilters": "Filter zurücksetzen",
+      "editNote": "Beim Bearbeiten siehst du die Playlist-Reihenfolge",
+      "namePlaceholder": "Name des Boulders",
+      "empty": {
+        "noMatch": "Hier passt nichts zu diesen Filtern.",
+        "allSent": "Du hast alles auf dieser Liste getoppt. Stark.",
+        "noName": "Kein Boulder namens „{{name}}“ in dieser Playlist.",
+        "noBoardFit": "Keiner davon passt auf dein Board."
+      }
+    },
     "climbCount_one": "{{count}} Boulder",
     "climbCount_other": "{{count}} Boulder",
     "openInApp": "Kletter das in der App",

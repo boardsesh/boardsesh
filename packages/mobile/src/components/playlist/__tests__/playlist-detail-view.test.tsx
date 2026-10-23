@@ -27,6 +27,11 @@ const ctrl = vi.hoisted(() => ({
   addToQueue: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openClimbActions: vi.fn(),
+  // The scroll-stage reaction (0 hero in view, 1 hero gone, 2 filter bar gone),
+  // so a test can scroll the header away.
+  scrollStageReaction: null as null | ((stage: number, previousStage: number | null) => void),
+  // FlashList's maintainVisibleContentPosition, as the view last passed it.
+  maintainVisibleContentPosition: undefined as unknown,
 }));
 
 type CapturedClimbListRowProps = {
@@ -122,7 +127,9 @@ vi.mock('react-native-reanimated', () => ({
   // useAnimatedReaction runs on a worklet thread — no-op in jsdom; the
   // component initialises `collapsed` to false via useState, which is what the
   // tests assert against.
-  useAnimatedReaction: () => undefined,
+  useAnimatedReaction: (_prepare: () => number, react: (stage: number, previousStage: number | null) => void) => {
+    ctrl.scrollStageReaction = react;
+  },
   runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
   interpolate: (v: number) => v,
   Extrapolation: { CLAMP: 'CLAMP' },
@@ -143,7 +150,9 @@ vi.mock('@shopify/flash-list', () => ({
     ListFooterComponent,
     onEndReached,
     refreshControl,
+    maintainVisibleContentPosition,
   }: {
+    maintainVisibleContentPosition?: unknown;
     data?: unknown[];
     renderItem?: (info: { item: unknown; index: number }) => ReactNode;
     ListHeaderComponent?: ReactNode;
@@ -152,6 +161,7 @@ vi.mock('@shopify/flash-list', () => ({
     onEndReached?: () => void;
     refreshControl?: ReactNode;
   }) => {
+    ctrl.maintainVisibleContentPosition = maintainVisibleContentPosition;
     const rowNodes = data?.map((item, index) => {
       const key =
         typeof item === 'object' && item !== null && 'uuid' in item ? String((item as { uuid?: unknown }).uuid) : index;
@@ -328,10 +338,19 @@ vi.mock('../../GlassSurface', () => ({
 }));
 
 vi.mock('../PlaylistAddToQueueRow', () => ({
-  PlaylistAddToQueueRow: ({ onPress, isAppending }: { onPress: () => void; isAppending: boolean }) =>
+  PlaylistAddToQueueRow: ({
+    onPress,
+    isAppending,
+    count,
+  }: {
+    onPress: () => void;
+    isAppending: boolean;
+    count?: number;
+  }) =>
     createElement('button', {
       'data-add-to-queue-row': 'true',
       'data-appending': String(isAppending),
+      'data-count': count === undefined ? 'none' : String(count),
       onClick: onPress,
     }),
 }));
@@ -1098,6 +1117,124 @@ describe('PlaylistDetailView', () => {
     it('is absent in edit mode', () => {
       const { container } = renderRow({ editMode: true });
       expect(container.querySelector('[data-add-to-queue-row]')).toBeNull();
+    });
+  });
+
+  // ── Sort and filters (#6651) ─────────────────────────────────────────────────
+
+  describe('filter chrome', () => {
+    const FILTER_BAR = <div data-filter-bar="true" />;
+    const filterAction = { activeCount: 2, onPress: vi.fn() };
+
+    function headerRightNode(): HTMLElement {
+      const headerRight = lastHeaderOptions().headerRight as (() => ReactNode) | undefined;
+      if (!headerRight) throw new Error('no headerRight');
+      return render(createElement('div', null, headerRight())).container;
+    }
+
+    function scrollTo(stage: 0 | 1 | 2) {
+      act(() => ctrl.scrollStageReaction?.(stage, null));
+    }
+
+    it('puts the filter bar under the hero, above the banner, Add to queue and discussion', () => {
+      const { container } = render(
+        <PlaylistDetailView
+          {...makeProps({
+            climbs: [CLIMB],
+            onAddAllToQueue: vi.fn(),
+            filterBar: FILTER_BAR,
+            headerSlot: <div data-discussion-slot="true" />,
+          })}
+        />,
+      );
+      const nodes = Array.from(
+        container.querySelectorAll('[data-filter-bar], [data-add-to-queue-row], [data-discussion-slot]'),
+      );
+      expect(
+        nodes.map((node) =>
+          node.hasAttribute('data-filter-bar')
+            ? 'filters'
+            : node.hasAttribute('data-add-to-queue-row')
+              ? 'queue'
+              : 'discussion',
+        ),
+      ).toEqual(['filters', 'queue', 'discussion']);
+    });
+
+    it('keeps the filter bar outside the hero banner it measures, in its own measured view', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ filterBar: FILTER_BAR })} />);
+      const measured = Array.from(container.querySelectorAll('[data-has-layout="true"]'));
+      const heroBanner = measured.find((node) => node.textContent?.includes('My Playlist'));
+      expect(heroBanner?.querySelector('[data-filter-bar]')).toBeNull();
+      expect(container.querySelector('[data-filter-bar]')?.parentElement?.getAttribute('data-has-layout')).toBe('true');
+    });
+
+    it('shows ≡ in the glass header only once the filter bar has scrolled away, not the hero alone', () => {
+      render(<PlaylistDetailView {...makeProps({ filterAction })} />);
+      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+
+      scrollTo(1);
+      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+
+      scrollTo(2);
+      const button = headerRightNode().querySelector('[data-icon="filter"]') as HTMLElement;
+      expect(button).not.toBeNull();
+      expect(button.getAttribute('aria-label')).toBe('mobile.search.filterCountAria');
+      fireEvent.click(button);
+      expect(filterAction.onPress).toHaveBeenCalled();
+    });
+
+    it('puts ≡ before the other header actions and clears any native bar item', () => {
+      const actions = vi.fn(() => createElement('span', { 'data-owner-action': 'true' }));
+      render(<PlaylistDetailView {...makeProps({ filterAction, actions })} />);
+      scrollTo(2);
+      const header = headerRightNode();
+      const order = Array.from(header.querySelectorAll('[data-icon="filter"], [data-owner-action]')).map((node) =>
+        node.hasAttribute('data-owner-action') ? 'actions' : 'filter',
+      );
+      expect(order).toEqual(['filter', 'actions']);
+      expect(lastHeaderOptions()).toHaveProperty('unstable_headerRightItems', undefined);
+    });
+
+    it('never shows ≡ in edit mode', () => {
+      render(<PlaylistDetailView {...makeProps({ filterAction, editMode: true })} />);
+      scrollTo(2);
+      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+    });
+
+    it('keeps ≡ in the Material app bar outside edit mode', () => {
+      ctrl.variant = 'material';
+      const { container, rerender } = render(<PlaylistDetailView {...makeProps({ filterAction })} />);
+      expect(container.querySelector('[data-appbar="true"] [data-icon="filter"]')).not.toBeNull();
+
+      rerender(<PlaylistDetailView {...makeProps({ filterAction, editMode: true })} />);
+      expect(container.querySelector('[data-appbar="true"] [data-icon="filter"]')).toBeNull();
+    });
+
+    it('does not re-set the header on a re-render with the same filter action', () => {
+      const props = makeProps({ filterAction, filterBar: FILTER_BAR });
+      const { rerender } = render(<PlaylistDetailView {...props} />);
+      const callsAfterMount = ctrl.setOptions.mock.calls.length;
+      rerender(<PlaylistDetailView {...props} />);
+      expect(ctrl.setOptions.mock.calls.length).toBe(callsAfterMount);
+    });
+
+    it('keeps the scroll offset when new rows replace the list, rather than chasing a moved row', () => {
+      render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      expect(ctrl.maintainVisibleContentPosition).toEqual({ disabled: true });
+    });
+
+    it('uses the given empty-state icon in the glass look', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ emptyIcon: 'filter' })} />);
+      expect(container.querySelector('[data-icon="filter"]')).not.toBeNull();
+      expect(container.querySelector('[data-icon="playlist"]')).toBeNull();
+    });
+
+    it('labels Add to queue with the filtered count', () => {
+      const { container } = render(
+        <PlaylistDetailView {...makeProps({ climbs: [CLIMB], onAddAllToQueue: vi.fn(), addToQueueCount: 12 })} />,
+      );
+      expect(container.querySelector('[data-add-to-queue-row]')?.getAttribute('data-count')).toBe('12');
     });
   });
 });

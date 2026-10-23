@@ -8,6 +8,7 @@ export {
   type PlaylistDetailHero,
   type PlaylistDetailEmptyState,
   type PlaylistDetailEmptyAction,
+  type PlaylistDetailFilterAction,
 } from './PlaylistDetailView';
 export { PlaylistStateHeader } from './PlaylistStateHeader';
 export { PlaylistFormSheet, type PlaylistFormValues } from './PlaylistFormSheet';
@@ -19,3 +20,5 @@ export { PlaylistActionsMenu } from './PlaylistActionsMenu';
 export { PlaylistDiscussionRow } from './PlaylistDiscussionRow';
 export { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
 export { PLAYLIST_COLORS, isValidPlaylistColor, normalizePlaylistColor } from './playlist-colors';
+export { PlaylistFilterBar, type PlaylistFilterStatus } from './PlaylistFilterBar';
+export { PlaylistFilterHeaderButton } from './PlaylistFilterHeaderButton';

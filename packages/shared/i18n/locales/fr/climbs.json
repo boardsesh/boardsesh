@@ -79,6 +79,7 @@
     },
     "summary": {
       "routesOnly": "Voies uniquement",
+      "bouldersOnly": "Blocs uniquement",
       "bouldersAndRoutes": "Blocs et voies"
     },
     "holds": {
@@ -505,6 +506,8 @@
       "matchingCount_one": "{{count, number}} bloc",
       "matchingCount_other": "{{count, number}} blocs",
       "sort": {
+        "position": "Ordre de la playlist",
+        "added": "Ajoutés récemment",
         "ascents": "Ascensions",
         "quality": "Qualité",
         "difficulty": "Difficulté",
@@ -518,6 +521,28 @@
       "sortOrder": {
         "asc": "Croissant",
         "desc": "Décroissant"
+      },
+      "sortDirection": {
+        "difficulty": {
+          "asc": "Plus faciles d'abord",
+          "desc": "Plus durs d'abord"
+        },
+        "added": {
+          "desc": "Plus récents d'abord",
+          "asc": "Plus anciens d'abord"
+        },
+        "quality": {
+          "desc": "Mieux notés d'abord",
+          "asc": "Moins bien notés d'abord"
+        },
+        "ascents": {
+          "desc": "Plus de croix d'abord",
+          "asc": "Moins de croix d'abord"
+        },
+        "name": {
+          "asc": "De A à Z",
+          "desc": "De Z à A"
+        }
       },
       "status": {
         "drafts": "Brouillons",
@@ -552,11 +577,17 @@
       "betaVideos": "Avec vidéo de beta uniquement",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
+      "boardFit": {
+        "label": "Adaptés à ma board",
+        "switch": "Seulement les blocs adaptés à ma board",
+        "description": "Masque les blocs ouverts pour une autre board ou une autre taille."
+      },
       "otherAngles": "Autres angles",
       "otherAnglesDescription": "Affiche les blocs ouverts à un autre angle",
       "searchSetters": "Rechercher des ouvreurs",
       "noSetters": "Aucun ouvreur",
       "clearAll": "Tout effacer",
+      "nameToken": "« {{name}} »",
       "drafts": "Mes brouillons",
       "popularityUnrepeated": "Non répétés"
     },

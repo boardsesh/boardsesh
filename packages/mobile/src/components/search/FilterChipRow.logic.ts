@@ -9,6 +9,7 @@
 
 import type { TFunction } from 'i18next';
 import {
+  CLIMB_TYPE_VALUES,
   formatMinAscentsFilterCount,
   gradeAccuracyBucket,
   GRADE_ACCURACY_VALUES,
@@ -76,7 +77,7 @@ export function climbTypeChipLabel(value: ClimbTypeFilter, t: TFunction<'climbs'
 
 /** Narrows a raw native-picker tag to a {@link ClimbTypeFilter}. */
 export function isClimbType(value: string): value is ClimbTypeFilter {
-  return value === 'boulders' || value === 'routes' || value === 'both';
+  return (CLIMB_TYPE_VALUES as readonly string[]).includes(value);
 }
 
 /**

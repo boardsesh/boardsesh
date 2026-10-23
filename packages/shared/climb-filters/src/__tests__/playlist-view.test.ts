@@ -8,7 +8,9 @@ import {
   countActivePlaylistFilters,
   hasActivePlaylistFilters,
   hasActivePlaylistView,
+  PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS,
   toPlaylistClimbViewInput,
+  withoutPlaylistActiveBoardOnlyFilters,
   type PlaylistClimbViewState,
 } from '../playlist-view';
 
@@ -252,5 +254,53 @@ describe('Climbs-only levers a playlist view never sends', () => {
     expect(
       countActivePlaylistFilters({ ...carriedOver, status: 'projects' }, { setterId: 7, onlyBenchmarks: true }),
     ).toBe(2);
+  });
+});
+
+describe('active-board-only filters', () => {
+  it('names progress, your ratings, Liked, Following, beta, Tall / Wide, holds, zone and "Fits my board"', () => {
+    expect([...PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS].sort()).toEqual(
+      [
+        'hideAttempted',
+        'hideCompleted',
+        'showOnlyAttempted',
+        'showOnlyCompleted',
+        'minUserRating',
+        'onlyRatedByMe',
+        'onlyFavorited',
+        'onlyFollowedAuthors',
+        'onlyWithBetaVideos',
+        'onlyTallClimbs',
+        'onlyWideClimbs',
+        'holdsFilter',
+        'zoneBox',
+        'onlyActiveBoard',
+      ].sort(),
+    );
+  });
+
+  it('drops them and keeps every filter that applies to all rows', () => {
+    const filters: PlaylistClimbViewState = {
+      ...DEFAULT_PLAYLIST_VIEW_STATE,
+      hideCompleted: true,
+      onlyFavorited: true,
+      onlyWithBetaVideos: true,
+      minRating: 3,
+      minGrade: 12,
+    };
+    const { filters: kept, boardFilters } = withoutPlaylistActiveBoardOnlyFilters(
+      { ...filters, sortBy: 'ascents' },
+      { onlyBenchmarks: true, holdsFilter: { '1': { HAND: 'include' } }, zoneBox: null, zoneMode: 'allHolds' },
+    );
+    expect(kept).toEqual({ ...DEFAULT_PLAYLIST_VIEW_STATE, sortBy: 'ascents', minRating: 3, minGrade: 12 });
+    expect(boardFilters).toEqual({ onlyBenchmarks: true });
+  });
+
+  it('hands back the same objects when none is set', () => {
+    const filters = { ...DEFAULT_PLAYLIST_VIEW_STATE, sortBy: 'ascents' as const, minRating: 3 };
+    const boardFilters = { onlyBenchmarks: true };
+    const result = withoutPlaylistActiveBoardOnlyFilters(filters, boardFilters);
+    expect(result.filters).toBe(filters);
+    expect(result.boardFilters).toBe(boardFilters);
   });
 });

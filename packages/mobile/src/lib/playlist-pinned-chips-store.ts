@@ -1,0 +1,21 @@
+import { createPinnedChipsStore } from './pinned-chips-store';
+import {
+  PLAYLIST_DEFAULT_PINNED_CHIPS,
+  PLAYLIST_PINNABLE_CHIP_CATALOG,
+  type PlaylistPinnableChipKind,
+} from './playlist-pinnable-chips';
+
+/** The preference-store key for the playlist screen's pins. Never shared with another surface. */
+export const PLAYLIST_PINNED_CHIPS_STORAGE_KEY = 'pinnedPlaylistChips';
+
+/**
+ * Which playlist capsules the climber has pinned. Device-global like the climbs
+ * and Logbook pins: one layout for every playlist. Unknown kinds in a stored
+ * payload drop out (the factory's default normalize), so the catalog can grow
+ * without a migration.
+ */
+export const playlistPinnedChipsStore = createPinnedChipsStore<PlaylistPinnableChipKind>({
+  storageKey: PLAYLIST_PINNED_CHIPS_STORAGE_KEY,
+  catalog: PLAYLIST_PINNABLE_CHIP_CATALOG,
+  defaults: PLAYLIST_DEFAULT_PINNED_CHIPS,
+});

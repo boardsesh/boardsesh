@@ -82,7 +82,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | --- | --- | --- | --- | --- |
 | Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1326`). With Light on tap off: a trackless preview (`:1313-1318`). | Walks the results | Track end. The track holds about 250 climbs after the tapped one (rounded up to a page of 100; never past the first 1,000 results). |
 | Setter page | For You setter card, the setter's name in the player, Home's "See all" | Replaces the queue with the setter's climbs; "Start playlist?" first if anything is queued after the current climb (`app/(tabs)/climbs/setter/[username].tsx:61-69`). | Walks the queue, which is now the list | Stops at the end of the queue |
-| Playlist | Discover › a playlist | As the setter page (`app/(tabs)/discover/[playlist_uuid].tsx:182-195`). The Material app bar's play button does the same with the first climb. The **Add to queue** row appends instead. | As the setter page | As the setter page |
+| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The Material app bar's play button does the same with the first climb. The **Add to queue** row appends instead. With a sort or filter on, all three use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
 | For You and smart lists (Projects, Liked Climbs and the rest) | Discover › For You | As the setter page (`app/(tabs)/discover/smart/[type].tsx:119-128`) | As the setter page | As the setter page |
 | Logbook | You › Logbook | Commits, no track, not flagged `suggested` (`src/components/you/LogbookTab.tsx:504-510`, then `use-play-selection-controller.ts:184-186`) | Walks the queue | Stops at the end of the queue |
 | Session detail | Home session card, You › Sessions | As the logbook (`src/components/session/SessionDetailScreen.tsx:91`) | Walks the queue | Stops at the end of the queue |
@@ -111,6 +111,45 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Workout preview | No session yet | No session yet | None | None |
 | Wall tab kiosk | Lights the board; the room's current climb doesn't move | Same | None | None |
 
+### Sorting and filtering a playlist
+
+A playlist (#6651) has the Climbs chip row under its hero: Filters, Grade, Your progress and
+Sort by default, each pinnable from the filter sheet. Once the hero scrolls away, a ≡ button in
+the header opens the same sheet. With a filter on, a line under the chips reads "12 of 117
+climbs · Clear filters". Clear filters keeps the sort; the sheet's Reset clears the sort too.
+Smart lists and setter pages do not have this yet.
+
+- **The request.** `usePlaylistClimbs` gets a `view` only when the sort is not the playlist's
+  own order or a filter is on. With neither, the request is the one sent before views existed.
+- **The rows on screen decide.** While a new sort or filter loads, the previous rows stay up.
+  The screen tracks the view those rows belong to (the settled view), and the play drawer's
+  track, the queue replace and Add to queue all use that view, so a swipe walks the order on
+  screen and skips filtered-out climbs.
+- **The source id carries the view.** It is `playlist:<uuid>` with no view and
+  `playlist:<uuid>|<view as JSON>` with one, so a sorted track is a different source from the
+  plain one and re-tapping after a change builds a fresh track.
+- **Add N to queue.** With a filter on, the row reads "Add 12 to queue" and appends those climbs
+  in the order shown, but only when the number is exact: with "Fits my board" on (the server's
+  count is then all on this board), or once every row is loaded (the climbs this board can show,
+  leaving out the dimmed ones the board-scoped add skips). Otherwise it stays "Add to queue".
+- **Edit mode always shows the playlist's own order.** A reorder index is a place in that order
+  (#4012). Tapping Edit sets the sort aside and clears the filters. The plain order's cached
+  pages can be stale (an add or remove refetches only the view on screen), so they are marked
+  stale and refetched, and the editor opens only once those rows have landed, after loading as
+  many as the sorted list showed (200 at most). The chips grey out and the ≡ button goes away;
+  Done backs out while it waits. If the plain order fails to load or is waiting for a
+  connection, the view comes back with a message. Done brings the sort back; filters stay
+  cleared. Drag-to-reorder is off whenever a sort or filter is on.
+- **No active board.** Progress, your ratings, Liked, Following, beta videos, Tall / Wide and
+  "Fits my board" pass only climbs on the active board (`PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS` in
+  `@boardsesh/climb-filters`, kept equal to the query's `PLAYLIST_FILTER_SCOPE` by a test). With
+  no board picked they would match nothing, so their rows and chips are hidden and a choice
+  kept from before stops filtering until a board is back.
+- **The list keeps its scroll offset on new rows.** FlashList's default keeps the first visible
+  row in place across data changes, which after a re-sort scrolled to wherever that row moved.
+  It is off here; instead, a new sort or filter scrolls back up to the filter bar only when the
+  climber was below it.
+
 The climb menu is the same everywhere (`src/components/climb-actions/use-climb-actions.ts:299-372`):
 Preview, Add to queue, Open queue, Play next, Add to playlist, Favorite and the rest. In a
 crew, swiping right, Add to queue and Play next all write to the room's queue, with or without
@@ -124,6 +163,8 @@ the flag.
 | The queue in a session | The server. The track is never sent, so it lives on one phone only. | `queue-provider.tsx:1930-1932` |
 | Previews | Nowhere. | — |
 | Recently opened playlists | AsyncStorage key `boardsesh:recent-playlists`. | `src/lib/playlists/recents-store.ts:13` |
+| The sort picked inside each playlist | MMKV settings key `playlistSortsV1`, newest first, 100 playlists at most. A playlist on its own order has no entry, and Random is kept without its seed. Filters are never kept. | `src/lib/playlists/playlist-sort-memory.ts` |
+| Which chips a playlist shows | AsyncStorage key `pinnedPlaylistChips`, one set for every playlist on the phone. | `src/lib/playlist-pinned-chips-store.ts` |
 | Ticks, wall history, playlists | The server. The lists above only read them. | — |
 
 <img src="images/list-model/board-history-sheet-dark.png" alt="The board history sheet in dark mode" width="300">

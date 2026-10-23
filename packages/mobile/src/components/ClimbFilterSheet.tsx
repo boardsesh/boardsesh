@@ -25,8 +25,12 @@ import {
   flagsToProgress,
   progressToFlags,
   newSortSeed,
+  sortKeyPatch,
+  climbTypePatch,
+  getClimbTypeFilter,
   type BoardSearchConfig,
   type ProgressFilter,
+  type ClimbTypeFilter,
 } from '@boardsesh/climb-filters';
 import { Button } from './Button';
 import { SheetTopBar } from './SheetTopBar';
@@ -43,14 +47,10 @@ import { filterSheetStyles } from './filter-sheet/filter-sheet-styles';
 import { usePinnedChips } from '../lib/pinned-chips-store';
 import type { RecentFilter } from '../lib/recent-filter-store';
 import { applyRecentFilterById, findCurrentRecentFilter, type ApplyRecentFilter } from '../lib/recent-filter-selection';
-import { PINNABLE_CHIP_KINDS, type PinnableChipKind } from '../lib/pinnable-chips';
+import { PINNABLE_CHIP_KINDS, isValidChipKind, type FilterChipKind } from '../lib/pinnable-chips';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
-import {
-  collectionPatch,
-  getCollectionFilter,
-  getClimbTypeFilter,
-  type CollectionFilter,
-} from '../lib/collection-filter';
+import { collectionPatch, getCollectionFilter, type CollectionFilter } from '../lib/collection-filter';
+import type { SegmentOption } from './SegmentedControl.types';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -79,7 +79,78 @@ import { NO_LOCKED_DIMENSIONS, withLockedDimensions, type LockedDimensions } fro
 export type { ClimbFilters };
 export { DEFAULT_FILTERS };
 
-type ClimbFilterSheetProps = {
+/**
+ * Which optional rows the sheet shows. Each defaults to on; the Climbs list uses
+ * them all. A playlist hides Recent, the Collection's My drafts option, Other
+ * angles and the three picker rows (Setters, Hold types, Board region). With no
+ * active board it also hides the rows whose filters need one: Your progress
+ * (with My rating), the Collection's Liked option, Following and Beta videos.
+ * A hidden option still shows while it is the active value, so it can be undone.
+ */
+export type ClimbFilterSheetSections = {
+  recent?: boolean;
+  drafts?: boolean;
+  setters?: boolean;
+  holds?: boolean;
+  zone?: boolean;
+  otherAngles?: boolean;
+  progress?: boolean;
+  liked?: boolean;
+  following?: boolean;
+  beta?: boolean;
+};
+
+/**
+ * The pins of a list other than Climbs, which keeps its own pin store. Pass the
+ * store's functions, not the store. A kind outside `pinnable` shows no pin.
+ */
+export type ClimbFilterSheetPins = {
+  isPinned: (kind: FilterChipKind) => boolean;
+  togglePin: (kind: FilterChipKind) => void;
+  pinnable: readonly FilterChipKind[];
+};
+
+/**
+ * A Sort section with the list's own keys and directions (a playlist's
+ * "Playlist order", "Easiest first"), in place of the Climbs `SORT_OPTIONS` with
+ * Descending / Ascending. The caller owns the sort; the sheet only shows it.
+ */
+export type FilterSortControl = {
+  options: readonly { key: string; label: string }[];
+  selected: string;
+  /** The sort differs from the list's default: Reset has something to reset. */
+  active: boolean;
+  /** The two directions, the key's opening one first. Null hides the control (one-direction keys). */
+  orderOptions: SegmentOption<SortOrder>[] | null;
+  order: SortOrder;
+  /** Shows "Shuffle again" (Random). */
+  showReshuffle: boolean;
+  onSelect: (key: string) => void;
+  onOrderChange: (order: SortOrder) => void;
+  onReshuffle: () => void;
+};
+
+/** "Fits my board": a playlist-only switch. Leave it out without an active board. */
+export type ClimbFilterSheetBoardFit = {
+  value: boolean;
+  onChange: (value: boolean) => void;
+};
+
+const ALL_SECTIONS: Required<ClimbFilterSheetSections> = {
+  recent: true,
+  drafts: true,
+  setters: true,
+  holds: true,
+  zone: true,
+  otherAngles: true,
+  progress: true,
+  liked: true,
+  following: true,
+  beta: true,
+};
+const NO_RECENT_FILTERS: readonly RecentFilter[] = [];
+
+export type ClimbFilterSheetProps = {
   onDismiss: () => void;
   boardConfig: BoardSearchConfig | null;
   currentFilters: ClimbFilters;
@@ -101,12 +172,12 @@ type ClimbFilterSheetProps = {
    *  field while the committed search term quietly survived. */
   onClearName: () => void;
   /** The saved searches, newest first, shown as chips under Recent. */
-  recentFilters: readonly RecentFilter[];
+  recentFilters?: readonly RecentFilter[];
   /**
    * Puts a saved search in force: the same handler the toolbar's Recent menu
    * calls. The sheet stays open and follows the new search through its props.
    */
-  onApplyRecent: ApplyRecentFilter;
+  onApplyRecent?: ApplyRecentFilter;
   /**
    * Tall/Wide dimensions whose chip-row lock is in force (iOS only; see
    * lib/dimension-chips.ts). Their switch shows on and is disabled, and the
@@ -114,6 +185,28 @@ type ClimbFilterSheetProps = {
    * agrees with the list.
    */
   lockedDimensions?: LockedDimensions;
+  /** A list's own pins (see ClimbFilterSheetPins). Without it the Climbs pins apply. */
+  pins?: ClimbFilterSheetPins;
+  /** Optional rows to hide. Every row shows by default. */
+  sections?: ClimbFilterSheetSections;
+  /**
+   * The list's own live match count, for a list the Climbs catalogue count
+   * cannot answer (a playlist). When present the catalogue count query is off
+   * and the subtitle reads this; a null count shows no subtitle.
+   */
+  liveCount?: { count: number | null };
+  /** The list's starting filters: Reset's target and the baseline for "anything to reset". */
+  defaultFilters?: ClimbFilters;
+  /** Reset for a list that owns more than the filters (its sort, "Fits my board", the name). Replaces publishing the defaults. */
+  onReset?: () => void;
+  /** The list's own Sort section (see FilterSortControl). Without it the Climbs sorts show. */
+  sortControl?: FilterSortControl;
+  /** "Fits my board" (see ClimbFilterSheetBoardFit). */
+  boardFit?: ClimbFilterSheetBoardFit;
+  /** The board whose grades the rail lists, when it differs from `boardConfig` (none, on a playlist with no active board). */
+  gradeBoardName?: string;
+  /** The name field's placeholder. Defaults to the Climbs search placeholder. */
+  namePlaceholder?: string;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -155,9 +248,18 @@ export function ClimbFilterSheet({
   onSelectionChange,
   onNameChange,
   onClearName,
-  recentFilters,
+  recentFilters = NO_RECENT_FILTERS,
   onApplyRecent,
   lockedDimensions = NO_LOCKED_DIMENSIONS,
+  pins,
+  sections,
+  liveCount,
+  defaultFilters = DEFAULT_FILTERS,
+  onReset,
+  sortControl,
+  boardFit,
+  gradeBoardName,
+  namePlaceholder,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
   const theme = useTheme();
@@ -183,7 +285,14 @@ export function ClimbFilterSheet({
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
   const boardName = boardConfig?.boardName ?? '';
-  const { data: grades } = useGrades(boardName);
+  const gradesBoardName = gradeBoardName ?? boardName;
+  const { data: grades } = useGrades(gradesBoardName);
+  const shownSections = useMemo(() => ({ ...ALL_SECTIONS, ...sections }), [sections]);
+  // The three picker rows open Climbs-tab routes and hand their picks back
+  // through the handoff stores; a list that hides all three skips that wiring.
+  const showsPickerRows = shownSections.setters || shownSections.holds || shownSections.zone;
+  const onResetRef = useRef(onReset);
+  onResetRef.current = onReset;
   // A spray wall has no benchmarks and no routes: every climb on it is a
   // one-frame problem set by a climber (#5960). The two controls stay only while
   // they carry a non-default answer, so a filter picked on another board can
@@ -281,7 +390,7 @@ export function ClimbFilterSheet({
   // Other angles — only where a climb belongs to the angle it was set at (Woods).
   // There the list keeps to the browsed angle unless the climber asks for the
   // rest; elsewhere a climb is not tied to one angle, so there is nothing to widen.
-  const showOtherAnglesControl = getBoardCapabilities(boardName).angleBoundClimbs;
+  const showOtherAnglesControl = shownSections.otherAngles && getBoardCapabilities(boardName).angleBoundClimbs;
 
   // Matching count for the committed selections.
   // Debounced so rapid chip/toggle taps — and now keystrokes in the name field —
@@ -317,10 +426,13 @@ export function ClimbFilterSheet({
       debouncedEdits.name,
     );
   }, [boardConfig, debouncedEdits]);
-  const { data: previewCount } = useSearchClimbsCount(
+  // A list with its own live count turns the catalogue count off: it would
+  // count the Climbs catalogue, not the list.
+  const { data: catalogueCount } = useSearchClimbsCount(
     previewInput ?? { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
-    !!previewInput,
+    liveCount === undefined && !!previewInput,
   );
+  const previewCount = liveCount === undefined ? catalogueCount : liveCount.count;
 
   const sortLabels = useMemo<Record<SortOption, string>>(
     () => ({
@@ -451,7 +563,7 @@ export function ClimbFilterSheet({
     (sortBy: SortOption) =>
       // Tapping (or re-tapping) Random mints a fresh seed for a new shuffle;
       // any other sort clears the seed so it never lingers in the search input.
-      setFiltersPatch(sortBy === 'random' ? { sortBy, sortSeed: newSortSeed() } : { sortBy, sortSeed: undefined }),
+      setFiltersPatch(sortKeyPatch(sortBy)),
     [setFiltersPatch],
   );
   // Explicit reshuffle affordance (mirrors web's "Shuffle again" button) so a new
@@ -480,19 +592,19 @@ export function ClimbFilterSheet({
   );
   const collectionFilter = getCollectionFilter(selectedFilters, selectedBoardFilters);
   const offerBenchmarks = !isSprayWall || collectionFilter === 'benchmarks';
+  // A list that hides My drafts (a playlist) still offers it while it is the
+  // active value, so a status carried in can be undone.
+  const offerDrafts = shownSections.drafts || collectionFilter === 'drafts';
+  const offerLiked = shownSections.liked || collectionFilter === 'liked';
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
       ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
       // My drafts and Liked are auth-only: both are the climber's own climbs.
-      ...(isAuthenticated
-        ? [
-            { key: 'drafts' as const, label: t('mobile.filter.drafts') },
-            { key: 'liked' as const, label: t('mobile.filter.collection.liked') },
-          ]
-        : []),
+      ...(isAuthenticated && offerDrafts ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+      ...(isAuthenticated && offerLiked ? [{ key: 'liked' as const, label: t('mobile.filter.collection.liked') }] : []),
     ],
-    [t, isAuthenticated, offerBenchmarks],
+    [t, isAuthenticated, offerBenchmarks, offerDrafts, offerLiked],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -527,17 +639,13 @@ export function ClimbFilterSheet({
   // UI path to "neither", so the never-both-off invariant is structural (see
   // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
   // Same derivation as the chip row (getClimbTypeFilter) so they never disagree.
-  const climbTypeKey = getClimbTypeFilter(selectedFilters);
+  const climbTypeKey = getClimbTypeFilter(selectedFilters, defaultFilters);
   const showClimbTypeControl = !isSprayWall || climbTypeKey !== 'boulders';
   const handleClimbTypeChange = useCallback(
-    (key: string) => {
-      if (key === 'routes') setFiltersPatch({ boulders: false, routes: true });
-      else if (key === 'both') setFiltersPatch({ boulders: true, routes: true });
-      else setFiltersPatch({ boulders: true, routes: false });
-    },
+    (key: ClimbTypeFilter) => setFiltersPatch(climbTypePatch(key)),
     [setFiltersPatch],
   );
-  const climbTypeOptions = useMemo(
+  const climbTypeOptions = useMemo<SegmentOption<ClimbTypeFilter>[]>(
     () => [
       { key: 'boulders', label: t('mobile.filter.climbType.boulders') },
       { key: 'routes', label: t('mobile.filter.climbType.routes') },
@@ -576,10 +684,19 @@ export function ClimbFilterSheet({
   const handleReset = useCallback(() => {
     if (!isCurrentPresentation() || closingRef.current) return;
     hapticSelection();
+    const resetList = onResetRef.current;
+    if (resetList) {
+      // The list resets everything it owns (filters, sort, name) in one go; the
+      // field only drops its own draft.
+      nameDraftRef.current = '';
+      setNameDraft('');
+      resetList();
+      return;
+    }
     // Publish both groups together so no query observes a half-reset selection.
-    publishSelection(DEFAULT_FILTERS, DEFAULT_CLIMB_BOARD_FILTER_STATE);
+    publishSelection(defaultFilters, DEFAULT_CLIMB_BOARD_FILTER_STATE);
     handleClearNameField();
-  }, [isCurrentPresentation, publishSelection, handleClearNameField]);
+  }, [isCurrentPresentation, publishSelection, handleClearNameField, defaultFilters]);
 
   // The Holds row is always visible now (no Refine accordion to expand), so
   // prewarm the create-board hold geometry as soon as the sheet is visible with
@@ -587,14 +704,14 @@ export function ClimbFilterSheet({
   // Prewarming is an idempotent cache warm, so a re-run on boardConfig churn is
   // harmless. (Replaces the old expand-triggered PREWARM_..._AFTER_REFINE path.)
   useEffect(() => {
-    if (!boardConfig) return;
+    if (!boardConfig || !showsPickerRows) return;
     prewarmCreateBoardHolds({
       boardName: boardConfig.boardName as BoardName,
       layoutId: boardConfig.layoutId,
       sizeId: boardConfig.sizeId,
       setIds: parseSetIdsParam(boardConfig.setIds),
     });
-  }, [boardConfig]);
+  }, [boardConfig, showsPickerRows]);
 
   // Each sub-picker opener starts with beginSubPickerSuspend: it snapshots the
   // scroll offset for the post-remount restore, then dismisses the native sheet
@@ -730,6 +847,7 @@ export function ClimbFilterSheet({
   // Kept subscribed while the sheet is suspended so results still arrive with
   // the route on top.
   useEffect(() => {
+    if (!showsPickerRows) return;
     const unsubscribeSetters = subscribeToSetterFilterSelection(handleSelectedSettersChange);
     const unsubscribeHolds = subscribeToHoldsFilterSelection(handleHoldsFilterChange);
     const unsubscribeZone = subscribeToZoneFilterSelection(handleZoneFilterChange);
@@ -738,7 +856,7 @@ export function ClimbFilterSheet({
       unsubscribeHolds();
       unsubscribeZone();
     };
-  }, [handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
+  }, [showsPickerRows, handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
 
   const holdFilterCount = countFilteredHolds(selectedBoardFilters.holdsFilter);
   const zoneActive = selectedBoardFilters.zoneBox != null;
@@ -752,35 +870,56 @@ export function ClimbFilterSheet({
   const handleClearMyRating = useCallback(() => setFiltersPatch({ minUserRating: undefined }), [setFiltersPatch]);
   const handleClearMinRating = useCallback(() => setFiltersPatch({ minRating: undefined }), [setFiltersPatch]);
 
-  // Each pin toggles its control's chip in the climbs chip row. One stable
-  // callback per kind, so a pin tap re-renders only the label rows.
-  const { isPinned, togglePin } = usePinnedChips();
+  // Each pin toggles its control's chip in the list's chip row: the climbs row
+  // unless the list passes its own pins. One stable callback per kind, so a pin
+  // tap re-renders only the label rows. A kind the list cannot pin gets none.
+  const { isPinned: isClimbPinned, togglePin: toggleClimbPin } = usePinnedChips();
   const pinToggles = useMemo(() => {
-    const toggles = {} as Record<PinnableChipKind, () => void>;
-    for (const kind of PINNABLE_CHIP_KINDS) toggles[kind] = () => togglePin(kind);
+    const toggles = new Map<FilterChipKind, () => void>();
+    if (pins) for (const kind of pins.pinnable) toggles.set(kind, () => pins.togglePin(kind));
+    else for (const kind of PINNABLE_CHIP_KINDS) toggles.set(kind, () => toggleClimbPin(kind));
     return toggles;
-  }, [togglePin]);
-  const pinProps = (kind: PinnableChipKind) => ({ pinned: isPinned(kind), onTogglePin: pinToggles[kind] });
+  }, [pins, toggleClimbPin]);
+  const pinProps = (kind: FilterChipKind) => {
+    const onTogglePin = pinToggles.get(kind);
+    if (!onTogglePin) return {};
+    const pinned = pins ? pins.isPinned(kind) : isValidChipKind(kind) && isClimbPinned(kind);
+    return { pinned, onTogglePin };
+  };
 
   // The saved searches under Recent, applied the way the toolbar's Recent menu
   // applies them. Stable while the history and handler are, so a chip only
   // re-renders when its own current state flips.
   const handleSelectRecent = useCallback(
-    (id: string) => applyRecentFilterById(recentFilters, id, onApplyRecent),
+    (id: string) => {
+      if (onApplyRecent) applyRecentFilterById(recentFilters, id, onApplyRecent);
+    },
     [recentFilters, onApplyRecent],
   );
   const currentRecentId = findCurrentRecentFilter(recentFilters, currentFilters, searchName ?? '')?.id;
 
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = selectedFilters.gradeAccuracy ?? 'off';
+  const followingSwitch = (
+    <SwitchRow
+      label={t('authors.followingClimbs')}
+      value={!!selectedFilters.onlyFollowedAuthors}
+      onValueChange={(enabled) => setFiltersPatch({ onlyFollowedAuthors: enabled || undefined })}
+    />
+  );
   // Reset greys out until there's actually something to reset.
   // The name counts as something to reset (#3606): it lives outside
   // ClimbFilters, so neither hasActive* helper can see it, and a lone climb-name
   // search — the issue's own repro — would otherwise leave Reset disabled with
   // the one thing the user wants gone still on screen. Same `.length > 0` rule
-  // as the inline × below, so the two clear affordances appear together.
+  // as the inline × below, so the two clear affordances appear together. A
+  // list's own sort and "Fits my board" count too.
   const anyActive =
-    hasActiveClimbFilters(selectedFilters) || hasActiveBoardFilters(selectedBoardFilters) || nameDraft.length > 0;
+    hasActiveClimbFilters(selectedFilters, defaultFilters) ||
+    hasActiveBoardFilters(selectedBoardFilters) ||
+    nameDraft.length > 0 ||
+    !!sortControl?.active ||
+    !!boardFit?.value;
 
   return (
     <BottomSheetModal
@@ -846,25 +985,29 @@ export function ClimbFilterSheet({
                 value={nameDraft}
                 onChangeText={handleNameTextChange}
                 onClear={handleClearNameField}
-                placeholder={t('search.placeholders.climbs')}
+                placeholder={namePlaceholder ?? t('search.placeholders.climbs')}
                 accessibilityLabel={t('mobile.filter.section.name')}
               />
               {/* Recent: the saved searches as chips, a tap applies one. The
                   row and its pin (the toolbar Recent chip's) show with no
                   history too, with a line saying where searches will appear. */}
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow
-                label={t('mobile.search.recentFilters')}
-                description={recentFilters.length > 0 ? undefined : t('mobile.filter.recentDescription')}
-                {...pinProps('recent')}
-              />
-              {recentFilters.length > 0 ? (
-                <RecentSearchRail
-                  recents={recentFilters}
-                  currentId={currentRecentId}
-                  onSelect={handleSelectRecent}
-                  style={filterSheetStyles.inlineRail}
-                />
+              {shownSections.recent ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow
+                    label={t('mobile.search.recentFilters')}
+                    description={recentFilters.length > 0 ? undefined : t('mobile.filter.recentDescription')}
+                    {...pinProps('recent')}
+                  />
+                  {recentFilters.length > 0 ? (
+                    <RecentSearchRail
+                      recents={recentFilters}
+                      currentId={currentRecentId}
+                      onSelect={handleSelectRecent}
+                      style={filterSheetStyles.inlineRail}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </FilterSheetSection>
 
@@ -877,7 +1020,7 @@ export function ClimbFilterSheet({
                 grades={grades ?? []}
                 bound={{ minGradeId: selectedFilters.minGrade, maxGradeId: selectedFilters.maxGrade }}
                 lastUsedGradeId={lastUsedGradeId}
-                boardName={boardName}
+                boardName={gradesBoardName}
                 onChange={handleGradeChange}
                 style={filterSheetStyles.inlineRail}
               />
@@ -899,7 +1042,7 @@ export function ClimbFilterSheet({
 
             {/* 3 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
                 the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
-            {isAuthenticated ? (
+            {isAuthenticated && shownSections.progress ? (
               <FilterSheetSection title={t('mobile.filter.progress.label')} {...pinProps('progress')}>
                 {/* A single-select over the four per-user tick flags. "Projects" =
                   attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
@@ -1064,58 +1207,91 @@ export function ClimbFilterSheet({
                 </>
               ) : null}
 
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterTappableRow
-                label={t('mobile.filter.setters')}
-                value={
-                  selectedFilters.setter && selectedFilters.setter.length > 0
-                    ? formatSetterSelection(selectedFilters.setter)
-                    : t('mobile.filter.none')
-                }
-                onPress={openSetters}
-                disabled={!boardConfig}
-              />
-
-              {isAuthenticated ? (
-                <View style={styles.followingSection}>
-                  <SwitchRow
-                    label={t('authors.followingClimbs')}
-                    value={!!selectedFilters.onlyFollowedAuthors}
-                    onValueChange={(enabled) => setFiltersPatch({ onlyFollowedAuthors: enabled || undefined })}
+              {shownSections.setters ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterTappableRow
+                    label={t('mobile.filter.setters')}
+                    value={
+                      selectedFilters.setter && selectedFilters.setter.length > 0
+                        ? formatSetterSelection(selectedFilters.setter)
+                        : t('mobile.filter.none')
+                    }
+                    onPress={openSetters}
+                    disabled={!boardConfig}
                   />
-                </View>
+                </>
               ) : null}
 
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterTappableRow
-                label={t('mobile.holdFilter.title')}
-                value={
-                  holdFilterCount > 0
-                    ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
-                    : t('mobile.filter.none')
-                }
-                onPress={openHoldFilter}
-                disabled={!boardConfig}
-              />
+              {/* Following sits under the Setters row it belongs with; without
+                  that row it takes the usual gap instead. */}
+              {isAuthenticated && shownSections.following && shownSections.setters ? (
+                <View style={styles.followingSection}>{followingSwitch}</View>
+              ) : null}
+              {isAuthenticated && shownSections.following && !shownSections.setters ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  {followingSwitch}
+                </>
+              ) : null}
 
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterTappableRow
-                label={t('mobile.zoneFilter.title')}
-                value={zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
-                onPress={openZoneFilter}
-                disabled={!boardConfig}
-              />
+              {shownSections.holds ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterTappableRow
+                    label={t('mobile.holdFilter.title')}
+                    value={
+                      holdFilterCount > 0
+                        ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                        : t('mobile.filter.none')
+                    }
+                    onPress={openHoldFilter}
+                    disabled={!boardConfig}
+                  />
+                </>
+              ) : null}
+
+              {shownSections.zone ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterTappableRow
+                    label={t('mobile.zoneFilter.title')}
+                    value={zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
+                    onPress={openZoneFilter}
+                    disabled={!boardConfig}
+                  />
+                </>
+              ) : null}
 
               {/* Beta videos — a content property of the climb, not a quality signal.
                   A group header carries the pin; the switch uses the descriptive line
                   as its label so "Beta videos" isn't worded twice. */}
-              <View style={filterSheetStyles.subsectionGap} />
-              <FilterLabelRow label={t('mobile.filter.betaVideos')} {...pinProps('beta')} />
-              <SwitchRow
-                label={t('mobile.filter.betaVideosDescription')}
-                value={!!selectedFilters.onlyWithBetaVideos}
-                onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
-              />
+              {shownSections.beta ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow label={t('mobile.filter.betaVideos')} {...pinProps('beta')} />
+                  <SwitchRow
+                    label={t('mobile.filter.betaVideosDescription')}
+                    value={!!selectedFilters.onlyWithBetaVideos}
+                    onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
+                  />
+                </>
+              ) : null}
+
+              {/* Fits my board — a playlist-only lever: hides the climbs set for
+                  another board or size, the rows the list dims. */}
+              {boardFit ? (
+                <>
+                  <View style={filterSheetStyles.subsectionGap} />
+                  <FilterLabelRow label={t('mobile.filter.boardFit.label')} {...pinProps('boardFit')} />
+                  <SwitchRow
+                    label={t('mobile.filter.boardFit.switch')}
+                    description={t('mobile.filter.boardFit.description')}
+                    value={boardFit.value}
+                    onValueChange={boardFit.onChange}
+                  />
+                </>
+              ) : null}
             </FilterSheetSection>
 
             {/* 6 · SORT — sort key + direction (or reshuffle for random). */}
@@ -1125,20 +1301,63 @@ export function ClimbFilterSheet({
                   horizontal ScrollView: a gesture-handler ScrollView nested in the
                   native bottom sheet collapsed the chip row's height on iOS and
                   clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
-              <FilterChipGroup>
-                {SORT_OPTIONS.map((option) => (
-                  <FilterChip
-                    key={option}
-                    label={sortLabels[option]}
-                    value={option}
-                    selected={selectedFilters.sortBy === option}
-                    onPress={handleSortByChange}
-                  />
-                ))}
-              </FilterChipGroup>
+              {sortControl ? (
+                // A list's own sorts: its keys, then its directions in words
+                // ("Easiest first"), Shuffle again for Random, nothing for a
+                // one-direction key such as the playlist's own order.
+                <>
+                  <FilterChipGroup>
+                    {sortControl.options.map((option) => (
+                      <FilterChip
+                        key={option.key}
+                        label={option.label}
+                        value={option.key}
+                        selected={sortControl.selected === option.key}
+                        onPress={sortControl.onSelect}
+                      />
+                    ))}
+                  </FilterChipGroup>
+                  {sortControl.showReshuffle ? (
+                    <>
+                      <View style={filterSheetStyles.subsectionGap} />
+                      <Button
+                        title={t('mobile.filter.sort.reshuffle')}
+                        onPress={sortControl.onReshuffle}
+                        variant="tonal"
+                        size="medium"
+                        icon="shuffle"
+                      />
+                    </>
+                  ) : sortControl.orderOptions ? (
+                    <>
+                      <View style={filterSheetStyles.subsectionGap} />
+                      <FilterLabelRow label={t('mobile.filter.sortOrderLabel')} />
+                      <View style={filterSheetStyles.controlGap} />
+                      <SegmentedControl
+                        options={sortControl.orderOptions}
+                        selectedKey={sortControl.order}
+                        onSelect={sortControl.onOrderChange}
+                        accessibilityLabel={t('mobile.filter.sortOrderLabel')}
+                      />
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <FilterChipGroup>
+                  {SORT_OPTIONS.map((option) => (
+                    <FilterChip
+                      key={option}
+                      label={sortLabels[option]}
+                      value={option}
+                      selected={selectedFilters.sortBy === option}
+                      onPress={handleSortByChange}
+                    />
+                  ))}
+                </FilterChipGroup>
+              )}
               {/* For random, direction is meaningless — swap the asc/desc control for
                   an explicit reshuffle button (re-tapping the Random chip also works). */}
-              {selectedFilters.sortBy === 'random' ? (
+              {sortControl ? null : selectedFilters.sortBy === 'random' ? (
                 <>
                   <View style={filterSheetStyles.subsectionGap} />
                   <Button

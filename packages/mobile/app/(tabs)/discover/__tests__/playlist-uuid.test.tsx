@@ -17,6 +17,8 @@ import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/queue';
+import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
+import type { PlaylistSelection } from '../../../../src/lib/playlists/playlist-view';
 
 type TestRenderBoard = {
   boardName: string;
@@ -36,6 +38,29 @@ type TestBoardBanner = {
 type CapturedActivationOptions = {
   viewOnlyBoard?: TestRenderBoard | ((climb: Climb) => TestRenderBoard | null) | null;
   previewOnly?: boolean;
+  sourceId: string;
+  allClimbs: Climb[];
+  fetchPage: (args: {
+    page: number;
+    pageSize: number;
+    board: TestRenderBoard;
+    signal: AbortSignal;
+  }) => Promise<{ climbs: Climb[]; hasMore: boolean }>;
+};
+
+/** What the mocked climbs query answers for one view (undefined = the playlist's own order). */
+type TestPlaylistPage = {
+  climbs: Climb[];
+  totalCount: number;
+  unfilteredCount: number | null;
+  /** The previous view's rows standing in while this view loads. */
+  placeholder?: boolean;
+  error?: boolean;
+  /** A fetch is under way (a background refetch or the next page). */
+  fetching?: boolean;
+  /** Waiting for a connection. */
+  paused?: boolean;
+  hasNextPage?: boolean;
 };
 
 // The metadata query goes through getHttpClient().request — mock it so we can
@@ -43,6 +68,11 @@ type CapturedActivationOptions = {
 const requestMock = vi.hoisted(() => vi.fn());
 const playlistMocks = vi.hoisted(() => ({
   allClimbs: [] as Climb[],
+  /** Every `view` the screen asked the climbs query for, in render order. */
+  views: [] as Array<PlaylistClimbViewInput | undefined>,
+  /** Overrides the query's answer per view; null answers every view with `allClimbs`. */
+  pageFor: null as null | ((view: PlaylistClimbViewInput | undefined) => TestPlaylistPage),
+  fetchNextPage: vi.fn(),
   activationOptions: null as CapturedActivationOptions | null,
   renderBoardResult: {
     renderBoard: null as TestRenderBoard | null,
@@ -80,12 +110,20 @@ const detailViewProps = vi.hoisted(() => ({
   current: null as {
     editMode: boolean;
     emptyAction: { label: string } | null;
+    emptyMessage?: string;
+    emptyIcon?: string;
+    emptyState?: { icon: string; title: string };
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    addToQueueCount?: number;
     onRefresh?: () => unknown;
     climbs: Climb[];
-    onReorderClimb: (uuid: string, index: number) => Promise<void>;
+    onReorderClimb?: (uuid: string, index: number) => Promise<void>;
     onRemoveClimb: (uuid: string) => void;
+    filterBar?: ReactNode;
+    filterAction?: { activeCount: number; onPress: () => void } | null;
+    scrollResetKey?: string | null;
+    hero: { climbCount: number };
   } | null,
 }));
 const snapToIndex = vi.hoisted(() => vi.fn());
@@ -111,17 +149,45 @@ vi.mock('../../../../src/components/you/CommentSheet', () => ({
 const climbsRefetch = vi.hoisted(() => vi.fn());
 const updatePlaylistMock = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
-vi.mock('@boardsesh/playlists-react', () => ({
-  usePlaylistClimbs: () => ({
-    query: {
-      isLoading: false,
-      isFetchingNextPage: false,
-      hasNextPage: false,
-      fetchNextPage: vi.fn(),
-      refetch: climbsRefetch,
-    },
-    allClimbs: playlistMocks.allClimbs,
-  }),
+vi.mock('@boardsesh/playlists-react', async (importOriginal) => ({
+  // The real key builder: the screen invalidates one view by it.
+  playlistClimbsQueryKey: (await importOriginal<typeof import('@boardsesh/playlists-react')>()).playlistClimbsQueryKey,
+  usePlaylistClimbs: ({ view }: { view?: PlaylistClimbViewInput }) => {
+    playlistMocks.views.push(view);
+    const page: TestPlaylistPage = playlistMocks.pageFor?.(view) ?? {
+      climbs: playlistMocks.allClimbs,
+      totalCount: playlistMocks.allClimbs.length,
+      unfilteredCount: null,
+    };
+    return {
+      query: {
+        isLoading: false,
+        isSuccess: !page.error,
+        isError: !!page.error,
+        isFetchNextPageError: false,
+        isFetching: !!page.fetching,
+        fetchStatus: page.paused ? 'paused' : page.fetching ? 'fetching' : 'idle',
+        isPlaceholderData: !!page.placeholder,
+        data: page.error
+          ? undefined
+          : {
+              pages: [
+                {
+                  climbs: page.climbs,
+                  totalCount: page.totalCount,
+                  unfilteredCount: page.unfilteredCount,
+                  hasMore: false,
+                },
+              ],
+            },
+        isFetchingNextPage: false,
+        hasNextPage: !!page.hasNextPage,
+        fetchNextPage: playlistMocks.fetchNextPage,
+        refetch: climbsRefetch,
+      },
+      allClimbs: page.error ? [] : page.climbs,
+    };
+  },
   usePlaylistMutations: () => ({
     updatePlaylist: updatePlaylistMock,
     deletePlaylist: vi.fn(),
@@ -188,6 +254,85 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
     };
   },
 }));
+// The filter session, reduced to a selection a test can set and the actions the
+// screen calls. Its own behaviour is covered by use-climb-filter-session.test.
+const filterSession = vi.hoisted(() => ({
+  initialSelection: null as PlaylistSelection | null,
+  setSelection: null as null | ((selection: PlaylistSelection) => void),
+  activeFilterCount: 0,
+  options: null as null | {
+    disabled: boolean;
+    liveCount: number | null;
+    scopeKey: string | null;
+    onSortCommit?: (sort: { sortBy: string; sortOrder: string }) => void;
+  },
+  pauseView: vi.fn(),
+  resumeView: vi.fn(),
+  clearFilters: vi.fn(),
+  openFilters: vi.fn(),
+}));
+vi.mock('../../../../src/hooks/use-climb-filter-session', async () => {
+  const { useMemo, useState } = await import('react');
+  const { PLAYLIST_FILTER_DEFAULTS } = await import('../../../../src/lib/playlists/playlist-view');
+  const plainSelection: PlaylistSelection = {
+    filters: PLAYLIST_FILTER_DEFAULTS,
+    boardFilters: {},
+    name: '',
+    sort: { sortBy: 'position', sortOrder: 'asc' },
+    boardFit: false,
+  };
+  return {
+    useClimbFilterSession: (options: NonNullable<typeof filterSession.options>) => {
+      filterSession.options = options;
+      const [selection, setSelection] = useState<PlaylistSelection>(filterSession.initialSelection ?? plainSelection);
+      const [pausedSelection, setPausedSelection] = useState<PlaylistSelection | null>(null);
+      filterSession.setSelection = setSelection;
+      const actions = useMemo(
+        () => ({
+          openFilters: filterSession.openFilters,
+          clearFilters: filterSession.clearFilters,
+          resetToDefault: vi.fn(),
+          pauseView: () => {
+            filterSession.pauseView();
+            setPausedSelection(selection);
+            setSelection(plainSelection);
+          },
+          resumeView: () => {
+            filterSession.resumeView();
+            if (pausedSelection) setSelection({ ...plainSelection, sort: pausedSelection.sort });
+          },
+        }),
+        [selection, pausedSelection],
+      );
+      const state = useMemo(
+        () => ({
+          querySelection: selection,
+          activeFilterCount: filterSession.activeFilterCount,
+          chipRowProps: {},
+          tokens: [],
+          gradeRail: null,
+          sheetProps: null,
+        }),
+        [selection],
+      );
+      return { state, actions };
+    },
+  };
+});
+vi.mock('../../../../src/components/ClimbFilterSheet', () => ({ ClimbFilterSheet: () => null }));
+vi.mock('../../../../src/lib/playlist-pinned-chips-store', () => ({ playlistPinnedChipsStore: {} }));
+const sortMemory = vi.hoisted(() => ({ write: vi.fn() }));
+vi.mock('../../../../src/lib/playlists/playlist-sort-memory', () => ({
+  playlistSortMemoryKey: (uuid: string) => `playlist:${uuid}`,
+  readListSort: () => ({ sortBy: 'position', sortOrder: 'asc' }),
+  writeListSort: sortMemory.write,
+}));
+vi.mock('../../../../src/lib/last-search-store', () => ({
+  boardConfigKey: (board: { boardName: string }) => board.boardName,
+}));
+vi.mock('../../../../src/hooks/use-personal-grades', () => ({ usePersonalGradesActive: () => false }));
+vi.mock('../../../../src/lib/graphql/hooks/search-grade-source', () => ({ useSearchGradeSourceActive: () => false }));
+
 vi.mock('../../../../src/lib/playlists/use-playlist-render-board', () => ({
   usePlaylistRenderBoard: () => playlistMocks.renderBoardResult,
 }));
@@ -217,34 +362,56 @@ vi.mock('../../../../src/components/playlist', () => ({
     actions,
     editMode,
     emptyAction,
+    emptyMessage,
+    emptyIcon,
+    emptyState,
     onAddAllToQueue,
     isAddingAllToQueue,
+    addToQueueCount,
     onRefresh,
     climbs,
     onReorderClimb,
     onRemoveClimb,
+    filterBar,
+    filterAction,
+    scrollResetKey,
   }: {
-    hero: { name: string };
+    hero: { name: string; climbCount: number };
     headerSlot?: ReactNode;
     actions?: (collapsed: boolean) => ReactNode;
     editMode?: boolean;
     emptyAction?: { label: string; onPress: () => void };
+    emptyMessage?: string;
+    emptyIcon?: string;
+    emptyState?: { icon: string; title: string };
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    addToQueueCount?: number;
     onRefresh?: () => unknown;
     climbs: Climb[];
-    onReorderClimb: (uuid: string, index: number) => Promise<void>;
+    onReorderClimb?: (uuid: string, index: number) => Promise<void>;
     onRemoveClimb: (uuid: string) => void;
+    filterBar?: ReactNode;
+    filterAction?: { activeCount: number; onPress: () => void } | null;
+    scrollResetKey?: string | null;
   }) => {
     detailViewProps.current = {
       editMode: !!editMode,
       emptyAction: emptyAction ?? null,
+      emptyMessage,
+      emptyIcon,
+      emptyState,
       onAddAllToQueue,
       isAddingAllToQueue,
+      addToQueueCount,
       onRefresh,
       climbs,
       onReorderClimb,
       onRemoveClimb,
+      filterBar,
+      filterAction,
+      scrollResetKey,
+      hero,
     };
     return createElement(
       'div',
@@ -326,7 +493,10 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('button', { 'data-menu-delete': 'true', onClick: onDelete }),
     ),
   PlaylistFollowButton: () => null,
-  PlaylistEditDoneButton: () => null,
+  PlaylistEditDoneButton: ({ onPress, collapsed }: { onPress: () => void; collapsed?: boolean }) =>
+    collapsed ? null : createElement('button', { 'data-edit-done': 'true', onClick: onPress }, 'done'),
+  PlaylistFilterBar: ({ editing }: { editing: boolean }) =>
+    createElement('div', { 'data-filter-bar': 'true', 'data-editing': String(editing) }),
   // Surfaces onEdit so a test can enter the climbs edit mode without the real
   // glass toolbar.
   PlaylistOwnerToolbar: ({ onEdit }: { onEdit?: () => void }) =>
@@ -351,6 +521,18 @@ function renderDetail(queryClient = new QueryClient({ defaultOptions: { queries:
 
 beforeEach(() => {
   requestMock.mockReset();
+  playlistMocks.views = [];
+  playlistMocks.pageFor = null;
+  playlistMocks.fetchNextPage.mockClear();
+  filterSession.initialSelection = null;
+  filterSession.setSelection = null;
+  filterSession.activeFilterCount = 0;
+  filterSession.options = null;
+  filterSession.pauseView.mockClear();
+  filterSession.resumeView.mockClear();
+  filterSession.clearFilters.mockClear();
+  filterSession.openFilters.mockClear();
+  sortMemory.write.mockClear();
   climbsRefetch.mockClear();
   updatePlaylistMock.mockReset();
   toast.showToast.mockClear();
@@ -756,7 +938,7 @@ describe('PlaylistDetail privacy withdrawal', () => {
     await editProtectedClimbs();
     let pending: Promise<void> | undefined;
     act(() => {
-      pending = detailViewProps.current?.onReorderClimb('private-climb', 1);
+      pending = detailViewProps.current?.onReorderClimb?.('private-climb', 1);
     });
     expect(playlistMocks.reorderClimb).toHaveBeenCalledTimes(1);
     act(() => invalidatePrivacySnapshots());
@@ -784,5 +966,350 @@ describe('PlaylistDetail privacy withdrawal', () => {
     });
     expect(playlistMocks.removeClimb).not.toHaveBeenCalled();
     expect(detailViewProps.current?.climbs).toEqual([]);
+  });
+});
+
+// Sort and filters inside a playlist (#6651). The session itself is mocked; these
+// pin what the screen does with it: which view the query asks for, which view the
+// play drawer and Add to queue follow, and how edit mode gets the plain order.
+describe('PlaylistDetail sort and filters', () => {
+  const PLAIN_ROWS = [makeClimb('plain-1', 'tension', 9, 40), makeClimb('plain-2', 'tension', 9, 40)];
+  const SORTED_ROWS = [makeClimb('plain-2', 'tension', 9, 40), makeClimb('plain-1', 'tension', 9, 40)];
+  const FILTERED_ROWS = [makeClimb('plain-2', 'tension', 9, 40)];
+  const DIFFICULTY_VIEW_KEY = JSON.stringify({ sortBy: 'difficulty', sortOrder: 'asc' });
+
+  function selectionWith(overrides: Partial<PlaylistSelection>): PlaylistSelection {
+    return {
+      filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: true },
+      boardFilters: {},
+      name: '',
+      sort: { sortBy: 'position', sortOrder: 'asc' },
+      boardFit: false,
+      ...overrides,
+    };
+  }
+
+  function answerBySort(sortedPlaceholder = false) {
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? {
+            climbs: sortedPlaceholder ? PLAIN_ROWS : SORTED_ROWS,
+            totalCount: 2,
+            unfilteredCount: null,
+            placeholder: sortedPlaceholder,
+          }
+        : { climbs: PLAIN_ROWS, totalCount: 2, unfilteredCount: null };
+  }
+
+  function mockClimbsRequests() {
+    requestMock.mockImplementation(async (request: unknown) => {
+      if (typeof request === 'object' && request !== null && 'document' in request) {
+        return { playlistClimbs: { climbs: [], hasMore: false } };
+      }
+      return { playlist: makePlaylist() };
+    });
+  }
+
+  async function renderPlaylist() {
+    mockClimbsRequests();
+    const rendered = renderDetail();
+    // The owner toolbar shows once the playlist itself has loaded.
+    await waitFor(() => expect(rendered.container.querySelector('[data-owner-edit="true"]')).not.toBeNull());
+    return rendered;
+  }
+
+  async function lastFetchInput() {
+    const board = { boardName: 'tension', layoutId: 9, sizeId: 1, setIds: '1', angle: 40 };
+    await playlistMocks.activationOptions?.fetchPage({
+      page: 0,
+      pageSize: 50,
+      board,
+      signal: new AbortController().signal,
+    });
+    const call = requestMock.mock.calls.findLast(
+      ([request]) => typeof request === 'object' && request !== null && 'document' in request,
+    );
+    if (!call) throw new Error('fetchPage sent no request');
+    return (call[0] as { variables: { input: Record<string, unknown> } }).variables.input;
+  }
+
+  it('sends no view for the playlist order, and the picked sort once there is one', async () => {
+    await renderPlaylist();
+    expect(playlistMocks.views.at(-1)).toBeUndefined();
+
+    act(() => filterSession.setSelection?.(selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } })));
+
+    expect(playlistMocks.views.at(-1)).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
+  });
+
+  it('keeps the drawer track and Add to queue on the rows on screen while a new sort loads', async () => {
+    answerBySort(true);
+    await renderPlaylist();
+
+    act(() => filterSession.setSelection?.(selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } })));
+
+    // The plain rows still stand in, so the plain playlist is what a tap walks.
+    expect(playlistMocks.activationOptions?.sourceId).toBe('playlist:p-1');
+    expect(await lastFetchInput()).not.toHaveProperty('view');
+    expect(detailViewProps.current?.scrollResetKey).toBeNull();
+
+    answerBySort(false);
+    act(() => filterSession.setSelection?.(selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } })));
+
+    expect(playlistMocks.activationOptions?.sourceId).toBe(`playlist:p-1|${DIFFICULTY_VIEW_KEY}`);
+    expect(playlistMocks.activationOptions?.allClimbs.map((climb) => climb.uuid)).toEqual(['plain-2', 'plain-1']);
+    expect(await lastFetchInput()).toMatchObject({ view: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    expect(detailViewProps.current?.scrollResetKey).toBe(DIFFICULTY_VIEW_KEY);
+  });
+
+  it('opens the editor on the playlist order once it is on screen, then gives the sort back', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    let plainOrderLoaded = false;
+    playlistMocks.pageFor = (view) => {
+      if (view?.sortBy === 'difficulty') return { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null };
+      // The plain order loads behind the sorted rows until the test lets it land.
+      return plainOrderLoaded
+        ? { climbs: PLAIN_ROWS, totalCount: 2, unfilteredCount: null }
+        : { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null, placeholder: true };
+    };
+    const { container, rerender, queryClient } = await renderPlaylist();
+    // A sorted list never offers a drag: a reorder index is a place in the playlist order.
+    expect(detailViewProps.current?.onReorderClimb).toBeUndefined();
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    expect(filterSession.pauseView).toHaveBeenCalledTimes(1);
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(filterSession.options?.disabled).toBe(true);
+    expect(detailViewProps.current?.filterAction).toBeNull();
+
+    plainOrderLoaded = true;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistDetail />
+      </QueryClientProvider>,
+    );
+
+    expect(detailViewProps.current?.editMode).toBe(true);
+    expect(detailViewProps.current?.climbs.map((climb) => climb.uuid)).toEqual(['plain-1', 'plain-2']);
+    expect(detailViewProps.current?.onReorderClimb).toBeDefined();
+
+    fireEvent.click(container.querySelector('[data-edit-done="true"]') as HTMLButtonElement);
+
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(filterSession.resumeView).toHaveBeenCalledTimes(1);
+    expect(playlistMocks.views.at(-1)).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
+  });
+
+  it('gives the view back when the playlist order fails to load for the editor', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null }
+        : { climbs: [], totalCount: 0, unfilteredCount: null, error: true };
+    const { container } = await renderPlaylist();
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(filterSession.resumeView).toHaveBeenCalledTimes(1);
+    expect(filterSession.options?.disabled).toBe(false);
+  });
+
+  it('says how many a filtered list holds and adds just those, with "Fits my board" on', async () => {
+    filterSession.initialSelection = selectionWith({ name: 'crimp', boardFit: true });
+    filterSession.activeFilterCount = 1;
+    playlistMocks.pageFor = () => ({ climbs: FILTERED_ROWS, totalCount: 12, unfilteredCount: 117 });
+    await renderPlaylist();
+
+    expect(detailViewProps.current?.addToQueueCount).toBe(12);
+    expect(detailViewProps.current?.filterAction).toMatchObject({ activeCount: 1 });
+    expect(filterSession.options?.liveCount).toBe(12);
+    // The hero keeps the playlist's own count.
+    expect(detailViewProps.current?.hero.climbCount).toBe(2);
+  });
+
+  it('keeps the plain Add to queue label for a sort alone', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    answerBySort(false);
+    await renderPlaylist();
+
+    expect(detailViewProps.current?.addToQueueCount).toBeUndefined();
+  });
+
+  it('offers Clear filters on a list filtered to nothing, worded for the filter', async () => {
+    filterSession.initialSelection = selectionWith({ name: 'crimp' });
+    playlistMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: 117 });
+    const { container } = await renderPlaylist();
+
+    expect(detailViewProps.current?.emptyMessage).toBe('detail.view.empty.noName');
+    expect(detailViewProps.current?.emptyIcon).toBe('filter');
+    expect(detailViewProps.current?.emptyState).toEqual({ icon: 'filter', title: 'detail.view.empty.noName' });
+    fireEvent.click(container.querySelector('[data-empty-action="detail.view.clearFilters"]') as HTMLButtonElement);
+    expect(filterSession.clearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads a list that is merely empty as empty, even with a filter just set', async () => {
+    filterSession.initialSelection = selectionWith({ name: 'crimp' });
+    // The server sends no unfilteredCount: the rows on screen are not filtered yet.
+    playlistMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: null });
+    await renderPlaylist();
+
+    expect(detailViewProps.current?.emptyMessage).toBe('detail.empty');
+    expect(detailViewProps.current?.emptyState).toBeUndefined();
+  });
+
+  it('says the climbs failed to load and offers a retry, rather than an empty playlist', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    playlistMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: null, error: true });
+    const { container } = await renderPlaylist();
+
+    expect(detailViewProps.current?.emptyMessage).toBe('detail.errors.loadTitle');
+    expect(detailViewProps.current?.emptyState).toMatchObject({ icon: 'error' });
+    climbsRefetch.mockClear();
+    fireEvent.click(container.querySelector('[data-empty-action="detail.errors.tryAgain"]') as HTMLButtonElement);
+    expect(climbsRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts only the climbs this board can add once every filtered row is loaded', async () => {
+    playlistMocks.renderBoardResult = {
+      renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+      banner: null,
+    };
+    filterSession.initialSelection = selectionWith({ name: 'crimp' });
+    const mixedRows = [makeClimb('kilter-row', 'kilter', 1, 40), makeClimb('tension-row', 'tension', 9, 40)];
+    let allLoaded = false;
+    playlistMocks.pageFor = () => ({ climbs: mixedRows, totalCount: 3, unfilteredCount: 9, hasNextPage: !allLoaded });
+    const { rerender, queryClient } = await renderPlaylist();
+    // Rows still to load: the count would be a guess, so the label stays plain.
+    expect(detailViewProps.current?.addToQueueCount).toBeUndefined();
+
+    allLoaded = true;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistDetail />
+      </QueryClientProvider>,
+    );
+    // The dimmed Tension row is left out of the add, so it is left out of the count.
+    expect(detailViewProps.current?.addToQueueCount).toBe(1);
+  });
+
+  it('marks the cached playlist order stale and waits for its refetch before the editor reads it', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    const STALE_ROWS = [makeClimb('removed-climb', 'tension', 9, 40), ...PLAIN_ROWS];
+    let refetched = false;
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null }
+        : refetched
+          ? { climbs: PLAIN_ROWS, totalCount: 2, unfilteredCount: null }
+          : { climbs: STALE_ROWS, totalCount: 3, unfilteredCount: null, fetching: true };
+    const { container, rerender, queryClient } = await renderPlaylist();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['playlistClimbs', 'p-1', 'all', null, 'default', 0],
+      exact: true,
+      refetchType: 'none',
+    });
+    // The cached rows are up but still refreshing: no editor yet.
+    expect(detailViewProps.current?.editMode).toBe(false);
+
+    refetched = true;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistDetail />
+      </QueryClientProvider>,
+    );
+    expect(detailViewProps.current?.editMode).toBe(true);
+    expect(detailViewProps.current?.climbs.map((climb) => climb.uuid)).toEqual(['plain-1', 'plain-2']);
+  });
+
+  it('loads as many playlist-order rows as the sorted list showed before the editor opens', async () => {
+    const sortedForty = Array.from({ length: 40 }, (_, index) => makeClimb(`climb-${39 - index}`, 'tension', 9, 40));
+    const plainTwenty = sortedForty.slice(0, 20).reverse();
+    const plainForty = [...sortedForty].reverse();
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    let pagesLoaded = 1;
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? { climbs: sortedForty, totalCount: 40, unfilteredCount: null }
+        : pagesLoaded === 1
+          ? { climbs: plainTwenty, totalCount: 40, unfilteredCount: null, hasNextPage: true }
+          : { climbs: plainForty, totalCount: 40, unfilteredCount: null };
+    const { container, rerender, queryClient } = await renderPlaylist();
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    expect(playlistMocks.fetchNextPage).toHaveBeenCalledTimes(1);
+    expect(detailViewProps.current?.editMode).toBe(false);
+
+    pagesLoaded = 2;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistDetail />
+      </QueryClientProvider>,
+    );
+    expect(detailViewProps.current?.editMode).toBe(true);
+    expect(detailViewProps.current?.climbs).toHaveLength(40);
+  });
+
+  it('gives the view back with a message when the playlist order waits for a connection', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null }
+        : { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null, placeholder: true, paused: true };
+    const { container } = await renderPlaylist();
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(filterSession.resumeView).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('detail.errors.loadDescription', 'error');
+    expect(filterSession.options?.disabled).toBe(false);
+  });
+
+  it('offers Done while the editor waits, which gives the view back', async () => {
+    filterSession.initialSelection = selectionWith({ sort: { sortBy: 'difficulty', sortOrder: 'asc' } });
+    playlistMocks.pageFor = (view) =>
+      view?.sortBy === 'difficulty'
+        ? { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null }
+        : { climbs: SORTED_ROWS, totalCount: 2, unfilteredCount: null, placeholder: true, fetching: true };
+    const { container } = await renderPlaylist();
+
+    fireEvent.click(container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+    expect(filterSession.options?.disabled).toBe(true);
+
+    fireEvent.click(container.querySelector('[data-edit-done="true"]') as HTMLButtonElement);
+
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(filterSession.resumeView).toHaveBeenCalledTimes(1);
+    expect(filterSession.options?.disabled).toBe(false);
+    expect(playlistMocks.views.at(-1)).toEqual({ sortBy: 'difficulty', sortOrder: 'asc' });
+  });
+
+  it('remembers a picked sort for this playlist', async () => {
+    await renderPlaylist();
+    const sort = { sortBy: 'quality', sortOrder: 'desc' };
+
+    filterSession.options?.onSortCommit?.(sort);
+
+    expect(sortMemory.write).toHaveBeenCalledWith(
+      'playlist:p-1',
+      sort,
+      expect.objectContaining({ options: expect.any(Array) }),
+    );
+  });
+
+  it('shows no filter chrome on a playlist with no climbs', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ climbCount: 0 }) });
+    const { container } = renderDetail();
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+
+    expect(detailViewProps.current?.filterBar).toBeNull();
+    expect(detailViewProps.current?.filterAction).toBeNull();
   });
 });

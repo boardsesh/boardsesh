@@ -476,3 +476,103 @@ describe('buildClimbCapsules: what each capsule commits', () => {
     expect([sort.label, sort.active, sort.selected]).toEqual(['mobile.filter.sortBy', false, 'ascents']);
   });
 });
+
+// The playlist row reuses this builder (#6651). Its seams are optional, so every
+// case above, built without them, is the unchanged Climbs row.
+describe('buildClimbCapsules: list seams', () => {
+  const ALL_PINNED = [...PINNABLE_CHIP_CATALOG, 'boardFit' as const];
+
+  it('swaps the Climbs sort menu for the list’s own Sort capsule', () => {
+    const onSelect = vi.fn();
+    const capsules = buildClimbCapsules(
+      makeProps({
+        pinnedChips: ['sort'],
+        sortControl: {
+          label: 'Easiest first',
+          active: true,
+          options: [
+            { value: 'position', label: 'Playlist order' },
+            { value: 'difficulty', label: 'Difficulty' },
+          ],
+          selected: 'difficulty',
+          onSelect,
+        },
+      }),
+      mockT,
+      null,
+    );
+    const sort = capsuleByKey(capsules, 'sort', 'menu');
+    expect(sort.label).toBe('Easiest first');
+    expect(isCapsuleActive(sort)).toBe(true);
+    expect(sort.options.map((option) => option.value)).toEqual(['position', 'difficulty']);
+    expect(sort.onSelect).toBe(onSelect);
+  });
+
+  it('puts "Fits my board" right before Sort, only while pinned', () => {
+    const onToggle = vi.fn();
+    const withBoardFit = buildClimbCapsules(
+      makeProps({ pinnedChips: ALL_PINNED, boardFit: { active: true, onToggle } }),
+      mockT,
+      null,
+    );
+    const keys = withBoardFit.map((capsule) => capsule.key);
+    expect(keys.slice(-2)).toEqual(['boardFit', 'sort']);
+    const boardFit = capsuleByKey(withBoardFit, 'boardFit', 'toggle');
+    expect(boardFit.label).toBe('mobile.filter.boardFit.label');
+    expect(isCapsuleActive(boardFit)).toBe(true);
+    boardFit.onPress();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+
+    const unpinned = buildClimbCapsules(
+      makeProps({ pinnedChips: PINNABLE_CHIP_CATALOG, boardFit: { active: true, onToggle } }),
+      mockT,
+      null,
+    );
+    expect(unpinned.some((capsule) => capsule.key === 'boardFit')).toBe(false);
+  });
+
+  it('never draws "Fits my board" on the Climbs row, which passes none', () => {
+    const capsules = buildClimbCapsules(makeProps({ pinnedChips: ALL_PINNED }), mockT, null);
+    expect(capsules.some((capsule) => capsule.key === 'boardFit')).toBe(false);
+  });
+
+  it('rests the climb type on the list’s own default', () => {
+    const playlistRow = buildClimbCapsules(
+      makeProps({ pinnedChips: ['climbType'], climbType: 'both', defaultClimbType: 'both' }),
+      mockT,
+      null,
+    );
+    expect(summarize(playlistRow).at(-1)).toEqual(['menu', 'climbType', 'mobile.filter.climbType.label', false]);
+
+    const bouldersOnPlaylist = buildClimbCapsules(
+      makeProps({ pinnedChips: ['climbType'], climbType: 'boulders', defaultClimbType: 'both' }),
+      mockT,
+      null,
+    );
+    expect(summarize(bouldersOnPlaylist).at(-1)).toEqual([
+      'menu',
+      'climbType',
+      'mobile.filter.climbType.boulders',
+      true,
+    ]);
+
+    // Climbs: both is a choice, boulders the resting default.
+    const climbsRow = buildClimbCapsules(makeProps({ pinnedChips: ['climbType'], climbType: 'both' }), mockT, null);
+    expect(summarize(climbsRow).at(-1)).toEqual(['menu', 'climbType', 'mobile.filter.climbType.all', true]);
+  });
+
+  it('leaves Recent out for a list without saved searches', () => {
+    const capsules = buildClimbCapsules(
+      makeProps({
+        recentFilters: undefined,
+        currentFilters: undefined,
+        currentSearchText: undefined,
+        onApplyRecent: undefined,
+        onClearRecent: undefined,
+      }),
+      mockT,
+      null,
+    );
+    expect(capsules.some((capsule) => capsule.key === 'recent')).toBe(false);
+  });
+});

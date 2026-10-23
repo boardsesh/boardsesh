@@ -14112,6 +14112,7 @@ export type GetPlaylistClimbsQuery = {
   playlistClimbs: {
     __typename?: 'PlaylistClimbsResult';
     totalCount: number;
+    unfilteredCount?: number | null;
     hasMore: boolean;
     climbs: Array<{
       __typename?: 'Climb';
@@ -21867,6 +21868,7 @@ export const GetPlaylistClimbsDocument = {
                   },
                 },
                 { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'unfilteredCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
               ],
             },

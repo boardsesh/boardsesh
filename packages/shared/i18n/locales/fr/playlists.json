@@ -155,6 +155,8 @@
     "activateAll": "Lancer la playlist",
     "addToQueue": {
       "action": "Ajouter à la file",
+      "actionCount_one": "Ajouter {{count}} à la file",
+      "actionCount_other": "Ajouter {{count}} à la file",
       "subtitle": "Votre file actuelle reste intacte",
       "queueFull": "Votre file est déjà pleine avec {{max}} blocs",
       "nothingToAdd": "Rien ici pour votre board pour l'instant",
@@ -202,6 +204,19 @@
     },
     "discussion": "Discussion",
     "empty": "Aucun bloc dans cette playlist pour l'instant",
+    "view": {
+      "status_one": "{{shown}} sur {{count}} bloc",
+      "status_other": "{{shown}} sur {{count}} blocs",
+      "clearFilters": "Effacer les filtres",
+      "editNote": "L'ordre de la playlist s'affiche pendant la modification",
+      "namePlaceholder": "Nom du bloc",
+      "empty": {
+        "noMatch": "Aucun bloc ici ne correspond à ces filtres.",
+        "allSent": "Vous avez enchaîné tous les blocs de cette liste. Bravo.",
+        "noName": "Aucun bloc nommé « {{name}} » dans cette playlist.",
+        "noBoardFit": "Aucun de ces blocs n'est adapté à votre board."
+      }
+    },
     "climbCount_one": "{{count}} bloc",
     "climbCount_other": "{{count}} blocs",
     "openInApp": "Grimpez ça dans l'app",

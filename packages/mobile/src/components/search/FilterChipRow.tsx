@@ -12,7 +12,8 @@
 // refinements rather than in the app bar. It reads the active board, opens the
 // shared BoardAnglePicker and is absent on fixed-angle boards. Liquid Glass keeps
 // its toolbar angle button instead. Keyed on the variant, not the platform, so
-// the angle shows exactly once in either look.
+// the angle shows exactly once in either look. A playlist's row passes
+// `showAngle={false}`: no list but Climbs carries an angle control.
 
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -51,8 +52,10 @@ function AngleCapsuleRow({ rowProps, openAngle }: { rowProps: FilterChipRowProps
 }
 
 // The row is the picker's trigger. BoardAnglePicker draws its sheet beside the
-// row, and drops a picker left open across a board or angle change.
+// row, and drops a picker left open across a board or angle change. A row that
+// asks for no Angle capsule (a playlist's, `showAngle={false}`) is the plain row.
 function ClimbCapsuleRowWithAngle(props: FilterChipRowProps) {
+  if (props.showAngle === false) return <ClimbCapsuleRow {...props} />;
   return (
     <BoardAnglePicker>{(openAngle) => <AngleCapsuleRow rowProps={props} openAngle={openAngle} />}</BoardAnglePicker>
   );

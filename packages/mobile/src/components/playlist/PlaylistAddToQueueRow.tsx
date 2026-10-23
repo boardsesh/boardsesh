@@ -11,6 +11,11 @@ type PlaylistAddToQueueRowProps = {
   onPress: () => void;
   /** True while the board-scoped fetch + append is in flight. */
   isAppending: boolean;
+  /**
+   * How many climbs a filtered playlist would add ("Add 12 to queue"). Left out
+   * for the whole playlist, which keeps the plain "Add to queue".
+   */
+  count?: number;
 };
 
 /**
@@ -32,14 +37,16 @@ type PlaylistAddToQueueRowProps = {
 export const PlaylistAddToQueueRow = memo(function PlaylistAddToQueueRow({
   onPress,
   isAppending,
+  count,
 }: PlaylistAddToQueueRowProps) {
   const { t } = useTranslation('playlists');
   const { systemColors, actionColors } = useTheme();
+  const title = count === undefined ? t('detail.addToQueue.action') : t('detail.addToQueue.actionCount', { count });
 
   return (
     <View style={styles.container}>
       <ListRow
-        title={t('detail.addToQueue.action')}
+        title={title}
         subtitle={t('detail.addToQueue.subtitle')}
         leading={<Icon name="add" size={22} color={actionColors.success} />}
         trailing={
@@ -60,7 +67,7 @@ export const PlaylistAddToQueueRow = memo(function PlaylistAddToQueueRow({
         onPress={isAppending ? noop : onPress}
         haptic={!isAppending}
         accessibilityState={isAppending ? BUSY_STATE : undefined}
-        accessibilityLabel={t('detail.addToQueue.action')}
+        accessibilityLabel={title}
         accessibilityHint={t('detail.addToQueue.subtitle')}
       />
     </View>

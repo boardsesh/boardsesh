@@ -10,3 +10,5 @@ export * from './climb-zone-math';
 export * from './hold-filter-options';
 export * from './climb-name-pattern';
 export * from './playlist-view';
+export * from './climb-type-filter';
+export * from './sort-patches';

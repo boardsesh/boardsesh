@@ -155,6 +155,8 @@
     "activateAll": "Start playlist",
     "addToQueue": {
       "action": "Add to queue",
+      "actionCount_one": "Add {{count}} to queue",
+      "actionCount_other": "Add {{count}} to queue",
       "subtitle": "Keeps everything already queued",
       "queueFull": "Your queue is full at {{max}} climbs",
       "nothingToAdd": "Nothing here for your board yet",
@@ -202,6 +204,19 @@
     },
     "discussion": "Discussion",
     "empty": "No climbs in this playlist yet",
+    "view": {
+      "status_one": "{{shown}} of {{count}} climb",
+      "status_other": "{{shown}} of {{count}} climbs",
+      "clearFilters": "Clear filters",
+      "editNote": "Showing playlist order while you edit",
+      "namePlaceholder": "Climb name",
+      "empty": {
+        "noMatch": "Nothing here fits those filters.",
+        "allSent": "You've sent everything on this list. Nice.",
+        "noName": "No climb called “{{name}}” in this playlist.",
+        "noBoardFit": "None of these fit your board."
+      }
+    },
     "climbCount_one": "{{count}} climb",
     "climbCount_other": "{{count}} climbs",
     "openInApp": "Climb this in the app",

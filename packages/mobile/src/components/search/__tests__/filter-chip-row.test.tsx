@@ -153,3 +153,20 @@ describe('FilterChipRow', () => {
     expect(capsules.some(({ key }) => key === 'angle')).toBe(false);
   });
 });
+
+describe('FilterChipRow without the Angle chip', () => {
+  it('leaves the Angle chip and its picker off a Material row that asks for none', () => {
+    state.variant = 'material';
+    render(createElement(FilterChipRow, { ...PROPS, showAngle: false }));
+    const capsules = state.capsules.at(-1);
+    expect(capsules?.map(({ key }) => key)).toEqual([
+      'filters',
+      'grade',
+      'progress',
+      'collection',
+      'popularity',
+      'rating',
+    ]);
+    expect(state.pickerMounts).toBe(0);
+  });
+});
