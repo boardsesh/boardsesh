@@ -97,6 +97,50 @@ export type PlaylistSuggestionSource = {
   activatedClimbUuid: string;
   boardKey: string;
   climbs: Climb[];
+  /**
+   * What the player calls this list: "From {label}". Absent for a track the
+   * climber did not pick from a named list (the queue sheet's suggestions, the
+   * board feed), and the player then names nothing.
+   */
+  label?: string;
+  /**
+   * How many climbs the list holds, as the server counts it. Kept only while
+   * `climbs` is that list one for one from its first climb, so a climb's index
+   * here is its place in the list; anything that drops, reorders or appends out
+   * of line clears it. Absent means the player shows the name without a count.
+   */
+  total?: number;
+  /**
+   * The server has climbs past the last one loaded. `loaderId` names the page
+   * loader the screen that built this track registered (it holds the query);
+   * `nextPage` is the page to ask it for. Absent means `climbs` is the whole track.
+   */
+  continuation?: PlaylistTrackContinuation;
+};
+
+/** Where a track's next page comes from. See {@link PlaylistSuggestionSource}. */
+export type PlaylistTrackContinuation = {
+  loaderId: string;
+  nextPage: number;
+};
+
+/**
+ * One page fetched past a track's loaded end, ready to append.
+ *
+ * `climbs` has already been through the track's own filter; `filteredOut` says
+ * whether that filter dropped anything, which is what breaks the one-for-one
+ * mapping a count needs.
+ */
+export type PlaylistTrackPage = {
+  /** The page index this came from, in pages of `pageSize`. */
+  page: number;
+  pageSize: number;
+  climbs: Climb[];
+  filteredOut: boolean;
+  /** The page after this one, or null when this was the last the track may load. */
+  nextPage: number | null;
+  /** The list's total, when the response carried one. */
+  total?: number;
 };
 
 /**

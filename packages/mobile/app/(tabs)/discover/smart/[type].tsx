@@ -302,6 +302,9 @@ function SmartPlaylistBody({
       return {
         climbs: toQueueClimbs(response.smartPlaylist.climbs),
         hasMore: response.smartPlaylist.hasMore,
+        // Counted by the same board-scoped query, so the player's "4 of 23"
+        // counts the climbs it walks.
+        totalCount: response.smartPlaylist.totalCount,
       };
     },
     [smartType, userId, settledView.view, settledView.activeBoardInput],
@@ -311,6 +314,8 @@ function SmartPlaylistBody({
     sourceId: listSourceId(`smart:${smartType}:${userId}`, settledView.key),
     allClimbs,
     fetchPage,
+    // "From Projects · 4 of 23": the same name the list's own header shows.
+    label: preset ? t(preset.titleI18nKey) : meta?.userName,
     // Same rule as the playlist screen above: with a crew present a row tap is a
     // look, not a queue replacement plus a wall grab.
     previewOnly: isSharedSession,

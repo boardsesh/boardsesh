@@ -1,5 +1,5 @@
 import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
-import type { Climb, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { withPlaylistTrackClimbs, type Climb, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { BOARD_FEED_SUGGESTION_SOURCE_ID } from '../../lib/playlists/board-feed-suggestion-source';
 
 type CompatibilityRecord = {
@@ -59,7 +59,8 @@ export function createBoardSuggestionCompatibilityCache() {
       if (climbs === source.climbs) return source;
       if (cached.previousSource === source && cached.previousNormalized?.climbs === climbs)
         return cached.previousNormalized;
-      const normalized = { ...source, climbs };
+      // Dropping a climb moves every position after it, so the count goes too.
+      const normalized = withPlaylistTrackClimbs(source, climbs);
       cached.previousSource = source;
       cached.previousNormalized = normalized;
       return normalized;

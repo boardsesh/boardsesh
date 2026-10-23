@@ -143,3 +143,38 @@ describe('PlayDrawerHeader workout stage subtitle', () => {
     expect(container.querySelector('[data-variant="caption1"]')?.textContent).toBe('12 sends');
   });
 });
+
+describe('PlayDrawerHeader track label (#6664)', () => {
+  const subtitle = (container: HTMLElement) => container.querySelector('[data-variant="caption1"]')?.textContent;
+
+  // The list the player walks rides the stats line, first, so it costs the
+  // board no height and truncation takes the stats rather than the name.
+  it('leads the stats line with the list the player is walking', () => {
+    const { container } = render(
+      createElement(PlayDrawerHeader, {
+        ...baseProps,
+        ascensionistCount: 12,
+        trackLabel: 'From Projects · 4 of 23',
+      }),
+    );
+    expect(subtitle(container)).toBe('From Projects · 4 of 23 · 12 sends');
+  });
+
+  it('puts the list ahead of a workout position', () => {
+    const { container } = render(
+      createElement(PlayDrawerHeader, {
+        ...baseProps,
+        trackLabel: 'From Projects',
+        workoutStageLabel: 'Warm-up · 2 of 5',
+      }),
+    );
+    expect(subtitle(container)).toBe('From Projects · Warm-up · 2 of 5');
+  });
+
+  it('keeps the stats line when there is nothing to print on it', () => {
+    // An empty line can measure shorter than a full one, which would step the
+    // board between a climb with a label and one without.
+    const { container } = render(createElement(PlayDrawerHeader, baseProps));
+    expect(subtitle(container)).toBe('​');
+  });
+});

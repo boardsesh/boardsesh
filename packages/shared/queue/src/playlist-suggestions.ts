@@ -6,7 +6,7 @@
  * stays dependency-free.
  */
 
-import type { Climb, ClimbQueue, ClimbQueueItem, PlaylistSuggestionSource } from './types';
+import type { Climb, ClimbQueue, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from './types';
 
 const acceptEveryClimb = () => true;
 
@@ -211,6 +211,11 @@ export function getQueueBoardKey(target: QueueBoardKeyTarget): string {
  * `use-playlist-activation.ts`) so a mixed-board playlist can't feed `next` a
  * climb the wall can't draw. Web has no consumer since the climbing UI moved to
  * the Expo app in W-16 (#4435). Omitting the predicate keeps everything.
+ *
+ * `climbs` is the list from its first climb, in the list's order. `total` is
+ * kept only when the track walks exactly that list, so "4 of 23" is never a
+ * wrong number: a filter that dropped a climb, a duplicate, or an activated
+ * climb that had to be appended all move positions, and each clears it.
  */
 export function createPlaylistSuggestionSource({
   playlistUuid,
@@ -219,6 +224,9 @@ export function createPlaylistSuggestionSource({
   boardKey,
   isClimbable = acceptEveryClimb,
   preparedClimbs,
+  label,
+  total,
+  continuation,
 }: {
   playlistUuid: string;
   activatedClimb: Climb;
@@ -226,6 +234,9 @@ export function createPlaylistSuggestionSource({
   boardKey: string;
   isClimbable?: (climb: Climb) => boolean;
   preparedClimbs?: PreparedPlaylistClimbs;
+  label?: string;
+  total?: number;
+  continuation?: PlaylistSuggestionSource['continuation'];
 }): PlaylistSuggestionSource {
   // A filtered-out or absent activated climb has exceptional inclusion/order
   // semantics. Keep that uncommon path on the original builder.
@@ -238,15 +249,91 @@ export function createPlaylistSuggestionSource({
     : mergeUniquePlaylistClimbs(activatedClimb, climbs).filter(
         (climb) => climb.uuid === activatedClimb.uuid || isClimbable(climb),
       );
-  const source = {
+  const source: PlaylistSuggestionSource = {
     playlistUuid,
     activatedClimbUuid: activatedClimb.uuid,
     boardKey,
     climbs: climbableClimbs,
   };
+  if (label) source.label = label;
+  if (total !== undefined && keepsListPositions(climbableClimbs, climbs, total)) source.total = total;
+  if (continuation) source.continuation = continuation;
   sourceIndices.set(source, {
     climbs: climbableClimbs,
     firstIndexByUuid: canReuse ? preparedClimbs.firstIndexByUuid : indexClimbs(climbableClimbs),
   });
   return source;
+}
+
+/** True when `track` is `list` climb for climb, so an index in one is a place in the other. */
+function keepsListPositions(track: Climb[], list: Climb[], total: number): boolean {
+  if (track.length !== list.length || total < track.length) return false;
+  for (let index = 0; index < track.length; index += 1) {
+    if (track[index].uuid !== list[index].uuid) return false;
+  }
+  return true;
+}
+
+/**
+ * The track with one more page on its end (issue #6664: lists longer than the
+ * first load keep going instead of stopping at the cap).
+ *
+ * Climbs the track already holds are not added twice. The count survives only
+ * when this page lands exactly where the track ends, nothing in it was dropped
+ * and nothing in it was already there; otherwise positions past this point no
+ * longer match the list, so the player stops showing them.
+ */
+export function appendPlaylistTrackPage(
+  source: PlaylistSuggestionSource,
+  page: PlaylistTrackPage,
+): PlaylistSuggestionSource {
+  const knownUuids = new Set(source.climbs.map(({ uuid }) => uuid));
+  const appended: Climb[] = [];
+  let hadDuplicates = false;
+  for (const climb of page.climbs) {
+    if (knownUuids.has(climb.uuid)) {
+      hadDuplicates = true;
+      continue;
+    }
+    knownUuids.add(climb.uuid);
+    appended.push(climb);
+  }
+  const climbs = appended.length > 0 ? [...source.climbs, ...appended] : source.climbs;
+  const next: PlaylistSuggestionSource = { ...source, climbs };
+  const total = page.total ?? source.total;
+  // An empty page moves no position (a load that failed ends the track this way).
+  const pageStartsAtTrackEnd = page.climbs.length === 0 || page.page * page.pageSize === source.climbs.length;
+  if (
+    source.total !== undefined &&
+    total !== undefined &&
+    total >= climbs.length &&
+    pageStartsAtTrackEnd &&
+    !hadDuplicates &&
+    !page.filteredOut
+  ) {
+    next.total = total;
+  } else {
+    delete next.total;
+  }
+  if (page.nextPage === null || !source.continuation) {
+    delete next.continuation;
+  } else {
+    next.continuation = { loaderId: source.continuation.loaderId, nextPage: page.nextPage };
+  }
+  const existingIndex = sourceIndices.get(source);
+  sourceIndices.set(
+    next,
+    existingIndex?.climbs === climbs ? existingIndex : { climbs, firstIndexByUuid: indexClimbs(climbs) },
+  );
+  return next;
+}
+
+/**
+ * A copy of `source` walking `climbs`, a filtered subset of its own. Dropping a
+ * climb moves every position after it, so the count goes with it.
+ */
+export function withPlaylistTrackClimbs(source: PlaylistSuggestionSource, climbs: Climb[]): PlaylistSuggestionSource {
+  const next: PlaylistSuggestionSource = { ...source, climbs };
+  if (climbs.length !== source.climbs.length) delete next.total;
+  return next;
 }

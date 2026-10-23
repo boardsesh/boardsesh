@@ -445,6 +445,8 @@
       "turnOff": "Pausen-Timer ausschalten",
       "queueEnded": "Warteschlange leer",
       "queueEndedToast": "Nichts mehr in der Warteschlange.",
+      "listEndedToast": "Das war das Ende der Liste.",
+      "listEnded": "Ende der Liste",
       "openHint": "Öffnet die Optionen des Pausen-Timers",
       "runningAria": "Pausen-Timer, {{time}} seit deinem letzten Boulder",
       "countdownAria": "Pausen-Timer, noch {{time}}",
@@ -785,6 +787,19 @@
       "climbActionsAria": "Boulder-Aktionen",
       "queueCountAria": "Warteschlange, {{count}} Boulder",
       "changeAngle": "Winkel ändern"
+    },
+    "track": {
+      "from": "Aus {{name}}",
+      "fromPosition": "Aus {{name}} · {{position}} von {{total}}",
+      "searchResults": "Suchergebnisse",
+      "setterClimbs": "Boulder von {{name}}",
+      "end": {
+        "title": "Ende von {{name}}",
+        "titleUnnamed": "Ende der Liste",
+        "finished": "Das war die ganze Liste, und in deiner Warteschlange kommt danach nichts mehr.",
+        "keepGoing": "Weiter mit deiner Warteschlange ({{upNextCount}})",
+        "stay": "Hierbleiben"
+      }
     },
     "tickFab": {
       "logAscentAria": "Begehung eintragen"

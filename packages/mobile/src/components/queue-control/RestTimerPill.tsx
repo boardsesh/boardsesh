@@ -101,6 +101,8 @@ export type RestTimerDisplay = {
   displayLabel: string;
   /** Compact target, e.g. `2m` / `1:30`. `null` when the rest length is Off. */
   targetLabel: string | null;
+  /** In `queueEnded`: it was the end of the list being walked, with the queue still behind it. */
+  listEnded: boolean;
 };
 
 /**
@@ -109,7 +111,7 @@ export type RestTimerDisplay = {
  * wants a live clock renders {@link RestTimerClock} instead of calling this.
  */
 export function useRestTimerDisplay(): RestTimerDisplay {
-  const { armed, anchorMs, isRunning, pausedElapsedSeconds, queueEnded } = useRestTimerState();
+  const { armed, anchorMs, isRunning, pausedElapsedSeconds, queueEnded, listEnded } = useRestTimerState();
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   const [mode] = useSetting('restTimerMode');
 
@@ -156,6 +158,7 @@ export function useRestTimerDisplay(): RestTimerDisplay {
           ? formatRestTimerSigned(remainingSeconds)
           : formatRestTimerElapsed(elapsedSeconds),
     targetLabel: hasTarget ? formatRestTimerTarget(targetSeconds) : null,
+    listEnded: queueEnded && listEnded,
   };
 }
 
@@ -263,7 +266,7 @@ export function restTimerClockAccessibilityLabel(
 export function RestTimerHeroClock() {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  const { armed, phase, displayLabel, targetSeconds, targetLabel, remainingSeconds } = useRestTimerDisplay();
+  const { armed, phase, displayLabel, targetSeconds, targetLabel, remainingSeconds, listEnded } = useRestTimerDisplay();
 
   if (!armed) return null;
 
@@ -278,7 +281,9 @@ export function RestTimerHeroClock() {
       : phase === 'paused'
         ? t('mobile.restTimer.clockCaptionPaused')
         : phase === 'queueEnded'
-          ? t('mobile.restTimer.queueEnded')
+          ? listEnded
+            ? t('mobile.restTimer.listEnded')
+            : t('mobile.restTimer.queueEnded')
           : phase === 'exceeded'
             ? t('mobile.restTimer.clockCaptionOver')
             : targetSeconds !== null && targetSeconds > 0
@@ -340,7 +345,7 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const { armed, isRunning, phase, displayLabel, targetLabel, remainingSeconds } = useRestTimerDisplay();
+  const { armed, isRunning, phase, displayLabel, targetLabel, remainingSeconds, listEnded } = useRestTimerDisplay();
 
   const handleLongPress = useCallback(() => {
     hapticMedium();
@@ -367,7 +372,9 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
     phase === 'waiting'
       ? t('mobile.restTimer.waitingForTick')
       : phase === 'queueEnded'
-        ? t('mobile.restTimer.queueEnded')
+        ? listEnded
+          ? t('mobile.restTimer.listEnded')
+          : t('mobile.restTimer.queueEnded')
         : null;
 
   // Shared with the sheet's hero clock — see restTimerClockAccessibilityLabel.

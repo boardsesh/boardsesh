@@ -445,6 +445,8 @@
       "turnOff": "Desactivar el temporizador",
       "queueEnded": "Cola vacía",
       "queueEndedToast": "No queda nada en la cola.",
+      "listEndedToast": "Has llegado al final de la lista.",
+      "listEnded": "Fin de la lista",
       "openHint": "Abre las opciones del temporizador",
       "runningAria": "Temporizador de descanso, {{time}} desde tu último bloque",
       "countdownAria": "Temporizador de descanso, quedan {{time}}",
@@ -785,6 +787,19 @@
       "climbActionsAria": "Acciones del bloque",
       "queueCountAria": "Cola, {{count}} bloques",
       "changeAngle": "Cambiar ángulo"
+    },
+    "track": {
+      "from": "Desde {{name}}",
+      "fromPosition": "Desde {{name}} · {{position}} de {{total}}",
+      "searchResults": "Resultados de búsqueda",
+      "setterClimbs": "Bloques de {{name}}",
+      "end": {
+        "title": "Fin de {{name}}",
+        "titleUnnamed": "Fin de la lista",
+        "finished": "Esa es toda la lista y no hay nada en tu cola después de este bloque.",
+        "keepGoing": "Sigue con tu cola ({{upNextCount}})",
+        "stay": "Quedarme aquí"
+      }
     },
     "tickFab": {
       "logAscentAria": "Registrar ascenso"

@@ -7,8 +7,10 @@ import {
   playlistSuggestionSourceMatches,
   pruneSuggestedQueueItemsAfterCurrent,
   reanchorPlaylistSuggestionSource,
+  appendPlaylistTrackPage,
+  withPlaylistTrackClimbs,
 } from '../playlist-suggestions';
-import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '../types';
+import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from '../types';
 
 function makeClimb(uuid: string, name?: string): Climb {
   return { uuid, name: name ?? `Climb ${uuid}` } as Climb;
@@ -204,5 +206,147 @@ describe('prepared playlist tracks', () => {
     expect(createPlaylistSuggestionSource({ ...args, climbs: updatedClimbs, preparedClimbs }).climbs).toEqual(
       updatedClimbs,
     );
+  });
+});
+
+// Issue #6664: the player names the list ("From Projects · 4 of 23") and pages
+// past the first load. A count is only ever shown while it is right.
+describe('named, counted tracks', () => {
+  const list = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));
+  const base = { playlistUuid: 'playlist:p', boardKey: 'board', activatedClimb: list[0], climbs: list };
+
+  it('keeps the name, count and continuation on a track that is the list one for one', () => {
+    const source = createPlaylistSuggestionSource({
+      ...base,
+      label: 'Projects',
+      total: 9,
+      continuation: { loaderId: 'loader', nextPage: 1 },
+    });
+    expect(source).toMatchObject({
+      label: 'Projects',
+      total: 9,
+      continuation: { loaderId: 'loader', nextPage: 1 },
+    });
+  });
+
+  it('drops the count when a climb is filtered out, on either build path', () => {
+    const isClimbable = (climb: Climb) => climb.uuid !== 'c';
+    const plain = createPlaylistSuggestionSource({ ...base, isClimbable, label: 'Projects', total: 4 });
+    const prepared = createPlaylistSuggestionSource({
+      ...base,
+      isClimbable,
+      preparedClimbs: preparePlaylistClimbs(list, isClimbable),
+      label: 'Projects',
+      total: 4,
+    });
+    for (const source of [plain, prepared]) {
+      expect(source.label).toBe('Projects');
+      expect(source).not.toHaveProperty('total');
+    }
+  });
+
+  it('drops the count when the activated climb had to be appended', () => {
+    const source = createPlaylistSuggestionSource({
+      ...base,
+      activatedClimb: makeClimb('not-in-list'),
+      label: 'Projects',
+      total: 4,
+    });
+    expect(source).not.toHaveProperty('total');
+  });
+
+  it('drops a count smaller than the track', () => {
+    expect(createPlaylistSuggestionSource({ ...base, total: 3 })).not.toHaveProperty('total');
+  });
+
+  it('keeps the name, count and continuation through a re-anchor', () => {
+    const source = createPlaylistSuggestionSource({
+      ...base,
+      label: 'Projects',
+      total: 4,
+      continuation: { loaderId: 'loader', nextPage: 1 },
+    });
+    expect(reanchorPlaylistSuggestionSource(source, 'c')).toMatchObject({
+      activatedClimbUuid: 'c',
+      label: 'Projects',
+      total: 4,
+      continuation: { loaderId: 'loader', nextPage: 1 },
+    });
+  });
+
+  it('drops the count when the provider filters the track down for a board', () => {
+    const source = createPlaylistSuggestionSource({ ...base, label: 'Projects', total: 4 });
+    expect(withPlaylistTrackClimbs(source, source.climbs.slice(0, 3))).not.toHaveProperty('total');
+    expect(withPlaylistTrackClimbs(source, [...source.climbs])).toMatchObject({ total: 4 });
+  });
+});
+
+describe('appendPlaylistTrackPage', () => {
+  const firstPage = ['p0-a', 'p0-b'].map((uuid) => makeClimb(uuid));
+  const secondPage = ['p1-a', 'p1-b'].map((uuid) => makeClimb(uuid));
+
+  function trackOf(overrides: Partial<PlaylistSuggestionSource> = {}): PlaylistSuggestionSource {
+    return createPlaylistSuggestionSource({
+      playlistUuid: 'playlist:p',
+      activatedClimb: firstPage[0],
+      climbs: firstPage,
+      boardKey: 'board',
+      label: 'Projects',
+      total: 6,
+      continuation: { loaderId: 'loader', nextPage: 1 },
+      ...overrides,
+    });
+  }
+
+  function pageOf(overrides: Partial<PlaylistTrackPage> = {}): PlaylistTrackPage {
+    return { page: 1, pageSize: 2, climbs: secondPage, filteredOut: false, nextPage: 2, total: 6, ...overrides };
+  }
+
+  it('appends the page, advances the continuation and keeps the count', () => {
+    const next = appendPlaylistTrackPage(trackOf(), pageOf());
+    expect(next.climbs.map(({ uuid }) => uuid)).toEqual(['p0-a', 'p0-b', 'p1-a', 'p1-b']);
+    expect(next.continuation).toEqual({ loaderId: 'loader', nextPage: 2 });
+    expect(next.total).toBe(6);
+    expect(next.label).toBe('Projects');
+    // The new climbs are findable without a scan of the old index.
+    expect(findPlaylistClimbIndex(next, 'p1-b')).toBe(3);
+  });
+
+  it('ends the continuation on the last page', () => {
+    expect(appendPlaylistTrackPage(trackOf(), pageOf({ nextPage: null }))).not.toHaveProperty('continuation');
+  });
+
+  it('never adds a climb the track already holds', () => {
+    const next = appendPlaylistTrackPage(trackOf(), pageOf({ climbs: [firstPage[1], ...secondPage] }));
+    expect(next.climbs.map(({ uuid }) => uuid)).toEqual(['p0-a', 'p0-b', 'p1-a', 'p1-b']);
+    // A repeat means the list moved under the track: positions are no longer certain.
+    expect(next).not.toHaveProperty('total');
+  });
+
+  it('drops the count when the page did not start where the track ends', () => {
+    expect(appendPlaylistTrackPage(trackOf(), pageOf({ page: 2 }))).not.toHaveProperty('total');
+  });
+
+  it('drops the count when the track filter dropped a climb from the page', () => {
+    expect(appendPlaylistTrackPage(trackOf(), pageOf({ filteredOut: true }))).not.toHaveProperty('total');
+  });
+
+  it('never gains a count the track did not already have', () => {
+    const uncounted = trackOf({ total: undefined });
+    expect(appendPlaylistTrackPage(uncounted, pageOf())).not.toHaveProperty('total');
+  });
+
+  it('ends the track on an empty last page and keeps a count that is still right', () => {
+    // A page that failed to load ends the track this way: nothing moved.
+    const next = appendPlaylistTrackPage(trackOf(), pageOf({ climbs: [], pageSize: 0, nextPage: null }));
+    expect(next).not.toHaveProperty('continuation');
+    expect(next.total).toBe(6);
+  });
+
+  it('advances past a page of climbs it already had, without touching the climbs', () => {
+    const source = trackOf();
+    const next = appendPlaylistTrackPage(source, pageOf({ climbs: firstPage }));
+    expect(next.climbs).toBe(source.climbs);
+    expect(next.continuation).toEqual({ loaderId: 'loader', nextPage: 2 });
   });
 });

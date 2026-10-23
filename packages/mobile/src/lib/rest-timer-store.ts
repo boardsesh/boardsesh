@@ -49,6 +49,12 @@ export type RestTimerState = {
    */
   queueEnded: boolean;
   /**
+   * Why the auto-advance stopped, read only while `queueEnded`: the climber
+   * reached the end of the list they are walking, with their queue still there
+   * behind it (issue #6664), rather than the end of the queue.
+   */
+  listEnded: boolean;
+  /**
    * The deadline the last auto-advance actually fired on, so the next one can
    * never be scheduled at or before it.
    *
@@ -72,6 +78,7 @@ const INITIAL_STATE: RestTimerState = {
   cycleId: 0,
   lastTickAt: null,
   queueEnded: false,
+  listEnded: false,
   lastFiredDeadlineMs: null,
 };
 
@@ -225,10 +232,13 @@ export function noteRestTimerAutoAdvanceFired(
   return true;
 }
 
-/** Nothing left to advance to. Stops the scheduler retrying every interval. */
-export function noteRestTimerQueueEnded(): void {
+/**
+ * Nothing left to advance to. Stops the scheduler retrying every interval.
+ * `listEnded` says it was the end of the list being walked, not of the queue.
+ */
+export function noteRestTimerQueueEnded({ listEnded = false }: { listEnded?: boolean } = {}): void {
   if (!state.armed || state.queueEnded) return;
-  setState({ ...state, queueEnded: true, cycleId: state.cycleId + 1 });
+  setState({ ...state, queueEnded: true, listEnded, cycleId: state.cycleId + 1 });
 }
 
 /**

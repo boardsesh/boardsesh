@@ -108,11 +108,14 @@ function shared<Value>(value: Value) {
  * its own accord (the incoming board stopping in the middle) is the pager's
  * business and is tested with it.
  */
-function makePager(state: Partial<SwipePagerJsState> = {}) {
+function makePager(state: Partial<SwipePagerJsState> = {}, { trackEnd = false }: { trackEnd?: boolean } = {}) {
   const requestStep = vi.fn();
   const untoldStep = shared(0);
   const flingDirection = shared(0);
   return {
+    trackEndAvailable: shared(trackEnd),
+    reachTrackEnd: vi.fn(),
+    setTrackEndHandler: vi.fn(),
     translateX: shared(0),
     isAnimating: shared(false),
     anchorPage: shared(0),
@@ -131,7 +134,7 @@ function makePager(state: Partial<SwipePagerJsState> = {}) {
     requestStep,
     stepRendered: vi.fn(),
     setNavigation: vi.fn(),
-  } as unknown as SwipePager & { requestStep: ReturnType<typeof vi.fn> };
+  } as unknown as SwipePager & { requestStep: ReturnType<typeof vi.fn>; reachTrackEnd: ReturnType<typeof vi.fn> };
 }
 
 function makeOptions(overrides: Partial<Options> = {}): Options {
@@ -309,6 +312,51 @@ describe('useCarouselGesture', () => {
 
     handlers.onUpdate({ translationX: 50 });
     expect(pager.translateX.value).toBe(50);
+  });
+
+  // Issue #6664: past the list's last climb a forward swipe shows the end card.
+  it('gives a little past the end of a list, and shows the end card on a full swipe', () => {
+    const pager = makePager({ hasNext: false }, { trackEnd: true });
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    const handlers = latestHandlers();
+
+    handlers.onStart({ translationX: 0 });
+    handlers.onUpdate({ translationX: -100 });
+    // Follows the finger a little, so the end reads as an end rather than a dead board.
+    expect(pager.translateX.value).toBeLessThan(0);
+    expect(pager.translateX.value).toBeGreaterThan(-100);
+    handlers.onEnd({ translationX: -(SWIPE_THRESHOLD + 1), velocityX: 0 });
+
+    expect(pager.reachTrackEnd).toHaveBeenCalledTimes(1);
+    // No step: the climb on screen stays, and the board springs back.
+    expect(pager.untoldStep.value).toBe(0);
+    expect(pager.anchorPage.value).toBe(0);
+    expect(pager.translateX.value).toBe(0);
+  });
+
+  it('does not show the end card for a short drag, a swipe back, or without one to show', () => {
+    const atEnd = makePager({ hasNext: false }, { trackEnd: true });
+    renderHook(() => useCarouselGesture(makeOptions({ pager: atEnd })));
+    swipe(latestHandlers(), -(SWIPE_THRESHOLD - 1));
+    swipe(latestHandlers(), SWIPE_THRESHOLD + 1);
+    expect(atEnd.reachTrackEnd).not.toHaveBeenCalled();
+
+    const noCard = makePager({ hasNext: false });
+    renderHook(() => useCarouselGesture(makeOptions({ pager: noCard })));
+    const handlers = latestHandlers();
+    handlers.onStart({ translationX: 0 });
+    handlers.onUpdate({ translationX: -100 });
+    expect(noCard.translateX.value).toBe(0);
+    handlers.onEnd({ translationX: -(SWIPE_THRESHOLD + 1), velocityX: 0 });
+    expect(noCard.reachTrackEnd).not.toHaveBeenCalled();
+  });
+
+  it('steps to the next climb, not the end card, when there is a next climb', () => {
+    const pager = makePager({}, { trackEnd: true });
+    renderHook(() => useCarouselGesture(makeOptions({ pager })));
+    swipe(latestHandlers(), -(SWIPE_THRESHOLD + 1));
+    expect(pager.reachTrackEnd).not.toHaveBeenCalled();
+    expect(pager.untoldStep.value).toBe(1);
   });
 
   it('does not swipe past the pages the JS thread has mounted while it is one step behind', () => {

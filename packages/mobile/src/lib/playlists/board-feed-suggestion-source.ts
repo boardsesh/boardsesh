@@ -15,7 +15,7 @@
 // put it at the head rather than letting `mergeUniquePlaylistClimbs` append it
 // at the tail.
 
-import type { Climb, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { withPlaylistTrackClimbs, type Climb, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 /**
  * Synthetic suggestion-source id for the board-scoped continuation feed —
@@ -69,5 +69,5 @@ export function normalizeBoardSuggestionSource(
         climb.uuid === source.activatedClimbUuid) ||
       isClimbable(climb),
   );
-  return climbs.length === source.climbs.length ? source : { ...source, climbs };
+  return climbs.length === source.climbs.length ? source : withPlaylistTrackClimbs(source, climbs);
 }

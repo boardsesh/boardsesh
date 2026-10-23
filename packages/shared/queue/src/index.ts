@@ -13,6 +13,8 @@ export type {
   QueueClimbReadTarget,
   ClimbQueue,
   PlaylistSuggestionSource,
+  PlaylistTrackContinuation,
+  PlaylistTrackPage,
   SetCurrentClimbOptions,
   SetCurrentClimbTrigger,
   AddToQueueSource,
@@ -49,6 +51,8 @@ export {
   reanchorPlaylistSuggestionSource,
   preparePlaylistClimbs,
   findPlaylistClimbIndex,
+  appendPlaylistTrackPage,
+  withPlaylistTrackClimbs,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';
 

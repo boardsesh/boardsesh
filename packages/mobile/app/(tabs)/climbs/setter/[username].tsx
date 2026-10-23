@@ -52,7 +52,12 @@ import { boardConfigKey } from '../../../../src/lib/last-search-store';
 import { useInfiniteSearchClimbs } from '../../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { useSearchClimbsCount } from '../../../../src/lib/graphql/hooks';
 import { useSearchGradeSourceActive, withGradeSource } from '../../../../src/lib/graphql/hooks/search-grade-source';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../../src/lib/graphql/operations';
+import {
+  SEARCH_CLIMBS,
+  SEARCH_CLIMBS_COUNT,
+  type SearchClimbsCountQueryResponse,
+  type SearchClimbsQueryResponse,
+} from '../../../../src/lib/graphql/operations';
 import { offlineAwareRequest } from '../../../../src/lib/graphql/offline-request';
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { useAuth } from '../../../../src/providers/auth-provider';
@@ -107,6 +112,7 @@ export default function SetterPlaylist() {
   }>();
   const { t } = useTranslation('climbs');
   const { t: tPlaylists } = useTranslation('playlists');
+  const { t: tSession } = useTranslation('session');
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const sourceBoard = useMemo(
@@ -214,11 +220,25 @@ export default function SetterPlaylist() {
     },
     [username, settledView.view, boardseshGrades],
   );
+  // The pages carry no count, so the player's "4 of 120" asks for it once, with
+  // the same input the pages use.
+  const fetchTotal = useCallback<NonNullable<UsePlaylistActivationOptions['fetchTotal']>>(
+    async ({ board, signal }) => {
+      if (signal.aborted) throw createAbortError('Setter playlist count was cancelled');
+      const response = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
+        input: setterPlaylistInput(username, board),
+      });
+      return response.searchClimbs.totalCount;
+    },
+    [username],
+  );
   const isSharedSession = useIsSharedSession();
   const activation = usePlaylistActivation({
     sourceId: listSourceId(`setter:${username}:${JSON.stringify(renderBoard)}`, settledView.key),
     allClimbs,
     fetchPage,
+    fetchTotal,
+    label: tSession('playView.track.setterClimbs', { name: username }),
     previewOnly: isSharedSession,
     replaceQueueOnActivate: true,
     refreshErrorMessage: 'Failed to refresh setter playlist',

@@ -3,8 +3,10 @@ import type { Climb } from '@boardsesh/queue';
 import {
   drainPlaylistPages,
   fetchPlaylistSuggestionClimbs,
+  fetchPlaylistTrackPage,
   isAbortError,
   MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
+  MAX_PLAYLIST_TRACK_PAGES,
   PLAYLIST_PAGE_MAX_ATTEMPTS,
   PLAYLIST_RATE_LIMIT_MAX_WAIT_MS,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
@@ -457,22 +459,24 @@ describe('drainPlaylistPages', () => {
 });
 
 describe('fetchPlaylistSuggestionClimbs', () => {
-  it('keeps its 10-page cap', async () => {
+  it("keeps its 10-page cap, and treats it as the track's end", async () => {
     const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
       climbs: makePage(page, 1),
       hasMore: true,
     }));
 
-    const climbs = await fetchPlaylistSuggestionClimbs({
+    const { climbs, nextPage } = await fetchPlaylistSuggestionClimbs({
       activatedClimbUuid: 'not-in-this-list',
       signal: new AbortController().signal,
       fetchPage,
       pageSize: 1,
     });
 
-    expect(fetchPage).toHaveBeenCalledTimes(10);
+    expect(fetchPage).toHaveBeenCalledTimes(MAX_PLAYLIST_TRACK_PAGES);
     expect(climbs).toHaveLength(10);
     expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ page: 0, pageSize: 1 });
+    // The server still has more, but the first 1,000 climbs are as far as a track goes.
+    expect(nextPage).toBeNull();
   });
 
   it('defaults to the shared refresh page size', async () => {
@@ -497,7 +501,7 @@ describe('fetchPlaylistSuggestionClimbs', () => {
       hasMore: true,
     }));
 
-    const climbs = await fetchPlaylistSuggestionClimbs({
+    const { climbs, nextPage } = await fetchPlaylistSuggestionClimbs({
       activatedClimbUuid: 'activated',
       signal: new AbortController().signal,
       fetchPage,
@@ -509,6 +513,8 @@ describe('fetchPlaylistSuggestionClimbs', () => {
     // 9 after the activated climb on page 0, +10 on page 1, +10 on page 2 = 29 >= 25.
     expect(fetchPage).toHaveBeenCalledTimes(3);
     expect(climbs).toHaveLength(30);
+    // A head start, not a cap: the track carries on from page 3 (issue #6664).
+    expect(nextPage).toBe(3);
   });
 
   it('does not count climbs loaded before the activated climb is seen', async () => {
@@ -544,7 +550,7 @@ describe('fetchPlaylistSuggestionClimbs', () => {
       };
     });
 
-    const climbs = await fetchPlaylistSuggestionClimbs({
+    const { climbs } = await fetchPlaylistSuggestionClimbs({
       activatedClimbUuid: 'activated',
       signal: new AbortController().signal,
       fetchPage,
@@ -568,7 +574,7 @@ describe('fetchPlaylistSuggestionClimbs', () => {
       return { climbs: makePage(page, 10), hasMore: true };
     });
 
-    const climbs = await fetchPlaylistSuggestionClimbs({
+    const { climbs } = await fetchPlaylistSuggestionClimbs({
       activatedClimbUuid: 'nope',
       signal: controller.signal,
       fetchPage,
@@ -578,6 +584,148 @@ describe('fetchPlaylistSuggestionClimbs', () => {
 
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(climbs).toHaveLength(20);
+  });
+
+  it('reports no next page when the list ended inside the first load', async () => {
+    const fetchPage = vi.fn(async () => ({ climbs: [makeClimb('activated'), makeClimb('after')], hasMore: false }));
+
+    const load = await fetchPlaylistSuggestionClimbs({
+      activatedClimbUuid: 'activated',
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+
+    expect(load.nextPage).toBeNull();
+  });
+
+  it('carries the list total from the first page that reports one', async () => {
+    const fetchPage = vi.fn(async () => ({ climbs: [makeClimb('activated')], hasMore: false, totalCount: 1 }));
+
+    const load = await fetchPlaylistSuggestionClimbs({
+      activatedClimbUuid: 'activated',
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+
+    expect(load.total).toBe(1);
+  });
+
+  it('drops the total when a page repeated a climb, because positions shifted', async () => {
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+      climbs: page === 0 ? [makeClimb('activated'), makeClimb('x')] : [makeClimb('x'), makeClimb('y')],
+      hasMore: page === 0,
+      totalCount: 4,
+    }));
+
+    const load = await fetchPlaylistSuggestionClimbs({
+      activatedClimbUuid: 'activated',
+      signal: new AbortController().signal,
+      fetchPage,
+      pageSize: 2,
+    });
+
+    expect(load.climbs.map(({ uuid }) => uuid)).toEqual(['activated', 'x', 'y']);
+    expect(load).not.toHaveProperty('total');
+  });
+});
+
+// Issue #6664: a track used to stop for good about 250 climbs past the tapped
+// one. It now asks for one more page whenever the climber nears its end.
+describe('fetchPlaylistTrackPage', () => {
+  it('pages past the first load, one page per call', async () => {
+    const pageSize = 100;
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+      climbs: makePage(page, pageSize),
+      hasMore: true,
+      totalCount: 900,
+    }));
+    const first = await fetchPlaylistSuggestionClimbs({
+      activatedClimbUuid: 'p0-c0',
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+    // The head start: 300 climbs, 299 of them past the tapped one.
+    expect(first.climbs).toHaveLength(300);
+    expect(first.nextPage).toBe(3);
+    fetchPage.mockClear();
+
+    const fourth = await fetchPlaylistTrackPage({
+      page: first.nextPage ?? -1,
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ page: 3, pageSize });
+    expect(fourth.climbs.map(({ uuid }) => uuid)).toEqual(makePage(3, pageSize).map(({ uuid }) => uuid));
+    expect(fourth.nextPage).toBe(4);
+    expect(fourth.totalCount).toBe(900);
+  });
+
+  it('ends the track on the last page the server has', async () => {
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({ climbs: makePage(page, 5), hasMore: false }));
+
+    const load = await fetchPlaylistTrackPage({ page: 4, signal: new AbortController().signal, fetchPage });
+
+    expect(load.climbs).toHaveLength(5);
+    expect(load.nextPage).toBeNull();
+  });
+
+  it('stops at the 1,000-climb bound even when the server has more', async () => {
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({ climbs: makePage(page, 100), hasMore: true }));
+
+    const last = await fetchPlaylistTrackPage({
+      page: MAX_PLAYLIST_TRACK_PAGES - 1,
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+    expect(last.nextPage).toBeNull();
+
+    const past = await fetchPlaylistTrackPage({
+      page: MAX_PLAYLIST_TRACK_PAGES,
+      signal: new AbortController().signal,
+      fetchPage,
+    });
+    expect(past).toEqual({ climbs: [], nextPage: null });
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends the track on an empty page that still claims more', async () => {
+    const fetchPage = vi.fn(async () => ({ climbs: [], hasMore: true }));
+
+    const load = await fetchPlaylistTrackPage({ page: 2, signal: new AbortController().signal, fetchPage });
+
+    expect(load.nextPage).toBeNull();
+  });
+
+  it('retries a transport error once, like the drain', async () => {
+    const sleep = makeImmediateSleep();
+    const fetchPage = vi
+      .fn()
+      .mockRejectedValueOnce(makeTransportError())
+      .mockResolvedValueOnce({ climbs: makePage(3, 2), hasMore: false });
+
+    const load = await fetchPlaylistTrackPage({
+      page: 3,
+      signal: new AbortController().signal,
+      fetchPage,
+      isRetryable: (error) => error instanceof TypeError,
+      sleep,
+    });
+
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(load.climbs).toHaveLength(2);
+  });
+
+  it('rejects with an AbortError when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchPage = vi.fn();
+
+    await expect(fetchPlaylistTrackPage({ page: 1, signal: controller.signal, fetchPage })).rejects.toSatisfy(
+      isAbortError,
+    );
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 });
 

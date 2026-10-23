@@ -379,3 +379,46 @@ describe('similar-climb selection', () => {
     expect(initialProps.chrome.clearMirror).not.toHaveBeenCalled();
   });
 });
+
+// Issue #6664: the end card's "Keep going with your queue" from a committed
+// climb. It must never take a wall that a swipe from the same state would not.
+describe('continuing into the queue from the end of a list', () => {
+  it('commits the queued climb solo, and leaves the list behind', () => {
+    const initialProps = inputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    const queued = item('queued');
+
+    act(() => result.current.continueIntoQueue(queued));
+
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(queued, { playlistSuggestionSource: null });
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
+    expect(initialProps.chrome.clearMirror).toHaveBeenCalled();
+  });
+
+  it('only previews the queued climb with a crew here, so the wall stays put', () => {
+    const initialProps = inputs();
+    initialProps.navigation.browseByDefault = true;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    const queued = item('queued');
+
+    act(() => result.current.continueIntoQueue(queued));
+
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(queued);
+    // A preview of a queued climb with no track walks the queue from there.
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenLastCalledWith(null);
+  });
+
+  it('only previews the queued climb with Light on swipe off', () => {
+    const initialProps = inputs();
+    initialProps.navigation.lightOnSwipe = false;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    const queued = item('queued');
+
+    act(() => result.current.continueIntoQueue(queued));
+
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(queued);
+  });
+});

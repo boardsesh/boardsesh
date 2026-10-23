@@ -54,6 +54,9 @@ const recorded = vi.hoisted(() => ({
   favoriteStatus: [] as Props[],
   navigationBoardConfigs: [] as unknown[],
   actionsMenu: [] as Props[],
+  liveHeader: [] as Props[],
+  trackEndCard: [] as Props[],
+  swipeableHeader: [] as { next?: ReactNode; previous?: ReactNode }[],
   panePlaceholder: 0,
 }));
 // Signed out unless a case says otherwise: both viewers here render without a
@@ -278,6 +281,13 @@ vi.mock('../WallStateCallout', () => ({
     return createElement('div', { 'data-testid': 'wall-callout' });
   },
 }));
+// Recorded: the end of a list (#6664) is a join this file pins, see below.
+vi.mock('../TrackEndCard', () => ({
+  TrackEndCard: (props: Props) => {
+    recorded.trackEndCard.push(props);
+    return createElement('div', { 'data-testid': 'track-end-card' });
+  },
+}));
 vi.mock('../DeferredSections', () => ({
   DeferredSections: (props: Props) => {
     recorded.deferredSections.push(props);
@@ -298,7 +308,7 @@ vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null
 vi.mock('../PlayDrawerStatusBarScrim', () => ({ PlayDrawerStatusBarScrim: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
   useLivePlayDrawerHeaderModel: (props: Props) =>
-    props.climb
+    recorded.liveHeader.push(props) && props.climb
       ? {
           headerProps: props,
           reduceMotion: false,
@@ -309,7 +319,10 @@ vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: ({ leading }: { leading?: ReactNode }) => createElement('div', null, leading),
 }));
 vi.mock('../SwipeableHeader', () => ({
-  SwipeableHeader: ({ current }: { current?: ReactNode }) => createElement('div', null, current),
+  SwipeableHeader: (props: { current?: ReactNode; next?: ReactNode; previous?: ReactNode }) => {
+    recorded.swipeableHeader.push(props);
+    return createElement('div', null, props.current);
+  },
 }));
 vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
 vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
@@ -540,6 +553,9 @@ beforeEach(() => {
   recorded.favoriteStatus = [];
   recorded.navigationBoardConfigs = [];
   recorded.actionsMenu = [];
+  recorded.liveHeader = [];
+  recorded.trackEndCard = [];
+  recorded.swipeableHeader = [];
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
   session.isShared = false;
@@ -2039,5 +2055,130 @@ describe('PlayDrawer — which board forward navigation is scanned against', () 
     } finally {
       activeBoard.current = { boardType: 'tension', layoutId: 8, sizeId: 20, setIds: '3', angle: 40 };
     }
+  });
+});
+
+// Issue #6664: the player names the list it walks and stops at its end. The
+// rules are pure and tested in @boardsesh/play-view (`resolveTrackLabel`, the
+// end-of-track result) and in `track-end.test.ts`; what only a render can see
+// is that PlayCore wires them in. Dropping any of the three joins below (the
+// header label, Next staying live at the end, Next opening the card) left every
+// other test green.
+describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
+  const climb = (uuid: string, name: string): Climb => ({ ...CLIMB, uuid, name }) as unknown as Climb;
+  const first = climb('climb-first', 'First');
+  const last = climb('climb-last', 'Last');
+  const queued = climb('climb-queued', 'Queued');
+  const itemFirst = { uuid: 'queue-first', climb: first };
+  const itemLast = { uuid: 'queue-last', climb: last };
+  const itemQueued = { uuid: 'queue-queued', climb: queued };
+
+  function onTheLastClimbOfProjects() {
+    session.useRealNavigation = true;
+    session.suggestionSource = {
+      playlistUuid: 'smart:projects:user',
+      activatedClimbUuid: first.uuid,
+      boardKey: 'kilter:1:10:1,20',
+      climbs: [first, last],
+      label: 'Projects',
+      total: 2,
+    } as unknown as PlaylistSuggestionSource;
+    session.queue = [itemFirst, itemLast, itemQueued];
+    session.currentItem = itemLast;
+    render(drawerElement('member', committedTargetFor(last)));
+  }
+
+  function lastLiveHeaderProps(): Props {
+    const props = recorded.liveHeader.at(-1);
+    if (!props) throw new Error('the live header never rendered');
+    return props;
+  }
+
+  function pressNext() {
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+  }
+
+  function lastTrackEndCardProps(): Props {
+    const props = recorded.trackEndCard.at(-1);
+    if (!props) throw new Error('the end card never opened');
+    return props;
+  }
+
+  it('names the list in the header while it walks one, with the count', () => {
+    onTheLastClimbOfProjects();
+    expect(lastLiveHeaderProps().trackLabel).toBe('playView.track.fromPosition');
+  });
+
+  /** The track label on the header waiting beside the current one. */
+  function neighbourTrackLabel(side: 'next' | 'previous'): unknown {
+    const neighbour = recorded.swipeableHeader.at(-1)?.[side];
+    if (!neighbour || typeof neighbour !== 'object' || !('props' in neighbour)) return undefined;
+    return (neighbour.props as Props).trackLabel;
+  }
+
+  it("slides the neighbour's own label in with a swipe that walks the list", () => {
+    onTheLastClimbOfProjects();
+    expect(neighbourTrackLabel('previous')).toBe('playView.track.fromPosition');
+  });
+
+  it('promises no list on the neighbour when the swipe opens a preview with none (crew)', () => {
+    // A crew is here, so a swipe off the committed climb opens a preview, and a
+    // preview walks only the track it was opened with (#5403): none.
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    onTheLastClimbOfProjects();
+    expect(lastLiveHeaderProps().trackLabel).toBe('playView.track.fromPosition');
+    expect(neighbourTrackLabel('previous') ?? null).toBeNull();
+  });
+
+  it('names nothing for a climb with no list', () => {
+    session.useRealNavigation = true;
+    session.queue = [itemLast, itemQueued];
+    session.currentItem = itemLast;
+    render(drawerElement('member', committedTargetFor(last)));
+    expect(lastLiveHeaderProps().trackLabel ?? null).toBeNull();
+  });
+
+  it('keeps Next live at the end of the list, and opens the end card instead of the queue', () => {
+    onTheLastClimbOfProjects();
+    expect(lastActionBarProps().canSwipeNext).toBe(true);
+    expect(recorded.trackEndCard).toHaveLength(0);
+
+    pressNext();
+
+    expect(queueActions.nextClimb).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lastTrackEndCardProps().model).toMatchObject({
+      listName: 'Projects',
+      upNextCount: 1,
+      action: { kind: 'nextInQueue', target: itemQueued },
+    });
+  });
+
+  it('carries on with the queue solo, leaving the list behind', () => {
+    onTheLastClimbOfProjects();
+    pressNext();
+
+    act(() => {
+      (lastTrackEndCardProps().onKeepGoing as () => void)();
+    });
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(itemQueued, { playlistSuggestionSource: null });
+  });
+
+  it('only previews the queued climb with a crew here, so the wall stays put', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    onTheLastClimbOfProjects();
+    pressNext();
+
+    act(() => {
+      (lastTrackEndCardProps().onKeepGoing as () => void)();
+    });
+
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lastDisplayedClimbUuid()).toBe(queued.uuid);
   });
 });

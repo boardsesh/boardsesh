@@ -1,6 +1,10 @@
 import type { Climb, ClimbQueueItem, ClimbQueue, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid, findPlaylistClimbIndex } from '@boardsesh/queue';
-import { findNextCompatibleQueueItem, type ActiveBoardForCompatibility } from '@boardsesh/board-config';
+import {
+  classifyClimbBoardCompatibility,
+  findNextCompatibleQueueItem,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import type { NavigationState } from './types';
 
 /**
@@ -99,31 +103,14 @@ export function computeNavigationState(
     nextItem,
     prevItem,
     remainingCount,
+    atTrackEnd: false,
   };
 }
 
-/** The playlist climb immediately after `currentClimbUuid` in the source's
- * ordered list, or null if the current climb isn't in the playlist or is last. */
-function getNextPlaylistClimb(
-  source: PlaylistSuggestionSource | null,
-  currentClimbUuid: string | undefined,
-): Climb | null {
-  if (!source || !currentClimbUuid) return null;
-  const index = findPlaylistClimbIndex(source, currentClimbUuid);
-  if (index === -1) return null;
-  return source.climbs[index + 1] ?? null;
-}
-
-/** The playlist climb immediately before `currentClimbUuid` in the source's
- * ordered list, or null if the current climb isn't in the playlist or is first. */
-function getPreviousPlaylistClimb(
-  source: PlaylistSuggestionSource | null,
-  currentClimbUuid: string | undefined,
-): Climb | null {
-  if (!source || !currentClimbUuid) return null;
-  const index = findPlaylistClimbIndex(source, currentClimbUuid);
-  if (index <= 0) return null;
-  return source.climbs[index - 1] ?? null;
+/** Where `climbUuid` sits on the track, or -1 with no track or off it. */
+function trackIndexOf(source: PlaylistSuggestionSource | null, climbUuid: string | undefined): number {
+  if (!source || !climbUuid) return -1;
+  return findPlaylistClimbIndex(source, climbUuid);
 }
 
 /** Wrap a suggested climb as a transient "peek" queue item. */
@@ -147,6 +134,52 @@ function findAdjacentQueueItemForClimb(
   return null;
 }
 
+/**
+ * A queued climb a swipe walks past: the board on the wall can't draw it, and
+ * it is not on another wall in this room. The queue walk's own rule
+ * ({@link scanForFirstCompatible}), asked one entry at a time.
+ */
+function swipeWalksPast(
+  item: ClimbQueueItem,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): boolean {
+  if (!item.climb || classifyClimbBoardCompatibility(activeConfig, item.climb) !== 'incompatible') return false;
+  return !isReachable?.(item.climb);
+}
+
+/**
+ * The queue entry that already holds the list's next (`step` 1) or previous
+ * (`step` -1) climb, so a swipe lands on it instead of minting a copy.
+ *
+ * The immediate neighbours first (the symmetric dedupe on
+ * findNextQueueItemWithSuggestions). Then on along the queue in the swipe's
+ * direction, past climbs the board can't draw, which the track left out for
+ * the same reason (issue #6664). "Start playlist" queues the whole list in its
+ * order, and on a list that mixes layouts a climb from another layout can sit
+ * between two of the list's climbs: without this, every swipe past one added
+ * a second copy of the next climb. The walk stops at the first climb the board
+ * can draw, so a climb queued on purpose ("Play next") is never walked past.
+ */
+function findQueuedListNeighbour(
+  queue: ClimbQueue,
+  currentIndex: number,
+  climbUuid: string,
+  step: 1 | -1,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): ClimbQueueItem | null {
+  if (currentIndex < 0) return null;
+  const adjacentItem = findAdjacentQueueItemForClimb(queue, currentIndex, climbUuid);
+  if (adjacentItem || !activeConfig) return adjacentItem;
+  for (let index = currentIndex + step; index >= 0 && index < queue.length; index += step) {
+    const item = queue[index];
+    if (item.climb?.uuid === climbUuid) return item;
+    if (!swipeWalksPast(item, activeConfig, isReachable)) return null;
+  }
+  return null;
+}
+
 /** What a forward navigation resolved to, plus the queued climbs it walked past. */
 export type NextQueueItemSelection = {
   item: ClimbQueueItem | null;
@@ -155,7 +188,16 @@ export type NextQueueItemSelection = {
    * passed over to reach `item`. Empty when no active board was supplied.
    */
   skippedItems: ClimbQueueItem[];
+  /**
+   * `item` is null because the current climb is the last on the track. Never
+   * true with an item, and never true without a track: a climb with no list to
+   * walk has nothing to end.
+   */
+  atTrackEnd: boolean;
 };
+
+const NOTHING_NEXT: NextQueueItemSelection = { item: null, skippedItems: [], atTrackEnd: false };
+const TRACK_END: NextQueueItemSelection = { item: null, skippedItems: [], atTrackEnd: true };
 
 /**
  * First queued climb from `items` the active board can draw, plus the ones
@@ -171,7 +213,7 @@ function scanForFirstCompatible(
   isReachable?: ReachableClimbPredicate,
 ): NextQueueItemSelection {
   const { item, skippedCount } = findNextCompatibleQueueItem(items, null, activeConfig);
-  if (!isReachable) return { item, skippedItems: items.slice(0, skippedCount) };
+  if (!isReachable) return { item, skippedItems: items.slice(0, skippedCount), atTrackEnd: false };
 
   // A reachable climb earlier in the queue outranks a compatible one further
   // along: the climber asked for the wall twenty metres away, so walking past it
@@ -180,13 +222,13 @@ function scanForFirstCompatible(
   // helper also answers the BLE senders' question — "can this wall physically
   // draw it" — where reachability is meaningless.
   const reachableIndex = items.findIndex(({ climb }) => climb != null && isReachable(climb));
-  if (reachableIndex < 0) return { item, skippedItems: items.slice(0, skippedCount) };
+  if (reachableIndex < 0) return { item, skippedItems: items.slice(0, skippedCount), atTrackEnd: false };
 
   const compatibleIndex = item ? items.findIndex(({ uuid }) => uuid === item.uuid) : -1;
   if (compatibleIndex >= 0 && compatibleIndex <= reachableIndex) {
-    return { item, skippedItems: items.slice(0, skippedCount) };
+    return { item, skippedItems: items.slice(0, skippedCount), atTrackEnd: false };
   }
-  return { item: items[reachableIndex], skippedItems: items.slice(0, reachableIndex) };
+  return { item: items[reachableIndex], skippedItems: items.slice(0, reachableIndex), atTrackEnd: false };
 }
 
 /**
@@ -208,8 +250,11 @@ function scanForFirstCompatible(
  *     starts a fresh pass (the queue grows 1..10, 1..10) instead of jumping
  *     ahead to the first un-queued climb.
  *  2. No source, or the current climb isn't in it → the queue successor.
- *  3. List boundary (in the source, nothing after it) → fall back to the queue
- *     successor, so a queue built from other lists is still reachable.
+ *  3. List boundary (in the source, nothing after it) → nothing, with
+ *     `atTrackEnd` set (issue #6664). Falling into the queue here used to hand
+ *     the climber whatever older climb sat after the current one, with nothing
+ *     on screen to say the list had ended. The player shows an end card
+ *     instead, and the queue is one deliberate tap on it.
  *
  * Symmetric dedupe: if the list target is ALREADY the queue item immediately
  * before or after current, return that real item instead of minting a peek, so
@@ -217,11 +262,14 @@ function scanForFirstCompatible(
  * the server always inserts after the current item and mobile verifies the
  * ORDERED queue hash: committing a *previous* peek yields `[…, W1, W0]` with W0
  * current, so the following "next" finds its list target W1 at
- * `currentIndex - 1`, not `+ 1`.
+ * `currentIndex - 1`, not `+ 1`. With `activeConfig`, the search also walks on
+ * past queued climbs the board can't draw, which the provider's board filter
+ * took off the track: see {@link findQueuedListNeighbour}.
  *
  * An orphan current (not in the queue at all — the wrong-board view-only
- * preview, or transiently between a peek commit and the server echo) keeps the
- * old behaviour: peek the list successor, else null. It never falls back to
+ * preview, or transiently between a peek commit and the server echo) peeks the
+ * list successor, and at the list's last climb reports `atTrackEnd` like a
+ * queued one. Off the list it has nothing to walk. It never falls back to
  * `queue[0]`, and it never dedupes (there is no meaningful adjacency).
  *
  * `activeConfig` makes the QUEUE branch board-aware (issue #5099): a swipe walks
@@ -255,19 +303,18 @@ export function selectNextQueueItemWithSuggestions(
 ): NextQueueItemSelection {
   if (currentClimbQueueItem) {
     const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
-    if (currentIndex >= 0) {
-      const listSuccessor = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
-      if (listSuccessor) {
-        return {
-          item: findAdjacentQueueItemForClimb(queue, currentIndex, listSuccessor.uuid) ?? toPeekItem(listSuccessor),
-          skippedItems: [],
-        };
-      }
-      // The active list wins; board filtering applies when falling back to queue history.
-      return scanForFirstCompatible(queue.slice(currentIndex + 1), activeConfig, isReachable);
+    const trackIndex = trackIndexOf(source, currentClimbQueueItem.climb?.uuid);
+    if (source && trackIndex >= 0) {
+      const listSuccessor = source.climbs[trackIndex + 1];
+      if (!listSuccessor) return TRACK_END;
+      const queuedItem = findQueuedListNeighbour(queue, currentIndex, listSuccessor.uuid, 1, activeConfig, isReachable);
+      return { item: queuedItem ?? toPeekItem(listSuccessor), skippedItems: [], atTrackEnd: false };
     }
-    const nextClimb = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
-    return { item: nextClimb ? toPeekItem(nextClimb) : null, skippedItems: [] };
+    // No list, or off it: a queued climb walks the queue, with board filtering;
+    // an orphan has nothing to walk.
+    return currentIndex >= 0
+      ? scanForFirstCompatible(queue.slice(currentIndex + 1), activeConfig, isReachable)
+      : NOTHING_NEXT;
   }
 
   if (queue.length > 0) {
@@ -277,13 +324,14 @@ export function selectNextQueueItemWithSuggestions(
     return {
       item: firstSuggestionAfterQueue ? toPeekItem(firstSuggestionAfterQueue) : null,
       skippedItems: scanned.skippedItems,
+      atTrackEnd: false,
     };
   }
 
   // No current climb and an empty queue: seed from the activated climb's first
   // suggestion (getPlaylistSuggestedClimbs anchors on source.activatedClimbUuid).
   const firstSuggestion = getPlaylistSuggestedClimbs(source, queue)[0];
-  return { item: firstSuggestion ? toPeekItem(firstSuggestion) : null, skippedItems: [] };
+  return firstSuggestion ? { item: toPeekItem(firstSuggestion), skippedItems: [], atTrackEnd: false } : NOTHING_NEXT;
 }
 
 /** `selectNextQueueItemWithSuggestions` for callers that don't report skips. */
@@ -310,33 +358,46 @@ export function findNextQueueItemWithSuggestions(
  *     "peek" (or the adjacent real queue item — see the symmetric dedupe note
  *     on findNextQueueItemWithSuggestions).
  *  2. No source, or the current climb isn't in it → the queue predecessor.
- *  3. List boundary (first in the list) → fall back to the queue predecessor,
- *     so history from before the list is still reachable.
+ *  3. List boundary (first in the list) → null. The list's start is a stop,
+ *     like its end (issue #6664): falling back into History here walked the
+ *     climber into climbs from before the list with nothing to say so.
  *
  * An orphan current (not in the queue — the wrong-board view-only preview,
- * whose peeked climbs are never committed) is unchanged: peek the list
- * predecessor if the climb is in the source, else null.
+ * whose peeked climbs are never committed) peeks the list predecessor if the
+ * climb is in the source, else null.
+ *
+ * `activeConfig` and `isReachable` only steer which queue entry stands for the
+ * list predecessor (see {@link findQueuedListNeighbour}); the queue branch
+ * stays board-blind going back, as computeNavigationStateWithSuggestions
+ * explains.
  */
 export function findPreviousQueueItemWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   prepared?: PreparedQueueNavigation,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
 ): ClimbQueueItem | null {
   if (!currentClimbQueueItem) return null;
 
   const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
-  if (currentIndex >= 0) {
-    const listPredecessor = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
-    if (listPredecessor) {
-      return findAdjacentQueueItemForClimb(queue, currentIndex, listPredecessor.uuid) ?? toPeekItem(listPredecessor);
-    }
-    // No list, off the list, or at the list's start: walk the queue.
-    return currentIndex > 0 ? queue[currentIndex - 1] : null;
+  const trackIndex = trackIndexOf(source, currentClimbQueueItem.climb?.uuid);
+  if (source && trackIndex >= 0) {
+    const listPredecessor = source.climbs[trackIndex - 1];
+    if (!listPredecessor) return null;
+    const queuedItem = findQueuedListNeighbour(
+      queue,
+      currentIndex,
+      listPredecessor.uuid,
+      -1,
+      activeConfig,
+      isReachable,
+    );
+    return queuedItem ?? toPeekItem(listPredecessor);
   }
-
-  const prevClimb = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
-  return prevClimb ? toPeekItem(prevClimb) : null;
+  // No list, or off it: a queued climb walks the queue; an orphan has nothing.
+  return currentIndex > 0 ? queue[currentIndex - 1] : null;
 }
 
 /**
@@ -437,16 +498,23 @@ export function computeNavigationTargetsWithSuggestions(
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
 ): Omit<NavigationState, 'remainingCount'> {
-  const nextItem = selectNextQueueItemWithSuggestions(
+  const { item: nextItem, atTrackEnd } = selectNextQueueItemWithSuggestions(
     queue,
     currentClimbQueueItem,
     source,
     activeConfig,
     isReachable,
     prepared,
-  ).item;
-  const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source, prepared);
-  return { canNext: nextItem !== null, canPrevious: prevItem !== null, nextItem, prevItem };
+  );
+  const prevItem = findPreviousQueueItemWithSuggestions(
+    queue,
+    currentClimbQueueItem,
+    source,
+    prepared,
+    activeConfig,
+    isReachable,
+  );
+  return { canNext: nextItem !== null, canPrevious: prevItem !== null, nextItem, prevItem, atTrackEnd };
 }
 
 export function countRemainingQueueItemsWithSuggestions(

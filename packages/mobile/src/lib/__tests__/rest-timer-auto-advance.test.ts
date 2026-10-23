@@ -21,6 +21,7 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   cycleId: 1,
   lastTickAt: null,
   queueEnded: false,
+  listEnded: false,
   lastFiredDeadlineMs: null,
   ...overrides,
 });

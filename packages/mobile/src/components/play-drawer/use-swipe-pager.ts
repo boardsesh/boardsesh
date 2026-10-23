@@ -96,6 +96,17 @@ export type SwipePager = {
   stepRendered: (step: number) => void;
   /** JS thread. What a step calls to change the climb. See `useSwipeNavigation`. */
   setNavigation: (onNext: () => void, onPrevious: () => void) => void;
+  /**
+   * True while the climb on screen is the last on the list the player walks and
+   * the end card is there to show (issue #6664). A forward swipe then gives a
+   * little and, released past the threshold, shows the card instead of
+   * springing back with nothing. Written by the drawer; see `useTrackEndSwipe`.
+   */
+  trackEndAvailable: SharedValue<boolean>;
+  /** JS thread. A forward swipe was released past the list's end. */
+  reachTrackEnd: () => void;
+  /** JS thread. What `reachTrackEnd` runs. See `useTrackEndSwipe`. */
+  setTrackEndHandler: (onTrackEnd: (() => void) | null) => void;
 };
 
 export type SwipePageAssignment = {
@@ -152,6 +163,14 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
   const slideWidth = useSharedValue(0);
   const resetGeneration = useSharedValue(0);
   const untoldStep = useSharedValue(0);
+  const trackEndAvailable = useSharedValue(false);
+  const trackEndHandlerRef = useRef<(() => void) | null>(null);
+  const setTrackEndHandler = useCallback((onTrackEnd: (() => void) | null) => {
+    trackEndHandlerRef.current = onTrackEnd;
+  }, []);
+  const reachTrackEnd = useCallback(() => {
+    trackEndHandlerRef.current?.();
+  }, []);
 
   const [stepSignal, setStepSignal] = useState<SwipeStepSignal>({ direction: 0, step: 0 });
   const navigationRef = useRef<{ onNext: () => void; onPrevious: () => void } | null>(null);
@@ -250,6 +269,9 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       requestStep,
       stepRendered,
       setNavigation,
+      trackEndAvailable,
+      reachTrackEnd,
+      setTrackEndHandler,
     }),
     [
       translateX,
@@ -265,6 +287,9 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       requestStep,
       stepRendered,
       setNavigation,
+      trackEndAvailable,
+      reachTrackEnd,
+      setTrackEndHandler,
     ],
   );
 
@@ -333,6 +358,22 @@ export function useSwipeNavigation(pager: SwipePager, onNext: () => void, onPrev
   useLayoutEffect(() => {
     setNavigation(onNext, onPrevious);
   }, [setNavigation, onNext, onPrevious]);
+}
+
+/**
+ * Whether a forward swipe at the list's end shows the end card, and what it runs.
+ *
+ * `onTrackEnd` is null when there is no card to show (not at a list's end, or
+ * more of the list is still loading); the swipe then stops dead, as it always
+ * has. The shared value is written after commit, like the pages, so the UI
+ * thread never offers a card the JS thread has already taken away.
+ */
+export function useTrackEndSwipe(pager: SwipePager, onTrackEnd: (() => void) | null): void {
+  const { trackEndAvailable, setTrackEndHandler } = pager;
+  useLayoutEffect(() => {
+    setTrackEndHandler(onTrackEnd);
+    trackEndAvailable.value = onTrackEnd !== null;
+  }, [onTrackEnd, setTrackEndHandler, trackEndAvailable]);
 }
 
 /**

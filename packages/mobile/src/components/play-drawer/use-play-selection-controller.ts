@@ -295,6 +295,49 @@ export function usePlaySelectionController({
     handleSetActive();
   }, [drawerPreviewItem, showBoardMismatch, handleSetActive]);
 
+  /**
+   * The end card's "Keep going with your queue" from a committed climb (#6664):
+   * leave the list for the climb queued after the current one.
+   *
+   * It goes the way Next went before the list took over the swipe, so it is
+   * bound by the same rules as a swipe: with Light on swipe off, or with a crew
+   * here, it opens the queued climb as a preview and the wall stays put. Only
+   * where a swipe would commit does it take the wall, exactly as a queue-sheet
+   * tap does. Either way the list's track is left behind, so Next and Previous
+   * walk the queue from there.
+   */
+  const continueIntoQueue = useCallback(
+    (target: ClimbQueueItem) => {
+      const landing = getSwipeNavigationTarget({
+        previewItem: drawerPreviewItem,
+        previewSuggestionSource: drawerPreviewSuggestionSource,
+        targetItem: target,
+        lightOnSwipe,
+        inSharedSession: browseByDefault,
+      });
+      setDrawerPreviewSuggestionSource(null);
+      setDrawerPreviewIsWallClimb(false);
+      clearMirror();
+      if (landing.viewOnly) {
+        setDrawerPreviewItem(landing.targetItem);
+        return;
+      }
+      setDrawerPreviewItem(null);
+      setCurrentClimb(target, { playlistSuggestionSource: null });
+    },
+    [
+      drawerPreviewItem,
+      drawerPreviewSuggestionSource,
+      lightOnSwipe,
+      browseByDefault,
+      setDrawerPreviewItem,
+      setDrawerPreviewSuggestionSource,
+      setDrawerPreviewIsWallClimb,
+      setCurrentClimb,
+      clearMirror,
+    ],
+  );
+
   const handleSimilarClimbPress = useCallback(
     async (similarClimb: Climb) => {
       const privacyGeneration = getPrivacyRevocationGeneration();
@@ -336,5 +379,12 @@ export function usePlaySelectionController({
     [addToQueue, setCurrentClimb, viewer, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
   );
 
-  return { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall };
+  return {
+    handlePrev,
+    handleNext,
+    handleSetActive,
+    handleSimilarClimbPress,
+    commitDisplayedToWall,
+    continueIntoQueue,
+  };
 }

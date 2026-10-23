@@ -310,6 +310,9 @@ export default function PlaylistDetail() {
       return {
         climbs: toQueueClimbs(response.playlistClimbs.climbs),
         hasMore: response.playlistClimbs.hasMore,
+        // Counted with the same board, sort and filters as these rows, so the
+        // player's "4 of 23" counts the climbs it walks.
+        totalCount: response.playlistClimbs.totalCount,
       };
     },
     [playlistUuid, settledView.view],
@@ -336,6 +339,8 @@ export default function PlaylistDetail() {
     sourceId: playlistSourceId(playlistUuid, settledView.key),
     allClimbs,
     fetchPage,
+    // The player says which list it is walking: "From <playlist> · 4 of 23".
+    label: playlist?.name,
     viewOnlyBoard: resolveViewOnlyBoard,
     // In a crew a row tap browses: it opens the drawer on the tapped climb with
     // the playlist seeded as the swipe track, and leaves the queue alone. The

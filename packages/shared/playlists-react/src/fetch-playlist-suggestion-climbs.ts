@@ -1,14 +1,16 @@
 import type { Climb } from '@boardsesh/queue';
 
 export const PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE = 100;
-const MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES = 10;
-// Soft cap on the prefetched next-up swipe buffer per activation. Once the
-// user swipes past the last loaded suggestion, the feed currently goes silent
-// instead of paging the next batch in — tracked for follow-up as
-// https://github.com/boardsesh/boardsesh/issues/2216 (infinite-scroll past
-// the cap). Until then, 250 is enough for a full session for typical playlist
-// sizes without burning a 10-page fetch on every activation.
-const MAX_PLAYLIST_SUGGESTION_REFRESH_CLIMBS_AFTER_ACTIVE = 250;
+// The furthest a swipe track goes: 10 pages of 100, the first 1,000 climbs of
+// the list. Past it the track ends and the player shows its end card, the same
+// as a list that really ended. Paging on demand (issue #6664) made this the one
+// remaining bound, so it is the list's end rather than a buffer size.
+export const MAX_PLAYLIST_TRACK_PAGES = 10;
+// How far past the tapped climb the first load reaches. Only the first load:
+// the player asks for one more page as the climber nears the end of what is
+// loaded (`fetchPlaylistTrackPage`), so this is a head start, not a cap. Big
+// enough that a typical session never waits on a page.
+const PLAYLIST_TRACK_FIRST_LOAD_CLIMBS_AFTER_ACTIVE = 250;
 
 // Runaway bound for the queue-replacement drain, NOT a product feature.
 // Nothing on the server should get near it today: the four RECOMMENDED_* smart
@@ -50,6 +52,8 @@ type FetchPlaylistSuggestionPageArgs = {
 type PlaylistSuggestionPage = {
   climbs: Climb[];
   hasMore: boolean;
+  /** How many climbs the whole list holds, when the query reports it. */
+  totalCount?: number;
 };
 
 export type PlaylistDrainStopReason =
@@ -68,6 +72,10 @@ export type PlaylistDrainResult = {
   climbs: Climb[];
   stopReason: PlaylistDrainStopReason;
   pagesFetched: number;
+  /** The list's total from the first page that reported one. */
+  totalCount?: number;
+  /** A page repeated a climb an earlier one already sent, so positions shifted. */
+  droppedDuplicates?: boolean;
 };
 
 export type DrainPlaylistPagesArgs = {
@@ -76,6 +84,11 @@ export type DrainPlaylistPagesArgs = {
   pageSize: number;
   /** Required. There is deliberately no default that means "unlimited". */
   maxPages: number;
+  /**
+   * The page to start from. Defaults to the list's first. `maxPages` counts from
+   * here, so a drain from page 4 with `maxPages: 1` fetches page 4 alone.
+   */
+  firstPage?: number;
   /**
    * True when the error is a transient transport failure worth one more try.
    * Injected so this package needs no dependency on `@boardsesh/offline-sync`
@@ -172,6 +185,7 @@ export async function drainPlaylistPages({
   signal,
   pageSize,
   maxPages,
+  firstPage = 0,
   isRetryable = () => false,
   parseRetryAfterSeconds = () => null,
   stopAfterPage,
@@ -180,9 +194,11 @@ export async function drainPlaylistPages({
 }: DrainPlaylistPagesArgs): Promise<PlaylistDrainResult> {
   const climbs: Climb[] = [];
   const seenClimbUuids = new Set<string>();
-  let page = 0;
+  let page = firstPage;
   let hasMore = true;
   let stopReason: PlaylistDrainStopReason = 'complete';
+  let totalCount: number | undefined;
+  let droppedDuplicates = false;
 
   const fetchPageWithRetry = async (pageIndex: number): Promise<PlaylistSuggestionPage> => {
     let attempt = 0;
@@ -220,19 +236,23 @@ export async function drainPlaylistPages({
       stopReason = 'aborted';
       break;
     }
-    if (page >= maxPages) {
+    if (page - firstPage >= maxPages) {
       stopReason = 'page-cap';
       break;
     }
 
     const pageResult = await fetchPageWithRetry(page);
     page += 1;
+    if (totalCount === undefined && typeof pageResult.totalCount === 'number') totalCount = pageResult.totalCount;
 
     // Marking as we go, so a uuid repeated INSIDE one page is dropped too — a
     // filter-then-mark pass would let both copies through.
     const newClimbs: Climb[] = [];
     for (const pageClimb of pageResult.climbs) {
-      if (seenClimbUuids.has(pageClimb.uuid)) continue;
+      if (seenClimbUuids.has(pageClimb.uuid)) {
+        droppedDuplicates = true;
+        continue;
+      }
       seenClimbUuids.add(pageClimb.uuid);
       newClimbs.push(pageClimb);
     }
@@ -253,16 +273,40 @@ export async function drainPlaylistPages({
     }
   }
 
-  return { climbs, stopReason, pagesFetched: page };
+  return {
+    climbs,
+    stopReason,
+    pagesFetched: page - firstPage,
+    ...(totalCount === undefined ? {} : { totalCount }),
+    ...(droppedDuplicates ? { droppedDuplicates } : {}),
+  };
 }
+
+/**
+ * The first load of a swipe track: pages from the top of the list until it
+ * holds `maxClimbsAfterActivated` climbs past the tapped one.
+ *
+ * `nextPage` is where the track continues, or null when this load reached the
+ * list's real end, the {@link MAX_PLAYLIST_TRACK_PAGES} bound, or a server that
+ * stopped making progress; in each of those cases there is nothing more to ask
+ * for. `total` is the list's count, left out when a page repeated a climb,
+ * because a repeat shifts every position after it.
+ */
+export type PlaylistTrackLoad = {
+  climbs: Climb[];
+  nextPage: number | null;
+  total?: number;
+  /** A page repeated a climb, so positions shifted: no count from anywhere fits this track. */
+  droppedDuplicates?: boolean;
+};
 
 export async function fetchPlaylistSuggestionClimbs({
   activatedClimbUuid,
   signal,
   fetchPage,
   pageSize = PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
-  maxPages = MAX_PLAYLIST_SUGGESTION_REFRESH_PAGES,
-  maxClimbsAfterActivated = MAX_PLAYLIST_SUGGESTION_REFRESH_CLIMBS_AFTER_ACTIVE,
+  maxPages = MAX_PLAYLIST_TRACK_PAGES,
+  maxClimbsAfterActivated = PLAYLIST_TRACK_FIRST_LOAD_CLIMBS_AFTER_ACTIVE,
   isRetryable,
   parseRetryAfterSeconds,
   sleep,
@@ -274,11 +318,14 @@ export async function fetchPlaylistSuggestionClimbs({
   pageSize?: number;
   maxPages?: number;
   maxClimbsAfterActivated?: number;
-} & Pick<DrainPlaylistPagesArgs, 'isRetryable' | 'parseRetryAfterSeconds' | 'sleep' | 'random'>): Promise<Climb[]> {
+} & Pick<
+  DrainPlaylistPagesArgs,
+  'isRetryable' | 'parseRetryAfterSeconds' | 'sleep' | 'random'
+>): Promise<PlaylistTrackLoad> {
   let activatedClimbSeen = false;
   let loadedClimbsAfterActivated = 0;
 
-  const { climbs } = await drainPlaylistPages({
+  const { climbs, stopReason, pagesFetched, totalCount, droppedDuplicates } = await drainPlaylistPages({
     fetchPage,
     signal,
     pageSize,
@@ -301,5 +348,61 @@ export async function fetchPlaylistSuggestionClimbs({
     },
   });
 
-  return climbs;
+  // Only a stop this function asked for leaves more to load: the server said
+  // there was more, and the bound has not been reached.
+  const nextPage = stopReason === 'caller-stop' && pagesFetched < maxPages ? pagesFetched : null;
+  if (droppedDuplicates) return { climbs, nextPage, droppedDuplicates };
+  return { climbs, nextPage, ...(totalCount === undefined ? {} : { total: totalCount }) };
+}
+
+/** One page past a track's loaded end. See {@link fetchPlaylistTrackPage}. */
+export type PlaylistTrackPageLoad = {
+  climbs: Climb[];
+  /** The page after this one, or null when the list (or the track's bound) ended here. */
+  nextPage: number | null;
+  totalCount?: number;
+};
+
+/**
+ * Fetch page `page` of a swipe track and nothing else (issue #6664).
+ *
+ * The player calls this as the climber nears the end of what is loaded, one
+ * page per approach: never a drain. Same retry policy as the drain. A page
+ * past {@link MAX_PLAYLIST_TRACK_PAGES} is never fetched; the page before it
+ * reports `nextPage: null`, which is the track's end.
+ */
+export async function fetchPlaylistTrackPage({
+  page,
+  signal,
+  fetchPage,
+  pageSize = PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+  isRetryable,
+  parseRetryAfterSeconds,
+  sleep,
+  random,
+}: {
+  page: number;
+  signal: AbortSignal;
+  fetchPage: (args: FetchPlaylistSuggestionPageArgs) => Promise<PlaylistSuggestionPage>;
+  pageSize?: number;
+} & Pick<
+  DrainPlaylistPagesArgs,
+  'isRetryable' | 'parseRetryAfterSeconds' | 'sleep' | 'random'
+>): Promise<PlaylistTrackPageLoad> {
+  if (page >= MAX_PLAYLIST_TRACK_PAGES) return { climbs: [], nextPage: null };
+  const { climbs, stopReason, totalCount } = await drainPlaylistPages({
+    fetchPage,
+    signal,
+    pageSize,
+    maxPages: 1,
+    firstPage: page,
+    isRetryable,
+    parseRetryAfterSeconds,
+    sleep,
+    random,
+  });
+  if (stopReason === 'aborted') throw createAbortError();
+  // `page-cap` here means "the server has more after this one page".
+  const nextPage = stopReason === 'page-cap' && page + 1 < MAX_PLAYLIST_TRACK_PAGES ? page + 1 : null;
+  return { climbs, nextPage, ...(totalCount === undefined ? {} : { totalCount }) };
 }

@@ -6,11 +6,11 @@
 // "the wall changed under a climber", so each rule below is paired with a test
 // that asserts it does NOT fire.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
-import { isClimbOnReachableBoard } from '@boardsesh/queue';
+import { isClimbOnReachableBoard, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { toBoardName } from '@boardsesh/board-config';
 import {
@@ -22,6 +22,8 @@ import {
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useToast } from '../../providers/toast-provider';
+import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
+import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { useKeepAwakeWhile } from '../../hooks/use-keep-awake-while';
 import { useSetting } from '../../settings';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
@@ -42,6 +44,9 @@ import {
 
 const KEEP_AWAKE_TAG = 'rest-timer';
 
+/** The scheduler pages only the committed track; it has no preview to update. */
+const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null>> = () => {};
+
 export function RestTimerAutoAdvanceScheduler() {
   const { t } = useTranslation('session');
   const timerState = useRestTimerState();
@@ -49,9 +54,25 @@ export function RestTimerAutoAdvanceScheduler() {
   const [autoAdvance] = useSetting('restTimerAutoAdvance');
   const [mode] = useSetting('restTimerMode');
 
-  const { nextClimb } = useQueueActions();
+  const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
+  // A long list keeps going with the player closed too (#6664): the player
+  // pages the track only while it is open, and a hands-free session walks the
+  // list from here. The page is asked for well before the last loaded climb, so
+  // it has landed by the time a beat gets there.
+  const getCommittedSuggestionSource = useCallback(
+    () => getQueueSnapshot().playlistSuggestionSource,
+    [getQueueSnapshot],
+  );
+  useTrackPaging({
+    source: playlistSuggestionSource,
+    displayedClimbUuid: currentClimbQueueItem?.climb?.uuid,
+    previewTrack: false,
+    setPreviewSource: keepPreviewSource,
+    getCommittedSource: getCommittedSuggestionSource,
+    refreshCommittedSource: refreshPlaylistSuggestionSource,
+  });
   const isSharedSession = useIsSharedSession();
   const { inAppBoardConnection } = useBoardConnectionState();
   const { data: activeBoard } = useActiveBoard();
@@ -83,6 +104,9 @@ export function RestTimerAutoAdvanceScheduler() {
   // only bind a plain `t(...)` identifier call — and the key would be reported
   // as orphaned even though it is used.
   const queueEndedMessage = t('mobile.restTimer.queueEndedToast');
+  // A list's end is not the queue's: what is queued is still there, one tap on
+  // the player's end card away (#6664).
+  const listEndedMessage = t('mobile.restTimer.listEndedToast');
   const advanceInputsRef = useRef({
     queue,
     currentClimbQueueItem,
@@ -90,6 +114,7 @@ export function RestTimerAutoAdvanceScheduler() {
     activeBoard,
     showToast,
     queueEndedMessage,
+    listEndedMessage,
   });
   advanceInputsRef.current = {
     queue,
@@ -98,6 +123,7 @@ export function RestTimerAutoAdvanceScheduler() {
     activeBoard,
     showToast,
     queueEndedMessage,
+    listEndedMessage,
   };
 
   const fireAdvance = useCallback(
@@ -123,7 +149,7 @@ export function RestTimerAutoAdvanceScheduler() {
       // `nextClimb` is a SILENT no-op at a dead end, so never call it blind —
       // the beat would keep running with the wall never changing and nothing
       // said. Ask the same selector the play drawer uses for its Next affordance.
-      const { canNext } = computeNavigationStateWithSuggestions(
+      const { canNext, atTrackEnd } = computeNavigationStateWithSuggestions(
         inputs.queue,
         inputs.currentClimbQueueItem,
         inputs.playlistSuggestionSource,
@@ -132,8 +158,11 @@ export function RestTimerAutoAdvanceScheduler() {
       );
 
       if (!canNext) {
-        noteRestTimerQueueEnded();
-        inputs.showToast(inputs.queueEndedMessage, 'info');
+        noteRestTimerQueueEnded({ listEnded: atTrackEnd });
+        // More of the list is still on its way: wait for it without a word.
+        // The latch clears below once the page lands and the beat goes on.
+        if (atTrackEnd && canLoadMoreOfTrack(inputs.playlistSuggestionSource)) return;
+        inputs.showToast(atTrackEnd ? inputs.listEndedMessage : inputs.queueEndedMessage, 'info');
         return;
       }
 

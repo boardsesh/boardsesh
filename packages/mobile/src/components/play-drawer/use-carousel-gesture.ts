@@ -14,6 +14,13 @@ import type { SwipePager } from './use-swipe-pager';
 import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
 
+/**
+ * How much of the finger's travel the board follows past the list's last climb
+ * (issue #6664): enough to feel the end give, not so much that it reads as a
+ * swipe that went somewhere.
+ */
+const TRACK_END_DRAG_RESISTANCE = 0.3;
+
 type UseCarouselGestureOptions = {
   /**
    * Which page is in the middle, the offset every swiping surface rides, and
@@ -71,6 +78,8 @@ export function useCarouselGesture({
     resetGeneration,
     untoldStep,
     tellUntoldStep,
+    trackEndAvailable,
+    reachTrackEnd,
   } = pager;
   const hasTriggeredHaptic = useSharedValue(false);
 
@@ -266,12 +275,19 @@ export function useCarouselGesture({
         const travel = event.translationX - dragOrigin.value;
         let offset = dragBase.value + travel;
 
-        if (offset < 0 && !canStep(1)) offset = 0;
+        // Past the list's last climb the board gives a little toward the end
+        // card; anywhere else with nowhere to go, it stays put.
+        const atTrackEnd = offset < 0 && !canStep(1) && trackEndAvailable.value;
+        if (offset < 0 && !canStep(1)) offset = atTrackEnd ? offset * TRACK_END_DRAG_RESISTANCE : 0;
         if (offset > 0 && !canStep(-1)) offset = 0;
 
         translateX.value = offset;
 
-        if (Math.abs(travel) >= SWIPE_THRESHOLD && !hasTriggeredHaptic.value && canStep(travel < 0 ? 1 : -1)) {
+        if (
+          Math.abs(travel) >= SWIPE_THRESHOLD &&
+          !hasTriggeredHaptic.value &&
+          (canStep(travel < 0 ? 1 : -1) || (travel < 0 && atTrackEnd))
+        ) {
           hasTriggeredHaptic.value = true;
           runOnJS(triggerHaptic)();
         }
@@ -311,6 +327,11 @@ export function useCarouselGesture({
             },
           );
           return;
+        }
+        // A forward swipe past the list's last climb shows the end card. The
+        // board springs back: the climb on screen does not change.
+        if (direction === 1 && !canStep(1) && trackEndAvailable.value) {
+          runOnJS(reachTrackEnd)();
         }
         if (offset !== 0) {
           translateX.value = withSpring(0, { ...springs.interactive, velocity });
@@ -353,6 +374,8 @@ export function useCarouselGesture({
     dragGeneration,
     untoldStep,
     tellUntoldStep,
+    trackEndAvailable,
+    reachTrackEnd,
     scrollRef,
   ]);
 

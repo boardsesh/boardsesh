@@ -48,4 +48,11 @@ export type NavigationState = {
    * plain remaining count they always had.
    */
   remainingCount: number;
+  /**
+   * True when Next has nothing to go to because the climb on screen is the last
+   * one on the list the player is walking (issue #6664). Tells "end of the list"
+   * apart from "nothing to walk": the player offers its end card for the first
+   * and nothing for the second.
+   */
+  atTrackEnd: boolean;
 };

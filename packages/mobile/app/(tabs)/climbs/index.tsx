@@ -123,7 +123,12 @@ import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/us
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { OfflineState } from '../../../src/components/OfflineState';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
+import {
+  SEARCH_CLIMBS,
+  SEARCH_CLIMBS_COUNT,
+  type SearchClimbsCountQueryResponse,
+  type SearchClimbsQueryResponse,
+} from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
@@ -348,6 +353,7 @@ function ClimbListInner() {
   }, [screenshotGradeSetupKey]);
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
+  const { t: tSession } = useTranslation('session');
   const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
   const [lightOnClimbTap] = useSetting('lightOnClimbTap');
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
@@ -1261,10 +1267,10 @@ function ClimbListInner() {
   // Reads the frozen basis rather than taking the filters as dependencies, so one
   // drain cannot straddle two orderings and the callback identity stays stable
   // across list refetches.
-  const fetchSearchPage = useCallback(
-    async ({ page, pageSize }: { page: number; pageSize: number }) => {
+  const searchInputForPage = useCallback(
+    (page: number, pageSize: number) => {
       const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
-      const input = withGradeSource(
+      return withGradeSource(
         mergeBoardFilters(
           toClimbSearchInput(
             filtersForBoard(basisFilters, boardName),
@@ -1276,16 +1282,32 @@ function ClimbListInner() {
         ),
         boardseshGradesActive,
       );
+    },
+    [searchBasis, boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
+  );
+  const fetchSearchPage = useCallback(
+    async ({ page, pageSize }: { page: number; pageSize: number }) => {
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
-      const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
+      const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+        input: searchInputForPage(page, pageSize),
+      });
       return {
         climbs: toQueueClimbs(response.searchClimbs.climbs),
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [searchBasis, boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
+    [searchInputForPage],
   );
+  // The search pages carry no count (counting every page would cost the server
+  // a count per page), so the player's "4 of 230" asks for it once per tap, for
+  // the same frozen search the pages walk.
+  const fetchSearchTotal = useCallback(async () => {
+    const response = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
+      input: searchInputForPage(0, 1),
+    });
+    return response.searchClimbs.totalCount;
+  }, [searchInputForPage]);
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
 
@@ -1293,6 +1315,10 @@ function ClimbListInner() {
     sourceId: 'climblist',
     allClimbs: allQueueClimbs,
     fetchPage: fetchSearchPage,
+    fetchTotal: fetchSearchTotal,
+    label: tSession('playView.track.searchResults'),
+    // The rows are this same search's pages, from the top, on the active board.
+    loadedRowsArePages: true,
     // In a crew, a row tap browses instead of taking everyone's wall: the drawer
     // opens on the tapped climb with these results seeded as its swipe track, so
     // the climber can walk the list and put up only the one they choose.

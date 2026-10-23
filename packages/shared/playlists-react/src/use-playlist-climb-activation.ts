@@ -4,6 +4,7 @@ import {
   type Climb,
   type ClimbQueueItem,
   type PlaylistSuggestionSource,
+  type PlaylistTrackContinuation,
   type PreparedPlaylistClimbs,
 } from '@boardsesh/queue';
 import { isAbortError } from './fetch-playlist-suggestion-climbs';
@@ -37,6 +38,18 @@ export type FetchActivationClimbsArgs = {
   signal: AbortSignal;
 };
 
+/**
+ * The first load of the track, from the top of the list. `total` is the list's
+ * count when the caller knows it for this exact list; `continuation` is how the
+ * player asks for the page after the last one loaded, absent when the list
+ * ended inside this load.
+ */
+export type ActivationTrackLoad = {
+  climbs: Climb[];
+  total?: number;
+  continuation?: PlaylistTrackContinuation;
+};
+
 export type UsePlaylistClimbActivationOptions = {
   /** Queue operations. When null/undefined, activation is a no-op. */
   queueApi: PlaylistActivationQueueApi | null | undefined;
@@ -50,9 +63,19 @@ export type UsePlaylistClimbActivationOptions = {
   /** Resolve the board a climb activates onto. Return null to fall back to a
    *  plain activation (no suggestion source). */
   resolveTarget: (climb: Climb) => PlaylistActivationBoardTarget | null;
-  /** Fetch the full ordered climb list for the target board, for the refreshed
+  /** Fetch the ordered climb list for the target board, for the refreshed
    *  suggestion source. */
-  fetchClimbsForBoard: (args: FetchActivationClimbsArgs) => Promise<Climb[]>;
+  fetchClimbsForBoard: (args: FetchActivationClimbsArgs) => Promise<ActivationTrackLoad>;
+  /** What the player calls this list ("From {label}"). */
+  label?: string;
+  /**
+   * How the first track, built from the loaded rows, says more of the list is
+   * on its way while the refresh runs (issue #6664). Handed a promise that
+   * settles when the refresh is done: true when it handed the queue the fuller
+   * track, false when it did not (failed, cancelled, or the activation never
+   * committed). Omit it and the first track says nothing about what is coming.
+   */
+  pendingContinuation?: (refreshSettled: Promise<boolean>) => PlaylistTrackContinuation;
   /** Optional post-activation side-effect (e.g. open the play drawer). */
   onActivated?: (climb: Climb) => void;
   /** Message logged when the async suggestion refresh fails (non-abort). */
@@ -76,6 +99,8 @@ export function usePlaylistClimbActivation({
   preparedClimbs,
   resolveTarget,
   fetchClimbsForBoard,
+  label,
+  pendingContinuation,
   onActivated,
   refreshErrorMessage,
 }: UsePlaylistClimbActivationOptions): (climb: Climb) => Promise<void> {
@@ -104,6 +129,12 @@ export function usePlaylistClimbActivation({
         return;
       }
 
+      // Settled exactly once, by whichever way this activation ends.
+      let settleRefresh: (refreshed: boolean) => void = () => {};
+      const refreshSettled = new Promise<boolean>((resolve) => {
+        settleRefresh = resolve;
+      });
+      const continuation = pendingContinuation?.(refreshSettled);
       const initialSource = createPlaylistSuggestionSource({
         playlistUuid: sourceId,
         activatedClimb: climb,
@@ -111,10 +142,21 @@ export function usePlaylistClimbActivation({
         boardKey: target.boardKey,
         isClimbable: target.isClimbable,
         preparedClimbs,
+        label,
+        continuation,
       });
 
-      const activeItem = await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: initialSource });
-      if (!activeItem) return;
+      let activeItem: ClimbQueueItem | null;
+      try {
+        activeItem = await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: initialSource });
+      } catch (error: unknown) {
+        settleRefresh(false);
+        throw error;
+      }
+      if (!activeItem) {
+        settleRefresh(false);
+        return;
+      }
       // Match the non-playlist browse-tap path so a playlist row tap surfaces
       // the play drawer rather than silently mutating state.
       onActivated?.(climb);
@@ -124,8 +166,9 @@ export function usePlaylistClimbActivation({
       refreshAbortRef.current = abortController;
 
       void (async () => {
+        let refreshed = false;
         try {
-          const fetchedClimbs = await fetchClimbsForBoard({
+          const trackLoad = await fetchClimbsForBoard({
             target,
             activatedClimbUuid: climb.uuid,
             signal: abortController.signal,
@@ -134,15 +177,20 @@ export function usePlaylistClimbActivation({
           const refreshedSource = createPlaylistSuggestionSource({
             playlistUuid: sourceId,
             activatedClimb: climb,
-            climbs: fetchedClimbs,
+            climbs: trackLoad.climbs,
             boardKey: target.boardKey,
             isClimbable: target.isClimbable,
+            label,
+            total: trackLoad.total,
+            continuation: trackLoad.continuation,
           });
           queueApi.refreshPlaylistSuggestionSource(refreshedSource);
+          refreshed = true;
         } catch (err: unknown) {
           if (isAbortError(err)) return;
           console.error(refreshErrorMessage, err);
         } finally {
+          settleRefresh(refreshed);
           if (refreshAbortRef.current === abortController) {
             refreshAbortRef.current = null;
           }
@@ -156,6 +204,8 @@ export function usePlaylistClimbActivation({
       preparedClimbs,
       resolveTarget,
       fetchClimbsForBoard,
+      label,
+      pendingContinuation,
       onActivated,
       refreshErrorMessage,
     ],

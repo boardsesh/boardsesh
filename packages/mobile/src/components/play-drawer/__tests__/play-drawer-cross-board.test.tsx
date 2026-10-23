@@ -293,6 +293,7 @@ vi.mock('../../LogAscentSheet', () => ({
 }));
 vi.mock('../WallStatePill', () => ({ WallStatePill: () => null }));
 vi.mock('../WallStateCallout', () => ({ WallStateCallout: () => null }));
+vi.mock('../TrackEndCard', () => ({ TrackEndCard: () => null }));
 vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));

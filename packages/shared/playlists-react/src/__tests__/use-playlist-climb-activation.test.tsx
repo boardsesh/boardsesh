@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { preparePlaylistClimbs, type Climb, type ClimbQueueItem } from '@boardsesh/queue';
-import { usePlaylistClimbActivation, type PlaylistActivationQueueApi } from '../use-playlist-climb-activation';
+import {
+  usePlaylistClimbActivation,
+  type ActivationTrackLoad,
+  type PlaylistActivationQueueApi,
+} from '../use-playlist-climb-activation';
 
 function climb(uuid: string): Climb {
   return { uuid, name: uuid } as Climb;
@@ -26,7 +30,7 @@ describe('prepared climb activation', () => {
       refreshPlaylistSuggestionSource: vi.fn(),
     };
     const onActivated = vi.fn();
-    const fetchClimbsForBoard = vi.fn(async () => climbs);
+    const fetchClimbsForBoard = vi.fn(async (): Promise<ActivationTrackLoad> => ({ climbs }));
     const { result } = renderHook(() =>
       usePlaylistClimbActivation({
         queueApi,
@@ -52,8 +56,8 @@ describe('prepared climb activation', () => {
 
   it('aborts the previous successful refresh after a new authorized activation and ignores its result', async () => {
     const climbs = [climb('a'), climb('b')];
-    const firstRefresh = deferred<Climb[]>();
-    const secondRefresh = deferred<Climb[]>();
+    const firstRefresh = deferred<ActivationTrackLoad>();
+    const secondRefresh = deferred<ActivationTrackLoad>();
     const fetchClimbsForBoard = vi
       .fn()
       .mockReturnValueOnce(firstRefresh.promise)
@@ -77,14 +81,146 @@ describe('prepared climb activation', () => {
     await result.current(climbs[0]);
     await result.current(climbs[1]);
     expect(fetchClimbsForBoard.mock.calls[0][0].signal.aborted).toBe(true);
-    firstRefresh.resolve(climbs);
+    firstRefresh.resolve({ climbs });
     await firstRefresh.promise;
     expect(queueApi.refreshPlaylistSuggestionSource).not.toHaveBeenCalled();
-    secondRefresh.resolve(climbs);
+    secondRefresh.resolve({ climbs });
     await secondRefresh.promise;
     expect(queueApi.refreshPlaylistSuggestionSource).toHaveBeenCalledWith(
       expect.objectContaining({ activatedClimbUuid: 'b', climbs }),
     );
     unmount();
+  });
+
+  it("names the track and carries the first load's count and continuation into the refresh (#6664)", async () => {
+    const climbs = [climb('a'), climb('b'), climb('c')];
+    const refresh = deferred<ActivationTrackLoad>();
+    const queueApi = {
+      setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async (selected) => ({
+        uuid: selected.uuid,
+        climb: selected,
+      })),
+      refreshPlaylistSuggestionSource: vi.fn(),
+    };
+    const isClimbable = () => true;
+    const { result } = renderHook(() =>
+      usePlaylistClimbActivation({
+        queueApi,
+        sourceId: 'track',
+        allClimbs: climbs.slice(0, 2),
+        resolveTarget: () => ({ boardKey: 'board', boardName: 'kilter', angle: 40, isClimbable }),
+        fetchClimbsForBoard: () => refresh.promise,
+        label: 'Projects',
+        refreshErrorMessage: 'refresh failed',
+      }),
+    );
+    await result.current(climbs[1]);
+    // The first frame already names the list, without a count it cannot vouch for.
+    const seeded = queueApi.setCurrentClimb.mock.calls[0]?.[1].playlistSuggestionSource;
+    expect(seeded).toMatchObject({ label: 'Projects' });
+    expect(seeded).not.toHaveProperty('total');
+
+    refresh.resolve({ climbs, total: 3, continuation: { loaderId: 'loader-1', nextPage: 1 } });
+    await refresh.promise;
+    await Promise.resolve();
+    expect(queueApi.refreshPlaylistSuggestionSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: 'Projects',
+        total: 3,
+        continuation: { loaderId: 'loader-1', nextPage: 1 },
+      }),
+    );
+  });
+
+  describe('a first track that says the rest of the list is still loading (#6664)', () => {
+    const climbs = [climb('a'), climb('b'), climb('c')];
+    const isClimbable = () => true;
+
+    function renderWithPending(
+      queueApi: PlaylistActivationQueueApi,
+      fetchClimbsForBoard: () => Promise<ActivationTrackLoad>,
+    ) {
+      const settled: Array<Promise<boolean>> = [];
+      const pendingContinuation = (refreshSettled: Promise<boolean>) => {
+        settled.push(refreshSettled);
+        return { loaderId: 'pending-1', nextPage: 0 };
+      };
+      const { result } = renderHook(() =>
+        usePlaylistClimbActivation({
+          queueApi,
+          sourceId: 'track',
+          allClimbs: climbs.slice(0, 2),
+          resolveTarget: () => ({ boardKey: 'board', boardName: 'kilter', angle: 40, isClimbable }),
+          fetchClimbsForBoard,
+          pendingContinuation,
+          refreshErrorMessage: 'refresh failed',
+        }),
+      );
+      return { activate: result.current, settled };
+    }
+
+    function committingQueueApi() {
+      return {
+        setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async (selected) => ({
+          uuid: selected.uuid,
+          climb: selected,
+        })),
+        refreshPlaylistSuggestionSource: vi.fn(),
+      };
+    }
+
+    it('marks the first track and settles true once the fuller track is in place', async () => {
+      const queueApi = committingQueueApi();
+      const refresh = deferred<ActivationTrackLoad>();
+      const { activate, settled } = renderWithPending(queueApi, () => refresh.promise);
+
+      await activate(climbs[1]);
+      expect(queueApi.setCurrentClimb.mock.calls[0]?.[1].playlistSuggestionSource?.continuation).toEqual({
+        loaderId: 'pending-1',
+        nextPage: 0,
+      });
+      refresh.resolve({ climbs });
+      await expect(settled[0]).resolves.toBe(true);
+      const fuller = queueApi.refreshPlaylistSuggestionSource.mock.calls[0]?.[0];
+      expect(fuller?.climbs.map(({ uuid }: Climb) => uuid)).toEqual(['a', 'b', 'c']);
+      // The fuller track is the whole list: it is not waiting on anything.
+      expect(queueApi.refreshPlaylistSuggestionSource.mock.calls[0]?.[0]).not.toHaveProperty('continuation');
+    });
+
+    it('settles false when the refresh fails, so the first track can end', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const queueApi = committingQueueApi();
+      const { activate, settled } = renderWithPending(queueApi, () => Promise.reject(new Error('offline')));
+
+      await activate(climbs[1]);
+      await expect(settled[0]).resolves.toBe(false);
+      expect(queueApi.refreshPlaylistSuggestionSource).not.toHaveBeenCalled();
+    });
+
+    it('settles false when the activation never committed', async () => {
+      const queueApi = {
+        setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async () => null),
+        refreshPlaylistSuggestionSource: vi.fn(),
+      };
+      const fetchClimbsForBoard = vi.fn(async (): Promise<ActivationTrackLoad> => ({ climbs }));
+      const { activate, settled } = renderWithPending(queueApi, fetchClimbsForBoard);
+
+      await activate(climbs[1]);
+      await expect(settled[0]).resolves.toBe(false);
+      expect(fetchClimbsForBoard).not.toHaveBeenCalled();
+    });
+
+    it('settles false when the commit throws', async () => {
+      const queueApi = {
+        setCurrentClimb: vi.fn<PlaylistActivationQueueApi['setCurrentClimb']>(async () => {
+          throw new Error('rejected');
+        }),
+        refreshPlaylistSuggestionSource: vi.fn(),
+      };
+      const { activate, settled } = renderWithPending(queueApi, async () => ({ climbs }));
+
+      await expect(activate(climbs[1])).rejects.toThrow('rejected');
+      await expect(settled[0]).resolves.toBe(false);
+    });
   });
 });

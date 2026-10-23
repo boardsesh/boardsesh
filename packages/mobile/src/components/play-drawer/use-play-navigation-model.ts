@@ -7,11 +7,16 @@ import {
   prepareQueueNavigation,
   findUpcomingQueueItemsWithSuggestions,
   resolveNavigationSuggestionSource,
+  resolveTrackLabel,
+  selectNextQueueItemWithSuggestions,
   type ReachableClimbPredicate,
+  type TrackLabelModel,
 } from '@boardsesh/play-view';
 import { toBoardName } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
+import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import type { BoardConfig } from './play-drawer-types';
+import { resolveTrackEndCard } from './track-end';
 
 /**
  * The frames a swipe peek may draw, or null when the neighbouring climb belongs
@@ -40,6 +45,7 @@ const PREFETCH_AHEAD = 3;
 /** Content-keyed to keep renderer warming stable across queue broadcasts. */
 const PREFETCH_FRAMES_SEPARATOR = '\n';
 const NO_PREFETCH_FRAMES: string[] = [];
+const NO_TRACK_LABEL: TrackLabelModel = { kind: 'hidden' };
 
 type PlayNavigationInputs = {
   queue: ClimbQueueItem[];
@@ -148,6 +154,69 @@ export function usePlayNavigationModel({
   // boards, so the title and grade being swiped towards are already there.
   const nextHeaderClimb = navigationState.canNext ? (navigationState.nextItem?.climb ?? null) : null;
   const previousHeaderClimb = navigationState.canPrevious ? (navigationState.prevItem?.climb ?? null) : null;
+
+  // "From Projects · 4 of 23" (issue #6664): the list the player is walking,
+  // read off the RESOLVED track, so the name goes the moment swipes stop
+  // following it. Each neighbour carries its own position, so a swipe slides
+  // "5 of 23" in rather than changing the number on landing.
+  const displayedClimbUuid = displayedClimb?.uuid;
+  const currentTrackLabel = useMemo(
+    () => resolveTrackLabel(navigationSuggestionSource, displayedClimbUuid),
+    [navigationSuggestionSource, displayedClimbUuid],
+  );
+  const nextHeaderClimbUuid = nextHeaderClimb?.uuid;
+  const previousHeaderClimbUuid = previousHeaderClimb?.uuid;
+  const nextTrackLabel = useMemo(
+    () => (nextHeaderClimbUuid ? resolveTrackLabel(navigationSuggestionSource, nextHeaderClimbUuid) : NO_TRACK_LABEL),
+    [navigationSuggestionSource, nextHeaderClimbUuid],
+  );
+  const previousTrackLabel = useMemo(
+    () =>
+      previousHeaderClimbUuid ? resolveTrackLabel(navigationSuggestionSource, previousHeaderClimbUuid) : NO_TRACK_LABEL,
+    [navigationSuggestionSource, previousHeaderClimbUuid],
+  );
+
+  // Past the list's last climb: the end card, and where "Keep going with your
+  // queue" goes. Only worked out at the end of a list; everywhere else it is null
+  // and costs nothing. Withheld while more of the list is on its way.
+  const atTrackEnd = navigationState.atTrackEnd;
+  const previewPinned = drawerPreviewItem != null;
+  const trackEndCard = useMemo(() => {
+    if (!atTrackEnd) return null;
+    const committedQueueIndex = currentClimbQueueItem
+      ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItem.uuid) ?? -1)
+      : -1;
+    const queueSuccessor =
+      committedQueueIndex >= 0
+        ? selectNextQueueItemWithSuggestions(
+            queue,
+            currentClimbQueueItem,
+            null,
+            navigationBoardConfig,
+            isReachableClimb,
+            preparedQueue,
+          ).item
+        : null;
+    return resolveTrackEndCard({
+      navigationState: { atTrackEnd },
+      moreToLoad: canLoadMoreOfTrack(navigationSuggestionSource),
+      trackLabel: currentTrackLabel,
+      queue,
+      committedQueueIndex,
+      queueSuccessor,
+      previewPinned,
+    });
+  }, [
+    atTrackEnd,
+    currentClimbQueueItem,
+    preparedQueue,
+    queue,
+    navigationBoardConfig,
+    isReachableClimb,
+    navigationSuggestionSource,
+    currentTrackLabel,
+    previewPinned,
+  ]);
   const nextHeaderBoard = useMemo(
     () => resolveClimbRenderBoard(nextHeaderClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
     [nextHeaderClimb, boardConfig, renderBoardConfig],
@@ -222,6 +291,10 @@ export function usePlayNavigationModel({
   return {
     navigationSuggestionSource,
     navigationState,
+    currentTrackLabel,
+    nextTrackLabel,
+    previousTrackLabel,
+    trackEndCard,
     nextHeaderClimb,
     previousHeaderClimb,
     nextHeaderBoard,

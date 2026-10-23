@@ -445,6 +445,8 @@
       "turnOff": "Désactiver le minuteur",
       "queueEnded": "File vide",
       "queueEndedToast": "Il n'y a plus rien dans la file.",
+      "listEndedToast": "C'est la fin de la liste.",
+      "listEnded": "Fin de la liste",
       "openHint": "Ouvre les options du minuteur",
       "runningAria": "Minuteur de repos, {{time}} depuis ton dernier bloc",
       "countdownAria": "Minuteur de repos, il reste {{time}}",
@@ -785,6 +787,19 @@
       "climbActionsAria": "Actions du bloc",
       "queueCountAria": "File, {{count}} blocs",
       "changeAngle": "Changer l’inclinaison"
+    },
+    "track": {
+      "from": "Depuis {{name}}",
+      "fromPosition": "Depuis {{name}} · {{position}} sur {{total}}",
+      "searchResults": "Résultats de recherche",
+      "setterClimbs": "Blocs de {{name}}",
+      "end": {
+        "title": "Fin de {{name}}",
+        "titleUnnamed": "Fin de la liste",
+        "finished": "C'est toute la liste, et rien n'attend dans ta file d'attente après ce bloc.",
+        "keepGoing": "Continuer avec ta file d'attente ({{upNextCount}})",
+        "stay": "Rester ici"
+      }
     },
     "tickFab": {
       "logAscentAria": "Enregistrer une ascension"

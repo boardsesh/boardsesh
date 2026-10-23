@@ -86,6 +86,7 @@ export type {
   PlaylistActivationQueueApi,
   PlaylistActivationBoardTarget,
   FetchActivationClimbsArgs,
+  ActivationTrackLoad,
 } from './use-playlist-climb-activation';
 
 // Mutation callbacks (create / update / delete / pin / unpin / follow / unfollow).
@@ -101,6 +102,7 @@ export type { UsePlaylistItemMutationsOptions, UsePlaylistItemMutationsResult } 
 export {
   drainPlaylistPages,
   fetchPlaylistSuggestionClimbs,
+  fetchPlaylistTrackPage,
   isAbortError,
   MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,

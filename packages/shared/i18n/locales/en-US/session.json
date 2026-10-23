@@ -445,6 +445,8 @@
       "turnOff": "Turn off rest timer",
       "queueEnded": "Queue's empty",
       "queueEndedToast": "Nothing left in the queue.",
+      "listEndedToast": "That's the end of the list.",
+      "listEnded": "End of the list",
       "openHint": "Opens rest timer options",
       "runningAria": "Rest timer, {{time}} since your last climb",
       "countdownAria": "Rest timer, {{time}} left",
@@ -785,6 +787,19 @@
       "climbActionsAria": "Climb actions",
       "queueCountAria": "Queue, {{count}} climbs",
       "changeAngle": "Change angle"
+    },
+    "track": {
+      "from": "From {{name}}",
+      "fromPosition": "From {{name}} · {{position}} of {{total}}",
+      "searchResults": "Search results",
+      "setterClimbs": "{{name}}'s climbs",
+      "end": {
+        "title": "End of {{name}}",
+        "titleUnnamed": "End of the list",
+        "finished": "That's the whole list, and nothing's queued after this climb.",
+        "keepGoing": "Keep going with your queue ({{upNextCount}})",
+        "stay": "Stay here"
+      }
     },
     "tickFab": {
       "logAscentAria": "Log ascent"

@@ -9,7 +9,13 @@ import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
-import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
+import {
+  usePlaylistActivation,
+  TRACK_COUNT_GRACE_MS,
+  _resetEmptyBoardFetchReportsForTests,
+  type UsePlaylistActivationOptions,
+} from '../use-playlist-activation';
+import { canLoadMoreOfTrack, loadNextTrackPage, _resetTrackPagerForTests } from '../track-pager';
 import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
@@ -67,6 +73,7 @@ vi.mock('@boardsesh/playlists-react', async () => {
       return mocks.activate;
     },
     fetchPlaylistSuggestionClimbs: (args: unknown) => mocks.fetchSuggestion(args),
+    fetchPlaylistTrackPage: drain.fetchPlaylistTrackPage,
     isAbortError: drain.isAbortError,
     drainPlaylistPages: drain.drainPlaylistPages,
     MAX_PLAYLIST_QUEUE_REPLACE_PAGES: drain.MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
@@ -179,6 +186,9 @@ function renderActivation(
     viewOnlyBoard?: typeof VIEW_ONLY_BOARD | ((climb: Climb) => typeof VIEW_ONLY_BOARD | null) | null;
     previewOnly?: boolean;
     replaceQueueOnActivate?: boolean;
+    label?: string;
+    fetchTotal?: UsePlaylistActivationOptions['fetchTotal'];
+    loadedRowsArePages?: boolean;
   } = {},
 ) {
   return renderHook(() =>
@@ -186,6 +196,9 @@ function renderActivation(
       sourceId: options.sourceId ?? 'playlist:pl-1',
       allClimbs: options.allClimbs ?? [],
       fetchPage,
+      fetchTotal: options.fetchTotal,
+      loadedRowsArePages: options.loadedRowsArePages,
+      label: options.label,
       viewOnlyBoard: options.viewOnlyBoard,
       previewOnly: options.previewOnly,
       refreshErrorMessage: 'refresh failed:',
@@ -204,6 +217,7 @@ beforeEach(() => {
   // The canary's once-per-session Set is module state; clear it so a reused
   // sourceId can't make a case pass by reporting nothing.
   _resetEmptyBoardFetchReportsForTests();
+  _resetTrackPagerForTests();
   mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3', angle: 40 };
   mocks.activeClimbUuid = null;
   mocks.suggestionSource = null;
@@ -579,6 +593,30 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(fetchPage).not.toHaveBeenCalled();
     });
 
+    // A preview opened at row 250 of a 500-row list must not fetch pages 0, 1
+    // and 2 back to back just to find out it already has them (#6664 review).
+    it.each([
+      [false, 0],
+      [true, 2],
+    ] as const)(
+      'pages the preview on from where the rows end only when they are its pages (aligned: %s)',
+      async (loadedRowsArePages, firstPage) => {
+        const rows = Array.from({ length: 250 }, (_, index) => makeClimb(`row-${index}`));
+        const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+          climbs: [makeClimb(`page-${page}`)],
+          hasMore: true,
+        }));
+        const { result } = renderActivation(fetchPage, { allClimbs: rows, previewOnly: true, loadedRowsArePages });
+
+        await result.current.activate(rows[240]);
+
+        const previewTrack = mocks.openPlayDrawer.mock.calls[0][1].playlistSuggestionSource;
+        expect(previewTrack.continuation).toMatchObject({ nextPage: firstPage });
+        await loadNextTrackPage(previewTrack);
+        expect(fetchPage.mock.calls[0][0]).toMatchObject({ page: firstPage });
+      },
+    );
+
     it('passes no board override, so the drawer stays on the board the climber is at', async () => {
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
@@ -671,18 +709,99 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         fetchPage: (a: { page: number; pageSize: number; signal: AbortSignal }) => unknown;
       }) => {
         await fp({ page: 0, pageSize: 100, signal: new AbortController().signal });
-        return [makeClimb('b')];
+        return { climbs: [makeClimb('b')], nextPage: null };
       },
     );
     renderActivation(fetchPage);
     const target = captured().resolveTarget(makeClimb('a'))!;
-    const climbs = await captured().fetchClimbsForBoard({
+    const load = await captured().fetchClimbsForBoard({
       target,
       activatedClimbUuid: 'a',
       signal: new AbortController().signal,
     });
     expect(fetchPage).toHaveBeenCalled();
-    expect(climbs.map((climb) => climb.uuid)).toEqual(['b']);
+    expect(load.climbs.map((climb) => climb.uuid)).toEqual(['b']);
+    // The list ended inside the first load: nothing to page past.
+    expect(load).not.toHaveProperty('continuation');
+  });
+
+  // Issue #6664: a track used to stop for good about 250 climbs in.
+  it('hands the first load a way to keep paging the same list past where it stopped', async () => {
+    const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+      climbs: [makeClimb(`page-${page}`)],
+      hasMore: true,
+      totalCount: 40,
+    }));
+    mocks.fetchSuggestion.mockResolvedValue({ climbs: [makeClimb('a')], nextPage: 3, total: 40 });
+    renderActivation(fetchPage);
+    const target = captured().resolveTarget(makeClimb('a'))!;
+    const load = await captured().fetchClimbsForBoard({
+      target,
+      activatedClimbUuid: 'a',
+      signal: new AbortController().signal,
+    });
+
+    expect(load.total).toBe(40);
+    expect(load.continuation).toMatchObject({ nextPage: 3 });
+    const source = { playlistUuid: 'p', activatedClimbUuid: 'a', boardKey: 'k', ...load };
+    const page = await loadNextTrackPage(source);
+
+    // One page, the next one, for the active board, and nothing else.
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls[0][0]).toMatchObject({
+      page: 3,
+      board: { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '3', angle: 40 },
+    });
+    expect(page).toMatchObject({ page: 3, nextPage: 4, total: 40, filteredOut: false });
+    expect(page?.climbs.map(({ uuid }) => uuid)).toEqual(['page-3']);
+  });
+
+  it('marks the first track of a list tap as still loading until the refresh lands (#6664)', async () => {
+    renderActivation();
+    const continuation = captured().pendingContinuation?.(Promise.resolve(true));
+    if (!continuation) throw new Error('the first track says nothing about the load still out');
+    const seed = { playlistUuid: 'p', activatedClimbUuid: 'a', boardKey: 'k', climbs: [makeClimb('a')], continuation };
+
+    expect(canLoadMoreOfTrack(seed)).toBe(true);
+    // The refresh put the fuller track in place: nothing lands on the seed.
+    await expect(loadNextTrackPage(seed)).resolves.toBeNull();
+  });
+
+  // The count only feeds the header's "4 of 23". A slow one must not hold up
+  // the swipe track (#6664 review): it gets a moment past the climbs, no more.
+  describe("the list's count, from its own query", () => {
+    async function firstLoad(fetchTotal: UsePlaylistActivationOptions['fetchTotal']) {
+      mocks.fetchSuggestion.mockResolvedValue({ climbs: [makeClimb('a')], nextPage: null });
+      renderActivation(vi.fn(), { fetchTotal });
+      const target = captured().resolveTarget(makeClimb('a'))!;
+      return captured().fetchClimbsForBoard({ target, activatedClimbUuid: 'a', signal: new AbortController().signal });
+    }
+
+    it('names the count when it answers with the climbs', async () => {
+      await expect(firstLoad(async () => 23)).resolves.toMatchObject({ total: 23 });
+    });
+
+    it('lands the climbs without a count that is still out after the grace', async () => {
+      vi.useFakeTimers();
+      try {
+        const load = firstLoad(() => new Promise<number>(() => {}));
+        await vi.advanceTimersByTimeAsync(TRACK_COUNT_GRACE_MS);
+        const landed = await load;
+        expect(landed.climbs.map(({ uuid }) => uuid)).toEqual(['a']);
+        expect(landed).not.toHaveProperty('total');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lands the climbs without a count that failed', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await expect(
+        firstLoad(async () => {
+          throw new Error('count failed');
+        }),
+      ).resolves.not.toHaveProperty('total');
+    });
   });
 
   it('swallows rejections from the underlying activation (no unhandled void promise)', async () => {
@@ -726,9 +845,230 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(fetchPage).toHaveBeenCalled();
       // Nothing queued after the current climb, so no destructive decision is needed.
       expect(mocks.choose).not.toHaveBeenCalled();
-      // The circuit is the queue now: any list source from an earlier screen is
-      // dropped so list-first swipes (#4829) walk the circuit, not the old list.
-      expect(mocks.setPlaylistSuggestionSource).toHaveBeenLastCalledWith(null);
+      // The circuit is the queue now, and the player still plays from the
+      // playlist (#6664): the track that replaces any earlier list's is this
+      // playlist, in the queue's order, so list-first swipes (#4829) walk the
+      // circuit and the header can still name it.
+      const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
+      expect(finalTrack).toMatchObject({ playlistUuid: 'playlist:pl-1', activatedClimbUuid: 'b' });
+      expect(finalTrack.climbs.map((climb: Climb) => climb.uuid)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('names the loaded playlist after "Start playlist", with its count', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi.fn().mockResolvedValue({
+        climbs: [makeClimb('a'), tapped, makeClimb('c')],
+        hasMore: false,
+        totalCount: 3,
+      });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
+        label: 'Tuesday circuit',
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      // The first frame already names the list, before its count is known.
+      expect(mocks.setPlaylistSuggestionSource.mock.calls[0][0]).toMatchObject({ label: 'Tuesday circuit' });
+      expect(mocks.setPlaylistSuggestionSource.mock.calls[0][0]).not.toHaveProperty('total');
+      await waitFor(() =>
+        expect(mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0]).toMatchObject({
+          label: 'Tuesday circuit',
+          total: 3,
+        }),
+      );
+    });
+
+    it('queues and walks only what this board can draw from a list that mixes layouts', async () => {
+      // A smart list is fetched by board name, so climbs from another layout and
+      // from a bigger wall come back with it. Queued between the list's climbs,
+      // they sat where the provider's board filter left them off the track, and
+      // every swipe past one queued a copy of the next climb (#6664).
+      const tapped = makeClimb('a', { boardType: 'kilter', layoutId: 1 });
+      const otherLayout = makeClimb('homewall', { boardType: 'kilter', layoutId: 8 });
+      const biggerWall = makeClimb('bigger-wall', { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [999] });
+      const second = makeClimb('b', { boardType: 'kilter', layoutId: 1 });
+      const fetchPage = vi.fn().mockResolvedValue({
+        climbs: [tapped, otherLayout, biggerWall, second],
+        hasMore: false,
+        totalCount: 4,
+      });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        allClimbs: [tapped, otherLayout, biggerWall, second],
+        label: 'Projects',
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() =>
+        expect(mocks.setQueue.mock.calls.at(-1)?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual([
+          'a',
+          'b',
+        ]),
+      );
+      const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
+      expect(finalTrack.climbs.map((climb: Climb) => climb.uuid)).toEqual(['a', 'b']);
+      // "2 of 4" would be wrong: positions moved when two climbs dropped out.
+      expect(finalTrack).toMatchObject({ label: 'Projects' });
+      expect(finalTrack).not.toHaveProperty('total');
+    });
+
+    it('keeps the climb the climber is on in place, even one this board cannot draw', async () => {
+      const tapped = makeClimb('homewall', { boardType: 'kilter', layoutId: 8 });
+      const listClimbs = [makeClimb('a', { boardType: 'kilter', layoutId: 1 }), tapped, makeClimb('b')];
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: listClimbs, hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: listClimbs });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => {
+        const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+        expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'homewall', 'b']);
+        expect(lastSetQueue?.[1].climb.uuid).toBe('homewall');
+      });
+    });
+
+    // Issue #6670: the seeded tap commits the climb, the whole playlist loads in
+    // the background, and a climber who swipes meanwhile must not be snapped
+    // back to the climb they tapped when it lands.
+    describe('when the climber moves while the playlist loads (#6670)', () => {
+      const listClimbs = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));
+
+      function startLoad() {
+        let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+        const fetchPage = vi.fn(
+          () =>
+            new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+              releaseFetch = resolve;
+            }),
+        );
+        const { result } = renderActivation(fetchPage, {
+          replaceQueueOnActivate: true,
+          allClimbs: listClimbs.slice(0, 3),
+        });
+        let activation: Promise<void> = Promise.resolve();
+        act(() => {
+          activation = result.current.activate(listClimbs[1]);
+        });
+        const tappedItem = mocks.queueState.currentClimbQueueItem;
+        if (!tappedItem) throw new Error('the tap did not seed the queue');
+        return {
+          tappedItem,
+          finishLoad: () =>
+            act(async () => {
+              releaseFetch({ climbs: listClimbs, hasMore: false });
+              await activation;
+            }),
+        };
+      }
+
+      it('loads the playlist around the climb they swiped to, instead of snapping back', async () => {
+        const { tappedItem, finishLoad } = startLoad();
+        // A committed swipe along the seeded track: the next climb goes in after
+        // the tapped one and becomes current.
+        const swipedTo = makeQueueItem('swiped-to-c', 'c', true);
+        mocks.queueState = { queue: [tappedItem, swipedTo], currentClimbQueueItem: swipedTo };
+
+        await finishLoad();
+
+        expect(mocks.setQueue).toHaveBeenCalledTimes(2);
+        const [queue, current] = mocks.setQueue.mock.calls[1];
+        expect(queue.map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c', 'd']);
+        // The same entry they are on, so nothing on screen or on the wall moves.
+        expect(current).toBe(swipedTo);
+        // The track is the playlist, walking on from where they are.
+        expect(mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0]).toMatchObject({
+          playlistUuid: 'playlist:pl-1',
+          activatedClimbUuid: 'c',
+        });
+      });
+
+      it('replaces around the tapped climb when they swiped back to it', async () => {
+        const { tappedItem, finishLoad } = startLoad();
+        // Forward and back again: the climb they visited is queued after the
+        // tapped one, so the load asks before clearing it.
+        mocks.queueState = {
+          queue: [tappedItem, makeQueueItem('visited-c', 'c', true)],
+          currentClimbQueueItem: tappedItem,
+        };
+        mocks.choose.mockResolvedValueOnce('replace');
+
+        await finishLoad();
+
+        expect(mocks.setQueue).toHaveBeenCalledTimes(2);
+        expect(mocks.setQueue.mock.calls[1][1]).toBe(tappedItem);
+      });
+
+      it('leaves the queue alone when they moved to a climb that is not on this playlist', async () => {
+        const { tappedItem, finishLoad } = startLoad();
+        const elsewhere = makeQueueItem('elsewhere-slot', 'elsewhere');
+        mocks.queueState = { queue: [tappedItem, elsewhere], currentClimbQueueItem: elsewhere };
+
+        await finishLoad();
+
+        // Only the seed: the replace would undo what they picked after the tap.
+        expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+        expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves the queue alone when they are walking another list, even through a shared climb', async () => {
+        const { tappedItem, finishLoad } = startLoad();
+        const fromSearch = makeQueueItem('search-slot', 'c');
+        mocks.queueState = { queue: [tappedItem, fromSearch], currentClimbQueueItem: fromSearch };
+        mocks.suggestionSource = { playlistUuid: 'climblist', activatedClimbUuid: 'c', boardKey: 'kilter:1:2:3' };
+
+        await finishLoad();
+
+        expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+      });
+
+      // The seed is the rows on screen. Their last row is not the playlist's
+      // last climb, so the player must not show the end card there (#6664).
+      it('says the seed is still loading, and answers nothing once the playlist replaced it', async () => {
+        const { finishLoad } = startLoad();
+        const seed = mocks.setPlaylistSuggestionSource.mock.calls[0]?.[0];
+        expect(canLoadMoreOfTrack(seed)).toBe(true);
+        const answer = loadNextTrackPage(seed);
+
+        await finishLoad();
+
+        await expect(answer).resolves.toBeNull();
+      });
+
+      it('ends the seed where it is when the replace is skipped', async () => {
+        const { tappedItem, finishLoad } = startLoad();
+        const elsewhere = makeQueueItem('elsewhere-slot', 'elsewhere');
+        mocks.queueState = { queue: [tappedItem, elsewhere], currentClimbQueueItem: elsewhere };
+        const seed = mocks.setPlaylistSuggestionSource.mock.calls[0]?.[0];
+
+        await finishLoad();
+
+        await expect(loadNextTrackPage(seed)).resolves.toMatchObject({ climbs: [], nextPage: null });
+      });
+    });
+
+    it('ends the seed where it is when the playlist fails to load', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        allClimbs: [makeClimb('a'), makeClimb('b')],
+      });
+
+      await act(async () => {
+        await result.current.activate(makeClimb('b'));
+      });
+
+      const seed = mocks.setPlaylistSuggestionSource.mock.calls[0]?.[0];
+      await expect(loadNextTrackPage(seed)).resolves.toMatchObject({ climbs: [], nextPage: null });
     });
 
     it('keeps loaded navigation live while the board refresh is still pending', async () => {

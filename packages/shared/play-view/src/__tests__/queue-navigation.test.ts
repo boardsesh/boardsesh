@@ -105,6 +105,7 @@ describe('computeNavigationState', () => {
       nextItem: null,
       prevItem: null,
       remainingCount: 0,
+      atTrackEnd: false,
     });
   });
 
@@ -117,6 +118,7 @@ describe('computeNavigationState', () => {
       nextItem: null,
       prevItem: null,
       remainingCount: 0,
+      atTrackEnd: false,
     });
   });
 
@@ -160,7 +162,7 @@ describe('findNextQueueItemWithSuggestions', () => {
     // `added` is a plain "Add to queue" item (not suggested) sitting right after
     // the current climb. While a list is active the swipe still walks the list:
     // the queued item stays reachable from the queue sheet (whose tap drops the
-    // source) or once the list runs out — see the boundary fallback test.
+    // source) or from the end card once the list runs out (#6664).
     const added = makeItem('added');
     expect(added.suggested).toBeUndefined();
     const items = [itemFor(x), added];
@@ -192,12 +194,12 @@ describe('findNextQueueItemWithSuggestions', () => {
     expect(findNextQueueItemWithSuggestions(queue, queue[1], source)).toBe(queue[0]);
   });
 
-  it('falls back to the queue successor at the end of the list', () => {
+  it('stops at the end of the list instead of falling into the queue (#6664)', () => {
     const x = makeClimb('x');
     const leftover = makeItem('leftover');
     const queue = [itemFor(x), leftover];
     const source = makeSource(x, [x]); // x is last on the list
-    expect(findNextQueueItemWithSuggestions(queue, queue[0], source)).toBe(leftover);
+    expect(findNextQueueItemWithSuggestions(queue, queue[0], source)).toBeNull();
   });
 
   it('walks the queue for a current climb that is not on the list', () => {
@@ -318,12 +320,12 @@ describe('findPreviousQueueItemWithSuggestions', () => {
     expect(findPreviousQueueItemWithSuggestions(queue, queue[0], source)).toBe(queue[1]);
   });
 
-  it('falls back to the queue predecessor at the start of the list', () => {
+  it('stops at the start of the list instead of walking back into History (#6664)', () => {
     const x = makeClimb('x');
     const leftover = makeItem('leftover');
     const queue = [leftover, itemFor(x)];
     const source = makeSource(x, [x]); // x is first on the list
-    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBe(leftover);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBeNull();
   });
 
   it('walks the queue for a current climb that is not on the list', () => {
@@ -815,6 +817,7 @@ describe("the end of the climber's own list (#5403)", () => {
     expect(state.canNext).toBe(false);
     expect(state.nextItem).toBeNull();
     expect(state.remainingCount).toBe(0);
+    expect(state.atTrackEnd).toBe(true);
   });
 
   it('stops the prefetch walk there too', () => {
@@ -1015,6 +1018,7 @@ describe('prepared navigation', () => {
       prevItem: queue[0],
       canNext: true,
       canPrevious: true,
+      atTrackEnd: false,
     });
     expect(anchoredSuggestionSource(source, queue[1])).toBe(source);
     expect(queueScan).not.toHaveBeenCalled();
@@ -1060,5 +1064,144 @@ describe('prepared navigation', () => {
     expect(findPreviousQueueItemWithSuggestions(reversed, queue[0], null, prepareQueueNavigation(queue))).toBe(
       queue[1],
     );
+  });
+});
+
+// Issue #6664: swipes and Next walk the list the climber tapped in and stop at
+// its ends. The end is reported, so the player can offer its end card for "the
+// list is done" and nothing for "there was never a list".
+describe('the list is a walk with two ends (#6664)', () => {
+  const first = makeClimb('first');
+  const middle = makeClimb('middle');
+  const last = makeClimb('last');
+  const list = makeSource(first, [first, middle, last]);
+
+  it('walks the list in order from a committed climb', () => {
+    const queue = [makeItem('older'), itemFor(first)];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[1], list);
+    expect(selection.item?.climb.uuid).toBe('middle');
+    expect(selection.atTrackEnd).toBe(false);
+  });
+
+  it('reports the end of the list for a committed climb, even with climbs queued after it', () => {
+    const queued = makeItem('queued-after');
+    const queue = [itemFor(last), queued];
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], list);
+    expect(selection).toEqual({ item: null, skippedItems: [], atTrackEnd: true });
+  });
+
+  it('reports the end of the list for a preview that is not in the queue', () => {
+    // The wrong-board and crew previews show a climb the queue does not hold.
+    const preview = itemFor(last);
+    const selection = selectNextQueueItemWithSuggestions([makeItem('queued')], preview, list);
+    expect(selection).toEqual({ item: null, skippedItems: [], atTrackEnd: true });
+    expect(computeNavigationStateWithSuggestions([makeItem('queued')], preview, list).atTrackEnd).toBe(true);
+  });
+
+  it('tells "nothing to walk" apart from the end of a list', () => {
+    // A preview with no list, and a preview off its list, have nowhere to go,
+    // and no list ended.
+    const trackless = itemFor(makeClimb('trackless'));
+    expect(selectNextQueueItemWithSuggestions([], trackless, null)).toEqual({
+      item: null,
+      skippedItems: [],
+      atTrackEnd: false,
+    });
+    expect(selectNextQueueItemWithSuggestions([], trackless, list).atTrackEnd).toBe(false);
+    // The end of the queue is not the end of a list either.
+    const queue = [makeItem('a'), makeItem('b')];
+    expect(selectNextQueueItemWithSuggestions(queue, queue[1], null).atTrackEnd).toBe(false);
+  });
+
+  it('never reports the end with somewhere to go', () => {
+    const queue = [itemFor(middle)];
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], list);
+    expect(state.canNext).toBe(true);
+    expect(state.atTrackEnd).toBe(false);
+  });
+
+  it('stops Previous at the first climb of the list for a committed climb with History', () => {
+    const history = makeItem('history');
+    const queue = [history, itemFor(first)];
+    const state = computeNavigationStateWithSuggestions(queue, queue[1], list);
+    expect(state.canPrevious).toBe(false);
+    expect(state.prevItem).toBeNull();
+  });
+
+  it('stops Previous at the first climb of the list for a preview', () => {
+    expect(findPreviousQueueItemWithSuggestions([makeItem('queued')], itemFor(first), list)).toBeNull();
+  });
+
+  it('still walks History for a climb with no list', () => {
+    const queue = [makeItem('history'), makeItem('current')];
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], null)).toBe(queue[0]);
+  });
+
+  it('counts only the climbs left on the list as "left"', () => {
+    const queue = [itemFor(first), makeItem('queued-1'), makeItem('queued-2')];
+    expect(computeNavigationStateWithSuggestions(queue, queue[0], list).remainingCount).toBe(2);
+  });
+});
+
+describe('a queue that holds the list in order, with off-board climbs between (#6664)', () => {
+  // "Start playlist" queues the whole list. A smart list is fetched by board
+  // name only, so a climb from another layout can sit between two of the list's
+  // climbs; the provider's board filter takes it off the track.
+  const first = climbOnBoard('first', 'tension', 8);
+  const offBoard = climbOnBoard('other-layout', 'tension', 10);
+  const second = climbOnBoard('second', 'tension', 8);
+  const third = climbOnBoard('third', 'tension', 8);
+  const track = makeSource(first, [first, second, third]);
+  const queue = [itemFor(first), itemFor(offBoard), itemFor(second), itemFor(third)];
+
+  it('lands Next on the queued copy past the climb the board cannot draw', () => {
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], track, TENSION_BOARD);
+    expect(selection.item).toBe(queue[2]);
+    expect(selection.atTrackEnd).toBe(false);
+    // The track left it out, as it always does, so nothing was "skipped".
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('lands Previous on the queued copy past the climb the board cannot draw', () => {
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[2], track, undefined, TENSION_BOARD)).toBe(queue[0]);
+  });
+
+  it('agrees with the provider and the drawer through computeNavigationStateWithSuggestions', () => {
+    const state = computeNavigationStateWithSuggestions(queue, queue[2], track, TENSION_BOARD);
+    expect(state.prevItem).toBe(queue[0]);
+    expect(state.nextItem).toBe(queue[3]);
+  });
+
+  it('walks the whole list without minting a single copy', () => {
+    const walk = findUpcomingQueueItemsWithSuggestions(queue, queue[0], track, 5, TENSION_BOARD);
+    expect(walk).toEqual([queue[2], queue[3]]);
+  });
+
+  it('never walks past a climb the board can draw, so "Play next" stays next', () => {
+    const playNext = itemFor(climbOnBoard('play-next', 'tension', 8));
+    const withPlayNext = [itemFor(first), playNext, itemFor(offBoard), itemFor(second)];
+    const selection = selectNextQueueItemWithSuggestions(withPlayNext, withPlayNext[0], track, TENSION_BOARD);
+    expect(selection.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('second'));
+  });
+
+  it('never walks past a climb on another wall at this gym', () => {
+    const reachable = (climb: Climb) => climb.layoutId === 10;
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], track, TENSION_BOARD, reachable);
+    expect(selection.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('second'));
+  });
+
+  it('only looks past a climb when it knows the board, as before', () => {
+    expect(selectNextQueueItemWithSuggestions(queue, queue[0], track).item?.uuid).toBe(
+      getPlaylistPeekQueueItemUuid('second'),
+    );
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[2], track)?.uuid).toBe(
+      getPlaylistPeekQueueItemUuid('first'),
+    );
+  });
+
+  it('still peeks for a preview, which is not in the queue', () => {
+    const preview = { uuid: 'preview-first', climb: first };
+    const selection = selectNextQueueItemWithSuggestions(queue, preview, track, TENSION_BOARD);
+    expect(selection.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('second'));
   });
 });

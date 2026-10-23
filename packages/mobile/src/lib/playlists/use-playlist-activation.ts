@@ -26,9 +26,11 @@ import {
   usePlaylistClimbActivation,
   drainPlaylistPages,
   fetchPlaylistSuggestionClimbs,
+  fetchPlaylistTrackPage,
   isAbortError,
   MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
   PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+  type ActivationTrackLoad,
   type PlaylistDrainResult,
   type PlaylistDrainStopReason,
 } from '@boardsesh/playlists-react';
@@ -56,6 +58,7 @@ import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
 import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
+import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
@@ -124,7 +127,37 @@ function countClimbsThisBoardCanRender(climbs: Climb[], board: PlaylistRenderBoa
 export type PlaylistActivationPage = {
   climbs: Climb[];
   hasMore: boolean;
+  /**
+   * How many climbs the list holds, when the query reports it. Counted by the
+   * same query the pages come from, so it is the right total for the track.
+   */
+  totalCount?: number;
 };
+
+/** The board a page or count is fetched for. */
+type ActivationFetchBoard = { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
+
+/** Accept every climb: previews keep every loaded row, as they always have. */
+const acceptEveryClimb = () => true;
+
+/**
+ * How long a list's count may run past its climbs. The count is asked for
+ * beside the pages and only feeds the header's "4 of 23", so a slow one must
+ * not hold up the track or the queue: once the climbs are in, it gets this
+ * long, and after that the player names the list without a count.
+ */
+export const TRACK_COUNT_GRACE_MS = 1000;
+
+/** What `pending` resolved to, or undefined if it took longer than `ms`. */
+function settledWithin<Value>(pending: Promise<Value | undefined>, ms: number): Promise<Value | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    void pending.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
 
 /** Return a board config for view-only drawer preview, or null to activate normally. */
 type ViewOnlyBoardResolver = (climb: Climb) => PlaylistRenderBoard | null;
@@ -142,9 +175,20 @@ export type UsePlaylistActivationOptions = {
   fetchPage: (args: {
     page: number;
     pageSize: number;
-    board: { boardName: string; layoutId: number; sizeId: number; setIds: string; angle: number };
+    board: ActivationFetchBoard;
     signal: AbortSignal;
   }) => Promise<PlaylistActivationPage>;
+  /**
+   * What the player calls this list while it walks it: "From {label} · 4 of 23"
+   * (issue #6664). Already translated. Omit it and the player names nothing.
+   */
+  label?: string;
+  /**
+   * Count the list `fetchPage` pages, for a query whose pages carry no total
+   * (search). Must count exactly that list, or the player's "4 of 23" is wrong.
+   * Asked once per tap, alongside the first page; a failure only costs the count.
+   */
+  fetchTotal?: (args: { board: ActivationFetchBoard; signal: AbortSignal }) => Promise<number>;
   /**
    * When set, the tap is view-only: open the drawer against this board config
    * and keep playlist navigation local to the drawer without mutating the active
@@ -163,6 +207,14 @@ export type UsePlaylistActivationOptions = {
    * crew forming or breaking up between render and tap is honoured.
    */
   previewOnly?: boolean;
+  /**
+   * The loaded rows are this list's own pages, from the top, for the board a
+   * preview carries on with (search: the same frozen search on the active
+   * board). A preview's track then asks for the page after the rows instead of
+   * re-reading the ones it already has from the first page. Leave it off when
+   * the rows come from a different query (a playlist's all-boards rows).
+   */
+  loadedRowsArePages?: boolean;
   /** Logged when the async suggestion refresh fails (non-abort). */
   refreshErrorMessage: string;
   /** Replace the user's queue with the playlist order instead of suggestion-fallback navigation. */
@@ -240,8 +292,11 @@ export function usePlaylistActivation({
   sourceId,
   allClimbs,
   fetchPage,
+  label,
+  fetchTotal,
   viewOnlyBoard,
   previewOnly = false,
+  loadedRowsArePages = false,
   refreshErrorMessage,
   replaceQueueOnActivate = false,
 }: UsePlaylistActivationOptions): PlaylistActivationResult {
@@ -410,9 +465,63 @@ export function usePlaylistActivation({
     [allClimbs, activationTarget],
   );
 
+  // The list's count, when the screen has a separate query for it. Never fails
+  // the track: without it the player names the list and leaves the count off.
+  const fetchTotalSafely = useCallback(
+    async (board: ActivationFetchBoard, signal: AbortSignal): Promise<number | undefined> => {
+      if (!fetchTotal) return undefined;
+      try {
+        const total = await fetchTotal({ board, signal });
+        return Number.isInteger(total) && total >= 0 ? total : undefined;
+      } catch (error) {
+        if (!signal.aborted && !isAbortError(error)) console.warn('Counting the swipe track failed:', error);
+        return undefined;
+      }
+    },
+    [fetchTotal],
+  );
+
+  /**
+   * A page loader for one track, registered with the player's pager so the track
+   * keeps going past what is loaded (issue #6664). Pages are run through the
+   * track's own filter; `filteredOut` tells the track its count no longer fits.
+   */
+  const registerPageLoader = useCallback(
+    (board: ActivationFetchBoard, isClimbable: (climb: Climb) => boolean): string => {
+      const loadPage: TrackPageLoader = async (page, signal) => {
+        const load = await fetchPlaylistTrackPage({
+          page,
+          signal,
+          fetchPage: ({ page: pageIndex, pageSize, signal: pageSignal }) =>
+            fetchPage({ page: pageIndex, pageSize, board, signal: pageSignal }),
+          ...PLAYLIST_DRAIN_RETRY_POLICY,
+        });
+        const climbs = load.climbs.filter(isClimbable);
+        return {
+          page,
+          pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
+          climbs,
+          filteredOut: climbs.length !== load.climbs.length,
+          nextPage: load.nextPage,
+          ...(load.totalCount === undefined ? {} : { total: load.totalCount }),
+        };
+      };
+      return registerTrackPageLoader(loadPage);
+    },
+    [fetchPage],
+  );
+
   const fetchClimbsForBoard = useCallback(
-    async ({ activatedClimbUuid, signal }: { activatedClimbUuid: string; signal: AbortSignal }) => {
-      if (!activeBoard) return [];
+    async ({
+      activatedClimbUuid,
+      signal,
+      target,
+    }: {
+      activatedClimbUuid: string;
+      signal: AbortSignal;
+      target: { isClimbable: (climb: Climb) => boolean };
+    }): Promise<ActivationTrackLoad> => {
+      if (!activeBoard) return { climbs: [] };
       const board = {
         boardName: activeBoard.boardType,
         layoutId: activeBoard.layoutId,
@@ -420,14 +529,31 @@ export function usePlaylistActivation({
         setIds: activeBoard.setIds,
         angle: activeBoard.angle,
       };
-      return fetchPlaylistSuggestionClimbs({
+      const countedTotal = fetchTotalSafely(board, signal);
+      const load = await fetchPlaylistSuggestionClimbs({
         activatedClimbUuid,
         signal,
         fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
         ...PLAYLIST_DRAIN_RETRY_POLICY,
       });
+      const total =
+        load.droppedDuplicates || signal.aborted
+          ? undefined
+          : (load.total ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
+      return {
+        climbs: load.climbs,
+        ...(total === undefined ? {} : { total }),
+        ...(load.nextPage === null
+          ? {}
+          : {
+              continuation: {
+                loaderId: registerPageLoader(board, target.isClimbable),
+                nextPage: load.nextPage,
+              },
+            }),
+      };
     },
-    [activeBoard, fetchPage],
+    [activeBoard, fetchPage, fetchTotalSafely, registerPageLoader],
   );
 
   const fetchAllClimbsForBoard = useCallback(
@@ -507,6 +633,13 @@ export function usePlaylistActivation({
     };
   }, []);
 
+  // The first track is the rows on screen while the rest of the list loads.
+  // Marked as still loading, so the player doesn't call the last row the end.
+  const pendingContinuation = useCallback(
+    (refreshSettled: Promise<boolean>) => ({ loaderId: registerPendingTrackLoader(refreshSettled), nextPage: 0 }),
+    [],
+  );
+
   const activate = usePlaylistClimbActivation({
     queueApi,
     sourceId,
@@ -514,6 +647,8 @@ export function usePlaylistActivation({
     preparedClimbs: preparedCompatibleClimbs,
     resolveTarget,
     fetchClimbsForBoard,
+    label,
+    pendingContinuation,
     // onActivated is intentionally omitted — the drawer is opened in the
     // returned callback BEFORE activate() runs, so the BottomSheet animation
     // starts on the same frame as the tap with no state-update work in between.
@@ -723,24 +858,55 @@ export function usePlaylistActivation({
         loadedClimbs?: Climb[];
         previewQueueItem?: ClimbQueueItem | null;
         drainStopReason?: PlaylistDrainStopReason;
+        /**
+         * Told how it ended, once: true when the loaded playlist's track is in
+         * place, false for every other ending (failed, cancelled, skipped).
+         */
+        onSettled?: (trackReplaced: boolean) => void;
       } = {},
     ) => {
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) {
+        options.onSettled?.(false);
+        return;
+      }
       replacementAbortRef.current?.abort();
       const abortController = new AbortController();
       replacementAbortRef.current = abortController;
+      // The climb the climber is on as the load starts: the seeded tap's item, or
+      // whatever was current when they confirmed the prompt. Compared after the
+      // load to tell "still here" from "moved on while it loaded" (#6670).
+      const currentAtStartUuid =
+        options.previewQueueItem?.uuid ?? getQueueSnapshot().currentClimbQueueItem?.uuid ?? null;
+      let trackReplaced = false;
       // Read by the catch block so a failed drain reports how far it got.
       let drainStopReason: PlaylistDrainStopReason | null = null;
       let drainPagesFetched = 0;
+      let listTotal: number | undefined;
       try {
         let climbs = options.loadedClimbs;
         if (climbs) {
           drainStopReason = options.drainStopReason ?? null;
         } else {
+          const countBoard = activeBoard
+            ? {
+                boardName: activeBoard.boardType,
+                layoutId: activeBoard.layoutId,
+                sizeId: activeBoard.sizeId,
+                setIds: activeBoard.setIds,
+                angle: activeBoard.angle,
+              }
+            : null;
+          const countedTotal: Promise<number | undefined> = countBoard
+            ? fetchTotalSafely(countBoard, abortController.signal)
+            : Promise.resolve(undefined);
           const drainResult = await fetchAllClimbsForBoard({ signal: abortController.signal });
           climbs = drainResult.climbs;
           drainStopReason = drainResult.stopReason;
           drainPagesFetched = drainResult.pagesFetched;
+          listTotal =
+            drainResult.droppedDuplicates || abortController.signal.aborted
+              ? undefined
+              : (drainResult.totalCount ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
         }
         if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
         if ((drainStopReason === 'page-cap' || drainStopReason === 'no-progress') && !options.loadedClimbs) {
@@ -775,18 +941,62 @@ export function usePlaylistActivation({
             return;
           }
         }
-        const { queue, currentItem } = buildPlaylistQueue(climbs, climb, options.previewQueueItem);
+        // The climber may have moved while the list loaded (#6670): swiped on
+        // from the tapped climb, or left for another list. Replacing around the
+        // tapped climb would snap them back to it.
+        //
+        // Still on this list (a swipe along its track, or a queue entry that is
+        // one of its climbs): load the whole playlist around the climb they are
+        // on. The queue, the track and the screen then agree, the replace still
+        // does what "Start playlist" said, and nothing on screen or on the wall
+        // moves. Anywhere else they picked something after the tap, and the
+        // replace would undo it, so it is skipped.
+        const { currentClimbQueueItem: liveCurrent, playlistSuggestionSource: liveTrack } = getQueueSnapshot();
+        let landingClimb = climb;
+        let landingItem = options.previewQueueItem;
+        if ((liveCurrent?.uuid ?? null) !== currentAtStartUuid) {
+          const liveClimbUuid = liveCurrent?.climb.uuid;
+          const liveClimbInList = liveClimbUuid ? climbs.find(({ uuid }) => uuid === liveClimbUuid) : undefined;
+          if (!liveCurrent || !liveClimbInList || (liveTrack && liveTrack.playlistUuid !== sourceId)) return;
+          landingClimb = liveClimbInList;
+          landingItem = liveCurrent;
+        }
+        // The circuit IS the queue now, and the player still plays from the
+        // playlist: the queue and the track are the same climbs in the same
+        // order, both only the ones this board can draw (#6664). A list fetched
+        // by board name alone (the smart lists) also carries other layouts and
+        // sizes. Queued, they sat between the list's climbs where the track
+        // (and the provider's board filter) left them out, so a swipe could not
+        // find the next climb beside the current one and queued a copy of it.
+        // The climb the climber is on stays wherever it is.
+        const isClimbableHere = activationTarget?.isClimbable;
+        const boardClimbs = isClimbableHere
+          ? climbs.filter((candidate) => candidate.uuid === landingClimb.uuid || isClimbableHere(candidate))
+          : climbs;
+        const { queue, currentItem } = buildPlaylistQueue(boardClimbs, landingClimb, landingItem);
         setQueue(queue, currentItem);
-        // The circuit IS the queue now, so swipes must walk it. Swipes are
-        // list-first (#4829) and the provider only drops a source whose list
-        // the current climb has left — a climb that sits in both the old list
-        // and this playlist would keep steering swipes into the old list. Clear
-        // it explicitly.
-        setPlaylistSuggestionSource(null);
+        // Named after the list (#6664). It replaces whatever track came before,
+        // so a climb that sits in both an older list and this playlist cannot
+        // steer swipes into the older one. Built from the whole list with the
+        // same filter, so a count that the filter makes wrong is dropped.
+        setPlaylistSuggestionSource(
+          activationTarget
+            ? createPlaylistSuggestionSource({
+                playlistUuid: sourceId,
+                activatedClimb: landingClimb,
+                climbs,
+                boardKey: activationTarget.boardKey,
+                isClimbable: activationTarget.isClimbable,
+                label,
+                total: listTotal,
+              })
+            : null,
+        );
+        trackReplaced = activationTarget !== null;
         // The activate path already opened the drawer (committedExternally) on the
         // seed queue; the confirm path opens it now that the climb is current.
         if (!options.previewQueueItem) {
-          openPlayDrawer(toSchemaClimb(climb), { committedExternally: true });
+          openPlayDrawer(toSchemaClimb(landingClimb), { committedExternally: true });
         }
       } catch (error) {
         // Ask the signal, not the error's `name` — see the drain's own catch.
@@ -808,21 +1018,47 @@ export function usePlaylistActivation({
         if (replacementAbortRef.current === abortController) {
           replacementAbortRef.current = null;
         }
+        options.onSettled?.(trackReplaced);
       }
     },
     [
+      activeBoard,
+      activationTarget,
       appendClimbsToQueue,
       fetchAllClimbsForBoard,
+      fetchTotalSafely,
       getQueueSnapshot,
+      label,
       openPlayDrawer,
       promptQueueFork,
       reportEmptyBoardFetchOnce,
+      setPlaylistSuggestionSource,
       setQueue,
       showToast,
+      sourceId,
       reportSourceId,
       t,
       privacyGeneration,
     ],
+  );
+
+  /**
+   * How a preview's track keeps going past the loaded rows. A preview opens on
+   * the rows the screen already shows. Where their paging does not line up with
+   * the track's pages, it asks from the first page and keeps only climbs it has
+   * not got: the rows on screen stay in place and nothing is skipped. Where it
+   * does (`loadedRowsArePages`), it starts at the page the rows end in, so it
+   * doesn't fetch, one by one, pages that add nothing. Every loaded row is
+   * kept, as previews always have.
+   */
+  const previewContinuation = useCallback(
+    (board: ActivationFetchBoard) => ({
+      loaderId: registerPageLoader(board, acceptEveryClimb),
+      nextPage: loadedRowsArePages
+        ? Math.floor(loadedClimbsRef.current.length / PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE)
+        : 0,
+    }),
+    [registerPageLoader, loadedRowsArePages],
   );
 
   // Open the drawer immediately, then let the shared hook commit the climb. The
@@ -866,6 +1102,8 @@ export function usePlaylistActivation({
             size_id: viewOnlyBoardConfig.sizeId,
             set_ids: viewOnlyBoardConfig.setIds,
           }),
+          label,
+          continuation: previewContinuation(viewOnlyBoardConfig),
         });
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
@@ -895,15 +1133,24 @@ export function usePlaylistActivation({
           // branch above has always had. It should be unreachable here (the
           // gate only fires in a shared session, where an active board
           // resolved), so degrading beats blocking the tap on a broken invariant.
-          playlistSuggestionSource: target
-            ? createPlaylistSuggestionSource({
-                playlistUuid: sourceId,
-                activatedClimb: climb,
-                climbs: allClimbs,
-                preparedClimbs: preparedPreviewClimbs,
-                boardKey: target.boardKey,
-              })
-            : null,
+          playlistSuggestionSource:
+            target && activeBoard
+              ? createPlaylistSuggestionSource({
+                  playlistUuid: sourceId,
+                  activatedClimb: climb,
+                  climbs: allClimbs,
+                  preparedClimbs: preparedPreviewClimbs,
+                  boardKey: target.boardKey,
+                  label,
+                  continuation: previewContinuation({
+                    boardName: activeBoard.boardType,
+                    layoutId: activeBoard.layoutId,
+                    sizeId: activeBoard.sizeId,
+                    setIds: activeBoard.setIds,
+                    angle: activeBoard.angle,
+                  }),
+                })
+              : null,
         });
         return Promise.resolve();
       }
@@ -939,6 +1186,14 @@ export function usePlaylistActivation({
           // the follow-up network drain. A slow, cancelled, or stuck refresh
           // therefore left both arrow buttons disabled indefinitely even though
           // the adjacent rows were already visible on the playlist screen.
+          //
+          // The rest of the playlist is still loading, so the seed says so: the
+          // player holds the end card back at the last row on screen until the
+          // load lands (#6664).
+          let settleLoad: (trackReplaced: boolean) => void = () => {};
+          const loadSettled = new Promise<boolean>((resolve) => {
+            settleLoad = resolve;
+          });
           setPlaylistSuggestionSource(
             createPlaylistSuggestionSource({
               playlistUuid: sourceId,
@@ -947,10 +1202,12 @@ export function usePlaylistActivation({
               preparedClimbs: preparedCompatibleClimbs,
               boardKey: target.boardKey,
               isClimbable: target.isClimbable,
+              label,
+              continuation: pendingContinuation(loadSettled),
             }),
           );
           openPlayDrawer(schemaClimb, { ...openingArtOptions, committedExternally: true });
-          return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
+          return replaceQueueWithPlaylist(climb, { previewQueueItem: item, onSettled: settleLoad });
         }
       }
 
@@ -1000,8 +1257,12 @@ export function usePlaylistActivation({
     },
     [
       activate,
+      activeBoard,
       allClimbs,
+      label,
       loadedClimbsByUuid,
+      pendingContinuation,
+      previewContinuation,
       preparedPreviewClimbs,
       preparedCompatibleClimbs,
       appendClimbsToQueue,

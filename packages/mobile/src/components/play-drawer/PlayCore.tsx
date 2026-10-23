@@ -50,7 +50,10 @@ import { LivePlayDrawerHeader, PreparedPlayDrawerHeader, useLivePlayDrawerHeader
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
-import { useSwipeNavigation, useSwipePager, useSwipePages } from './use-swipe-pager';
+import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } from './use-swipe-pager';
+import { useTrackPaging } from './use-track-paging';
+import { formatTrackLabel } from './track-label-text';
+import { TrackEndCard } from './TrackEndCard';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
@@ -260,6 +263,10 @@ export function PlayCore({
   // absolute sibling of the swipeable header (so it doesn't ride the swipe
   // translate) — it can't be a child of the 32pt pill in the header's flank.
   const [wallCallout, setWallCallout] = useState<'none' | 'explainer'>('none');
+  // The end card of the list the player is walking (#6664), open for this climb.
+  // Keyed on the climb, and cleared on every climb change, so it never reopens
+  // by itself on a climb the climber comes back to.
+  const [trackEndCardClimbUuid, setTrackEndCardClimbUuid] = useState<string | null>(null);
   // The mirror toggle, scoped to the climb it was made on. A bare boolean went
   // stale whenever the current climb changed by a route the drawer doesn't own
   // (a party peer advancing the queue, a reorder, the accessory bar) — the
@@ -367,7 +374,15 @@ export function PlayCore({
   }));
 
   const { queue, currentClimbQueueItem } = useQueueData();
-  const { setCurrentClimb, nextClimb, previousClimb, addToQueue, mirrorCurrentClimb } = useQueueActions();
+  const {
+    setCurrentClimb,
+    nextClimb,
+    previousClimb,
+    addToQueue,
+    mirrorCurrentClimb,
+    getQueueSnapshot,
+    refreshPlaylistSuggestionSource,
+  } = useQueueActions();
   const { sessionId } = useQueueSessionId();
   // "Is anyone else here." Read as one boolean off a dedicated selector context
   // so the ≤1/2s session-stats push and every presence delta cost the drawer
@@ -695,7 +710,12 @@ export function PlayCore({
   // the climber can always turn off a section they can see.
   const sectionsListActiveHolds = isMoonboardBoardName(boardName) || activeBoardIsMoonboard(activeBoardForNavigation);
   const {
+    navigationSuggestionSource,
     navigationState,
+    currentTrackLabel,
+    nextTrackLabel,
+    previousTrackLabel,
+    trackEndCard,
     nextHeaderClimb,
     previousHeaderClimb,
     nextHeaderBoard,
@@ -716,6 +736,28 @@ export function PlayCore({
     renderBoardConfig,
     isReachableClimb,
     enhancementsReady,
+  });
+
+  // The header names the list the player is walking (#6664): "From Projects ·
+  // 4 of 23". Each neighbour has its own (see `nextTrackLabelText` below), for
+  // the same reason as the workout label.
+  const trackLocale = i18n.language;
+  const currentTrackLabelText = useMemo(
+    () => formatTrackLabel(currentTrackLabel, t, trackLocale),
+    [currentTrackLabel, t, trackLocale],
+  );
+  // More of a long list arrives as the climber nears the end of what is loaded.
+  const getCommittedSuggestionSource = useCallback(
+    () => getQueueSnapshot().playlistSuggestionSource,
+    [getQueueSnapshot],
+  );
+  useTrackPaging({
+    source: navigationSuggestionSource,
+    displayedClimbUuid: displayedQueueItem?.climb?.uuid,
+    previewTrack: drawerPreviewItem != null,
+    setPreviewSource: setDrawerPreviewSuggestionSource,
+    getCommittedSource: getCommittedSuggestionSource,
+    refreshCommittedSource: refreshPlaylistSuggestionSource,
   });
 
   // The neighbours' headers carry their own workout position, so a swipe slides
@@ -782,6 +824,8 @@ export function PlayCore({
     // A new climb's Logbook re-lays out from scratch — don't let a stale expand
     // intent auto-scroll it.
     pendingFirstSectionScrollRef.current = false;
+    // The end card was about the climb that was on screen.
+    setTrackEndCardClimbUuid(null);
   }, [displayedClimbUuid, resetFavoriteOverride]);
 
   // --- The shared-session browse latch ---------------------------------------
@@ -862,6 +906,20 @@ export function PlayCore({
     lightOnSwipe,
     inSharedSession: browseByDefault,
   });
+  // The neighbours' "From Projects · 5 of 23", so a swipe slides the right one
+  // in. Not where the swipe opens a preview off the committed climb (a crew
+  // here, or Light on swipe off): that preview has no list of its own (#5403,
+  // a preview walks only the track it was opened with), so its header names
+  // none, and the climb sliding in must not promise one.
+  const swipeOpensTracklessPreview = !isPreview && !navigationCommits;
+  const nextTrackLabelText = useMemo(
+    () => (swipeOpensTracklessPreview ? null : formatTrackLabel(nextTrackLabel, t, trackLocale)),
+    [swipeOpensTracklessPreview, nextTrackLabel, t, trackLocale],
+  );
+  const previousTrackLabelText = useMemo(
+    () => (swipeOpensTracklessPreview ? null : formatTrackLabel(previousTrackLabel, t, trackLocale)),
+    [swipeOpensTracklessPreview, previousTrackLabel, t, trackLocale],
+  );
   // --- Busy-wall confirm -----------------------------------------------------
   //
   // Someone else lit a climb while you were browsing. Taking the wall silently
@@ -1198,7 +1256,7 @@ export function PlayCore({
     );
   }, [displayedClimb, boardName, layoutId, showToast, tClimbs]);
 
-  const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall } =
+  const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall, continueIntoQueue } =
     usePlaySelectionController({
       openTarget,
       viewer,
@@ -1227,6 +1285,32 @@ export function PlayCore({
 
   // A swipe step changes the climb with these, whichever render it follows.
   useSwipeNavigation(swipePager, handleNext, handlePrev);
+
+  // --- The end of the list (#6664) -------------------------------------------
+  //
+  // At the list's last climb Next, and one more forward swipe, open the end
+  // card instead of falling into the queue. While more of the list is loading
+  // there is no card (`trackEndCard` is null) and Next waits for the page.
+  const openTrackEndCard = useCallback(() => {
+    setTrackEndCardClimbUuid(displayedClimbUuid ?? null);
+  }, [displayedClimbUuid]);
+  const closeTrackEndCard = useCallback(() => setTrackEndCardClimbUuid(null), []);
+  const trackEndCardVisible =
+    trackEndCard !== null && trackEndCardClimbUuid !== null && trackEndCardClimbUuid === displayedClimbUuid;
+  useTrackEndSwipe(swipePager, trackEndCard ? openTrackEndCard : null);
+  const handleNextPress = trackEndCard ? openTrackEndCard : handleNext;
+  const canPressNext = navigationState.canNext || trackEndCard !== null;
+  const trackEndAction = trackEndCard?.action ?? null;
+  const handleTrackEndKeepGoing = useCallback(() => {
+    setTrackEndCardClimbUuid(null);
+    if (!trackEndAction) return;
+    if (trackEndAction.kind === 'backToCommitted') {
+      // A preview's list ended: its queue starts back at the committed climb.
+      handleBackToLive();
+      return;
+    }
+    continueIntoQueue(trackEndAction.target);
+  }, [trackEndAction, handleBackToLive, continueIntoQueue]);
 
   // Solo and preview surfaces retain their existing local mirror semantics.
   useEffect(() => {
@@ -1451,6 +1535,7 @@ export function PlayCore({
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
     workoutStageLabel,
+    trackLabel: currentTrackLabelText,
   });
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
@@ -1635,7 +1720,7 @@ export function PlayCore({
   const actionBar = (
     <PlayDrawerActionBar
       canSwipePrevious={navigationState.canPrevious}
-      canSwipeNext={navigationState.canNext}
+      canSwipeNext={canPressNext}
       isMirrored={isMirrored}
       supportsMirroring={supportsMirroring}
       isFavorited={isFavorited}
@@ -1674,7 +1759,7 @@ export function PlayCore({
       onCommit={handleSetActive}
       ascentCount={ascentCount}
       onPrevClick={handlePrev}
-      onNextClick={handleNext}
+      onNextClick={handleNextPress}
       onMirror={handleMirror}
       onToggleFavorite={handleToggleFavorite}
       lightbulbLabelKind={lightbulbLabelKind}
@@ -1886,6 +1971,7 @@ export function PlayCore({
                                 layoutId={previousHeaderBoard.layoutId}
                                 angle={previousHeaderBoard.angle}
                                 workoutStageLabel={previousWorkoutStageLabel}
+                                trackLabel={previousTrackLabelText}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -1902,6 +1988,7 @@ export function PlayCore({
                                 layoutId={nextHeaderBoard.layoutId}
                                 angle={nextHeaderBoard.angle}
                                 workoutStageLabel={nextWorkoutStageLabel}
+                                trackLabel={nextTrackLabelText}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -1964,9 +2051,9 @@ export function PlayCore({
                             prevFrames={prevPeekFrames}
                             prefetchFrames={upcomingPrefetchFrames}
                             mirrored={isMirrored}
-                            canSwipeNext={navigationState.canNext}
+                            canSwipeNext={canPressNext}
                             canSwipePrevious={navigationState.canPrevious}
-                            onSwipeNext={handleNext}
+                            onSwipeNext={handleNextPress}
                             onSwipePrevious={handlePrev}
                             onResetZoomReady={handleResetZoomReady}
                             enabled={!isTickBarActive}
@@ -1985,6 +2072,15 @@ export function PlayCore({
                             climbName={displayedClimb.name}
                           />
                         )}
+                        {/* Over the board only: the header and the action bar
+                            stay live, so Previous still walks back along the list. */}
+                        {trackEndCardVisible && trackEndCard ? (
+                          <TrackEndCard
+                            model={trackEndCard}
+                            onKeepGoing={handleTrackEndKeepGoing}
+                            onDismiss={closeTrackEndCard}
+                          />
+                        ) : null}
                       </View>
 
                       {controlsAbove ? null : controlsRegion}

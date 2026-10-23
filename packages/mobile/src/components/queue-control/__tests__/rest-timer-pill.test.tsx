@@ -440,6 +440,16 @@ describe('RestTimerHeroClock', () => {
     expect(heroCaption(container)).toBe('mobile.restTimer.queueEnded');
   });
 
+  // Issue #6664: a list's end is not the queue's. The queue is still there,
+  // one tap away on the player's end card, so the caption must not say empty.
+  it('says the list ended, not that the queue is empty, at the end of a list', () => {
+    armWithTick();
+    act(() => noteRestTimerQueueEnded({ listEnded: true }));
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroCaption(container)).toBe('mobile.restTimer.listEnded');
+  });
+
   it('is ONE accessible element carrying the same sentence the pill speaks', () => {
     armWithTick();
     advanceSeconds(30);
