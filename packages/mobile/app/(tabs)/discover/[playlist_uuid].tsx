@@ -896,9 +896,11 @@ export default function PlaylistDetail() {
           />
         );
       }
+      // Signed out there is nothing to follow or pin: no item, not an empty one.
+      if (!isAuthenticated) return null;
       return (
         <>
-          {isAuthenticated && isFollowable ? (
+          {isFollowable ? (
             <PlaylistFollowButton
               isFollowing={isFollowing}
               onToggle={handleToggleFollow}
@@ -906,18 +908,16 @@ export default function PlaylistDetail() {
               collapsed={collapsed}
             />
           ) : null}
-          {isAuthenticated ? (
-            <GlassIconButton
-              iconName={isPinned ? 'pin.fill' : 'pin'}
-              iconColor={systemColors.label}
-              onPress={() => {
-                hapticSelection();
-                void handleTogglePin();
-              }}
-              accessibilityLabel={isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel')}
-              fallbackColor={systemColors.fill}
-            />
-          ) : null}
+          <GlassIconButton
+            iconName={isPinned ? 'pin.fill' : 'pin'}
+            iconColor={systemColors.label}
+            onPress={() => {
+              hapticSelection();
+              void handleTogglePin();
+            }}
+            accessibilityLabel={isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel')}
+            fallbackColor={systemColors.fill}
+          />
         </>
       );
     },

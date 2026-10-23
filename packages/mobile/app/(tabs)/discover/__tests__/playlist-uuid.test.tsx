@@ -868,6 +868,17 @@ describe('PlaylistDetail owner overflow menu', () => {
     expect(detailViewProps.current?.emptyAction).toBeNull();
   });
 
+  it('gives a signed-out viewer no header actions at all, so no empty glass item shows', async () => {
+    authMock.isAuthenticated = false;
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-actions-expanded="true"]')?.childElementCount).toBe(0);
+    expect(container.querySelector('[data-actions-collapsed="true"]')?.childElementCount).toBe(0);
+  });
+
   it('forwards the bulk add-to-queue handler and its in-flight flag to the detail view', async () => {
     // A non-owner is the case the issue names — a crew member queueing someone
     // else's playlist — and it is exactly the population the overflow menu can't

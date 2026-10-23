@@ -374,7 +374,11 @@ export function PlaylistDetailView({
     // The ≡ filter button joins the capsule once the filter bar under the hero
     // has scrolled away (the chips it stands in for are out of view); edit mode
     // has no filters to open.
-    const showFilterButton = filterBarScrolledAway && !!filterAction && !editMode;
+    const filterButton =
+      filterBarScrolledAway && filterAction && !editMode ? (
+        <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
+      ) : null;
+    const actionButtons = actions?.(collapsed) ?? null;
     navigation.setOptions({
       headerShown: true,
       headerLargeTitle: false,
@@ -384,15 +388,16 @@ export function PlaylistDetailView({
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
       // a rendered node: a fresh element each render would re-set the options on
-      // every render. `ownHeaderRight` also clears any native bar item.
+      // every render. No item at all while there is nothing to show (a smart list
+      // with its hero up, a signed-out viewer): iOS draws an empty glass capsule
+      // for an item that renders nothing. `ownHeaderRight` also clears any
+      // native bar item.
       ...ownHeaderRight(
-        actions || filterAction
+        filterButton || actionButtons
           ? () => (
               <ButtonSurfaceProvider surface="glass">
-                {showFilterButton && filterAction ? (
-                  <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
-                ) : null}
-                {actions?.(collapsed)}
+                {filterButton}
+                {actionButtons}
               </ButtonSurfaceProvider>
             )
           : undefined,

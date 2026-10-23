@@ -1170,11 +1170,13 @@ describe('PlaylistDetailView', () => {
     });
 
     it('shows ≡ in the glass header only once the filter bar has scrolled away, not the hero alone', () => {
+      // A smart list: no other actions, so until ≡ shows there is no header item
+      // at all. iOS draws an empty glass capsule for one that renders nothing.
       render(<PlaylistDetailView {...makeProps({ filterAction })} />);
-      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
 
       scrollTo(1);
-      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
 
       scrollTo(2);
       const button = headerRightNode().querySelector('[data-icon="filter"]') as HTMLElement;
@@ -1199,7 +1201,27 @@ describe('PlaylistDetailView', () => {
     it('never shows ≡ in edit mode', () => {
       render(<PlaylistDetailView {...makeProps({ filterAction, editMode: true })} />);
       scrollTo(2);
-      expect(headerRightNode().querySelector('[data-icon="filter"]')).toBeNull();
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
+    });
+
+    it('sets no header item while the actions render nothing and ≡ is not up', () => {
+      // A signed-out viewer of someone's playlist: no Follow, no pin.
+      const actions = vi.fn(() => null);
+      render(<PlaylistDetailView {...makeProps({ filterAction, actions })} />);
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
+      expect(lastHeaderOptions()).toHaveProperty('unstable_headerRightItems', undefined);
+
+      scrollTo(2);
+      const header = headerRightNode();
+      expect(header.querySelector('[data-icon="filter"]')).not.toBeNull();
+    });
+
+    it('keeps the header item while the actions render something, ≡ or not', () => {
+      const actions = vi.fn(() => createElement('span', { 'data-owner-action': 'true' }));
+      render(<PlaylistDetailView {...makeProps({ filterAction, actions })} />);
+      const header = headerRightNode();
+      expect(header.querySelector('[data-owner-action]')).not.toBeNull();
+      expect(header.querySelector('[data-icon="filter"]')).toBeNull();
     });
 
     it('keeps ≡ in the Material app bar outside edit mode', () => {
