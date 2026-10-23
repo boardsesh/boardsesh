@@ -17,7 +17,16 @@
 
 import { devices, expect, test, type Page } from '@playwright/test';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { boardClimbs, boardClimbStats, closePool, createDb, userBoards } from '@boardsesh/db';
+import { CONSENT_VERSION } from '@boardsesh/consent';
+import {
+  boardClimbs,
+  boardClimbStats,
+  closePool,
+  createDb,
+  userAnalyticsConsentEvents,
+  userBoards,
+  users,
+} from '@boardsesh/db';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -90,14 +99,51 @@ async function ensureSignedIn(page: Page): Promise<void> {
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill(TEST_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
   }
-  // An account with no analytics decision gets the consent prompt before the
-  // tab shell. Declining stores the decision on the account, so later tests
-  // signed in as the same user go straight to Home.
+  // The suite seeds a "No thanks" on the account (see `seedAccountConsent`),
+  // so the prompt should not open. This stays as the fallback for a stack
+  // where the seed could not land.
   const declineAnalytics = page.getByRole('button', { name: 'No thanks', exact: true });
   await expect(declineAnalytics.or(homeTab).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
   if (await declineAnalytics.isVisible()) await declineAnalytics.click();
   await expect(homeTab).toBeVisible({ timeout: WARM_TIMEOUT_MS });
 }
+
+/**
+ * Gives the test account an analytics answer before any test signs in.
+ *
+ * With no answer on the account, the consent prompt opens as a transparent
+ * modal over the tab shell up to ~10 s after Home renders (a 5 s wait for the
+ * account read, then a region lookup capped at 5 s). A check made when Home
+ * first shows misses it, and the late modal then hides or covers the tabs.
+ * With a denial stored, the account read settles consent and nothing opens.
+ */
+async function seedAccountConsent(): Promise<void> {
+  process.env.DATABASE_URL ??= 'postgres://postgres:password@localhost:5432/main';
+  const db = createDb();
+  try {
+    const [account] = await db.select({ id: users.id }).from(users).where(eq(users.email, TEST_EMAIL)).limit(1);
+    if (!account) {
+      throw new Error(
+        `No user ${TEST_EMAIL} in the e2e database — the dev DB image is stale (docker compose down -v && vp run db:up).`,
+      );
+    }
+    const [existing] = await db
+      .select({ id: userAnalyticsConsentEvents.id })
+      .from(userAnalyticsConsentEvents)
+      .where(eq(userAnalyticsConsentEvents.userId, account.id))
+      .limit(1);
+    if (existing) return;
+    await db
+      .insert(userAnalyticsConsentEvents)
+      .values({ userId: account.id, analytics: 'denied', version: CONSENT_VERSION, source: 'web' });
+  } finally {
+    await closePool();
+  }
+}
+
+test.beforeAll(async () => {
+  await seedAccountConsent();
+});
 
 test.describe('expo-web smoke', () => {
   test('boots, signs in, and renders the five-tab Material shell', async ({ page }) => {
