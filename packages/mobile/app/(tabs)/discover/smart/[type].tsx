@@ -320,6 +320,8 @@ function SmartPlaylistBody({
     // look, not a queue replacement plus a wall grab.
     previewOnly: isSharedSession,
     refreshErrorMessage: 'Failed to refresh smart playlist suggestions:',
+    // A tap plays from the list; with "Tapping a playlist loads it into my
+    // queue" on, it replaces the queue with it instead (F4, #6667).
     replaceQueueOnActivate: true,
   });
 

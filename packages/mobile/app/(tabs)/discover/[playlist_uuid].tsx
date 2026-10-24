@@ -337,12 +337,15 @@ export default function PlaylistDetail() {
     label: playlist?.name,
     viewOnlyBoard: resolveViewOnlyBoard,
     // In a crew a row tap browses: it opens the drawer on the tapped climb with
-    // the playlist seeded as the swipe track, and leaves the queue alone. The
-    // alternative here is the loudest write in the app — `replaceQueueOnActivate`
-    // swaps the whole crew's queue for the playlist order and takes the wall,
-    // which is not what tapping a row to look at it means.
+    // the playlist seeded as the swipe track, and leaves the queue alone. With
+    // "Tapping a playlist loads it into my queue" on, the alternative here is the
+    // loudest write in the app — `replaceQueueOnActivate` swaps the whole crew's
+    // queue for the playlist order and takes the wall, which is not what tapping
+    // a row to look at it means.
     previewOnly: isSharedSession,
     refreshErrorMessage: 'Failed to refresh playlist suggestions:',
+    // A solo tap plays from the playlist and leaves the queue alone; the switch
+    // above makes it replace the queue instead (F4, #6667).
     replaceQueueOnActivate: true,
   });
 
