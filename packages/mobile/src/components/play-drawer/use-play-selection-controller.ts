@@ -150,10 +150,11 @@ export function usePlaySelectionController({
     (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
       const previewItem = options?.previewQueueItem ?? null;
       const playlistSuggestionSource = options?.playlistSuggestionSource ?? null;
-      // Fresh active open (search / list / LogbookTab / a tick in the feed / a
-      // profile climb / the accessory bar's own current climb): the climb becomes
-      // current unless it already is, so re-opening the current climb doesn't
-      // re-append it. A fresh-uuid item on a genuinely new selection is
+      // Fresh active open (a notification, a deep link with activation intent,
+      // the accessory bar's own current climb): the climb becomes current unless
+      // it already is, so re-opening the current climb doesn't re-append it.
+      // Lists don't come through here: since #6665 they play through the
+      // activation hook, which commits (committedExternally) or previews. A fresh-uuid item on a genuinely new selection is
       // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
       const isFreshActiveOpen = !previewItem && !options?.committedExternally;
       const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
@@ -161,9 +162,9 @@ export function usePlaySelectionController({
       // tick in the session feed, or a row in your own logbook, must not move the
       // shared queue and blank the climb someone is mid-attempt on — the deep-link
       // opener already reasons this way and passes `preview: true`. Gated here
-      // rather than at each opener because the openers are many (feed, Logbook,
-      // Sessions, session detail, profile, notifications) and every one of them
-      // is the same gesture: show me this climb.
+      // rather than at each opener because the openers are many (notifications,
+      // the climb route's hand-off, beta and moderation links) and every one of
+      // them is the same gesture: show me this climb.
       //
       // Reads the LATCH, like every other gesture gate in this file, not the live
       // roster: a peer's phone dropping off the wifi for a moment must not turn
