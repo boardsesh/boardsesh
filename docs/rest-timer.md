@@ -124,7 +124,8 @@ The climber's music:
   Each failing step (`create`, `play`, `release`) reports once per app run, as a warning.
 - A player that cannot be built throws (after its report) instead of returning null, so the cue
   module builds a fresh one on the next cue. If the tick player was built and the final one
-  failed, the tick player is removed first.
+  failed, the tick player is removed first. Each build first removes the previous build's two
+  native players and replaces its `AppState` listener, so rebuilds never pile up either.
 - Foreground only. A beep starts only while `AppState` is `active`, checked when the cue asks for
   it and again just before it plays, so one queued as the app leaves is dropped. `inactive`
   counts as away (a phone call, Control Center, the app switcher). The missing `audio` background

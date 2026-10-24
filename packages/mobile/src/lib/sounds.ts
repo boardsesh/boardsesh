@@ -112,6 +112,25 @@ function listenToAppState(listener: (nextState: AppStateStatus) => void): void {
   appStateSubscription = AppState.addEventListener('change', listener);
 }
 
+type CuePlayers = Readonly<Record<CueSound, ExpoAudioModule.AudioPlayer>>;
+
+// The live player's two native players. Each holds a loaded file natively until
+// it is removed, so a rebuild removes the dropped player's pair first.
+let currentCuePlayers: CuePlayers | null = null;
+
+function removeCurrentCuePlayers(): void {
+  if (currentCuePlayers === null) return;
+  const { tick, final } = currentCuePlayers;
+  currentCuePlayers = null;
+  for (const player of [tick, final]) {
+    try {
+      player.remove();
+    } catch {
+      // Nothing else can be done with it, and the new pair does not depend on it.
+    }
+  }
+}
+
 /** Whether this binary can play a sound at all. Never throws. */
 export function isSoundSupported(): boolean {
   if (soundSupported === undefined) {
@@ -141,8 +160,9 @@ export function createSoundPlayer(): SoundPlayer | null {
 }
 
 /**
- * Swaps the native bindings and forgets the capability answer and the last
- * player's app-state listener. `undefined` puts back the real ones. Tests only.
+ * Swaps the native bindings, forgets the capability answer, and drops the last
+ * player's app-state listener and native players. `undefined` puts back the
+ * real bindings. Tests only.
  */
 export function setSoundNativeBindingsForTests(next: SoundNativeBindings | undefined): void {
   bindings = next ?? NATIVE_BINDINGS;
@@ -150,6 +170,7 @@ export function setSoundNativeBindingsForTests(next: SoundNativeBindings | undef
   reportedFailureSteps.clear();
   appStateSubscription?.remove();
   appStateSubscription = null;
+  removeCurrentCuePlayers();
 }
 
 type SoundStep = 'create' | 'play' | 'release';
@@ -193,7 +214,7 @@ async function withDeadline<Result>(call: Promise<Result>): Promise<Result> {
  * every one after it starts from a loaded file. If the second cannot be built
  * the first is removed, since the caller builds a fresh pair on its next cue.
  */
-function loadCuePlayers(audio: ExpoAudio): Readonly<Record<CueSound, ExpoAudioModule.AudioPlayer>> {
+function loadCuePlayers(audio: ExpoAudio): CuePlayers {
   const tickPlayer = audio.createAudioPlayer(SOUND_SOURCES.tick, { keepAudioSessionActive: true });
   try {
     return {
@@ -211,7 +232,10 @@ function loadCuePlayers(audio: ExpoAudio): Readonly<Record<CueSound, ExpoAudioMo
 }
 
 function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
+  // ./rest-timer-cues asks for a new player only after dropping the last one.
+  removeCurrentCuePlayers();
   const players = loadCuePlayers(audio);
+  currentCuePlayers = players;
 
   let audioModeSet = false;
   // Whether this sink may be holding the audio session (iOS) or audio focus (Android).
@@ -261,7 +285,9 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
       // A beep asked for since the return arms its own hand-back.
       if (requestNumber !== playRequestCount) return;
       // If nothing turned the session back on, this costs one native call
-      // that turns off audio already off.
+      // that turns off audio already off. In expo-audio 57.0.5 that is not
+      // expected to fail (Android returns early with no focus held; iOS pauses
+      // every player before deactivating), and a failure is reported once per run.
       holdsSession = true;
       armIdleRelease(requestNumber);
     });

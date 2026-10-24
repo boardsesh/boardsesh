@@ -101,6 +101,19 @@ function installBindings(fake: FakeAudio, hasExpoAudio = true) {
   return bindings;
 }
 
+/** Each build of the player gets the next fake, the way a rebuild gets fresh native players. */
+function installBindingsPerBuild(...fakes: FakeAudio[]): void {
+  const remaining = [...fakes];
+  setSoundNativeBindingsForTests({
+    hasExpoAudio: () => true,
+    loadExpoAudio: () => {
+      const next = remaining.shift();
+      if (next === undefined) throw new Error(`built more than ${fakes.length} times`);
+      return next.audio;
+    },
+  });
+}
+
 /** Lets the sink's queued native calls run. */
 async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
@@ -262,15 +275,7 @@ describe('createSoundPlayer', () => {
   it("leaves exactly one app-state listener, the newest player's, when the player is built twice", async () => {
     const firstFake = makeFakeAudio();
     const secondFake = makeFakeAudio();
-    const fakes = [firstFake, secondFake];
-    setSoundNativeBindingsForTests({
-      hasExpoAudio: () => true,
-      loadExpoAudio: () => {
-        const next = fakes.shift();
-        if (next === undefined) throw new Error('built more than twice');
-        return next.audio;
-      },
-    });
+    installBindingsPerBuild(firstFake, secondFake);
 
     const firstPlayer = createSoundPlayer();
     const secondPlayer = createSoundPlayer();
@@ -285,7 +290,42 @@ describe('createSoundPlayer', () => {
     await settle();
 
     expect(secondFake.nativeCalls).toEqual(['set audio mode', 'seek tick 0', 'play tick', 'audio off']);
-    expect(firstFake.nativeCalls).toEqual([]);
+    expect(firstFake.nativeCalls).toEqual(['remove tick', 'remove final']);
+  });
+
+  // Each pair holds its loaded file natively until it is removed.
+  it('removes the first pair exactly once, before building the second, and leaves the second pair alive', () => {
+    const firstFake = makeFakeAudio();
+    const secondFake = makeFakeAudio();
+    installBindingsPerBuild(firstFake, secondFake);
+
+    createSoundPlayer();
+    expect(firstFake.players.tick.remove).not.toHaveBeenCalled();
+    createSoundPlayer();
+
+    expect(firstFake.players.tick.remove).toHaveBeenCalledTimes(1);
+    expect(firstFake.players.final.remove).toHaveBeenCalledTimes(1);
+    const [firstRemoval] = firstFake.players.final.remove.mock.invocationCallOrder;
+    const [secondBuild] = secondFake.createAudioPlayer.mock.invocationCallOrder;
+    expect(firstRemoval).toBeLessThan(secondBuild);
+    expect(secondFake.createAudioPlayer).toHaveBeenCalledTimes(2);
+    expect(secondFake.players.tick.remove).not.toHaveBeenCalled();
+    expect(secondFake.players.final.remove).not.toHaveBeenCalled();
+  });
+
+  it('still removes the other old player and builds a new pair when one removal throws', () => {
+    const firstFake = makeFakeAudio();
+    const secondFake = makeFakeAudio();
+    firstFake.players.tick.remove.mockImplementationOnce(() => {
+      throw new Error('already released');
+    });
+    installBindingsPerBuild(firstFake, secondFake);
+
+    createSoundPlayer();
+    expect(() => createSoundPlayer()).not.toThrow();
+
+    expect(firstFake.players.final.remove).toHaveBeenCalledTimes(1);
+    expect(secondFake.createAudioPlayer).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -353,6 +393,39 @@ describe('play', () => {
     await settle();
 
     expect(fake.players.final.play).toHaveBeenCalledTimes(1);
+    expect(reporting.reportHandledError).toHaveBeenCalledTimes(1);
+  });
+
+  it('never throws, keeps playing later cues, and still hands the session back when a rewind is rejected', async () => {
+    const fake = makeFakeAudio();
+    fake.players.tick.seekTo.mockRejectedValueOnce(new Error('seek failed'));
+    const player = makePlayer(fake);
+
+    expect(() => player.play('tick')).not.toThrow();
+    await settle();
+    expect(fake.players.tick.play).not.toHaveBeenCalled();
+    expect(reporting.reportHandledError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: { source: 'rest-timer-sound', step: 'play' } }),
+    );
+
+    // The beep had taken the session before its rewind failed, so its idle hand-back runs.
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    await settle();
+    expect(fake.nativeCalls).toEqual(['set audio mode', 'audio off']);
+
+    player.play('tick');
+    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    await settle();
+    expect(fake.nativeCalls).toEqual([
+      'set audio mode',
+      'audio off',
+      'audio on',
+      'seek tick 0',
+      'play tick',
+      'audio off',
+    ]);
     expect(reporting.reportHandledError).toHaveBeenCalledTimes(1);
   });
 
