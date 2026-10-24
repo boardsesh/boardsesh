@@ -186,6 +186,7 @@ import {
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
 } from '../offline-sync-adapter';
+import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 import type {
   OfflineDatabase,
   DrainOptions,
@@ -457,9 +458,32 @@ describe('startBackgroundTracking', () => {
       attempts: 2,
       outcome: 'refused',
       elapsedMs: 5_310,
+      jsRestartCount: null,
     });
     stop();
     expect(pullWriteTelemetry.unregister).toHaveBeenCalledTimes(1);
+  });
+
+  // #6689: a sync write that never wins after a reload is the old runtime's orphan.
+  it('says how many times this runtime has been restarted on a contended sync write', () => {
+    setJsRestartCount(1);
+    try {
+      const stop = startBackgroundTracking();
+      pullWriteTelemetry.reporter?.({
+        site: 'deletions-coverage',
+        sizing: 'background',
+        attempts: 3,
+        outcome: 'exhausted',
+        elapsedMs: 15_520,
+      });
+      stop();
+      expect(trackMock).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineSyncWriteRetried,
+        expect.objectContaining({ outcome: 'exhausted', jsRestartCount: 1 }),
+      );
+    } finally {
+      resetLaunchReloadWindowForTests();
+    }
   });
 });
 
@@ -1730,6 +1754,7 @@ describe('triggerSync / pullSync bindings', () => {
       status: null,
       errorKind: 'exception',
       offlineEngineEnabled: false,
+      jsRestartCount: null,
     });
     expect(reportHandledError).toHaveBeenCalledWith(cycleError, {
       tags: { source: 'offline-sync', kind: 'cycle', phase: 'deletions' },

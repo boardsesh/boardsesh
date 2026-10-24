@@ -23,5 +23,6 @@ export function anonymousOtaLaunchProperties(properties: OtaLaunchUpdateProperti
     cap_ms: properties.cap_ms,
     ota_runtime_version: properties.ota_runtime_version,
     ota_is_embedded: properties.ota_is_embedded,
+    previous_reload_outlived_grace: properties.previous_reload_outlived_grace,
   };
 }

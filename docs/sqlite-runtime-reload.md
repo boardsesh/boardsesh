@@ -128,23 +128,41 @@ closed when a runtime is torn down:
 
 The native fix is #6707.
 
-Until that ships, the app keeps the write transactions out of the window where
-the launch update gate can reload:
+Until that ships, the app keeps write transactions out of the window where the
+launch update gate can reload. Two states in `src/lib/launch-reload-window.ts`,
+written only by the gate, carry it:
 
-- Every writer the offline sync bridge starts waits for `useLaunchReady()`: the
-  owner stamp, the outbox recovery, the delisted-download sweep and the sync
-  scheduler. So does the owned spray wall pin. `useLaunchReady()` needs the gate
-  resolved, and once resolved it never reloads.
-- Writers outside React read `isLaunchReloadPossible()`
-  (`src/lib/launch-reload-window.ts`). The followed-authors load serves its
+- **The gate is open**: an eligible run that has not resolved yet.
+- **A reload is requested**: set at the moment the gate decides to reload, before
+  it flushes its event. It is cleared when the reload is rejected. When the
+  gate's 5 s grace expires with the runtime still alive, the gate resolves and
+  the app opens, but the request stays for a further 10 s
+  (`LAUNCH_UPDATE_RELOAD_OUTSTANDING_MARGIN_MS`). On Android a relaunch can be
+  queued behind expo-updates' own work, so the grace is no proof the reload will
+  not land. The next gated launch reports a reload that outlived its grace as
+  `previous_reload_outlived_grace` on `OTA Launch Update`.
+
+What waits on those states:
+
+- Every writer the offline sync bridge starts waits for `useLaunchWritesReady()`:
+  the owner stamp, the outbox recovery, the delisted-download sweep and the sync
+  scheduler. That is `useLaunchReady()` plus no reload requested. The owned spray
+  wall pin waits the same way.
+- Writers outside React read `isLaunchReloadPossible()`, which is true while the
+  gate is open or a reload is requested. The followed-authors load serves its
   stored snapshot instead of writing a new one while it is true.
-- The gate does not reload while a database setup attempt is running
-  (`src/db/init-activity.ts`), so a migration is never interrupted. If an
-  attempt outlasts the cap, the gate releases as `timed_out`, and the update
-  applies on the next cold start.
-- Local reads do not wait. They hold no lock a reload can strand.
+- The gate does not decide to reload while a database setup attempt is running
+  (`src/db/init-activity.ts`). The init chain starts no new attempt while a
+  reload is requested. The gate also re-checks for a running attempt right
+  before it calls `reloadAsync()`, and declines (`failed`) if one is running.
+  If an attempt outlasts the cap, the gate releases as `timed_out`, and the
+  update applies on the next cold start.
+- Ordinary local reads do not wait. The first screen renders from them.
 
-What this does not cover:
+The cost is the same on both platforms. iOS cannot wedge (#6292), but one code
+path is simpler, and iOS waits about 1.5 s at p90 before its first pull.
+
+Known gaps, which only #6707 closes:
 
 - A store update's first launch runs the embedded JS of the new binary. This
   protects that launch only from the binary whose embedded bundle includes it.
@@ -152,9 +170,15 @@ What this does not cover:
   channel switch, QA surf.
 - expo-updates' native error-recovery relaunch.
 - The drainer's `UPDATE … RETURNING`, whose window is one native step.
+- Similar climbs and the hold heatmap are reads, but they build the holds index
+  in write transactions (`ensureHoldIndex`). Today they sit behind held routes
+  or taps the placeholder blocks, so the risk is latent.
+- A forced sign-out after auth is ready (a confirmed identity change, or a 401)
+  runs `clearUserData`, which can land while the gate is still downloading.
+- `useKeepBoardsOffline` is mounted by the settings layout. A cold start deep
+  linked into settings can kick a download cycle under the placeholder.
 
-Only #6707 covers all of these.
-
-`Offline Local Write Attempt Failed` carries `jsRestartCount`. An `exhausted`
-lock with a count above zero that repeats all session is a transaction the
-previous runtime left open.
+`Offline Local Write Attempt Failed`, `Offline Sync Write Retried` and
+`Offline Sync Cycle Failed` carry `jsRestartCount`. An `exhausted` lock with a
+count above zero that repeats all session is a transaction the previous runtime
+left open.

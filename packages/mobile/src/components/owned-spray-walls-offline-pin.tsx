@@ -7,7 +7,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { useIsOffline } from '../hooks/use-is-offline';
-import { useLaunchReady } from '../providers/launch-ready-context';
+import { useLaunchWritesReady } from '../providers/launch-ready-context';
 import { fetchAllMyBoards } from '../lib/graphql/hooks';
 import { reportHandledError } from '../lib/error-reporting';
 import { useBoardDownloads } from '../offline/use-board-downloads';
@@ -57,9 +57,13 @@ export function OwnedSprayWallsOfflinePin(): null {
   const { isAuthenticated } = useAuth();
   const downloadsEnabled = useOfflineDownloadsEnabled();
   const isOffline = useIsOffline();
-  const launchReady = useLaunchReady();
+  const launchWritesReady = useLaunchWritesReady();
   const active =
-    launchReady && isAuthenticated && downloadsEnabled && !isOffline && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+    launchWritesReady &&
+    isAuthenticated &&
+    downloadsEnabled &&
+    !isOffline &&
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
   const { userId } = useStoredUserId(active);
   const { data: boards } = useQuery({
     queryKey: OWNED_SPRAY_WALL_PIN_ROSTER_QUERY_KEY,

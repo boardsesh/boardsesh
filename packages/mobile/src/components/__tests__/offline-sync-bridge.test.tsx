@@ -156,7 +156,32 @@ vi.mock('../../lib/env', () => ({
   isSnapshotBaseUrlConfigured: () => snapshotBaseUrlConfigured.value,
 }));
 
-const fakeDb = { tag: 'db' };
+// Records every SQLite call the bridge makes on its database, so a writer that
+// nobody stubbed is seen instead of throwing silently inside the bridge's own
+// try/catch (#6689).
+const sqliteCalls: string[] = [];
+const SQLITE_METHODS = new Set([
+  'withExclusiveTransactionAsync',
+  'runAsync',
+  'execAsync',
+  'getFirstAsync',
+  'getAllAsync',
+  'prepareAsync',
+]);
+const fakeDb: { tag: string } = new Proxy(
+  { tag: 'db' },
+  {
+    get(target, property, receiver) {
+      if (typeof property === 'string' && SQLITE_METHODS.has(property)) {
+        return async () => {
+          sqliteCalls.push(property);
+          return property === 'getAllAsync' ? [] : null;
+        };
+      }
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  },
+);
 let providedDatabase = fakeDb;
 vi.mock('expo-sqlite', () => ({
   useSQLiteContext: () => providedDatabase,
@@ -199,6 +224,7 @@ import { isOfflineEngineEnabled, __resetOfflineEngineForTests } from '../../lib/
 import { setSchemaReady, __resetSchemaReadyForTests } from '../../db/schema-ready';
 import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 import { LaunchReadyProvider } from '../../providers/launch-ready-context';
+import { resetLaunchReloadWindowForTests, setLaunchReloadRequested } from '../../lib/launch-reload-window';
 
 // What `useLaunchReady()` answers: auth, fonts and the launch update gate have all
 // resolved. Mutable so the launch-gate case can hold it false (#6689).
@@ -279,6 +305,8 @@ beforeEach(() => {
   getPendingCountMock.mockResolvedValue(0);
   isAuthenticated = true;
   launchReady = true;
+  sqliteCalls.length = 0;
+  resetLaunchReloadWindowForTests();
   providedDatabase = fakeDb;
   storedUserId = 'user-1';
   assertLocalUserDataOwnerMock.mockClear();
@@ -531,6 +559,7 @@ describe('OfflineSyncBridge — waits for the launch to settle', () => {
     expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
     expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
     expect(loadFollowedAuthorsMock).not.toHaveBeenCalled();
+    expect(sqliteCalls).toEqual([]);
     // Not a writer: the backgrounding guard still starts at once.
     expect(startBackgroundTrackingMock).toHaveBeenCalledOnce();
 
@@ -542,6 +571,27 @@ describe('OfflineSyncBridge — waits for the launch to settle', () => {
     expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledOnce();
     expect(sweepDelistedDownloadTerminalsMock).toHaveBeenCalledOnce();
     expect(assertLocalUserDataOwnerMock).toHaveBeenCalledOnce();
+  });
+
+  // The gate gives a reload 5 s, then opens the app with it still outstanding; on
+  // Android it can land later. Writers wait out the gate's extra margin too.
+  it('keeps every writer waiting while a launch reload is still outstanding', async () => {
+    setLaunchReloadRequested(true);
+    const queryClient = makeQueryClient();
+    render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await act(async () => {});
+
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+    expect(sqliteCalls).toEqual([]);
+
+    await act(async () => {
+      setLaunchReloadRequested(false);
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledOnce();
   });
 });
 

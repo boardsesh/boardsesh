@@ -47,7 +47,7 @@ vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthentica
 vi.mock('../../providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => state.downloadsEnabled }));
 vi.mock('../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ userId: state.userId }) }));
 vi.mock('../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
-vi.mock('../../providers/launch-ready-context', () => ({ useLaunchReady: () => state.launchReady }));
+vi.mock('../../providers/launch-ready-context', () => ({ useLaunchWritesReady: () => state.launchReady }));
 vi.mock('../../lib/graphql/hooks', () => ({ fetchAllMyBoards: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../offline/use-board-downloads', () => ({ useBoardDownloads: () => ({ enableBoardsOffline }) }));

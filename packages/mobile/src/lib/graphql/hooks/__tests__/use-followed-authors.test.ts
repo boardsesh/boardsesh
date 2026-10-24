@@ -4,7 +4,11 @@ import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/t
 import { enqueue, runMigrations, stampLocalUserId } from '@boardsesh/offline-sync';
 import { readAuthorSnapshot, saveAuthorSnapshot } from '../../../../db/queries/followed-authors-local';
 import { loadFollowedAuthors } from '../use-followed-authors';
-import { resetLaunchReloadWindowForTests, setLaunchReloadPossible } from '../../../launch-reload-window';
+import {
+  resetLaunchReloadWindowForTests,
+  setLaunchReloadPossible,
+  setLaunchReloadRequested,
+} from '../../../launch-reload-window';
 
 const request = vi.hoisted(() => vi.fn());
 let db: TestSqliteDb;
@@ -118,6 +122,12 @@ describe.sequential('followed authors while a launch reload is still possible', 
 
     expect(await loadFollowedAuthors('viewer')).toEqual(newAuthors);
     expect(await readAuthorSnapshot(db, 'viewer')).toBeNull();
+  });
+  it('writes nothing while a reload that outlived the gate may still land', async () => {
+    setLaunchReloadRequested(true);
+
+    expect(await loadFollowedAuthors('viewer')).toEqual(oldAuthors);
+    expect(request).not.toHaveBeenCalled();
   });
   it('writes the snapshot again once the launch has settled', async () => {
     setLaunchReloadPossible(true);

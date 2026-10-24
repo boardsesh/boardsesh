@@ -6,27 +6,78 @@
 // SQLite's single write lock until the process dies, so every later write fails
 // for the rest of the session. Nothing in JS can release it afterwards: the new
 // runtime holds no handle to that connection. The cure is to have no write
-// transaction open when the gate reloads. The React side waits on
-// `useLaunchReady()`. Writers outside React read `isLaunchReloadPossible()`.
+// transaction open when the gate reloads.
 //
-// The gate is the only writer of this module. It opens the window when an
-// eligible run starts and closes it when the gate resolves, after which it never
-// reloads this runtime.
+// Two states, both written by the gate only:
+// - the gate is OPEN while an eligible run has not resolved: it may still decide
+//   to reload;
+// - a reload is REQUESTED from the moment the gate decides on one until the reload
+//   is known not to be happening: it was rejected, or the gate's grace expired
+//   and a further margin passed with this runtime still alive. On Android a
+//   relaunch can be queued behind expo-updates' own work, so the grace alone is
+//   no proof it will not land.
+//
+// React writers wait on `useLaunchWritesReady()`; writers outside React read
+// `isLaunchReloadPossible()`; the database init chain waits out a requested
+// reload before it starts another setup attempt.
 
-let reloadPossible = false;
+let gateOpen = false;
+let reloadRequested = false;
 let restartCount: number | null = null;
+const listeners = new Set<() => void>();
+const requestClearedWaiters = new Set<() => void>();
+
+function notify(): void {
+  for (const listener of listeners) listener();
+}
 
 /** Called by the launch update gate only. */
 export function setLaunchReloadPossible(possible: boolean): void {
-  reloadPossible = possible;
+  if (gateOpen === possible) return;
+  gateOpen = possible;
+  notify();
+}
+
+/** Called by the launch update gate only. */
+export function setLaunchReloadRequested(requested: boolean): void {
+  if (reloadRequested === requested) return;
+  reloadRequested = requested;
+  if (!requested) {
+    const waiters = [...requestClearedWaiters];
+    requestClearedWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
+  notify();
 }
 
 /**
- * True while the launch update gate may still reload this runtime. A SQLite write
- * that can wait must not start while this is true.
+ * True while the launch update gate may still reload this runtime, or has asked
+ * for a reload that may still land. A SQLite write that can wait must not start
+ * while this is true.
  */
 export function isLaunchReloadPossible(): boolean {
-  return reloadPossible;
+  return gateOpen || reloadRequested;
+}
+
+/** True from the gate's reload decision until that reload is known not to be happening. */
+export function isLaunchReloadRequested(): boolean {
+  return reloadRequested;
+}
+
+/** Resolves once no reload is requested. Never resolves if the reload happens. */
+export function waitForLaunchReloadRequestToClear(): Promise<void> {
+  if (!reloadRequested) return Promise.resolve();
+  return new Promise((resolve) => {
+    requestClearedWaiters.add(resolve);
+  });
+}
+
+/** For `useSyncExternalStore`. Returns the unsubscribe. */
+export function subscribeLaunchReloadWindow(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 /** Called by the launch update gate only, from expo-updates' `restartCount`. */
@@ -45,6 +96,9 @@ export function getJsRestartCount(): number | null {
 }
 
 export function resetLaunchReloadWindowForTests(): void {
-  reloadPossible = false;
+  gateOpen = false;
+  reloadRequested = false;
   restartCount = null;
+  listeners.clear();
+  requestClearedWaiters.clear();
 }

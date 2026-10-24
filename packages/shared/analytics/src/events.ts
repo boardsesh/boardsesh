@@ -1230,7 +1230,8 @@ export const SHARED_EVENTS = {
   // Sync Cycle Failed` carries the same `sqliteWriteSite`). Every attempt waits
   // the lock out with the busy handler honoured, so `elapsedMs` is how long
   // another connection really held it. Props: { site, sizing: 'background' |
-  // 'foreground', attempts, outcome, elapsedMs }.
+  // 'foreground', attempts, outcome, elapsedMs, jsRestartCount }. `jsRestartCount`
+  // is the same field as on `Offline Local Write Attempt Failed` (#6689).
   OfflineSyncWriteRetried: 'Offline Sync Write Retried',
   // Offline sync — the local SQLite write behind an offline tick threw. `outcome`
   // says what happened next: 'queued' means the outbox-only fallback still saved
@@ -1263,7 +1264,8 @@ export const SHARED_EVENTS = {
   // failures. Raw exception text stays in Sentry rather than analytics; an
   // unchanged signature is emitted at most once per five minutes.
   // `sqliteWriteSite` (#5851) names the sync write that lost the SQLite lock when
-  // that is what failed the cycle, and is absent otherwise.
+  // that is what failed the cycle, and is absent otherwise. `jsRestartCount`
+  // (#6689) is the same field as on `Offline Local Write Attempt Failed`.
   // `errorKind` is 'aborted' | 'server_unavailable' | 'network' | 'server' |
   // 'exception' | 'non-error', in that precedence. 'server_unavailable' (#4862)
   // is a 502/503/504, or any failure raised while the connectivity store had

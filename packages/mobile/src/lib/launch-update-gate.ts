@@ -65,6 +65,14 @@ export const LAUNCH_UPDATE_RELOAD_START_WINDOW_MS = LAUNCH_UPDATE_FLUSH_TIMEOUT_
  * alive after it, the reload did not happen and the app opens instead.
  */
 export const LAUNCH_UPDATE_RELOAD_GRACE_MS = 5_000;
+/**
+ * After a reload outlives the grace, how much longer SQLite writers keep waiting
+ * before the app treats the reload as not happening. The app is open by then; only
+ * the first sync, the outbox drain and other background writers wait. On Android
+ * a relaunch can be queued behind expo-updates' own work, and one that lands on an
+ * open write transaction keeps the lock for the rest of the process (#6689).
+ */
+export const LAUNCH_UPDATE_RELOAD_OUTSTANDING_MARGIN_MS = 10_000;
 
 /**
  * Preference holding the runtime version whose first launch was already gated.
@@ -77,6 +85,13 @@ export const OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY = 'ota_first_launch_update_runt
  * `isKnownFailedUpdate` for the loop it breaks.
  */
 export const OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY = 'ota_launch_update_last_reload_target_v1';
+/**
+ * Preference set when a gated runtime asked for a reload and was still alive
+ * after the grace. The next gated launch reports it on its outcome event as
+ * `previous_reload_outlived_grace`, then clears it: nothing else measures how
+ * often a reload outlives the grace (#6689).
+ */
+export const OTA_LAUNCH_UPDATE_RELOAD_OUTLIVED_GRACE_KEY = 'ota_launch_update_reload_outlived_grace_v1';
 
 /**
  * How a gated launch is treated. A launch the gate does not cover at all has no

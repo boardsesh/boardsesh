@@ -25,7 +25,7 @@ import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
 import { invalidateFollowingCatalogueQueries, isCatalogueQuery } from '../lib/graphql/author-query-invalidation';
-import { useLaunchReady } from '../providers/launch-ready-context';
+import { useLaunchWritesReady } from '../providers/launch-ready-context';
 
 /**
  * Publishes the permanently enabled native offline engine to the module-level
@@ -71,13 +71,13 @@ export function OfflineSyncBridge() {
   // this db has no tables yet. See src/db/schema-ready.ts.
   const schemaReady = useOfflineSchemaReady();
   // Every effect below that WRITES waits for the launch to settle (#6689). Until
-  // the launch update gate resolves it may reload this runtime, and on Android a
-  // reload does not close the old runtime's SQLite connections: a write
-  // transaction open at that moment keeps the write lock until the process dies,
-  // and every tick and sync write after it fails for the whole session. Local
-  // READS do not wait: they hold no lock a reload could strand, and the first
+  // the launch update gate resolves, and while a reload it asked for may still
+  // land, this runtime can be replaced. On Android a reload does not close the old
+  // runtime's SQLite connections: a write transaction open at that moment keeps
+  // the write lock until the process dies, and every tick and sync write after it
+  // fails for the whole session. Ordinary local reads do not wait; the first
   // screen renders from them.
-  const launchReady = useLaunchReady();
+  const launchWritesReady = useLaunchWritesReady();
 
   // getOfflineSyncHttpClient() carries auth, endpoint, and a hard request
   // deadline; binding .request keeps the
@@ -102,7 +102,7 @@ export function OfflineSyncBridge() {
   // write, and on a contended launch there is no sync_meta table to write it
   // into. Nothing reads local user data before the stamp lands either — those
   // reads go through getDatabaseHandle(), which stays null until the same
-  // moment. It also waits for `launchReady`: a missing stamp during the launch
+  // moment. It also waits for `launchWritesReady`: a missing stamp during the launch
   // gate only sends user-scoped reads to the network, and the catalogue recovery
   // below re-runs them once the stamp lands.
   const { userId: localUserId } = useStoredUserId(isAuthenticated);
@@ -115,7 +115,7 @@ export function OfflineSyncBridge() {
     // delays and canceled preparations, without refreshing normal ready launches.
     if (!schemaReady || previousDatabase.current !== db) catalogueRecoveryPending.current = true;
     previousDatabase.current = db;
-    if (!isAuthenticated || !localUserId || !schemaReady || !launchReady) return;
+    if (!isAuthenticated || !localUserId || !schemaReady || !launchWritesReady) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -179,7 +179,7 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, isAuthenticated, localUserId, schemaReady, launchReady, queryClient]);
+  }, [db, isAuthenticated, localUserId, schemaReady, launchWritesReady, queryClient]);
 
   // The download funnel's launch backstop (issue #4452). Every in-session
   // de-listing path reports its own terminal now — the My Boards toggle-off and
@@ -195,9 +195,9 @@ export function OfflineSyncBridge() {
   // sign-out already reported and cleared. Self-limiting across re-runs: it
   // clears the markers it reports, so a second pass finds nothing.
   useEffect(() => {
-    if (!isAuthenticated || !schemaReady || !launchReady) return;
+    if (!isAuthenticated || !schemaReady || !launchWritesReady) return;
     void sweepDelistedDownloadTerminals(db);
-  }, [db, isAuthenticated, schemaReady, launchReady]);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady]);
 
   // Unconditional (unlike the scheduler effect below): the offline-sync
   // engine's backgrounding guard must cover ad-hoc drainMutationQueue() calls
@@ -213,9 +213,9 @@ export function OfflineSyncBridge() {
   // exist yet on a contended launch, and a gauge that throws there would report
   // no backlog rather than the backlog it could not read.
   useEffect(() => {
-    if (!isAuthenticated || !schemaReady || !launchReady) return;
+    if (!isAuthenticated || !schemaReady || !launchWritesReady) return;
     void recoverAndReportOutboxOnce(db);
-  }, [db, isAuthenticated, schemaReady, launchReady]);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own
   // teardown, so React calls it on unmount / dependency change — including the
@@ -227,8 +227,8 @@ export function OfflineSyncBridge() {
     // schema. Readiness usually lands before the first commit; when a contended
     // launch makes it late, this effect re-runs on the flip and starts then.
     if (!schemaReady) return undefined;
-    // And for the launch to settle: see `launchReady` above.
-    if (!launchReady) return undefined;
+    // And for the launch to settle: see `launchWritesReady` above.
+    if (!launchWritesReady) return undefined;
     try {
       const getEnabledBoards = () => getSetting('syncEnabledBoards');
       const drainQueue = () => drainMutationQueue(db, queryClient, graphqlFetch);
@@ -245,7 +245,7 @@ export function OfflineSyncBridge() {
       }
       return undefined;
     }
-  }, [db, queryClient, graphqlFetch, snapshotSource, isAuthenticated, schemaReady, launchReady]);
+  }, [db, queryClient, graphqlFetch, snapshotSource, isAuthenticated, schemaReady, launchWritesReady]);
 
   return null;
 }

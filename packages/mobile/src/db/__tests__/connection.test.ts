@@ -47,6 +47,7 @@ import {
 import { noteDatabaseHandleFailure } from '../dead-handle';
 import { isSchemaReady } from '../schema-ready';
 import { isDatabaseInitAttemptRunning, subscribeDatabaseInitAttempt } from '../init-activity';
+import { resetLaunchReloadWindowForTests, setLaunchReloadRequested } from '../../lib/launch-reload-window';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
   runMigrations,
@@ -602,12 +603,21 @@ describe('initializeDatabase connection PRAGMAs', () => {
   it('reports the setup attempt as running for exactly as long as it runs', async () => {
     const seen: boolean[] = [];
     const unsubscribe = subscribeDatabaseInitAttempt(() => seen.push(isDatabaseInitAttemptRunning()));
+    // What the gate would read at the moment each migration transaction opens.
+    const realTransaction = fileDb.withExclusiveTransactionAsync.bind(fileDb);
+    const runningAtEachMigration: boolean[] = [];
+    vi.spyOn(fileDb, 'withExclusiveTransactionAsync').mockImplementation((task) => {
+      runningAtEachMigration.push(isDatabaseInitAttemptRunning());
+      return realTransaction(task);
+    });
     try {
       await initializeDatabase(fileDb);
     } finally {
       unsubscribe();
     }
 
+    expect(runningAtEachMigration.length).toBeGreaterThan(0);
+    expect(runningAtEachMigration.every(Boolean)).toBe(true);
     expect(seen).toEqual([true, false]);
     expect(isDatabaseInitAttemptRunning()).toBe(false);
     expect(getDatabaseHandle()).toBe(fileDb);
@@ -750,6 +760,29 @@ describe('initializeDatabase lock contention (#4104)', () => {
     // minutes (#4314). The unlock is the writer finishing, exactly as everywhere else.
     contended.unlock();
     await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+  });
+
+  // #6689. Once the launch update gate has decided to reload, a retry must not
+  // start migrations under it: on Android the reload would leave their write lock
+  // held for the rest of the process.
+  it('starts no retry while a launch reload is requested, and carries on once it clears', async () => {
+    vi.useFakeTimers();
+    try {
+      const contended = createContendedDatabase();
+      await initializeDatabase(contended.db);
+      expect(contended.failures()).toBe(1);
+
+      setLaunchReloadRequested(true);
+      contended.unlock();
+      await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS * 4);
+      expect(isDatabaseInitAttemptRunning()).toBe(false);
+      expect(getDatabaseHandle()).toBeNull();
+
+      setLaunchReloadRequested(false);
+      await vi.waitFor(() => expect(getDatabaseHandle()).toBe(contended.db));
+    } finally {
+      resetLaunchReloadWindowForTests();
+    }
   });
 
   it('publishes the handle once a retry wins, instead of staying dead for the session', async () => {

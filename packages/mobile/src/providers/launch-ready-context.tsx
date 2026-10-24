@@ -1,4 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from 'react';
+import { isLaunchReloadRequested, subscribeLaunchReloadWindow } from '../lib/launch-reload-window';
 
 /**
  * "The app has settled": auth has resolved, the required fonts have loaded and
@@ -29,4 +30,22 @@ export function LaunchReadyProvider({ ready, children }: { ready: boolean; child
 /** True once auth, fonts and the launch update gate have all resolved. Never goes back to false. */
 export function useLaunchReady(): boolean {
   return useContext(LaunchReadyContext);
+}
+
+/**
+ * `useLaunchReady()`, and no launch reload still outstanding. The gate asks for
+ * its reload, gives it 5 s, then opens the app regardless, while on Android the
+ * relaunch can still land later. A SQLite writer started in that gap would
+ * keep the write lock for the rest of the process (#6689), so writers wait a
+ * further bounded margin after a reload that outlived the grace. Reads use
+ * `useLaunchReady()`.
+ */
+export function useLaunchWritesReady(): boolean {
+  const launchReady = useLaunchReady();
+  const reloadRequested = useSyncExternalStore(
+    subscribeLaunchReloadWindow,
+    isLaunchReloadRequested,
+    isLaunchReloadRequested,
+  );
+  return launchReady && !reloadRequested;
 }

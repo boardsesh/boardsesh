@@ -46,6 +46,11 @@ export type OtaLaunchUpdateProperties = {
   cap_ms: number;
   ota_runtime_version: string | null;
   ota_is_embedded: boolean;
+  /**
+   * The previous gated launch asked for a reload and was still running after
+   * the grace (#6689). Null when the marker had not been read yet.
+   */
+  previous_reload_outlived_grace: boolean | null;
 };
 
 export function buildOtaLaunchUpdateProperties(fields: {
@@ -56,6 +61,7 @@ export function buildOtaLaunchUpdateProperties(fields: {
   capMs: number;
   runtimeVersion: string | null | undefined;
   isEmbeddedLaunch: boolean;
+  previousReloadOutlivedGrace?: boolean | null;
 }): OtaLaunchUpdateProperties {
   return {
     outcome: fields.outcome,
@@ -65,6 +71,7 @@ export function buildOtaLaunchUpdateProperties(fields: {
     cap_ms: fields.capMs,
     ota_runtime_version: fields.runtimeVersion ?? null,
     ota_is_embedded: fields.isEmbeddedLaunch,
+    previous_reload_outlived_grace: fields.previousReloadOutlivedGrace ?? null,
   };
 }
 

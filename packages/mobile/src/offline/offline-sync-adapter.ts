@@ -68,6 +68,7 @@ import {
   subscribeConnectivity as subscribeConnectivityStore,
 } from '../lib/connectivity/connectivity-store';
 import { reportHandledError, addErrorBreadcrumb } from '../lib/error-reporting';
+import { getJsRestartCount } from '../lib/launch-reload-window';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { userIdFromJwt } from '../lib/jwt-user-id';
@@ -657,6 +658,9 @@ const warnCycleError = (error: unknown) => {
       status,
       errorKind,
       offlineEngineEnabled: isOfflineEngineEnabled(),
+      // Above zero, this runtime came from a reload; on Android a lock that never
+      // frees after one is a transaction the old runtime left open (#6689).
+      jsRestartCount: getJsRestartCount(),
       // Absent rather than null when no background write lost the lock, so every
       // older failure shape is unchanged.
       ...(sqliteWriteSite ? { sqliteWriteSite } : {}),
@@ -712,6 +716,7 @@ function reportSyncWriteRetried(report: PullWriteSettledReport): void {
       attempts: report.attempts,
       outcome: report.outcome,
       elapsedMs: report.elapsedMs,
+      jsRestartCount: getJsRestartCount(),
     });
   } catch (reportError) {
     if (__DEV__) console.warn('[Sync] sync write report failed:', reportError);

@@ -26,9 +26,11 @@ import {
   LAUNCH_UPDATE_CHECK_CAP_MS,
   LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS,
   LAUNCH_UPDATE_RELOAD_GRACE_MS,
+  LAUNCH_UPDATE_RELOAD_OUTSTANDING_MARGIN_MS,
   LAUNCH_UPDATE_RELOAD_START_WINDOW_MS,
   OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY,
   OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY,
+  OTA_LAUNCH_UPDATE_RELOAD_OUTLIVED_GRACE_KEY,
   decideLaunchUpdateStep,
   isLaunchUpdateGateEligible,
   launchUpdateStateFromContext,
@@ -49,7 +51,7 @@ import { runChannelOverrideCleanupOnce } from './ota-channel-override-cleanup-ru
 import { buildOtaLaunchUpdateProperties } from './ota-telemetry';
 import { getPreference, removePreference, setPreference } from './preference-store';
 import { readOtaHeaderRevision, runOtaOperation } from './ota-operation-owner';
-import { setJsRestartCount, setLaunchReloadPossible } from './launch-reload-window';
+import { setJsRestartCount, setLaunchReloadPossible, setLaunchReloadRequested } from './launch-reload-window';
 import { isDatabaseInitAttemptRunning, subscribeDatabaseInitAttempt } from '../db/init-activity';
 import {
   captureOtaReloadReceipt,
@@ -118,6 +120,13 @@ let newestEventContext: NativeContext | null = null;
 let explicitCheckController: AbortController | null = null;
 let unsubscribeFromUpdates: (() => void) | null = null;
 let unsubscribeFromDatabaseInit: (() => void) | null = null;
+// Ends the extra hold on SQLite writers after a reload that outlived its grace.
+// Not in `timers`: `resolveGate()` clears those, and this one has to outlive it.
+let reloadOutstandingTimer: ReturnType<typeof setTimeout> | null = null;
+// Whether the previous gated runtime asked for a reload and was still alive after
+// the grace. Read once at gate start for the outcome event; null until the read
+// lands, which is milliseconds against the preparation reads it runs beside.
+let previousReloadOutlivedGrace: boolean | null = null;
 const timers = new Set<ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 
@@ -246,6 +255,8 @@ function failOpen(op: string, generation: number) {
   return (error: unknown): void => {
     if (generation !== runGeneration) return;
     try {
+      // Whatever was in flight, no reload is coming from this run any more.
+      setLaunchReloadRequested(false);
       resolveGate();
     } finally {
       reportGateError(error, op);
@@ -274,6 +285,7 @@ function trackLaunchUpdate(
       capMs,
       runtimeVersion: Updates.runtimeVersion,
       isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      previousReloadOutlivedGrace,
     }),
   );
 }
@@ -282,6 +294,10 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
   // One terminal action per runtime. From here no state change can reload.
   gatePhase = 'settling';
   settlingReload = decision.step === 'reload';
+  // Synchronously, before anything awaits: from this moment the database init
+  // chain starts no new setup attempt, and writers keep waiting even if the gate
+  // resolves on the grace path (#6689).
+  if (settlingReload) setLaunchReloadRequested(true);
   const generation = runGeneration;
   // A reload still has its flush and marker writes to do, so it may start
   // until the cap plus the start window. Without the window a download
@@ -332,6 +348,12 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
             throw new Error('The launch update target changed before restart.');
           }
           await lease.reload(() => {
+            // The decision saw no setup attempt running and the init chain starts
+            // none while a reload is requested, so this should never fire. If it
+            // does, a reload now would strand the migration's write lock (#6689).
+            if (isDatabaseInitAttemptRunning()) {
+              throw new Error('A database setup attempt was running at restart.');
+            }
             onStarted();
             return Updates.reloadAsync();
           });
@@ -340,11 +362,48 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
       ),
     onHandledError: reportGateError,
   }).then(
-    () => {
-      if (generation === runGeneration) resolveGate();
+    (outcome) => {
+      if (generation !== runGeneration) return;
+      if (decision.step === 'reload') {
+        if (outcome === 'updated') holdWritesAfterGrace();
+        else setLaunchReloadRequested(false);
+      }
+      resolveGate();
     },
     failOpen('settle', generation),
   );
+}
+
+/** Reads, and clears, the marker `holdWritesAfterGrace` leaves for the next gated launch. */
+function readPreviousReloadOutlivedGrace(generation: number): void {
+  try {
+    void getPreference<boolean>(OTA_LAUNCH_UPDATE_RELOAD_OUTLIVED_GRACE_KEY).then(
+      (outlived) => {
+        if (generation !== runGeneration) return;
+        previousReloadOutlivedGrace = outlived === true;
+        if (outlived === true) void removePreference(OTA_LAUNCH_UPDATE_RELOAD_OUTLIVED_GRACE_KEY).catch(() => {});
+      },
+      () => {},
+    );
+  } catch {
+    // Telemetry only: the gate runs the same without it.
+  }
+}
+
+/**
+ * The reload was asked for and this runtime is still here after the grace. The
+ * app opens, but on Android the relaunch can still be queued behind
+ * expo-updates' own work, and a write transaction it lands on would keep the
+ * lock for the rest of the process (#6689). So writers wait a bounded margin
+ * more, and the next gated launch reports that this happened.
+ */
+function holdWritesAfterGrace(): void {
+  if (reloadOutstandingTimer !== null) clearTimeout(reloadOutstandingTimer);
+  reloadOutstandingTimer = setTimeout(() => {
+    reloadOutstandingTimer = null;
+    setLaunchReloadRequested(false);
+  }, LAUNCH_UPDATE_RELOAD_OUTSTANDING_MARGIN_MS);
+  void setPreference(OTA_LAUNCH_UPDATE_RELOAD_OUTLIVED_GRACE_KEY, true).catch(() => {});
 }
 
 function startExplicitCheck(): void {
@@ -502,6 +561,7 @@ function beginLaunchUpdateGate(environment: LaunchUpdateGateEnvironment): void {
   // process (#6689). Writers outside React wait on this; the offline engine waits
   // on `useLaunchReady()`, which needs the gate resolved too.
   setLaunchReloadPossible(true);
+  readPreviousReloadOutlivedGrace(generation);
   // A setup attempt finishing is what lets a held reload go ahead.
   unsubscribeFromDatabaseInit = subscribeDatabaseInitAttempt(evaluate);
   const subscription = Updates.addUpdatesStateChangeListener((event) => {
@@ -586,7 +646,11 @@ export function resetLaunchUpdateGateForTests(): void {
   unsubscribeFromUpdates = null;
   unsubscribeFromDatabaseInit?.();
   unsubscribeFromDatabaseInit = null;
+  if (reloadOutstandingTimer !== null) clearTimeout(reloadOutstandingTimer);
+  reloadOutstandingTimer = null;
+  previousReloadOutlivedGrace = null;
   setLaunchReloadPossible(false);
+  setLaunchReloadRequested(false);
   for (const timer of timers) clearTimeout(timer);
   timers.clear();
   listeners.clear();
