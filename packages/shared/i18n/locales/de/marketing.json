@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Eine Playlist bauen und der Reihe nach klettern",
-        "subtitle": "Heb Boulder für später auf und lade die Liste in deine Warteschlange."
+        "subtitle": "Heb Boulder für später auf und kletter die Liste der Reihe nach."
       },
       "build": {
         "title": "Eine Playlist anlegen",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Die ganze Liste klettern",
-        "intro": "Tipp einen Boulder in einer Playlist an, und deine Warteschlange wird zu dieser Playlist.",
-        "p1": "Sie lädt der Reihe nach ab dem Boulder, den du angetippt hast. Standen schon Boulder hinter deinem aktuellen, fragt Playlist starten? erst nach. Der Play-Button oben startet von vorn.",
+        "intro": "Tipp einen Boulder in einer Playlist an, und du kletterst diese Playlist durch. Deine Warteschlange bleibt, wie sie ist.",
+        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Zur Warteschlange hinzufügen kopiert die ganze Liste in deine Warteschlange. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein.",
         "p2": "In einer Session öffnet das Antippen den Boulder nur für dich. Die geteilte Warteschlange bleibt, wie sie ist.",
         "sessionsLink": "Wie eine Session eine Warteschlange teilt",
         "clipAlt": "Das Sheet Playlist starten?",
-        "clipCaption": "Stehen schon Boulder in der Warteschlange, fragt Playlist starten? erst nach."
+        "clipCaption": "Ist diese Einstellung an und stehen schon Boulder in der Warteschlange, fragt Playlist starten? erst nach."
       },
       "smart": {
         "title": "Die acht Listen, die Boardsesh für dich baut",
