@@ -29,6 +29,8 @@ import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
+import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
+import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -151,7 +153,8 @@ export type PlaylistDetailViewProps = {
   hasNextPage: boolean;
   fetchNextPage: () => void;
   /** Activate a tapped climb (wires the queue + opens the play drawer). */
-  onActivateClimb: (climb: Climb) => void;
+  /** A row tap, or with `deliberate` the Play button (see `PlaylistActivationOptions`). */
+  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
   /** An unavailable climb source keeps the hero while explaining the gap. */
@@ -472,7 +475,9 @@ export function PlaylistDetailView({
   const handleActivateAll = useCallback(() => {
     if (disableActivateAll) return;
     const first = climbs[0];
-    if (first) onActivateClimb(first);
+    // The Play button is a deliberate start, so Light problems when tapping
+    // the list (a row-tap setting) leaves it alone.
+    if (first) onActivateClimb(first, undefined, { deliberate: true });
   }, [disableActivateAll, climbs, onActivateClimb]);
 
   // List-level drag-to-reorder for edit mode. Always instantiated (hooks can't be

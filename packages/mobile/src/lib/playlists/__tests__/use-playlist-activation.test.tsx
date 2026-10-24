@@ -772,6 +772,26 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
+    it('leaves a deliberate play (the Play button) alone', async () => {
+      setSetting('lightOnClimbTap', false);
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb] });
+
+      await result.current.activate(climb, undefined, { deliberate: true });
+
+      expect(mocks.activate).toHaveBeenCalledWith(climb);
+    });
+
+    it('still previews a deliberate play in a crew', async () => {
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
+
+      await result.current.activate(climb, undefined, { deliberate: true });
+
+      expect(mocks.activate).not.toHaveBeenCalled();
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
+    });
+
     it('reads the setting at the tap, so turning it back on commits the next tap', async () => {
       setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
