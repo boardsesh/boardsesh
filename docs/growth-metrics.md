@@ -557,7 +557,12 @@ are not repeated here: read them from `Active Users Snapshot` (above).
   `boardsesh:community-monthly:<month>:<list>:<rank>`. A query can still see
   several copies of one uuid, so every tile keeps one row per uuid, the one
   with the newest `created_at`, which is the latest measurement
-  (`ORDER BY created_at DESC LIMIT 1 BY uuid`).
+  (`ORDER BY created_at DESC LIMIT 1 BY uuid`). PostHog does not promise to
+  dedupe by uuid, so this was checked on 2026-10-24: two probe uuids
+  (`Recap Uuid Probe`, `system:recap-uuid-probe`, one dated this month and
+  one dated September) were each sent twice with different values, and each
+  read back as a single row, the newer one, within a minute. Re-check it if
+  names ever linger after a privacy change.
 - **No cohort, not zero.** A month in which nobody lit a climb sends no
   summary, not a summary of zeros. It still sends its 20 rank rows, all
   `empty: true`, so a month that had rows before and has lost every lit climb
@@ -650,7 +655,10 @@ numbers down by board type.
 are versioned in `scripts/posthog/community-queries.ts`: climbers and climbs
 per month, the top 10 gyms and climbers of the latest complete month with
 their movement since the month before, and a "Reddit post draft" tile that
-returns one markdown block to paste. The post's 30-day active line comes from
+returns one markdown block to paste. A climber's movement column matches last
+month by display name (the events carry no id), so two climbers sharing a name
+can show a false move and a climber who renamed reads as new; anonymous
+climbers show no movement. The post's 30-day active line comes from
 `Active Users Snapshot` and is left out for any month ending before
 2026-11-07, the first day that number covers a full 30 days. Each query is
 built from three swappable sources; `community-fixtures.ts` runs the same text

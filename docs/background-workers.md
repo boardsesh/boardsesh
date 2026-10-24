@@ -533,6 +533,24 @@ the same walls as the full rule. The recap's gym ranking also leaves out spray
 walls an admin hid or their owner deleted, reading `spray_walls (board_uuid,
 hidden_at, deleted_at)` from the list above.
 
+What a run costs, measured with `EXPLAIN (ANALYZE, BUFFERS)` on the DR standby
+on 2026-10-24 for the Monday window (13 months plus one retired):
+
+| Statement | Time | Buffers |
+| --- | ---: | --- |
+| Climber ranking | 21.8 s | hit 1,265,523, read 32,952 |
+| Sending totals | 0.6 s | hit 416, read 23,343 |
+| New accounts | 6 ms | hit 153 |
+| Lighting (totals and gyms, one scan) | not measured | one pass over `board_climb_events`, the table `communityStats` already scans in about 430 ms |
+
+The climber ranking runs the tick privacy rule once per native send (about
+90,000 over the window, five index probes each), which is what the buffer hits
+count. The daily run covers two months, about a sixth of that. Both sit well
+inside the 900 s lease. If the Monday run ever nears it, rank climbers on raw
+send counts first and apply the privacy rule in that order, stopping once the
+next raw count is below the tenth visible count: the rule only removes sends,
+so nobody further down can reach the top ten.
+
 The family's schedule exists only once the backend has booted with it, and the
 backend deploys after `migrate`, so its first scheduled run already has these
 grants (see "A new worker image can start before the migrator has run"). An
