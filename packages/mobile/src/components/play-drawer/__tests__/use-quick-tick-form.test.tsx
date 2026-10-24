@@ -25,18 +25,22 @@ const gradesState = vi.hoisted(() => ({
   current: [] as Array<{ difficultyId: number; name: string }>,
 }));
 
-// Stable save mock so a test can assert on the input passed to saveTick.mutate.
-// Invokes onSuccess by default (so the TickLogged track call and the
+// Stable save mock so a test can assert on the input passed to
+// saveTick.mutateAsync. Succeeds by default (so the TickLogged track call and the
 // savedRef/onDismiss wiring fire the way the real mutation would); flip
-// `failure` to drive the onError path instead.
+// `failure` to drive the failure path instead. It settles before it returns:
+// `then` runs its handler at once, so the save's side effects are done by then.
 const saveMock = vi.hoisted(() => {
   const state = { failure: null as Error | null };
   return {
     state,
-    mutate: vi.fn((_input: unknown, callbacks?: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
-      if (state.failure) callbacks?.onError?.(state.failure);
-      else callbacks?.onSuccess?.();
-    }),
+    mutateAsync: vi.fn((_input: unknown) => ({
+      // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles before it returns
+      then: (onSaved: (result: unknown) => void, onFailed: (error: unknown) => void) => {
+        if (state.failure) onFailed(state.failure);
+        else onSaved(undefined);
+      },
+    })),
   };
 });
 
@@ -114,7 +118,7 @@ vi.mock('@boardsesh/board-react', async (importOriginal) => {
     ...actual,
     useOptionalBoardActions: () => boardState.current,
     useOptionalBoardLogbook: () => boardState.current,
-    useSaveTick: () => ({ mutate: saveMock.mutate, isPending: false }),
+    useSaveTick: () => ({ mutateAsync: saveMock.mutateAsync, isPending: false }),
   };
 });
 
@@ -222,7 +226,7 @@ function boardWithUnfetchedLogbook() {
 }
 
 beforeEach(() => {
-  saveMock.mutate.mockClear();
+  saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
   toastMock.showToast.mockClear();
   gradesState.current = [];
@@ -245,7 +249,7 @@ describe('useQuickTickForm hasPriorHistory', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ baseAscensionistCount: 37 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ baseAscensionistCount: 37 });
   });
 
   it('reads the logbookByClimbAngle index, not the raw logbook array', () => {
@@ -290,7 +294,7 @@ describe('useQuickTickForm hasPriorHistory', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'send' });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ status: 'send' });
   });
 
   it('offers Flash once the fetch lands and confirms no history', () => {
@@ -309,8 +313,8 @@ describe('useQuickTickForm climbedAt', () => {
     fireEvent.click(getByTestId('climbedat-date'));
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({
       climbedAt: '2025-03-15T12:00:00.000Z',
     });
   });
@@ -328,8 +332,8 @@ describe('useQuickTickForm climbedAt', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({
       climbedAt: '2025-03-15T12:10:00.000Z',
     });
   });
@@ -380,12 +384,12 @@ describe('useQuickTickForm first ascent of a spray climb (#5971)', () => {
     expect(getByTestId('first-ascent').textContent).toBe('true');
     expect(getByTestId('save-blocked').textContent).toBe('true');
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
 
     fireEvent.click(getByTestId('grade-select'));
     expect(getByTestId('save-blocked').textContent).toBe('false');
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ difficulty: 5 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ difficulty: 5 });
   });
 
   it('offers no default grade: the climb\u2019s grade is not outlined as a consensus', () => {
@@ -398,7 +402,7 @@ describe('useQuickTickForm first ascent of a spray climb (#5971)', () => {
     boardState.current = null;
     const { getByTestId } = renderForm(FIRST_ASCENT);
     fireEvent.click(getByTestId('attempt'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'attempt', difficulty: null });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ status: 'attempt', difficulty: null });
   });
 
   it('is not a first ascent once somebody has sent it, nor on another board', () => {
@@ -443,7 +447,7 @@ describe('useQuickTickForm angle', () => {
     expect(getByTestId('opening-angle').textContent).toBe(String(ANGLE));
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ angle: 45 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ angle: 45 });
   });
 
   it('drops the consensus outline at another angle and brings it back at the opening one', () => {
@@ -505,11 +509,14 @@ describe('useQuickTickForm angle', () => {
     boardState.current = null;
     const { getByTestId } = renderForm({ baseAscensionistCount: 37 });
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ angle: ANGLE, baseAscensionistCount: 37 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ angle: ANGLE, baseAscensionistCount: 37 });
 
     fireEvent.click(getByTestId('angle-45'));
     fireEvent.click(getByTestId('save'));
-    const pickedAnglePayload = saveMock.mutate.mock.calls[1][0] as { angle: number; baseAscensionistCount?: number };
+    const pickedAnglePayload = saveMock.mutateAsync.mock.calls[1][0] as {
+      angle: number;
+      baseAscensionistCount?: number;
+    };
     expect(pickedAnglePayload.angle).toBe(45);
     expect(pickedAnglePayload.baseAscensionistCount).toBeUndefined();
   });
@@ -623,7 +630,7 @@ describe('useQuickTickForm climb version', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('climbRevision');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('climbRevision');
   });
 });
 
@@ -655,7 +662,7 @@ describe('useQuickTickForm board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardId: 4242 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ boardId: 4242 });
   });
 
   it('keeps the bound wall off a tick for a climb that belongs to another wall', () => {
@@ -668,10 +675,10 @@ describe('useQuickTickForm board attribution', () => {
     // No boardId at all rather than the wrong one: the Homewall's own id is not
     // knowable from a render board, and guessing costs other climbers' data.
     // No full config: the server must not guess another physical wall.
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('sizeId');
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('setIds');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardId');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('sizeId');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('setIds');
   });
 
   it('ignores a queue button configuration when the climb belongs to Homewall', () => {
@@ -681,9 +688,9 @@ describe('useQuickTickForm board attribution', () => {
       climb: { boardType: 'kilter', layoutId: 8, compatibleSizeIds: [17] },
     });
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('sizeId');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardId');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('sizeId');
   });
 
   it('sends no board id while no wall is bound', () => {
@@ -693,7 +700,7 @@ describe('useQuickTickForm board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardId');
   });
   it('keeps the opening board after presence and active board change', () => {
     bindWall(4242);
@@ -712,7 +719,7 @@ describe('useQuickTickForm board attribution', () => {
     activeBoardState.current = { ...ACTIVE_BOARD, uuid: 'next-wall', layoutId: 8, sizeId: 17, setIds: '26,27' };
     rerender(createElement(Harness, props));
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({
       boardId: 4242,
       boardUuid: 'opening-wall',
       layoutId: 1,
@@ -811,12 +818,12 @@ describe('useQuickTickForm tries count', () => {
 
     // Read the shown count BEFORE the click — a successful save resets the
     // form, so the control is back at its default by the time this runs.
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({
       status: 'send',
       attemptCount: shownTries,
     });
     // The try the climber never made. Before the fix this stored 2.
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ attemptCount: 1 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ attemptCount: 1 });
   });
 
   it('reports the shown count to analytics, not a rewritten one', () => {
@@ -843,7 +850,7 @@ describe('useQuickTickForm tries count', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ attemptCount: shownTries });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ attemptCount: shownTries });
   });
 
   it('saves the shown count when the climber logs an attempt instead of an ascent', () => {
@@ -857,7 +864,7 @@ describe('useQuickTickForm tries count', () => {
 
     fireEvent.click(getByTestId('attempt'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({
       status: 'attempt',
       attemptCount: shownTries,
     });
@@ -886,7 +893,7 @@ describe('useQuickTickForm tries count', () => {
     expect(saveLabel(container)).toBe('playView.tickBar.flashSaveLabel');
 
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'flash', attemptCount: 1 });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ status: 'flash', attemptCount: 1 });
   });
 });
 
@@ -905,7 +912,7 @@ describe('useQuickTickForm rest timer anchor', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    const sentClimbedAt = (saveMock.mutateAsync.mock.calls[0][0] as { climbedAt: string }).climbedAt;
     expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
     expect(getRestTimerState().anchorMs).toBe(Date.parse(sentClimbedAt));
   });
@@ -918,7 +925,7 @@ describe('useQuickTickForm rest timer anchor', () => {
     fireEvent.click(getByTestId('climbedat-date'));
     fireEvent.click(getByTestId('save'));
 
-    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    const sentClimbedAt = (saveMock.mutateAsync.mock.calls[0][0] as { climbedAt: string }).climbedAt;
     expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
   });
 
@@ -970,7 +977,7 @@ describe('useQuickTickForm selected-board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardUuid: SELECTED_BOARD.uuid });
+    expect(saveMock.mutateAsync.mock.calls[0][0]).toMatchObject({ boardUuid: SELECTED_BOARD.uuid });
   });
 
   it('omits the uuid when the drawer resolved a different board to render', () => {
@@ -984,7 +991,7 @@ describe('useQuickTickForm selected-board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardUuid');
   });
 
   it('omits the uuid when no board is selected', () => {
@@ -994,7 +1001,7 @@ describe('useQuickTickForm selected-board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardUuid');
   });
 
   it('omits the uuid when the drawer sent no config to check it against', () => {
@@ -1004,7 +1011,7 @@ describe('useQuickTickForm selected-board attribution', () => {
 
     fireEvent.click(getByTestId('save'));
 
-    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+    expect(saveMock.mutateAsync.mock.calls[0][0]).not.toHaveProperty('boardUuid');
   });
 });
 

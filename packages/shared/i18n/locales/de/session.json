@@ -868,9 +868,10 @@
       "sent": "Getoppt",
       "fellHint": "Trägt einen Versuch an diesem Boulder ein",
       "sentHint": "Trägt diesen Boulder als getoppt ein",
-      "attemptLogged": "Versuch eingetragen",
-      "flashLogged": "Flash eingetragen",
-      "sendLogged": "Begehung eingetragen"
+      "attemptLogged": "Versuch eingetragen · {{name}}",
+      "flashLogged": "Flash eingetragen · {{name}}",
+      "sendLogged": "Begehung eingetragen · {{name}}",
+      "wallMovedFirstAscent": "Wisch zurück zu {{name}}, um die Erstbegehung mit Grad einzutragen."
     }
   },
   "mobileDetail": {

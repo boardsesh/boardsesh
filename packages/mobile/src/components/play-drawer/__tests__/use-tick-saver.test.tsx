@@ -29,13 +29,20 @@ const saveMock = vi.hoisted(() => {
   };
   return {
     state,
-    mutate: vi.fn(
-      (_input: unknown, callbacks?: { onSuccess?: (result: unknown) => void; onError?: (error: unknown) => void }) => {
-        state.whileSaving?.();
-        if (state.failure) callbacks?.onError?.(state.failure);
-        else callbacks?.onSuccess?.(state.result);
-      },
-    ),
+    // A save that settles before it returns: `then` runs its handler at once, so
+    // the side effects are done when save() returns. The real promise settles
+    // later; use-workout-one-tap.test.tsx saves through React Query itself to pin
+    // that the side effects still run when the caller is gone by then.
+    mutateAsync: vi.fn((_input: unknown) => {
+      state.whileSaving?.();
+      return {
+        // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles before it returns
+        then: (onSaved: (result: unknown) => void, onFailed: (error: unknown) => void) => {
+          if (state.failure) onFailed(state.failure);
+          else onSaved(state.result);
+        },
+      };
+    }),
   };
 });
 
@@ -70,7 +77,7 @@ vi.mock('@boardsesh/board-react', async (importOriginal) => {
     useOptionalBoardLogbook: () => boardState.current,
     useSaveTick: (boardName: string | null) => {
       saveMock.state.boardNames.push(boardName);
-      return { mutate: saveMock.mutate, isPending: saveMock.state.isPending };
+      return { mutateAsync: saveMock.mutateAsync, isPending: saveMock.state.isPending };
     },
   };
 });
@@ -202,12 +209,12 @@ function renderSaver(overrides: Partial<UseTickSaverInput> = {}, { withQueue = f
 }
 
 function sentInput(callIndex = 0): SaveTickOptions {
-  return saveMock.mutate.mock.calls[callIndex][0] as SaveTickOptions;
+  return saveMock.mutateAsync.mock.calls[callIndex][0] as SaveTickOptions;
 }
 
 beforeEach(() => {
   callLog.length = 0;
-  saveMock.mutate.mockClear();
+  saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
   saveMock.state.isPending = false;
   saveMock.state.result = undefined;
@@ -240,7 +247,7 @@ describe('useTickSaver save input', () => {
       true,
     );
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
     expect(sentInput()).toEqual({
       climbUuid: CLIMB_UUID,
       angle: ANGLE,
@@ -308,7 +315,7 @@ describe('useTickSaver save input', () => {
 
     expect(result.current.save(fields())).toBe(false);
     expect(result.current.isPending).toBe(true);
-    expect(saveMock.mutate).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
   });
 });
 
@@ -335,7 +342,7 @@ describe('useTickSaver board', () => {
     presenceState.enabled = true;
     presenceState.boardId = 4242;
     activeBoardState.current = { uuid: 'wall-1', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
-    const input = { ...SAVER_INPUT, sizeId: 10, setIds: '1,20' };
+    const input = { ...SAVER_INPUT, sizeId: 10, setIds: '1,20', active: true };
     const { result, rerender } = renderSaver(input);
 
     presenceState.boardId = 777;
@@ -605,7 +612,9 @@ describe('useTickSaver when a save fails', () => {
     expect(noteRestTimerTick).not.toHaveBeenCalled();
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
     expect(hapticError).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(track).mock.calls).toEqual([['Quick Tick Failed', { climbUuid: CLIMB_UUID, layoutId: 1 }]]);
+    expect(vi.mocked(track).mock.calls).toEqual([
+      ['Quick Tick Failed', { climbUuid: CLIMB_UUID, layoutId: 1, surface: 'mobile_quick_tick' }],
+    ]);
   });
 
   it('says the privacy choice went stale on a revision conflict', () => {
@@ -707,5 +716,44 @@ describe('isFirstAscentTick', () => {
     expect(isFirstAscentTick('spray', 1)).toBe(false);
     expect(isFirstAscentTick('kilter', 0)).toBe(false);
     expect(isFirstAscentTick(undefined, 0)).toBe(false);
+  });
+});
+
+describe('useTickSaver with no open/close moment', () => {
+  it('takes the wall as it is at each save when `active` is left out', () => {
+    presenceState.enabled = true;
+    presenceState.boardId = null;
+    activeBoardState.current = { uuid: 'wall-1', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
+    const input = { ...SAVER_INPUT, sizeId: 10, setIds: '1,20' };
+    const { result, rerender } = renderSaver(input);
+
+    result.current.save(fields());
+    // The climber binds the wall after the row appeared, on the same climb.
+    presenceState.boardId = 4242;
+    rerender(input);
+    result.current.save(fields());
+
+    expect(sentInput(0)).not.toHaveProperty('boardId');
+    expect(sentInput(1)).toMatchObject({ climbUuid: CLIMB_UUID, boardId: 4242, boardUuid: 'wall-1' });
+  });
+});
+
+describe('useTickSaver queue item', () => {
+  it('counts the tick for the queue item the caller names, even after the wall moved on', () => {
+    // The wall moved to another climb; the caller knows the tick is for the one it left.
+    queueSnapshot.current = { uuid: 'queue-8', climb: { uuid: 'climb-2' } };
+    saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ status: 'flash', queueItemUuid: 'queue-7' }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'flash', queueItemUuid: 'queue-7' });
+    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
+      queueItemUuid: 'queue-7',
+      status: 'flash',
+      climbedAt: '2026-10-24T09:30:00.000Z',
+      tickUuid: 'tick-9',
+    });
+    expect(sentInput()).not.toHaveProperty('queueItemUuid');
   });
 });

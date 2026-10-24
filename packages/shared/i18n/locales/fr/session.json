@@ -868,9 +868,10 @@
       "sent": "Enchaîné",
       "fellHint": "Enregistre un essai sur ce bloc",
       "sentHint": "Fait la croix sur ce bloc",
-      "attemptLogged": "Essai enregistré",
-      "flashLogged": "Flash enregistré",
-      "sendLogged": "Croix enregistrée"
+      "attemptLogged": "Essai enregistré · {{name}}",
+      "flashLogged": "Flash enregistré · {{name}}",
+      "sendLogged": "Croix enregistrée · {{name}}",
+      "wallMovedFirstAscent": "Reviens sur {{name}} pour enregistrer sa première ascension avec une cotation."
     }
   },
   "mobileDetail": {

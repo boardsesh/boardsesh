@@ -200,7 +200,9 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
 - **Logging every go.** While the climb on the wall is in a timed stage, the player's small row
   is one-tap Fell / Sent (`docs/climb-view-options.md` › One-tap Fell / Sent). Fell logs a 1-try
   attempt at once; Sent logs a flash or a send. Both reach the rest timer and the tick log through
-  the same tick path as the sheet.
+  the same tick path as the sheet, and a save still lands there when the row is gone before it
+  settles. A tap within 2 s of the wall moving on (an on-the-minute beat) logs for the climb it
+  left, against that queue item.
 - **The sheet.** While a stage paces the timer, the rest timer sheet and the Record tab's arm
   row show "Set by your workout" (`RestTimerWorkoutPacingRow`: the stage, its rests and how it
   moves on) in place of the rest length, cadence and auto-advance controls, which edit the

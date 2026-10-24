@@ -303,6 +303,10 @@ export const SHARED_EVENTS = {
   // violation means the sheet presented without user intent (the phantom-reopen
   // bug this event was added to watchdog).
   QuickTickOpened: 'Quick Tick Opened',
+  // A mobile save that failed. Props: { climbUuid, layoutId, surface }, with the
+  // same `surface` as Tick Logged below, so a failed one-tap Fell / Sent
+  // ('mobile_workout_runner', no Quick Tick Opened before it) can be left out of
+  // a failure rate or abandonment count built on the sheet's Quick Tick Opened.
   QuickTickFailed: 'Quick Tick Failed',
   // Mobile-only for now: fired when the tick sheet is closed (X button,
   // pan-down, backdrop tap) without a save completing. Props include a

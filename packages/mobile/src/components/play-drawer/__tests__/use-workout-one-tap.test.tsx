@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { logbookClimbAngleKey, type LogbookEntry, type SaveTickOptions } from '@boardsesh/board-react';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -9,6 +10,8 @@ import type { Climb } from '@boardsesh/shared-schema';
 // One-tap Fell / Sent in a timed workout block (#6231). The save runs through the
 // real useTickSaver, so these pin what the climber's tap writes: the tick, its
 // flash rule, and what the rest timer and the workout's tick log hear about it.
+// The mutation itself is a double that settles at once, except where a test
+// saves through React Query to pin what happens when the row is gone first.
 
 const CLIMB_UUID = 'climb-1';
 const QUEUE_ITEM_UUID = 'item-1';
@@ -21,21 +24,35 @@ const saveMock = vi.hoisted(() => {
     failure: null as unknown,
     isPending: false,
     result: undefined as { savedTick: { uuid: string } } | undefined,
+    /** Save through a real React Query mutation instead of the double. */
+    throughReactQuery: false,
   };
   return {
     state,
-    mutate: vi.fn(
-      (_input: unknown, callbacks?: { onSuccess?: (result: unknown) => void; onError?: (error: unknown) => void }) => {
-        if (state.failure) callbacks?.onError?.(state.failure);
-        else callbacks?.onSuccess?.(state.result);
+    // Settles before it returns: `then` runs its handler at once, so a tap's side
+    // effects are done when the tap returns.
+    mutateAsync: vi.fn((_input: unknown) => ({
+      // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles before it returns
+      then: (onSaved: (result: unknown) => void, onFailed: (error: unknown) => void) => {
+        if (state.failure) onFailed(state.failure);
+        else onSaved(state.result);
       },
-    ),
+    })),
   };
 });
 const boardState = vi.hoisted(() => ({ current: null as unknown }));
 const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
+const presenceState = vi.hoisted(() => ({ enabled: false, boardId: null as number | null }));
+const activeBoardState = vi.hoisted(() => ({
+  current: null as { uuid?: string; boardType: string; layoutId: number; sizeId: number; setIds: string } | null,
+}));
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// Keeps the climb name a toast carries, so a test can tell which climb it named.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { name?: string }) => (options?.name ? `${key}:${options.name}` : key),
+  }),
+}));
 vi.mock('@boardsesh/analytics', async (importOriginal) => {
   const { boardTypeProperty } = await importOriginal<typeof import('@boardsesh/analytics')>();
   return {
@@ -45,18 +62,28 @@ vi.mock('@boardsesh/analytics', async (importOriginal) => {
 });
 vi.mock('@boardsesh/board-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/board-react')>();
+  const { useMutation } = await import('@tanstack/react-query');
   return {
     ...actual,
     useOptionalBoardActions: () => boardState.current,
     useOptionalBoardLogbook: () => boardState.current,
-    useSaveTick: () => ({ mutate: saveMock.mutate, isPending: saveMock.state.isPending }),
+    useSaveTick: () => {
+      const reactQuerySave = useMutation({
+        mutationFn: (input: unknown) => Promise.resolve(saveMock.mutateAsync(input)),
+      });
+      return saveMock.state.throughReactQuery
+        ? reactQuerySave
+        : { mutateAsync: saveMock.mutateAsync, isPending: saveMock.state.isPending };
+    },
   };
 });
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toastMock }));
 vi.mock('../../../providers/board-presence-provider', () => ({
-  useBoardPresenceControls: () => ({ enabled: false, boardId: null }),
+  useBoardPresenceControls: () => presenceState,
 }));
-vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: activeBoardState.current }),
+}));
 vi.mock('../../../providers/rogue-timer-provider', () => ({ useOptionalRogueTimer: () => null }));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => false }));
@@ -85,7 +112,7 @@ vi.mock('../../privacy/use-publication-audience', () => ({
   }),
 }));
 
-import { ONE_TAP_GUARD_MS, useWorkoutOneTap } from '../use-workout-one-tap';
+import { ONE_TAP_GUARD_MS, WALL_MOVED_GRACE_MS, useWorkoutOneTap } from '../use-workout-one-tap';
 import type { WorkoutOutcomeTarget } from '../workout-outcome';
 import { track } from '../../../lib/analytics';
 import { noteRestTimerTick } from '../../../lib/rest-timer-store';
@@ -139,8 +166,13 @@ const queueSnapshot = { current: { uuid: QUEUE_ITEM_UUID, climb: { uuid: CLIMB_U
 const queueActions = {
   getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: queueSnapshot.current, playlistSuggestionSource: null }),
 } as unknown as NonNullable<React.ContextType<typeof QueueActionsContext>>;
+let queryClient = new QueryClient();
 const withQueue = ({ children }: { children: ReactNode }) =>
-  createElement(QueueActionsContext.Provider, { value: queueActions }, children);
+  createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    createElement(QueueActionsContext.Provider, { value: queueActions }, children),
+  );
 
 function renderOneTap(initialTarget = target(), openLogSheet = vi.fn()) {
   const rendered = renderHook(
@@ -153,8 +185,8 @@ function renderOneTap(initialTarget = target(), openLogSheet = vi.fn()) {
   return { ...rendered, openLogSheet };
 }
 
-/** A logbook that has been fetched for the climb, holding `count` ticks at the angle. */
-function logbook(count: number) {
+/** A logbook that has been fetched for the climb, holding `count` ticks at the angle (`isAscent` says which kind). */
+function logbook(count: number, isAscent = false) {
   return {
     logbook: [],
     logbookByClimbAngle: new Map<string, LogbookEntry[]>(
@@ -164,7 +196,7 @@ function logbook(count: number) {
               logbookClimbAngleKey(CLIMB_UUID, ANGLE),
               Array.from(
                 { length: count },
-                () => ({ climb_uuid: CLIMB_UUID, angle: ANGLE }) as unknown as LogbookEntry,
+                () => ({ climb_uuid: CLIMB_UUID, angle: ANGLE, is_ascent: isAscent }) as unknown as LogbookEntry,
               ),
             ],
           ]
@@ -176,7 +208,7 @@ function logbook(count: number) {
 }
 
 function sentInput(callIndex = 0): SaveTickOptions {
-  return saveMock.mutate.mock.calls[callIndex][0] as SaveTickOptions;
+  return saveMock.mutateAsync.mock.calls[callIndex][0] as SaveTickOptions;
 }
 
 /** Moves the wall clock the tap guard reads. */
@@ -187,11 +219,16 @@ function advanceClock(ms: number) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(START_MS);
-  saveMock.mutate.mockClear();
+  saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
   saveMock.state.isPending = false;
   saveMock.state.result = { savedTick: { uuid: 'tick-1' } };
+  saveMock.state.throughReactQuery = false;
+  queryClient = new QueryClient();
   boardState.current = logbook(0);
+  presenceState.enabled = false;
+  presenceState.boardId = null;
+  activeBoardState.current = null;
   queueSnapshot.current = { uuid: QUEUE_ITEM_UUID, climb: { uuid: CLIMB_UUID } };
   toastMock.showToast.mockClear();
   vi.mocked(track).mockClear();
@@ -210,7 +247,7 @@ describe('useWorkoutOneTap: Fell', () => {
 
     act(() => result.current.onFell());
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
     expect(sentInput()).toMatchObject({
       climbUuid: CLIMB_UUID,
       status: 'attempt',
@@ -227,7 +264,7 @@ describe('useWorkoutOneTap: Fell', () => {
       'Tick Logged',
       expect.objectContaining({ surface: 'mobile_workout_runner', status: 'attempt', attemptCount: 1 }),
     );
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged', 'success');
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Crimp line', 'success');
   });
 
   it('tells the rest timer and the workout’s tick log which queue item fell', () => {
@@ -258,7 +295,7 @@ describe('useWorkoutOneTap: Fell', () => {
     advanceClock(ONE_TAP_GUARD_MS);
     act(() => result.current.onFell());
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(3);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(3);
     expect(getWorkoutRunLog(SESSION_ID).map((entry) => entry.status)).toEqual(['attempt', 'attempt', 'attempt']);
   });
 
@@ -285,7 +322,7 @@ describe('useWorkoutOneTap: Sent', () => {
       status: 'flash',
       queueItemUuid: QUEUE_ITEM_UUID,
     });
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.flashLogged', 'success');
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.flashLogged:Crimp line', 'success');
   });
 
   it('logs a send when the climber has logged the climb at this angle before', () => {
@@ -295,7 +332,7 @@ describe('useWorkoutOneTap: Sent', () => {
     act(() => result.current.onSent());
 
     expect(sentInput()).toMatchObject({ status: 'send', attemptCount: 1 });
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.sendLogged', 'success');
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.sendLogged:Crimp line', 'success');
   });
 
   it('logs a send after a fall on this queue item, before the logbook has caught up', () => {
@@ -334,7 +371,7 @@ describe('useWorkoutOneTap: Sent', () => {
     act(() => result.current.onSent());
 
     expect(openLogSheet).toHaveBeenCalledTimes(1);
-    expect(saveMock.mutate).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
   });
 
   it('logs a sent spray climb someone has already sent in one tap', () => {
@@ -345,7 +382,7 @@ describe('useWorkoutOneTap: Sent', () => {
     act(() => result.current.onSent());
 
     expect(openLogSheet).not.toHaveBeenCalled();
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('marks a benchmark climb as one', () => {
@@ -366,7 +403,7 @@ describe('useWorkoutOneTap: the tap guard', () => {
     act(() => result.current.onFell());
     act(() => result.current.onSent());
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
     expect(sentInput()).toMatchObject({ status: 'attempt' });
   });
 
@@ -377,7 +414,7 @@ describe('useWorkoutOneTap: the tap guard', () => {
     advanceClock(ONE_TAP_GUARD_MS);
     act(() => result.current.onSent());
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(2);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(2);
     expect(sentInput(1)).toMatchObject({ status: 'send' });
   });
 
@@ -388,7 +425,7 @@ describe('useWorkoutOneTap: the tap guard', () => {
     rerender({ target: target({ climb: climb({ uuid: 'climb-2' }), queueItemUuid: 'item-2' }) });
     act(() => result.current.onSent());
 
-    expect(saveMock.mutate).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('sends nothing while a save is still in flight', () => {
@@ -397,7 +434,7 @@ describe('useWorkoutOneTap: the tap guard', () => {
 
     act(() => result.current.onFell());
 
-    expect(saveMock.mutate).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
     expect(toastMock.showToast).not.toHaveBeenCalled();
   });
 });
@@ -412,5 +449,212 @@ describe('useWorkoutOneTap: failure', () => {
     expect(toastMock.showToast).toHaveBeenCalledWith('Server said no', 'error');
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
     expect(noteRestTimerTick).not.toHaveBeenCalled();
+    // Told apart from a Log ascent sheet failure, which has a Quick Tick Opened before it.
+    expect(track).toHaveBeenCalledExactlyOnceWith('Quick Tick Failed', {
+      climbUuid: CLIMB_UUID,
+      layoutId: 1,
+      surface: 'mobile_workout_runner',
+    });
+  });
+});
+
+// The row lives only while it shows: a swipe to a preview, the wall moving out of
+// the timed block, or closing the player unmounts it, and a save can still be in
+// flight then (a 9 s local-write budget under lock contention, a network round
+// trip on the web). React Query drops a per-call `mutate` callback once the row's
+// observer is gone, so these save through React Query itself.
+describe('useWorkoutOneTap: the row is gone before the save lands', () => {
+  function deferSave() {
+    const settle: { resolve: (result: unknown) => void; reject: (error: unknown) => void } = {
+      resolve: () => {},
+      reject: () => {},
+    };
+    saveMock.mutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          settle.resolve = resolve;
+          settle.reject = reject;
+        }) as unknown as ReturnType<typeof saveMock.mutateAsync>,
+    );
+    return settle;
+  }
+
+  it('still tells the rest timer, the workout’s log and analytics, and says so', async () => {
+    saveMock.state.throughReactQuery = true;
+    const settle = deferSave();
+    const { result, unmount } = renderOneTap();
+
+    act(() => result.current.onFell());
+    unmount();
+    // React Query reaches the mutation function a few microtasks after the tap.
+    await vi.waitFor(() => expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1));
+    settle.resolve({ savedTick: { uuid: 'tick-7' } });
+
+    await vi.waitFor(() => expect(noteRestTimerTick).toHaveBeenCalledTimes(1));
+    expect(noteRestTimerTick).toHaveBeenCalledWith(new Date(START_MS).toISOString(), 'afterTick', START_MS, {
+      status: 'attempt',
+      queueItemUuid: QUEUE_ITEM_UUID,
+    });
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([
+      {
+        queueItemUuid: QUEUE_ITEM_UUID,
+        status: 'attempt',
+        climbedAt: new Date(START_MS).toISOString(),
+        tickUuid: 'tick-7',
+      },
+    ]);
+    expect(track).toHaveBeenCalledWith('Tick Logged', expect.objectContaining({ surface: 'mobile_workout_runner' }));
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Crimp line', 'success');
+  });
+
+  it('still says why a save failed', async () => {
+    saveMock.state.throughReactQuery = true;
+    const settle = deferSave();
+    const { result, unmount } = renderOneTap();
+
+    act(() => result.current.onSent());
+    unmount();
+    await vi.waitFor(() => expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1));
+    settle.reject(new Error('Server said no'));
+
+    await vi.waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('Server said no', 'error'));
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
+  });
+});
+
+describe('useWorkoutOneTap: the wall', () => {
+  it('logs each tap on the wall as it is then, so a board bound mid-block counts', () => {
+    presenceState.enabled = true;
+    activeBoardState.current = { uuid: 'wall-1', boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
+    const { result, rerender } = renderOneTap();
+
+    act(() => result.current.onFell());
+    // The climber connects from the bulb while the same climb stays up.
+    presenceState.boardId = 4242;
+    rerender({ target: target() });
+    advanceClock(ONE_TAP_GUARD_MS);
+    act(() => result.current.onFell());
+
+    expect(sentInput(0)).not.toHaveProperty('boardId');
+    expect(sentInput(1)).toMatchObject({ climbUuid: CLIMB_UUID, boardId: 4242, boardUuid: 'wall-1' });
+  });
+});
+
+describe('useWorkoutOneTap: a spray climb the climber sent first', () => {
+  const firstAscentTarget = () => target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) });
+
+  it('logs a later Sent in one tap once this block has their send', () => {
+    // The queue's copy of the climb still says nobody has sent it.
+    noteWorkoutRunTick(SESSION_ID, { queueItemUuid: QUEUE_ITEM_UUID, status: 'send', climbedAt: 'earlier' });
+    const { result, openLogSheet } = renderOneTap(firstAscentTarget());
+
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).not.toHaveBeenCalled();
+    expect(sentInput()).toMatchObject({ status: 'send', attemptCount: 1 });
+  });
+
+  it('logs a later Sent in one tap once their logbook has an ascent at this angle', () => {
+    boardState.current = logbook(1, true);
+    const { result, openLogSheet } = renderOneTap(firstAscentTarget());
+
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).not.toHaveBeenCalled();
+    expect(sentInput()).toMatchObject({ status: 'send' });
+  });
+
+  it('still opens Log ascent when the block only has their falls', () => {
+    noteWorkoutRunTick(SESSION_ID, { queueItemUuid: QUEUE_ITEM_UUID, status: 'attempt', climbedAt: 'earlier' });
+    boardState.current = logbook(1, false);
+    const { result, openLogSheet } = renderOneTap(firstAscentTarget());
+
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// An on-the-minute beat moves the wall whether the climber logged or not, so a
+// climber who topped out just before it taps after it.
+describe('useWorkoutOneTap: just after the wall moved on', () => {
+  const NEXT_QUEUE_ITEM_UUID = 'item-2';
+  const nextTarget = () =>
+    target({ climb: climb({ uuid: 'climb-2', name: 'Pinch roof' }), queueItemUuid: NEXT_QUEUE_ITEM_UUID });
+
+  function moveTheWall(rerender: (props: { target: WorkoutOutcomeTarget }) => void) {
+    queueSnapshot.current = { uuid: NEXT_QUEUE_ITEM_UUID, climb: { uuid: 'climb-2' } };
+    rerender({ target: nextTarget() });
+  }
+
+  it('logs the tap for the climb the wall left, against its queue item, and names it', () => {
+    const { result, rerender } = renderOneTap();
+
+    moveTheWall(rerender);
+    advanceClock(WALL_MOVED_GRACE_MS - 1);
+    act(() => result.current.onSent());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'flash' });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
+      status: 'flash',
+      queueItemUuid: QUEUE_ITEM_UUID,
+    });
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: QUEUE_ITEM_UUID })]);
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.flashLogged:Crimp line', 'success');
+  });
+
+  it('keeps the flash rule of the climb it left: a fall there makes it a send', () => {
+    noteWorkoutRunTick(SESSION_ID, { queueItemUuid: QUEUE_ITEM_UUID, status: 'attempt', climbedAt: 'earlier' });
+    const { result, rerender } = renderOneTap();
+
+    moveTheWall(rerender);
+    act(() => result.current.onSent());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'send' });
+  });
+
+  it('logs the climb now on the wall once the grace has passed', () => {
+    const { result, rerender } = renderOneTap();
+
+    moveTheWall(rerender);
+    advanceClock(WALL_MOVED_GRACE_MS);
+    act(() => result.current.onFell());
+
+    expect(sentInput()).toMatchObject({ climbUuid: 'climb-2', status: 'attempt' });
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: NEXT_QUEUE_ITEM_UUID })]);
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Pinch roof', 'success');
+  });
+
+  it('says where to log a first ascent on the climb it left, since the sheet would open on the new one', () => {
+    const { result, rerender, openLogSheet } = renderOneTap(
+      target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) }),
+    );
+
+    queueSnapshot.current = { uuid: NEXT_QUEUE_ITEM_UUID, climb: { uuid: 'climb-2' } };
+    rerender({
+      target: target({
+        boardName: 'spray',
+        climb: climb({ uuid: 'climb-2', name: 'Pinch roof', ascensionist_count: 4 }),
+        queueItemUuid: NEXT_QUEUE_ITEM_UUID,
+      }),
+    });
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.wallMovedFirstAscent:Crimp line', 'info');
+  });
+
+  it('treats a refreshed copy of the same queue item as no move', () => {
+    const { result, rerender } = renderOneTap();
+
+    rerender({ target: target({ climb: climb({ name: 'Crimp line (renamed)' }) }) });
+    act(() => result.current.onSent());
+
+    expect(toastMock.showToast).toHaveBeenCalledWith(
+      'playView.workoutOutcome.flashLogged:Crimp line (renamed)',
+      'success',
+    );
   });
 });

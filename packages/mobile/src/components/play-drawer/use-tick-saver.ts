@@ -1,10 +1,11 @@
 // The one place a mobile tick is saved.
 //
-// The Log ascent sheet (through useQuickTickForm) and, later, the workout
-// player's one-tap buttons both log through here, so every tick gets the same
-// board stamping, privacy choice, flash rule, analytics event, error copy and
-// timer side effects. The caller owns its own fields and what happens after a
-// save (toast, reset, closing the sheet).
+// The Log ascent sheet (through useQuickTickForm) and the workout player's
+// one-tap buttons both log through here, so every tick gets the same board
+// stamping, privacy choice, flash rule, analytics event, error copy and timer
+// side effects. The caller owns its own fields and what happens after a save
+// (toast, reset, closing the sheet). Those side effects run even when the caller
+// has unmounted by the time the save lands (`saveSurvivingUnmount`).
 //
 // None of this runs from outbox replay: the drainer delivers a queued tick
 // without this hook, so a tick that reaches the server twenty minutes late can
@@ -18,6 +19,7 @@ import {
   useOptionalBoardLogbook,
   useSaveTick,
   logbookClimbAngleKey,
+  type SaveTickOptions,
 } from '@boardsesh/board-react';
 import { toBoardName, type TickClimbIdentity } from '@boardsesh/board-config';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
@@ -51,8 +53,9 @@ export type UseTickSaverInput = {
   /**
    * The board context is snapshotted when this turns true (and on a new climb),
    * so a presence or active-board change while the climber types can't move the
-   * ascent to another wall. The sheet passes its visibility; a caller with no
-   * open/close moment leaves it on.
+   * ascent to another wall. The sheet passes its visibility. A caller with no
+   * open/close moment (the workout's one-tap Fell / Sent, where the tap is the
+   * commit) leaves it out, and every save takes the board as it is right then.
    */
   active?: boolean;
   surface: TickSurface;
@@ -76,6 +79,13 @@ export type TickSaveFields = {
   baseAscensionistCount?: number;
   /** The picked difficulty's grade name, for analytics only. */
   gradeName?: string | null;
+  /**
+   * The queue item this tick counts for, when the caller knows it better than
+   * the wall does: a one-tap Fell / Sent just after the wall moved on is for the
+   * climb it left. Left out, it is the committed current item when that item's
+   * climb is the ticked one (`attributeTickToQueueItem`).
+   */
+  queueItemUuid?: string;
 };
 
 export type TickSaveHandlers = {
@@ -108,7 +118,7 @@ export function useTickSaver({
   sizeId,
   setIds,
   sessionId,
-  active = true,
+  active,
   surface,
 }: UseTickSaverInput): TickSaver {
   const { t: tClimbs } = useTranslation('climbs');
@@ -132,9 +142,11 @@ export function useTickSaver({
     boardPresenceEnabled ? boardPresenceBoardId : null,
   );
   // The selected wall is a snapshot of opening the form, not a live presence
-  // binding that can move the ascent to another wall while someone types.
+  // binding that can move the ascent to another wall while someone types. With
+  // no form (`active` left out) there is nothing to snapshot: each save takes
+  // the wall as it is, so a board bound after the row appeared still counts.
   const contextRef = useRef({ climbUuid, active, context: liveContext });
-  if (contextRef.current.climbUuid !== climbUuid || (active && !contextRef.current.active)) {
+  if (active === undefined || contextRef.current.climbUuid !== climbUuid || (active && !contextRef.current.active)) {
     contextRef.current = { climbUuid, active, context: liveContext };
   }
   contextRef.current.active = active;
@@ -162,12 +174,12 @@ export function useTickSaver({
       // that was up when the climber logged it. Only at the angle it is up at: a
       // send picked at another angle in the form still saves, but counts for no
       // queue item, so it never moves the wall or lands in the workout's log.
-      const queueItemUuid = attributeTickToQueueItem(
-        { climbUuid, angle: fields.angle },
-        getQueueSnapshot?.().currentClimbQueueItem ?? null,
-      );
+      const queueItemUuid =
+        fields.queueItemUuid ??
+        attributeTickToQueueItem({ climbUuid, angle: fields.angle }, getQueueSnapshot?.().currentClimbQueueItem ?? null);
 
-      saveTick.mutate(
+      saveSurvivingUnmount(
+        saveTick,
         {
           climbUuid,
           ...(privacy.publication ? { privacy: privacy.publication } : {}),
@@ -240,7 +252,7 @@ export function useTickSaver({
           },
           onError: (error: unknown) => {
             hapticError();
-            track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
+            track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null, surface });
             const message = hasGraphqlErrorCode(error, 'PRIVACY_REVISION_CONFLICT')
               ? tSettings('privacy.revisionChanged')
               : isOfflineRef.current
@@ -344,6 +356,24 @@ export function useHasPriorTickHistory(climbUuid: string, boardName: string, ang
  */
 export function isFirstAscentTick(boardName: string | undefined, baseAscensionistCount: number): boolean {
   return boardName === 'spray' && baseAscensionistCount === 0;
+}
+
+/**
+ * Starts the save and runs its outcome callbacks even when the caller is gone by
+ * the time it settles. `mutate(variables, { onSuccess })` would not: React Query
+ * calls a per-call callback only while the hook's observer still has a listener,
+ * and the one-tap Fell / Sent row (or the whole player) can unmount before a slow
+ * save lands, which would drop the rest timer's anchor, the workout's tick log
+ * entry, Tick Logged and the toast. The `mutateAsync` promise settles either way,
+ * and each save keeps its own callbacks, so a second save can't take over the
+ * first one's.
+ */
+function saveSurvivingUnmount(
+  saveTick: Pick<ReturnType<typeof useSaveTick>, 'mutateAsync'>,
+  variables: SaveTickOptions,
+  outcome: { onSuccess: (result: SavedTickResult) => void; onError: (error: unknown) => void },
+): void {
+  void saveTick.mutateAsync(variables).then(outcome.onSuccess, outcome.onError);
 }
 
 /** A save the server refused because the climb is gone (`saveTick`'s CLIMB_NOT_FOUND). */

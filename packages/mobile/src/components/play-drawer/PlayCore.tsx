@@ -1026,6 +1026,20 @@ export function PlayCore({
     : commitBarModel.showPutOnWall
       ? 'putOnWall'
       : null;
+  // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
+  // in a stage that paces the rest, that this climber can log from here. It
+  // takes the second row (`workoutOutcome` below), so the connect pill can't be
+  // on screen with it and must not spend one of its days.
+  const showWorkoutOutcome =
+    sessionId !== null &&
+    shouldShowWorkoutOutcome({
+      run: workoutRun,
+      displayedQueueItemUuid: displayedQueueItemUuid ?? null,
+      committedQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
+      signedIn: isAuthenticated && !isAnonymous,
+      boardMismatch: showBoardMismatch,
+      isDraft: displayedClimb?.is_draft === true,
+    });
   // The connect-step test's pill (#5654, PR 7, treatment only): the bulb with a
   // label, while this phone has never connected, and only where a tap on the
   // bulb would CONNECT this phone (see `deriveFirstConnectPillWouldConnect`).
@@ -1034,6 +1048,7 @@ export function PlayCore({
     hasBluetooth: bluetooth !== null,
     boardMismatch: showBoardMismatch,
     commitMode: commitBarModel.mode === 'commit',
+    workoutOutcome: showWorkoutOutcome,
     sharedSession: isSharedSession,
     wallHeldByOtherUser: bluetooth?.wallHeldByOtherUser ?? false,
     tapConnects: lightbulbPressAction === 'connect',
@@ -1538,19 +1553,10 @@ export function PlayCore({
     onPressSetter: openSetterPlaylist,
     workoutStageLabel,
   });
-  // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
-  // in a stage that paces the rest, that this climber can log from here.
+  // What a Fell / Sent tap logs against (`showWorkoutOutcome` above).
   const workoutOutcome = useMemo<WorkoutOutcomeTarget | null>(() => {
     const committedQueueItemUuid = currentClimbQueueItem?.uuid ?? null;
-    const show = shouldShowWorkoutOutcome({
-      run: workoutRun,
-      displayedQueueItemUuid: displayedQueueItemUuid ?? null,
-      committedQueueItemUuid,
-      signedIn: isAuthenticated && !isAnonymous,
-      boardMismatch: showBoardMismatch,
-      isDraft: displayedClimbIsDraft,
-    });
-    if (!show || !displayedClimb || committedQueueItemUuid === null || sessionId === null) return null;
+    if (!showWorkoutOutcome || !displayedClimb || committedQueueItemUuid === null || sessionId === null) return null;
     return {
       climb: displayedClimb,
       queueItemUuid: committedQueueItemUuid,
@@ -1563,13 +1569,8 @@ export function PlayCore({
       isMirror: isMirrored,
     };
   }, [
-    workoutRun,
-    displayedQueueItemUuid,
+    showWorkoutOutcome,
     currentClimbQueueItem?.uuid,
-    isAuthenticated,
-    isAnonymous,
-    showBoardMismatch,
-    displayedClimbIsDraft,
     displayedClimb,
     sessionId,
     boardName,

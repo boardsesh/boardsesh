@@ -243,6 +243,11 @@ export type FirstConnectPillWouldConnectInput = {
   boardMismatch: boolean;
   /** The second row is the browse latch's commit row. */
   commitMode: boolean;
+  /**
+   * The second row is a timed workout block's one-tap Fell / Sent (#6231), which
+   * wins over the pill, so a day there would count without the pill on screen.
+   */
+  workoutOutcome: boolean;
   /** A party session with a crew in it. */
   sharedSession: boolean;
   /** Another account holds the wall. */
@@ -260,14 +265,16 @@ export type FirstConnectPillWouldConnectInput = {
 /**
  * Whether a tap on the play view's bulb right now would connect THIS phone,
  * which is the only moment the pill may stand in for it. Never for a signed-out
- * reader, under the switch-board scrim, in commit mode, with a crew in the
- * session, or while someone else holds the wall. A connect already in flight
+ * reader, under the switch-board scrim, in commit mode, while a workout's Fell /
+ * Sent holds the row, with a crew in the session, or while someone else holds
+ * the wall. A connect already in flight
  * keeps it (no link and no virtual hold yet, so the pending work is the
  * connect), so the pill does not jump back to a bulb mid-connect; a pending
  * disconnect does not.
  */
 export function deriveFirstConnectPillWouldConnect(input: FirstConnectPillWouldConnectInput): boolean {
-  if (input.isAnonymous || !input.hasBluetooth || input.boardMismatch || input.commitMode) return false;
+  if (input.isAnonymous || !input.hasBluetooth || input.boardMismatch) return false;
+  if (input.commitMode || input.workoutOutcome) return false;
   if (input.sharedSession || input.wallHeldByOtherUser) return false;
   return input.tapConnects || (input.pending && !input.localConnected && !input.wallHeldLocally);
 }

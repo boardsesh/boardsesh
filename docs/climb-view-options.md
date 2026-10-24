@@ -93,15 +93,30 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   earlier in the block, else a send (`deriveAscentType`). While the logbook is still loading it says send, as the
   sheet does.
 - **A spray climb nobody has sent** needs a grade, which only the sheet asks for, so Sent opens Log ascent instead.
-  Fell still logs at once: a try sets no grade.
+  Fell still logs at once: a try sets no grade. The queue's copy of the climb never hears of a send, so once the
+  climber's own send is in this block's tick log (this queue item) or their logbook (this angle), later Sents log in
+  one tap again.
 - **One tap at a time.** A second tap within 700 ms (`ONE_TAP_GUARD_MS`), on either button, is dropped, and so is a
   tap while a save is still in flight. A fumbled double tap logs one go, never a fall and a send.
+- **Just after the wall moves on.** An on-the-minute beat advances whether the climber logged or not, so a tap within
+  2 s (`WALL_MOVED_GRACE_MS`) of the climb on the wall changing logs for the climb it left, against that queue item
+  (`TickSaveFields.queueItemUuid`), with that climb's own flash rule. Nobody gets a go on a climb that fast after it
+  lights up. A first ascent there can't open the sheet (it would open on the new climb), so a toast says to swipe
+  back to it. A new copy of the same queue item is not a move.
+- **The wall at the tap.** The row leaves `useTickSaver`'s `active` out, so each save takes the board as it is right
+  then: a board bound from the bulb mid-block is on the next tick. The sheet snapshots it when it opens instead.
 - **When it shows** (`shouldShowWorkoutOutcome`): the climb on screen is the committed current one (not a climb the
   climber swiped to or a preview), its run stage has `pacing` (keyed on the pacing, not the stage kinds, so any
   future timed block gets it too), the climber is signed in, it is not another board's climb and not a draft. A
-  crew phone without the run never shows it.
-- Each save says so in a toast ("Try logged", "Flash logged", "Send logged"); a failure toasts its reason. Tick
-  Logged reports `surface: 'mobile_workout_runner'`, with no Quick Tick Opened before it.
+  crew phone without the run never shows it. While it shows, the connect pill can't, so the pill's day budget is not
+  spent (`deriveFirstConnectPillWouldConnect`'s `workoutOutcome`).
+- Each save says so in a toast that names the climb ("Try logged · Crimp line", "Flash logged · …", "Send logged ·
+  …"); a failure toasts its reason. Tick Logged and Quick Tick Failed report `surface: 'mobile_workout_runner'`, with
+  no Quick Tick Opened before them.
+- **A save outlives the row.** Swiping to a preview, the wall leaving the timed block or closing the player unmounts
+  the row while a save can still be in flight. `useTickSaver` runs the side effects (rest timer, the workout's tick
+  log, Tick Logged, the toast) off the `mutateAsync` promise, which settles either way, never off a per-call `mutate`
+  callback, which React Query drops once the caller is gone.
 - The pair holds the row's usual 64 pt, so the board moves only for a climber who switched every small button off.
   The opening-layout cache keys on it (`controlsFingerprint`).
 

@@ -868,9 +868,10 @@
       "sent": "Sent",
       "fellHint": "Logs one try on this climb",
       "sentHint": "Logs this climb as sent",
-      "attemptLogged": "Try logged",
-      "flashLogged": "Flash logged",
-      "sendLogged": "Send logged"
+      "attemptLogged": "Try logged · {{name}}",
+      "flashLogged": "Flash logged · {{name}}",
+      "sendLogged": "Send logged · {{name}}",
+      "wallMovedFirstAscent": "Swipe back to {{name}} to log its first ascent with a grade."
     }
   },
   "mobileDetail": {
