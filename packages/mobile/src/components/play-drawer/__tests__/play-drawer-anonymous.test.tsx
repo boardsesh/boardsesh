@@ -2194,3 +2194,58 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     expect(lastDisplayedClimbUuid()).toBe(queued.uuid);
   });
 });
+
+// The caption beside the back chip (#6667 panel, confusions 1 and 4). The rule
+// is table-tested in `wall-state.test.ts`; what only a render can see is that
+// PlayDrawer feeds it the preview, the crew and the wall it actually has.
+describe('PlayDrawer — the browse caption', () => {
+  function lastCaption(): unknown {
+    const props = recorded.liveHeader.at(-1);
+    if (!props) throw new Error('the live header never rendered');
+    return props.browseCaption;
+  }
+
+  it('says a solo preview is not lit while a climb is on the wall', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = SIMILAR_CLIMB.uuid;
+    wall.name = SIMILAR_CLIMB.name;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBe('playView.wallState.previewNotLit');
+  });
+
+  it('says nothing solo with no board connected and nothing lit', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBeNull();
+  });
+
+  it('tells a crew the look is private and what the wall is on', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = SIMILAR_CLIMB.uuid;
+    wall.name = SIMILAR_CLIMB.name;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBe('playView.wallState.onlyYouSeeThisWallOn');
+  });
+
+  it('says nothing once the climb on screen is the lit one', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = CLIMB.uuid;
+    wall.name = CLIMB.name;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBeNull();
+  });
+
+  it('says nothing to the signed-out reader', () => {
+    session.isShared = true;
+    wall.uuid = SIMILAR_CLIMB.uuid;
+    renderDrawer('anonymous');
+
+    expect(lastCaption()).toBeNull();
+  });
+});

@@ -52,7 +52,7 @@ import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
-import { formatTrackLabel } from './track-label-text';
+import { formatBrowseCaption, formatTrackLabel } from './track-label-text';
 import { TrackEndCard } from './TrackEndCard';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
@@ -69,6 +69,7 @@ import {
   shouldAdoptLateWallRead,
   shouldArmBusyWallConfirm,
   shouldShowHolderBadge,
+  resolveBrowseCaption,
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
 import { useWallClimb } from './use-wall-climb';
@@ -1145,6 +1146,31 @@ export function PlayCore({
   // the way back. On the wall and Live it opens the explainer.
   const wallPillPress = headerPillState === 'browsing' ? handleBackToLive : handleOpenWallCallout;
 
+  // The words beside the back chip while a climb is only being looked at
+  // (`resolveBrowseCaption`). The swipe peeks get their own, so the line the
+  // incoming climb slides in with already says what it will: a peek is a
+  // preview when this one latches, or when a swipe off the committed climb
+  // opens one (a crew, or Light the board as I swipe off).
+  const peekIsPreview = isPreview ? browseLatchActive : !navigationCommits;
+  // Plain strings out, so the memoized headers below compare by value.
+  const browseCaptionFor = (climbUuid: string | null, climbIsPreview: boolean) =>
+    formatBrowseCaption(
+      resolveBrowseCaption({
+        isAnonymous,
+        isPreview: climbIsPreview,
+        climbUuid,
+        committedHeadUuid,
+        wallClimbUuid,
+        wallClimbName: wallClimb.name,
+        inCrew: isSharedSession,
+        wallDriven: lightbulbActive,
+      }),
+      t,
+    );
+  const browseCaption = browseCaptionFor(displayedClimbUuid ?? null, isPreview);
+  const previousBrowseCaption = browseCaptionFor(previousHeaderClimb?.uuid ?? null, peekIsPreview);
+  const nextBrowseCaption = browseCaptionFor(nextHeaderClimb?.uuid ?? null, peekIsPreview);
+
   // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
   // the render board's, which follows the displayed climb).
   //
@@ -1546,6 +1572,7 @@ export function PlayCore({
     onPressSetter: openSetterPlaylist,
     workoutStageLabel,
     trackLabel: currentTrackLabelText,
+    browseCaption,
   });
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
@@ -1982,6 +2009,7 @@ export function PlayCore({
                                 angle={previousHeaderBoard.angle}
                                 workoutStageLabel={previousWorkoutStageLabel}
                                 trackLabel={previousTrackLabelText}
+                                browseCaption={previousBrowseCaption}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -1999,6 +2027,7 @@ export function PlayCore({
                                 angle={nextHeaderBoard.angle}
                                 workoutStageLabel={nextWorkoutStageLabel}
                                 trackLabel={nextTrackLabelText}
+                                browseCaption={nextBrowseCaption}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />

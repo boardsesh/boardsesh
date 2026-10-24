@@ -748,6 +748,9 @@
       "backToCurrent": "Zurück zu deinem Boulder",
       "putOnWall": "Am Board beleuchten",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
+      "previewNotLit": "Vorschau, nicht beleuchtet",
+      "onlyYouSeeThis": "Nur du siehst das",
+      "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
         "body": "Jemand hat gerade {{name}} beleuchtet. Trotzdem deinen beleuchten?",
         "confirm": "Meinen beleuchten",

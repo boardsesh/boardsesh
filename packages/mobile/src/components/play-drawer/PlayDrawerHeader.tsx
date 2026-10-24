@@ -98,6 +98,14 @@ type PlayDrawerHeaderProps = {
    * between a climb that has one and a climb that does not.
    */
   trackLabel?: string | null;
+  /**
+   * What looking at this climb does to the wall, while it is only a preview:
+   * "Preview, not lit", or in a crew "Only you see this · the wall is on Crimp
+   * Ladder" (`resolveBrowseCaption`). Leads the stats line, beside the back
+   * chip, for the same reason the track label rides it: no new line, so the
+   * board never steps when a preview starts or ends.
+   */
+  browseCaption?: string | null;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -123,6 +131,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   angle,
   workoutStageLabel,
   trackLabel,
+  browseCaption,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -144,8 +153,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
-  // The workout stage, then where swipes go: truncation takes the stats from
-  // the end, never these two.
+  // What the wall is doing, the workout stage, then where swipes go:
+  // truncation takes the stats from the end, never these three.
+  if (browseCaption) subtitleParts.push(browseCaption);
   if (workoutStageLabel) subtitleParts.push(workoutStageLabel);
   if (trackLabel) subtitleParts.push(trackLabel);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
@@ -315,6 +325,7 @@ export type LivePlayDrawerHeaderProps = {
   onPressSetter?: () => void;
   workoutStageLabel?: string | null;
   trackLabel?: string | null;
+  browseCaption?: string | null;
 };
 
 type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
@@ -335,6 +346,7 @@ export function useLivePlayDrawerHeaderModel({
   onPressSetter,
   workoutStageLabel = null,
   trackLabel = null,
+  browseCaption = null,
 }: LivePlayDrawerHeaderProps): LivePlayDrawerHeaderModel | null {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
@@ -401,6 +413,7 @@ export function useLivePlayDrawerHeaderModel({
       angle,
       workoutStageLabel,
       trackLabel,
+      browseCaption,
     };
     return Object.freeze({
       headerProps: Object.freeze(headerProps),
@@ -436,6 +449,7 @@ export function useLivePlayDrawerHeaderModel({
     angle,
     workoutStageLabel,
     trackLabel,
+    browseCaption,
     hasLeading,
     hasLongPressName,
     hasSetterAction,

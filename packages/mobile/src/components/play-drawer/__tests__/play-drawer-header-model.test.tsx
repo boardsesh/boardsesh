@@ -174,6 +174,42 @@ describe('prepared live header geometry identity', () => {
     expect(result.current).not.toBeNull();
     expect(reads.stats).toHaveBeenLastCalledWith('kilter', 1, climb.uuid, 40, expect.any(Object), { enabled: true });
   });
+  // The browse caption leads the stats line, beside the back chip, so the
+  // climber reads what looking does to the wall before the list and the stats.
+  it('leads the stats line with the browse caption, then the workout stage and the list', () => {
+    function CaptionedHeader() {
+      const model = useLivePlayDrawerHeaderModel({
+        ...args,
+        browseCaption: 'Only you see this · the wall is on Crimp Ladder',
+        workoutStageLabel: 'Warm-up · 2 of 5',
+        trackLabel: 'From Projects · 4 of 23',
+      });
+      return model ? createElement(PreparedPlayDrawerHeader, { model }) : null;
+    }
+    const rendered = render(createElement(CaptionedHeader));
+    expect(
+      rendered.getByText(
+        (_content, element) =>
+          element?.tagName === 'SPAN' &&
+          element.textContent?.startsWith(
+            'Only you see this · the wall is on Crimp Ladder · Warm-up · 2 of 5 · From Projects · 4 of 23 · ',
+          ) === true &&
+          // The innermost span carrying the whole line, not an ancestor.
+          !Array.from(element.children).some((child) => child.textContent === element.textContent),
+      ),
+    ).toBeTruthy();
+  });
+  it('puts the browse caption in the layout identity, and leaves it out when there is none', () => {
+    const { result, rerender } = renderHook(
+      ({ caption }: { caption: string | null }) => useLivePlayDrawerHeaderModel({ ...args, browseCaption: caption }),
+      { initialProps: { caption: null as string | null } },
+    );
+    const uncaptioned = result.current?.layoutFingerprint;
+    expect(result.current?.headerProps.browseCaption).toBeNull();
+    rerender({ caption: 'Preview, not lit' });
+    expect(result.current?.headerProps.browseCaption).toBe('Preview, not lit');
+    expect(result.current?.layoutFingerprint).not.toBe(uncaptioned);
+  });
   it('renders prepared output without adding a second set of live observers', () => {
     function CurrentHeader() {
       const model = useLivePlayDrawerHeaderModel(args);

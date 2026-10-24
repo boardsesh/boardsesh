@@ -748,6 +748,9 @@
       "backToCurrent": "Volver a tu bloque",
       "putOnWall": "Ponerlo en el muro",
       "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
+      "previewNotLit": "Vista previa, sin encender",
+      "onlyYouSeeThis": "Solo tú lo ves",
+      "onlyYouSeeThisWallOn": "Solo tú lo ves · en el muro: {{name}}",
       "commitOverride": {
         "body": "Alguien acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
         "confirm": "Poner el mío",
