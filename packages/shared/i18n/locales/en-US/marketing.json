@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Make a playlist and climb it in order",
-        "subtitle": "Save climbs for later and load the list into your queue."
+        "subtitle": "Save climbs for later and climb the list in order."
       },
       "build": {
         "title": "Make a playlist",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Climb the whole list",
-        "intro": "Tap a climb in a playlist and your queue becomes that playlist.",
-        "p1": "It loads in order from the climb you tapped. If climbs were queued after your current one, Start playlist? asks first. The header's play button starts from the top.",
+        "intro": "Tap a climb in a playlist and you play from that playlist. Your queue stays as it is.",
+        "p1": "Swipe to walk the list in order from the climb you tapped. The header's play button starts from the top. Add to queue copies the whole list into your queue. To have a tap load the playlist into your queue instead, turn on Tapping a playlist loads it into my queue under Settings, then Board.",
         "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
         "sessionsLink": "How a session shares one queue",
         "clipAlt": "The Start playlist? sheet",
-        "clipCaption": "With climbs already queued, Start playlist? asks first."
+        "clipCaption": "With that switch on and climbs already queued, Start playlist? asks first."
       },
       "smart": {
         "title": "The eight lists Boardsesh builds for you",

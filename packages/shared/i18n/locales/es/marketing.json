@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Monta una playlist y escálala en orden",
-        "subtitle": "Guarda bloques para luego y carga la lista en tu cola."
+        "subtitle": "Guarda bloques para luego y escala la lista en orden."
       },
       "build": {
         "title": "Crear una playlist",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Escalar la lista entera",
-        "intro": "Toca un bloque de una playlist y tu cola pasa a ser esa playlist.",
-        "p1": "Se carga en orden desde el bloque que tocaste. Si tenías bloques en cola después del actual, ¿Iniciar playlist? pregunta primero. El botón de play de la cabecera empieza desde arriba.",
+        "intro": "Toca un bloque de una playlist y recorres esa playlist. Tu cola se queda como está.",
+        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Añadir a la cola copia la lista entera en tu cola. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón.",
         "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
         "sessionsLink": "Cómo una sesión comparte una sola cola",
         "clipAlt": "La hoja ¿Iniciar playlist?",
-        "clipCaption": "Con bloques ya en cola, ¿Iniciar playlist? pregunta primero."
+        "clipCaption": "Con ese ajuste activado y bloques ya en cola, ¿Iniciar playlist? pregunta primero."
       },
       "smart": {
         "title": "Las ocho listas que Boardsesh monta por ti",

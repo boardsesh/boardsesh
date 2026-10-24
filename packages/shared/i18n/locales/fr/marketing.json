@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Crée une playlist et grimpe-la dans l'ordre",
-        "subtitle": "Garde des blocs pour plus tard et charge la liste dans ta file."
+        "subtitle": "Garde des blocs pour plus tard et grimpe la liste dans l'ordre."
       },
       "build": {
         "title": "Créer une playlist",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Grimper toute la liste",
-        "intro": "Touche un bloc dans une playlist et ta file devient cette playlist.",
-        "p1": "Elle se charge dans l'ordre à partir du bloc touché. Si des blocs suivaient le tien dans la file, Lancer la playlist ? demande d'abord. Le bouton lecture de l'en-tête part du début.",
+        "intro": "Touche un bloc dans une playlist et tu parcours cette playlist. Ta file reste telle quelle.",
+        "p1": "Fais défiler pour parcourir la liste dans l'ordre à partir du bloc touché. Le bouton lecture de l'en-tête part du début. Ajouter à la file copie toute la liste dans ta file. Pour qu'un toucher charge plutôt la playlist dans ta file, active Toucher une playlist la charge dans ma file dans Paramètres, puis Board.",
         "p2": "En session, toucher n'ouvre le bloc que pour toi. La file partagée ne bouge pas.",
         "sessionsLink": "Comment une session partage une seule file",
         "clipAlt": "La fiche Lancer la playlist ?",
-        "clipCaption": "Avec des blocs déjà en file, Lancer la playlist ? demande d'abord."
+        "clipCaption": "Avec ce réglage activé et des blocs déjà en file, Lancer la playlist ? demande d'abord."
       },
       "smart": {
         "title": "Les huit listes que Boardsesh monte pour toi",

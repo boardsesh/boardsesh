@@ -64,8 +64,9 @@ Player wording is being agreed with #6229. Until then this page uses these words
 
 The two lighting settings, in Settings: **Light problems when tapping the list**
 (`lightOnClimbTap`) and **Light problems on swipe** (`lightOnSwipe`). Both default to on
-(`src/settings/defaults.ts:18-19`). This page shortens them to Light on tap and Light on
-swipe.
+(`src/settings/defaults.ts:20-21`). This page shortens them to Light on tap and Light on
+swipe. Since F4 the same Board lighting group has **Tapping a playlist loads it into my
+queue** (`playlistTapLoadsQueue`), default off; this page calls it the playlist switch.
 
 ## Today, surface by surface
 
@@ -87,9 +88,9 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 
 | Surface | How you get there | Tap (solo) | Next after the tap | End of the list |
 | --- | --- | --- | --- | --- |
-| Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1329`). Since F2, with Light on tap off: a preview with the results as its track (`src/lib/playlists/use-playlist-activation.ts:1213`). | Walks the results | Track end. The first load holds about 250 climbs after the tapped one (rounded up to a page of 100); since F1 one more page loads as the climber nears its end, up to the first 1,000 results. |
-| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Replaces the queue with the setter's climbs this board can draw; "Start playlist?" first if anything is queued after the current climb (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). Light on tap off does not change it until F4. | Walks the list, which the queue now holds climb for climb, under the setter's name | Track end |
-| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The Material app bar's play button does the same with the first climb. The **Add to queue** row appends instead. With a sort or filter on, all three use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
+| Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1329`). Since F2, with Light on tap off: a preview with the results as its track (`src/lib/playlists/use-playlist-activation.ts:1311`). | Walks the results | Track end. The first load holds about 250 climbs after the tapped one (rounded up to a page of 100); since F1 one more page loads as the climber nears its end, up to the first 1,000 results. |
+| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Since F4: commits, flagged `suggested`, with the setter's climbs as the track, named after the setter, and leaves the rest of the queue alone (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). With Light on tap off: a preview with the same track. With the playlist switch on: replaces the queue with the setter's climbs this board can draw, after "Start playlist?" if anything is queued after the current climb; there, Cancel previews the tapped climb and Add to queue appends the list and plays the tapped climb from it. | Walks the list, under the setter's name | Track end |
+| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The header's **Play** button (both looks since F4) does the same with the first climb, and ignores Light on tap. The **Add to queue** row appends the whole list, with or without the switch. With a sort or filter on, all three use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
 | For You and smart lists (Projects, Liked Climbs and the rest) | Discover › For You | As the setter page (`app/(tabs)/discover/smart/[type].tsx:119-128`) | As the setter page | As the setter page |
 | Logbook | You › Logbook, someone's logbook | Since F2: commits, flagged `suggested`, with the logbook's rows as the track, named "Logbook" (`src/components/you/LogbookTab.tsx:574`, through `src/lib/playlists/use-tick-list-activation.ts`). A tick on another board model opens as a preview on its own board. The tapped tick is drawn at the size and angle it was climbed at. With Light on tap off: a preview with the same track. | Walks the rows on screen, in their order (one entry per climb) | Track end. The track pages on through the logbook's own feed as the climber nears its end (`src/lib/playlists/loaded-list-pages.ts`). |
 | Session detail | Home session card, You › Sessions | As the logbook, named "Session climbs" (`src/components/session/SessionDetailScreen.tsx:91`) | Walks the session's ticks | Track end |
@@ -107,7 +108,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Surface | In a crew today (flag off) | In a crew, flag on | Row swipes | Long-press |
 | --- | --- | --- | --- | --- |
 | Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Right: add to queue. Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
-| Setter page, playlist, For You | Replaces the whole room's queue | Preview with the loaded rows as the track; Next stops at the last loaded row | As search; rows the board can't show still swipe | Climb menu |
+| Setter page, playlist, For You | Commits for the whole room (F4); with Light on tap off, a preview. With the playlist switch on, replaces the whole room's queue | Preview with the loaded rows as the track; Next stops at the last loaded row | As search; rows the board can't show still swipe | Climb menu |
 | Logbook | Commits for the whole room | Preview with the logbook as the track (F2) | Right: edit the tick. Left: delete it. Your own ticks only. | Climb menu, plus Edit |
 | Session detail, profile climbs, Home session card | Commits for the whole room | Preview with that list as the track (F2) | None | Climb menu |
 | Home new-climb card | Trackless preview | Trackless preview | None | None |
@@ -225,10 +226,11 @@ Mobile paths are under `packages/mobile/`.
 
 ### 1. A row tap does one of five things
 
-Fixed by F2 (#6665) for every list but the playlists' replace (F4): the logbook, session
-detail, profile climbs, Home and Sessions cards, board history, Record's history and similar
-climbs play from their own list through the activation hook, as search does, and every list
-but playlists, For You and setter pages reads Light on tap (`src/lib/playlists/use-playlist-activation.ts:1213`). The board history
+Fixed by F2 (#6665) and F4 (#6667): the logbook, session detail, profile climbs, Home and
+Sessions cards, board history, Record's history and similar climbs play from their own list
+through the activation hook, as search does, and since F4 so do playlists, For You and setter
+pages, which replace the queue only with the playlist switch on. Every list reads Light on tap
+(`src/lib/playlists/use-playlist-activation.ts:1311`). The board history
 sheet and Record's history stop taking the wall in a crew. Home's new-climb card and the
 workout preview are still trackless previews. What follows is how it was.
 
@@ -325,9 +327,10 @@ Home cards and similar climbs open a private preview. Three places still didn't 
 
 - Record's in-session history: `InSessionView.tsx:432-446`. Its comment says "Always-live".
 - The board history sheet and the iPad wall column: `drawer-host-provider.tsx:1050-1063`.
-- The Material "Start playlist" header button calls the row-tap path with the first climb
-  (`src/components/playlist/PlaylistDetailView.tsx:374-378`). With the flag on, in a crew that
-  path previews, so the button labelled Start playlist only shows climb 1.
+- The playlist header's Play button (Start playlist before F4) calls the row-tap path with the
+  first climb (`handleActivateAll` in `src/components/playlist/PlaylistDetailView.tsx`). With
+  the flag on, in a crew that path previews, so the button only shows climb 1. Since F4 that is
+  deliberate: Play skips Light on tap, never the crew rule.
 
 Two smaller gaps: list screens read the crew state at the moment of the tap, while the
 logbook, sessions, profile and similar climbs read the player's browse latch. The latch arms
@@ -380,6 +383,11 @@ _Left and middle: a Climbs row half-swiped right (1, Add to queue) and left (2, 
 
 ### 7. Playlists differ by platform
 
+Fixed by F4 (#6667): the Liquid Glass header has the same Play button
+(`PlaylistPlayHeaderButton`, next to the ≡ filter button and the playlist's own controls), shown
+under the same conditions: the list has climbs, no switch-board banner, not editing. What
+follows is how it was.
+
 Only the Material look (Android's default) has a play-all button, in its app bar:
 `PlaylistDetailView.tsx:708-716`. The Liquid Glass header (iOS) carries only the follow, pin
 and owner controls (`:324-326`), and its list header has the Add to queue row but no play
@@ -390,7 +398,7 @@ from the top" (`marketing.json` `help.playlists.queue.p1`).
 
 _The same playlist in the Liquid Glass look (left, the iOS default) and the Material look (right, the Android default). (1) Material's play button, which starts the playlist from the top. (2) The Liquid Glass header has Follow and Pin, and no play button. Material's app bar drawing at the bottom of the screen looks like a separate bug._
 
-The "Start playlist?" prompt, which the model removes:
+The "Start playlist?" prompt. Since F4 it only appears with the playlist switch on:
 
 <img src="images/list-model/start-playlist-sheet.png" alt="The Start playlist? prompt" width="300">
 
@@ -505,9 +513,9 @@ player names that list, walks it, and stops at its end card.
 | Surface                                  | Today                                                                                     | After                                                                                              |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Search results | Inserts the climb into the queue (a second copy if it was already queued) and walks the results, named "From Search results", to the end card (F1). With Light on tap off or in a crew, a preview that walks the results (F2). | Plays from the results. Nothing is added to Up next (F1, F3). |
-| Playlist                                 | Replaces the queue, after "Start playlist?" if anything is queued, and walks it as the named playlist to the end card (F1). Play-all on Material only. | Plays from the playlist. Play button in both looks. Add to queue copies it in. The switch keeps today's replace (F4). |
-| For You and smart lists                  | Replaces the queue, same prompt; walks it as the named list (F1).                         | Plays from the list (F4).                                                                          |
-| Setter page                              | Replaces the queue, same prompt; walks it as the setter's list (F1).                      | Plays from the setter's list (F4).                                                                 |
+| Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Add to queue copies it in. The playlist switch keeps the old replace, and its prompt's Cancel and Add to queue now open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
+| For You and smart lists                  | As the playlist (F4); the track pages the board the rows on screen were read on.           | Plays from the list (F3).                                                                          |
+| Setter page                              | As the playlist (F4); the track pages with the same cross-angle stats as the list.         | Plays from the setter's list (F3).                                                                 |
 | Logbook | Inserts the climb and plays from the logbook, named "Logbook", to the end card; a preview with the same track with Light on tap off or in a crew (F2). | Plays from the logbook. Nothing is added to Up next (F2, F3). |
 | Session detail | Inserts the climb and plays from the session's ticks (F2). | Plays from the session's ticks (F2, F3). |
 | Profile climbs | Inserts the climb and plays from the profile list (F2). | Plays from the profile list (F2, F3). |
@@ -524,16 +532,17 @@ every row above (F5).
 
 ## Preferences
 
-No new settings ship with this page. The model keeps what exists and plans one switch.
+The model keeps what exists and adds one switch, which shipped with F4.
 
 | Setting                                     | Status                    | What it does                                                                                                                                                         |
 | ------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Light problems when tapping the list        | Exists, default on        | Off: a tap opens a preview instead of lighting the board, and the preview still walks the list it came from. Since F2 every list reads it, at the tap (`src/lib/playlists/use-playlist-activation.ts:1213`); before, only search results did. Playlists, For You and setter pages still ignore it and replace the queue until F4: on Liquid Glass a row tap is the only way to start one, and a preview puts up one climb, not the list. |
+| Light problems when tapping the list        | Exists, default on        | Off: a tap opens a preview instead of lighting the board, and the preview still walks the list it came from. Since F2 every list reads it, at the tap (`src/lib/playlists/use-playlist-activation.ts:1311`); before, only search results did. Since F4 playlists, For You and setter pages read it too. The header Play button and a tap with the playlist switch on skip it: a preview puts up one climb, not the list. |
 | Light problems on swipe                     | Exists, default on        | Off: swipes in the player stay Browsing (`play-drawer-navigation.ts:67`).                                                                                            |
-| Tapping a playlist loads it into my queue   | Planned in F4, default off | Keeps today's behaviour for climbers who want it: a playlist, For You or setter tap replaces the queue with that list. Off, the tap plays from the list (rule 5). |
+| Tapping a playlist loads it into my queue   | Exists since F4, default off | On: a playlist, For You or setter tap (and their Play button) replaces the queue with that list, the behaviour before F4, after "Start playlist?" when anything is queued after the current climb. Off: the tap plays from the list (rule 5). In Settings › Board lighting, under Light on tap (`playlistTapLoadsQueue`, read at the tap). |
 | End of list: stop or continue into my queue | Rejected                  | The end card (rule 2) offers both on the spot, so a setting would only hide the choice.                                                                             |
 
-F1, F2, F3 and F5 change behaviour for everyone without a switch. Each one fixes an open bug
+F1, F2, F3 and F5 change behaviour for everyone without a switch; F4 changes it too, with
+the playlist switch for climbers who want the old replace. Each one fixes an open bug
 report (#3841, #5157, #4979, #5924), so they are bug fixes rather than tastes. F6 only adds
 labels.
 
@@ -579,7 +588,7 @@ A race found while filing them is #6670: swiping before a playlist finishes load
 | F1 | The player names the list it is walking and stops at its end with "Keep going with your queue (N)".                     | Closes #3841                   | Header wording with #6229. Removes the 250-climb track cap or pages past it. Today only a committed climb falls back into the queue at a list's end; previews (wrong board, crew) stop dead, so the end card needs its own way into the queue for them. |
 | F2 | Every list opens a climb the same way. Record history and the board history sheet stop taking a crew's wall.            | Closes #5157                   | **Done** (#6665). Home taps follow F2 (#6289). The crew half only reaches climbers once `shared-session-browse` is turned on; that ramp is its own decision. The board history track stops at what the sheet had loaded; it does not page older history yet. |
 | F3 | Looking at a climb stops adding it to Up next, opening a climb that is already queued stops adding a second copy, and connecting after a long gap doesn't light an old climb. | #4979                          | Risk 4/5: changes what the server's queue holds. Option (b) above.            |
-| F4 | Playlists, For You and setter pages play from the list without wiping the queue. The iOS playlist header gets a play button. | Rescopes #3511              | Adds the "Tapping a playlist loads it into my queue" switch, default off.     |
+| F4 | Playlists, For You and setter pages play from the list without wiping the queue. The iOS playlist header gets a play button. | Rescopes #3511              | **Done** (#6667). Adds the "Tapping a playlist loads it into my queue" switch, default off. Capping the replace at the 500-climb queue limit is #6673. |
 | F5 | Closing the player returns you to the list and scroll position you came from.                                            | Closes #5924                   |                                                                                |
 | F6 | The queue sheet labels Up next, History and Suggestions.                                                                 | —                              | Also fixes the stale swipe comment in `persistent-queue-bar.tsx:10`.          |
 
