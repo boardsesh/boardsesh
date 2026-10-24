@@ -140,6 +140,9 @@ export function upNextOf<TItem extends NowSlotQueueItem>(state: NowSlotState<TIt
  * `MAX_SYNCED_QUEUE_ITEMS`. `addQueueItem` rejects with {@link QUEUE_FULL} at
  * `adding = 1`; a `setQueue` or `joinSession` seed with a climb current throws
  * at `adding = 0`.
+ *
+ * Call {@link normaliseOrphanCurrent} first: an orphan current climb counts as
+ * nothing current, so it is left out of the Now + Up next count.
  */
 export function isUpNextFull<TItem extends NowSlotQueueItem>(state: NowSlotState<TItem>, adding = 1): boolean {
   const nowAndUpNextCount = state.queue.length - historyLine(state);
@@ -238,8 +241,9 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * | `item.uuid` is the current climb                           | any           | `none`           |
  * | `item.uuid` is Up next[0]                                  | any           | `next`           |
  * | `queue[0]`, nothing current, line >= 1, Up next not empty, |               |                  |
- * |   `shouldAddToQueue` not `true` (an old phone's Next)      | absent        | `next-from-line` |
+ * |   `shouldAddToQueue: false` (an old phone's Next)          | absent        | `next-from-line` |
  * | `item.uuid` is the last History entry                      | `STEP`/absent | `step`           |
+ * | the last History entry, nothing current (already on line)  | `NOW`         | `step`           |
  * | in History, not last, a climb current                      | `STEP`/absent | `step`           |
  * | in History, not last, nothing current                      | `STEP`/absent | `move-history`   |
  * | `item.uuid` is in History                                  | `NOW`         | `move-history`   |
@@ -251,7 +255,11 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * | `item: null`                                               | -             | `clear`          |
  *
  * `step` and `next` are pointer moves; `next-from-line` lights Up next[0], not
- * the climb named. A reused entry keeps its own uuid, `addedByUser`, `tickedBy`
+ * the climb named. Only an explicit `false` reads as an old phone's Next:
+ * every shipped JS sender passes a boolean, while the native socket sends no
+ * `shouldAddToQueue` and its Previous can name `queue[0]` after a
+ * `CurrentClimbChanged(null)` (Swift keeps the cleared climb's index). A
+ * reused entry keeps its own uuid, `addedByUser`, `tickedBy`
  * and mirror flag: the returned `currentClimbQueueItem` is the array's own
  * entry, except for `insert`, where it is `item`. `shouldAddToQueue` only
  * tells a row tap (`true`) from an old Next; it never decides whether the climb
@@ -284,7 +292,7 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
       line >= 1 &&
       firstUpNext < queue.length &&
       placement == null &&
-      shouldAddToQueue !== true;
+      shouldAddToQueue === false;
     // With nothing current a shipped Next names queue[0], the oldest History
     // climb. Light the climb a new phone's Next picks instead of spilling
     // History into Up next.
@@ -294,8 +302,12 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
       // keep today's pointer move while a climb is current (decision 3). With
       // nothing current a pointer move would spill History into Up next, so
       // only History's last entry steps.
-      const isPointerStep = existingIndex === line - 1 || hasCurrent;
+      const isLastHistory = existingIndex === line - 1;
+      const isPointerStep = isLastHistory || hasCurrent;
       if (placement !== 'NOW' && isPointerStep) return pointerTo(queue, existingIndex, 'step');
+      // NOW on History's last entry with nothing current: it already sits on
+      // the line, so the move leaves the array as it is. Report the pointer.
+      if (isLastHistory && !hasCurrent) return pointerTo(queue, existingIndex, 'step');
       return moveIntoNow(queue, line, hasCurrent, existingIndex, 'move-history');
     }
     return moveIntoNow(queue, line, hasCurrent, existingIndex, 'move-up-next');
@@ -340,6 +352,10 @@ export type CappedHistory<TItem extends NowSlotQueueItem> = NowSlotResolvedState
  *
  * `headroom` is the number of entries about to be added (1 before
  * `addQueueItem`); 0 after a placement that already added its entry.
+ *
+ * Call {@link normaliseOrphanCurrent} first (a `setQueue` / `joinSession`
+ * payload): an orphan current climb counts as nothing current, and it is
+ * passed through as an orphan.
  */
 export function capHistory<TItem extends NowSlotQueueItem>(
   state: NowSlotState<TItem>,
@@ -360,7 +376,9 @@ export function capHistory<TItem extends NowSlotQueueItem>(
 
 /**
  * A change to the array, applied as given. `add` and `reorder` indexes are in
- * the final array; `trim` drops the oldest `count` entries; `clear` is
+ * the final array: for `add` that is the resolved insert index (after
+ * {@link clampInsertPosition} or the append fallback), not the wire
+ * `position`. `trim` drops the oldest `count` entries; `clear` is
  * `setCurrentClimb(null)`.
  */
 export type QueueLineDelta =
@@ -398,8 +416,10 @@ export function lineAfterDelta<TItem extends NowSlotQueueItem>(
 
   switch (delta.kind) {
     case 'add': {
-      if (hasCurrent) return delta.index <= currentIndex ? currentIndex + 1 : currentIndex;
-      return delta.index < line ? line + 1 : line;
+      // An out-of-range index appends, as `insertQueueItemIdempotent` does.
+      const addedIndex = delta.index >= 0 && delta.index <= queueLength ? delta.index : queueLength;
+      if (hasCurrent) return addedIndex <= currentIndex ? currentIndex + 1 : currentIndex;
+      return addedIndex < line ? line + 1 : line;
     }
     case 'remove': {
       const removedIndex = state.queue.findIndex((queueItem) => queueItem.uuid === delta.uuid);

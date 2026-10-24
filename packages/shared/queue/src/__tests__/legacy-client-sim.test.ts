@@ -1218,6 +1218,13 @@ const deviceOperations: Operation<null>[] = [
       const item = crew.server.state.queue.find(({ uuid }) => uuid === items[target].uuid);
       if (!item) throw new Error('swift list out of step with the server');
       crew.server.setCurrentClimb({ item, clientId: crew.swift.clientId, correlationId: 'swift-navigation' });
+      // A lock-screen press lights the climb it named, never Up next[0] in its
+      // place (the native socket sends no shouldAddToQueue).
+      if (crew.server.state.currentClimbQueueItem?.uuid !== item.uuid) {
+        throw new Error(
+          `lock-screen press named ${item.uuid}, server lit ${crew.server.state.currentClimbQueueItem?.uuid}`,
+        );
+      }
       return 'lock-screen Next / Previous';
     },
   ],
@@ -1382,6 +1389,27 @@ describe('the simulation’s own guard', () => {
     );
     expect(uuidsOf(legacy.queue)).toEqual(['A', 'B', 'C-prime', 'C']);
     expect(uuidsOf(placed.queue)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('a lock-screen Previous after a clear lights the climb it named, not Up next[0]', () => {
+    // Swift ignores CurrentClimbChanged(null) and keeps the cleared climb's
+    // index, so its Previous from History [A B] names queue[0] = A with no
+    // shouldAddToQueue. That must not be read as an old phone's Next.
+    const [itemA, itemB, itemC, itemD] = ['A', 'B', 'C', 'D'].map((uuid, index) => ({
+      uuid,
+      climb: makeClimb(index + 1, 40, undefined),
+    }));
+    const queue = [itemA, itemB, itemC, itemD];
+    const onB: SwiftQueueState = { items: queue.map(toSwiftQueueItem), currentIndex: 1 };
+    const afterClear = swiftApply({ kind: 'currentClimbChanged', item: null, sequence: 2 }, onB);
+    expect(afterClear.currentIndex).toBe(1);
+
+    const named = queue[afterClear.currentIndex - 1];
+    const before = { queue, currentClimbQueueItem: null, historyCount: 2 };
+    const placed = placeOnWall(before, named);
+    expect(placed.currentClimbQueueItem?.uuid).toBe('A');
+    expect(placed.rewrite).toBe('move-history');
+    expect(chooseQueueEvent(before, { item: named }, placed)).toBe('fullsync+trailing');
   });
 
   it('a stale CurrentClimbChanged at the same sequence as its FullSync is dropped by JS and applied by Swift', () => {
