@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// The list-play hook has its own suite; here a tap only has to reach it.
+vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
 import { render, act } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';

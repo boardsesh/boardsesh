@@ -5,6 +5,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { PlayDrawerOpenOptions } from '../play-drawer-types';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { usePlaySelectionController } from '../use-play-selection-controller';
+import { setSetting } from '../../../settings/hooks';
 
 const authority = vi.hoisted(() => ({ privacy: 0, uuid: 0, platform: 'ios', announce: vi.fn() }));
 vi.mock('react-native', () => ({
@@ -61,10 +62,10 @@ function inputs(): SelectionInputs {
     queue: {
       currentClimbQueueItem: item('current'),
       setCurrentClimb: vi.fn(),
-      addToQueue: vi.fn(async () => 'added' as const),
       previousClimb: vi.fn(),
       nextClimb: vi.fn(),
     },
+    similarTrack: { boardKey: 'kilter:1:10:1,2', label: 'Similar climbs' },
     navigation: {
       navigationState: { prevItem: item('previous'), nextItem: item('next') },
       lightOnSwipe: true,
@@ -96,6 +97,7 @@ beforeEach(() => {
   authority.uuid = 0;
   authority.platform = 'ios';
   authority.announce.mockClear();
+  setSetting('lightOnClimbTap', true);
 });
 
 describe('host target application', () => {
@@ -321,62 +323,74 @@ describe('explicit wall commitment', () => {
   });
 });
 
+// Issue #6665: a similar climb plays from the similar-climbs strip, and the
+// tap never appends it to the end of the queue.
 describe('similar-climb selection', () => {
-  it.each(['anonymous', 'crew'] as const)('keeps a %s reader on the preview path', async (kind) => {
-    const initialProps = inputs();
-    if (kind === 'anonymous') initialProps.viewer = 'anonymous';
-    if (kind === 'crew') initialProps.navigation.browseByDefault = true;
-    const { result } = renderHook(usePlaySelectionController, { initialProps });
-    await act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb));
-    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
-      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'similar' }) }),
-    );
-    expect(initialProps.queue.addToQueue).not.toHaveBeenCalled();
-    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
-  });
+  const strip = () => [item('similar-a').climb, item('similar').climb, item('similar-b').climb] as Climb[];
 
-  it('activates only after an accepted cross-board prompt', async () => {
+  it.each(['anonymous', 'crew', 'light-on-tap off', 'another board'] as const)(
+    'previews with the strip as its track for %s',
+    (kind) => {
+      const initialProps = inputs();
+      if (kind === 'anonymous') initialProps.viewer = 'anonymous';
+      if (kind === 'crew') initialProps.navigation.browseByDefault = true;
+      if (kind === 'light-on-tap off') setSetting('lightOnClimbTap', false);
+      if (kind === 'another board') initialProps.showBoardMismatch = true;
+      const { result } = renderHook(usePlaySelectionController, { initialProps });
+
+      act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+
+      expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'similar' }) }),
+      );
+      expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(
+        expect.objectContaining({
+          playlistUuid: 'similar:preview',
+          activatedClimbUuid: 'similar',
+          boardKey: 'kilter:1:10:1,2',
+          label: 'Similar climbs',
+          climbs: strip(),
+        }),
+      );
+      expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    },
+  );
+
+  it('puts the climb up solo, playing from the strip, without appending it to the queue', () => {
     const initialProps = inputs();
     const { result } = renderHook(usePlaySelectionController, { initialProps });
-    await act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb));
-    expect(initialProps.queue.addToQueue).toHaveBeenCalledOnce();
+
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+
+    // setCurrentClimb inserts after the current climb; nothing goes to the end.
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledTimes(1);
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
-      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'similar' }) }),
-      { playlistSuggestionSource: null },
+      expect.objectContaining({ suggested: true, climb: expect.objectContaining({ uuid: 'similar' }) }),
+      {
+        playlistSuggestionSource: expect.objectContaining({
+          activatedClimbUuid: 'similar',
+          label: 'Similar climbs',
+          climbs: strip(),
+        }),
+      },
     );
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
     expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
+    expect(initialProps.chrome.setIsTickBarActive).toHaveBeenCalledWith(false);
   });
 
-  it('preserves the displayed preview if the prompt is cancelled', async () => {
+  it('keeps one handler across player moves and keys the track on the climb shown at tap time', () => {
     const initialProps = inputs();
-    initialProps.queue.addToQueue = vi.fn(async () => 'cancelled' as const);
-    const { result } = renderHook(usePlaySelectionController, { initialProps });
-    await act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb));
-    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
-    expect(initialProps.preview.setDrawerPreviewItem).not.toHaveBeenCalled();
-    expect(initialProps.chrome.clearMirror).not.toHaveBeenCalled();
-  });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    const firstHandler = result.current.handleSimilarClimbPress;
 
-  it('rejects an asynchronous prompt result after privacy withdrawal', async () => {
-    const initialProps = inputs();
-    let resolveAdd!: (result: 'added' | 'cancelled') => void;
-    initialProps.queue.addToQueue = vi.fn(
-      () =>
-        new Promise<'added' | 'cancelled'>((resolve) => {
-          resolveAdd = resolve;
-        }),
-    );
-    const { result } = renderHook(usePlaySelectionController, { initialProps });
-    const pending = result.current.handleSimilarClimbPress(item('similar').climb as Climb);
-    authority.privacy++;
-    await act(async () => {
-      resolveAdd('added');
-      await pending;
+    rerender({ ...initialProps, confirmation: { ...initialProps.confirmation, displayedClimbUuid: 'moved-to' } });
+
+    expect(result.current.handleSimilarClimbPress).toBe(firstHandler);
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), {
+      playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'similar:moved-to' }),
     });
-    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
-    expect(initialProps.preview.setDrawerPreviewItem).not.toHaveBeenCalled();
-    expect(initialProps.chrome.clearMirror).not.toHaveBeenCalled();
   });
 });
 

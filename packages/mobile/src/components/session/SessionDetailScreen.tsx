@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -18,12 +18,13 @@ import { SessionBetaCarousel } from './SessionBetaCarousel';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionTickRow } from './SessionTickRow';
 import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/graphql/hooks';
-import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { getSoleBoardType } from '../../lib/grade-label';
+
+const EMPTY_TICKS: SessionDetailTick[] = [];
 
 // Hoisted so FlashList gets a stable reference across renders.
 const keyExtractor = (tick: SessionDetailTick) => tick.uuid;
@@ -40,8 +41,6 @@ export default function SessionDetailScreen() {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const navigation = useNavigation();
-  const router = useRouter();
-  const { openPlayDrawer } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   // Session detail is a pushed route without queue/accessory chrome. Use the
   // floating-control metric so the final row clears whichever tab bar is actually
@@ -87,10 +86,13 @@ export default function SessionDetailScreen() {
 
   const handleOpenSessionComments = useCallback((id: string) => openComments(id, 'session'), [openComments]);
 
-  const handleTickPress = useCallback(
-    (tick: SessionDetailTick) => openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router }),
-    [openPlayDrawer, router],
-  );
+  // A tick opens playing from this session's ticks, in the order listed: every
+  // tick is loaded, so the track is the whole session (issue #6665).
+  const handleTickPress = useTickListActivation<SessionDetailTick>({
+    sourceId: `session:${sessionId ?? ''}`,
+    label: t('playView.track.sessionClimbs'),
+    rows: session?.ticks ?? EMPTY_TICKS,
+  });
 
   // Stable per-row factory so the memoized `SessionTickRow`s keep their identity
   // across re-renders — a fresh inline arrow would force FlashList to re-evaluate

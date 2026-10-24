@@ -61,7 +61,8 @@ type DeferredSectionsProps = {
   sections?: PlayDrawerSectionsVisibility;
   /** The climber's order for the sections below the fold. */
   order?: readonly BelowFoldSectionId[];
-  onSimilarClimbPress: (climb: Climb) => void;
+  /** A similar climb was tapped; `similarClimbs` is the strip as a list to play from. */
+  onSimilarClimbPress: (climb: Climb, similarClimbs: Climb[]) => void;
   /** Reports the measured height of the first visible section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
   onFirstSectionHeaderLayout?: (height: number) => void;

@@ -9,6 +9,7 @@ const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
   participantId: 'participant-self' as string | null,
   activeClimbUuid: null as string | null,
+  isSharedSession: false,
   setCurrentClimb: vi.fn(),
   addToQueue: vi.fn(),
   setSessionBoardPath: vi.fn(async () => {}),
@@ -282,7 +283,7 @@ vi.mock('../bluetooth-provider', () => ({
 }));
 
 vi.mock('../queue-provider', () => ({
-  useIsSharedSession: () => false,
+  useIsSharedSession: () => queue.isSharedSession,
   useActiveClimbUuid: () => queue.activeClimbUuid,
   useQueueActions: () => ({
     addToQueue: queue.addToQueue,
@@ -376,6 +377,7 @@ import {
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { setSetting } from '../../settings/hooks';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -745,6 +747,8 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
 
 describe('DrawerHostProvider board sheet climb actions', () => {
   beforeEach(() => {
+    queue.isSharedSession = false;
+    setSetting('lightOnClimbTap', true);
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
@@ -806,6 +810,57 @@ describe('DrawerHostProvider board sheet climb actions', () => {
           angle: 40,
         }),
       });
+    });
+  });
+
+  // Issue #6665: the wall's history is a list like any other.
+  const wallTrack = {
+    playlistUuid: 'wall-history:kilter:1:10:1,2:40',
+    activatedClimbUuid: 'climb-x',
+    boardKey: 'kilter:1:10:1,2',
+    climbs: [],
+    label: 'Wall history',
+  } as PlaylistSuggestionSource;
+
+  it('plays a board-sheet climb from the wall history it was tapped in', async () => {
+    renderHost(() => {});
+    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    act(() => {
+      getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack }));
+    });
+
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }), {
+      playlistSuggestionSource: wallTrack,
+    });
+  });
+
+  it.each([
+    ['in a crew', true, true],
+    ['with Light problems when tapping the list off', false, false],
+  ] as const)('opens a preview with the wall history and leaves the wall alone %s', async (_case, crew, light) => {
+    queue.isSharedSession = crew;
+    setSetting('lightOnClimbTap', light);
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      () => {},
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    act(() => {
+      getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+    });
+
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    expect(routes.at(-1)?.playTarget?.options).toEqual({
+      // The wall climb's own queue entry, so putting it up queues no second copy.
+      previewQueueItem: expect.objectContaining({ uuid: 'wall-queue-x', climb }),
+      previewIsWallClimb: true,
+      playlistSuggestionSource: wallTrack,
     });
   });
 

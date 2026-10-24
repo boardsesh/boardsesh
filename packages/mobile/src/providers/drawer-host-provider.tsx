@@ -55,7 +55,8 @@ import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
 import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
-import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { getSetting } from '../settings/hooks';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
@@ -479,6 +480,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
+  // Read at a board-sheet tap, which must not take a crewmate's wall (#6665).
+  const isSharedSession = useIsSharedSession();
+  const isSharedSessionRef = useRef(isSharedSession);
+  isSharedSessionRef.current = isSharedSession;
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
   const setBoardAngle = useSetBoardAngle();
@@ -1056,15 +1061,29 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [boardConfigOverride],
   );
 
+  // A board-history row (the sheet and the iPad wall column) plays from the
+  // wall's history like any list (issue #6665): swipes walk back through what
+  // was lit. Like every list it reads Light problems when tapping the list, and
+  // in a crew it opens a preview, so looking never takes a crewmate's wall.
+  // The queue entry the wall's climb already has is reused either way, so
+  // putting it up from the preview doesn't queue a second copy.
   const handleBoardSheetClimbPress = useCallback(
     (action: BoardSheetClimbAction) => {
       const item = climbToQueueItem(action.climb, { uuid: action.queueItemUuid ?? undefined });
       const boardConfigOverride = boardConfigsMatch(action.boardConfig, storedActiveBoardConfigRef.current)
         ? undefined
         : action.boardConfig;
-      // Opening from the board sheet means "walk the queue" — drop any list
-      // source so next/previous follow the queue again, not a stale list.
-      setCurrentClimb(item, { playlistSuggestionSource: null });
+      const track = action.track ?? null;
+      if (isSharedSessionRef.current || !getSetting('lightOnClimbTap')) {
+        openPlayDrawer(action.climb, {
+          previewQueueItem: item,
+          previewIsWallClimb: action.isWallClimb ?? false,
+          playlistSuggestionSource: track,
+          boardConfig: boardConfigOverride,
+        });
+        return;
+      }
+      setCurrentClimb(item, { playlistSuggestionSource: track });
       openPlayDrawer(action.climb, {
         committedExternally: true,
         boardConfig: boardConfigOverride,

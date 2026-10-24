@@ -25,6 +25,8 @@ function flattenStyles(styles: unknown): Record<string, unknown> {
   return Object.assign({}, ...[styles].flat(10).filter(Boolean));
 }
 
+// The list-play hook has its own suite; here a tap only has to reach it.
+vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   useWindowDimensions: () => ({ fontScale: 1 }),
@@ -91,7 +93,6 @@ vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () =>
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
-vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ renderBoardToPlaylistConfig: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => {

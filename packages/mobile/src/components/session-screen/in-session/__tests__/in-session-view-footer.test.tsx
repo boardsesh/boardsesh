@@ -34,11 +34,22 @@ const theme = vi.hoisted(() => ({
 // Controllable endSession + a captured view of the EndSessionSheet props, so the
 // error path (endSession rejects) can assert the spinner clears.
 const queue = vi.hoisted(() => ({ endSession: vi.fn(), setCurrentClimb: vi.fn() }));
+// What the history list handed the list-play hook, and the tap it got back.
+const tickList = vi.hoisted(() => ({
+  open: vi.fn(),
+  options: undefined as { sourceId: string; label: string; rows: readonly { uuid: string }[] } | undefined,
+}));
 // Session-history ticks fed to the list, so a tap on one can be asserted.
 const detail = vi.hoisted(() => ({ ticks: [] as Record<string, unknown>[] }));
 const sheet = vi.hoisted(() => ({ isEnding: false as boolean, onConfirm: null as (() => void) | null }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
+vi.mock('../../../../lib/playlists/use-tick-list-activation', () => ({
+  useTickListActivation: (options: { sourceId: string; label: string; rows: readonly { uuid: string }[] }) => {
+    tickList.options = options;
+    return tickList.open;
+  },
+}));
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../WorkoutRunCard', () => ({ WorkoutRunCard: () => null }));
 vi.mock('../AddWorkoutBlockSheet', () => ({ AddWorkoutBlockSheet: () => null }));
@@ -220,7 +231,6 @@ vi.mock('../../../../lib/playlists/board-details-for-playlist', () => ({
   getBoardConfigForPlaylist: () => null,
   renderBoardToPlaylistConfig: () => null,
 }));
-vi.mock('../../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade: string | null) => grade, formatGradeByDifficultyId: () => null }),
 }));
@@ -254,6 +264,8 @@ describe('InSessionView footer', () => {
     sheet.onConfirm = null;
     integrations.runSessionEndExports.mockReset();
     queue.setCurrentClimb.mockReset();
+    tickList.open.mockReset();
+    tickList.options = undefined;
     detail.ticks = [];
   });
 
@@ -404,7 +416,10 @@ describe('InSessionView footer', () => {
     );
   });
 
-  it('drops the list source when a history tick is tapped so swipes walk the queue (#4829)', () => {
+  // Issue #6665: a history tap used to make the climb current for everyone with
+  // a fresh queue entry, which took a crewmate's wall and queued a second copy.
+  // It now plays from the session's ticks through the same hook as every list.
+  it('plays a history tick from the session list without taking the wall itself', () => {
     detail.ticks = [
       {
         uuid: 'tick-1',
@@ -420,6 +435,20 @@ describe('InSessionView footer', () => {
         isMirror: false,
         isNoMatch: false,
       },
+      {
+        uuid: 'tick-2',
+        climbUuid: 'climb-2',
+        climbName: 'Later Route',
+        frames: 'p2r15',
+        angle: 40,
+        status: 'send',
+        userId: 'user-1',
+        climbedAt: '2026-01-01T00:20:00.000Z',
+        boardType: 'woods',
+        layoutId: 1,
+        isMirror: false,
+        isNoMatch: false,
+      },
     ];
     const { getAllByTestId } = render(createElement(InSessionView));
 
@@ -427,10 +456,12 @@ describe('InSessionView footer', () => {
       getAllByTestId('pressable')[0].click();
     });
 
-    expect(queue.setCurrentClimb).toHaveBeenCalledTimes(1);
-    expect(queue.setCurrentClimb).toHaveBeenCalledWith(
-      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
-      { playlistSuggestionSource: null },
-    );
+    // Newest first, as the history lists them, and named for the player.
+    expect(tickList.options?.rows.map(({ uuid }) => uuid)).toEqual(['tick-2', 'tick-1']);
+    expect(tickList.options?.label).toBe('playView.track.sessionClimbs');
+    expect(tickList.open).toHaveBeenCalledTimes(1);
+    expect(tickList.open).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'tick-2' }));
+    // The hook decides whether the climb goes up; the history writes nothing.
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
   });
 });

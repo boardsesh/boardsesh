@@ -6,7 +6,6 @@ import { PressableSurface } from '../PressableSurface';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, StyleSheet, useWindowDimensions } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
@@ -53,7 +52,7 @@ import { useToday } from '../../hooks/use-today';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { OfflineState } from '../OfflineState';
 import type { Grade } from '@boardsesh/shared-schema';
-import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { buildGradeRailStops } from '../../lib/grade-stops';
@@ -116,6 +115,100 @@ type LogbookGroupUnit = AscentFeedItem & {
   groupItems?: AscentFeedItem[];
 };
 
+type GroupedFeedPages = NonNullable<ReturnType<typeof useUserGroupedAscentsFeed>['data']>['pages'];
+type FlatFeedPages = NonNullable<ReturnType<typeof useUserAscentsFeed>['data']>['pages'];
+
+type LogbookRowsInput = {
+  groupedMode: boolean;
+  showDividers: boolean;
+  groupedPages: GroupedFeedPages | undefined;
+  flatPages: FlatFeedPages | undefined;
+  groupedHasMore: boolean;
+  flatHasMore: boolean;
+  hiddenTickUuids: ReadonlySet<string>;
+};
+
+// Wall label ("Alex's board") feeds the divider/subdivider context; board
+// identity only — the angle stays on every row. Derivation needs the app's
+// board metadata so it happens here, not in the shared builder.
+const wallOf = (item: AscentFeedItem) => item.boardDisplayName ?? getLayoutDisplayName(item.boardType, item.layoutId);
+
+/**
+ * The logbook's rows from the loaded feed pages. A plain function of the pages
+ * so a swipe track paging past the loaded rows (issue #6665) reads the list in
+ * exactly the order the screen shows it.
+ */
+function buildLogbookRows({
+  groupedMode,
+  showDividers,
+  groupedPages,
+  flatPages,
+  groupedHasMore,
+  flatHasMore,
+  hiddenTickUuids,
+}: LogbookRowsInput): LogbookListRow<LogbookGroupUnit>[] {
+  if (groupedMode) {
+    const groups = groupedPages?.flatMap((page) => page.userGroupedAscentsFeed.groups) ?? [];
+    // RE-BUCKET the backend groups client-side by (climb, LOCAL day, angle):
+    // the resolver cuts groups on the stored UTC calendar day, which
+    // disagrees with the local-day dividers on any non-UTC device (an
+    // evening session would split), and its key ignores angle, which would
+    // sum tries across angles under one row — the exact honesty rules the
+    // redesign set. Flattening items and regrouping fixes both without a
+    // backend timezone parameter; item-level dedupe absorbs group overlap
+    // from offset pagination.
+    const itemsByLocalKey = new Map<string, AscentFeedItem[]>();
+    const seenTickUuids = new Set<string>();
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (seenTickUuids.has(item.uuid) || hiddenTickUuids.has(item.uuid)) continue;
+        seenTickUuids.add(item.uuid);
+        // isMirror splits the bucket: on Tension/Decoy the mirrored ascent is
+        // its own problem — collapsing it with the normal orientation would
+        // sum tries across orientations and mislabel the row's mirror tag.
+        const localKey = `${item.climbUuid}|${logbookDayKey(item.climbedAt)}|${item.angle}|${item.isMirror}`;
+        const bucket = itemsByLocalKey.get(localKey);
+        if (bucket) bucket.push(item);
+        else itemsByLocalKey.set(localKey, [item]);
+      }
+    }
+    const units: LogbookGroupUnit[] = Array.from(itemsByLocalKey.values()).map((bucketItems) => {
+      const best = pickBestGroupEntry(bucketItems);
+      // The unit's timestamp is the bucket's LATEST activity (not the best
+      // entry's) so ordering reads "when did I last touch this today".
+      const latestClimbedAt = bucketItems.reduce(
+        (latest, item) => (item.climbedAt > latest ? item.climbedAt : latest),
+        bucketItems[0].climbedAt,
+      );
+      return {
+        ...best,
+        climbedAt: latestClimbedAt,
+        wall: wallOf(best),
+        groupTries: sumGroupTries(bucketItems),
+        groupItems: bucketItems,
+      };
+    });
+    units.sort((a, b) => (a.climbedAt < b.climbedAt ? 1 : a.climbedAt > b.climbedAt ? -1 : 0));
+    return buildLogbookListRows(units, { hasMore: groupedHasMore });
+  }
+  const items =
+    flatPages?.flatMap((page) => page.userAscentsFeed.items).filter((item) => !hiddenTickUuids.has(item.uuid)) ?? [];
+  if (showDividers) {
+    // Date-ASC custom sort: dividers without grouping (the grouped resolver
+    // is DESC-only) — one row per tick, exactly as before grouping existed.
+    const withWalls = items.map((item) => ({ ...item, wall: wallOf(item) }));
+    return buildLogbookListRows(withWalls, { hasMore: flatHasMore });
+  }
+  return dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
+}
+
+/** The ticks a logbook's rows show, in the order it shows them. */
+function logbookEntries(rows: LogbookListRow<LogbookGroupUnit>[]): LogbookGroupUnit[] {
+  const entries: LogbookGroupUnit[] = [];
+  for (const row of rows) if (row.type === 'entry') entries.push(row.item);
+  return entries;
+}
+
 export function LogbookTab({
   userId,
   topInset = 0,
@@ -130,6 +223,7 @@ export function LogbookTab({
   const headerMeasured = !hasComposedHeader || headerHeight > 0;
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
   const { t, i18n } = useTranslation('you');
+  const { t: tSession } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   // One grade scale for the grade capsule's label, the inline rail and the sheet.
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
@@ -140,9 +234,8 @@ export function LogbookTab({
   );
   const boardOptions = useLogbookBoardOptions(userId);
   const { pinned: pinnedChips, isPinned } = useLogbookPinnedChips();
-  const router = useRouter();
   const scopedRouter = useScopedRouter();
-  const { openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   // One dimension subscription for the whole list; rows take fontScale as a prop.
   const { fontScale } = useWindowDimensions();
@@ -420,94 +513,72 @@ export function LogbookTab({
   // is stable between unrelated re-renders.
   const hiddenTickUuids = usePendingLogbookDeletes();
   const { scheduleDelete, getDeleteScope } = useLogbookDeleteActions();
-  const { listRows } = useMemo(() => {
-    // Wall label ("Alex's board") feeds the divider/subdivider context; board
-    // identity only — the angle stays on every row. Derivation needs the app's
-    // board metadata so it happens here, not in the shared builder.
-    const wallOf = (item: AscentFeedItem) =>
-      item.boardDisplayName ?? getLayoutDisplayName(item.boardType, item.layoutId);
-
-    let rows: LogbookListRow<LogbookGroupUnit>[];
-    if (groupedMode) {
-      const groups = groupedFeed.data?.pages.flatMap((page) => page.userGroupedAscentsFeed.groups) ?? [];
-      // RE-BUCKET the backend groups client-side by (climb, LOCAL day, angle):
-      // the resolver cuts groups on the stored UTC calendar day, which
-      // disagrees with the local-day dividers on any non-UTC device (an
-      // evening session would split), and its key ignores angle, which would
-      // sum tries across angles under one row — the exact honesty rules the
-      // redesign set. Flattening items and regrouping fixes both without a
-      // backend timezone parameter; item-level dedupe absorbs group overlap
-      // from offset pagination.
-      const itemsByLocalKey = new Map<string, AscentFeedItem[]>();
-      const seenTickUuids = new Set<string>();
-      for (const group of groups) {
-        for (const item of group.items) {
-          if (seenTickUuids.has(item.uuid) || hiddenTickUuids.has(item.uuid)) continue;
-          seenTickUuids.add(item.uuid);
-          // isMirror splits the bucket: on Tension/Decoy the mirrored ascent is
-          // its own problem — collapsing it with the normal orientation would
-          // sum tries across orientations and mislabel the row's mirror tag.
-          const localKey = `${item.climbUuid}|${logbookDayKey(item.climbedAt)}|${item.angle}|${item.isMirror}`;
-          const bucket = itemsByLocalKey.get(localKey);
-          if (bucket) bucket.push(item);
-          else itemsByLocalKey.set(localKey, [item]);
-        }
-      }
-      const units: LogbookGroupUnit[] = Array.from(itemsByLocalKey.values()).map((bucketItems) => {
-        const best = pickBestGroupEntry(bucketItems);
-        // The unit's timestamp is the bucket's LATEST activity (not the best
-        // entry's) so ordering reads "when did I last touch this today".
-        const latestClimbedAt = bucketItems.reduce(
-          (latest, item) => (item.climbedAt > latest ? item.climbedAt : latest),
-          bucketItems[0].climbedAt,
-        );
-        return {
-          ...best,
-          climbedAt: latestClimbedAt,
-          wall: wallOf(best),
-          groupTries: sumGroupTries(bucketItems),
-          groupItems: bucketItems,
-        };
-      });
-      units.sort((a, b) => (a.climbedAt < b.climbedAt ? 1 : a.climbedAt > b.climbedAt ? -1 : 0));
-      rows = buildLogbookListRows(units, { hasMore: groupedFeed.hasNextPage ?? false });
-    } else if (showDividers) {
-      // Date-ASC custom sort: dividers without grouping (the grouped resolver
-      // is DESC-only) — one row per tick, exactly as before grouping existed.
-      const items =
-        flatFeed.data?.pages
-          .flatMap((page) => page.userAscentsFeed.items)
-          .filter((item) => !hiddenTickUuids.has(item.uuid)) ?? [];
-      const withWalls = items.map((item) => ({ ...item, wall: wallOf(item) }));
-      rows = buildLogbookListRows(withWalls, { hasMore: flatFeed.hasNextPage ?? false });
-    } else {
-      const items =
-        flatFeed.data?.pages
-          .flatMap((page) => page.userAscentsFeed.items)
-          .filter((item) => !hiddenTickUuids.has(item.uuid)) ?? [];
-      rows = dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
-    }
-    return { listRows: rows };
-  }, [
-    groupedFeed.data,
-    groupedFeed.hasNextPage,
-    flatFeed.data,
-    flatFeed.hasNextPage,
-    groupedMode,
-    showDividers,
-    hiddenTickUuids,
-  ]);
-
-  // Tap → set the climb active and open the play drawer (own logbook and another
-  // climber's read-only logbook alike). AscentFeedItem structurally satisfies the
-  // `tick` kind, which builds the climb + board config from frames.
-  const handleActivate = useCallback(
-    (ascent: AscentFeedItem) => {
-      // Default open mode is now "set active", so no option is needed here.
-      openClimbInPlayDrawer({ kind: 'tick', tick: ascent }, { openPlayDrawer, router });
-    },
-    [openPlayDrawer, router],
+  const listRowsInput = useMemo<Omit<LogbookRowsInput, 'groupedPages' | 'flatPages'>>(
+    () => ({
+      groupedMode,
+      showDividers,
+      groupedHasMore: groupedFeed.hasNextPage ?? false,
+      flatHasMore: flatFeed.hasNextPage ?? false,
+      hiddenTickUuids,
+    }),
+    [groupedMode, showDividers, groupedFeed.hasNextPage, flatFeed.hasNextPage, hiddenTickUuids],
   );
+  const listRows = useMemo(
+    () =>
+      buildLogbookRows({
+        ...listRowsInput,
+        groupedPages: groupedFeed.data?.pages,
+        flatPages: flatFeed.data?.pages,
+      }),
+    [listRowsInput, groupedFeed.data, flatFeed.data],
+  );
+
+  // Tap → the climb opens playing from this logbook (own and another climber's
+  // alike, issue #6665): swipes walk the rows on screen, in their order, and
+  // page on through the feed. Light problems when tapping the list and the crew
+  // rule decide whether it goes up or opens as a preview.
+  const listRowsInputRef = useRef(listRowsInput);
+  listRowsInputRef.current = listRowsInput;
+  const fetchNextGroupedPage = groupedFeed.fetchNextPage;
+  const fetchNextFlatPage = flatFeed.fetchNextPage;
+  const loadMoreLogbookEntries = useCallback(async () => {
+    const input = listRowsInputRef.current;
+    if (input.groupedMode) {
+      const result = await fetchNextGroupedPage({ cancelRefetch: false });
+      if (result.isError) throw result.error;
+      const hasMore = result.hasNextPage ?? false;
+      return {
+        rows: logbookEntries(
+          buildLogbookRows({
+            ...input,
+            groupedPages: result.data?.pages,
+            flatPages: undefined,
+            groupedHasMore: hasMore,
+          }),
+        ),
+        hasMore,
+      };
+    }
+    const result = await fetchNextFlatPage({ cancelRefetch: false });
+    if (result.isError) throw result.error;
+    const hasMore = result.hasNextPage ?? false;
+    return {
+      rows: logbookEntries(
+        buildLogbookRows({ ...input, flatPages: result.data?.pages, groupedPages: undefined, flatHasMore: hasMore }),
+      ),
+      hasMore,
+    };
+  }, [fetchNextGroupedPage, fetchNextFlatPage]);
+  const entryRows = useMemo(() => logbookEntries(listRows), [listRows]);
+  const logbookListKey = useMemo(() => `${groupedMode}|${JSON.stringify(feedInput)}`, [groupedMode, feedInput]);
+  const handleActivate = useTickListActivation<AscentFeedItem>({
+    sourceId: `logbook:${userId ?? ''}`,
+    label: tSession('playView.track.logbook'),
+    rows: entryRows,
+    hasMore: feed.hasNextPage ?? false,
+    loadMore: loadMoreLogbookEntries,
+    listKey: logbookListKey,
+  });
 
   // Day-entries chooser for grouped rows: swipe-edit/delete on a row that
   // collapses several same-day entries must act on ONE tick, so the climber

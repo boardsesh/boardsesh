@@ -32,6 +32,8 @@ const chrome = vi.hoisted(() => ({
   titleSheetVisible: false,
   contentInsetAdjustmentBehavior: undefined as string | undefined,
 }));
+// The list-play hook has its own suite; here a tap only has to reach it.
+vi.mock('../../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => chrome.native }));
 const router = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
@@ -236,7 +238,6 @@ vi.mock('../../../../lib/session-comment-draft-store', () => ({
 }));
 vi.mock('../../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: vi.fn() }));
 vi.mock('../../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: () => null }));
-vi.mock('../../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../../lib/tick-to-climb', () => ({ tickToClimb: () => null }));
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade: string | null) => grade, formatGradeByDifficultyId: () => null }),

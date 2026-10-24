@@ -203,7 +203,8 @@ vi.mock('../../../../src/lib/feed/vote-summary-map', () => ({
   buildVoteSummaryMap: () => new Map(),
   voteSummaryKey: () => '',
 }));
-vi.mock('../../../../src/lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
+// The list-play hook has its own suite; here the cards only have to reach it.
+vi.mock('../../../../src/lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../../src/lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../../src/lib/session-feed-navigation', () => ({ navigateToSessionFeedItem: vi.fn() }));
 vi.mock('../../../../src/lib/profiling/HomeStartupCommit', () => ({ HomeStartupCommit: () => null }));

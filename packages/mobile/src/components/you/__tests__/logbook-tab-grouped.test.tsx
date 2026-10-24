@@ -1,4 +1,12 @@
 // @vitest-environment jsdom
+// The list-play hook has its own suite; here the logbook only has to hand it
+// its rows, in order, and wire its tap onto every row.
+vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({
+  useTickListActivation: (options: TickListOptions) => {
+    tickList.options = options;
+    return tickList.open;
+  },
+}));
 vi.mock('../../../providers/logbook-delete-provider', () => ({
   usePendingLogbookDeletes: () => new Set(),
   useLogbookDeleteActions: () => ({
@@ -81,6 +89,15 @@ const GROUP_ITEMS = [
     boardDisplayName: 'Test Board',
   },
 ];
+type TickListOptions = {
+  sourceId: string;
+  label: string;
+  rows: readonly { uuid: string }[];
+  hasMore?: boolean;
+  listKey?: string;
+  loadMore?: () => Promise<{ rows: readonly { uuid: string }[]; hasMore: boolean }>;
+};
+const tickList = vi.hoisted(() => ({ open: vi.fn(), options: undefined as TickListOptions | undefined }));
 const groupedFeed = vi.hoisted(() => ({
   data: {
     pages: [
@@ -197,7 +214,6 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: () => {} }));
-vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -239,6 +255,10 @@ beforeEach(() => {
   mountedRows.log = [];
   chooser.props = null;
   editSheet.ascent = null;
+  tickList.open.mockReset();
+  tickList.options = undefined;
+  groupedFeed.fetchNextPage.mockReset();
+  groupedFeed.hasNextPage = false;
   groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
     { key: 'climb-1-2026-06-15', climbUuid: 'climb-1', date: '2026-06-15', items: GROUP_ITEMS },
   ];
@@ -466,5 +486,62 @@ describe('LogbookTab grouped mode', () => {
 
     expect(chooser.props).toBeNull();
     expect(editSheet.ascent?.uuid).toBe('tick-send');
+  });
+});
+
+// Issue #6665: a logbook row plays from the logbook, in the order it shows.
+describe('LogbookTab row taps', () => {
+  it('hands the list-play hook the rows on screen and wires its tap onto each', () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    expect(tickList.options).toMatchObject({
+      sourceId: 'logbook:user-1',
+      label: 'playView.track.logbook',
+      hasMore: false,
+    });
+    // One row per group: its best entry, which is what the row shows.
+    expect(tickList.options?.rows.map(({ uuid }) => uuid)).toEqual(['tick-send']);
+    expect(row.props?.onActivate).toBe(tickList.open);
+  });
+
+  it('pages on through the grouped feed, rebuilding rows the way the screen does', async () => {
+    groupedFeed.hasNextPage = true;
+    const olderItem = {
+      ...GROUP_ITEMS[0],
+      uuid: 'tick-older',
+      climbUuid: 'climb-2',
+      climbedAt: '2026-06-01T12:00:00.000Z',
+    };
+    groupedFeed.fetchNextPage.mockResolvedValueOnce({
+      isError: false,
+      hasNextPage: false,
+      data: {
+        pages: [
+          groupedFeed.data.pages[0],
+          {
+            userGroupedAscentsFeed: {
+              groups: [{ key: 'older', climbUuid: 'climb-2', date: '2026-06-01', items: [olderItem] }],
+              totalCount: 2,
+              hasMore: false,
+            },
+          },
+        ],
+      },
+    });
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    const loaded = await tickList.options?.loadMore?.();
+
+    expect(groupedFeed.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(loaded?.rows.map(({ uuid }) => uuid)).toEqual(['tick-send', 'tick-older']);
+    expect(loaded?.hasMore).toBe(false);
+  });
+
+  it('fails the page when the feed does, so the track ends where it is', async () => {
+    groupedFeed.hasNextPage = true;
+    groupedFeed.fetchNextPage.mockResolvedValueOnce({ isError: true, error: new Error('offline'), hasNextPage: true });
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await expect(tickList.options?.loadMore?.()).rejects.toThrow('offline');
   });
 });

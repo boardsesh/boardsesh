@@ -17,6 +17,7 @@ import {
 } from '../use-playlist-activation';
 import { canLoadMoreOfTrack, loadNextTrackPage, _resetTrackPagerForTests } from '../track-pager';
 import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { setSetting } from '../../../settings/hooks';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
 import type { SearchClimbsQueryResponse } from '../../graphql/operations';
@@ -190,6 +191,9 @@ function renderActivation(
     fetchTotal?: UsePlaylistActivationOptions['fetchTotal'];
     snapshotFetchPage?: UsePlaylistActivationOptions['snapshotFetchPage'];
     loadedRowsArePages?: boolean;
+    loadedRowsAreTheList?: boolean;
+    hasMoreRows?: boolean;
+    drawerBoardFor?: UsePlaylistActivationOptions['drawerBoardFor'];
   } = {},
 ) {
   return renderHook(() =>
@@ -200,6 +204,9 @@ function renderActivation(
       fetchTotal: options.fetchTotal,
       snapshotFetchPage: options.snapshotFetchPage,
       loadedRowsArePages: options.loadedRowsArePages,
+      loadedRowsAreTheList: options.loadedRowsAreTheList,
+      hasMoreRows: options.hasMoreRows,
+      drawerBoardFor: options.drawerBoardFor,
       label: options.label,
       viewOnlyBoard: options.viewOnlyBoard,
       previewOnly: options.previewOnly,
@@ -237,6 +244,8 @@ beforeEach(() => {
   mocks.choose.mockResolvedValue('cancel');
   // Mirror the provider: everything handed over lands, and the count comes back.
   mocks.appendQueueItems.mockImplementation((items: ClimbQueueItem[]) => items.length);
+  // The settings store is module state shared by every case.
+  setSetting('lightOnClimbTap', true);
 });
 
 /** The values the three-way fork offered, in display order. */
@@ -725,6 +734,159 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
       expect(mocks.activate).toHaveBeenCalledWith(climb);
       expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    });
+  });
+
+  // Issue #6665: every list reads "Light problems when tapping the list", not
+  // only search, and with it off a tap is a preview that still walks the list.
+  describe('Light problems when tapping the list, off', () => {
+    it('opens a preview seeded with this list instead of committing', async () => {
+      setSetting('lightOnClimbTap', false);
+      const climbA = makeClimb('a');
+      const climbB = makeClimb('b');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climbA, climbB], sourceId: 'logbook:me' });
+
+      await result.current.activate(climbB);
+
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climbB, {
+        previewQueueItem: expect.objectContaining({ climb: climbB }),
+        playlistSuggestionSource: expect.objectContaining({
+          playlistUuid: 'logbook:me',
+          activatedClimbUuid: 'b',
+          boardKey: 'kilter:1:2:3',
+          climbs: [climbA, climbB],
+        }),
+      });
+      expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+      expect(mocks.activate).not.toHaveBeenCalled();
+    });
+
+    it('leaves a playlist tap starting the playlist until F4', async () => {
+      // On Liquid Glass a row tap is the only way to start a playlist, For You
+      // or setter list: a preview here would leave no way to start one at all.
+      setSetting('lightOnClimbTap', false);
+      const climb = makeClimb('a');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(climb);
+      });
+
+      expect(mocks.setQueue.mock.calls[0]?.[1].climb.uuid).toBe('a');
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    });
+
+    it('reads the setting at the tap, so turning it back on commits the next tap', async () => {
+      setSetting('lightOnClimbTap', false);
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb] });
+      const activateBefore = result.current.activate;
+
+      setSetting('lightOnClimbTap', true);
+      await result.current.activate(climb);
+
+      expect(result.current.activate).toBe(activateBefore);
+      expect(mocks.activate).toHaveBeenCalledWith(climb);
+    });
+  });
+
+  // Logbook, session ticks and profile climbs: the rows on screen are the list.
+  describe('loadedRowsAreTheList', () => {
+    it('plays from the loaded rows without fetching the list again', async () => {
+      const rows = [makeClimb('a'), makeClimb('b')];
+      const fetchPage = vi.fn();
+      renderActivation(fetchPage, { allClimbs: rows, loadedRowsAreTheList: true });
+      const target = captured().resolveTarget(rows[0])!;
+
+      const load = await captured().fetchClimbsForBoard({
+        target,
+        activatedClimbUuid: 'a',
+        signal: new AbortController().signal,
+      });
+
+      expect(load.climbs).toEqual(rows);
+      expect(load).not.toHaveProperty('continuation');
+      expect(fetchPage).not.toHaveBeenCalled();
+      expect(mocks.fetchSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('pages on from where the rows end while the list has more', async () => {
+      const rows = Array.from({ length: 120 }, (_, index) => makeClimb(`row-${index}`));
+      const fetchPage = vi.fn(async ({ page }: { page: number }) => ({
+        climbs: [makeClimb(`page-${page}`)],
+        hasMore: false,
+      }));
+      renderActivation(fetchPage, { allClimbs: rows, loadedRowsAreTheList: true, hasMoreRows: true });
+      const target = captured().resolveTarget(rows[0])!;
+
+      const load = await captured().fetchClimbsForBoard({
+        target,
+        activatedClimbUuid: 'row-0',
+        signal: new AbortController().signal,
+      });
+
+      expect(load.continuation).toMatchObject({ nextPage: 1 });
+      const source = { playlistUuid: 'p', activatedClimbUuid: 'row-0', boardKey: 'k', ...load };
+      await loadNextTrackPage(source);
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+      expect(fetchPage.mock.calls[0][0]).toMatchObject({ page: 1 });
+    });
+
+    it('gives a preview no loader when the rows are the whole list', async () => {
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), {
+        allClimbs: [climb],
+        previewOnly: true,
+        loadedRowsAreTheList: true,
+      });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer.mock.calls[0][1].playlistSuggestionSource).not.toHaveProperty('continuation');
+    });
+  });
+
+  // Ticks open on the board and angle they were climbed at (issue #6665).
+  describe('drawerBoardFor', () => {
+    const TICK_BOARD = { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '3', angle: 25 };
+
+    it('draws a committed tap on the board the list names', async () => {
+      const climb = makeClimb('a', { angle: 25 });
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], drawerBoardFor: () => TICK_BOARD });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true, boardConfig: TICK_BOARD });
+      expect(mocks.activate).toHaveBeenCalledWith(climb);
+    });
+
+    it('draws a preview tap on it too', async () => {
+      const climb = makeClimb('a', { angle: 25 });
+      const { result } = renderActivation(vi.fn(), {
+        allClimbs: [climb],
+        previewOnly: true,
+        drawerBoardFor: () => TICK_BOARD,
+      });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toMatchObject({
+        boardConfig: TICK_BOARD,
+        previewQueueItem: expect.objectContaining({ climb }),
+      });
+    });
+
+    it('opens the row tapped, not the first row of the same climb at another angle', async () => {
+      const firstRow = makeClimb('a', { angle: 40 });
+      const tappedRow = makeClimb('a', { angle: 25 });
+      const drawerBoardFor = vi.fn(() => TICK_BOARD);
+      const { result } = renderActivation(vi.fn(), { allClimbs: [firstRow], drawerBoardFor });
+
+      await result.current.activate(tappedRow);
+
+      expect(mocks.activate).toHaveBeenCalledWith(tappedRow);
+      expect(drawerBoardFor).toHaveBeenCalledWith(tappedRow);
     });
   });
 

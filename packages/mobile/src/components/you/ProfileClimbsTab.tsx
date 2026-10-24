@@ -3,7 +3,6 @@ import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-sc
 import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -13,7 +12,7 @@ import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers
 import { ClimbListRow } from '../ClimbListRow';
 import { useUserClimbs } from '../../lib/graphql/hooks';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
-import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
+import { useBoardListActivation, type BoardListRow } from '../../lib/playlists/use-board-list-activation';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
@@ -29,6 +28,40 @@ type ProfileClimbsTabProps = {
 
 const keyExtractor = (climb: Climb) => climb.uuid;
 
+// Rows keep their identity across pages, so each is read once.
+const describedClimbs = new WeakMap<Climb, BoardListRow>();
+
+/**
+ * The board a profile climb is drawn on. The userClimbs payload carries no
+ * size or sets, so they come from the climb's resolved render board, or the
+ * layout's default when it has none.
+ */
+function describeProfileClimb(climb: Climb): BoardListRow {
+  const described = describedClimbs.get(climb);
+  if (described) return described;
+  // boardType is typed optional on Climb but the userClimbs query always returns it.
+  // A climb with no board to draw on gets `board: null` here, and `renderItem`
+  // renders no row for it under the same two checks, so a tap never reaches
+  // the list hook without a board and this list needs no `openFallback`.
+  const config = climb.boardType
+    ? renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard)
+    : null;
+  const row: BoardListRow = {
+    climb,
+    board: config
+      ? {
+          boardName: config.boardName,
+          layoutId: config.layoutId,
+          sizeId: config.sizeId,
+          setIds: config.setIds.join(','),
+          angle: climb.angle,
+        }
+      : null,
+  };
+  describedClimbs.set(climb, row);
+  return row;
+}
+
 /**
  * Climbs a user has created (web-profile "Created Climbs" parity). Each row
  * resolves its own board art from (boardType, layoutId) — the userClimbs payload
@@ -37,9 +70,9 @@ const keyExtractor = (climb: Climb) => climb.uuid;
 export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileClimbsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
+  const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
-  const router = useRouter();
-  const { openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
@@ -56,32 +89,23 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
     return targets;
   }, [climbs]);
 
-  const handlePress = useCallback(
-    (climb: Climb) => {
-      // boardType is typed optional on Climb but the userClimbs query always returns it.
-      if (!climb.boardType) return;
-      const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
-      if (!config) return;
-      // We already have the full climb, so open the play drawer in place (kind
-      // 'climb') rather than 'ref', which would route to the Climbs tab's climb
-      // screen instead of opening over the profile.
-      openClimbInPlayDrawer(
-        {
-          kind: 'climb',
-          climb,
-          boardConfig: {
-            boardName: config.boardName,
-            layoutId: config.layoutId,
-            sizeId: config.sizeId,
-            setIds: config.setIds.join(','),
-            angle: climb.angle,
-          },
-        },
-        { openPlayDrawer, router },
-      );
-    },
-    [openPlayDrawer, router],
-  );
+  // A tap opens the climb playing from this profile's climbs, paging on through
+  // the same feed as the climber swipes (issue #6665). Climbs set on another
+  // board open as a preview on their own board.
+  const fetchNextClimbsPage = feed.fetchNextPage;
+  const loadMoreClimbs = useCallback(async () => {
+    const result = await fetchNextClimbsPage({ cancelRefetch: false });
+    if (result.isError) throw result.error;
+    return { rows: result.data?.pages.flatMap((page) => page.climbs) ?? [], hasMore: result.hasNextPage ?? false };
+  }, [fetchNextClimbsPage]);
+  const handlePress = useBoardListActivation<Climb>({
+    sourceId: `profile-climbs:${userId ?? ''}`,
+    label: tSession('playView.track.createdClimbs'),
+    rows: climbs,
+    describeRow: describeProfileClimb,
+    hasMore: feed.hasNextPage ?? false,
+    loadMore: loadMoreClimbs,
+  });
 
   // Long press → reaction menu. Resolves the same per-climb board config handlePress
   // uses (the userClimbs payload carries no size/sets).

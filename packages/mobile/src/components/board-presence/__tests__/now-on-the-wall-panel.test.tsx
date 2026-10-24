@@ -16,7 +16,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardPresenceClimb, BoardPresenceStats, Climb, UserBoard } from '@boardsesh/shared-schema';
-import type { NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
+import type { BoardSheetClimbAction, NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
 import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
 const presence = vi.hoisted(() => ({
@@ -653,14 +653,57 @@ describe('NowOnTheWallPanel', () => {
 
     fireEvent.click(getByLabelText('press hero-climb'));
     await waitFor(() =>
-      expect(onClimbPress).toHaveBeenCalledWith({
-        climb: heroDetail,
-        queueItemUuid: 'queue-hero',
-        boardConfig,
-      }),
+      expect(onClimbPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          climb: heroDetail,
+          queueItemUuid: 'queue-hero',
+          boardConfig,
+        }),
+      ),
     );
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(graphql.request).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #6665: a wall-history row plays from the wall's history.
+  it("hands a row tap the wall's history as its track, the wall's climb first", async () => {
+    presence.currentClimb = makeClimb('hero-climb', 3, { queueItemUuid: 'queue-hero', frames: 'p1r12' });
+    presence.history = [
+      makeClimb('older-a', 2, { frames: 'p2r12', angle: 35 }),
+      makeClimb('hero-climb', 1, { frames: 'p1r12' }),
+      makeClimb('no-frames', 0),
+    ];
+    const onClimbPress = vi.fn();
+    graphql.request.mockResolvedValue({ climb: makeFullClimb('older-a') });
+
+    const { getByLabelText } = render(panelElement({ onClimbPress }));
+    fireEvent.click(getByLabelText('press older-a'));
+
+    await waitFor(() => expect(onClimbPress).toHaveBeenCalledTimes(1));
+    const action = onClimbPress.mock.calls[0][0] as BoardSheetClimbAction;
+    expect(action.isWallClimb).toBe(false);
+    expect(action.track).toMatchObject({
+      activatedClimbUuid: 'older-a',
+      boardKey: 'kilter:1:10:1,2',
+      label: 'playView.track.wallHistory',
+    });
+    // One entry per climb, nothing without frames, each at the angle it was lit.
+    expect(action.track?.climbs.map(({ uuid, angle }) => [uuid, angle])).toEqual([
+      ['hero-climb', 40],
+      ['older-a', 35],
+    ]);
+  });
+
+  it("marks a tap on the wall's own climb as the lit one", async () => {
+    presence.currentClimb = makeClimb('hero-climb', 3, { queueItemUuid: 'queue-hero', frames: 'p1r12' });
+    const onClimbPress = vi.fn();
+    graphql.request.mockResolvedValueOnce({ climb: makeFullClimb('hero-climb') });
+
+    const { getByLabelText } = render(panelElement({ onClimbPress }));
+    fireEvent.click(getByLabelText('press hero-climb'));
+
+    await waitFor(() => expect(onClimbPress).toHaveBeenCalledTimes(1));
+    expect(onClimbPress.mock.calls[0][0]).toMatchObject({ isWallClimb: true });
   });
 
   it('keeps the hardest-send avatar linked to the climber profile', () => {

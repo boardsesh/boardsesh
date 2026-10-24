@@ -70,6 +70,13 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
 import { boardPresenceClimbToClimb, wallDriverForClimb } from '../../lib/board-presence/presence-climb';
+import {
+  createPlaylistSuggestionSource,
+  getQueueBoardKey,
+  type Climb as QueueClimb,
+  type PlaylistSuggestionSource,
+} from '@boardsesh/queue';
+import { toQueueClimb } from '../../lib/climb-types';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -96,6 +103,14 @@ export type BoardSheetClimbAction = {
   climb: Climb;
   queueItemUuid: string | null;
   boardConfig: BoardConfig;
+  /**
+   * A row tap only: the wall's history as a swipe track, the wall's climb first
+   * and then back through time (issue #6665), so the player walks it the way
+   * the sheet lists it. Keyed to the board the sheet shows.
+   */
+  track?: PlaylistSuggestionSource | null;
+  /** A row tap only: the climb is the one lit on the wall right now. */
+  isWallClimb?: boolean;
 };
 
 export type NowOnTheWallPanelHandle = {
@@ -518,12 +533,57 @@ function NowOnTheWallPanelComponent(
     [getActionContext, invalidatePendingActions, notifyActionFailed, onClose, resolveAction, setActionLoading],
   );
 
+  // The wall's climb, then its history: what a row tap plays from (#6665).
+  // Read through a ref at the tap, so a history page landing doesn't rebuild
+  // every row's handler. Rows with no frames have nothing to draw and stay out.
+  const wallTrackClimbs = useMemo(() => {
+    const climbs: QueueClimb[] = [];
+    const seenClimbUuids = new Set<string>();
+    for (const presenceClimb of currentClimb ? [currentClimb, ...combinedHistory] : combinedHistory) {
+      if (!presenceClimb.frames || seenClimbUuids.has(presenceClimb.climbUuid)) continue;
+      seenClimbUuids.add(presenceClimb.climbUuid);
+      climbs.push(boardPresenceClimbToClimb(presenceClimb));
+    }
+    return climbs;
+  }, [currentClimb, combinedHistory]);
+  const wallTrackClimbsRef = useRef(wallTrackClimbs);
+  wallTrackClimbsRef.current = wallTrackClimbs;
+  const currentClimbRef = useRef(currentClimb);
+  currentClimbRef.current = currentClimb;
+  const wallTrackLabel = t('playView.track.wallHistory');
+
   const handleInteractiveClimbPress = useCallback(
     (presenceClimb: BoardPresenceClimb) => {
       if (!onClimbPress) return;
-      runInteractiveAction(presenceClimb, onClimbPress, true);
+      runInteractiveAction(
+        presenceClimb,
+        (action) => {
+          // Read after the climb resolves, with the track: a crewmate can move
+          // the wall while it loads.
+          const wallClimb = currentClimbRef.current;
+          const isWallClimb =
+            wallClimb != null && wallClimb.climbUuid === presenceClimb.climbUuid && wallClimb.seq === presenceClimb.seq;
+          const panelBoard = boardConfigRef.current;
+          const track = panelBoard
+            ? createPlaylistSuggestionSource({
+                playlistUuid: `wall-history:${boardConfigSignatureRef.current}`,
+                activatedClimb: toQueueClimb(action.climb),
+                climbs: wallTrackClimbsRef.current,
+                boardKey: getQueueBoardKey({
+                  board_name: panelBoard.boardName,
+                  layout_id: panelBoard.layoutId,
+                  size_id: panelBoard.sizeId,
+                  set_ids: panelBoard.setIds,
+                }),
+                label: wallTrackLabel,
+              })
+            : null;
+          onClimbPress({ ...action, track, isWallClimb });
+        },
+        true,
+      );
     },
-    [onClimbPress, runInteractiveAction],
+    [onClimbPress, runInteractiveAction, wallTrackLabel],
   );
 
   const handleInteractiveAddToQueue = useCallback(

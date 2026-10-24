@@ -37,7 +37,6 @@ import { SMART_PLAYLIST_COUNTS_QUERY_KEY } from '@boardsesh/playlists-react';
 import { useHomeBoard } from '../../../src/lib/graphql/hooks/use-home-board';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { OfflineState } from '../../../src/components/OfflineState';
@@ -45,7 +44,7 @@ import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
 import { createFeedPageGate, requiresCrewPageTap } from '../../../src/lib/feed/crew-page-state';
 import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
-import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
+import { useTickListActivation } from '../../../src/lib/playlists/use-tick-list-activation';
 import { hapticLight } from '../../../src/lib/haptics';
 import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
@@ -76,16 +75,18 @@ type CommentTarget = {
 const keyExtractor = (item: CrewFeedItem) => item.id;
 const getItemType = (item: CrewFeedItem) => item.__typename;
 const NO_FEED_ITEMS: CrewFeedItem[] = [];
+// A session card shows one climb, so it plays from a list of just that one.
+const NO_TICKS: SessionFeedTickHighlight[] = [];
 
 export default function HomeTab() {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
+  const { t: tSession } = useTranslation('session');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const { systemColors, brandColors } = useTheme();
-  const { openPlayDrawer } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlashListRef<CrewFeedItem>>(null);
@@ -246,10 +247,14 @@ export default function HomeTab() {
     [router],
   );
 
-  const handleOpenClimb = useCallback(
-    (tick: SessionFeedTickHighlight) => openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router }),
-    [openPlayDrawer, router],
-  );
+  // A session card's hardest send opens like a row of any list (issue #6665):
+  // Light problems when tapping the list and the crew rule decide whether it
+  // goes up, and it plays from a one-climb list of its own.
+  const handleOpenClimb = useTickListActivation<SessionFeedTickHighlight>({
+    sourceId: 'home-session-cards',
+    label: tSession('playView.track.hardestSend'),
+    rows: NO_TICKS,
+  });
 
   const loadNextPage = useCallback(() => {
     // A disabled query still pages on request, so a hidden feed must not ask.

@@ -796,6 +796,12 @@
       "fromPosition": "Aus {{name}} · {{position}} von {{total}}",
       "searchResults": "Suchergebnisse",
       "setterClimbs": "Boulder von {{name}}",
+      "logbook": "Routenbuch",
+      "sessionClimbs": "Boulder der Session",
+      "createdClimbs": "Erstellte Boulder",
+      "hardestSend": "Schwerste Begehung",
+      "wallHistory": "Wandverlauf",
+      "similarClimbs": "Ähnliche Boulder",
       "end": {
         "title": "Ende von {{name}}",
         "titleUnnamed": "Ende der Liste",
