@@ -263,18 +263,9 @@ export type PlaylistAddToQueueState = {
   isAppending: boolean;
 };
 
-export type PlaylistActivationOptions = {
-  /**
-   * A deliberate play, not a row tap: the playlist's Play button. "Light
-   * problems when tapping the list" is about row taps, so it does not turn
-   * this into a preview. The crew rule still does.
-   */
-  deliberate?: boolean;
-};
-
 export type PlaylistActivationResult = {
   /** Callback to wire onto a climb row tap. */
-  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => Promise<void>;
+  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => Promise<void>;
   /** Bulk additive queueing for the detail screen's "Add to queue" row. */
   addToQueue: PlaylistAddToQueueState;
 };
@@ -1160,7 +1151,7 @@ export function usePlaylistActivation({
   // the caller already dispatched, so it doesn't re-commit or treat this as a
   // preview.
   const activatePlaylistClimb = useCallback(
-    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, activationOptions?: PlaylistActivationOptions) => {
+    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
       if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
@@ -1225,23 +1216,27 @@ export function usePlaylistActivation({
       // (`previewOnly`), so a tap must not take their wall; or the climber
       // turned off "Light problems when tapping the list" (issue #6665: every
       // list reads it, not only search). The setting is read here, at the tap,
-      // so the callback does not change identity when it flips. A deliberate
-      // play (the playlist's Play button) is not a row tap and skips it.
+      // so the callback does not change identity when it flips.
+      //
+      // The setting leaves `replaceQueueOnActivate` lists (playlists, For You,
+      // setter pages) alone until F4 (#6667) moves them onto play-from-the-list:
+      // on Liquid Glass a row tap is the only way to start one (its header has
+      // no Play button yet), and a preview's commit puts up one climb, not the
+      // list.
       //
       // Ordered ahead of `replaceQueueOnActivate` deliberately: replacing a
       // crew's whole queue is the loudest write in the app, and a row tap must
       // never be it.
-      if (previewOnlyRef.current || (!activationOptions?.deliberate && !getSetting('lightOnClimbTap'))) {
+      if (previewOnlyRef.current || (!replaceQueueOnActivate && !getSetting('lightOnClimbTap'))) {
         const target = resolveTarget(climb);
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
           previewQueueItem: climbToQueueItem(schemaClimb),
-          // A null target (no resolvable board) deliberately degrades to a
-          // trackless preview: the tapped climb still shows, swipes just walk
-          // the queue instead of this list — the same fallback the wrong-board
-          // branch above has always had. It should be unreachable here (the
-          // gate only fires in a shared session, where an active board
-          // resolved), so degrading beats blocking the tap on a broken invariant.
+          // A null target or no active board degrades to a trackless preview:
+          // the tapped climb still shows, swipes just walk the queue instead of
+          // this list, the same fallback the wrong-board branch above has. A
+          // climber with the setting off and no board picked can land here:
+          // with no wall to light, a preview is all a tap can be.
           playlistSuggestionSource:
             target && activeBoard
               ? createPlaylistSuggestionSource({

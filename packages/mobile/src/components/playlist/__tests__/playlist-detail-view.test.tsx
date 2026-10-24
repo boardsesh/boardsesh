@@ -984,9 +984,7 @@ describe('PlaylistDetailView', () => {
       const playAction = container.querySelector('[data-appbar-action="play"]');
       expect(playAction).not.toBeNull();
       fireEvent.click(playAction as HTMLElement);
-      // A deliberate start: Light problems when tapping the list (a row-tap
-      // setting) must not turn the Play button into a preview (#6665).
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
     });
 
     it('omits the activate-all action when the list is empty', () => {

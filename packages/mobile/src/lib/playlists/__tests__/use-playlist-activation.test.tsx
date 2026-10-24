@@ -761,35 +761,20 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.activate).not.toHaveBeenCalled();
     });
 
-    it('previews a playlist instead of replacing the queue', async () => {
+    it('leaves a playlist tap starting the playlist until F4', async () => {
+      // On Liquid Glass a row tap is the only way to start a playlist, For You
+      // or setter list: a preview here would leave no way to start one at all.
       setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], replaceQueueOnActivate: true });
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
 
-      await result.current.activate(climb);
+      await act(async () => {
+        await result.current.activate(climb);
+      });
 
-      expect(mocks.setQueue).not.toHaveBeenCalled();
-      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
-    });
-
-    it('leaves a deliberate play (the Play button) alone', async () => {
-      setSetting('lightOnClimbTap', false);
-      const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb] });
-
-      await result.current.activate(climb, undefined, { deliberate: true });
-
-      expect(mocks.activate).toHaveBeenCalledWith(climb);
-    });
-
-    it('still previews a deliberate play in a crew', async () => {
-      const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
-
-      await result.current.activate(climb, undefined, { deliberate: true });
-
-      expect(mocks.activate).not.toHaveBeenCalled();
-      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
+      expect(mocks.setQueue.mock.calls[0]?.[1].climb.uuid).toBe('a');
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
     });
 
     it('reads the setting at the tap, so turning it back on commits the next tap', async () => {
