@@ -463,7 +463,9 @@ Benchmarks only are what usually bring it here.
   past the limit the plan's own pool search fails and the preview shows its error toast.
 - **Rows.** For a borrowed row `PreviewItem.slot.grade` is the grade the climb came from,
   and `borrowedFrom.plannedGrade` the grade planned. The row says "V4 for V5" under the
-  climb, and its spoken label says it too.
+  climb, and its spoken label says it too. When both grades read the same in the climber's
+  format (4a, 4b and 4c are all V0, 5a and 5b both V1), both labels add the Font grade
+  ("V0 / 4B for V0 / 4A"), as the grade rail's chips do (`borrowedGradeLabels`).
 - **Refresh.** A row refresh tries the planned grade first (its cached pool, then one
   refetch unless the pool is read out), then the nearby grades in step order the same
   way, for a climb not in the queue, then a queued climb at the nearest grade that has one,

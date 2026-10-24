@@ -77,10 +77,13 @@ vi.mock('../../../Icon', () => ({ Icon: () => createElement('span', { 'data-test
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+// The caption formats its two grade ids with the real shared scale (18 is
+// 6b/V4, 20 is 6c/V5) under the climber's format, mocked here as V.
+const gradeFormatPreference = vi.hoisted(() => ({ gradeFormat: 'v-grade' as 'v-grade' | 'font' | 'both' }));
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
+    gradeFormat: gradeFormatPreference.gradeFormat,
     formatGrade: () => 'V4',
-    formatGradeByDifficultyId: (difficultyId: number) => ({ 18: 'V4', 20: 'V5' })[difficultyId] ?? null,
   }),
 }));
 vi.mock('../../../../providers/theme-provider', () => ({
@@ -140,6 +143,7 @@ function renderRow(overrides: {
 
 beforeEach(() => {
   surfaces.entries = [];
+  gradeFormatPreference.gradeFormat = 'v-grade';
   resetClimbRowDisplayForTests();
 });
 
@@ -250,6 +254,32 @@ describe('WorkoutPreviewRow borrowed from a nearby grade', () => {
 
     getByText('V4 for V5');
     expect(rowButton()?.label).toBe('Test Climb, V4, V4 for V5, 12 sends, 4 stars, setter');
+  });
+
+  // 4b borrowed for 4a: both are V0, so "V0 for V0" would say nothing.
+  it('adds the Font grade when both grades read the same V grade, and speaks it', () => {
+    const { getByText } = renderRow({
+      isRefreshing: false,
+      refreshDisabled: false,
+      borrowedGrade: 11,
+      plannedGrade: 10,
+    });
+
+    getByText('V0 / 4B for V0 / 4A');
+    expect(rowButton()?.label).toBe('Test Climb, V4, V0 / 4B for V0 / 4A, 12 sends, 4 stars, setter');
+  });
+
+  it('keeps the climber’s Font format when it already tells the grades apart', () => {
+    gradeFormatPreference.gradeFormat = 'font';
+
+    const { getByText } = renderRow({
+      isRefreshing: false,
+      refreshDisabled: false,
+      borrowedGrade: 11,
+      plannedGrade: 10,
+    });
+
+    getByText('4B for 4A');
   });
 
   it('shows no caption on a row at its planned grade', () => {

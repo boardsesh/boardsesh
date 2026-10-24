@@ -16,6 +16,7 @@ import { formatQuality, formatSends } from '../../../lib/format-climb-stats';
 import { useClimbRowDisplay } from '../../../lib/climb-row-display-preference';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import type { TierAscentStatus } from './workout-search-tiers';
+import { borrowedGradeLabels } from './borrowed-grade-labels';
 
 type WorkoutPreviewRowProps = {
   item: ClimbQueueItem;
@@ -39,7 +40,8 @@ type WorkoutPreviewRowProps = {
   /**
    * For a row whose climb came from a nearby grade (`PreviewItem.borrowedFrom`):
    * the difficulty id it came from and the one the plan asked for. The row then
-   * says "V4 for V5" under the climb. Absent or null on every other row.
+   * says "V4 for V5" under the climb (`borrowedGradeLabels`). Absent or null on
+   * every other row.
    */
   borrowedGrade?: number | null;
   plannedGrade?: number | null;
@@ -73,7 +75,7 @@ function WorkoutPreviewRowComponent({
   const { systemColors, brandColors, opacity } = useTheme();
   const { t: sessionT } = useTranslation('session');
   const { t: climbsT } = useTranslation('climbs');
-  const { formatGrade, formatGradeByDifficultyId: formatGradeIdWithPreference } = useGradeFormat();
+  const { gradeFormat, formatGrade } = useGradeFormat();
   // What the climber has switched on for climb rows. The row visual reads it for
   // itself; this row needs it for the two things it adds around that visual:
   // the label it speaks, and where its separator starts.
@@ -99,16 +101,14 @@ function WorkoutPreviewRowComponent({
   const climbName = climb?.name ?? sessionT('mobile.queue.unknownClimb');
   const formattedGrade = climb ? (formatGrade(climb.difficulty, board.boardName) ?? climb.difficulty) : null;
   // "V4 for V5": the grade the climb came from, then the one it fills in for.
-  const borrowedGradeLabel =
-    borrowedGrade === null ? null : formatGradeIdWithPreference(borrowedGrade, board.boardName);
-  const plannedGradeLabel = plannedGrade === null ? null : formatGradeIdWithPreference(plannedGrade, board.boardName);
-  const borrowedCaption =
-    borrowedGradeLabel && plannedGradeLabel
-      ? sessionT('mobile.session.preWorkoutPreviewBorrowedGrade', {
-          grade: borrowedGradeLabel,
-          plannedGrade: plannedGradeLabel,
-        })
-      : null;
+  // "V0 / 4B for V0 / 4A" when both read V0 in the climber's format.
+  const borrowedLabels = borrowedGradeLabels(borrowedGrade, plannedGrade, gradeFormat, board.boardName);
+  const borrowedCaption = borrowedLabels
+    ? sessionT('mobile.session.preWorkoutPreviewBorrowedGrade', {
+        grade: borrowedLabels.grade,
+        plannedGrade: borrowedLabels.plannedGrade,
+      })
+    : null;
   const quality = climb ? Number(formatQuality(climb.quality_average)) : 0;
   const qualityStarCount = Math.round(quality);
   // The label replaces what a screen reader would compose from the row, so it
