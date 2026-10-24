@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import sharp from 'sharp';
+import sharp, { type OutputInfo } from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
 import { aliveHolds } from '@boardsesh/db/queries';
 import { sprayWallVersions, sprayWalls, type SprayWallVersionArt } from '@boardsesh/db/schema';
@@ -205,7 +205,7 @@ async function render(context: BackgroundJobContext, request: Payload): Promise<
   // stages instead: an aborted attempt stops at the next one.
   context.signal.throwIfAborted();
 
-  let photo: { data: Buffer; info: sharp.OutputInfo };
+  let photo: { data: Buffer; info: OutputInfo };
   try {
     photo = await sharp(photoBytes).removeAlpha().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
   } catch {
