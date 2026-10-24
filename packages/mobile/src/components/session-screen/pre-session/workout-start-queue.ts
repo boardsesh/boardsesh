@@ -65,6 +65,29 @@ export function countFilledSlots(slotIndexByUuid: ReadonlyMap<string, number>, u
   return filledSlots.size;
 }
 
+/**
+ * The staged climbs minus every slot that already has a climb in the queue
+ * (`queuedUuids`). Only round 1 keeps the preview row's uuid, and each hand-over
+ * mints fresh copies, so a uuid match finds round 1 alone: dropping the whole
+ * slot keeps a second add of the same 4x4 from queueing rounds 2 onward again.
+ */
+export function withoutQueuedSlots(
+  items: readonly ClimbQueueItem[],
+  slotIndexByUuid: ReadonlyMap<string, number>,
+  queuedUuids: ReadonlySet<string>,
+): ClimbQueueItem[] {
+  const queuedSlots = new Set<number>();
+  for (const { uuid } of items) {
+    const slotIndex = queuedUuids.has(uuid) ? slotIndexByUuid.get(uuid) : undefined;
+    if (slotIndex !== undefined) queuedSlots.add(slotIndex);
+  }
+  return items.filter(({ uuid }) => {
+    if (queuedUuids.has(uuid)) return false;
+    const slotIndex = slotIndexByUuid.get(uuid);
+    return slotIndex === undefined || !queuedSlots.has(slotIndex);
+  });
+}
+
 type QueuedRow = {
   /** The queue item's uuid, for `expandRounds`. */
   uuid: string;

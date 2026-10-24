@@ -13,7 +13,7 @@ import {
 } from '@boardsesh/playlist-generator';
 import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
 import type { PreviewItem } from '../workout-preview-pool';
-import { countFilledSlots, stagePreviewQueue, summarizeStartQueue } from '../workout-start-queue';
+import { countFilledSlots, stagePreviewQueue, summarizeStartQueue, withoutQueuedSlots } from '../workout-start-queue';
 
 const workout = (options: GeneratorOptions): WorkoutBlockSpec => ({ kind: 'workout', options });
 const fourByFour = (rounds = 4) => workout({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18, rounds });
@@ -162,6 +162,38 @@ describe('countFilledSlots', () => {
     expect(countFilledSlots(staged.slotIndexByUuid, landed)).toBe(4);
     expect(countFilledSlots(staged.slotIndexByUuid, landed.slice(0, 2))).toBe(2);
     expect(countFilledSlots(staged.slotIndexByUuid, ['not-queued'])).toBe(0);
+  });
+});
+
+describe('withoutQueuedSlots', () => {
+  it('drops every round of a slot whose first round is queued, and keeps the other slots whole', () => {
+    const plan = planOf(['four'], [fourByFour()]);
+    const previews = rowsFor('four', 4);
+    // A second hand-over of the same preview: round 1 again, fresh copies.
+    const firstAdd = stage(previews, plan);
+    const secondAdd = stage(previews, plan);
+    const queued = new Set(firstAdd.items.slice(0, 1).map((item) => item.uuid));
+
+    const kept = withoutQueuedSlots(secondAdd.items, secondAdd.slotIndexByUuid, queued);
+
+    expect(kept).toHaveLength(12);
+    expect(kept.some((item) => item.climb.uuid === 'climb-0')).toBe(false);
+  });
+
+  it('keeps nothing when the whole preview is already queued', () => {
+    const plan = planOf(['four'], [fourByFour()]);
+    const previews = rowsFor('four', 4);
+    const firstAdd = stage(previews, plan);
+    const secondAdd = stage(previews, plan);
+    const queued = new Set(firstAdd.items.map((item) => item.uuid));
+
+    expect(withoutQueuedSlots(secondAdd.items, secondAdd.slotIndexByUuid, queued)).toEqual([]);
+  });
+
+  it('drops a queued climb that has no slot and keeps one that is not queued', () => {
+    const items = rowsFor(undefined, 2).map((preview) => preview.item);
+
+    expect(withoutQueuedSlots(items, new Map(), new Set([items[0].uuid]))).toEqual([items[1]]);
   });
 });
 

@@ -271,7 +271,8 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   not move the wall on this phone. Then the block's stage is appended to the run (or
   becomes the run). Climbs cut by the queue's size cap get no stage; a climb whose wire
   send fails afterwards keeps its stage, which is harmless because readers count only
-  queued climbs. Climbs already in the queue are left out, and a second tap during the
+  queued climbs. A slot with a climb already in the queue is left out, every round of
+  it, since a 4x4's later rounds get fresh uuids on each add; a second tap during the
   slide-down does nothing. The pure part is `add-workout-block.ts`.
 - Before it composes the run, the confirm waits for the store to finish reading this
   session's run after a cold start, so the run queued at Start is never overwritten.
