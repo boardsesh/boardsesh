@@ -102,18 +102,16 @@ function BleControlSheet({
           value={lightOnClimbTap}
           onValueChange={onToggleLightOnClimbTap}
         />
-        {/* Indented under the tap switch, the same pair as Settings › Board:
+        {/* Under the tap switch, the same pair and order as Settings › Board:
             swiping only lights the board once a climb is on the wall, and its
-            description says so. */}
-        <View style={styles.nestedSwitch}>
-          <SwitchRow
-            label={tSettings('ble.lighting.onSwipeLabel')}
-            description={tSettings('ble.lighting.onSwipeDescription')}
-            wrapDescription
-            value={lightOnSwipe}
-            onValueChange={onToggleLightOnSwipe}
-          />
-        </View>
+            description says so. Not indented, so both toggles stay aligned. */}
+        <SwitchRow
+          label={tSettings('ble.lighting.onSwipeLabel')}
+          description={tSettings('ble.lighting.onSwipeDescription')}
+          wrapDescription
+          value={lightOnSwipe}
+          onValueChange={onToggleLightOnSwipe}
+        />
         <Separator />
         <ListRow
           title={tSettings('ble.relightBoard')}
@@ -143,8 +141,5 @@ export { BleControlSheet };
 const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[2],
-  },
-  nestedSwitch: {
-    paddingLeft: spacing[4],
   },
 });

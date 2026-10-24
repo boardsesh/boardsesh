@@ -72,4 +72,15 @@ describe('formatBrowseCaption', () => {
     const printedName = caption?.slice('Only you see this · the wall is on '.length) ?? '';
     expect(Array.from(printedName)).toHaveLength(MAX_CAPTION_NAME_LENGTH);
   });
+
+  it('drops the wall climb name under a list or a workout stage, so the short form fits the top bar', () => {
+    const caption = formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimpladder Overhangtraverse Project' }, t, {
+      sharesLine: true,
+    });
+    expect(caption).toBe('Only you see this');
+  });
+
+  it('keeps the solo preview words under a list or a workout stage', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t, { sharesLine: true })).toBe('Preview, not lit');
+  });
 });

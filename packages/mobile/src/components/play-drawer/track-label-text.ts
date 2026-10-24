@@ -65,11 +65,21 @@ function shortCaptionName(name: string): string {
  * you see this" in a crew, with "· the wall is on Crimp Ladder" when the room
  * has a climb lit. It shares the narrow top bar with the list, so the climb name
  * is cut short.
+ *
+ * `sharesLine` is true when the top bar's first line also names a list or a
+ * workout stage. The wall climb's name is then left out: the top bar sits
+ * between ⌄ and the timer + ⋯ cluster, and the long crew form alone runs to 59
+ * characters, far past what fits there. The pill's face still says who lit the
+ * wall.
  */
-export function formatBrowseCaption(caption: BrowseCaption, t: TFunction<'session'>): string | null {
+export function formatBrowseCaption(
+  caption: BrowseCaption,
+  t: TFunction<'session'>,
+  { sharesLine = false }: { sharesLine?: boolean } = {},
+): string | null {
   if (caption === null) return null;
   if (caption.kind === 'preview') return t('playView.wallState.previewNotLit');
   const wallClimbName = caption.wallClimbName?.trim();
-  if (!wallClimbName) return t('playView.wallState.onlyYouSeeThis');
+  if (!wallClimbName || sharesLine) return t('playView.wallState.onlyYouSeeThis');
   return t('playView.wallState.onlyYouSeeThisWallOn', { name: shortCaptionName(wallClimbName) });
 }

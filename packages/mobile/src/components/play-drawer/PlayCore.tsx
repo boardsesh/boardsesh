@@ -1197,7 +1197,8 @@ export function PlayCore({
   // (`resolveBrowseCaption`): "Preview, not lit", or in a crew "Only you see
   // this · the wall is on Crimp Ladder". It rides the top bar's second line
   // (#6745), not the stats line, so it never pushes the sends and stars off;
-  // the top bar does not swipe, so the peeks carry none of their own.
+  // the top bar does not swipe, so the peeks carry none of their own. Under a
+  // list or a workout stage it takes the short crew form, which fits there.
   const browseCaption = formatBrowseCaption(
     resolveBrowseCaption({
       isAnonymous,
@@ -1210,6 +1211,7 @@ export function PlayCore({
       wallDriven: lightbulbActive,
     }),
     t,
+    { sharesLine: topBarParts !== null },
   );
 
   // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
