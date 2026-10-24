@@ -555,12 +555,14 @@ function NowOnTheWallPanelComponent(
   const handleInteractiveClimbPress = useCallback(
     (presenceClimb: BoardPresenceClimb) => {
       if (!onClimbPress) return;
-      const wallClimb = currentClimbRef.current;
-      const isWallClimb =
-        wallClimb != null && wallClimb.climbUuid === presenceClimb.climbUuid && wallClimb.seq === presenceClimb.seq;
       runInteractiveAction(
         presenceClimb,
         (action) => {
+          // Read after the climb resolves, with the track: a crewmate can move
+          // the wall while it loads.
+          const wallClimb = currentClimbRef.current;
+          const isWallClimb =
+            wallClimb != null && wallClimb.climbUuid === presenceClimb.climbUuid && wallClimb.seq === presenceClimb.seq;
           const panelBoard = boardConfigRef.current;
           const track = panelBoard
             ? createPlaylistSuggestionSource({

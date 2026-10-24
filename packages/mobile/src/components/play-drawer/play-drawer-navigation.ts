@@ -23,9 +23,11 @@ export function getViewOnlyPreviewNavigationTarget({
   forceViewOnly?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
   if (forceViewOnly) return { viewOnly: true, targetItem };
-  // Mobile only sets previewSuggestionSource for the wrong-board view-only
-  // drawer path. Normal playlist activation commits navigation through the
-  // queue and must leave this value null.
+  // A preview carries the list it came from as previewSuggestionSource (the
+  // wrong board, a crew, Light on tap off, board history, similar climbs), so
+  // its swipes stay previews. It is null for a committed climb and for a
+  // trackless preview (the long-press Preview action, deep links, the new-climb
+  // card, workout rows).
   if (!previewSuggestionSource || !previewItem) return { viewOnly: false };
   return { viewOnly: true, targetItem };
 }
