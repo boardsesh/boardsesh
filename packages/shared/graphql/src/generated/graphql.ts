@@ -50,7 +50,7 @@ export type ActivityFeedInput = {
   cursor?: InputMaybe<Scalars['String']['input']>;
   /** Restrict results to users followed by the authenticated viewer */
   followingOnly?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Include one daily hardest-send card for followed/user-filtered days without explicit sessions */
+  /** Include daily activity cards for user, followed-user, or board scopes, covering readable logs outside listed sessions */
   includeDailyHighlights?: InputMaybe<Scalars['Boolean']['input']>;
   /** Maximum number of items to return */
   limit?: InputMaybe<Scalars['Int']['input']>;

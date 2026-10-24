@@ -117,6 +117,7 @@ type DailyHighlightKey = {
 type DailySessionId = {
   userId: string;
   day: string;
+  boardId?: number;
 };
 
 type BetaLinkRow = {
@@ -155,6 +156,33 @@ function parseDailySessionId(sessionId: string): DailySessionId | null {
   const match = /^daily:([^:]+):(\d{4}-\d{2}-\d{2})$/.exec(sessionId);
   if (!match) return null;
   return { userId: match[1], day: match[2] };
+}
+
+async function resolveBoardDailySession(
+  boardUuid: string,
+  tickUuid: string,
+  viewerUserId: string | null,
+): Promise<DailySessionId | null> {
+  if (!(await canAccessResource('board', boardUuid, viewerUserId))) return null;
+  // The anchor is a readable log on this exact wall. Resolve its author and
+  // date on the primary so a copied card cannot restore a moved or private log.
+  const [anchor] = await db
+    .select({
+      userId: dbSchema.boardseshTicks.userId,
+      day: sql<string>`${dbSchema.boardseshTicks.climbedAt}::date::text`,
+      boardId: dbSchema.userBoards.id,
+    })
+    .from(dbSchema.boardseshTicks)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.boardseshTicks.boardId, dbSchema.userBoards.id))
+    .where(
+      and(
+        eq(dbSchema.boardseshTicks.uuid, tickUuid),
+        eq(dbSchema.userBoards.uuid, boardUuid),
+        dailyCardTickSql('boardsesh_ticks', viewerUserId),
+      ),
+    )
+    .limit(1);
+  return anchor ?? null;
 }
 
 export type SessionFeedPagination = {
@@ -227,7 +255,9 @@ export async function getSessionFeed(
     // climber's ticks per session. Empty on social/home/following feeds, which
     // keep whole-session aggregates. Mirrors boardIdFilter's null guard.
     const sessionUserFilter = userId !== null ? sql`AND t.user_id = ${userId}` : sql``;
-    const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
+    // Home's selected-board feed also needs logs outside listed sessions.
+    // Keep the unscoped Everyone feed from aggregating daily logs globally.
+    const shouldIncludeDailyHighlights = includeDailyHighlights && (participantFilterEnabled || boardIdFilter !== null);
     const eligibleUsersCte = userId
       ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
       : followingOnly
@@ -255,7 +285,7 @@ export async function getSessionFeed(
             t.climbed_at::date AS day,
             COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty
           FROM boardsesh_ticks t
-          INNER JOIN eligible_users eu ON eu.user_id = t.user_id
+          ${participantFilterEnabled ? sql`INNER JOIN eligible_users eu ON eu.user_id = t.user_id` : sql``}
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
@@ -625,7 +655,10 @@ export async function getSessionFeed(
       const durationMinutes = Math.round((lastTime - firstTime) / 60000) || null;
 
       return {
-        sessionId: row.session_id,
+        sessionId:
+          isDailyHighlight && boardIdFilter !== null && !participantFilterEnabled
+            ? `daily:board:${validatedInput.boardUuid}:${row.highlight_tick_uuid}`
+            : row.session_id,
         sessionType: isDailyHighlight ? 'daily_highlight' : 'party',
         sessionName: isDailyHighlight ? null : sessionMeta?.name || null,
         ownerUserId:
@@ -706,9 +739,15 @@ export const sessionFeedQueries = {
   ): Promise<SessionDetail | null> => {
     if (!sessionId) return null;
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
-    const dailySession = parseDailySessionId(sessionId);
+    const boardDailyMatch = /^daily:board:([^:]+):([^:]+)$/.exec(sessionId);
+    if (sessionId.startsWith('daily:board:') && !boardDailyMatch) return null;
+    const dailySession = boardDailyMatch
+      ? await resolveBoardDailySession(boardDailyMatch[1], boardDailyMatch[2], viewerUserId)
+      : parseDailySessionId(sessionId);
+    if (boardDailyMatch && !dailySession) return null;
     if (dailySession) {
-      if (!(await canViewActivityIdentity(dailySession.userId, ctx?.userId))) return null;
+      if (dailySession.boardId == null && !(await canViewActivityIdentity(dailySession.userId, viewerUserId)))
+        return null;
     } else if (!aggregateOnly && !(await canAccessResource('session', sessionId, ctx?.userId))) return null;
 
     const [partySession] = dailySession
@@ -721,12 +760,14 @@ export const sessionFeedQueries = {
       ? and(
           eq(dbSchema.boardseshTicks.userId, dailySession.userId),
           sql`${dbSchema.boardseshTicks.climbedAt}::date = ${dailySession.day}::date`,
+          dailySession.boardId != null ? eq(dbSchema.boardseshTicks.boardId, dailySession.boardId) : undefined,
           dailyCardTickSql('boardsesh_ticks', viewerUserId),
         )
       : eq(dbSchema.boardseshTicks.sessionId, sessionId);
 
     // Fetch ticks for this session
-    const tickRows = await dbRead
+    const detailReadDb = dailySession?.boardId != null ? db : dbRead;
+    const tickRows = await detailReadDb
       .select({
         tick: dbSchema.boardseshTicks,
         climbName: dbSchema.boardClimbs.name,
@@ -936,13 +977,18 @@ export const sessionFeedQueries = {
     }
 
     if (comboValues.length > 0) {
+      const boardDailyAttemptScope =
+        dailySession?.boardId != null
+          ? sql`AND t.board_id = ${dailySession.boardId} AND t.climbed_at::date = ${dailySession.day}::date
+              AND ${dailyCardTickSql('t', viewerUserId)}`
+          : sql``;
       // Build VALUES clause for the combos
       const valuesSql = sql.join(
         comboValues.map((c) => sql`(${c.userId}, ${c.climbUuid}, ${c.boardType}, ${c.angle})`),
         sql`, `,
       );
 
-      const totalAttemptsResult = await dbRead.execute(sql`
+      const totalAttemptsResult = await detailReadDb.execute(sql`
         WITH combos(user_id, climb_uuid, board_type, angle) AS (
           VALUES ${valuesSql}
         ),
@@ -960,6 +1006,7 @@ export const sessionFeedQueries = {
             AND t.board_type = c.board_type
             AND t.angle = c.angle::int
           WHERE t.status IN ('flash', 'send') AND ${tickPrivacyCondition(ctx?.userId, alias(dbSchema.boardseshTicks, 't'))}
+            ${boardDailyAttemptScope}
           GROUP BY t.user_id, t.climb_uuid, t.board_type, t.angle
         ),
         attempts_since AS (
@@ -981,6 +1028,7 @@ export const sessionFeedQueries = {
             AND t.board_type = ls.board_type
             AND t.angle = ls.angle
           WHERE t.climbed_at >= COALESCE(ls.last_success_at, '1970-01-01'::timestamp) AND ${tickPrivacyCondition(ctx?.userId, alias(dbSchema.boardseshTicks, 't'))}
+            ${boardDailyAttemptScope}
           GROUP BY t.user_id, t.climb_uuid, t.board_type, t.angle
         )
         SELECT * FROM attempts_since
@@ -1074,12 +1122,24 @@ export const sessionFeedQueries = {
     // stays anonymous on boards they don't own is unnamed here when the
     // session's board is not theirs, unless the viewer is a fellow member of the
     // session. Their rows and counts stay, under the session's opaque
-    // participant id, without name, avatar, note or clips. A daily card is one
-    // climber's own day, so it is never projected.
-    const anonymous =
-      dailySession || aggregateOnly
-        ? new Set<string>()
-        : await sessionAnonymousUserIds([...userIds, ownerUserId], viewerUserId, sessionId);
+    // participant id, without name, avatar, note or clips. Board daily cards
+    // follow that wall's identity policy; personal and crew daily cards follow
+    // their author as before.
+    const boardDailyRows =
+      dailySession?.boardId != null && !aggregateOnly
+        ? [{ userIds: [...userIds, ownerUserId], onBoard: { boardId: dailySession.boardId } }]
+        : [];
+    const [boardDailyAnonymous, boardDailyVisible] = await Promise.all([
+      anonymousOnBoardUserIdsByBoard(boardDailyRows, viewerUserId),
+      visibleActivityUserIdsByBoard(boardDailyRows, viewerUserId),
+    ]);
+    const anonymous = aggregateOnly
+      ? new Set<string>()
+      : dailySession?.boardId != null
+        ? boardDailyAnonymous[0]
+        : dailySession
+          ? new Set<string>()
+          : await sessionAnonymousUserIds([...userIds, ownerUserId], viewerUserId, sessionId);
     const anonymousId = (userId: string) => sessionParticipantId(sessionId, userId);
     const [healthKitWorkout] =
       viewerUserId && !dailySession
@@ -1104,14 +1164,17 @@ export const sessionFeedQueries = {
         ownerUserId &&
         !anonymous.has(ownerUserId) &&
         (dailySession
-          ? await canViewActivityIdentity(ownerUserId, viewerUserId)
+          ? dailySession.boardId != null
+            ? boardDailyVisible[0]?.has(ownerUserId)
+            : await canViewActivityIdentity(ownerUserId, viewerUserId)
           : (await sessionVisibleUserIds([ownerUserId], viewerUserId, sessionId)).has(ownerUserId))
           ? ownerUserId
           : null,
       participants: aggregateOnly
         ? []
         : participants.map((participant) =>
-            anonymous.has(participant.userId)
+            anonymous.has(participant.userId) ||
+            (dailySession?.boardId != null && !boardDailyVisible[0]?.has(participant.userId))
               ? { ...participant, userId: anonymousId(participant.userId), displayName: null, avatarUrl: null }
               : participant,
           ),
