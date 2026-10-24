@@ -117,6 +117,7 @@ anything left out keeps the real value.
 | Field                    | Patches                                                      |
 | ------------------------ | ------------------------------------------------------------ |
 | `queue.isSharedSession`  | `useIsSharedSession()`: whether gestures browse first (#4281) |
+| `queue.isCrewSession`    | `useIsCrewSession()`: whether only the wall holder's rest timer may move the wall. Follows `isSharedSession` when left out |
 | `queue.sessionId`        | `useQueueSessionId()` and `useQueueSessionControls()`       |
 | `queue.sessionUsers`     | The roster in `useQueueLiveStats()`, and `sessionMemberUserIds` in `useQueueSessionControls()` (from each member's `userId`) |
 

@@ -27,8 +27,8 @@ import { ScrollableTabs } from '../navigation/ScrollableTabs';
 import { TickDestructiveRow } from '../tick/TickDestructiveRow';
 import { TICK_ACTION_MAX_FONT_SCALE, TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
 import { useTheme } from '../../providers/theme-provider';
-import { useQueueSessionId, useIsSharedSession } from '../../providers/queue-provider';
-import { useBoardConnectionState } from '../ble/use-board-connection-state';
+import { useQueueSessionId } from '../../providers/queue-provider';
+import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useSetting } from '../../settings';
 import { useRestTimerArmed, useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
@@ -105,15 +105,16 @@ export function RestTimerAutoAdvanceRow() {
   const { systemColors } = useTheme();
   const [autoAdvance, setAutoAdvance] = useSetting('restTimerAutoAdvance');
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
-  const isSharedSession = useIsSharedSession();
-  const { inAppBoardConnection } = useBoardConnectionState();
-  const isCrewPassenger = isSharedSession && inAppBoardConnection !== 'connectedByMe';
+  // The scheduler's own rule (lib/session-timer/driver-rule.ts), so the switch
+  // can never say yes where the scheduler would refuse.
+  const { blockedReason: driverBlockedReason } = useSessionTimerDriver();
 
-  const blockedReason = isCrewPassenger
-    ? t('mobile.restTimer.autoAdvanceBlocked')
-    : hasRestLength(targetSeconds)
-      ? null
-      : t('mobile.restTimer.autoAdvanceNeedsLength');
+  const blockedReason =
+    driverBlockedReason !== null
+      ? t('mobile.restTimer.autoAdvanceBlocked')
+      : hasRestLength(targetSeconds)
+        ? null
+        : t('mobile.restTimer.autoAdvanceNeedsLength');
 
   return (
     <View style={styles.autoAdvanceGroup}>

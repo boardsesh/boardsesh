@@ -19,6 +19,7 @@ export function DevScenarioOverrides({ children }: { children: ReactNode }) {
   const overrides = useSyncExternalStore(subscribeScenarioOverrides, getScenarioOverrides, getScenarioOverrides);
   const queuePatch = overrides?.queue;
   const patchedSharedSession = queuePatch?.isSharedSession;
+  const patchedCrewSession = queuePatch?.isCrewSession;
   const patchedSessionId = queuePatch?.sessionId;
   const patchedSessionUsers = queuePatch?.sessionUsers;
 
@@ -27,12 +28,17 @@ export function DevScenarioOverrides({ children }: { children: ReactNode }) {
   const sessionControls = useContext(QueueSessionControlContext);
   const liveStats = useContext(QueueLiveStatsContext);
 
+  // A browsing crew is always a crew, so a patched `isSharedSession` carries
+  // `isCrewSession` with it unless the story says otherwise.
   const sharedSessionValue = useMemo(
     () =>
-      sharedSession === null || patchedSharedSession === undefined
+      sharedSession === null || (patchedSharedSession === undefined && patchedCrewSession === undefined)
         ? sharedSession
-        : { isSharedSession: patchedSharedSession },
-    [sharedSession, patchedSharedSession],
+        : {
+            isSharedSession: patchedSharedSession ?? sharedSession.isSharedSession,
+            isCrewSession: patchedCrewSession ?? patchedSharedSession ?? sharedSession.isCrewSession,
+          },
+    [sharedSession, patchedSharedSession, patchedCrewSession],
   );
   // The real provider derives the member set from the roster, so a patched roster
   // patches it too. Same rule: anonymous members have no userId to match.

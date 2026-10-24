@@ -26,7 +26,7 @@ import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
-import { useSetting } from '../../settings';
+import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
 import { hapticMedium } from '../../lib/haptics';
 import { pauseRestTimer, resetRestTimer, resumeRestTimer } from '../../lib/rest-timer-store';
@@ -112,8 +112,7 @@ export type RestTimerDisplay = {
  */
 export function useRestTimerDisplay(): RestTimerDisplay {
   const { armed, anchorMs, isRunning, pausedElapsedSeconds, queueEnded, listEnded } = useRestTimerState();
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
-  const [mode] = useSetting('restTimerMode');
+  const { targetSeconds, mode } = useEffectiveRestPacing();
 
   // Only a running timer with something to count from needs a heartbeat.
   const ticking = armed && isRunning && anchorMs !== null;

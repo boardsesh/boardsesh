@@ -13,22 +13,17 @@ import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import { isClimbOnReachableBoard, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { toBoardName } from '@boardsesh/board-config';
-import {
-  useQueueActions,
-  useQueueData,
-  useIsSharedSession,
-  usePlaylistSuggestionSource,
-} from '../../providers/queue-provider';
+import { useQueueActions, useQueueData, usePlaylistSuggestionSource } from '../../providers/queue-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useToast } from '../../providers/toast-provider';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { useKeepAwakeWhile } from '../../hooks/use-keep-awake-while';
-import { useSetting } from '../../settings';
+import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
+import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
-import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
+import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import {
   clearRestTimerQueueEnded,
   noteRestTimerAutoAdvanceFired,
@@ -50,9 +45,7 @@ const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null
 export function RestTimerAutoAdvanceScheduler() {
   const { t } = useTranslation('session');
   const timerState = useRestTimerState();
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
-  const [autoAdvance] = useSetting('restTimerAutoAdvance');
-  const [mode] = useSetting('restTimerMode');
+  const { targetSeconds, autoAdvance, mode } = useEffectiveRestPacing();
 
   const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -73,8 +66,6 @@ export function RestTimerAutoAdvanceScheduler() {
     getCommittedSource: getCommittedSuggestionSource,
     refreshCommittedSource: refreshPlaylistSuggestionSource,
   });
-  const isSharedSession = useIsSharedSession();
-  const { inAppBoardConnection } = useBoardConnectionState();
   const { data: activeBoard } = useActiveBoard();
   // The beat has to agree with what a swipe would actually do: without this it
   // announces "queue ended" while `nextClimb` would happily advance onto a climb
@@ -92,8 +83,9 @@ export function RestTimerAutoAdvanceScheduler() {
 
   // In a crew, only the climber driving the wall may move the shared queue —
   // `nextClimb` broadcasts, so a passenger's timer would change everyone's climb.
-  // Solo there is nothing to stomp on, so no board link is required.
-  const canDriveWall = !isSharedSession || inAppBoardConnection === 'connectedByMe';
+  // Solo there is nothing to stomp on, so no board link is required. One rule,
+  // shared with the sheet: lib/session-timer/driver-rule.ts.
+  const { canAdvanceQueue: canDriveWall } = useSessionTimerDriver();
 
   // Read through refs so the scheduling effect depends only on the timer's own
   // inputs. Re-running it on every queue edit would cancel and reschedule the
@@ -182,7 +174,7 @@ export function RestTimerAutoAdvanceScheduler() {
       // or a remount loses the race here rather than skipping a second climb.
       if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs)) return;
 
-      hapticMedium();
+      playRestTimerCue({ kind: 'advance' });
       nextClimb();
     },
     [mode, nextClimb],
@@ -225,7 +217,7 @@ export function RestTimerAutoAdvanceScheduler() {
 
     const warnTimeout =
       remainingMs > AUTO_ADVANCE_WARNING_LEAD_MS
-        ? setTimeout(() => hapticLight(), remainingMs - AUTO_ADVANCE_WARNING_LEAD_MS)
+        ? setTimeout(() => playRestTimerCue({ kind: 'warning' }), remainingMs - AUTO_ADVANCE_WARNING_LEAD_MS)
         : null;
     const fireTimeout = setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs);
 
@@ -257,7 +249,7 @@ export function RestTimerAutoAdvanceScheduler() {
 
     const timeout = setTimeout(() => {
       reachedRef.current = { cycleId, targetSeconds };
-      hapticSuccess();
+      playRestTimerCue({ kind: 'reached' });
     }, remainingMs);
     return () => clearTimeout(timeout);
   }, [anchorMs, armed, cycleId, isRunning, scheduled, targetSeconds]);

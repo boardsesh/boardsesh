@@ -14,7 +14,7 @@ let atTrackEnd = false;
 let moreToLoad = false;
 let suggestionSource: { playlistUuid: string } | null = null;
 const trackPagingInputs: Record<string, unknown>[] = [];
-let isSharedSession = false;
+let isCrewSession = false;
 let inAppBoardConnection = 'connectedByMe';
 let settings: Record<string, unknown> = {};
 let currentNowMs = Date.parse('2026-09-11T10:00:00.000Z');
@@ -59,7 +59,10 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ nextClimb, getQueueSnapshot: vi.fn(), refreshPlaylistSuggestionSource: vi.fn() }),
   useQueueData: () => ({ queue: [], currentClimbQueueItem: { uuid: 'queue-current', climb: { uuid: 'current' } } }),
-  useIsSharedSession: () => isSharedSession,
+  // The wall-driver rule's crew input. Deliberately not `useIsSharedSession`:
+  // that one is gated on the browse rollout flag, and a flag-off crew is still a
+  // crew whose wall a passenger's timer must not move.
+  useIsCrewSession: () => isCrewSession,
   usePlaylistSuggestionSource: () => suggestionSource,
 }));
 
@@ -94,13 +97,12 @@ vi.mock('../../../settings', () => ({
 
 vi.mock('../../../lib/clock', () => ({ nowMs: () => currentNowMs }));
 
-vi.mock('../../../lib/haptics', () => ({
-  hapticLight: vi.fn(),
-  hapticMedium: vi.fn(),
-  hapticSuccess: vi.fn(),
-}));
+// The scheduler names the moment; which haptic and sound that is lives in the
+// cue module and is pinned by its own tests.
+vi.mock('../../../lib/rest-timer-cues', () => ({ playRestTimerCue: vi.fn() }));
 
-import { hapticMedium, hapticSuccess } from '../../../lib/haptics';
+import { playRestTimerCue } from '../../../lib/rest-timer-cues';
+import type { RestTimerCueKind } from '../../../lib/rest-timer-cues';
 import {
   armRestTimer,
   getRestTimerState,
@@ -111,6 +113,11 @@ import {
 import { RestTimerAutoAdvanceScheduler } from '../RestTimerAutoAdvanceScheduler';
 
 const T0 = Date.parse('2026-09-11T10:00:00.000Z');
+
+/** How many times the scheduler played one kind of cue. */
+function cueCount(kind: RestTimerCueKind): number {
+  return vi.mocked(playRestTimerCue).mock.calls.filter(([cue]) => cue.kind === kind).length;
+}
 
 /** Advance the fake clock and the timer queue together, so they never disagree. */
 function advance(ms: number) {
@@ -130,7 +137,7 @@ beforeEach(() => {
   moreToLoad = false;
   suggestionSource = null;
   trackPagingInputs.length = 0;
-  isSharedSession = false;
+  isCrewSession = false;
   inAppBoardConnection = 'connectedByMe';
   currentNowMs = T0;
   appStateListener = null;
@@ -159,7 +166,7 @@ describe('firing', () => {
 
     advance(1_000);
     expect(nextClimb).toHaveBeenCalledTimes(1);
-    expect(hapticMedium).toHaveBeenCalledTimes(1);
+    expect(cueCount('advance')).toBe(1);
   });
 
   it('re-anchors after firing and advances again on the next interval', () => {
@@ -203,7 +210,7 @@ describe('not firing', () => {
   });
 
   it('does not advance for a passenger in a crew session', () => {
-    isSharedSession = true;
+    isCrewSession = true;
     inAppBoardConnection = 'heldByPeer';
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
@@ -212,8 +219,28 @@ describe('not firing', () => {
     expect(nextClimb).not.toHaveBeenCalled();
   });
 
+  it('does not advance for anyone in a crew while nobody holds the wall', () => {
+    isCrewSession = true;
+    inAppBoardConnection = 'disconnected';
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(120_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('advance')).toBe(0);
+  });
+
+  it('does advance solo with no board connected at all', () => {
+    inAppBoardConnection = 'disconnected';
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
   it('does advance for the climber driving the wall in a crew session', () => {
-    isSharedSession = true;
+    isCrewSession = true;
     inAppBoardConnection = 'connectedByMe';
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
@@ -334,7 +361,7 @@ describe('the end of a list', () => {
 
   it('drops the waiting beat if the climber stops driving the wall before the page lands', () => {
     // A late page must not move a crew's shared queue from a passenger's phone.
-    isSharedSession = true;
+    isCrewSession = true;
     inAppBoardConnection = 'connectedByMe';
     suggestionSource = { playlistUuid: 'playlist:projects' };
     canNext = false;
@@ -385,18 +412,18 @@ describe('the end of a list', () => {
 });
 
 describe('target reached with auto-advance off', () => {
-  it('fires one haptic and does not touch the queue', () => {
+  it('plays the reached cue once and does not touch the queue', () => {
     settings = { ...settings, restTimerAutoAdvance: false };
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
     advance(60_000);
-    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(cueCount('reached')).toBe(1);
     expect(nextClimb).not.toHaveBeenCalled();
 
-    // Still counting past the target; the haptic must not repeat.
+    // Still counting past the target; the cue must not repeat.
     advance(120_000);
-    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(cueCount('reached')).toBe(1);
   });
 
   it('stays silent while auto-advance is on, so the two cues never double up', () => {
@@ -404,7 +431,7 @@ describe('target reached with auto-advance off', () => {
     render(<RestTimerAutoAdvanceScheduler />);
 
     advance(60_000);
-    expect(hapticSuccess).not.toHaveBeenCalled();
+    expect(cueCount('reached')).toBe(0);
   });
 });
 
@@ -441,7 +468,7 @@ describe('backgrounding', () => {
     });
 
     expect(nextClimb).not.toHaveBeenCalled();
-    expect(hapticMedium).not.toHaveBeenCalled();
+    expect(cueCount('advance')).toBe(0);
 
     // And the resume that follows still leaves the timer usable, not wedged.
     act(() => appStateListener?.('active'));
@@ -482,13 +509,13 @@ describe('the target buzz', () => {
     const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
 
     advance(60_000);
-    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(cueCount('reached')).toBe(1);
 
     // Same cycle, longer rest: a cycle-only latch would swallow this silently.
     settings = { ...settings, restTimerTargetSeconds: 300 };
     rerender(<RestTimerAutoAdvanceScheduler />);
     advance(240_000);
-    expect(hapticSuccess).toHaveBeenCalledTimes(2);
+    expect(cueCount('reached')).toBe(2);
   });
 });
 
@@ -521,5 +548,45 @@ describe('the screen wake lock', () => {
     act(() => pauseRestTimer(currentNowMs));
     expect(keepAwakeCalls.at(-1)).toEqual({ active: false, tag: 'rest-timer' });
     unmount();
+  });
+});
+
+// What the climber hears and feels. Each moment names a cue; the cue module maps
+// it to the same haptic the timer always played (warning light, advance medium,
+// reached success).
+describe('cues', () => {
+  it('warns once ahead of the advance, then plays the advance cue with the move', () => {
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_999);
+    expect(cueCount('warning')).toBe(0);
+    advance(1);
+    expect(cueCount('warning')).toBe(1);
+    expect(nextClimb).not.toHaveBeenCalled();
+
+    advance(3_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['warning', 'advance']);
+  });
+
+  it('plays no advance cue at the end of the queue, where the wall did not move', () => {
+    canNext = false;
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('advance')).toBe(0);
+  });
+
+  it('gives a passenger the reached cue, never the warning or the advance', () => {
+    isCrewSession = true;
+    inAppBoardConnection = 'heldByPeer';
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['reached']);
   });
 });
