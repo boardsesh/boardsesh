@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 // query-provider imports AppState/Platform from react-native; mock it for the wiring test.
 vi.mock('react-native', () => ({
@@ -12,15 +12,13 @@ vi.mock('../../aurora-credentials', () => ({ getAuroraCredentials: vi.fn() }));
 import { createQueryClient } from '../../../providers/query-provider';
 import {
   boardsWithFinishedImport,
+  invalidateOwnDataAfterImport,
   watchBoardImportCompletion,
   type BoardImportState,
 } from '../board-import-completion';
-import {
-  AURORA_CREDENTIALS_QUERY_KEY,
-  AURORA_UNSYNCED_QUERY_KEY,
-  PENDING_SYNC_REFRESH_MS,
-  pendingSyncRefetchInterval,
-} from '../use-board-account-credentials';
+import { AURORA_CREDENTIALS_QUERY_KEY, AURORA_UNSYNCED_QUERY_KEY } from '../board-account-query-keys';
+import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
+import { PENDING_SYNC_REFRESH_MS, pendingSyncRefetchInterval } from '../use-board-account-credentials';
 
 const syncing = (boardType: string): BoardImportState => ({ boardType, pendingRunId: 'run-1', lastSyncAt: null });
 const synced = (boardType: string): BoardImportState => ({
@@ -36,6 +34,10 @@ describe('boardsWithFinishedImport', () => {
   it('reports a board whose first lastSyncAt appeared', () => {
     const before = { boardType: 'tension', pendingRunId: null, lastSyncAt: null };
     expect(boardsWithFinishedImport([before], [synced('tension')])).toEqual(['tension']);
+  });
+  it('reports a lastSyncAt that moved to a newer timestamp', () => {
+    const older = { boardType: 'kilter', pendingRunId: null, lastSyncAt: '2026-10-01T00:00:00Z' };
+    expect(boardsWithFinishedImport([older], [synced('kilter')])).toEqual(['kilter']);
   });
   it('reports nothing when nothing changed', () => {
     expect(boardsWithFinishedImport([syncing('kilter')], [syncing('kilter')])).toEqual([]);
@@ -82,6 +84,7 @@ describe('watchBoardImportCompletion', () => {
       expect.arrayContaining(['userTicks', 'userGroupedAscentsFeed', 'userProfileStats', 'userTickCountsByBoard']),
     );
     expect(invalidatedRoots()).not.toContain('auroraCredentials');
+    expect(invalidatedRoots().filter((root) => root === 'userTicks')).toHaveLength(1);
     const callsAfterFinish = spy.mock.calls.length;
     write(queryClient, [synced('kilter')]);
     expect(spy.mock.calls.length).toBe(callsAfterFinish);
@@ -92,6 +95,60 @@ describe('watchBoardImportCompletion', () => {
     write(queryClient, [syncing('kilter')]);
     queryClient.setQueryData(AURORA_UNSYNCED_QUERY_KEY, { credentials: [synced('kilter')] });
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('fires once across fetch, error and repeated success events from a real observer', async () => {
+    const { queryClient, invalidatedRoots } = setup();
+    const reads: Array<BoardImportState[] | Error> = [
+      [syncing('kilter')],
+      new Error('offline'),
+      [synced('kilter')],
+      [synced('kilter')],
+    ];
+    const queryFn = vi.fn(async () => {
+      const next = reads.shift() as BoardImportState[] | Error;
+      if (next instanceof Error) throw next;
+      return { credentials: next };
+    });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: AURORA_CREDENTIALS_QUERY_KEY,
+      queryFn,
+      retry: false,
+    });
+    const userTicksRounds = () => invalidatedRoots().filter((root) => root === 'userTicks').length;
+    const counts: number[] = [];
+    for (let read = 0; read < 4; read += 1) {
+      await observer.refetch().catch(() => undefined);
+      counts.push(userTicksRounds());
+    }
+    expect(counts).toEqual([0, 0, 1, 1]);
+  });
+
+  it('treats the first read after a sign-out as a first observation', () => {
+    const { queryClient, spy } = setup();
+    write(queryClient, [syncing('kilter')]);
+    invalidatePrivacySnapshots('credential');
+    write(queryClient, [synced('kilter')]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('keeps its state when the cache entry is removed (gc)', () => {
+    const { queryClient, spy } = setup();
+    write(queryClient, [syncing('kilter')]);
+    queryClient.removeQueries({ queryKey: AURORA_CREDENTIALS_QUERY_KEY, exact: true });
+    write(queryClient, [synced('kilter')]);
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('invalidateOwnDataAfterImport refreshes the own-data keys without touching credentials', () => {
+    const queryClient = new QueryClient();
+    clients.push(queryClient);
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    invalidateOwnDataAfterImport(queryClient);
+    const roots = spy.mock.calls.map(([filters]) => filters?.queryKey?.[0]);
+    expect(roots).toEqual(expect.arrayContaining(['userTicks', 'userTickCountsByBoard']));
+    expect(roots).not.toContain('auroraCredentials');
+    expect(roots).not.toContain('localTicks');
   });
 
   it('stops watching after unsubscribe', () => {

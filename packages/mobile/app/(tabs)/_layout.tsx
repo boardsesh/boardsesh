@@ -27,6 +27,7 @@ import {
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
 import { isAccessoryHiddenRoute, tabsActiveSegment } from '../../src/lib/route-segments';
+import { usePendingBoardSyncPoll } from '../../src/lib/integrations/use-pending-board-sync-poll';
 import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
@@ -90,6 +91,7 @@ const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } a
  */
 export default function TabLayout() {
   const { t } = useTranslation('common');
+  usePendingBoardSyncPoll();
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSession } = useTranslation('session');
   const { systemColors, variant, m3, brandColors } = useTheme();

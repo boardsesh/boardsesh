@@ -63,6 +63,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+vi.mock('../../../src/lib/integrations/use-pending-board-sync-poll', () => ({ usePendingBoardSyncPoll: vi.fn() }));
+
 vi.mock('../../../src/lib/ble/bluetooth-status-store', () => ({
   useBluetoothConnectedStatus: () => cfg.bluetoothConnected,
 }));

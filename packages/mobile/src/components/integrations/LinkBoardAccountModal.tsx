@@ -16,7 +16,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import {
   AURORA_CREDENTIALS_QUERY_KEY,
   AURORA_UNSYNCED_QUERY_KEY,
-} from '../../lib/integrations/use-board-account-credentials';
+} from '../../lib/integrations/board-account-query-keys';
 import { BoardAccountError, saveAuroraCredential, saveKilterCredentialViaPassword } from '../../lib/aurora-credentials';
 import {
   trackLinkFailed,
