@@ -425,6 +425,8 @@ describe('Controller Mutations', () => {
           version: 1,
           stateHash: 'protected-state',
           stateHashOrdered: 'protected-ordered-state',
+          historyCount: 0,
+          currentChangedAt: null,
         };
         try {
           expect((await nextControllerEvent(iterator)).controllerEvents.__typename).toBe('ControllerQueueSync');

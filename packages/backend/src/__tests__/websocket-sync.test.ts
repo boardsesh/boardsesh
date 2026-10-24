@@ -179,6 +179,7 @@ describe('WebSocket Sync - Sequence Number Consistency', () => {
       [createTestClimbQueueItem('item-1', 'Climb 1')],
       null,
       1, // Pass current version for optimistic locking
+      0,
     );
 
     // Check sequence after first update
@@ -191,6 +192,7 @@ describe('WebSocket Sync - Sequence Number Consistency', () => {
       [createTestClimbQueueItem('item-1', 'Climb 1'), createTestClimbQueueItem('item-2', 'Climb 2')],
       null,
       version1, // Pass previous version
+      0,
     );
 
     // Check sequence after second update
@@ -229,6 +231,7 @@ describe('WebSocket Sync - Sequence Number Consistency', () => {
         [createTestClimbQueueItem(`item-${i}`, `Climb ${i}`)],
         null,
         currentVersion,
+        0,
       );
     }
 

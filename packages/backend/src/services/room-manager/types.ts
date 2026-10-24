@@ -112,14 +112,7 @@ export type SessionDisconnectResult = {
  * plumbing state.
  */
 export type JoinSessionCallbacks = {
-  getQueueState: (sessionId: string) => Promise<{
-    queue: ClimbQueueItem[];
-    currentClimbQueueItem: ClimbQueueItem | null;
-    version: number;
-    sequence: number;
-    stateHash: string;
-    stateHashOrdered: string;
-  }>;
+  getQueueState: (sessionId: string) => Promise<QueueState>;
   getSessionUsers: (sessionId: string) => Promise<SessionUser[]>;
   getSessionUsersLocal: (sessionId: string) => SessionUser[];
   getSessionById: (sessionId: string) => Promise<LiveSession | null>;
@@ -127,7 +120,8 @@ export type JoinSessionCallbacks = {
     sessionId: string,
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
-    expectedVersion?: number,
+    expectedVersion: number | undefined,
+    historyCount: number,
   ) => Promise<number>;
   leaveSession: (connectionId: string) => Promise<SessionLeaveResult | null>;
 };
@@ -137,6 +131,12 @@ export type JoinSessionOptions = {
   avatarUrl?: string;
   initialQueue?: ClimbQueueItem[];
   initialCurrentClimb?: ClimbQueueItem | null;
+  /**
+   * The seed's History / Up next line (F3). The resolver has already validated
+   * and normalised the seed (a seed current climb is always in `initialQueue`),
+   * so this is the line to store; 0 when absent.
+   */
+  initialHistoryCount?: number;
   sessionName?: string;
   participantId?: string | null;
   /**
@@ -182,6 +182,28 @@ export type QueueState = {
   sequence: number;
   stateHash: string;
   stateHashOrdered: string;
+  /**
+   * The History / Up next line (F3, docs/current-climb-outside-queue.md,
+   * section 1): the current climb's index while one is current, else the
+   * stored line. Always resolved and within `[0, queue.length]`.
+   */
+  historyCount: number;
+  /**
+   * When the current climb last changed to a different climb, ISO 8601 (the
+   * #4979 hold's clock). Null only for a room that has never been written.
+   */
+  currentChangedAt: string | null;
+};
+
+/** What a queue-state write returns to the resolver that publishes its event. */
+export type QueueWriteResult = {
+  version: number;
+  sequence: number;
+  stateHash: string;
+  stateHashOrdered: string;
+  /** The line the write stored, clamped and resolved. */
+  historyCount: number;
+  currentChangedAt: string | null;
 };
 
 export type PendingWrite = {

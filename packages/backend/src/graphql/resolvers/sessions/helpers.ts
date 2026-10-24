@@ -20,6 +20,8 @@ type SessionQueueState = {
   stateHashOrdered?: string | null;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  historyCount?: number | null;
+  currentChangedAt?: string | null;
 };
 
 /**
@@ -141,6 +143,8 @@ export async function buildSessionPayload(
           currentClimbQueueItem: queueState.currentClimbQueueItem
             ? await redactQueueItem(queueState.currentClimbQueueItem, ctx.userId, sessionId, visible)
             : null,
+          historyCount: queueState.historyCount ?? null,
+          currentChangedAt: queueState.currentChangedAt ?? null,
         }
       : null,
     isLeader: inputs.isLeader !== undefined ? inputs.isLeader : leaderConnectionId === ctx.connectionId,

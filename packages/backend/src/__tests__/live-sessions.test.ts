@@ -312,7 +312,7 @@ describe('followedLiveSessions — social arm', () => {
       isDraft: false,
       isListed: true,
     });
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
 
     const [session, ...rest] = await followedLiveSessions(VIEWER);
 
@@ -353,7 +353,7 @@ describe('followedLiveSessions — social arm', () => {
       isDraft: false,
       isListed: true,
     });
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
     const sessionsFor = (ctx: ConnectionContext) =>
       liveSessionQueries.boardLiveSessions(undefined, { boardId: board.id }, ctx);
 
@@ -774,7 +774,7 @@ describe('followedLiveSessions — exclusions', () => {
     await approveSessionGuest(sessionId, VIEWER);
     await goLive(sessionId, VIEWER);
     const current = makeQueueItem('Private Climb');
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
 
     const [session] = await followedLiveSessions(VIEWER);
     expect(session.sessionId).toBe(sessionId);
@@ -1115,7 +1115,7 @@ describe('followedLiveSessions — spray walls', () => {
     await goLive(sessionId, STRANGER, wall.path);
     await addTick({ sessionId, boardId: wall.id });
     const current = makeQueueItem('Secret Spray Problem');
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
 
     const [session] = await followedLiveSessions(VIEWER);
     expect(session.sessionId).toBe(sessionId);
@@ -1170,7 +1170,7 @@ describe('followedLiveSessions — spray walls', () => {
     await goLive(sessionId, FRIEND, wall.path);
     await addTick({ sessionId, userId: FRIEND, boardId: wall.id });
     const current = makeQueueItem('Hidden Spray Problem');
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
     await db
       .update(dbSchema.sprayWalls)
       .set({ hiddenAt: new Date() })
@@ -1499,7 +1499,7 @@ describe('session privacy switch', () => {
       isDraft: false,
       isListed: true,
     });
-    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current, undefined, 0);
     const publishSpy = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {});
     const lastPreviewFor = (boardId: number) =>
       publishSpy.mock.calls.filter(([channelBoardId]) => channelBoardId === String(boardId)).at(-1)?.[1];

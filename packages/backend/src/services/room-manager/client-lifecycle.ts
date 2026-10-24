@@ -75,6 +75,8 @@ export async function joinSession(
   sequence: number;
   stateHash: string;
   stateHashOrdered: string;
+  historyCount: number;
+  currentChangedAt: string | null;
   isLeader: boolean;
   sessionName: string | null;
   participantId: string;
@@ -97,7 +99,16 @@ export async function joinSession(
     updateQueueStateImmediate,
     leaveSession: leaveSessionFn,
   } = callbacks;
-  const { username, avatarUrl, initialQueue, initialCurrentClimb, sessionName, participantId, isPublic } = options;
+  const {
+    username,
+    avatarUrl,
+    initialQueue,
+    initialCurrentClimb,
+    initialHistoryCount,
+    sessionName,
+    participantId,
+    isPublic,
+  } = options;
 
   const client = clients.get(connectionId);
   if (!client) {
@@ -231,10 +242,15 @@ export async function joinSession(
     }
   }
 
-  // Initialize queue state for new sessions with provided initial queue
-  if (isNewSession && initialQueue && initialQueue.length > 0) {
-    logger.info(`[RoomManager] Initializing queue for new session ${sessionId} with ${initialQueue.length} items`);
-    await updateQueueStateImmediate(sessionId, initialQueue, initialCurrentClimb || null, 0);
+  // Initialize queue state for new sessions with a provided seed: a seed queue
+  // or a seed current climb (F3). A current-only seed used to be dropped; the
+  // resolver now hands it over as `[current]`, so the queue is never empty here
+  // when a current climb was sent, but the guard says what it means.
+  const hasSeed = (initialQueue !== undefined && initialQueue.length > 0) || !!initialCurrentClimb;
+  if (isNewSession && hasSeed) {
+    const seedQueue = initialQueue ?? [];
+    logger.info(`[RoomManager] Initializing queue for new session ${sessionId} with ${seedQueue.length} items`);
+    await updateQueueStateImmediate(sessionId, seedQueue, initialCurrentClimb || null, 0, initialHistoryCount ?? 0);
   }
 
   // Update Redis session state
@@ -263,6 +279,8 @@ export async function joinSession(
     sequence: queueState.sequence,
     stateHash: queueState.stateHash,
     stateHashOrdered: queueState.stateHashOrdered,
+    historyCount: queueState.historyCount,
+    currentChangedAt: queueState.currentChangedAt,
     isLeader,
     sessionName: resolvedSessionName,
     participantId: resolvedParticipantId,

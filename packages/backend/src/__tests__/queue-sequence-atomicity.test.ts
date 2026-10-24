@@ -221,11 +221,11 @@ describe('queue state atomicity (#3906)', () => {
       await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
 
       const initial = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [createTestClimb('first')], null, initial.version);
+      await roomManager.updateQueueState(sessionId, [createTestClimb('first')], null, initial.version, 0);
 
       // `initial.version` is now stale by one.
       await expect(
-        roomManager.updateQueueState(sessionId, [createTestClimb('second')], null, initial.version),
+        roomManager.updateQueueState(sessionId, [createTestClimb('second')], null, initial.version, 0),
       ).rejects.toThrow(VersionConflictError);
     });
 
@@ -234,10 +234,10 @@ describe('queue state atomicity (#3906)', () => {
       await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
 
       const initial = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueOnly(sessionId, [createTestClimb('first')], initial.version);
+      await roomManager.updateQueueOnly(sessionId, [createTestClimb('first')], initial.version, undefined, 0);
 
       await expect(
-        roomManager.updateQueueOnly(sessionId, [createTestClimb('second')], initial.version),
+        roomManager.updateQueueOnly(sessionId, [createTestClimb('second')], initial.version, undefined, 0),
       ).rejects.toThrow(VersionConflictError);
     });
 
@@ -246,8 +246,8 @@ describe('queue state atomicity (#3906)', () => {
       await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
 
       const initial = await roomManager.getQueueState(sessionId);
-      const first = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, initial.version);
-      const second = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, first.version);
+      const first = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, initial.version, 0);
+      const second = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, first.version, 0);
 
       expect(second.version).toBe(first.version + 1);
       expect(second.sequence).toBe(first.sequence + 1);
@@ -334,7 +334,7 @@ describe('queue state atomicity (#3906)', () => {
       const climbB = createTestClimb('climb-B');
       const climbC = createTestClimb('climb-C');
       const seeded = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climbA, climbB, climbC], null, seeded.version);
+      await roomManager.updateQueueState(sessionId, [climbA, climbB, climbC], null, seeded.version, 0);
 
       const gate = gateCasEval(mockRedis);
 
@@ -368,7 +368,7 @@ describe('queue state atomicity (#3906)', () => {
       const climbB = createTestClimb('climb-B');
       const climbC = createTestClimb('climb-C');
       const seeded = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climbA, climbB], null, seeded.version);
+      await roomManager.updateQueueState(sessionId, [climbA, climbB], null, seeded.version, 0);
 
       const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
       const gate = gateCasEval(mockRedis);
@@ -407,7 +407,7 @@ describe('queue state atomicity (#3906)', () => {
       const climbA = createTestClimb('climb-A');
       const climbB = createTestClimb('climb-B');
       const seeded = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climbA], climbA, seeded.version);
+      await roomManager.updateQueueState(sessionId, [climbA], climbA, seeded.version, 0);
 
       const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
       const gate = gateCasEval(mockRedis);
@@ -443,7 +443,7 @@ describe('queue state atomicity (#3906)', () => {
       const climbB = createTestClimb('climb-B');
       const climbC = createTestClimb('climb-C');
       const seeded = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climbA, climbB], climbA, seeded.version);
+      await roomManager.updateQueueState(sessionId, [climbA, climbB], climbA, seeded.version, 0);
 
       vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
       const gate = gateCasEval(mockRedis);
@@ -500,7 +500,7 @@ describe('queue state atomicity (#3906)', () => {
       // which is what a long-running session would have flushed by the time
       // its Redis hash aged out.
       for (let write = 0; write < 4; write++) {
-        await roomManager.updateQueueStateImmediate(sessionId, [createTestClimb()], null, undefined);
+        await roomManager.updateQueueStateImmediate(sessionId, [createTestClimb()], null, undefined, 0);
       }
 
       const beforeEviction = await roomManager.getQueueState(sessionId);
@@ -509,7 +509,7 @@ describe('queue state atomicity (#3906)', () => {
       // Simulate the 4h Redis TTL expiring while the durable row survives.
       await mockRedis.del(`boardsesh:session:${sessionId}`);
 
-      const revived = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, undefined);
+      const revived = await roomManager.updateQueueState(sessionId, [createTestClimb()], null, undefined, 0);
       // Restarting at 1 here would rewind the sequence clients gap-check on.
       expect(revived.sequence).toBe(beforeEviction.sequence + 1);
       expect(revived.version).toBe(beforeEviction.version + 1);
@@ -525,7 +525,7 @@ describe('queue state atomicity (#3906)', () => {
       await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
 
       const existing = createTestClimb('already-there');
-      await roomManager.updateQueueStateImmediate(sessionId, [existing], null, undefined);
+      await roomManager.updateQueueStateImmediate(sessionId, [existing], null, undefined, 0);
       const durable = await roomManager.getQueueState(sessionId);
 
       // The 4h TTL expires; Postgres keeps the counters.
@@ -632,6 +632,7 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       expectedVersion,
       stateHash: 'hash',
       stateHashOrdered: 'ordered',
+      historyCount: 0,
       versionFloor: 0,
       sequenceFloor: 0,
       floorsKnown: true,
@@ -646,6 +647,7 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       expectedVersion: CAS_ANY_VERSION,
       stateHash: 'hash',
       stateHashOrdered: 'ordered',
+      historyCount: 0,
       versionFloor: 0,
       sequenceFloor: 0,
       floorsKnown: false,
@@ -664,6 +666,7 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       expectedVersion: CAS_ANY_VERSION,
       stateHash: 'hash',
       stateHashOrdered: 'ordered',
+      historyCount: 0,
       versionFloor: 311,
       sequenceFloor: 319,
       floorsKnown: true,
@@ -713,6 +716,7 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       expectedVersion: CAS_ANY_VERSION,
       stateHash: 'hash-one',
       stateHashOrdered: 'ordered-one',
+      historyCount: 0,
       versionFloor: 0,
       sequenceFloor: 0,
       floorsKnown: true,
@@ -725,6 +729,7 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       expectedVersion: CAS_ANY_VERSION,
       stateHash: 'hash-two',
       stateHashOrdered: 'ordered-two',
+      historyCount: 0,
       versionFloor: 0,
       sequenceFloor: 0,
       floorsKnown: true,

@@ -300,9 +300,9 @@ describe('setQueue merges concurrent adds (#3933)', () => {
     const realUpdate = roomManager.updateQueueState.bind(roomManager);
     const updateSpy = vi
       .spyOn(roomManager, 'updateQueueState')
-      .mockImplementation(async (id, queue, currentClimb, expectedVersion) => {
+      .mockImplementation(async (id, queue, currentClimb, expectedVersion, historyCount) => {
         if (expectedVersion !== undefined) throw new VersionConflictError(id, expectedVersion);
-        return realUpdate(id, queue, currentClimb, expectedVersion);
+        return realUpdate(id, queue, currentClimb, expectedVersion, historyCount);
       });
 
     const replacement = createTestClimb('replacement');
