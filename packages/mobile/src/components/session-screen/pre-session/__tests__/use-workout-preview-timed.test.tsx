@@ -106,9 +106,13 @@ describe('useWorkoutPreview with timed blocks', () => {
     const fetchCount = countingFetchPool.mock.calls.length;
 
     rerender({ selection: selectionWith({ ...fourByFour, rounds: 6, restBetweenRoundsSeconds: 240 }) });
-    await waitFor(() => expect(result.current.toStagedQueueItems().run?.stages[0].rounds).toBe(6));
+    // toStagedQueueItems reads refs that update before React commits the rebuild,
+    // so wait for the committed 'ready' render too, not only the new run.
+    await waitFor(() => {
+      expect(result.current.toStagedQueueItems().run?.stages[0].rounds).toBe(6);
+      expect(result.current.status).toBe('ready');
+    });
 
-    expect(result.current.status).toBe('ready');
     expect(rowsOf(result.current.items)).toEqual(rows);
     expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toMatchObject({ restBetweenRoundsSeconds: 240 });
     expect(countingFetchPool).toHaveBeenCalledTimes(fetchCount);
@@ -133,11 +137,11 @@ describe('useWorkoutPreview with timed blocks', () => {
     const newInterval = onTheMinute.intervalSeconds + 15;
 
     rerender({ selection: selectionWith({ ...onTheMinute, intervalSeconds: newInterval }) });
-    await waitFor(() =>
-      expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toMatchObject({ restSeconds: newInterval }),
-    );
+    await waitFor(() => {
+      expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toMatchObject({ restSeconds: newInterval });
+      expect(result.current.status).toBe('ready');
+    });
 
-    expect(result.current.status).toBe('ready');
     expect(rowsOf(result.current.items)).toEqual(rows);
   });
 });
