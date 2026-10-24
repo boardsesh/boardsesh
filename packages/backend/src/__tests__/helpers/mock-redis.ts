@@ -289,10 +289,13 @@ export const createMockRedis = (): MockRedis => {
         const sequenceFloor = Number(args[11]) || 0;
         const anySentinel = args[12] as string;
         const floorsKnown = args[13] as string;
+        // F3 (#6666): the History / Up next line and the current climb's uuid.
+        const historyCount = args[14] as string;
+        const currentUuid = args[15] as string;
 
         const stored = hashes.get(sessionKey);
         if (stored?.version === undefined && floorsKnown !== '1') {
-          return ['NEEDS_FLOOR', 0, 0, '', ''];
+          return ['NEEDS_FLOOR', 0, 0, '', '', ''];
         }
         const baseVersion = Math.max(Number(stored?.version) || 0, versionFloor);
         const baseSequence = Math.max(Number(stored?.sequence) || 0, sequenceFloor);
@@ -300,11 +303,24 @@ export const createMockRedis = (): MockRedis => {
         const priorStateHashOrdered = stored?.stateHashOrdered ?? '';
 
         if (expectedVersion !== anySentinel && baseVersion !== Number(expectedVersion)) {
-          return ['CONFLICT', baseVersion, baseSequence, priorStateHash, priorStateHashOrdered];
+          return ['CONFLICT', baseVersion, baseSequence, priorStateHash, priorStateHashOrdered, ''];
         }
 
         const newVersion = baseVersion + 1;
         const newSequence = baseSequence + 1;
+        // Stamp the hold's clock only when the current uuid changes, or when the
+        // stored F3 fields are stale (absent, or a pre-F3 write moved `version`).
+        const storedFieldsFresh =
+          stored?.historyCountVersion !== undefined &&
+          stored.historyCountVersion !== '' &&
+          Number(stored.historyCountVersion) === (Number(stored?.version) || 0);
+        const currentChangedAt =
+          stored?.currentUuid === undefined ||
+          stored.currentChangedAt === undefined ||
+          !storedFieldsFresh ||
+          stored.currentUuid !== currentUuid
+            ? now
+            : stored.currentChangedAt;
         if (!hashes.has(sessionKey)) hashes.set(sessionKey, {});
         Object.assign(hashes.get(sessionKey)!, {
           sessionId,
@@ -314,11 +330,15 @@ export const createMockRedis = (): MockRedis => {
           sequence: String(newSequence),
           stateHash,
           stateHashOrdered,
+          historyCount,
+          historyCountVersion: String(newVersion),
+          currentUuid,
+          currentChangedAt,
           lastActivity: now,
         });
         await mockRedis.zadd(recentKey, Number(now), sessionId);
 
-        return ['OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered];
+        return ['OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered, currentChangedAt];
       }
 
       if (_script === MARK_RECONNECTING_IF_IDLE_SCRIPT) {
