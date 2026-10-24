@@ -7,7 +7,16 @@
 // "the wall changed under a climber", so each rule below is paired with a test
 // that asserts it does NOT fire.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
@@ -28,12 +37,14 @@ import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import { anchorAfterFire, restAdvanceAllowed } from '../../lib/rest-timer-pacing';
 import {
   clearRestTimerQueueEnded,
+  floorRestTimerAnchorAtLastAdvance,
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
   reanchorRestTimerAfterBackground,
 } from '../../lib/rest-timer-store';
 import {
+  getAfterTickRestFloorMs,
   getAutoAdvanceDeadlineMs,
   getRestTimerCountdownCueTimes,
   getRestTimerCountdownLeadSeconds,
@@ -226,6 +237,25 @@ export function RestTimerAutoAdvanceScheduler() {
   const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, nowMs());
   const scheduled = wantsAdvance && !deadlineStale;
   const deadlineMs = scheduled ? candidateDeadlineMs : null;
+
+  // A running after-tick rest that began before the last advance counts from
+  // it, less 3 s (`getAfterTickRestFloorMs`); the deadline above already does.
+  // Written into the store the first time it applies, before paint, so the pill
+  // reaches 0:00 as the wall moves, a pause freezes that rest, and the rest
+  // never flips back to its own anchor once that one's end goes by.
+  const restFloorMs = wantsAdvance
+    ? getAfterTickRestFloorMs({
+        mode,
+        anchorMs: timerState.anchorMs,
+        targetSeconds,
+        nowMs: nowMs(),
+        lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
+      })
+    : null;
+  useLayoutEffect(() => {
+    if (restFloorMs === null) return;
+    floorRestTimerAnchorAtLastAdvance(timerState.cycleId, mode, targetSeconds, nowMs());
+  }, [mode, restFloorMs, targetSeconds, timerState.cycleId]);
 
   // The final countdown (#5396). The lead scales with the rest, and each second
   // of it is a cue, or a single warning with per-second cues off. The choice is

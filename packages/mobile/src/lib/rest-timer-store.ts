@@ -22,7 +22,7 @@
 // wall under a tick or send rule (`restAdvanceAllowed`). Neither is persisted.
 
 import { getRestTimerStartMs, type RestTimerMode } from './rest-timer';
-import { isTickFreshEnoughToArm } from './rest-timer-auto-advance';
+import { getAfterTickRestFloorMs, isTickFreshEnoughToArm } from './rest-timer-auto-advance';
 import {
   sameStagePacing,
   type RestTimerLastTick,
@@ -78,7 +78,9 @@ export type RestTimerState = {
    * when the fire callback lands (an NTP step back, or the climber editing the
    * device clock), the same beat is returned, and the fresh cycle id from the
    * fire waves the second advance straight through. Two climbs skipped, the wall
-   * lit for the wrong one.
+   * lit for the wrong one. Under `afterTick` a running rest that began before
+   * it counts from it instead (`floorRestTimerAnchorAtLastAdvance`). Cleared on
+   * arm and disarm, so it only ever speaks for this arm.
    */
   lastFiredDeadlineMs: number | null;
   /**
@@ -159,11 +161,12 @@ export function disarmRestTimer(): void {
  * Where a tick starts a rest: at the tick, but never earlier than the rest
  * already running or the last advance, and never in the future.
  *
- * The scheduler's `afterTick` deadline is the anchor plus the rest, with no walk
- * past the last fire (only `onTheMinute` walks). So a send logged 2 s after an
- * advance but dated 55 s back would, anchored at its own time, put the next
- * deadline 7 s out on a 60 s rest and move the wall again, skipping the climb
- * it just lit. Floored at the advance, the newly lit climb gets its whole rest.
+ * The scheduler's `afterTick` deadline is the anchor plus the rest. So a send
+ * logged 2 s after an advance but dated 55 s back would, anchored at its own
+ * time, put the next deadline 7 s out on a 60 s rest and move the wall again,
+ * skipping the climb it just lit. Floored at the advance, the newly lit climb
+ * gets its whole rest. (`floorRestTimerAnchorAtLastAdvance` backs this up for
+ * the paths that reach such an anchor without a fresh tick, 3 s short of it.)
  * The cap at now keeps the anchor off the future: a fire can land a moment
  * before the deadline it records (a clock step back), and a tick can carry a
  * time from a clock running ahead of this phone's.
@@ -412,6 +415,35 @@ export function clearRestTimerQueueEnded(
 export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: number | null): void {
   if (!state.armed || !state.isRunning || deadlineMs === null || deadlineMs > nowMs) return;
   setState({ ...state, anchorMs: nowMs, pausedElapsedSeconds: 0, cycleId: state.cycleId + 1 });
+}
+
+/**
+ * A running `afterTick` rest that began before the last advance now counts from
+ * it (`getAfterTickRestFloorMs`). The scheduler asks, because it knows the rest
+ * length, the first time the rule applies; the store asks the same rule again,
+ * so the anchor only ever moves later and only for a rest still running, never
+ * one that ran out. Written down rather than worked out on every read: the rule
+ * depends on the clock, and once the old anchor's own end went by it would let
+ * go, so everything that reads the anchor (the pill, a pause) counts from this one.
+ * Refused on any other cycle than the one it was asked for.
+ */
+export function floorRestTimerAnchorAtLastAdvance(
+  expectedCycleId: number,
+  mode: RestTimerMode,
+  targetSeconds: number | null,
+  nowMs: number,
+): boolean {
+  if (!state.armed || !state.isRunning || state.cycleId !== expectedCycleId) return false;
+  const floorMs = getAfterTickRestFloorMs({
+    mode,
+    anchorMs: state.anchorMs,
+    targetSeconds,
+    nowMs,
+    lastFiredDeadlineMs: state.lastFiredDeadlineMs,
+  });
+  if (floorMs === null) return false;
+  setState({ ...state, anchorMs: floorMs, cycleId: state.cycleId + 1 });
+  return true;
 }
 
 /**

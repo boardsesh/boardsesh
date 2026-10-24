@@ -3,6 +3,7 @@ import {
   armRestTimer,
   bindRestTimerToSession,
   disarmRestTimer,
+  floorRestTimerAnchorAtLastAdvance,
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
@@ -16,6 +17,7 @@ import {
 } from '../rest-timer-store';
 import {
   AUTO_ADVANCE_MAX_BACKDATE_MS,
+  AUTO_ADVANCE_REST_FLOOR_SLACK_MS,
   getAutoAdvanceDeadlineMs,
   isAutoAdvanceDeadlineStale,
 } from '../rest-timer-auto-advance';
@@ -427,6 +429,82 @@ describe('backgrounding', () => {
     noteRestTimerTick(tickAt(0), 'afterTick', T0);
     reanchorRestTimerAfterBackground(T0 + 30_000, T0 + 60_000);
     expect(getRestTimerState().anchorMs).toBe(T0);
+  });
+});
+
+describe('the after-tick rest floor', () => {
+  const ADVANCED_AT_MS = T0 + 60_000;
+
+  /** The advance at T0 + 60 s waits for a tick; 2 s later a send from 85 s ago lands at its own time. */
+  function sendFrom85sAgoAfterTheAdvance() {
+    advancedOnceWaitingForATick();
+    noteRestTimerTick(tickAt(60 + 2 - 85), 'afterTick', ADVANCED_AT_MS + 2_000, {
+      status: 'send',
+      queueItemUuid: 'queue-2',
+    });
+    expect(getRestTimerState().anchorMs).toBe(ADVANCED_AT_MS - 83_000);
+  }
+
+  it('moves a running rest that began before the advance to 3 s before it, and rolls the cycle', () => {
+    sendFrom85sAgoAfterTheAdvance();
+    const { cycleId } = getRestTimerState();
+
+    expect(floorRestTimerAnchorAtLastAdvance(cycleId, 'afterTick', 90, ADVANCED_AT_MS + 2_000)).toBe(true);
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: ADVANCED_AT_MS - AUTO_ADVANCE_REST_FLOOR_SLACK_MS,
+      cycleId: cycleId + 1,
+      lastFiredDeadlineMs: ADVANCED_AT_MS,
+    });
+    const { anchorMs, lastFiredDeadlineMs } = getRestTimerState();
+    expect(
+      getAutoAdvanceDeadlineMs({
+        mode: 'afterTick',
+        anchorMs,
+        targetSeconds: 90,
+        nowMs: ADVANCED_AT_MS + 2_000,
+        lastFiredDeadlineMs,
+      }),
+    ).toBe(ADVANCED_AT_MS + 87_000);
+
+    // Done once: the anchor now stands.
+    expect(floorRestTimerAnchorAtLastAdvance(cycleId + 1, 'afterTick', 90, ADVANCED_AT_MS + 2_000)).toBe(false);
+  });
+
+  it('never moves a rest that has run out, so it never gives one a live deadline', () => {
+    sendFrom85sAgoAfterTheAdvance();
+    const before = getRestTimerState();
+
+    // On a 60 s rest that send's rest ran out 23 s before the advance.
+    expect(floorRestTimerAnchorAtLastAdvance(before.cycleId, 'afterTick', 60, ADVANCED_AT_MS + 2_000)).toBe(false);
+    // On 90 s it runs out at the advance + 7 s; at + 7 s it has.
+    expect(floorRestTimerAnchorAtLastAdvance(before.cycleId, 'afterTick', 90, ADVANCED_AT_MS + 7_000)).toBe(false);
+    expect(getRestTimerState()).toBe(before);
+  });
+
+  it('refuses another cycle, a paused rest, on the minute, and a disarmed timer', () => {
+    sendFrom85sAgoAfterTheAdvance();
+    const { cycleId } = getRestTimerState();
+    const nowMs = ADVANCED_AT_MS + 2_000;
+
+    expect(floorRestTimerAnchorAtLastAdvance(cycleId - 1, 'afterTick', 90, nowMs)).toBe(false);
+    expect(floorRestTimerAnchorAtLastAdvance(cycleId, 'onTheMinute', 90, nowMs)).toBe(false);
+
+    pauseRestTimer(nowMs);
+    expect(floorRestTimerAnchorAtLastAdvance(getRestTimerState().cycleId, 'afterTick', 90, nowMs)).toBe(false);
+
+    disarmRestTimer();
+    expect(floorRestTimerAnchorAtLastAdvance(getRestTimerState().cycleId, 'afterTick', 90, nowMs)).toBe(false);
+  });
+
+  it('starts every arm with no last advance, so a re-armed rest keeps its own anchor', () => {
+    sendFrom85sAgoAfterTheAdvance();
+    armRestTimer('afterTick', ADVANCED_AT_MS + 3_000, 'session-1');
+    noteRestTimerTick(tickAt(60 + 3 - 50), 'afterTick', ADVANCED_AT_MS + 3_000);
+
+    expect(getRestTimerState()).toMatchObject({ anchorMs: ADVANCED_AT_MS - 47_000, lastFiredDeadlineMs: null });
+    expect(
+      floorRestTimerAnchorAtLastAdvance(getRestTimerState().cycleId, 'afterTick', 90, ADVANCED_AT_MS + 3_000),
+    ).toBe(false);
   });
 });
 
