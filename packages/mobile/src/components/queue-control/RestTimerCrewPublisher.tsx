@@ -16,6 +16,7 @@ import { reportHandledError } from '../../lib/error-reporting';
 import { resetCrewCadenceLink, subscribeCrewCadenceSnapshots } from '../../lib/crew-rest-cadence';
 import { createCrewRestPublisher } from '../../lib/crew-rest-publisher';
 import {
+  clearCrewCadence,
   getRestTimerState,
   setRestTimerWallQueueItemReader,
   subscribeLocalRestTimerActions,
@@ -71,6 +72,13 @@ function SessionCrewPublisher({ sessionId }: { sessionId: string }) {
       setRestTimerWallQueueItemReader(null);
       resetCrewCadenceLink();
       resetServerClock();
+      // A clock this app cannot run is only held, so it goes with its session
+      // here: on an unarmed phone nothing else would drop it (RestTimerSessionSync
+      // mounts only while armed), and its "needs a newer version" note would
+      // outlive the session. A clock this phone follows is armed, and
+      // RestTimerSessionSync turns it off with the session.
+      const { crew } = getRestTimerState();
+      if (crew !== null && crew.sessionId === sessionId && crew.config === null) clearCrewCadence();
     };
   }, [sessionId]);
 

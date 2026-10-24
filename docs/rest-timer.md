@@ -175,20 +175,34 @@ in the crew.
   the scheduler asks the server to take the beat first (FIRE, compare-and-set) and moves the
   wall only when it did, so two phones that both think they hold the board can never both move
   it. A phone alone in its session moves the wall itself only when the server cannot be reached.
-- **Who changes it.** Anyone in the session. Every control keeps writing the climber's own
-  settings, and a change hands the crew this phone's pacing; the sheet says so ("Changes here go
-  to everyone"). Auto-advance becomes the crew's setting: a passenger can switch it, and its line
-  names whose phone moves the wall.
+- **A beat nobody claimed.** On the minute, a beat the holder lets go (no answer, refused, too
+  late, or slept through) is marked spent on that phone, so the next beat is claimed as usual.
+  After a tick, a deadline nobody can claim any more (more than 5 s gone) is restarted by the
+  phone pacing it: back from the background, after a FIRE that failed or came back refused or
+  late, and when a phone takes the board over with the deadline already past.
+- **Who changes it.** Anyone in the session. While a crew clock runs, the sheet's and the Record
+  tab's length, cadence and auto-advance controls show the crew's values, not the climber's own.
+  An edit copies the crew's other two values into the climber's settings and then writes the one
+  changed, so the crew gets its own clock with that one change; the sheet says so ("Changes here
+  go to everyone"). Auto-advance becomes the crew's setting: a passenger can switch it, and its
+  line names whose phone moves the wall.
 - **What a passenger sees.** The crew's rest, counted from the crew's anchor, with "Sam is
   pacing the wall" under the digits. If the holder's phone sleeps the rest runs past zero and
   nothing moves; the holder's phone restarts it when it comes back.
+- **The clock offset.** Every crew instant is converted to the phone's clock when the change is
+  taken. A later sample, even one on a change too old to take (a FIRE's reply), that moves the
+  offset by more than 250 ms converts the held clock again, unless this phone has an action of its
+  own waiting for its echo.
 - **A tick under a tick or send rule** counts only on the climb on the wall, on every phone: a
   late tick on the previous climb, or one from a list, neither replaces the wall climb's tick nor
   moves the rest, and never reaches the server.
 - **A cold start** takes the crew's clock back only if another member set it, or this phone was
   already armed for that session.
 - **An unknown mode or rule** (a newer app set it) is held but never fired on, and the sheet asks
-  for an update.
+  for an update. The hold goes with the session.
+
+Stories: `rest-timer-crew--crew-passenger` (also `--crew-holder`, `--crew-unheld`,
+`--sheet-crew-passenger` and `--sheet-crew-holder`) fake a crew and Sam's clock on one simulator.
 
 "A crew" is `useIsCrewSession()`: someone else is on the session roster, past the arming dwell.
 It is the same roster rule as `useIsSharedSession()` without the `shared-session-browse` flag.

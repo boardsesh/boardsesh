@@ -46,6 +46,56 @@ import { RestTimerCrewNote } from './RestTimerCrewNote';
 import { restTimerCrewAutoAdvanceDescription } from './RestTimerPacerCaption';
 
 /**
+ * What the three rest controls below show (length, cadence, auto-advance) and
+ * what an edit writes (#5382). With no crew clock, the climber's own settings,
+ * as always. While this phone follows a crew clock, the crew clock's: that is
+ * what the timer runs on and what everyone in the session sees, and a settings
+ * edit goes out as the crew's new config (lib/crew-rest-publisher.ts). Showing
+ * the climber's own values there made one tap hand the crew this climber's
+ * other two values as well. So an edit first copies the crew's values into the
+ * settings (`takeCrewPacing`), then writes the one changed: the crew gets its
+ * own clock with exactly that change.
+ */
+function useRestPacingControls() {
+  const [ownTargetSeconds, writeTargetSeconds] = useSetting('restTimerTargetSeconds');
+  const [ownMode, writeMode] = useSetting('restTimerMode');
+  const [ownAutoAdvance, writeAutoAdvance] = useSetting('restTimerAutoAdvance');
+  const crewConfig = useCrewRestConfig();
+
+  return useMemo(() => {
+    if (crewConfig === null) {
+      return {
+        targetSeconds: ownTargetSeconds,
+        mode: ownMode,
+        autoAdvance: ownAutoAdvance,
+        setTargetSeconds: writeTargetSeconds,
+        setAutoAdvance: writeAutoAdvance,
+        takeCrewPacing: () => {},
+      };
+    }
+    const takeCrewPacing = () => {
+      writeTargetSeconds(crewConfig.targetSeconds);
+      writeMode(crewConfig.mode);
+      writeAutoAdvance(crewConfig.autoAdvance);
+    };
+    return {
+      targetSeconds: crewConfig.targetSeconds,
+      mode: crewConfig.mode,
+      autoAdvance: crewConfig.autoAdvance,
+      setTargetSeconds: (next: number | null) => {
+        takeCrewPacing();
+        writeTargetSeconds(next);
+      },
+      setAutoAdvance: (next: boolean) => {
+        takeCrewPacing();
+        writeAutoAdvance(next);
+      },
+      takeCrewPacing,
+    };
+  }, [crewConfig, ownAutoAdvance, ownMode, ownTargetSeconds, writeAutoAdvance, writeMode, writeTargetSeconds]);
+}
+
+/**
  * Rest length: one pill that steps 30 s a tap, and the fine slider it reveals on
  * a long press. Exported because the Record tab's arm row mounts the same
  * control — one implementation, two mounts, so the two surfaces can never
@@ -63,7 +113,7 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
 function RestTimerLengthSetting({ inset }: { inset: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
+  const { targetSeconds, setTargetSeconds } = useRestPacingControls();
 
   return (
     // `inset={false}` cancels a caller-owned card gutter. The Record card now
@@ -108,10 +158,11 @@ function RestTimerLengthSetting({ inset }: { inset: boolean }) {
  * still can't move the queue, so telling them to pick one would send them round
  * a loop that ends where it started.
  *
- * With a crew clock (#5382) auto-advance is the crew's setting instead: anyone
- * in the session may switch it, and the line says whose phone moves the wall
- * for everyone. Only the no-length reason still blocks it, since a change here
- * hands the crew this climber's rest length.
+ * With a crew clock (#5382) auto-advance is the crew's setting instead: the
+ * switch shows the crew's, anyone in the session may flip it, and the line
+ * says whose phone moves the wall for everyone. Only the no-length reason
+ * still blocks it, read from the crew's rest length: with none there is no
+ * deadline for anyone's phone to move the wall on.
  *
  * Hidden while a workout stage paces the timer: a stage always auto-advances.
  */
@@ -122,8 +173,7 @@ export function RestTimerAutoAdvanceRow() {
 function RestTimerAutoAdvanceSetting() {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const [autoAdvance, setAutoAdvance] = useSetting('restTimerAutoAdvance');
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
+  const { autoAdvance, setAutoAdvance, targetSeconds } = useRestPacingControls();
   // The scheduler's own rule (lib/session-timer/driver-rule.ts), so the switch
   // can never say yes where the scheduler would refuse.
   const { blockedReason: driverBlockedReason, role, pacerDisplayName } = useSessionTimerDriver();
@@ -186,8 +236,7 @@ function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const [mode] = useSetting('restTimerMode');
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
+  const { mode, targetSeconds, takeCrewPacing } = useRestPacingControls();
   // Only whether it is armed: the full state emits on every tick, pause and
   // reset, and this block sits on the Record card as well as the sheet.
   const armed = useRestTimerArmed();
@@ -207,9 +256,13 @@ function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
 
   const handleSelect = useCallback(
     (nextMode: RestTimerMode) => {
+      // The cadence on screen is the one to change from: the crew's while a crew
+      // clock runs, which the settings only hold once it is copied over.
+      if (nextMode === mode) return;
+      takeCrewPacing();
       changeRestTimerMode(nextMode, sessionId, armed);
     },
-    [armed, sessionId],
+    [armed, mode, sessionId, takeCrewPacing],
   );
   // Match the iOS segmented control's large-text fallback. Paper's fixed-width
   // Android segments ellipsize the cadence labels when the text grows.

@@ -5,7 +5,7 @@
 // setting rather than one a passenger cannot touch. The store is REAL: a crew
 // clock is adopted the way the session's event would adopt it.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type SegmentedProps = {
@@ -506,11 +506,20 @@ describe('the sheet’s auto-advance switch in a crew', () => {
     });
   });
 
-  it('still needs a rest length, since a change hands the crew this climber’s', () => {
+  it('needs the crew clock’s rest length, not this climber’s own', () => {
     settingsStore.values.restTimerTargetSeconds = null;
     followCrewClock();
-    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    const { container, unmount } = render(<RestTimerSheet visible onClose={() => {}} />);
     expect(autoAdvanceRow(container)).toEqual({
+      description: 'mobile.restTimer.crew.autoAdvanceByName:Sam',
+      disabled: 'false',
+    });
+    unmount();
+
+    settingsStore.values.restTimerTargetSeconds = 60;
+    followCrewClock({ targetSeconds: null });
+    const offClock = render(<RestTimerSheet visible onClose={() => {}} />);
+    expect(autoAdvanceRow(offClock.container)).toEqual({
       description: 'mobile.restTimer.autoAdvanceNeedsLength',
       disabled: 'true',
     });
@@ -521,5 +530,78 @@ describe('the sheet’s auto-advance switch in a crew', () => {
     followCrewClock();
     const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
     expect(autoAdvanceRow(container).description).toBe('mobile.restTimer.autoAdvanceHint');
+  });
+});
+
+describe('the sheet’s rest controls follow the crew clock', () => {
+  // Sam's clock: on the minute, 2:00, moving the wall. This climber's own: after
+  // each send, 1:00, auto-advance off.
+  beforeEach(() => {
+    settingsStore.values = { restTimerTargetSeconds: 60, restTimerMode: 'afterTick', restTimerAutoAdvance: false };
+  });
+
+  function controls(container: HTMLElement) {
+    const row = container.querySelector(AUTO_ADVANCE_ROW) as HTMLElement;
+    return {
+      autoAdvance: row.getAttribute('data-value'),
+      length: container.querySelector('[data-testid="rest-length-pill"]')?.getAttribute('data-a11y-label'),
+      cadence: container
+        .querySelector('[data-segmented="mobile.restTimer.modeAria"] [data-selected="true"]')
+        ?.getAttribute('data-segment'),
+    };
+  }
+
+  it('shows the crew’s length, cadence and auto-advance where this climber’s own differ', () => {
+    followCrewClock();
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    expect(controls(container)).toEqual({
+      autoAdvance: 'true',
+      length: 'mobile.restTimer.lengthPillAria:2:00',
+      cadence: 'mobile.restTimer.modeAria:onTheMinute',
+    });
+  });
+
+  it('keeps this climber’s own values with no crew clock', () => {
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    harness.inAppBoardConnection = 'connectedByMe';
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    expect(controls(container)).toEqual({
+      autoAdvance: 'false',
+      length: 'mobile.restTimer.lengthPillAria:1:00',
+      cadence: 'mobile.restTimer.modeAria:afterTick',
+    });
+  });
+
+  it('switching auto-advance hands the crew its own clock with only that changed', () => {
+    followCrewClock();
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    fireEvent.click(container.querySelector(AUTO_ADVANCE_ROW) as HTMLElement);
+    expect(settingsStore.values).toEqual({
+      restTimerTargetSeconds: 120,
+      restTimerMode: 'onTheMinute',
+      restTimerAutoAdvance: false,
+    });
+  });
+
+  it('stepping the rest length keeps the crew’s cadence and auto-advance', () => {
+    followCrewClock();
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    fireEvent.click(container.querySelector('[data-testid="rest-length-pill"]') as HTMLElement);
+    expect(settingsStore.values).toEqual({
+      restTimerTargetSeconds: 150,
+      restTimerMode: 'onTheMinute',
+      restTimerAutoAdvance: true,
+    });
+  });
+
+  it('changing the cadence keeps the crew’s length and auto-advance', () => {
+    followCrewClock();
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    fireEvent.click(container.querySelector('[data-segment="mobile.restTimer.modeAria:afterTick"]') as HTMLElement);
+    expect(settingsStore.values).toEqual({
+      restTimerTargetSeconds: 120,
+      restTimerMode: 'afterTick',
+      restTimerAutoAdvance: true,
+    });
   });
 });
