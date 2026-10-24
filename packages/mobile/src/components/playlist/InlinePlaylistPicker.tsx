@@ -25,7 +25,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
-import { getHttpClient } from '../../lib/graphql/client';
+import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { usePlaylistsContext, type Playlist } from '../../providers/playlists-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -155,7 +155,7 @@ export function InlinePlaylistPicker({
   const { data: memberUuids } = useQuery({
     queryKey: membershipKey,
     queryFn: async (): Promise<string[]> => {
-      const response = await getHttpClient().request<GetPlaylistsForClimbQueryResponse>(GET_PLAYLISTS_FOR_CLIMB, {
+      const response = await offlineAwareRequest<GetPlaylistsForClimbQueryResponse>(GET_PLAYLISTS_FOR_CLIMB, {
         input: { boardType: boardName, layoutId, climbUuid: climb.uuid },
       });
       return response.playlistsForClimb;

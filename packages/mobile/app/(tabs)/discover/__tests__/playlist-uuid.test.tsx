@@ -82,6 +82,12 @@ const playlistMocks = vi.hoisted(() => ({
   reorderClimb: vi.fn(),
   removeClimb: vi.fn(),
 }));
+vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: requestMock }));
+const connectivity = vi.hoisted(() => ({ effectiveOffline: false, reason: null as string | null }));
+vi.mock('../../../../src/lib/connectivity/use-connectivity', () => ({ useConnectivity: () => connectivity }));
+vi.mock('../../../../src/components/OfflineState', () => ({
+  OfflineState: ({ reason }: { reason: string }) => createElement('div', { 'data-offline-state': reason }),
+}));
 vi.mock('../../../../src/lib/graphql/client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
@@ -164,6 +170,7 @@ vi.mock('@boardsesh/playlists-react', async (importOriginal) => ({
       query: {
         isLoading: false,
         isSuccess: !page.error,
+        status: page.error ? 'error' : 'success',
         isError: !!page.error,
         isFetchNextPageError: false,
         isFetching: !!page.fetching,
@@ -365,6 +372,7 @@ vi.mock('../../../../src/components/playlist', () => ({
     editMode,
     emptyAction,
     emptyMessage,
+    unavailableContent,
     emptyIcon,
     emptyState,
     onAddAllToQueue,
@@ -384,6 +392,7 @@ vi.mock('../../../../src/components/playlist', () => ({
     editMode?: boolean;
     emptyAction?: { label: string; onPress: () => void };
     emptyMessage?: string;
+    unavailableContent?: ReactNode;
     emptyIcon?: string;
     emptyState?: { icon: string; title: string };
     onAddAllToQueue?: () => void;
@@ -427,6 +436,7 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('div', { 'data-actions-expanded': 'true' }, actions?.(false)),
       createElement('div', { 'data-actions-collapsed': 'true' }, actions?.(true)),
       headerSlot,
+      unavailableContent,
       emptyAction
         ? createElement(
             'button',
@@ -523,6 +533,8 @@ function renderDetail(queryClient = new QueryClient({ defaultOptions: { queries:
 
 beforeEach(() => {
   requestMock.mockReset();
+  connectivity.effectiveOffline = false;
+  connectivity.reason = null;
   playlistMocks.views = [];
   playlistMocks.pageFor = null;
   playlistMocks.fetchNextPage.mockClear();
@@ -592,6 +604,26 @@ function makeClimb(uuid: string, boardType: string, layoutId: number, angle: num
 }
 
 describe('PlaylistDetail metadata error handling', () => {
+  it('keeps owned metadata visible with an offline placard when climbs are unavailable', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ name: 'Saved projects' }) });
+    connectivity.effectiveOffline = true;
+    connectivity.reason = 'offline_mode';
+    playlistMocks.pageFor = () => ({ climbs: [], totalCount: 0, unfilteredCount: null, error: true });
+    const { container } = renderDetail();
+    await waitFor(() => expect(container.querySelector('[data-hero-name="Saved projects"]')).not.toBeNull());
+    expect(container.querySelector('[data-offline-state="offline_mode"]')).not.toBeNull();
+    expect(detailViewProps.current?.climbs).toEqual([]);
+  });
+
+  it('keeps a genuinely empty offline playlist distinct from unavailable climbs', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ climbCount: 0 }) });
+    connectivity.effectiveOffline = true;
+    connectivity.reason = 'device_offline';
+    const { container } = renderDetail();
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-offline-state]')).toBeNull();
+  });
+
   it('renders an error + retry state (not a fallback-titled hero) when GET_PLAYLIST rejects', async () => {
     // react-query leaves data undefined (never null) on a thrown error.
     requestMock.mockRejectedValue(new Error('network down'));
@@ -1016,7 +1048,7 @@ describe('PlaylistDetail sort and filters', () => {
 
   function mockClimbsRequests() {
     requestMock.mockImplementation(async (request: unknown) => {
-      if (typeof request === 'object' && request !== null && 'document' in request) {
+      if (typeof request === 'string' && request.includes('query GetPlaylistClimbs')) {
         return { playlistClimbs: { climbs: [], hasMore: false } };
       }
       return { playlist: makePlaylist() };
@@ -1040,10 +1072,10 @@ describe('PlaylistDetail sort and filters', () => {
       signal: new AbortController().signal,
     });
     const call = requestMock.mock.calls.findLast(
-      ([request]) => typeof request === 'object' && request !== null && 'document' in request,
+      ([request]) => typeof request === 'string' && request.includes('query GetPlaylistClimbs'),
     );
     if (!call) throw new Error('fetchPage sent no request');
-    return (call[0] as { variables: { input: Record<string, unknown> } }).variables.input;
+    return (call[1] as { input: Record<string, unknown> }).input;
   }
 
   it('sends no view for the playlist order, and the picked sort once there is one', async () => {

@@ -93,6 +93,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetUserDataExportDownload',
   // The Logbook setter picker; no capture flow opens it.
   'GetUserLoggedSetters',
+  // Scoped offline registration only; mobile library/picker use GetAllUserPlaylists.
+  'GetUserPlaylists',
   'HoldHeatmap',
   'HoldOutlines',
   'IncomingFollowRequests',

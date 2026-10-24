@@ -51,6 +51,7 @@ import { spacing } from '../../../src/theme/tokens';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
 import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
 import { usePlaylistGradeBand } from '../../../src/hooks/use-playlist-grade-band';
+import { useUserReadRefresh } from '../../../src/hooks/use-user-read-refresh';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
   'LIKED_CLIMBS',
@@ -545,6 +546,15 @@ export default function DiscoverLibrary() {
   );
   const openAllPlaylists = useCallback(() => router.push('/(tabs)/discover/all'), []);
   const openCommunityPlaylists = useCallback(() => router.push('/(tabs)/discover/community'), []);
+
+  const userReadRefresh = useUserReadRefresh('playlists');
+  const previousUserReadRefresh = useRef(userReadRefresh);
+  useEffect(() => {
+    if (previousUserReadRefresh.current === userReadRefresh) return;
+    previousUserReadRefresh.current = userReadRefresh;
+    refetchUser();
+    refetchPinned();
+  }, [userReadRefresh, refetchUser, refetchPinned]);
 
   // Refresh owned + pinned when returning to the tab (e.g. after editing,
   // deleting, or pinning from a detail screen). Skip the first focus so we don't

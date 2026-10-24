@@ -31,11 +31,7 @@ import {
   type UpdateSessionVariables,
   type UpdateSessionResponse,
 } from '@boardsesh/graphql/operations';
-import {
-  GET_FAVORITES,
-  type FavoritesQueryVariables,
-  type FavoritesQueryResponse,
-} from '@boardsesh/graphql/operations/favorites';
+import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
 import {
@@ -1223,7 +1219,7 @@ export function useFavoriteStatus(
   return useQuery({
     queryKey: ['favoriteStatus', boardName, climbUuid, angle],
     queryFn: () =>
-      getHttpClient().request<FavoritesQueryResponse, FavoritesQueryVariables>(GET_FAVORITES, {
+      offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
         boardName,
         climbUuids: [climbUuid!],
         angle,

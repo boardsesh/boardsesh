@@ -4,18 +4,20 @@ import { renderHook } from '@testing-library/react';
 
 // Run scheduled interaction callbacks immediately — this hook's deferral is
 // covered by the shared `runAfterInteractions` contract, not by these tests.
-const { runAfterInteractions, request, isAuthenticated, storedUser } = vi.hoisted(() => ({
+const { runAfterInteractions, request, isAuthenticated, storedUser, refresh } = vi.hoisted(() => ({
   runAfterInteractions: vi.fn((callback: () => void) => {
     callback();
     return { cancel: vi.fn() };
   }),
   request: vi.fn(),
+  refresh: { epoch: 0 },
   isAuthenticated: { value: true },
   storedUser: { userId: 'user-a' as string | undefined, isLoading: false },
 }));
 
 vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
-vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) }));
+vi.mock('../../lib/graphql/offline-request', () => ({ offlineAwareRequest: request }));
+vi.mock('../use-user-read-refresh', () => ({ useUserReadRefresh: () => refresh.epoch }));
 vi.mock('../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: isAuthenticated.value }),
 }));
@@ -35,10 +37,24 @@ describe('useClimbListFavorites', () => {
     // Also forgets the context the store held, so each test starts unscoped.
     favoritesStore.reset();
     request.mockReset();
+    refresh.epoch = 0;
     runAfterInteractions.mockClear();
     isAuthenticated.value = true;
     storedUser.userId = 'user-a';
     storedUser.isLoading = false;
+  });
+
+  it('refetches already displayed hearts after local-read recovery', async () => {
+    request.mockResolvedValueOnce({ favorites: ['a'] }).mockResolvedValueOnce({ favorites: [] });
+    const climbUuids = ['a'];
+    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+    refresh.epoch += 1;
+    rerender();
+    await flush();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(favoritesStore.getIsFavorited('a')).toBe(false);
   });
 
   it('writes the favorited subset of the visible climbs into the store', async () => {
@@ -122,8 +138,8 @@ describe('useClimbListFavorites', () => {
   // whose favourites the store is holding.
   it('clears one user\u2019s hearts when another signs in at the same board and angle', async () => {
     request.mockResolvedValue({ favorites: ['a'] });
-
-    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: ['a'] }));
+    const climbUuids = ['a'];
+    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
     await flush();
     expect(favoritesStore.getIsFavorited('a')).toBe(true);
 
@@ -132,6 +148,7 @@ describe('useClimbListFavorites', () => {
     rerender();
     await flush();
 
+    expect(request).toHaveBeenCalledTimes(2);
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
   });
 

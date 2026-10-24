@@ -1471,7 +1471,7 @@ second, narrower signal.
 
 Every offline-served read funnels through `offlineAwareRequest()` in
 `packages/mobile/src/lib/graphql/offline-request.ts`, which already knows which
-lane it took. Four terminal outcomes are worth measuring:
+lane it took. These terminal outcomes are worth measuring:
 
 | Outcome                                    | Event                      | Lane / reason          |
 | ------------------------------------------ | -------------------------- | ---------------------- |
@@ -1481,6 +1481,7 @@ lane it took. Four terminal outcomes are worth measuring:
 | Offline, board not downloaded              | `Offline Read Unavailable` | `board_not_downloaded` |
 | Offline, board downloaded, filter gap      | `Offline Read Unavailable` | `filter_unsupported`   |
 | Offline, no database handle                | `Offline Read Unavailable` | `local_db_unavailable` |
+| Offline, user data unowned or incomplete    | `Offline Read Unavailable` | `user_data_unavailable` |
 
 `network_error_local` is real offline value that `onlineManager` mislabels as
 online (captive portal, dead gym-wifi upstream, cold-start seed race), so it
@@ -1488,6 +1489,8 @@ counts toward the north-star. `online_local` is the flag-on latency
 optimization — it proves the local path is exercised but it is **not** offline
 usage, and it is excluded from the north-star. Expect it to dominate the
 breakdown once #4312 bakes the engine flag on.
+
+The logbook, owned-playlist and favorite readers (#4352) use the same rollup. They are network-first online, so their local answers occupy offline or network-error lanes. Boardless playlist reads use `boardName: all`. Their user-data gate is independent of downloads; an ownership/completeness decline reports `user_data_unavailable`, while missing playlist-climb coverage reports `board_not_downloaded`.
 
 Two labelling rules keep those buckets honest, and both are cases where the
 obvious code books the wrong thing:
@@ -1500,7 +1503,7 @@ obvious code books the wrong thing:
   grade reads a null row is indistinguishable from a genuinely ungraded climb
   (MoonBoard, too few ascents), so counting it would put a number we can't verify
   on the gap tile.
-- **A missing download outranks the filter gap.** An unsupported filter run
+- **In catalogue search, a missing download outranks the filter gap.** An unsupported filter run
   against a board that was never downloaded is reported as
   `board_not_downloaded`. Teaching SQLite every filter (#4002) would still serve
   that read nothing; only a download (#4318) would.
@@ -1554,6 +1557,8 @@ Supporting tiles, in the order they answer questions about it:
    convert; `filter_unsupported` is #4002's. `local_db_unavailable` is neither —
    it means the database handle was missing (init retrying or wedged, #4313 /
    #4314), so those users may already have the board downloaded.
+   `user_data_unavailable` also needs no download nudge: the owner stamp or
+   complete user-data sync was missing.
 3. **Conversion** — `Offline Board Download Completed` → `Offline Read Served`
    (offline lanes) over 30 days: of the people who downloaded a board, how many
    ever used it away from signal.

@@ -19,7 +19,6 @@ import {
   GET_PLAYLIST,
   GET_PLAYLIST_CLIMBS,
   type GetPlaylistQueryResponse,
-  type GetPlaylistQueryVariables,
   type GetPlaylistClimbsInput,
   type GetPlaylistClimbsQueryResponse,
   type Playlist,
@@ -67,7 +66,9 @@ import {
 import { listAddToQueueCount } from '../../../src/lib/playlists/list-add-to-queue-count';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
-import { getHttpClient } from '../../../src/lib/graphql/client';
+import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
+import { OfflineState } from '../../../src/components/OfflineState';
+import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { useComments } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
@@ -124,24 +125,18 @@ export default function PlaylistDetail() {
 
   // Playlist metadata for the hero (name, climb count, colour, icon, ownership,
   // pin/follow state).
-  const {
-    data: playlist,
-    isLoading: metaLoading,
-    isError: metaError,
-    refetch: refetchMeta,
-  } = useQuery({
+  const metadataQuery = useQuery({
     queryKey: ['playlist', playlistUuid],
     queryFn: async () => {
-      const response = await getHttpClient().request<GetPlaylistQueryResponse, GetPlaylistQueryVariables>(
-        GET_PLAYLIST,
-        {
-          playlistId: playlistUuid,
-        },
-      );
+      const response = await offlineAwareRequest<GetPlaylistQueryResponse>(GET_PLAYLIST, {
+        playlistId: playlistUuid,
+      });
       return response.playlist;
     },
     enabled: !!playlistUuid,
   });
+  const { data: playlist, isLoading: metaLoading, isError: metaError, refetch: refetchMeta } = metadataQuery;
+  const metadataOffline = useOfflineQueryState(metadataQuery);
 
   // Render the list at the user's selected wall angle: in all-boards mode the
   // resolver renders on-active-board climbs' grades at `activeAngle` instead of
@@ -262,6 +257,7 @@ export default function PlaylistDetail() {
   if (viewRowsOnScreen && settledView.key !== viewKey) {
     setSettledView({ view: viewInput, key: viewKey, selection: viewKey === null ? null : filterState.querySelection });
   }
+  const climbsOffline = useOfflineQueryState(query);
   const firstPage = query.data?.pages[0];
   const totalCount = firstPage?.totalCount;
   // Only a filtering view carries it, so it also says "the rows on screen are filtered".
@@ -300,12 +296,10 @@ export default function PlaylistDetail() {
       };
       // See the smart-playlist screen: passing the signal is what turns
       // "stop paging" into "cancel the request that is already out".
-      const response = await getHttpClient().request<GetPlaylistClimbsQueryResponse, { input: GetPlaylistClimbsInput }>(
-        {
-          document: GET_PLAYLIST_CLIMBS,
-          variables: { input },
-          signal,
-        },
+      const response = await offlineAwareRequest<GetPlaylistClimbsQueryResponse>(
+        GET_PLAYLIST_CLIMBS,
+        { input },
+        { signal },
       );
       return {
         climbs: toQueueClimbs(response.playlistClimbs.climbs),
@@ -982,6 +976,14 @@ export default function PlaylistDetail() {
   // a blank fallback-titled hero would render as if it were a real empty
   // playlist. Surface an explicit error + retry instead. Distinct from the
   // resolved-null not-found case.
+  if (metadataOffline.isBlocked && metadataOffline.reason && metadataOffline.reason !== 'error') {
+    return (
+      <View style={styles.stateContainer}>
+        <PlaylistStateHeader />
+        <OfflineState reason={metadataOffline.reason} />
+      </View>
+    );
+  }
   if (metaError && !playlist) {
     return (
       <View style={styles.stateContainer}>
@@ -1046,7 +1048,12 @@ export default function PlaylistDetail() {
         climbs={editMode ? editClimbs : visibleAllClimbs}
         renderBoard={renderBoard}
         boardBanner={boardBanner}
-        isLoading={query.isLoading}
+        isLoading={query.isLoading && !climbsOffline.isBlocked}
+        unavailableContent={
+          climbsOffline.isBlocked && climbsOffline.reason && climbsOffline.reason !== 'error' ? (
+            <OfflineState reason={climbsOffline.reason} />
+          ) : undefined
+        }
         // Pagination is paused while editing the loaded window.
         isFetchingNextPage={editMode ? false : query.isFetchingNextPage}
         hasNextPage={editMode ? false : (query.hasNextPage ?? false)}

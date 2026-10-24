@@ -23,6 +23,7 @@ import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
+import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
@@ -121,7 +122,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     () => ({
       isAuthenticated,
       isAuthLoading: isLoading,
-      executeHttp: (query, variables) => getHttpClient().request(query, variables),
+      executeHttp: (query, variables) => offlineAwareRequest(query, variables),
       executeWs: ({ query, variables }) => execute(getWsClient(), { query, variables }),
       afterClimbWrite: mirrorWrittenClimb,
       resolveActiveSessionId: () => sessionIdRef.current,

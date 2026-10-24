@@ -9,13 +9,13 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { PlaylistsAdapterProvider, type PlaylistsAdapter } from '@boardsesh/playlists-react';
-import { getHttpClient } from '../lib/graphql/client';
+import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { mobileRecentsAdapter } from '../lib/playlists/recents-store';
 
 export function PlaylistsAdapterWrapper({ children }: { children: ReactNode }) {
   const adapter = useMemo<PlaylistsAdapter>(
     () => ({
-      executeGraphQL: (query, variables) => getHttpClient().request(query, variables),
+      executeGraphQL: (query, variables) => offlineAwareRequest(query, variables),
       recents: mobileRecentsAdapter,
     }),
     [],

@@ -37,6 +37,7 @@ import {
   type CreatePlaylistMutationResponse,
 } from '@boardsesh/graphql/operations/playlists';
 import { getHttpClient } from '../client';
+import { offlineAwareRequest } from '../offline-request';
 import { useAuth } from '../../../providers/auth-provider';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { useActiveBoard } from '../use-active-board';
@@ -120,7 +121,7 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   const { data: playlists = [] as Playlist[], isLoading: playlistsLoading } = useQuery({
     queryKey: PLAYLISTS_QUERY_KEY,
     queryFn: async (): Promise<Playlist[]> => {
-      const response = await getHttpClient().request<GetAllUserPlaylistsQueryResponse>(GET_ALL_USER_PLAYLISTS, {
+      const response = await offlineAwareRequest<GetAllUserPlaylistsQueryResponse>(GET_ALL_USER_PLAYLISTS, {
         input: { pageSize: 200 },
       });
       return response.allUserPlaylists.playlists;

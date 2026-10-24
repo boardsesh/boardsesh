@@ -154,6 +154,8 @@ export type PlaylistDetailViewProps = {
   onActivateClimb: (climb: Climb) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
+  /** An unavailable climb source keeps the hero while explaining the gap. */
+  unavailableContent?: ReactNode;
   /**
    * The empty state's icon in both looks, when the list is empty for a reason
    * other than having no climbs (filtered to nothing, a failed load). Defaults to
@@ -267,6 +269,7 @@ export function PlaylistDetailView({
   fetchNextPage,
   onActivateClimb,
   emptyMessage,
+  unavailableContent,
   emptyIcon = 'playlist',
   emptyState,
   emptyAction,
@@ -644,39 +647,42 @@ export function PlaylistDetailView({
   // Shared list state visuals. The first-page load renders skeleton rows (a far
   // better "shape of what's coming" cue than a bare spinner). Empty + footer are
   // shared; the empty body is variant-aware below.
-  const listEmptyComponent = isLoading ? (
-    <View style={styles.skeletonList}>
-      {SKELETON_PLACEHOLDERS.map((key) => (
-        <ClimbListRowSkeleton key={key} showProgress={!editMode} />
-      ))}
-    </View>
-  ) : isMaterial ? (
-    <MaterialEmptyState
-      icon={emptyState?.icon ?? emptyIcon}
-      title={emptyState?.title ?? emptyMessage}
-      supporting={emptyState?.supporting}
-      action={emptyAction}
-      titleColor={systemColors.label}
-      supportingColor={systemColors.secondaryLabel}
-    />
-  ) : (
-    <View style={styles.stateContainer}>
-      <Icon name={emptyIcon} size={44} color={systemColors.tertiaryLabel} />
-      <Text variant="subheadline" style={styles.emptyText}>
-        {emptyMessage}
-      </Text>
-      {emptyAction ? (
-        <Button
-          title={emptyAction.label}
-          onPress={emptyAction.onPress}
-          size="medium"
-          icon={emptyAction.icon}
-          style={styles.emptyActionButton}
-          ignoreContainerSafeArea
-        />
-      ) : null}
-    </View>
-  );
+  const listEmptyComponent =
+    unavailableContent != null ? (
+      <>{unavailableContent}</>
+    ) : isLoading ? (
+      <View style={styles.skeletonList}>
+        {SKELETON_PLACEHOLDERS.map((key) => (
+          <ClimbListRowSkeleton key={key} showProgress={!editMode} />
+        ))}
+      </View>
+    ) : isMaterial ? (
+      <MaterialEmptyState
+        icon={emptyState?.icon ?? emptyIcon}
+        title={emptyState?.title ?? emptyMessage}
+        supporting={emptyState?.supporting}
+        action={emptyAction}
+        titleColor={systemColors.label}
+        supportingColor={systemColors.secondaryLabel}
+      />
+    ) : (
+      <View style={styles.stateContainer}>
+        <Icon name={emptyIcon} size={44} color={systemColors.tertiaryLabel} />
+        <Text variant="subheadline" style={styles.emptyText}>
+          {emptyMessage}
+        </Text>
+        {emptyAction ? (
+          <Button
+            title={emptyAction.label}
+            onPress={emptyAction.onPress}
+            size="medium"
+            icon={emptyAction.icon}
+            style={styles.emptyActionButton}
+            ignoreContainerSafeArea
+          />
+        ) : null}
+      </View>
+    );
 
   const listFooterComponent = isFetchingNextPage ? (
     <View style={styles.footer}>

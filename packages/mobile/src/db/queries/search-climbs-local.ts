@@ -67,7 +67,7 @@ const SORT_ALIASES: Record<string, string> = {
 // NULL). This won't reproduce the server's md5 order byte-for-byte — an accepted
 // offline gap, like the ASCII-collation note above — but it's stable per seed so
 // OFFSET pagination doesn't reshuffle mid-scroll.
-const RANDOM_ORDER_EXPR = `(
+export const RANDOM_ORDER_EXPR = `(
   (COALESCE(unicode(substr(c.uuid, 1, 1)), 0) * 131
    + COALESCE(unicode(substr(c.uuid, 4, 1)), 0) * 137
    + COALESCE(unicode(substr(c.uuid, 7, 1)), 0) * 139
@@ -327,7 +327,7 @@ function clampToBoulderScale(difficultyExpr: string): string {
  * `idx_ticks_climb` makes each probe a handful of rows and there is no 220k-row
  * candidate set for a per-row probe to multiply against.
  */
-const MY_GRADE_SUBQUERY = `(SELECT ${clampToBoulderScale('mg.difficulty')}
+export const MY_GRADE_SUBQUERY = `(SELECT ${clampToBoulderScale('mg.difficulty')}
     FROM boardsesh_ticks mg
     WHERE mg.climb_uuid = c.uuid AND mg.board_type = ? AND mg.angle = ? AND ${ownedTicks('mg')}
     AND mg.difficulty IS NOT NULL
@@ -372,13 +372,14 @@ export function buildJoinAndWhere(
   input: ClimbSearchInput,
   ownerUserId: string | null,
   followedCondition?: { sql: string; binds: string[] },
+  context: 'catalogue' | 'playlist' = 'catalogue',
 ): JoinAndWhere {
   const boardType = input.boardName;
   const angle = input.angle;
   const setIds = parseSetIds(input.setIds);
   const isMoonboard = boardType === 'moonboard';
 
-  const crossAngle = isCrossAngleStats(input);
+  const crossAngle = context === 'catalogue' && isCrossAngleStats(input);
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
 
   // Stats drive grade/quality/ascents; grades add the Boardsesh grade + confidence
@@ -411,45 +412,49 @@ export function buildJoinAndWhere(
 
   // Base: board / layout / listed / non-draft.
   if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
-  push('c.board_type = ?', boardType);
-  push('c.layout_id = ?', input.layoutId);
-  push('c.is_listed = 1');
-  push('c.is_draft = 0');
+  // Playlists own their membership, visibility and geometry. Their filters
+  // reuse the expressions below against stats joined at each row's display angle.
+  if (context === 'catalogue') {
+    push('c.board_type = ?', boardType);
+    push('c.layout_id = ?', input.layoutId);
+    push('c.is_listed = 1');
+    push('c.is_draft = 0');
 
-  // Community-hidden climbs, mirroring hiddenClimbCondition in
-  // packages/db/src/queries/climbs/create-climb-filters.ts: gone from browsing,
-  // still findable by name. COALESCE because is_hidden arrived in the on-device
-  // schema at migration v5 and rows pulled before the server started sending it
-  // are NULL — an unknown flag reads as visible, which is the safe direction for
-  // a column the sync will refresh.
-  if (!hasNameQuery(input)) push('COALESCE(c.is_hidden, 0) = 0');
+    // Community-hidden climbs, mirroring hiddenClimbCondition in
+    // packages/db/src/queries/climbs/create-climb-filters.ts: gone from browsing,
+    // still findable by name. COALESCE because is_hidden arrived in the on-device
+    // schema at migration v5 and rows pulled before the server started sending it
+    // are NULL — an unknown flag reads as visible, which is the safe direction for
+    // a column the sync will refresh.
+    if (!hasNameQuery(input)) push('COALESCE(c.is_hidden, 0) = 0');
 
-  // The browsed-angle restriction, mirroring `browsedAngleRestrictionSql` in
-  // packages/db/src/queries/climbs/effective-stats.ts arm for arm (issue #5642):
-  // on Woods without the opt-in, keep a climb set at this angle, one with no set
-  // angle recorded, or one with a stats row here. `s` is the browsed-angle stats
-  // join in both join shapes above, and its climb_uuid is part of the primary key,
-  // so NULL means exactly "no row at this angle" — the same probe
-  // `effectiveStatsSql` uses. `countClimbsLocal` shares this builder, so the badge
-  // counts what the list shows.
-  if (isBrowsedAngleRestricted(input)) {
-    push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
-  }
+    // The browsed-angle restriction, mirroring `browsedAngleRestrictionSql` in
+    // packages/db/src/queries/climbs/effective-stats.ts arm for arm (issue #5642):
+    // on Woods without the opt-in, keep a climb set at this angle, one with no set
+    // angle recorded, or one with a stats row here. `s` is the browsed-angle stats
+    // join in both join shapes above, and its climb_uuid is part of the primary key,
+    // so NULL means exactly "no row at this angle" — the same probe
+    // `effectiveStatsSql` uses. `countClimbsLocal` shares this builder, so the badge
+    // counts what the list shows.
+    if (isBrowsedAngleRestricted(input)) {
+      push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
+    }
 
-  // A spray climb that lost a hold is listed like any other: it carries a badge
-  // and a Remix, and is not hidden. The one exception mirrors the server's
-  // `retiredByResetCondition` (packages/db/src/queries/climbs/create-climb-filters.ts),
-  // which applies when the request carries no `holdIntegrity` (the app never
-  // sends one for a wall list): a climb a full in-place reset retired (#6024)
-  // leaves the default list, and comes back on a name search. A downloaded wall
-  // reads here even while online, so the two must agree or the list changes
-  // with the signal. The drafts list is answered by the network
-  // (`isOfflineSearchSupported`), which sends `ANY` for it.
-  //
-  // COALESCE because NULL reads as not retired: every catalogue climb, and any
-  // row pulled before on-device migration v12 added the column.
-  if (boardType === 'spray' && input.onlyDrafts !== true && !hasNameQuery(input)) {
-    push('COALESCE(c.retired_by_reset, 0) = 0');
+    // A spray climb that lost a hold is listed like any other: it carries a badge
+    // and a Remix, and is not hidden. The one exception mirrors the server's
+    // `retiredByResetCondition` (packages/db/src/queries/climbs/create-climb-filters.ts),
+    // which applies when the request carries no `holdIntegrity` (the app never
+    // sends one for a wall list): a climb a full in-place reset retired (#6024)
+    // leaves the default list, and comes back on a name search. A downloaded wall
+    // reads here even while online, so the two must agree or the list changes
+    // with the signal. The drafts list is answered by the network
+    // (`isOfflineSearchSupported`), which sends `ANY` for it.
+    //
+    // COALESCE because NULL reads as not retired: every catalogue climb, and any
+    // row pulled before on-device migration v12 added the column.
+    if (boardType === 'spray' && input.onlyDrafts !== true && !hasNameQuery(input)) {
+      push('COALESCE(c.retired_by_reset, 0) = 0');
+    }
   }
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
@@ -463,7 +468,7 @@ export function buildJoinAndWhere(
 
   // Size: compatible_size_ids contains sizeId (skipped for boards without size
   // variants — moonboard — via the shared isSizeScopedBoard predicate).
-  if (isSizeScopedBoard(boardType)) {
+  if (context === 'catalogue' && isSizeScopedBoard(boardType)) {
     push(
       'c.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(c.compatible_size_ids) WHERE value = ?)',
       input.sizeId,
@@ -473,7 +478,7 @@ export function buildJoinAndWhere(
   // Set membership (subset): every required set is in the selected sets. NULL
   // required_set_ids is excluded for non-draft/non-moonboard (matches Postgres
   // NULL <@ semantics); moonboard allows NULL (backfill pending).
-  if (setIds.length > 0) {
+  if (context === 'catalogue' && setIds.length > 0) {
     const placeholders = setIds.map(() => '?').join(', ');
     const subsetProbe = `NOT EXISTS (SELECT 1 FROM json_each(c.required_set_ids) WHERE value NOT IN (${placeholders}))`;
     if (isMoonboard) {
@@ -657,7 +662,7 @@ export function buildJoinAndWhere(
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }
 
-function sortColumnSql(
+export function sortColumnSql(
   sortBy: string,
   crossAngle: boolean,
   gradeSource: ClimbSearchInput['gradeSource'],

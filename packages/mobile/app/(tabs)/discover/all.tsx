@@ -2,7 +2,7 @@ import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { AccessibleTextInput as TextInput } from '../../../src/components/AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../../src/hooks/use-typography-styles';
 import { PressableSurface } from '../../../src/components/PressableSurface';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +21,7 @@ import { useDrainAllPages } from '../../../src/hooks/use-drain-all-pages';
 import { sortAndFilterPlaylists } from '../../../src/lib/sort-filter-playlists';
 import { spacing } from '../../../src/theme/tokens';
 import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
+import { useUserReadRefresh } from '../../../src/hooks/use-user-read-refresh';
 
 /**
  * "My Playlists" — the full, vertical, alphabetical list of the signed-in user's
@@ -55,6 +56,13 @@ export default function AllPlaylistsScreen() {
   // library, not just the first page.
   useDrainAllPages({ hasMore, isLoading, isLoadingMore, loadMore });
   const pullRefresh = usePullRefresh(refetch, isLoading);
+  const userReadRefresh = useUserReadRefresh('playlists');
+  const previousUserReadRefresh = useRef(userReadRefresh);
+  useEffect(() => {
+    if (previousUserReadRefresh.current === userReadRefresh) return;
+    previousUserReadRefresh.current = userReadRefresh;
+    refetch();
+  }, [userReadRefresh, refetch]);
 
   // Refresh on return so an edit/delete made on a pushed detail screen lands here
   // (this list uses its own useState store, not the react-query cache the picker

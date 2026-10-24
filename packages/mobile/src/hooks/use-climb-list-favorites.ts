@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { getHttpClient } from '../lib/graphql/client';
+import { offlineAwareRequest } from '../lib/graphql/offline-request';
+import { useUserReadRefresh } from './use-user-read-refresh';
 import { useAuth } from '../providers/auth-provider';
 import { useStoredUserId } from './use-current-user-id';
 
@@ -43,6 +44,7 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
   // `staleTime: Infinity` and dropped by the sign-out cache clear.
   const { userId, isLoading: isUserIdLoading } = useStoredUserId(isAuthenticated);
 
+  const refreshEpoch = useUserReadRefresh('favorites');
   const fetchedRef = useRef<Set<string>>(new Set());
   const contextKey = `${userId ?? 'anonymous'}:${boardName}:${angle}:${isAuthenticated ? 1 : 0}`;
 
@@ -54,6 +56,10 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
     if (!favoritesStore.applyContext(contextKey)) return;
     fetchedRef.current = new Set();
   }, [contextKey]);
+
+  useEffect(() => {
+    fetchedRef.current = new Set();
+  }, [refreshEpoch]);
 
   useEffect(() => {
     // Waiting out the id read costs nothing and saves a wasted round trip: the
@@ -83,7 +89,7 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
           // Read the clock BEFORE asking, so a toggle that lands while this is
           // in flight is recognisably newer than the answer coming back.
           const startedAtStamp = favoritesStore.getWriteStamp();
-          const response = await getHttpClient().request<FavoritesQueryResponse>(GET_FAVORITES, {
+          const response = await offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
             boardName,
             climbUuids: chunk,
             angle,
@@ -114,5 +120,5 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
       // list change happened to come along.
       releaseUnmerged();
     };
-  }, [isAuthenticated, isUserIdLoading, boardName, angle, climbUuids]);
+  }, [isAuthenticated, isUserIdLoading, userId, boardName, angle, climbUuids, refreshEpoch]);
 }

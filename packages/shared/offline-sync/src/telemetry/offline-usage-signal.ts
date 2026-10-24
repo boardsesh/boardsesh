@@ -67,6 +67,9 @@ export type OfflineConnectivityReason = 'offline_mode' | 'device_offline' | 'bac
 // dedupe key, so this is "the surface that happened to trip the counter", not an
 // exhaustive list of surfaces the user browsed.
 export type OfflineReadSurface =
+  | 'logbook'
+  | 'playlists'
+  | 'favorites'
   | 'search'
   | 'climb_detail'
   | 'grade'
@@ -82,7 +85,11 @@ export type OfflineReadSurface =
 //                          wedged — #4313 / #4314). Kept separate on purpose: the board may well
 //                          BE downloaded, so folding this into board_not_downloaded would aim
 //                          #4318's "download a board" nudge at people who already have one.
-export type OfflineUnavailableReason = 'board_not_downloaded' | 'filter_unsupported' | 'local_db_unavailable';
+export type OfflineUnavailableReason =
+  | 'board_not_downloaded'
+  | 'filter_unsupported'
+  | 'local_db_unavailable'
+  | 'user_data_unavailable';
 
 export type OfflineUsageEmission =
   | { kind: 'served'; lane: OfflineReadLane; surface: OfflineReadSurface; boardName: string; readCount: number }

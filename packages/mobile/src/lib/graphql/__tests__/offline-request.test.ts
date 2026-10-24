@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { onlineManager } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
+// User registrations have their own integration suite, exercising the real
+// registrar. Keep this catalogue-policy suite independent of those readers.
+vi.mock('../offline-user-operations', () => ({ registerOfflineUserOperations: vi.fn() }));
+vi.mock('../offline-user-read-recovery', () => ({ recordLocalUserRead: vi.fn() }));
+
 // Client-level offline-aware interceptor: routes a registered document to local
 // SQLite when the board is downloaded + filters supported (even online), to the
 // network otherwise (online), and to a per-op empty/null fallback when offline
