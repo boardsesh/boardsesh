@@ -159,4 +159,42 @@ describe('usePlayNavigationModel', () => {
     expect(result.current.navigationSuggestionSource).toBeNull();
     expect(result.current.navigationState.nextItem).toBe(queue[1]);
   });
+
+  // #6238: walking a list, the queue button badges Up next, the same number
+  // the end card offers.
+  describe('the Up next badge', () => {
+    const now = item('a');
+    const queued = [item('q1'), item('q2')];
+    const queue = [now, ...queued];
+    const projects: PlaylistSuggestionSource = {
+      playlistUuid: 'smart:projects',
+      activatedClimbUuid: 'a',
+      boardKey: 'kilter:1',
+      climbs: [now.climb, item('b').climb, item('c').climb],
+      label: 'Projects',
+      total: 3,
+    };
+
+    it('counts Up next while a named list is walked, before its end', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: projects }),
+      );
+      expect(result.current.currentTrackLabel.kind).toBe('counted');
+      expect(result.current.trackEndCard).toBeNull();
+      expect(result.current.listWalkUpNextCount).toBe(2);
+    });
+
+    it('shows none while playing from the queue', () => {
+      const { result } = renderHook(() => usePlayNavigationModel(inputs(queue)));
+      expect(result.current.currentTrackLabel.kind).toBe('hidden');
+      expect(result.current.listWalkUpNextCount).toBe(0);
+    });
+
+    it('follows the queue as climbs are added', () => {
+      const initialProps = { ...inputs(queue), playlistSuggestionSource: projects };
+      const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps });
+      rerender({ ...initialProps, queue: [...queue, item('q3')] });
+      expect(result.current.listWalkUpNextCount).toBe(3);
+    });
+  });
 });
