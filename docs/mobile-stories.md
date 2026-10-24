@@ -56,6 +56,13 @@ Focused parameter or preference changes are checked again, and returning to an e
 reapplies its parameters. Leaving a story keeps the current appearance; blur does not reset it.
 Missing or invalid parameters leave that preference alone, and matching preferences avoid a write.
 
+The iOS dev client previously entered a render loop when stacked stories requested conflicting
+appearances. These captures show the error and the dark Material story settling with focus ownership.
+
+| Before | After |
+| --- | --- |
+| ![Conflicting story appearance loop](images/story-appearance-loop-before.png) | ![Focused dark Material story](images/story-appearance-loop-after.png) |
+
 Stories only exist in a dev bundle (the simulator dev client, `vp run dev:mobile`). A store
 build or OTA update sends `dev/stories/*` home.
 
