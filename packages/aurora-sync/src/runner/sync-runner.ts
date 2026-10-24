@@ -26,8 +26,12 @@ import {
   type SharedSyncClaimToken,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
-import { circuitPlaylistConflictSyncError } from '@boardsesh/shared-schema/sync-error-codes';
-import { syncUserData, getCircuitPlaylistOwnershipConflictState } from '../sync/user-sync';
+import { boardAccountSyncErrorCode, circuitPlaylistConflictSyncError } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  syncUserData,
+  getCircuitPlaylistOwnershipConflictState,
+  getLogbookOwnershipConflictState,
+} from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
 import { createAuroraGymUserFetcher, createAuroraGymUserFetcherForToken } from '../sync/gym-wall-fetcher';
 import {
@@ -763,7 +767,35 @@ export class SyncRunner {
       );
     }
 
-    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', duplicateCircuitOwnerError, succeededAt, {
+    // Same question for the logbook (#6687): does another Boardsesh account
+    // already hold this board login's sends? A state read for the same reason
+    // as the circuits one, and fail-open for the same reason. When it is true
+    // its code wins over the circuits code: it is what explains an empty
+    // logbook, and its copy covers the playlists too.
+    const logbookOwnedElsewhere = await getLogbookOwnershipConflictState(
+      db,
+      boardType,
+      cred.auroraUserId,
+      cred.userId,
+    ).catch((error: unknown) => {
+      this.log(
+        `[SyncRunner] Foreign-logbook-owner check failed for user ${cred.userId} (${boardType}); treating as no duplicate: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    });
+    if (logbookOwnedElsewhere) {
+      this.log(
+        `[SyncRunner] User ${cred.userId}: ${boardType} sends from this board login belong to another Boardsesh user (see #6687)`,
+      );
+    }
+    const successSyncError = boardAccountSyncErrorCode({
+      logbookOwnedElsewhere,
+      circuitsSyncError: duplicateCircuitOwnerError,
+    });
+
+    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', successSyncError, succeededAt, {
       credentialFailureCount: 0,
       lastCredentialFailureAt: null,
       // Success advances the attempt clock too (they coincide on a clean

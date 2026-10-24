@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR,
 } from '@boardsesh/shared-schema/sync-error-codes';
 import { SHARED_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
 import { AuroraRequestError } from '../api/errors';
@@ -53,6 +54,7 @@ const {
   mockSignIn,
   mockSyncUserData,
   mockGetCircuitPlaylistOwnershipConflictState,
+  mockGetLogbookOwnershipConflictState,
   mockSyncSharedData,
   mockSyncAuroraBoardLocations,
   mockCrawlGymWalls,
@@ -69,6 +71,8 @@ const {
   mockSignIn: vi.fn(),
   mockSyncUserData: vi.fn(),
   mockGetCircuitPlaylistOwnershipConflictState: vi.fn(),
+  // Defaults to "no conflict" for every describe that runs a real cycle.
+  mockGetLogbookOwnershipConflictState: vi.fn(async () => false),
   mockSyncSharedData: vi.fn(),
   mockSyncAuroraBoardLocations: vi.fn(),
   mockCrawlGymWalls: vi.fn(),
@@ -109,6 +113,7 @@ vi.mock('@boardsesh/crypto', () => ({
 vi.mock('../sync/user-sync', () => ({
   syncUserData: mockSyncUserData,
   getCircuitPlaylistOwnershipConflictState: mockGetCircuitPlaylistOwnershipConflictState,
+  getLogbookOwnershipConflictState: mockGetLogbookOwnershipConflictState,
 }));
 
 vi.mock('../sync/shared-sync', () => ({
@@ -146,6 +151,7 @@ describe('SyncRunner login failure handling', () => {
     mockEncrypt.mockReturnValue('encrypted-token');
     mockSyncUserData.mockResolvedValue({});
     mockGetCircuitPlaylistOwnershipConflictState.mockResolvedValue('none');
+    mockGetLogbookOwnershipConflictState.mockResolvedValue(false);
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
   });
 
@@ -459,6 +465,53 @@ describe('SyncRunner login failure handling', () => {
     expect(status).toBe('active');
     // No duplicate reported, since we could not determine one.
     expect(errorMessage).toBeNull();
+  });
+
+  it('stores the foreign-logbook code over the circuits code when another account owns the sends (#6687)', async () => {
+    // The second Boardsesh account on one Aurora login. Its cursor is the
+    // first account's, so this cycle received none of that history: the
+    // state check is the only thing that knows the logbook is elsewhere.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockSyncUserData.mockResolvedValue({ ascents: { synced: 0 } });
+    mockGetCircuitPlaylistOwnershipConflictState.mockResolvedValue('foreign');
+    mockGetLogbookOwnershipConflictState.mockResolvedValue(true);
+
+    await runnerPrivates.syncSingleCredential(createCredential());
+
+    expect(mockGetLogbookOwnershipConflictState).toHaveBeenCalledWith(expect.anything(), 'decoy', 42, 'user-123');
+    const [, , status, syncErrorCode] = updateCredentialStatus.mock.calls[0];
+    expect(status).toBe('active');
+    expect(syncErrorCode).toBe(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR);
+  });
+
+  it('falls back to the circuits code when the foreign-logbook check fails (#6687)', async () => {
+    // Fail-open like the circuits read: a status-field read must never turn a
+    // committed cycle into a recorded failure.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockGetCircuitPlaylistOwnershipConflictState.mockResolvedValue('foreign');
+    mockGetLogbookOwnershipConflictState.mockRejectedValue(
+      new Error('permission denied for table user_board_mappings'),
+    );
+
+    await expect(runnerPrivates.syncSingleCredential(createCredential())).resolves.toBeUndefined();
+
+    const [, , status, syncErrorCode] = updateCredentialStatus.mock.calls[0];
+    expect(status).toBe('active');
+    expect(syncErrorCode).toBe(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
   });
 
   it('leaves sync_error null when circuits synced cleanly', async () => {

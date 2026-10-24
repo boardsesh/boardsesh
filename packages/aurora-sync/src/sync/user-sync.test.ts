@@ -11,6 +11,8 @@ import {
   CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
   DUPLICATE_CIRCUIT_OWNER_SKIP_REASON,
   getCircuitPlaylistOwnershipConflictState,
+  getLogbookOwnershipConflictState,
+  logbookOwnershipConflictQuery,
   upsertTableData,
 } from './user-sync';
 
@@ -972,5 +974,52 @@ describe('getCircuitPlaylistOwnershipConflictState (#3950)', () => {
     expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."playlist_id" = "playlists"."id"');
     expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."role" =');
     expect(renderedOwnerJoin.params).toEqual(['owner']);
+  });
+});
+
+/**
+ * #6687: a second Boardsesh account on the same Aurora login starts from the
+ * first one's sync cursor, so Aurora never sends it the history and nothing is
+ * ever skipped. The board card needs a STATE answer: does another Boardsesh
+ * account hold this login's sends?
+ */
+describe('getLogbookOwnershipConflictState (#6687)', () => {
+  function stubDb(rows: Array<Record<string, unknown>>) {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      limit: () => Promise.resolve(rows),
+    };
+    return { select: () => chain };
+  }
+
+  it('reports a conflict when another mapped user owns Aurora-synced ticks', async () => {
+    await expect(
+      getLogbookOwnershipConflictState(stubDb([{ userId: 'user-2' }]) as never, 'tension', 144574, 'user-1'),
+    ).resolves.toBe(true);
+  });
+
+  it('reports no conflict when no other user qualifies', async () => {
+    await expect(getLogbookOwnershipConflictState(stubDb([]) as never, 'tension', 144574, 'user-1')).resolves.toBe(
+      false,
+    );
+  });
+
+  it('asks about OTHER users mapped to this board login who hold real Aurora ticks on this board', () => {
+    // Render the production query itself, never a rebuilt copy of it.
+    const rendered = logbookOwnershipConflictQuery(renderOnlyDb as never, 'tension', 144574, 'user-1').toSQL();
+
+    expect(rendered.sql).toContain('"user_board_mappings"."board_type" =');
+    expect(rendered.sql).toContain('"user_board_mappings"."board_user_id" =');
+    // Without this the syncing user's own sends would count as "elsewhere".
+    expect(rendered.sql).toContain('"user_board_mappings"."user_id" <>');
+    expect(rendered.sql).toContain('exists (select');
+    expect(rendered.sql).toContain('"boardsesh_ticks"."user_id" = "user_board_mappings"."user_id"');
+    expect(rendered.sql).toContain('"boardsesh_ticks"."board_type" =');
+    expect(rendered.sql).toContain('"boardsesh_ticks"."aurora_id" is not null');
+    // JSON-import ids are per-user hashes, not this login's Aurora uuids.
+    expect(rendered.sql).toContain('"boardsesh_ticks"."aurora_id" not like');
+    expect(rendered.sql).toContain('limit');
+    expect(rendered.params).toEqual(['tension', 144574, 'user-1', 'tension', 'json-import-%', 1]);
   });
 });

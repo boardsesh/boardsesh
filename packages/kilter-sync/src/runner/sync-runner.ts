@@ -36,7 +36,10 @@ import {
   type ResolvedDaemonOptions,
   type DaemonOptions,
 } from '@boardsesh/sync-runtime';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  boardAccountSyncErrorCode,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 
 import { KILTER_BOARD_TYPE } from '../api/types';
@@ -386,7 +389,7 @@ export class SyncRunner {
     const accessToken = await this.refreshTokenFor(cred, db);
     options.signal?.throwIfAborted();
 
-    const { skippedForeignCircuits } = await syncKilterUserData({
+    const { skippedForeignCircuits, skippedForeignLogs } = await syncKilterUserData({
       db,
       userId: cred.userId,
       accessToken,
@@ -417,16 +420,30 @@ export class SyncRunner {
     // user has no way to know another Boardsesh account holds the same board
     // login (#3526).
     //
+    // The same holds for logs, and it matters more: when the other account
+    // owns the sends, this one's logbook stays empty while the card says
+    // Connected (#6687). That code wins over the circuits one. PowerSync
+    // redelivers the whole logbook every cycle, so the count is the current
+    // state and the code clears itself once the other account lets go.
+    //
     // A CODE, not a sentence. The board card is the surface that shows this,
     // and it renders in the viewer's language — so the daemon states the
     // condition and the client owns the wording.
     const now = new Date();
-    const duplicateCircuitOwnerError = skippedForeignCircuits > 0 ? DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR : null;
-    if (duplicateCircuitOwnerError) {
+    if (skippedForeignCircuits > 0) {
       this.log(
         `[KilterSyncRunner] User ${cred.userId}: ${skippedForeignCircuits} circuit(s) skipped — the Kilter account is linked to another Boardsesh user (see #3526)`,
       );
     }
+    if (skippedForeignLogs > 0) {
+      this.log(
+        `[KilterSyncRunner] User ${cred.userId}: ${skippedForeignLogs} log(s) skipped — another Boardsesh user owns these sends (see #6687)`,
+      );
+    }
+    const successSyncError = boardAccountSyncErrorCode({
+      logbookOwnedElsewhere: skippedForeignLogs > 0,
+      circuitsSyncError: skippedForeignCircuits > 0 ? DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR : null,
+    });
     const markActive = async (database: RunnerDb) => {
       await database
         .update(auroraCredentials)
@@ -434,7 +451,7 @@ export class SyncRunner {
           lastSyncAt: now,
           lastSyncAttemptAt: now,
           syncStatus: 'active',
-          syncError: duplicateCircuitOwnerError,
+          syncError: successSyncError,
           // Success clears the failure counters so backoff resets and the
           // observability field stops showing a stale error.
           consecutiveFailures: 0,

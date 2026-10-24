@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import { KilterApiError } from '../api/errors';
 import { CATALOG_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
 import { KILTER_BOARD_TYPE } from '../api/types';
@@ -507,6 +510,46 @@ describe('SyncRunner.syncNextUser', () => {
     expect(activeUpdate?.set.syncError).toBe(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
     // Observability field stays clean: this was not a sync failure.
     expect(activeUpdate?.set.lastSyncError).toBeNull();
+  });
+
+  it('surfaces the foreign-logbook CODE when another account owns the sends, without failing the cycle (#6687)', async () => {
+    // The second Boardsesh account on one Kilter login: every log is refused
+    // because the first account's ticks already carry those kilter_ids. The
+    // card used to say Connected over an empty logbook.
+    const runner = new SyncRunner();
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db, updates } = createDbShim();
+    vi.spyOn(privates, 'getClient').mockReturnValue({ client: {}, db });
+    vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(credential());
+
+    mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 12 });
+
+    const summary = await runner.syncNextUser();
+
+    expect(summary.successful).toBe(1);
+    expect(summary.failed).toBe(0);
+    const activeUpdate = updates.find((u) => u.set.syncStatus === 'active');
+    expect(activeUpdate?.set.syncError).toBe(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR);
+    expect(activeUpdate?.set.lastSyncError).toBeNull();
+  });
+
+  it('prefers the foreign-logbook code over the circuits code when both apply (#6687)', async () => {
+    // The circuits copy says nothing about sends, so it must not be the one the
+    // card shows over an empty logbook.
+    const runner = new SyncRunner();
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db, updates } = createDbShim();
+    vi.spyOn(privates, 'getClient').mockReturnValue({ client: {}, db });
+    vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(credential());
+
+    mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 3, skippedForeignLogs: 12 });
+
+    await runner.syncNextUser();
+
+    const activeUpdate = updates.find((u) => u.set.syncStatus === 'active');
+    expect(activeUpdate?.set.syncError).toBe(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR);
   });
 
   it('leaves sync_error null on a clean cycle', async () => {
