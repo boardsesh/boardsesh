@@ -4,6 +4,7 @@ import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/t
 import { enqueue, runMigrations, stampLocalUserId } from '@boardsesh/offline-sync';
 import { readAuthorSnapshot, saveAuthorSnapshot } from '../../../../db/queries/followed-authors-local';
 import { loadFollowedAuthors } from '../use-followed-authors';
+import { resetLaunchReloadWindowForTests, setLaunchReloadPossible } from '../../../launch-reload-window';
 
 const request = vi.hoisted(() => vi.fn());
 let db: TestSqliteDb;
@@ -25,6 +26,7 @@ beforeEach(async () => {
 afterEach(() => {
   db.close();
   onlineManager.setOnline(true);
+  resetLaunchReloadWindowForTests();
 });
 
 // These cases own one mutable database fixture; overlap is introduced explicitly
@@ -96,5 +98,33 @@ describe.sequential('followed author snapshot refresh', () => {
     onlineManager.setOnline(false);
     await expect(loadFollowedAuthors('other')).rejects.toThrow('online sync');
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+// #6689. While the launch update gate can still reload this runtime, the snapshot
+// write is a transaction a reload could strand: on Android it would hold SQLite's
+// write lock until the process dies. The bridge loads again once the launch settles.
+describe.sequential('followed authors while a launch reload is still possible', () => {
+  it('serves the stored snapshot without a request or a write', async () => {
+    setLaunchReloadPossible(true);
+
+    expect(await loadFollowedAuthors('viewer')).toEqual(oldAuthors);
+    expect(request).not.toHaveBeenCalled();
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual(oldAuthors);
+  });
+  it('answers from the network but writes nothing when no snapshot is stored', async () => {
+    await db.runAsync('DELETE FROM followed_author_snapshots');
+    setLaunchReloadPossible(true);
+
+    expect(await loadFollowedAuthors('viewer')).toEqual(newAuthors);
+    expect(await readAuthorSnapshot(db, 'viewer')).toBeNull();
+  });
+  it('writes the snapshot again once the launch has settled', async () => {
+    setLaunchReloadPossible(true);
+    await loadFollowedAuthors('viewer');
+    setLaunchReloadPossible(false);
+
+    expect(await loadFollowedAuthors('viewer')).toEqual(newAuthors);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual(newAuthors);
   });
 });

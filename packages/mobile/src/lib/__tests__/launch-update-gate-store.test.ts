@@ -186,6 +186,8 @@ import {
   startLaunchUpdateGate,
   subscribeLaunchUpdateGate,
 } from '../launch-update-gate-store';
+import { beginDatabaseInitAttempt, resetDatabaseInitActivityForTests } from '../../db/init-activity';
+import { getJsRestartCount, isLaunchReloadPossible, resetLaunchReloadWindowForTests } from '../launch-reload-window';
 
 const PRODUCTION = { development: false };
 const MARKER_KEY = 'ota_first_launch_update_runtime_v1';
@@ -250,6 +252,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetOtaOperationOwnerForTests();
   resetLaunchUpdateGateForTests();
+  resetDatabaseInitActivityForTests();
+  resetLaunchReloadWindowForTests();
   calls.log = [];
   updates.latestContext = DOWNLOADING;
   updates.listeners.clear();
@@ -802,6 +806,76 @@ describe('state changes the listener never hears', () => {
     await advance(0);
 
     expect(updates.reloadAsync).toHaveBeenCalledOnce();
+  });
+});
+
+// #6689. The schema migrations run as write transactions, and on Android a
+// reload does not close the old runtime's connections: a reload landing inside
+// one would leave the write lock held until the process dies, and the next
+// runtime could never migrate. The gate holds its reload while a setup attempt
+// runs, and nothing that writes may start while a reload is still possible.
+describe('waiting for the database', () => {
+  it('does not reload while a database setup attempt is running, then reloads once it ends', async () => {
+    updates.latestContext = PENDING;
+    const endAttempt = beginDatabaseInitAttempt();
+    await startGate();
+    await advance(3_000);
+
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(launchUpdateEvents()).toHaveLength(0);
+
+    endAttempt();
+    await advance(0);
+
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'updated' });
+  });
+
+  it('releases without reloading when the setup attempt outlasts the cap', async () => {
+    updates.latestContext = PENDING;
+    const endAttempt = beginDatabaseInitAttempt();
+    await startGate();
+
+    await advance(15_000);
+
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(launchUpdateEvents()).toEqual([
+      expect.objectContaining({ outcome: 'timed_out', phase_at_release: 'download' }),
+    ]);
+
+    endAttempt();
+    await advance(0);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the reload window open while the gate can reload, and closes it when the gate resolves', async () => {
+    updates.latestContext = DOWNLOADING;
+    await startGate();
+    expect(isLaunchReloadPossible()).toBe(true);
+
+    emit({ ...IDLE });
+    await advance(0);
+
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(isLaunchReloadPossible()).toBe(false);
+  });
+
+  it('keeps the window open through a reload it has asked for', async () => {
+    updates.latestContext = PENDING;
+    await startGate();
+
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    expect(isLaunchReloadPossible()).toBe(true);
+  });
+
+  it('never opens the window for a launch it does not cover, and records the restart count', () => {
+    updates.latestContext = { ...PENDING, restartCount: 1 };
+    startLaunchUpdateGate(PRODUCTION);
+
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(isLaunchReloadPossible()).toBe(false);
+    expect(getJsRestartCount()).toBe(1);
   });
 });
 

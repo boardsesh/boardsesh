@@ -35,6 +35,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { beginDatabaseInitAttempt } from './init-activity';
 import { SCHEMA_NEWER_REPORT_KIND, setSchemaDowngrade, type SchemaDowngrade } from './schema-downgrade';
 import { pinDatabase } from './connection-pin';
 import { registerDeadHandleRecovery, type DeadHandleOrigin } from './dead-handle';
@@ -538,7 +539,16 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       // started — see `latestDatabase`. Falls back to the captured one only if the
       // handle was cleared outright.
       const target = latestDatabase ?? db;
-      const outcome = await attemptInitialization(target);
+      // While an attempt runs, the launch update gate holds its reload: the
+      // migrations inside are write transactions, and on Android a reload leaves
+      // an open one holding the write lock for the rest of the process (#6689).
+      const endAttempt = beginDatabaseInitAttempt();
+      let outcome: InitOutcome;
+      try {
+        outcome = await attemptInitialization(target);
+      } finally {
+        endAttempt();
+      }
       if (epoch !== chainEpoch) {
         releaseLaunch();
         return;

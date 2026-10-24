@@ -24,6 +24,7 @@ import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
 import { CLIMB_LOGS_PREVIEW_QUERY_KEY, CLIMB_LOGS_QUERY_KEY, FOLLOWING_CLIMB_LOGS_QUERY_KEY } from '../query-keys';
 import { isOfflineEngineEnabled } from '../../offline-engine';
+import { isLaunchReloadPossible } from '../../launch-reload-window';
 import { updateUserFollowCaches } from './user-follow-cache';
 import { FOLLOWING_CATALOGUE_QUERY_KEYS, invalidateFollowingCatalogueQueries } from '../author-query-invalidation';
 
@@ -54,6 +55,12 @@ export async function loadFollowedAuthors(userId: string): Promise<FollowedAutho
   const { getDatabaseHandle } = await import('../../../db');
   const db = isOfflineEngineEnabled() ? getDatabaseHandle() : null;
   const cached = db ? await readAuthorSnapshot(db, userId) : null;
+  // The launch update gate may still reload this runtime, and on Android the
+  // snapshot write below would keep SQLite's write lock for the rest of the
+  // process if the reload landed inside it (#6689). Serve what is stored and
+  // write nothing: the offline sync bridge loads again once the launch settles.
+  const launchReloadPossible = isLaunchReloadPossible();
+  if (cached && launchReloadPossible) return cached.authors;
   if (!onlineManager.isOnline()) {
     if (!cached) throw new Error('Followed authors need an online sync');
     return cached.authors;
@@ -65,7 +72,7 @@ export async function loadFollowedAuthors(userId: string): Promise<FollowedAutho
       throw error;
     });
   if ('offlineFallback' in response) return response.followedAuthors;
-  if (db) {
+  if (db && !launchReloadPossible) {
     // Check again after the request: sign-out or a local toggle may have raced it.
     const result: { saved: AuthorSnapshot | null } = { saved: null };
     await runLocalWriteWithRetry(() =>

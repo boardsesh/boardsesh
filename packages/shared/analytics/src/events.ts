@@ -1209,7 +1209,11 @@ export const SHARED_EVENTS = {
   // should size the ladder, which today rests on an estimate. This is the ONLY
   // signal for a lost favorite/follow; those paths have no Sentry report at all.
   // Props: { tableName, operation, attempts, outcome: 'recovered' | 'exhausted',
-  // isLockError, wasOffline, elapsedMs }.
+  // isLockError, wasOffline, elapsedMs, jsRestartCount }. `jsRestartCount` is how
+  // many times expo-updates restarted the JS runtime in this process (null where
+  // unknown). On Android a reload leaves an open write transaction holding the
+  // lock until the process dies (#6689), so `exhausted` with a count above zero,
+  // repeating all session, is that orphan.
   OfflineLocalWriteAttemptFailed: 'Offline Local Write Attempt Failed',
   // Offline sync — the FIRST attempt of one of the sync engine's own SQLite
   // writes lost the write lock, so its retry ladder ran (#5851). Covers every

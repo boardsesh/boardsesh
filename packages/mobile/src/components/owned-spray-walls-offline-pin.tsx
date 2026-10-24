@@ -7,6 +7,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { useIsOffline } from '../hooks/use-is-offline';
+import { useLaunchReady } from '../providers/launch-ready-context';
 import { fetchAllMyBoards } from '../lib/graphql/hooks';
 import { reportHandledError } from '../lib/error-reporting';
 import { useBoardDownloads } from '../offline/use-board-downloads';
@@ -43,7 +44,10 @@ const ROSTER_STALE_TIME_MS = 10 * 60 * 1000;
  * `.web.tsx` twin and the flag), in screenshot captures (their requests are
  * replayed from a recording), and while a sign-out is wiping: the account's
  * roster is still cached then, and pinning into the wipe would re-enable its
- * walls and rewrite the record the sign-out is about to clear.
+ * walls and rewrite the record the sign-out is about to clear. Idle until the
+ * launch has settled too: a pin starts a download cycle and an unpin a scope
+ * teardown, both SQLite writers, and a launch update reload landing on one of
+ * them leaves the write lock held on Android for the rest of the process (#6689).
  *
  * The effect re-runs on every settings write (`useSetting` re-renders all its
  * readers), not only on `syncEnabledBoards`; the plan is a pass over the roster
@@ -53,7 +57,9 @@ export function OwnedSprayWallsOfflinePin(): null {
   const { isAuthenticated } = useAuth();
   const downloadsEnabled = useOfflineDownloadsEnabled();
   const isOffline = useIsOffline();
-  const active = isAuthenticated && downloadsEnabled && !isOffline && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+  const launchReady = useLaunchReady();
+  const active =
+    launchReady && isAuthenticated && downloadsEnabled && !isOffline && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
   const { userId } = useStoredUserId(active);
   const { data: boards } = useQuery({
     queryKey: OWNED_SPRAY_WALL_PIN_ROSTER_QUERY_KEY,

@@ -286,9 +286,12 @@ export type LaunchUpdateDecisionInput = {
   isEmbeddedLaunch: boolean;
   explicitCheck: ExplicitUpdateCheckStatus;
   /**
-   * False until auth has resolved. The launch-time token refresh is single-use
-   * on the server: a reload between the server rotating the refresh token and
-   * the app storing the new pair signs the climber out.
+   * False until auth has resolved, and false while a database setup attempt is
+   * running. The launch-time token refresh is single-use on the server: a
+   * reload between the server rotating the refresh token and the app storing
+   * the new pair signs the climber out. A setup attempt runs the schema
+   * migrations as write transactions, and on Android a reload leaves an open one
+   * holding SQLite's write lock until the process dies (#6689).
    */
   reloadAllowed: boolean;
   /** The update the gate reloaded for on an earlier cold start, if it is not the one running. */

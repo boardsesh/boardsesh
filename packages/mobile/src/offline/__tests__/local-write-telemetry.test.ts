@@ -12,6 +12,7 @@ vi.mock('../offline-sync-adapter', () => ({ isOnline: isOnlineMock }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { localWriteRetryOptions } from '../local-write-telemetry';
+import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 
 const LOCK_ERROR = new Error('Error code 5: database is locked');
 const DISK_ERROR = new Error('database or disk is full');
@@ -19,6 +20,7 @@ const DISK_ERROR = new Error('database or disk is full');
 beforeEach(() => {
   vi.clearAllMocks();
   isOnlineMock.mockReturnValue(true);
+  resetLaunchReloadWindowForTests();
 });
 
 describe('localWriteRetryOptions', () => {
@@ -38,6 +40,7 @@ describe('localWriteRetryOptions', () => {
       outcome: 'recovered',
       isLockError: true,
       wasOffline: false,
+      jsRestartCount: null,
     });
   });
 
@@ -88,6 +91,24 @@ describe('localWriteRetryOptions', () => {
     expect(trackMock).toHaveBeenCalledWith(
       SHARED_EVENTS.OfflineLocalWriteAttemptFailed,
       expect.objectContaining({ wasOffline: true }),
+    );
+  });
+
+  // #6689: a lock that never frees after a reload is the old runtime's orphaned
+  // transaction, so every report says whether this runtime came from one.
+  it('says how many times this runtime has been restarted', () => {
+    setJsRestartCount(1);
+
+    localWriteRetryOptions('boardsesh_ticks', 'create').onSettled?.({
+      attempts: 2,
+      error: LOCK_ERROR,
+      recovered: false,
+      elapsedMs: 4191,
+    });
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineLocalWriteAttemptFailed,
+      expect.objectContaining({ outcome: 'exhausted', jsRestartCount: 1 }),
     );
   });
 

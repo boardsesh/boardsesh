@@ -49,6 +49,8 @@ import { runChannelOverrideCleanupOnce } from './ota-channel-override-cleanup-ru
 import { buildOtaLaunchUpdateProperties } from './ota-telemetry';
 import { getPreference, removePreference, setPreference } from './preference-store';
 import { readOtaHeaderRevision, runOtaOperation } from './ota-operation-owner';
+import { setJsRestartCount, setLaunchReloadPossible } from './launch-reload-window';
+import { isDatabaseInitAttemptRunning, subscribeDatabaseInitAttempt } from '../db/init-activity';
 import {
   captureOtaReloadReceipt,
   fetchOwnedOtaUpdate,
@@ -115,6 +117,7 @@ let reloadWindowClosed = false;
 let newestEventContext: NativeContext | null = null;
 let explicitCheckController: AbortController | null = null;
 let unsubscribeFromUpdates: (() => void) | null = null;
+let unsubscribeFromDatabaseInit: (() => void) | null = null;
 const timers = new Set<ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 
@@ -212,6 +215,10 @@ function schedule(callback: () => void, delayMs: number): void {
 function resolveGate(): void {
   if (gatePhase === 'resolved') return;
   gatePhase = 'resolved';
+  // From here the gate never reloads this runtime, so writers may start (#6689).
+  setLaunchReloadPossible(false);
+  unsubscribeFromDatabaseInit?.();
+  unsubscribeFromDatabaseInit = null;
   // The native request itself cannot be cancelled. Abort its JS continuation:
   // a check arriving after release must not start a new download or reload.
   explicitCheckController?.abort();
@@ -381,7 +388,7 @@ function evaluate(): void {
       runningUpdateId: Updates.updateId,
       isEmbeddedLaunch: Updates.isEmbeddedLaunch,
       explicitCheck,
-      reloadAllowed: authReady,
+      reloadAllowed: authReady && !isDatabaseInitAttemptRunning(),
       lastReloadTargetId: preparation.lastReloadTargetId,
       explicitFetchedUpdateId,
     });
@@ -475,6 +482,7 @@ function beginLaunchUpdateGate(environment: LaunchUpdateGateEnvironment): void {
     launchedInBackground,
     restartCount: Updates.isEnabled ? Updates.latestContext.restartCount : 0,
   };
+  setJsRestartCount(eligibility.restartCount);
   if (!isLaunchUpdateGateEligible(eligibility)) {
     if (launchedInBackground && isLaunchUpdateGateEligible({ ...eligibility, launchedInBackground: false })) {
       addErrorBreadcrumb({
@@ -489,6 +497,13 @@ function beginLaunchUpdateGate(environment: LaunchUpdateGateEnvironment): void {
   }
 
   gatePhase = 'preparing';
+  // Until the gate resolves it may reload this runtime, and on Android a reload
+  // leaves any open SQLite write transaction holding the lock for the rest of the
+  // process (#6689). Writers outside React wait on this; the offline engine waits
+  // on `useLaunchReady()`, which needs the gate resolved too.
+  setLaunchReloadPossible(true);
+  // A setup attempt finishing is what lets a held reload go ahead.
+  unsubscribeFromDatabaseInit = subscribeDatabaseInitAttempt(evaluate);
   const subscription = Updates.addUpdatesStateChangeListener((event) => {
     newestEventContext = event.context;
     evaluate();
@@ -569,6 +584,9 @@ export function resetLaunchUpdateGateForTests(): void {
   explicitCheckController = null;
   unsubscribeFromUpdates?.();
   unsubscribeFromUpdates = null;
+  unsubscribeFromDatabaseInit?.();
+  unsubscribeFromDatabaseInit = null;
+  setLaunchReloadPossible(false);
   for (const timer of timers) clearTimeout(timer);
   timers.clear();
   listeners.clear();

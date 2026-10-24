@@ -9,6 +9,7 @@ import { createElement } from 'react';
 
 const state = vi.hoisted(() => ({
   signingOut: false,
+  launchReady: true,
   isAuthenticated: true,
   downloadsEnabled: true,
   isOffline: false,
@@ -46,6 +47,7 @@ vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthentica
 vi.mock('../../providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => state.downloadsEnabled }));
 vi.mock('../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ userId: state.userId }) }));
 vi.mock('../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
+vi.mock('../../providers/launch-ready-context', () => ({ useLaunchReady: () => state.launchReady }));
 vi.mock('../../lib/graphql/hooks', () => ({ fetchAllMyBoards: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../offline/use-board-downloads', () => ({ useBoardDownloads: () => ({ enableBoardsOffline }) }));
@@ -67,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(state, {
     signingOut: false,
+    launchReady: true,
     isAuthenticated: true,
     downloadsEnabled: true,
     isOffline: false,
@@ -101,6 +104,9 @@ describe('OwnedSprayWallsOfflinePin', () => {
     ['offline', { isOffline: true }],
     ['without offline downloads', { downloadsEnabled: false }],
     ['before the account id is known', { userId: undefined }],
+    // #6689: a pin starts a download cycle and an unpin a scope teardown. A launch
+    // update reload landing on either leaves the write lock held on Android.
+    ['while the launch update gate can still reload', { launchReady: false }],
   ])('does nothing %s', (_case, overrides) => {
     Object.assign(state, overrides);
     render(createElement(OwnedSprayWallsOfflinePin));

@@ -46,6 +46,7 @@ import {
 } from '../connection';
 import { noteDatabaseHandleFailure } from '../dead-handle';
 import { isSchemaReady } from '../schema-ready';
+import { isDatabaseInitAttemptRunning, subscribeDatabaseInitAttempt } from '../init-activity';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
   runMigrations,
@@ -593,6 +594,23 @@ describe('initializeDatabase connection PRAGMAs', () => {
     expect(journal?.journal_mode?.toLowerCase()).toBe('wal');
     const busy = await fileDb.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
     expect(busy?.timeout).toBe(5000);
+  });
+
+  // #6689. The launch update gate reads this to hold its reload while the schema
+  // migrations run: on Android a reload leaves an open migration transaction
+  // holding the write lock, and the next runtime could then never migrate.
+  it('reports the setup attempt as running for exactly as long as it runs', async () => {
+    const seen: boolean[] = [];
+    const unsubscribe = subscribeDatabaseInitAttempt(() => seen.push(isDatabaseInitAttemptRunning()));
+    try {
+      await initializeDatabase(fileDb);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(seen).toEqual([true, false]);
+    expect(isDatabaseInitAttemptRunning()).toBe(false);
+    expect(getDatabaseHandle()).toBe(fileDb);
   });
 
   it('persists WAL on the file so a fresh connection inherits it', async () => {

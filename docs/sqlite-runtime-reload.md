@@ -108,3 +108,53 @@ update an already-installed binary. Validate the same reproduction with a newly
 compiled client, then ship the matching native build. JavaScript privacy recovery
 from #6286 remains useful for transient contention, but does not repair an old
 binary's abandoned native connection.
+
+## Android (#6689)
+
+Android 2.6.0 has the same failure, and the #6292 native fix covers iOS only.
+In the first 2.6.0 session after the store update, 10 Android users had every
+tick write and sync write fail for the whole session. The next process was
+clean. Every failed write waited out its full busy timeout, so a lock was really
+held. iOS 2.6.0 made about 1,650 launch-gate reloads in the same 10 days, with
+no failures.
+
+Two things in the installed Android expo-sqlite mean no connection is ever
+closed when a runtime is torn down:
+
+- `removeAllCachedDatabases()` returns the same `MutableList` it has just
+  cleared, so `OnDestroy` closes nothing.
+- The JS-release path, `sharedObjectDidRelease`, frees the C++ binding without
+  calling `sqlite3_close`.
+
+The native fix is #6707.
+
+Until that ships, the app keeps the write transactions out of the window where
+the launch update gate can reload:
+
+- Every writer the offline sync bridge starts waits for `useLaunchReady()`: the
+  owner stamp, the outbox recovery, the delisted-download sweep and the sync
+  scheduler. So does the owned spray wall pin. `useLaunchReady()` needs the gate
+  resolved, and once resolved it never reloads.
+- Writers outside React read `isLaunchReloadPossible()`
+  (`src/lib/launch-reload-window.ts`). The followed-authors load serves its
+  stored snapshot instead of writing a new one while it is true.
+- The gate does not reload while a database setup attempt is running
+  (`src/db/init-activity.ts`), so a migration is never interrupted. If an
+  attempt outlasts the cap, the gate releases as `timed_out`, and the update
+  applies on the next cold start.
+- Local reads do not wait. They hold no lock a reload can strand.
+
+What this does not cover:
+
+- A store update's first launch runs the embedded JS of the new binary. This
+  protects that launch only from the binary whose embedded bundle includes it.
+- Reloads the climber starts after launch: changelog restart, OTA recovery,
+  channel switch, QA surf.
+- expo-updates' native error-recovery relaunch.
+- The drainer's `UPDATE … RETURNING`, whose window is one native step.
+
+Only #6707 covers all of these.
+
+`Offline Local Write Attempt Failed` carries `jsRestartCount`. An `exhausted`
+lock with a count above zero that repeats all session is a transaction the
+previous runtime left open.

@@ -17,6 +17,7 @@ import {
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 import { isOnline } from './offline-sync-adapter';
+import { getJsRestartCount } from '../lib/launch-reload-window';
 
 /**
  * Retry options carrying the `onSettled` reporter for one write.
@@ -40,6 +41,9 @@ export function localWriteRetryOptions(
           outcome: recovered ? 'recovered' : 'exhausted',
           isLockError: isDatabaseLockedError(error),
           wasOffline: !isOnline(),
+          // Above zero, this runtime came from a reload. On Android a lock that
+          // never frees after one is a transaction the old runtime left open (#6689).
+          jsRestartCount: getJsRestartCount(),
         });
       } catch (reportError) {
         if (__DEV__) console.warn('[LocalWriteTelemetry] attempt-failed report failed:', reportError);
