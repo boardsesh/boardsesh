@@ -22,6 +22,8 @@ export type SyncErrorContext = {
 
 export type SyncRunnerConfig = {
   onLog?: (message: string) => void;
+  /** Operator-facing warnings that are not failures. Defaults to console.warn. */
+  onWarn?: (message: string) => void;
   onError?: (error: Error, context: SyncErrorContext) => void;
   /**
    * Minimum time between shared-sync attempts on the same board. Multiple users

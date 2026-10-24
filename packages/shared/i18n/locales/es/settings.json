@@ -215,7 +215,7 @@
       "syncingHint": "Sincronizando, vuelve en un rato",
       "foreignAccountCircuits": "Los circuitos no se están sincronizando en esta cuenta porque otra cuenta de Boardsesh tiene las playlists correspondientes. Contacta con el soporte de Boardsesh para resolver la propiedad de las playlists.",
       "ambiguousAccountCircuits": "Los circuitos no se están sincronizando porque las playlists correspondientes pertenecen a varias cuentas de Boardsesh. Contacta con el soporte de Boardsesh para resolver la propiedad de las playlists.",
-      "foreignAccountLogbook": "Tus encadenes y playlists de este inicio de sesión del plafón están en otra cuenta de Boardsesh, así que no aparecerán aquí. Inicia sesión en esa cuenta para verlos."
+      "foreignAccountLogbook": "Algunos encadenes de este inicio de sesión del plafón están en otra cuenta de Boardsesh, así que no aparecerán aquí. Inicia sesión en esa cuenta o contacta con el soporte de Boardsesh."
     },
     "unsynced": {
       "title_one": "{{count}} elemento pendiente de sincronizar",

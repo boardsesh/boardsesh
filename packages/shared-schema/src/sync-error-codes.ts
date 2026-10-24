@@ -47,9 +47,10 @@ export const AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR = 'duplicate-board-acco
  * `active`. It is a state, not a per-cycle event, so it clears on its own once
  * the other account no longer holds those sends.
  *
- * Wins over every circuits code. One column carries one code, and when the
- * other account owns the sends it almost always owns the playlists too, so the
- * card copy for this code covers both.
+ * Wins over every circuits code. One column carries one code, and this is the
+ * one that explains an empty logbook. Signing in to the other account (or
+ * asking support) is also the answer for its playlists, so nothing is lost.
+ * The copy says "some sends": new sends with no owner still import here.
  *
  * Sent over REST as-is, never folded onto DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR:
  * an app that predates this code shows its generic error line for it, which is
