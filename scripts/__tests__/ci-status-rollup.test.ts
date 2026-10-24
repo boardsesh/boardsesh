@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import { jobBlocks } from './helpers/workflow-yaml';
 
@@ -26,22 +27,24 @@ import { jobBlocks } from './helpers/workflow-yaml';
 const workflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 const jobs = jobBlocks(workflowSource);
 
-/** The `needs:` block-sequence entries of a job. */
-function jobNeeds(jobName: string): string[] {
-  const block = jobs.get(jobName);
-  if (!block) throw new Error(`ci.yml has no \`${jobName}\` job`);
-
-  const needsIndex = block.findIndex((line) => line.trim() === 'needs:');
-  if (needsIndex < 0) return [];
-
-  const collected: string[] = [];
-  for (const line of block.slice(needsIndex + 1)) {
-    const entry = /^ {6}- ([A-Za-z0-9_-]+)\s*$/.exec(line);
-    if (!entry) break;
-    collected.push(entry[1]);
-  }
-  return collected;
+/** Job dependencies support YAML block lists, inline lists, and a single job. */
+function jobNeeds(jobName: string, source = workflowSource): string[] {
+  const workflow = parse(source) as { jobs: Record<string, { needs?: string | string[] }> };
+  const job = workflow.jobs[jobName];
+  if (!job) throw new Error(`ci.yml has no \`${jobName}\` job`);
+  const needs = job.needs;
+  return typeof needs === 'string' ? [needs] : (needs ?? []);
 }
+
+describe('reading workflow dependencies', () => {
+  it.each([
+    ['block list', 'needs:\n      - lint\n      - guards', ['lint', 'guards']],
+    ['inline list', 'needs: [lint, guards]', ['lint', 'guards']],
+    ['single job', 'needs: guards', ['guards']],
+  ])('reads a %s', (_format, declaration, expected) => {
+    expect(jobNeeds('ci-status', `jobs:\n  ci-status:\n    ${declaration}\n`)).toEqual(expected);
+  });
+});
 
 describe('ci-status is a complete roll-up', () => {
   const rollupNeeds = jobNeeds('ci-status');
