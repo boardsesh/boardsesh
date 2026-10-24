@@ -25,7 +25,7 @@ export type {
 // Queue-local type definitions (wide enough for both web and shared-schema consumers)
 export type { Climb, ClimbQueueItem, QueueItemUser, ClimbRegradePatch, ClimbAuthoredPatch } from './types';
 
-export { MAX_SYNCED_QUEUE_ITEMS } from './limits';
+export { MAX_SYNCED_QUEUE_ITEMS, clampQueueWindow } from './limits';
 
 export {
   insertQueueItemIdempotent,

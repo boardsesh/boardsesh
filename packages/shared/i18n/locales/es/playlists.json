@@ -194,6 +194,8 @@
       "cancel": "Cancelar",
       "confirm": "Iniciar playlist",
       "loadFailed": "No se pudo iniciar la playlist. Inténtalo de nuevo.",
+      "trimmed": "Se cargaron {{loaded}} de {{total}} bloques. Tu cola admite {{max}}.",
+      "trimmedUnknownTotal": "Se cargaron {{loaded}} bloques. Tu cola admite {{max}}.",
       "addInstead": "Añadir a la cola"
     },
     "deleteConfirm": {

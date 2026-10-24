@@ -1588,6 +1588,38 @@ describe('QueueProvider local solo queue', () => {
     expect(wireQueue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
   });
 
+  it('setQueue clamps a replacement to MAX_SYNCED_QUEUE_ITEMS around the current climb', async () => {
+    const itemA = makeQueueItem('item-a');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA], itemA));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-a');
+    });
+
+    // 600 rows with the current one at row 550: a plain slice(0, 500) would
+    // drop it, and the resolver THROWS on the whole 600.
+    const replacement = Array.from({ length: 600 }, (_unused, index) => makeQueueItem(`row-${index}`));
+    const current = replacement[550];
+    queueMutations.setQueue.mockClear();
+    act(() => {
+      snapshots.at(-1)?.setQueue(replacement, current);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    });
+    const localQueue = snapshots.at(-1)?.state.queue ?? [];
+    expect(localQueue[0]?.uuid).toBe('row-100');
+    expect(localQueue.at(-1)?.uuid).toBe('row-599');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('row-550');
+    await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalled());
+    const [wireQueue = [], wireCurrent] = queueMutations.setQueue.mock.calls.at(-1) ?? [];
+    expect(wireQueue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    expect(wireCurrent?.uuid).toBe('row-550');
+  });
+
   it('appendQueueItems returns 0 and broadcasts nothing when the queue is already at the cap', async () => {
     const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_unused, index) => makeQueueItem(`seed-${index}`));
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot(seeded, seeded[0]));

@@ -194,6 +194,8 @@
       "cancel": "Abbrechen",
       "confirm": "Playlist starten",
       "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal.",
+      "trimmed": "{{loaded}} von {{total}} Bouldern geladen. Deine Warteschlange fasst {{max}}.",
+      "trimmedUnknownTotal": "{{loaded}} Boulder geladen. Deine Warteschlange fasst {{max}}.",
       "addInstead": "Zur Warteschlange hinzufügen"
     },
     "deleteConfirm": {

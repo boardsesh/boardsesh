@@ -41,6 +41,7 @@ import {
   preparePlaylistClimbs,
   getQueueBoardKey,
   MAX_SYNCED_QUEUE_ITEMS,
+  clampQueueWindow,
   type Climb,
   type ClimbQueueItem,
 } from '@boardsesh/queue';
@@ -293,6 +294,31 @@ function buildPlaylistQueue(
   const appended = reusableCurrentItem ?? climbToQueueItem(toSchemaClimb(activatedClimb));
   queue.push(appended);
   return { queue, currentItem: appended };
+}
+
+/**
+ * A `stopAfterPage` for the replace drain: stop once the pages hold the climb
+ * the queue will centre on plus `MAX_SYNCED_QUEUE_ITEMS - 1` climbs this board
+ * can draw after it. That is a full queue window (see `clampQueueWindow`), so
+ * every later page would be cut anyway. Nothing counts until the anchor turns
+ * up, so a tapped climb deep in the list is never paged past.
+ */
+function stopOnceQueueWindowIsFull(
+  anchorClimbUuid: string,
+  isClimbable: (climb: Climb) => boolean,
+): (newClimbs: Climb[]) => boolean {
+  let anchorSeen = false;
+  let climbsAfterAnchor = 0;
+  return (newClimbs) => {
+    for (const newClimb of newClimbs) {
+      if (newClimb.uuid === anchorClimbUuid) {
+        anchorSeen = true;
+      } else if (anchorSeen && isClimbable(newClimb)) {
+        climbsAfterAnchor += 1;
+      }
+    }
+    return climbsAfterAnchor >= MAX_SYNCED_QUEUE_ITEMS - 1;
+  };
 }
 
 /** Returns playlist activation controls to wire onto a climb row tap. */
@@ -568,8 +594,19 @@ export function usePlaylistActivation({
     [activeBoard, fetchPage, fetchTotalSafely, registerPageLoader],
   );
 
+  // `limit` keeps the first `limit` climbs (the append). `stopAfterPage` ends
+  // the drain on the caller's own terms and keeps every page it fetched (the
+  // replace, which windows the queue around the tapped climb).
   const fetchAllClimbsForBoard = useCallback(
-    async ({ signal, limit }: { signal: AbortSignal; limit?: number }): Promise<PlaylistDrainResult> => {
+    async ({
+      signal,
+      limit,
+      stopAfterPage,
+    }: {
+      signal: AbortSignal;
+      limit?: number;
+      stopAfterPage?: (newClimbs: Climb[]) => boolean;
+    }): Promise<PlaylistDrainResult> => {
       if (!activeBoard) return { climbs: [], stopReason: 'complete', pagesFetched: 0 };
       const board = {
         boardName: activeBoard.boardType,
@@ -579,19 +616,19 @@ export function usePlaylistActivation({
         angle: activeBoard.angle,
       };
       let drainedCount = 0;
+      const stopDrainAfterPage =
+        limit === undefined
+          ? stopAfterPage
+          : (newClimbs: Climb[]) => {
+              drainedCount += newClimbs.length;
+              return drainedCount >= limit;
+            };
       const drainResult = await drainPlaylistPages({
         signal,
         pageSize: PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE,
         maxPages: MAX_PLAYLIST_QUEUE_REPLACE_PAGES,
         fetchPage: ({ page, pageSize, signal: pageSignal }) => fetchPage({ page, pageSize, board, signal: pageSignal }),
-        ...(limit === undefined
-          ? {}
-          : {
-              stopAfterPage: (newClimbs: Climb[]) => {
-                drainedCount += newClimbs.length;
-                return drainedCount >= limit;
-              },
-            }),
+        ...(stopDrainAfterPage ? { stopAfterPage: stopDrainAfterPage } : {}),
         ...PLAYLIST_DRAIN_RETRY_POLICY,
       });
       return limit === undefined ? drainResult : { ...drainResult, climbs: drainResult.climbs.slice(0, limit) };
@@ -867,9 +904,7 @@ export function usePlaylistActivation({
       climb: Climb,
       options: {
         allowClearingManualFuture?: boolean;
-        loadedClimbs?: Climb[];
         previewQueueItem?: ClimbQueueItem | null;
-        drainStopReason?: PlaylistDrainStopReason;
         /**
          * Told how it ended, once: true when the loaded playlist's track is in
          * place, false for every other ending (failed, cancelled, skipped).
@@ -893,41 +928,41 @@ export function usePlaylistActivation({
       // Read by the catch block so a failed drain reports how far it got.
       let drainStopReason: PlaylistDrainStopReason | null = null;
       let drainPagesFetched = 0;
-      let listTotal: number | undefined;
       try {
-        let climbs = options.loadedClimbs;
-        if (climbs) {
-          drainStopReason = options.drainStopReason ?? null;
-        } else {
-          const countBoard = activeBoard
-            ? {
-                boardName: activeBoard.boardType,
-                layoutId: activeBoard.layoutId,
-                sizeId: activeBoard.sizeId,
-                setIds: activeBoard.setIds,
-                angle: activeBoard.angle,
-              }
-            : null;
-          const countedTotal: Promise<number | undefined> = countBoard
-            ? fetchTotalSafely(countBoard, abortController.signal)
-            : Promise.resolve(undefined);
-          const drainResult = await fetchAllClimbsForBoard({ signal: abortController.signal });
-          climbs = drainResult.climbs;
-          drainStopReason = drainResult.stopReason;
-          drainPagesFetched = drainResult.pagesFetched;
-          listTotal =
-            drainResult.droppedDuplicates || abortController.signal.aborted
-              ? undefined
-              : (drainResult.totalCount ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
-        }
+        const drainBoard = activeBoard
+          ? {
+              boardName: activeBoard.boardType,
+              layoutId: activeBoard.layoutId,
+              sizeId: activeBoard.sizeId,
+              setIds: activeBoard.setIds,
+              angle: activeBoard.angle,
+            }
+          : null;
+        const countedTotal: Promise<number | undefined> = drainBoard
+          ? fetchTotalSafely(drainBoard, abortController.signal)
+          : Promise.resolve(undefined);
+        // Stops paging once a full queue window past the tapped climb is in
+        // (#6673): the queue holds MAX_SYNCED_QUEUE_ITEMS, so later pages would
+        // be cut. The track carries on past them through its own pager below.
+        const drainResult = await fetchAllClimbsForBoard({
+          signal: abortController.signal,
+          stopAfterPage: stopOnceQueueWindowIsFull(climb.uuid, activationTarget?.isClimbable ?? acceptEveryClimb),
+        });
+        const climbs = drainResult.climbs;
+        drainStopReason = drainResult.stopReason;
+        drainPagesFetched = drainResult.pagesFetched;
+        const listTotal =
+          drainResult.droppedDuplicates || abortController.signal.aborted
+            ? undefined
+            : (drainResult.totalCount ?? (await settledWithin(countedTotal, TRACK_COUNT_GRACE_MS)));
         if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
-        if ((drainStopReason === 'page-cap' || drainStopReason === 'no-progress') && !options.loadedClimbs) {
+        if (drainStopReason === 'page-cap' || drainStopReason === 'no-progress') {
           reportHandledError(new Error(`Playlist drain stopped early: ${drainStopReason}`), {
             tags: { source: 'playlist', op: `replace-queue-${drainStopReason}` },
             extra: { sourceId: reportSourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
           });
         }
-        if (climbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
+        if (climbs.length === 0 && drainStopReason === 'complete') {
           reportEmptyBoardFetchOnce('replace-queue-empty');
         }
         // Re-check live queue state after the async load: new future items may
@@ -947,7 +982,7 @@ export function usePlaylistActivation({
             // The board-scoped list is already in hand — no second round trip.
             await appendClimbsToQueue({
               loadedClimbs: climbs,
-              drainStopReason: drainStopReason ?? undefined,
+              drainStopReason,
               entryPoint: 'replacePrompt',
             });
             return;
@@ -985,8 +1020,27 @@ export function usePlaylistActivation({
         const boardClimbs = isClimbableHere
           ? climbs.filter((candidate) => candidate.uuid === landingClimb.uuid || isClimbableHere(candidate))
           : climbs;
-        const { queue, currentItem } = buildPlaylistQueue(boardClimbs, landingClimb, landingItem);
+        // At most MAX_SYNCED_QUEUE_ITEMS of them (#6673): `Mutation.setQueue`
+        // throws on a longer payload. The window keeps the climb the climber is
+        // on and the climbs after it, filling from before it near the list's end.
+        const { queue: playlistQueue, currentItem } = buildPlaylistQueue(boardClimbs, landingClimb, landingItem);
+        const queue = clampQueueWindow(playlistQueue, playlistQueue.indexOf(currentItem));
         setQueue(queue, currentItem);
+        // Cut short, by the clamp or by the drain stopping at a full window:
+        // say what fit. A count of the whole list only when it is known.
+        if (queue.length < playlistQueue.length || drainStopReason === 'caller-stop') {
+          const knownTotal = drainStopReason === 'complete' ? playlistQueue.length : listTotal;
+          showToast(
+            knownTotal !== undefined && knownTotal > queue.length
+              ? t('detail.queueReplace.trimmed', {
+                  loaded: queue.length,
+                  total: knownTotal,
+                  max: MAX_SYNCED_QUEUE_ITEMS,
+                })
+              : t('detail.queueReplace.trimmedUnknownTotal', { loaded: queue.length, max: MAX_SYNCED_QUEUE_ITEMS }),
+            'info',
+          );
+        }
         // Named after the list (#6664). It replaces whatever track came before,
         // so a climb that sits in both an older list and this playlist cannot
         // steer swipes into the older one. Built from the whole list with the
@@ -998,6 +1052,11 @@ export function usePlaylistActivation({
         // list's first climb and queue a copy of every climb before the tapped
         // one. Without a track the swipes walk the queue, which holds the same
         // climbs in the same order.
+        //
+        // The track is the list, not the queue window: on a list longer than the
+        // queue it keeps its own count and runs to the list's end (#6673). When
+        // the drain stopped at a full window, the track's pager carries on from
+        // the next page, as it does for every other list (#6664).
         const track =
           activationTarget && activationTarget.isClimbable(landingClimb)
             ? createPlaylistSuggestionSource({
@@ -1008,6 +1067,14 @@ export function usePlaylistActivation({
                 isClimbable: activationTarget.isClimbable,
                 label,
                 total: listTotal,
+                ...(drainStopReason === 'caller-stop' && drainBoard
+                  ? {
+                      continuation: {
+                        loaderId: registerPageLoader(drainBoard, activationTarget.isClimbable),
+                        nextPage: drainPagesFetched,
+                      },
+                    }
+                  : {}),
               })
             : null;
         setPlaylistSuggestionSource(track);
@@ -1050,6 +1117,7 @@ export function usePlaylistActivation({
       label,
       openPlayDrawer,
       promptQueueFork,
+      registerPageLoader,
       reportEmptyBoardFetchOnce,
       setPlaylistSuggestionSource,
       setQueue,

@@ -194,6 +194,8 @@
       "cancel": "Cancel",
       "confirm": "Start playlist",
       "loadFailed": "Couldn't start playlist. Try again.",
+      "trimmed": "Loaded {{loaded}} of {{total}} climbs. Your queue holds {{max}}.",
+      "trimmedUnknownTotal": "Loaded {{loaded}} climbs. Your queue holds {{max}}.",
       "addInstead": "Add to queue"
     },
     "deleteConfirm": {

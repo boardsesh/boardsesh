@@ -194,6 +194,8 @@
       "cancel": "Annuler",
       "confirm": "Lancer la playlist",
       "loadFailed": "Impossible de lancer la playlist. Réessayez.",
+      "trimmed": "{{loaded}} blocs sur {{total}} chargés. Votre file en contient {{max}} au maximum.",
+      "trimmedUnknownTotal": "{{loaded}} blocs chargés. Votre file en contient {{max}} au maximum.",
       "addInstead": "Ajouter à la file"
     },
     "deleteConfirm": {

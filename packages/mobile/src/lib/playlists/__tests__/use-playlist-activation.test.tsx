@@ -1620,6 +1620,110 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
+    // #6673: `Mutation.setQueue` throws on a payload over 500 climbs.
+    describe('a playlist longer than the queue holds', () => {
+      /** Page `page` of a `size`-climb list, 100 climbs a page, named row-<index>. */
+      function pagedList(size: number, { reportsTotal = true }: { reportsTotal?: boolean } = {}) {
+        return vi.fn(async ({ page, pageSize }: { page: number; pageSize: number }) => {
+          const firstRow = page * pageSize;
+          const lastRow = Math.min(firstRow + pageSize, size);
+          return {
+            climbs: Array.from({ length: Math.max(lastRow - firstRow, 0) }, (_unused, offset) =>
+              makeClimb(`row-${firstRow + offset}`),
+            ),
+            hasMore: lastRow < size,
+            ...(reportsTotal ? { totalCount: size } : {}),
+          };
+        });
+      }
+
+      it('starts a 600-climb playlist with 500 queued, the tapped row 550 among them, and says so', async () => {
+        const tapped = makeClimb('row-550');
+        const fetchPage = pagedList(600);
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+
+        await act(async () => {
+          await result.current.activate(tapped);
+        });
+
+        await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
+        const [queue, current] = mocks.setQueue.mock.calls[1];
+        const queuedUuids = queue.map((item: ClimbQueueItem) => item.climb.uuid);
+        expect(queuedUuids).toHaveLength(500);
+        // The tapped climb stays current, with every climb after it, and the
+        // window fills from before it: rows 100 to 599, in list order.
+        expect(current.climb.uuid).toBe('row-550');
+        expect(queue).toContain(current);
+        expect(queuedUuids[0]).toBe('row-100');
+        expect(queuedUuids.at(-1)).toBe('row-599');
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.trimmed', 'info');
+        // The track is still the whole list, so "551 of 600" stays right.
+        const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
+        expect(finalTrack.climbs).toHaveLength(600);
+        expect(finalTrack).toMatchObject({ activatedClimbUuid: 'row-550', total: 600 });
+        expect(finalTrack).not.toHaveProperty('continuation');
+      });
+
+      it('stops paging once a full queue from the tapped climb is in, and the track pages on', async () => {
+        const tapped = makeClimb('row-10');
+        const fetchPage = pagedList(2000);
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+
+        await act(async () => {
+          await result.current.activate(tapped);
+        });
+
+        await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
+        // Rows 0 to 599 hold row 10 and 589 climbs after it: six pages, not twenty.
+        expect(fetchPage).toHaveBeenCalledTimes(6);
+        const [queue, current] = mocks.setQueue.mock.calls[1];
+        const queuedUuids = queue.map((item: ClimbQueueItem) => item.climb.uuid);
+        expect(queuedUuids).toHaveLength(500);
+        expect(queuedUuids[0]).toBe('row-10');
+        expect(queuedUuids.at(-1)).toBe('row-509');
+        expect(current.climb.uuid).toBe('row-10');
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.trimmed', 'info');
+
+        const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
+        expect(finalTrack.climbs).toHaveLength(600);
+        expect(finalTrack.total).toBe(2000);
+        expect(finalTrack.continuation).toMatchObject({ nextPage: 6 });
+        const nextPage = await loadNextTrackPage(finalTrack);
+        expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ page: 6 });
+        expect(nextPage?.climbs[0].uuid).toBe('row-600');
+      });
+
+      it('says what fit without a count when the list never reports one', async () => {
+        const tapped = makeClimb('row-0');
+        const fetchPage = pagedList(2000, { reportsTotal: false });
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+
+        await act(async () => {
+          await result.current.activate(tapped);
+        });
+
+        await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
+        // Five pages hold row 0 and the 499 after it, and the list goes on.
+        expect(fetchPage).toHaveBeenCalledTimes(5);
+        expect(mocks.setQueue.mock.calls[1][0]).toHaveLength(500);
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.trimmedUnknownTotal', 'info');
+      });
+
+      it('leaves a playlist that fits whole and quiet', async () => {
+        const tapped = makeClimb('row-450');
+        const fetchPage = pagedList(500);
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+
+        await act(async () => {
+          await result.current.activate(tapped);
+        });
+
+        await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
+        expect(mocks.setQueue.mock.calls[1][0]).toHaveLength(500);
+        expect(mocks.showToast).not.toHaveBeenCalled();
+      });
+    });
+
     // A server that repeats a page is a paging defect, not the #3891 empty-fetch
     // defect. Firing that canary here would poison the signal it exists to give.
     it('does not fire the #3891 empty-fetch canary when the drain stopped on no-progress', async () => {
