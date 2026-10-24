@@ -83,11 +83,90 @@ Rules the scheduler keeps:
 
 ## Sound (native train)
 
-On `main` there is no sound: `packages/mobile/src/lib/sounds.ts` is a placeholder whose
-`isSoundSupported()` returns false and `createSoundPlayer()` returns null, so every cue is the
-haptic alone and the Sound setting row stays hidden. Playing a sound needs `expo-audio`, a native
-module, so the body ships in a `[native-train]` PR on `release/next` (#5395). Only that PR edits
-this section and `sounds.ts`.
+The cues beep through `expo-audio` (57.0.5), a native module, so the sound ships with the store
+binary built from `release/next` (#5395) and never by OTA. Until the merge-back, only the
+`[native-train]` PR edits this section and `packages/mobile/src/lib/sounds.ts`.
+
+What a binary without the module does. The same JavaScript reaches every store binary built
+before this train, older dev clients and the Expo web app, and importing `expo-audio` throws on
+all of them. `sounds.ts` touches nothing native when it loads. On the first cue that wants a
+sound, `isSoundSupported()` asks `requireOptionalNativeModule('ExpoAudio')` (iOS and Android
+only, answered once per app run), and only a yes leads to `require('expo-audio')`. A no means
+every cue is the haptic alone and the Sound row stays hidden.
+
+The climber's music:
+
+- The audio mode is set once, before the first beep: `playsInSilentMode: true`,
+  `interruptionMode: 'duckOthers'`, `shouldPlayInBackground: false`, `allowsRecording: false`.
+  Their music dips under the beep and keeps playing. iOS only ducks from the `.playback`
+  category, which is what `playsInSilentMode` selects, so the beep also plays through the silent
+  switch. If the mode cannot be set, that beep is skipped: the default session would stop the
+  music.
+- Both players are made with `keepAudioSessionActive`. On iOS a countdown keeps the session from
+  its first tick to its final tone, so the music dips once, not once a second. 1.2 s after the
+  last beep (`SOUND_SESSION_IDLE_MS`), `setIsAudioActiveAsync(false)` hands the session back and
+  the music returns to full volume. Leaving the foreground hands it back at once.
+- Android is different. expo-audio 57.0.5 takes `keepAudioSessionActive` and never uses it, and
+  gives up audio focus as soon as no player is playing. So on Android the music dips under each
+  beep and comes back between ticks: a countdown makes it pump once a second. That is expected,
+  not a bug.
+- Coming back to the foreground hands the session back once more, 1.2 s later, when the last
+  hand-back happened while the app was away: in the background, or inactive through a phone call.
+  iOS expo-audio turns the session back on by itself at those moments. It resumes the rest of a
+  tone it paused on the way out, and it reactivates the session when a call ends. Without this
+  the music would stay dipped until the next rest's beeps.
+- After a hand-back, the next beep calls `setIsAudioActiveAsync(true)` first. Android refuses
+  every play until audio is turned back on; on iOS `play()` reactivates the session anyway.
+- Native calls run one at a time, in order, and each gets 1 s to answer
+  (`SOUND_NATIVE_CALL_DEADLINE_MS`), so one stuck call costs one beep, not every beep after it.
+  Each failing step (`create`, `play`, `release`) reports once per app run, as a warning.
+- A player that cannot be built throws (after its report) instead of returning null, so the cue
+  module builds a fresh one on the next cue. If the tick player was built and the final one
+  failed, the tick player is removed first. Each build first removes the previous build's two
+  native players and replaces its `AppState` listener, so rebuilds never pile up either.
+- Foreground only. A beep starts only while `AppState` is `active`, checked when the cue asks for
+  it and again just before it plays, so one queued as the app leaves is dropped. `inactive`
+  counts as away (a phone call, Control Center, the app switcher). The missing `audio` background
+  mode is not enough on its own: iOS keeps running the JavaScript timers that fire the cues for a
+  while after the app leaves (the simulator played a tick and a final tone 7 to 15 s after another
+  app came forward), and expo-audio 57.0.5's `play()` turns the session on without checking. The
+  rest of the cue (the haptic call, the wall advancing) is unchanged. A locked-phone alert is
+  #6530's local notification.
+
+The config plugin entry in `app.config.ts` turns off background playback and background
+recording (their defaults add the `audio` UIBackgroundMode and the Android media-playback
+foreground service) and does not ask for `RECORD_AUDIO`. It leaves `microphonePermission` unset on
+purpose: the binary already carries `NSMicrophoneUsageDescription` from `expo-image-picker`,
+`expo-audio` links the recording APIs that App Store processing checks for it (ITMS-90683), and
+`false` would delete the string whenever this plugin's Info.plist step runs after the image
+picker's. Nothing records. Android gains `MODIFY_AUDIO_SETTINGS`, a normal permission with no
+prompt.
+
+The sounds are two generated sine tones in `packages/mobile/assets/sounds/`, 16-bit PCM mono
+WAV at 44,100 Hz, with raised-cosine fades so they start and stop without a click:
+
+| File | Cue | Tone | Length | Peak | Fade in / out |
+| --- | --- | --- | --- | --- | --- |
+| `rest-timer-tick.wav` | `countdownTick`, `warning` | 880 Hz | 100 ms | -6 dBFS | 5 ms / 30 ms |
+| `rest-timer-final.wav` | `advance`, `reached` | 1,320 Hz, a fifth above the tick | 450 ms | -3 dBFS | 5 ms / 120 ms |
+
+To change one, regenerate it with the same parameters and check the length still fits under
+`SOUND_SESSION_IDLE_MS`.
+
+Testing: the iOS simulator plays the beeps through the Mac's speakers, but its screen recordings
+are silent. These can only be checked on a phone:
+
+- Ducking another app's music, and the music coming back about a second after the final tone.
+- Android: the music pumps once per tick through a countdown. Expected.
+- Locking the phone during the final tone, then unlocking: the music is back to full volume about
+  a second later.
+- A phone call during a countdown: after hanging up, the music is back to full volume.
+- The silent switch, and Bluetooth headphones.
+
+The beep is on by default and plays through the silent switch, so the Sound switch on
+Settings › Timers is the only way to mute it. The `[native-train]` PR therefore merges into
+`release/next` only after the Timers page is on `main` and the Release Train Sync has brought it
+into the train.
 
 ## Which phone moves the wall
 

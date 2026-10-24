@@ -698,6 +698,24 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           color: '#8C4A52',
         },
       ],
+      // The rest timer's cue sounds (#5395, src/lib/sounds.ts). Foreground only:
+      // both background switches are off, so no `audio` UIBackgroundMode and no
+      // Android media-playback foreground service (their defaults would add both).
+      // Nothing here records. `microphonePermission` is deliberately left unset:
+      // NSMicrophoneUsageDescription is already in the binary (expo-image-picker
+      // adds it), expo-audio links the recording APIs that App Store processing
+      // checks for it (ITMS-90683), and `false` would delete it whenever this
+      // plugin's Info.plist mod runs after expo-image-picker's. Unset, it keeps
+      // the existing string. Android gains MODIFY_AUDIO_SETTINGS, a normal
+      // permission with no prompt. Native change, ships on the next build (not OTA).
+      [
+        'expo-audio',
+        {
+          recordAudioAndroid: false,
+          enableBackgroundPlayback: false,
+          enableBackgroundRecording: false,
+        },
+      ],
       // Makes Boardsesh a share target so a beta video link shared from
       // Instagram/TikTok (the OS share sheet) opens the app. iOS gets a no-UI
       // Share Extension that redirects into the host app; Android gets an
