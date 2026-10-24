@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/queue';
-import { createLoadedListFetchPage, MAX_LOADS_PER_TRACK_PAGE, type LoadedList } from '../loaded-list-pages';
+import { createLoadedListFetchPage, type LoadedList } from '../loaded-list-pages';
 
 function makeClimbs(prefix: string, count: number, from = 0): Climb[] {
   return Array.from({ length: count }, (_, index) => ({ uuid: `${prefix}-${from + index}` }) as unknown as Climb);
@@ -74,18 +74,54 @@ describe('createLoadedListFetchPage', () => {
     expect(page.climbs).toEqual([]);
   });
 
-  it('loads at most a bounded number of pages for one track page', async () => {
+  it('fills a track page however many repeat-heavy pages it takes, so the next page loses no climbs', async () => {
+    // A project-heavy logbook: each 20-row page adds 6 new climbs, so 100
+    // climbs take 17 pages. The track asks page 0, then page 1 from climb 100;
+    // a page 0 that stopped short would leave a gap the track never serves.
+    let list = loaded([], true, 0);
+    const loadMore = vi.fn(async () => {
+      const climbCount = list.climbs.length + 6;
+      list = loaded(makeClimbs('row', climbCount), climbCount < 240, list.loadedRows + 20);
+      return list;
+    });
+    const fetchPage = createLoadedListFetchPage({ read: () => list, loadMore });
+
+    const first = await fetchPage(pageArgs(0, 100));
+    const second = await fetchPage(pageArgs(1, 100));
+
+    expect(first.climbs).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    expect([...first.climbs, ...second.climbs].map(({ uuid }) => uuid)).toEqual(
+      makeClimbs('row', 200).map(({ uuid }) => uuid),
+    );
+  });
+
+  it('keeps loading a feed that adds rows and no climbs until it ends', async () => {
     let rows = 0;
     const loadMore = vi.fn(async () => {
       rows += 1;
-      // Every page adds a row and never a climb: a pathological feed.
+      return loaded([], rows < 30, rows);
+    });
+    const fetchPage = createLoadedListFetchPage({ read: () => loaded([], true, rows), loadMore });
+
+    const page = await fetchPage(pageArgs(0, 100));
+
+    expect(loadMore).toHaveBeenCalledTimes(30);
+    expect(page).toEqual({ climbs: [], hasMore: false });
+  });
+
+  it('stops loading once the track page is aborted', async () => {
+    const controller = new AbortController();
+    let rows = 0;
+    const loadMore = vi.fn(async () => {
+      rows += 1;
+      if (rows === 3) controller.abort();
       return loaded([], true, rows);
     });
     const fetchPage = createLoadedListFetchPage({ read: () => loaded([], true, rows), loadMore });
 
-    await fetchPage(pageArgs(0, 100));
-
-    expect(loadMore).toHaveBeenCalledTimes(MAX_LOADS_PER_TRACK_PAGE);
+    await expect(fetchPage(pageArgs(0, 100, controller.signal))).rejects.toMatchObject({ name: 'AbortError' });
+    expect(loadMore).toHaveBeenCalledTimes(3);
   });
 
   it('ends the track once the screen shows another list', async () => {

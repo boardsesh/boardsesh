@@ -3,8 +3,8 @@
 // list, in its own page size, so the track reads it through that query rather
 // than asking the server for the same rows a second way.
 //
-// Track page `n` is rows n * pageSize up to (n + 1) * pageSize of the list as
-// loaded. When the track asks past what is loaded, the screen's query loads
+// Track page `n` is climbs n * pageSize up to (n + 1) * pageSize of the list as
+// loaded, always whole unless the list ends inside it. When the track asks past what is loaded, the screen's query loads
 // its next page, one at a time, until the track page is covered or the list
 // ends. That only happens as the climber swipes near the end of the track (one
 // track page per approach, see `use-track-paging.ts`), never on a tap.
@@ -37,14 +37,6 @@ export type LoadedListSource = {
 
 type FetchPage = UsePlaylistActivationOptions['fetchPage'];
 
-/**
- * The most query pages one track page may load. A logbook page is 20 rows and
- * a track page 100 climbs, but the logbook holds a climb once per day it was
- * climbed, so a page of rows can add fewer than 20 climbs. Past this the track
- * page comes back short, which is fine: the next approach asks again.
- */
-export const MAX_LOADS_PER_TRACK_PAGE = 10;
-
 function abortError(): Error {
   const error = new Error('Loading the list was cancelled');
   error.name = 'AbortError';
@@ -62,7 +54,13 @@ export function createLoadedListFetchPage(source: LoadedListSource, isSameList: 
     if (!isSameList()) return { climbs: [], hasMore: false };
     let list = source.read();
     const end = (page + 1) * pageSize;
-    for (let loads = 0; list.climbs.length < end && list.hasMore && loads < MAX_LOADS_PER_TRACK_PAGE; loads += 1) {
+    // No cap on the loads: the next track page starts at the next page
+    // boundary, so a page that came back short with more behind it would skip
+    // every climb between its end and that boundary. A logbook holds a climb
+    // once per day it was climbed, so covering 100 climbs can take more than
+    // five 20-row pages. The loop still ends: at the list's end, on a load that
+    // added no rows, on another list, or on an abort.
+    while (list.climbs.length < end && list.hasMore) {
       if (signal.aborted) throw abortError();
       const loadedRows = list.loadedRows;
       list = await source.loadMore();
