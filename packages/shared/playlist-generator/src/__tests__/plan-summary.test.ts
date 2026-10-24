@@ -27,6 +27,7 @@ describe('summarizePlanFill', () => {
       planned: 9,
       filled: 9,
       missing: 0,
+      substituted: 0,
       lowestGrade: 16,
       highestGrade: 20,
       sections: [
@@ -62,10 +63,41 @@ describe('summarizePlanFill', () => {
       planned: plan.length,
       filled: 0,
       missing: plan.length,
+      substituted: 0,
       lowestGrade: null,
       highestGrade: null,
       sections: [],
     });
+  });
+
+  it('counts the filled slots whose climb came from a nearby grade', () => {
+    const plan = generatePyramidPlan(
+      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps: 5, climbsPerStep: 1, targetGrade: 20 },
+      MOONBOARD_GRADES,
+    );
+    // The peak grade ran short: its slot took a climb one grade down.
+    const filled = plan.map((slot) => (slot.section === 'peak' ? { ...slot, grade: slot.grade - 1 } : slot));
+
+    const summary = summarizePlanFill(plan, filled);
+
+    expect(summary).toMatchObject({ planned: 5, filled: 5, missing: 0, substituted: 1, highestGrade: 19 });
+    // The borrowed climb keeps its slot's section.
+    expect(summary.sections.map((section) => section.section)).toEqual(['increasing', 'peak', 'decreasing']);
+  });
+
+  it('counts a substitution and a shortfall apart', () => {
+    const plan = generatePyramidPlan(
+      { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', numberOfSteps: 5, climbsPerStep: 2, targetGrade: 20 },
+      MOONBOARD_GRADES,
+    );
+    const peaks = plan.filter((slot) => slot.section === 'peak');
+    // One peak slot borrowed a grade up, the other found nothing at all.
+    const filled = plan.flatMap((slot) => {
+      if (slot === peaks[0]) return [{ ...slot, grade: slot.grade + 1 }];
+      return slot === peaks[1] ? [] : [slot];
+    });
+
+    expect(summarizePlanFill(plan, filled)).toMatchObject({ planned: 10, filled: 9, missing: 1, substituted: 1 });
   });
 
   it('never reports a negative shortfall', () => {

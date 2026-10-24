@@ -283,6 +283,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       ),
       stageCount: result.addedStageCount,
       phase: 'in_session',
+      // Rows that came from a nearby grade because theirs ran short.
+      substitutedCount: planSummary.substituted,
     });
     hapticSuccess();
     onClose();
@@ -297,6 +299,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     plannedCount,
     t,
     onClose,
+    planSummary.substituted,
   ]);
   const handleAddPress = useCallback(() => void handleAdd(), [handleAdd]);
 

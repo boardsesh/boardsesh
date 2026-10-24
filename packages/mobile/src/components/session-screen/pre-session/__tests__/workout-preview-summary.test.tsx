@@ -50,6 +50,7 @@ function makeSummary(overrides: Partial<PlanFillSummary> = {}): PlanFillSummary 
     planned: 6,
     filled: 6,
     missing: 0,
+    substituted: 0,
     lowestGrade: 16,
     highestGrade: 20,
     sections: [{ section: 'main', count: 6 }],
@@ -92,6 +93,21 @@ describe('WorkoutPreviewSummary', () => {
     const { queryByText } = renderSummary(makeSummary());
 
     expect(queryByText(/preWorkoutPreviewShortfall/)).toBeNull();
+    expect(queryByText(/preWorkoutPreviewSubstituted/)).toBeNull();
+  });
+
+  it('explains climbs borrowed from a nearby grade when the plan still filled', () => {
+    const { getByText, queryByText } = renderSummary(makeSummary({ substituted: 3 }));
+
+    getByText('mobile.session.preWorkoutPreviewSubstituted {"count":3}');
+    expect(queryByText(/preWorkoutPreviewShortfall/)).toBeNull();
+  });
+
+  it('explains the borrowed climbs and the shortfall left after borrowing together', () => {
+    const { getByText } = renderSummary(makeSummary({ filled: 5, missing: 1, substituted: 2 }));
+
+    getByText('mobile.session.preWorkoutPreviewSubstituted {"count":2}');
+    getByText('mobile.session.preWorkoutPreviewShortfall {"filled":5,"planned":6}');
   });
 
   it('shuffles on tap, and not while disabled', () => {

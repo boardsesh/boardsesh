@@ -356,10 +356,14 @@ describe('refreshSlotInState', () => {
     }
   });
 
-  it('refreshes within the slot grade and never crosses into another grade', async () => {
+  // Updated on purpose for #6232: a refresh used to never leave the slot's
+  // grade. It still stays there while the grade has a climb to offer, and only
+  // a grade with nothing left borrows from the grade next to it.
+  it('refreshes within the slot grade while it has climbs, and borrows only once it runs out', async () => {
     // Pyramid/ladder workouts put different grades in different slots. Refreshing
-    // a grade-18 row must always land on another grade-18 climb, never the
-    // grade-17 slot's climbs — the pool is keyed by slot.grade.
+    // a grade-18 row lands on another grade-18 climb while grade 18 has one free,
+    // never on the grade-17 slot's climbs, even with borrowing on.
+    const grades = [{ difficulty_id: 17 }, { difficulty_id: 18 }];
     let state = buildState({ 17: ['g17-a', 'g17-b', 'g17-c'], 18: ['g18-a', 'g18-b', 'g18-c'] }, [
       [17, 0],
       [18, 1],
@@ -369,17 +373,42 @@ describe('refreshSlotInState', () => {
 
     const seen = new Set<string>([state.items[1].item.climb.uuid]);
     for (let refresh = 0; refresh < 8; refresh++) {
-      const result = await refreshSlotInState(state, grade18Uuid, ctx, fetchPool);
+      const result = await refreshSlotInState(state, grade18Uuid, ctx, fetchPool, undefined, grades);
       expect(result.changed).toBe(true);
       state = result.state;
       const refreshedUuid = state.items[1].item.climb.uuid;
       expect(refreshedUuid.startsWith('g18-')).toBe(true); // stayed on grade 18
+      expect(state.items[1].borrowedFrom).toBeUndefined();
       seen.add(refreshedUuid);
       expect(state.items[0].item.climb.uuid.startsWith('g17-')).toBe(true); // grade-17 row untouched
     }
     expect(seen.size).toBeGreaterThan(1); // re-rolled within grade 18 rather than sticking
-    expect([...seen].every((uuid) => uuid.startsWith('g18-'))).toBe(true); // every pick stayed on grade
     expect(fetchPool).not.toHaveBeenCalled(); // cache always had an unused grade-18 climb
+
+    // Grade 18 is down to the climb on screen, and the search found all it has.
+    const shownAt18 = state.items[1].item.climb.uuid;
+    state = {
+      ...state,
+      pools: new Map(state.pools).set(key(18), [makeClimb(shownAt18)]),
+      exhaustedPoolKeys: new Set([key(18)]),
+    };
+    const { state: borrowed, changed } = await refreshSlotInState(
+      state,
+      grade18Uuid,
+      ctx,
+      fetchPool,
+      undefined,
+      grades,
+    );
+
+    expect(changed).toBe(true);
+    expect(borrowed.items[1].item.uuid).toBe(grade18Uuid);
+    expect(borrowed.items[1].item.climb.uuid.startsWith('g17-')).toBe(true);
+    expect(borrowed.items[1].item.climb.uuid).not.toBe(borrowed.items[0].item.climb.uuid);
+    expect(borrowed.items[1].slot.grade).toBe(17);
+    expect(borrowed.items[1].borrowedFrom).toEqual({ plannedGrade: 18 });
+    // Grade 18 holds every climb it has, so it is not searched again.
+    expect(fetchPool).not.toHaveBeenCalled();
   });
 
   it('never re-picks a climb already shown in another row (cache miss → refetch)', async () => {

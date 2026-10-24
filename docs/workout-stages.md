@@ -418,6 +418,55 @@ offers it, and on volume at the stage's grade where it does not (`defaultMidSess
   many rounds it runs, and is never negative: Start reads `filledSlotCount`, and the sheet
   counts the slots among the climbs the queue took.
 
+### Borrowing from nearby grades
+
+Issue [#6232](https://github.com/boardsesh/boardsesh/issues/6232). A slot whose grade has
+no climb left takes one from a nearby grade instead of staying empty. `BORROW_GRADE_STEPS`
+(`workout-preview-pool.ts`) is the order: one grade easier, one harder, two easier, two
+harder. The steps walk the board's grade scale (`getGradesForBoard`) by position, since
+MoonBoard and Woods skip difficulty ids. A borrowed climb keeps every filter of its slot
+(Skip what I've sent, Skip what I've tried, Benchmarks only, min ascents and stars,
+tall/wide), so borrowing never undoes a choice the climber made. A slot with nothing
+nearby either stays empty and the shortfall shows as before. With top-ups ("Sent climbs and
+benchmarks" below) a grade rarely runs short on the default filters; the skip switches and
+Benchmarks only are what usually bring it here.
+
+- **Picking.** `selectItemsFromPools` takes the grade scale. Kept rows go first, then every
+  slot at its own grade, then one step at a time across every slot still empty, so each
+  short slot gets the nearest grade before any slot takes one further away. Within a
+  grade a climb already in the live queue (mid-session) still beats borrowing. One
+  used-climb set spans every pool, so a borrowed climb never fills a second row, and the
+  slots planned at a grade take its climbs before a neighbour borrows any. Rows keep plan
+  order, stage and section.
+- **Searching.** `borrowForShortSlots` runs between `buildPoolsReusing` and the final
+  pick. For each step it searches the pool one step away for the slots still empty, with
+  their filters, sized by the slots planned at that grade plus the ones that would borrow.
+  A plan that fills at its own grades sends no extra request. Each nearby pool is searched
+  at most once a build, never once it is read out (`exhausted`), and a rebuild reuses it
+  under the same rule as the plan's own pools, so editing another block does not search
+  it again. A nearby search that fails is skipped (the next step can still fill the slot)
+  and never fails the preview. A superseded build stops between steps. On a fresh build, a
+  grade that comes up short costs at most four more pool searches, each paged and tiered
+  the usual way.
+- **Rows.** For a borrowed row `PreviewItem.slot.grade` is the grade the climb came from,
+  and `borrowedFrom.plannedGrade` the grade planned. The row says "V4 for V5" under the
+  climb, and its spoken label says it too.
+- **Refresh.** A row refresh tries the planned grade first (its cached pool, then one
+  refetch unless the pool is read out), then the nearby grades in step order the same
+  way, then a repeat that differs from the row's climb. A borrowed row whose planned grade
+  has a climb free again goes back to it. A refresh no longer refetches a pool that is
+  read out, at any grade. Shuffle borrows again from the pools it has, with no request.
+- **Summary and Start.** `summarizePlanFill` counts `substituted`: filled slots whose grade
+  differs from the planned slot with the same index. The card under the summary line says
+  how many climbs came from a nearby grade, above the shortfall line when slots are still
+  empty, and the grade span covers the grades the climbs are at. Start queues exactly the
+  rows on screen, borrowed ones included, under their planned stage. `Session Queue
+  Generated` carries `substitutedCount` on both Start and Add to session.
+- **Screenshot captures borrow nothing** (`borrowScaleFor`). The pinned fixture set has no
+  answer for a nearby grade's search, nor for the stats of the climbs it would show, where
+  a recorded grade came back short (Woods, and MoonBoard at the recorded grade). Remove
+  that line and re-record the set to show borrowed rows there.
+
 ### Sent climbs and benchmarks
 
 Issue [#6232](https://github.com/boardsesh/boardsesh/issues/6232). Under the default

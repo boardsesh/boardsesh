@@ -47,6 +47,8 @@ export function WorkoutPreviewListRow({
   if (!board) return null;
   const { item, knownStatus = null } = row.preview;
   const isRefreshing = refreshingUuids.has(item.uuid);
+  // A climb from a nearby grade says which grade it fills in for.
+  const { borrowedFrom } = row.preview;
   return (
     <WorkoutPreviewRow
       item={item}
@@ -56,6 +58,8 @@ export function WorkoutPreviewListRow({
       // Refreshes run one at a time, so another row's refresh blocks this one.
       refreshDisabled={refreshLocked || (refreshingUuids.size > 0 && !isRefreshing)}
       knownStatus={knownStatus}
+      borrowedGrade={borrowedFrom ? row.preview.slot.grade : null}
+      plannedGrade={borrowedFrom?.plannedGrade ?? null}
       onPress={onPress}
       onRefresh={onRefresh}
     />

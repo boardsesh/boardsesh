@@ -310,6 +310,8 @@ export function PreSessionView({
           stageCount: generatedRun?.stages.length ?? 0,
           // Start builds the workout; a block added later sends 'in_session'.
           phase: 'pre_session',
+          // Rows that came from a nearby grade because theirs ran short.
+          substitutedCount: planSummary.substituted,
         });
       }
       if (onStarted) onStarted();
@@ -339,6 +341,7 @@ export function PreSessionView({
     onStartingChange,
     onStarted,
     isStartPending,
+    planSummary.substituted,
   ]);
 
   const generatorPreviewReady =

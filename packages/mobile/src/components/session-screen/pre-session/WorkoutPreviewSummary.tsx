@@ -81,11 +81,21 @@ export function WorkoutPreviewSummary({
         </PressableSurface>
       </View>
 
-      {summary.missing > 0 ? (
+      {/* Why some rows are not at the planned grade, and what is still missing. */}
+      {summary.substituted > 0 || summary.missing > 0 ? (
         <Card>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.session.preWorkoutPreviewShortfall', { filled: summary.filled, planned: summary.planned })}
-          </Text>
+          <View style={styles.noteLines}>
+            {summary.substituted > 0 ? (
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('mobile.session.preWorkoutPreviewSubstituted', { count: summary.substituted })}
+              </Text>
+            ) : null}
+            {summary.missing > 0 ? (
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('mobile.session.preWorkoutPreviewShortfall', { filled: summary.filled, planned: summary.planned })}
+              </Text>
+            ) : null}
+          </View>
         </Card>
       ) : null}
     </View>
@@ -114,5 +124,8 @@ const styles = StyleSheet.create({
   },
   shuffleText: {
     fontWeight: '600',
+  },
+  noteLines: {
+    gap: spacing[2],
   },
 });

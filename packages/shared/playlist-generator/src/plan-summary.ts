@@ -12,13 +12,21 @@ export type PlanSectionCount = {
  * What a filled plan will actually start: how many of the planned climbs found
  * a climb, the grade span of the ones that did, and the run of sections they
  * fall into. Callers pass the slots the climbs were picked for, so a slot a
- * thin catalogue couldn't fill drops out of every number here.
+ * thin catalogue couldn't fill drops out of every number here. A filled slot
+ * carries the grade its climb came from, which differs from the planned slot
+ * with the same `index` when the climb was borrowed from a nearby grade.
  */
 export type PlanFillSummary = {
   planned: number;
   filled: number;
   /** Planned slots with no climb. Never negative. */
   missing: number;
+  /**
+   * Filled slots whose climb is from another grade than the one planned for
+   * them (matched by `index`): a grade ran short and they borrowed from a
+   * nearby one.
+   */
+  substituted: number;
   /** Lowest and highest difficulty id among the filled slots; null when none filled. */
   lowestGrade: number | null;
   highestGrade: number | null;
@@ -31,10 +39,16 @@ export const summarizePlanFill = (
   filled: readonly PlannedClimbSlot[],
 ): PlanFillSummary => {
   const grades = filled.map((slot) => slot.grade);
+  const plannedGradeByIndex = new Map(planned.map((slot) => [slot.index, slot.grade]));
+  const substituted = filled.filter((slot) => {
+    const plannedGrade = plannedGradeByIndex.get(slot.index);
+    return plannedGrade !== undefined && plannedGrade !== slot.grade;
+  }).length;
   return {
     planned: planned.length,
     filled: filled.length,
     missing: Math.max(0, planned.length - filled.length),
+    substituted,
     lowestGrade: grades.length > 0 ? Math.min(...grades) : null,
     highestGrade: grades.length > 0 ? Math.max(...grades) : null,
     sections: groupSlotsBySection([...filled]).map((group) => ({ section: group.section, count: group.slots.length })),

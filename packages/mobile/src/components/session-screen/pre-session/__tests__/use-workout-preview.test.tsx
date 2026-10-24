@@ -265,7 +265,9 @@ describe('useWorkoutPreview', () => {
     });
 
     await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
-    expect(fetchPool).toHaveBeenCalledTimes(1); // single refetch despite the double tap
+    // A single refetch of grade 10 despite the double tap. With nothing new
+    // there, the refresh also looks one grade up before it settles on a repeat.
+    expect(fetchPool.mock.calls.filter(([grade]) => grade === 10)).toHaveLength(1);
     expect(result.current.items[0].item.uuid).toBe(targetUuid); // queue-item identity preserved
     expect(result.current.items[0].item.climb.uuid).not.toBe(initialClimbUuid); // swapped climb
     expect(['a', 'b']).toContain(result.current.items[0].item.climb.uuid);
@@ -297,12 +299,14 @@ describe('useWorkoutPreview', () => {
       await Promise.resolve();
     });
     await act(async () => {
-      deferreds[1]?.(poolOf([makeClimb('fresh')]));
+      // Enough for both slots, so the build has no short slot to borrow for.
+      deferreds[1]?.(poolOf([makeClimb('fresh-a'), makeClimb('fresh-b')]));
       await Promise.resolve();
     });
 
     expect(result.current.status).toBe('ready');
-    expect(result.current.items.every((preview) => preview.item.climb.uuid === 'fresh')).toBe(true);
+    expect(result.current.items).toHaveLength(2);
+    expect(result.current.items.every((preview) => preview.item.climb.uuid.startsWith('fresh'))).toBe(true);
   });
 
   it('drops a stale row refresh after the preview is cleared', async () => {

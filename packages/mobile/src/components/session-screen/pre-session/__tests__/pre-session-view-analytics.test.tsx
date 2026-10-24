@@ -363,6 +363,27 @@ describe('PreSessionView Shuffle during Start', () => {
   });
 });
 
+describe('PreSessionView analytics with climbs from a nearby grade', () => {
+  it('counts the rows that borrowed from a nearby grade in "Session Queue Generated"', async () => {
+    // The second row's grade ran short, so its climb came from one grade down.
+    preview.result.items = [
+      previewRows[0],
+      { ...previewRows[1], slot: { ...previewRows[1].slot, grade: 9 }, borrowedFrom: { plannedGrade: 10 } },
+    ];
+    render(createElement(PreSessionView));
+    act(() => {
+      picker.onChange?.(volumeSelection());
+    });
+
+    await act(async () => startButton.onPress?.());
+
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Session Queue Generated',
+      expect.objectContaining({ savedCount: 2, phase: 'pre_session', substitutedCount: 1 }),
+    );
+  });
+});
+
 describe('PreSessionView analytics', () => {
   it('queues the generated session behind the live queue and fires "Session Queue Generated" with the queued/failed counts when starting with the generator on', async () => {
     render(createElement(PreSessionView));
@@ -390,6 +411,7 @@ describe('PreSessionView analytics', () => {
         failedCount: 1,
         stageCount: 1,
         phase: 'pre_session',
+        substitutedCount: 0,
       }),
     );
 
@@ -411,6 +433,7 @@ describe('PreSessionView analytics', () => {
       failedCount: 1,
       stageCount: 1,
       phase: 'pre_session',
+      substitutedCount: 0,
     });
     // The run is kept on the phone for the session that just started.
     expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
@@ -483,6 +506,7 @@ describe('PreSessionView analytics', () => {
         failedCount: 1,
         stageCount: 2,
         phase: 'pre_session',
+        substitutedCount: 0,
       });
       expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', multiStageRun);
     } finally {

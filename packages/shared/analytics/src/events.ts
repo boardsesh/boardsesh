@@ -221,7 +221,9 @@ export const SHARED_EVENTS = {
   // `phase` is 'pre_session' for the workout queued at Start and 'in_session'
   // for a block added to a running session (one workout block, never a warm-up);
   // events from before it existed are all Start. Same values as
-  // SessionVisibilityChanged.
+  // SessionVisibilityChanged. `substitutedCount` (#6232) is how many preview
+  // rows came from a nearby grade because their own grade ran short; absent
+  // on events from before borrowing.
   SessionQueueGenerated: 'Session Queue Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',

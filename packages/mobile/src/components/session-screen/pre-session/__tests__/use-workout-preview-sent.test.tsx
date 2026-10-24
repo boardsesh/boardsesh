@@ -99,15 +99,66 @@ describe('useWorkoutPreview with sent climbs as top-up', () => {
     const fetchPool = vi.fn<FetchGradePool>(async (grade) => ({
       climbs: poolAt(grade).climbs.slice(6),
       topUpTiers: new Map(),
+      exhausted: true,
     }));
     const { result } = renderPreview(gradeFocus(7, skipping), fetchPool);
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     expect(fetchPool.mock.calls[0][1].filters?.skipSent).toBe(true);
-    // Only the unsent climbs fit: the preview comes up short instead of showing sent ones.
-    expect(result.current.items).toHaveLength(UNSENT_COUNT);
+    // Only four unsent climbs fit at grade 20, so the other three come from the
+    // grade below, still unsent: never a sent climb to fill the gap (#6232).
+    const rows = result.current.items;
+    expect(rows).toHaveLength(7);
+    expect(rows.every((preview) => !isSent(preview.item.climb.uuid))).toBe(true);
+    expect(rows.filter((preview) => preview.slot.grade === 20)).toHaveLength(UNSENT_COUNT);
+    const borrowed = rows.filter((preview) => preview.borrowedFrom);
+    expect(borrowed.map((preview) => [preview.slot.grade, preview.borrowedFrom?.plannedGrade])).toEqual([
+      [19, 20],
+      [19, 20],
+      [19, 20],
+    ]);
+    // The grade below was searched with Skip what I've sent too.
+    expect(fetchPool.mock.calls.map(([grade, ctx]) => [grade, ctx.filters?.skipSent])).toEqual([
+      [20, true],
+      [19, true],
+    ]);
     expect(result.current.plannedCount).toBe(7);
-    expect(result.current.toStagedQueueItems().run?.stages[0].filters?.skipSent).toBe(true);
+    // Start queues the seven rows on screen, borrowed ones included.
+    const { items: queued, run } = result.current.toStagedQueueItems();
+    expect(queued).toEqual(rows.map((preview) => preview.item));
+    expect(run?.stages[0].filters?.skipSent).toBe(true);
+    expect(run?.stages[0].itemUuids).toEqual(rows.map((preview) => preview.item.uuid));
+  });
+
+  it('keeps borrowing on a row refresh and a Shuffle, from the pools it has', async () => {
+    const skipping = { ...DEFAULT_WORKOUT_FILTERS, skipSent: true };
+    const fetchPool = vi.fn<FetchGradePool>(async (grade) => ({
+      climbs: poolAt(grade).climbs.slice(6),
+      topUpTiers: new Map(),
+      exhausted: true,
+    }));
+    const { result } = renderPreview(gradeFocus(6, skipping), fetchPool);
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const borrowedRow = result.current.items.find((preview) => preview.borrowedFrom);
+    if (!borrowedRow) throw new Error('expected a row borrowed from grade 19');
+    fetchPool.mockClear();
+
+    await act(async () => {
+      result.current.refreshSlot(borrowedRow.item.uuid);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
+
+    const refreshed = result.current.items.find((preview) => preview.item.uuid === borrowedRow.item.uuid);
+    expect(refreshed?.item.climb.uuid).not.toBe(borrowedRow.item.climb.uuid);
+    expect(refreshed?.slot.grade).toBe(19);
+    expect(refreshed?.borrowedFrom).toEqual({ plannedGrade: 20 });
+
+    act(() => result.current.shuffle());
+    expect(result.current.items).toHaveLength(6);
+    expect(result.current.items.filter((preview) => preview.borrowedFrom)).toHaveLength(2);
+    // Both grades are read out and cached: neither the refresh nor the Shuffle searched.
+    expect(fetchPool).not.toHaveBeenCalled();
   });
 
   it('fetches signed out without Skip what I have sent, while the run keeps the switch', async () => {
@@ -160,8 +211,11 @@ describe('useWorkoutPreview search budget', () => {
     }
 
     expect(fetchPool.mock.calls.filter(([grade]) => grade === 12)).toHaveLength(1);
-    // The thin block shows what its grade has: a shortfall, not a fresh search.
+    // The thin block shows what its grade has and borrows the rest from the
+    // grade below, which is not searched again on every edit either.
     expect(result.current.items.filter((preview) => preview.slot.grade === 12)).toHaveLength(2);
+    expect(result.current.items.filter((preview) => preview.borrowedFrom?.plannedGrade === 12)).toHaveLength(2);
+    expect(fetchPool.mock.calls.filter(([grade]) => grade === 11)).toHaveLength(1);
   });
 
   it("tells a superseded build's searches to stop", async () => {

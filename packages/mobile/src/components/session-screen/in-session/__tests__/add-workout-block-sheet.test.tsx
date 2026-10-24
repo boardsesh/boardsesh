@@ -533,6 +533,7 @@ describe('AddWorkoutBlockSheet', () => {
       failedCount: 1,
       stageCount: 1,
       phase: 'in_session',
+      substitutedCount: 0,
     });
     // The added block's own stages decide whether the timer comes on, never
     // the rest of the run.
