@@ -174,6 +174,28 @@ describe('useSheetKeyboardInset', () => {
     expect(result.current.bottomInset).toBe(34);
   });
 
+  it('pads nothing for the zero frame iOS reports with Prefer Cross-Fade Transitions on', () => {
+    // RN's KeyboardAvoidingView treats `screenY` 0 the same way. Read as a real
+    // frame it would pad the column by the whole window (844 here).
+    const crossFade = { height: 336, screenY: 0, width: 390 };
+    const onKeyboardShow = vi.fn();
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    expect(result.current.bottomInset).toBe(34);
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: crossFade }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    expect(onKeyboardShow).not.toHaveBeenCalled();
+  });
+
+  it('pads nothing when a sheet opens over a keyboard whose frame reads screenY 0', () => {
+    native.visible = true;
+    native.metrics = { height: 336, screenY: 0, width: 390 };
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    expect(result.current.bottomInset).toBe(34);
+  });
+
   it('reports a show once per keyboard appearance, not per frame change', () => {
     const onKeyboardShow = vi.fn();
     renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));

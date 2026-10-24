@@ -88,11 +88,22 @@ export function sheetKeyboardInset({
   return overlap > 0 ? { keyboardOverlap: overlap, bottomInset: 0 } : resting;
 }
 
-/** The on-screen keyboard frame an event reports, or `null` once it is down. */
+/** The on-screen keyboard frame an event reports, or `null` once it is down or
+ * the frame does not say where the keyboard is. */
 function shownFrame(end: KeyboardMetrics | undefined, windowHeight: number): SheetKeyboardFrame | null {
   if (!end || end.height <= 0) return null;
-  // iOS reports a hide as a frame moved below the window.
-  if (Platform.OS === 'ios' && end.screenY >= windowHeight) return null;
+  if (Platform.OS === 'ios') {
+    // iOS reports a hide as a frame moved below the window.
+    if (end.screenY >= windowHeight) return null;
+    // With Settings › Accessibility › Motion › Prefer Cross-Fade Transitions on,
+    // iOS reports `screenY` 0, which would read as a keyboard covering the
+    // whole window and pad the column by its full height. RN's
+    // KeyboardAvoidingView pads nothing for this frame
+    // (`KeyboardAvoidingView.js`, `_relativeKeyboardHeight`); do the same. A
+    // docked keyboard never starts at the top of the window, so no real frame
+    // is lost.
+    if (end.screenY <= 0) return null;
+  }
   return { screenY: end.screenY, height: end.height, width: end.width };
 }
 
