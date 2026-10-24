@@ -422,7 +422,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Active filters: {{filters}}",
-        "removeHint": "Remove one filter to try again. Your search and board setup stay selected.",
+        "removeHint": "Remove one filter to try again. Your search and setup stay selected.",
         "openFilters": "Adjust filters"
       }
     },
