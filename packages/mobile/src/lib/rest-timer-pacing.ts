@@ -9,10 +9,11 @@
 //
 // Every reader goes through `resolveEffectiveRestPacing` (via
 // `hooks/use-effective-rest-pacing.ts`), so a new source plugs in here and never
-// in the scheduler, the pill or the sheet. `settings` and `stage` are wired: the
+// in the scheduler, the pill or the sheet. All three are wired: the
 // stage input is what `RestTimerPacingSync` resolved for the climb on the wall
-// (`resolveStageRestPacing`). The crew input stays null until #5382's mobile PR.
-// See docs/rest-timer.md and docs/workout-stages.md ("Pacing").
+// (`resolveStageRestPacing`); the crew input is the session's shared clock this
+// phone follows (lib/crew-rest-cadence.ts). See docs/rest-timer.md and
+// docs/workout-stages.md ("Pacing").
 
 import {
   stageRestSeconds,

@@ -86,4 +86,16 @@ describe('toMobileSessionRuntimeEvent', () => {
     // ship without breaking un-OTA'd clients.
     expect(toMobileSessionRuntimeEvent({ __typename: 'SomeFutureSessionEvent' })).toBeNull();
   });
+
+  it('leaves the crew rest clock out of the roster: the rest-timer store takes it (#5382)', () => {
+    expect(
+      toMobileSessionRuntimeEvent({
+        __typename: 'SessionRestCadenceChanged',
+        restCadence: null,
+        revision: 0,
+        serverNow: '1800000000000',
+        isSnapshot: true,
+      }),
+    ).toBeNull();
+  });
 });

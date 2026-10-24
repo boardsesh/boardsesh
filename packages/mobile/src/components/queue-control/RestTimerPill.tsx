@@ -41,6 +41,7 @@ import { REST_TIMER_PILL_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '..
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE, REST_CLOCK_MAX_FONT_SCALE } from '../../theme/typography';
 import { AccessoryBarSurface } from './AccessoryBarSurface';
+import { RestTimerPacerCaption } from './RestTimerPacerCaption';
 
 /** Narrowest the full-size pill goes, so a short "0:12" still reads as a pill. */
 const PILL_MIN_WIDTH = 120;
@@ -290,33 +291,38 @@ export function RestTimerHeroClock() {
               : t('mobile.restTimer.clockCaptionCountUp');
 
   return (
-    <View
-      style={styles.hero}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={`${restTimerClockAccessibilityLabel({ phase, displayLabel, targetLabel, remainingSeconds }, t)}. ${caption}`}
-      testID="rest-timer-hero-clock"
-    >
-      <Text
-        variant="largeTitle"
-        color={phaseColor(phase, systemColors, brandColors)}
-        // Not the global 1.5x: see REST_CLOCK_MAX_FONT_SCALE — an hour-long
-        // overrun is the widest string this can print, and 1.5x overflows it.
-        maxFontSizeMultiplier={REST_CLOCK_MAX_FONT_SCALE}
-        numberOfLines={1}
-        style={styles.tabularDigits}
-        testID="rest-timer-hero-digits"
+    <View style={styles.heroGroup}>
+      <View
+        style={styles.hero}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={`${restTimerClockAccessibilityLabel({ phase, displayLabel, targetLabel, remainingSeconds }, t)}. ${caption}`}
+        testID="rest-timer-hero-clock"
       >
-        {displayLabel}
-      </Text>
-      <Text
-        variant="subheadline"
-        color={systemColors.secondaryLabel}
-        style={styles.heroCaption}
-        testID="rest-timer-hero-caption"
-      >
-        {caption}
-      </Text>
+        <Text
+          variant="largeTitle"
+          color={phaseColor(phase, systemColors, brandColors)}
+          // Not the global 1.5x: see REST_CLOCK_MAX_FONT_SCALE — an hour-long
+          // overrun is the widest string this can print, and 1.5x overflows it.
+          maxFontSizeMultiplier={REST_CLOCK_MAX_FONT_SCALE}
+          numberOfLines={1}
+          style={styles.tabularDigits}
+          testID="rest-timer-hero-digits"
+        >
+          {displayLabel}
+        </Text>
+        <Text
+          variant="subheadline"
+          color={systemColors.secondaryLabel}
+          style={styles.heroCaption}
+          testID="rest-timer-hero-caption"
+        >
+          {caption}
+        </Text>
+      </View>
+      {/* Who paces a crew's clock (#5382). Outside the clock's one accessible
+          element: it is a separate fact, and it changes when the board does. */}
+      <RestTimerPacerCaption variant="subheadline" centered />
     </View>
   );
 }
@@ -428,6 +434,9 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
               {secondaryLabel}
             </Text>
           ) : null}
+          {/* In a crew the free line says who paces the wall (#5382): its own
+              leaf, so the clock's 1 Hz render passes it by. */}
+          {!compact && !secondaryLabel ? <RestTimerPacerCaption style={styles.secondary} /> : null}
         </LargeContentViewer>
       </PressableSurface>
     </AccessoryBarSurface>
@@ -473,6 +482,10 @@ const styles = StyleSheet.create({
   },
   secondary: {
     flexShrink: 1,
+  },
+  heroGroup: {
+    alignItems: 'center',
+    gap: spacing[1],
   },
   hero: {
     alignItems: 'center',

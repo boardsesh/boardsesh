@@ -139,6 +139,19 @@ const DISCOVER_PLAYLISTS_GRADE_SELECTION = 'gradeSummary { gradedClimbCount p10D
  */
 const SMART_PLAYLIST_UNFILTERED_COUNT_SELECTION = 'unfilteredCount';
 
+/**
+ * The selection a pinned SessionUpdates recording predates: the crew rest
+ * clock's `SessionRestCadenceChanged` member (#5382). A fragment on a union
+ * member the recorded frame (a SessionRosterSnapshot) is not, so the recorded
+ * response replays unchanged. Must match the fragment in
+ * packages/mobile/src/lib/graphql/operations.ts byte for byte once whitespace
+ * is collapsed.
+ */
+export const SESSION_REST_CADENCE_SELECTION =
+  '... on SessionRestCadenceChanged { restCadence { mode targetSeconds autoAdvance advanceOn source isRunning ' +
+  'anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus setByParticipantId } ' +
+  'revision serverNow isSnapshot action }';
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -163,6 +176,8 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   manufacturer board.
  * - DiscoverPlaylists: each playlist's `gradeSummary`.
  * - GetSmartPlaylist: the list's `unfilteredCount`.
+ * - SessionUpdates: the crew rest clock's union member, which the recorded
+ *   roster frame never is.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -183,6 +198,7 @@ export function replayCompatibleFixtureResponse(
   }
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
+  if (operationName === 'SessionUpdates') return replaySessionUpdatesWithoutRestCadence(requestQuery, fixture);
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
@@ -218,6 +234,19 @@ function matchesWithoutSelection(requestQuery: string, selection: string, fixtur
   const normalized = normalizeDocument(requestQuery);
   if (normalized.split(selection).length !== 2) return false;
   return normalizeDocument(normalized.replace(selection, '')) === normalizeDocument(fixture.query);
+}
+
+function replaySessionUpdatesWithoutRestCadence(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  if (!matchesWithoutSelection(requestQuery, SESSION_REST_CADENCE_SELECTION, fixture)) return null;
+  // Only a frame of another member replays untouched: a recording that already
+  // holds a rest clock frame was made with the fragment, so it is not this case.
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const event = fixture.response.data.sessionUpdates;
+  if (!isRecord(event) || event.__typename === 'SessionRestCadenceChanged') return null;
+  return { response: fixture.response };
 }
 
 function replayDiscoverPlaylistsWithoutGrades(

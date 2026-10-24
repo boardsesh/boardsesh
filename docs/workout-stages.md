@@ -198,6 +198,10 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   climber's own settings. Pause, Reset and Turn off stay.
 - **Crew.** Stage pacing lives on the phone that built the workout. In a crew only the phone
   holding the wall moves it (`docs/rest-timer.md`), stage or not; a passenger's sheet says so.
+  The builder's phone hands each stage's pacing to the session's shared rest clock (#5382) as
+  the climb on the wall changes, so every phone, the holder's included, counts that stage's
+  rest and waits on its rule; if the builder's phone sleeps, the crew keeps the last pacing it
+  sent.
 
 ## Building a workout
 

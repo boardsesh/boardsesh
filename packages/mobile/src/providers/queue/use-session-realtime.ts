@@ -32,6 +32,8 @@ import { getStoredActiveBoard } from '../../lib/active-board-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-conversion';
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
+import { handleCrewCadenceChange } from '../../lib/crew-rest-cadence';
+import { nowMs } from '../../lib/clock';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
@@ -734,6 +736,25 @@ export function useSessionRealtime({
             const event = data?.sessionUpdates;
             if (!event) return;
             if (!isCurrent() || sessionIdRef.current !== sessionId) return;
+
+            // The crew's shared rest clock (#5382), its subscribe seed included.
+            // Not roster state, so it never reaches the runtime mapper: the
+            // rest-timer store takes it, through the revision floor and the
+            // adoption rule in lib/crew-rest-cadence.ts.
+            if (event.__typename === 'SessionRestCadenceChanged') {
+              if (typeof event.revision !== 'number' || typeof event.serverNow !== 'string') return;
+              handleCrewCadenceChange(
+                {
+                  restCadence: event.restCadence ?? null,
+                  revision: event.revision,
+                  serverNow: event.serverNow,
+                  isSnapshot: event.isSnapshot === true,
+                  action: event.action ?? null,
+                },
+                { sessionId, ownParticipantId: participantIdRef.current, receivedAtMs: nowMs() },
+              );
+              return;
+            }
 
             // Live analytics push: flashes + flash/send/attempt grade split +
             // per-participant breakdown. Drives the in-session analytics view and

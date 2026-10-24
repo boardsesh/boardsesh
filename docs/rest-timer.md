@@ -22,7 +22,8 @@ and which phone may move the wall. The workout stages that pace it are in
 | Wall-driver rule | `packages/mobile/src/lib/session-timer/driver-rule.ts`, `src/hooks/use-session-timer-driver.ts` |
 
 The durable preferences (rest length, cadence, auto-advance, sound, countdown cues) live in
-`packages/mobile/src/settings`. Arming never survives a cold start.
+`packages/mobile/src/settings`. Arming never survives a cold start, with one exception: a crew
+clock another member set comes back from the session's seed (see "The crew's clock" under "Which phone moves the wall").
 
 ## Effective pacing
 
@@ -43,10 +44,11 @@ as they land. A new source changes `rest-timer-pacing.ts` and the hook, never th
 sheet's controls keep writing the settings directly: they edit the climber's preferences, not the
 effective value.
 
-`settings` and `stage` are wired. With no workout stage on the wall the hook returns exactly the
+All three are wired. With no crew clock and no workout stage on the wall the hook returns exactly the
 three settings with `advanceOn: 'deadline'` and `source: 'settings'`. The stage input is the
 `stagePacing` that `RestTimerPacingSync` keeps in the store for the climb on the wall (see
-"Pacing" in `docs/workout-stages.md`). The crew input lands with #5382's mobile PR.
+"Pacing" in `docs/workout-stages.md`). The crew input is the clock this phone follows, held
+in the store's `crew` field (see "The crew's clock" under "Which phone moves the wall").
 
 The advance rule:
 
@@ -125,6 +127,37 @@ this section and `sounds.ts`.
 
 The scheduler fires only where `canAdvanceQueue` is true, and the sheet's auto-advance switch is
 disabled with the reason everywhere else, so the two can never disagree.
+
+**The crew's clock (#5382).** In a session the backend keeps one rest clock every member
+follows (wire and reducer: "Crew rest clock" in `docs/websocket-implementation.md`). A phone
+follows it once it arms the timer, or once another member does: the pill appears on every phone
+in the crew.
+
+| Piece | File |
+| --- | --- |
+| Taking a change: revision floor, adoption rule, inputs, the FIRE plan | `packages/mobile/src/lib/crew-rest-cadence.ts` |
+| The server clock offset | `packages/mobile/src/lib/server-clock.ts` |
+| Sending this phone's actions | `src/lib/crew-rest-publisher.ts`, `RestTimerCrewPublisher.tsx` |
+| "Sam is pacing the wall", the crew notes | `RestTimerPacerCaption.tsx`, `RestTimerCrewNote.tsx` |
+
+- **Who moves the wall.** Still only `holder`, and `solo`, by the table above. With a crew clock
+  the scheduler asks the server to take the beat first (FIRE, compare-and-set) and moves the
+  wall only when it did, so two phones that both think they hold the board can never both move
+  it. A phone alone in its session moves the wall itself only when the server cannot be reached.
+- **Who changes it.** Anyone in the session. Every control keeps writing the climber's own
+  settings, and a change hands the crew this phone's pacing; the sheet says so ("Changes here go
+  to everyone"). Auto-advance becomes the crew's setting: a passenger can switch it, and its line
+  names whose phone moves the wall.
+- **What a passenger sees.** The crew's rest, counted from the crew's anchor, with "Sam is
+  pacing the wall" under the digits. If the holder's phone sleeps the rest runs past zero and
+  nothing moves; the holder's phone restarts it when it comes back.
+- **A tick under a tick or send rule** counts only on the climb on the wall, on every phone: a
+  late tick on the previous climb, or one from a list, neither replaces the wall climb's tick nor
+  moves the rest, and never reaches the server.
+- **A cold start** takes the crew's clock back only if another member set it, or this phone was
+  already armed for that session.
+- **An unknown mode or rule** (a newer app set it) is held but never fired on, and the sheet asks
+  for an update.
 
 "A crew" is `useIsCrewSession()`: someone else is on the session roster, past the arming dwell.
 It is the same roster rule as `useIsSharedSession()` without the `shared-session-browse` flag.

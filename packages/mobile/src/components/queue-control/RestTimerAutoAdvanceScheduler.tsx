@@ -38,8 +38,42 @@ import {
   isAutoAdvanceDeadlineStale,
   shouldScheduleAutoAdvance,
 } from '../../lib/rest-timer-auto-advance';
+import type { SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
+import {
+  CREW_FIRE_LATE_TOLERANCE_MS,
+  CREW_FIRE_TIMEOUT_MS,
+  crewBeatServerMs,
+  handleCrewCadenceChange,
+  planCrewFireOutcome,
+} from '../../lib/crew-rest-cadence';
+import { serverToLocalMs } from '../../lib/server-clock';
+import { reportHandledError } from '../../lib/error-reporting';
 
 const KEEP_AWAKE_TAG = 'rest-timer';
+
+/** A crew repair waits this long past the 5 s claim window, so the server agrees the beat is gone. */
+const CREW_REPAIR_MARGIN_MS = 250;
+
+/**
+ * The whole FIRE, rejoin included, within CREW_FIRE_TIMEOUT_MS. The mutation's
+ * own timeout starts only once the session is joined, and a rejoin over a dead
+ * connection can take the transport's full 30 s: a beat answered that late is
+ * no use to anyone.
+ */
+async function withinCrewFireTimeout<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Crew FIRE got no answer within ${CREW_FIRE_TIMEOUT_MS} ms`)),
+      CREW_FIRE_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([request, timedOut]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
 
 /** The scheduler pages only the committed track; it has no preview to update. */
 const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null>> = () => {};
@@ -49,7 +83,7 @@ export function RestTimerAutoAdvanceScheduler() {
   const timerState = useRestTimerState();
   const { targetSeconds, autoAdvance, mode, advanceOn } = useEffectiveRestPacing();
 
-  const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource } = useQueueActions();
+  const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource, setSessionRestCadence } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // A long list keeps going with the player closed too (#6664): the player
@@ -87,7 +121,16 @@ export function RestTimerAutoAdvanceScheduler() {
   // `nextClimb` broadcasts, so a passenger's timer would change everyone's climb.
   // Solo there is nothing to stomp on, so no board link is required. One rule,
   // shared with the sheet: lib/session-timer/driver-rule.ts.
-  const { canAdvanceQueue: canDriveWall } = useSessionTimerDriver();
+  //
+  // A crew clock this app cannot run (an unknown mode or rule) moves nothing.
+  const { canAdvanceQueue, role } = useSessionTimerDriver();
+  const canDriveWall = canAdvanceQueue && timerState.crew?.config !== null;
+  // The fire and the foreground callbacks land long after the render, and the
+  // board can change hands meanwhile.
+  const roleRef = useRef(role);
+  roleRef.current = role;
+  /** Whether this phone paces a crew clock right now (read in callbacks, after the render). */
+  const pacesTheCrew = useCallback(() => roleRef.current === 'holder' || roleRef.current === 'solo', []);
 
   // Read through refs so the scheduling effect depends only on the timer's own
   // inputs. Re-running it on every queue edit would cancel and reschedule the
@@ -124,8 +167,169 @@ export function RestTimerAutoAdvanceScheduler() {
   // still on its way. Taken when the page lands (see the effect below).
   const awaitingPageRef = useRef<{ cycleId: number; deadlineMs: number } | null>(null);
 
+  // The crew clock's FIRE (#5382, contracts §10). With a crew clock, the server
+  // claims each beat once for the whole session (compare-and-set on the
+  // revision), and only an applied claim moves the wall, so two phones that
+  // both think they pace can never both advance. A refusal that can still land
+  // (the server's clock not at the beat yet, or another write first) retries
+  // the same beat; one more than 5 s gone is lost. A holder that hears nothing
+  // back lets the beat go; a phone alone in its session moves the wall itself
+  // rather than stall on a dead connection.
+  const crewFireInFlightRef = useRef(false);
+  const crewTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const mountedRef = useRef(true);
+  const fireAdvanceRef = useRef<
+    ((expectedCycleId: number, scheduledDeadlineMs: number, afterPage?: boolean, crewAttempt?: number) => void) | null
+  >(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    const crewTimers = crewTimersRef.current;
+    return () => {
+      mountedRef.current = false;
+      for (const timer of crewTimers) clearTimeout(timer);
+      crewTimers.clear();
+    };
+  }, []);
+  const scheduleCrewTimer = useCallback((callback: () => void, delayMs: number) => {
+    const timer = setTimeout(
+      () => {
+        crewTimersRef.current.delete(timer);
+        callback();
+      },
+      Math.max(0, delayMs),
+    );
+    crewTimersRef.current.add(timer);
+  }, []);
+
+  /**
+   * The local claim and the advance, for a phone that moves the wall itself:
+   * no crew clock, or a solo phone whose FIRE never got an answer. The claim
+   * also tells the crew publisher, which puts the shared clock's rest in step.
+   */
+  const advanceLocally = useCallback(
+    (expectedCycleId: number, scheduledDeadlineMs: number) => {
+      // Claim the cycle BEFORE advancing: a stale timeout from a re-run effect
+      // or a remount loses the race here rather than skipping a second climb.
+      // Under a tick or send rule the claim also clears the anchor and the tick,
+      // so the next climb rests only once it is logged.
+      const anchorAfter = anchorAfterFire({ mode, advanceOn });
+      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs, anchorAfter)) return;
+
+      playRestTimerCue({ kind: 'advance' });
+      nextClimb();
+    },
+    [mode, advanceOn, nextClimb],
+  );
+
+  const fireCrewBeat = useCallback(
+    async ({
+      expectedCycleId,
+      deadlineMs: localDeadlineMs,
+      attempt,
+    }: {
+      expectedCycleId: number;
+      deadlineMs: number;
+      attempt: number;
+    }) => {
+      const before = getRestTimerState();
+      const crew = before.crew;
+      if (crew === null || crew.config === null || before.cycleId !== expectedCycleId) return;
+      if (crewFireInFlightRef.current) return;
+      const beatServerMs = crewBeatServerMs(crew, localDeadlineMs);
+      if (beatServerMs === null) return;
+      // The climb this beat moves on from: a crewmate who moves the wall by hand
+      // while the claim is in flight has already spent the beat.
+      const wallQueueItemUuid = advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null;
+      const alone = roleRef.current === 'solo';
+
+      crewFireInFlightRef.current = true;
+      const sentAtMs = nowMs();
+      let payload: SetSessionRestCadencePayload | null;
+      try {
+        payload = await withinCrewFireTimeout(
+          setSessionRestCadence(
+            {
+              action: 'FIRE',
+              expectedRevision: crew.revision,
+              firedBeatAgoMs: Math.max(0, Math.round(sentAtMs - localDeadlineMs)),
+            },
+            { timeoutMs: CREW_FIRE_TIMEOUT_MS, retryWhenRateLimited: false },
+          ),
+        );
+      } catch (error) {
+        crewFireInFlightRef.current = false;
+        reportHandledError(error, { tags: { source: 'crew-rest-clock', op: 'fire' } });
+        if (!mountedRef.current) return;
+        if (alone) {
+          // Nobody else to claim it: the wall moves from here, as long as the
+          // beat is still one the climber is watching.
+          if (!isAutoAdvanceDeadlineStale(localDeadlineMs, nowMs())) advanceLocally(expectedCycleId, localDeadlineMs);
+          return;
+        }
+        // The beat is skipped. If the server never took it either, its rest
+        // stays on a deadline nobody can claim once 5 s have gone: restart it
+        // then, as coming back from the background would (contracts §10).
+        playRestTimerCue({ kind: 'reached' });
+        const staleAnchorServerMs = crew.anchorServerMs;
+        scheduleCrewTimer(
+          () => {
+            const currentCrew = getRestTimerState().crew;
+            if (currentCrew === null || currentCrew.anchorServerMs !== staleAnchorServerMs || !pacesTheCrew()) return;
+            reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
+          },
+          serverToLocalMs(beatServerMs + CREW_FIRE_LATE_TOLERANCE_MS) + CREW_REPAIR_MARGIN_MS - nowMs(),
+        );
+        return;
+      }
+      crewFireInFlightRef.current = false;
+      if (payload === null || !mountedRef.current) return;
+
+      handleCrewCadenceChange(payload.change, {
+        sessionId: crew.sessionId,
+        // Only this phone's own clock fires, so it is armed for it: the
+        // adoption rule needs no participant id here.
+        ownParticipantId: null,
+        receivedAtMs: nowMs(),
+        sentAtMs,
+      });
+      const outcome = planCrewFireOutcome({ applied: payload.applied, change: payload.change, beatServerMs, attempt });
+      switch (outcome.kind) {
+        case 'advance':
+          if ((advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null) !== wallQueueItemUuid) return;
+          playRestTimerCue({ kind: 'advance' });
+          nextClimb();
+          return;
+        case 'retry': {
+          const retryCycleId = getRestTimerState().cycleId;
+          const retryDeadlineMs = serverToLocalMs(beatServerMs);
+          scheduleCrewTimer(
+            () => fireAdvanceRef.current?.(retryCycleId, retryDeadlineMs, false, attempt + 1),
+            serverToLocalMs(outcome.atServerMs) - nowMs(),
+          );
+          return;
+        }
+        case 'lost':
+          // Too late by the server's clock, so the rest is stuck on a deadline
+          // nobody can claim: restart it now, if this phone still paces it.
+          playRestTimerCue({ kind: 'reached' });
+          if (pacesTheCrew()) reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
+          return;
+        case 'refused':
+          playRestTimerCue({ kind: 'reached' });
+          return;
+        case 'claimed':
+          return;
+        default: {
+          const unhandled: never = outcome;
+          throw new Error(`Unhandled crew fire outcome: ${JSON.stringify(unhandled)}`);
+        }
+      }
+    },
+    [advanceLocally, nextClimb, pacesTheCrew, scheduleCrewTimer, setSessionRestCadence],
+  );
+
   const fireAdvance = useCallback(
-    (expectedCycleId: number, scheduledDeadlineMs: number, afterPage = false) => {
+    (expectedCycleId: number, scheduledDeadlineMs: number, afterPage = false, crewAttempt = 0) => {
       // A beat that waited for a page came due while the climber watched, so
       // its deadline is late on purpose, not stale.
       //
@@ -135,7 +339,10 @@ export function RestTimerAutoAdvanceScheduler() {
       // that came due while the phone was in a pocket can land here first. Check
       // the deadline rather than trusting the listener to have re-anchored.
       if (!afterPage && isAutoAdvanceDeadlineStale(scheduledDeadlineMs, nowMs())) {
-        reanchorRestTimerAfterBackground(nowMs(), scheduledDeadlineMs);
+        // A crew clock is the crew's: only the phone that paces it restarts it.
+        if (getRestTimerState().crew === null || pacesTheCrew()) {
+          reanchorRestTimerAfterBackground(nowMs(), scheduledDeadlineMs);
+        }
         return;
       }
 
@@ -175,22 +382,23 @@ export function RestTimerAutoAdvanceScheduler() {
       // A tick or send rule asks again at the fire, against the climb on the
       // wall NOW: a manual Next that lands just before the timeout leaves the new
       // climb without its tick, and walking on from it would skip a climb.
-      const { lastTick } = getRestTimerState();
+      const { lastTick, crew } = getRestTimerState();
       const currentQueueItemUuid = inputs.currentClimbQueueItem?.uuid ?? null;
       if (!restAdvanceAllowed({ advanceOn, currentQueueItemUuid, lastTick })) return;
 
-      // Claim the cycle BEFORE advancing: a stale timeout from a re-run effect
-      // or a remount loses the race here rather than skipping a second climb.
-      // Under a tick or send rule the claim also clears the anchor and the tick,
-      // so the next climb rests only once it is logged.
-      const anchorAfter = anchorAfterFire({ mode, advanceOn });
-      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs, anchorAfter)) return;
+      if (crew !== null) {
+        // The server claims the beat (see fireCrewBeat). A clock this app
+        // cannot run, or a phone that no longer paces it, moves nothing.
+        if (crew.config === null || !pacesTheCrew()) return;
+        void fireCrewBeat({ expectedCycleId, deadlineMs: scheduledDeadlineMs, attempt: crewAttempt });
+        return;
+      }
 
-      playRestTimerCue({ kind: 'advance' });
-      nextClimb();
+      advanceLocally(expectedCycleId, scheduledDeadlineMs);
     },
-    [mode, advanceOn, nextClimb],
+    [advanceOn, advanceLocally, fireCrewBeat, pacesTheCrew],
   );
+  fireAdvanceRef.current = fireAdvance;
 
   // A workout stage's tick or send rule: the rest only moves the wall once the
   // climb on it was logged (limit: sent). Otherwise the rest runs out with the
@@ -325,13 +533,19 @@ export function RestTimerAutoAdvanceScheduler() {
   // Coming back from the background, a deadline that passed while away was never
   // actionable. Re-anchor and start a fresh cycle rather than moving the wall for
   // an interval the climber never watched.
+  //
+  // With a crew clock only the phone pacing it restarts it (the crew publisher
+  // sends the restart on); a phone that handed the board over while it was
+  // away must not move everyone's rest. The role is read now, not as it was
+  // when the listener was set up, since the board can change hands meanwhile.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState !== 'active') return;
+      if (getRestTimerState().crew !== null && !pacesTheCrew()) return;
       reanchorRestTimerAfterBackground(nowMs(), deadlineMs);
     });
     return () => subscription.remove();
-  }, [deadlineMs]);
+  }, [deadlineMs, pacesTheCrew]);
 
   return null;
 }

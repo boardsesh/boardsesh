@@ -10,7 +10,8 @@ import type {
   QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
-import type { PublishPlaybackStateInput } from '@boardsesh/queue-react';
+import type { PublishPlaybackStateInput, SessionRestCadenceSendOptions } from '@boardsesh/queue-react';
+import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
 
@@ -199,6 +200,14 @@ type QueueContextValue = {
   subscribeToPlaybackEvents: (listener: (event: PlaybackStateChangedEvent) => void) => () => void;
   /** Broadcast local route-playback state to party peers. Best-effort; no-op solo. */
   publishPlaybackState: (input: PublishPlaybackStateInput) => Promise<void>;
+  /**
+   * Change the session's shared rest clock (#5382). Null with no session;
+   * throws on a transport error, so the caller decides what a lost write means.
+   */
+  setSessionRestCadence: (
+    input: SessionRestCadenceInput,
+    options?: SessionRestCadenceSendOptions,
+  ) => Promise<SetSessionRestCadencePayload | null>;
 };
 
 export const QueueContext = createContext<QueueContextValue | null>(null);

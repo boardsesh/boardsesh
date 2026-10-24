@@ -62,6 +62,10 @@ vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
 
+// The crew pacer line reads the wall-driver rule (the queue and Bluetooth
+// providers); it has its own tests (rest-timer-pacer-caption.test.tsx).
+vi.mock('../RestTimerPacerCaption', () => ({ RestTimerPacerCaption: () => null }));
+
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../theme/typography', () => ({
   CHROME_LABEL_MAX_FONT_SCALE: 1.2,

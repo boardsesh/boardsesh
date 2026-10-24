@@ -46,7 +46,9 @@ import { RestTimerHeroClock } from './RestTimerPill';
 import { RestLengthPicker } from './RestLengthPicker';
 import { formatRestLength, hasRestLength } from './rest-length.logic';
 import { RestTimerWorkoutPacingRow } from './RestTimerWorkoutPacingRow';
-import { useRestTimerStagePacing } from '../../hooks/use-effective-rest-pacing';
+import { useCrewRestConfig, useRestTimerStagePacing } from '../../hooks/use-effective-rest-pacing';
+import { RestTimerCrewNote } from './RestTimerCrewNote';
+import { restTimerCrewAutoAdvanceDescription } from './RestTimerPacerCaption';
 
 /**
  * Rest length: one pill that steps 30 s a tap, and the fine slider it reveals on
@@ -111,6 +113,11 @@ function RestTimerLengthSetting({ inset }: { inset: boolean }) {
  * still can't move the queue, so telling them to pick one would send them round
  * a loop that ends where it started.
  *
+ * With a crew clock (#5382) auto-advance is the crew's setting instead: anyone
+ * in the session may switch it, and the line says whose phone moves the wall
+ * for everyone. Only the no-length reason still blocks it, since a change here
+ * hands the crew this climber's rest length.
+ *
  * Hidden while a workout stage paces the timer: a stage always auto-advances.
  */
 export function RestTimerAutoAdvanceRow() {
@@ -124,14 +131,16 @@ function RestTimerAutoAdvanceSetting() {
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   // The scheduler's own rule (lib/session-timer/driver-rule.ts), so the switch
   // can never say yes where the scheduler would refuse.
-  const { blockedReason: driverBlockedReason } = useSessionTimerDriver();
+  const { blockedReason: driverBlockedReason, role, pacerDisplayName } = useSessionTimerDriver();
+  const followsCrewClock = useCrewRestConfig() !== null;
 
   const blockedReason =
-    driverBlockedReason !== null
+    driverBlockedReason !== null && !followsCrewClock
       ? t('mobile.restTimer.autoAdvanceBlocked')
       : hasRestLength(targetSeconds)
         ? null
         : t('mobile.restTimer.autoAdvanceNeedsLength');
+  const crewDescription = followsCrewClock ? restTimerCrewAutoAdvanceDescription(role, pacerDisplayName, t) : null;
 
   return (
     <View style={styles.autoAdvanceGroup}>
@@ -140,7 +149,7 @@ function RestTimerAutoAdvanceSetting() {
         // Short enough to read at a glance. The "only while the app is open"
         // caveat lives in the group footnote below: SwitchRow includes both its
         // label and description in the accessible name.
-        description={blockedReason ?? t('mobile.restTimer.autoAdvanceHint')}
+        description={blockedReason ?? crewDescription ?? t('mobile.restTimer.autoAdvanceHint')}
         value={autoAdvance}
         onValueChange={setAutoAdvance}
         disabled={blockedReason !== null}
@@ -293,6 +302,9 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
         {/* The rest keeps running while this is open, so the sheet shows it. Its
             own leaf — the 1 Hz tick stops here and never reaches this form. */}
         <RestTimerHeroClock />
+
+        {/* A crew's clock is everyone's: say so before the controls that change it. */}
+        <RestTimerCrewNote placement="sheet" />
 
         {/* Rest, then cadence, then what happens when it runs out — the order
             you set them up in. The auto-advance switch carries no section
