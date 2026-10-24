@@ -22,6 +22,7 @@ import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 import { userDataExportFamily } from './user-data-export';
 import { sprayWallArtFamily } from './spray-wall-art';
 import { sprayWallHealthFamily } from './spray-wall-health';
+import { communityMonthlyStatsFamily } from './community-monthly-stats';
 
 export { BackgroundJobError, InvalidJobPayloadError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -46,6 +47,7 @@ const FAMILY_MODULES = {
   'user-data-export': userDataExportFamily,
   'spray-wall-art': sprayWallArtFamily,
   'spray-wall-health': sprayWallHealthFamily,
+  'community-monthly-stats': communityMonthlyStatsFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

@@ -29,7 +29,16 @@ export type BackendAnalyticsEvent =
   // #6062). The distinct id is a fixed synthetic actor; count WEEKS, and read
   // the properties, never the event volume. Contract:
   // services/analytics/wall-health-events.ts and docs/growth-metrics.md.
-  | 'Spray Wall Health Weekly';
+  | 'Spray Wall Health Weekly'
+  // The monthly community recap (community-monthly-stats batch family): one
+  // summary and twenty ranked rows (top gyms, top climbers) per UTC month, on
+  // the fixed actor `system:community-monthly`, re-sent daily under
+  // deterministic uuids. Dedupe by uuid, keep the newest. `Community Monthly
+  // Rank` carries the one personal value a backend event may carry, see
+  // below. Contract: services/analytics/community-monthly-events.ts and
+  // docs/growth-metrics.md.
+  | 'Community Monthly Summary'
+  | 'Community Monthly Rank';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not
@@ -44,6 +53,19 @@ export type BackendAnalyticsEvent =
  * - every event carries `$process_person_profile: false`, so PostHog creates no
  *   person profile for it;
  * - property names that carry identity (`userId`, `email`, ...) are dropped.
+ *
+ * One written exception: `Community Monthly Rank.climberName`, the display
+ * name of a climber in a month's top ten. It is set only for a public account
+ * that has not chosen to be anonymous on boards it doesn't own, which are the
+ * people a signed-out visitor already sees named on a board leaderboard.
+ * Everyone else keeps their rank with a null name. No id, avatar or profile
+ * link travels with it, and the recap re-sends every month in its window daily
+ * (the last 2 months) and every Monday (the last 13), so a climber who goes
+ * private, turns on anonymity or deletes their account loses their name from
+ * every month in that window within 7 days. A month older than 13 is no
+ * longer re-sent and keeps the names it was last sent with. Nothing else may
+ * name a person here (docs/analytics-consent.md, "Named climbers in the
+ * community recap").
  */
 interface CaptureBackendEventOptions {
   properties?: AnalyticsProperties;
@@ -259,6 +281,22 @@ export function captureBackendEvent(
   } catch (error) {
     logger.warn('[PostHog] Capture failed:', error);
     return false;
+  }
+}
+
+/**
+ * Send whatever is queued now instead of on the next 10 s tick. For a batch
+ * job that queues many events at its end, so a worker stopped right after the
+ * job does not drop them. A failure is logged, never thrown: the events are
+ * telemetry, and the caller's work is already done.
+ */
+export async function flushBackendEvents(): Promise<void> {
+  const posthog = posthogClient;
+  if (!posthog) return;
+  try {
+    await posthog.flush();
+  } catch (error) {
+    logger.warn('[PostHog] Flush failed:', error);
   }
 }
 

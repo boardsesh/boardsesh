@@ -4,6 +4,7 @@ const posthogMocks = vi.hoisted(() => ({
   PostHog: vi.fn(),
   capture: vi.fn(),
   on: vi.fn(),
+  flush: vi.fn(),
   shutdown: vi.fn(),
 }));
 const loggerMock = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ describe('backend PostHog analytics helper', () => {
       return {
         capture: posthogMocks.capture,
         on: posthogMocks.on,
+        flush: posthogMocks.flush,
         shutdown: posthogMocks.shutdown,
       };
     });
@@ -245,6 +247,23 @@ describe('backend PostHog analytics helper', () => {
     await shutdownPosthog();
 
     expect(posthogMocks.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('flushes queued events on request, and swallows a failed flush', async () => {
+    const { flushBackendEvents: flushWithoutClient } = await loadPosthogModule();
+    await flushWithoutClient();
+    expect(posthogMocks.flush).not.toHaveBeenCalled();
+
+    vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+    vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+    const { captureBackendEvent, flushBackendEvents } = await loadPosthogModule();
+    captureBackendEvent('Community Monthly Summary', { systemDistinctId: 'system:community-monthly' });
+    await flushBackendEvents();
+    expect(posthogMocks.flush).toHaveBeenCalledOnce();
+
+    posthogMocks.flush.mockRejectedValueOnce(new Error('network down'));
+    await expect(flushBackendEvents()).resolves.toBeUndefined();
+    expect(loggerMock.warn).toHaveBeenCalledWith('[PostHog] Flush failed:', expect.any(Error));
   });
 
   // #3814: without this gate, a key present in ANY non-production runtime (a

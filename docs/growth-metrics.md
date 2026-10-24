@@ -525,6 +525,95 @@ beside them. What the lines say at rollout time decides the next board —
 alongside `Board Demand Reported`, which is the same ledger from the other
 end: the demand that has not become a wall yet.
 
+## Community monthly recap
+
+The numbers behind the PostHog "Community: monthly recap" dashboard and the
+monthly r/kilterboard post: how many climbers lit climbs on real boards, the
+ten busiest public gyms and the ten climbers with the most sends, per UTC
+calendar month. PostHog has no Postgres connection, so the
+`community-monthly-stats` batch family (`docs/background-workers.md`) computes
+them from the app tables and sends them as personless events. Active users
+are not repeated here: read them from `Active Users Snapshot` (above).
+
+- **Filter:** `event IN ('Community Monthly Summary', 'Community Monthly Rank')`,
+  distinct id `system:community-monthly`, `$lib = posthog-node`,
+  `$process_person_profile = false`. Each event is dated noon UTC on the 1st of
+  the month it measures.
+- **Re-sent on purpose.** Every day at 07:30 UTC the family re-sends the
+  current and the previous month (`months: 2`); every Monday it re-sends the
+  current month and the twelve before it (`months: 13`). The first Monday run
+  is the 12-month backfill. The current month fills in day by day (`complete`
+  is false until it ends), and the previous month settles once late lighting
+  has landed.
+- **Dedupe by uuid, keep the newest.** Every re-send reuses the same uuid: a
+  v5 hash of `boardsesh:community-monthly:<month>:summary` or
+  `boardsesh:community-monthly:<month>:<list>:<rank>`. A query can still see
+  several copies of one uuid, so every tile keeps one row per uuid, the one
+  with the newest `created_at`, which is the latest measurement
+  (`argMax(properties.X, created_at) ... GROUP BY uuid`).
+- **No cohort, not zero.** A month in which nobody lit a climb sends nothing,
+  not a summary of zeros. A month that had events and then lost every lit
+  climb (every board behind them deleted) keeps its last events.
+
+`Community Monthly Summary`, one per month:
+
+| Property | Definition |
+| --- | --- |
+| `month` | `YYYY-MM`, the UTC calendar month measured. |
+| `complete` | False for the month that has not ended yet; read it as partial. |
+| `climbersWhoLit` | Distinct climbers who lit a climb: `board_climb_events` with `source = 'boardsesh'` (a phone pushed it to the LEDs after about 60 s of presence), by `confirmed_at`. A lit climb whose climber deleted their account still counts in `climbsLit`, never here. |
+| `climbsLit` | Those lit climbs, on every board. |
+| `boardsLit` | Distinct boards they were lit on, every board (home walls and private boards too: it is a count). |
+| `gymsWithActivity` | Public, undeleted gyms with at least one lit climb on a public, listed, live gym board (`ENUMERABLE_GYM_BOARDS`). |
+| `sendsLogged` | Native flash and send ticks (`origin = 'native'`), by `climbed_at`. Logbook imports never count, so an import does not inflate the month it ran in. A total: no privacy filter. |
+| `climbersWhoLogged` | Distinct climbers behind those ticks. |
+| `newAccounts` | Accounts created in the month (`users.created_at`), without the reserved system accounts. |
+
+`Community Monthly Rank`, exactly ten per list per month:
+
+| Property | Definition |
+| --- | --- |
+| `month`, `complete` | As on the summary. |
+| `list` | `gyms` or `climbers`. |
+| `rank` | 1 to 10. |
+| `empty` | True on a padding row: the list had fewer than ten entries. Every other property but these four is null on it. |
+| `gymName`, `gymSlug` | The gym's public name and slug (`boardsesh.com/gym/<slug>`; the slug can be null). |
+| `climbers` | Distinct climbers who lit a climb on the gym's public, listed, live boards. The rank orders by this, then `climbsLit`, then the older gym. |
+| `climbsLit`, `boards` | Lit climbs and distinct boards behind `climbers`. |
+| `climberName` | The climber's display name, else their account name, under the naming rule below; null otherwise. |
+| `named` | Whether `climberName` is set. |
+| `sends`, `flashes` | Native flash and send ticks a signed-out visitor may read (`tickPrivacyCondition` with no viewer), and the flashes among them. The rank orders by sends, then flashes, then `sendDays`, then a fixed order that is not sent. |
+| `sendDays` | Distinct UTC days with one of those sends. |
+
+**Always ten rows.** A list with fewer than ten entries is padded with
+`empty: true` rows, so when a list shrinks (a climber goes private, a gym is
+deleted) its old bottom rows are overwritten by the same uuids instead of
+lingering.
+
+**The naming rule** is the board leaderboard's for a signed-out visitor on a
+board the climber does not own (`boardLeaderboard`):
+
+- Only sends a signed-out visitor may read count. A private account's sends
+  (except any it marked public itself), `only_me` and followers-only sends, and
+  sends on unlisted, draft or private spray-wall climbs drop out of the
+  ranking.
+- A ranked climber is named only when their account is public and they have
+  not chosen "Stay anonymous on boards I don't own". A global ranking spans
+  boards they don't own, so that choice always applies. Otherwise
+  `climberName` is null and they keep their rank and counts: show them as
+  "Anonymous climber".
+- Nothing else about a climber is sent: no id, avatar or profile link.
+
+A climber who goes private, turns on anonymity or deletes their account drops
+out of the current and previous month by the next morning, and out of every
+month in the 13-month window by the next Monday. A month older than that is
+no longer re-sent and keeps the names it last carried
+([analytics-consent.md](./analytics-consent.md#named-climbers-in-the-community-recap)).
+
+**What may be published.** Totals and per-gym counts may go in the post. A
+count of Boardsesh users split by board brand may not, so no tile breaks these
+numbers down by board type.
+
 ## Acquisition
 
 These are separate counts. None of them is a funnel of the same people.
@@ -1008,6 +1097,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6342 backend deploy (fill in the date when it ships) | Consented capture is geolocated to the visitor again; country-based filters work from here |
 | #6574 OTA (fill in the date when it ships) | The Bluetooth quickstart lists boards with no serial. `Board Quickstart Scan Finished` gains `serialless_count` (boards heard with no serial, one per Bluetooth device: MoonBoards and Kilter-built boxes advertising a bare `Kilter Board`) and `moonboard_count` (the MoonBoard part of it). `found_count` stays serials-only, so its series continues across the change. Both new counts are devices, not boards: an Android controller that rotates its private address mid-scan can count twice. Earlier events have no `serialless_count`; a scan that heard nothing has all three at zero |
 | #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
+| community-monthly-stats first run (fill in the date when it ships) | `Community Monthly Summary` and `Community Monthly Rank` start. The first Monday run sends the 12 months before it as well, so those months appear on one day; read them by their own `month`, not by when they arrived |
 | 2026-10-19 (crew browse UI, #4281) | `Set Active Climb` gains `trigger = 'put_on_wall'` when a climber commits a pinned preview on purpose: the Put on the wall (or Set active) button, or the lightbulb relaying it. It is a real pick: filters on `trigger != 'climb_saved'` count it unchanged. Crew commits are the ones with `participantCount >= 2` |
 
 None of these repairs past data. Annotate them; do not backfill.

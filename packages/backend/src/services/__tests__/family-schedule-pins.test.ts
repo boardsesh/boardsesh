@@ -29,6 +29,10 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'user-data-export': [],
   'spray-wall-art': [],
   'spray-wall-health': [{ key: 'weekly', cron: '45 8 * * 1', tz: 'UTC', roles: ['batch'] }],
+  'community-monthly-stats': [
+    { key: 'daily', cron: '30 7 * * 0,2-6', tz: 'UTC', roles: ['batch'] },
+    { key: 'weekly', cron: '30 7 * * 1', tz: 'UTC', roles: ['batch'] },
+  ],
 };
 
 describe('family schedules', () => {

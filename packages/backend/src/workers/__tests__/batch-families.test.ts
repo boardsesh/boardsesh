@@ -24,7 +24,7 @@ vi.mock('@boardsesh/db/jobs', async (importOriginal) => {
   return { ...actual, ...jobs };
 });
 
-// The wall-health family is the only one that captures a PostHog event; the
+// The wall-health and community-recap families capture PostHog events; the
 // real client is environment-gated, so the test pins the CALL instead.
 const capture = vi.hoisted(() => ({
   captureBackendEvent: vi.fn(
@@ -32,14 +32,25 @@ const capture = vi.hoisted(() => ({
       _eventName: string,
       _options: {
         systemDistinctId: `system:${string}`;
-        properties?: Record<string, string | number>;
+        properties?: Record<string, string | number | boolean | null>;
+        timestamp?: Date;
+        uuid?: string;
       },
     ): boolean => false,
   ),
+  flushBackendEvents: vi.fn(async (): Promise<void> => {}),
 }));
 vi.mock('../../services/analytics/posthog', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/analytics/posthog')>();
   return { ...actual, ...capture };
+});
+
+// The recap's queries run against the test database in
+// services/__tests__/community-monthly-stats.test.ts; here only the hand-off.
+const recap = vi.hoisted(() => ({ computeCommunityMonthlyStats: vi.fn() }));
+vi.mock('../../services/community-monthly-stats', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/community-monthly-stats')>();
+  return { ...actual, ...recap };
 });
 
 const {
@@ -57,6 +68,8 @@ const { refreshClimbNeighborsFamily } = await import('../families/refresh-climb-
 const { refreshMoonboardAngleEstimatesFamily } = await import('../families/refresh-moonboard-angle-estimates');
 const { refreshMoonboardWideAngleEstimatesFamily } = await import('../families/refresh-moonboard-wide-angle-estimates');
 const { sprayWallHealthFamily } = await import('../families/spray-wall-health');
+const { communityMonthlyStatsFamily } = await import('../families/community-monthly-stats');
+const { logger } = await import('../../utils/logger');
 
 type Context = Parameters<typeof refreshRecommendationsFamily.execute>[0];
 
@@ -113,6 +126,7 @@ describe('batch family registration', () => {
         'refresh-moonboard-angle-estimates',
         'refresh-moonboard-wide-angle-estimates',
         'spray-wall-health',
+        'community-monthly-stats',
       ]),
     );
     expect(familiesForRole('interactive-import').map((family) => family.name)).toEqual([
@@ -138,6 +152,7 @@ describe('batch family registration', () => {
     expect(requireFamily('refresh-moonboard-angle-estimates')).toBe(refreshMoonboardAngleEstimatesFamily);
     expect(requireFamily('refresh-moonboard-wide-angle-estimates')).toBe(refreshMoonboardWideAngleEstimatesFamily);
     expect(requireFamily('spray-wall-health')).toBe(sprayWallHealthFamily);
+    expect(requireFamily('community-monthly-stats')).toBe(communityMonthlyStatsFamily);
   });
 
   it('keeps each lease inside pg-boss limits and each heartbeat window valid', () => {
@@ -146,6 +161,8 @@ describe('batch family registration', () => {
       refreshHoldFeaturesFamily,
       refreshClimbGradesFamily,
       refreshClimbNeighborsFamily,
+      // Daily, and its Monday run must end before Tuesday's.
+      communityMonthlyStatsFamily,
     ];
     const weekly = [
       refreshMoonboardAngleEstimatesFamily,
@@ -206,6 +223,14 @@ describe('batch family registration', () => {
       deadlineSeconds: 518_400,
       heartbeatSeconds: 300,
     });
+    expect(communityMonthlyStatsFamily.options).toMatchObject({
+      // Five read-only scans; the weekly 13-month run checks tick privacy per send.
+      expireInSeconds: 900,
+      retryLimit: 1,
+      retryDelay: 300,
+      deadlineSeconds: 72_000,
+      heartbeatSeconds: 300,
+    });
     expect(refreshClimbNeighborsFamily.options).toEqual({
       expireInSeconds: 21_600,
       retryLimit: 2,
@@ -242,6 +267,22 @@ describe('batch family registration', () => {
       { payload: { publish: true } },
     ]);
     expect(await sprayWallHealthFamily.schedules?.[0].fanOut(database)).toEqual([{ payload: { dryRun: false } }]);
+  });
+
+  it('re-sends the community recap daily for two months and every Monday for thirteen', async () => {
+    expect(communityMonthlyStatsFamily.schedules?.map(({ key, cron, tz }) => ({ key, cron, tz }))).toEqual([
+      { key: 'daily', cron: '30 7 * * 0,2-6', tz: undefined },
+      { key: 'weekly', cron: '30 7 * * 1', tz: undefined },
+    ]);
+    const [daily, weekly] = communityMonthlyStatsFamily.schedules ?? [];
+    expect(await daily.fanOut(database)).toEqual([{ payload: { months: 2, dryRun: false } }]);
+    expect(await weekly.fanOut(database)).toEqual([{ payload: { months: 13, dryRun: false } }]);
+    // Each slot's payload is one the worker accepts, under its own key.
+    for (const schedule of [daily, weekly]) {
+      const [request] = await schedule.fanOut(database);
+      const parsed = communityMonthlyStatsFamily.payload.parse(request.payload);
+      expect(communityMonthlyStatsFamily.singletonKey?.(parsed)).toBe(String(request.payload.months));
+    }
   });
 
   it('fans the neighbours schedule out to one job per board, cheapest first', async () => {
@@ -330,6 +371,22 @@ describe('payloads and dedup keys', () => {
     });
     expect(refreshMoonboardWideAngleEstimatesFamily.payload.safeParse({ validateOnly: true }).success).toBe(false);
     expect(refreshMoonboardWideAngleEstimatesFamily.singletonKey?.({ publish: true })).toBe('weekly');
+  });
+
+  it('community-monthly-stats defaults to two months and keys by the window size', () => {
+    expect(communityMonthlyStatsFamily.payload.parse({})).toEqual({ months: 2, dryRun: false });
+    expect(communityMonthlyStatsFamily.payload.parse({ months: 13, dryRun: true })).toEqual({
+      months: 13,
+      dryRun: true,
+    });
+    expect(communityMonthlyStatsFamily.payload.parse({ months: 1 })).toEqual({ months: 1, dryRun: false });
+    for (const months of [0, 14, 1.5, '2', -1]) {
+      expect(communityMonthlyStatsFamily.payload.safeParse({ months }).success, String(months)).toBe(false);
+    }
+    expect(communityMonthlyStatsFamily.payload.safeParse({ months: 2, month: '2026-09' }).success).toBe(false);
+    expect(communityMonthlyStatsFamily.payload.safeParse({ dryRun: 'yes' }).success).toBe(false);
+    expect(communityMonthlyStatsFamily.singletonKey?.({ months: 2, dryRun: false })).toBe('2');
+    expect(communityMonthlyStatsFamily.singletonKey?.({ months: 13, dryRun: true })).toBe('13');
   });
 
   it('spray-wall-health defaults to the live weekly slot and keys a backfill by its week', () => {
@@ -572,6 +629,94 @@ describe('execute', () => {
       expect(failure).toBeInstanceOf(BackgroundJobError);
       expect(failure).toMatchObject({ code: 'WEEK_START_INVALID', retryable: false });
       expect(capture.captureBackendEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('community-monthly-stats', () => {
+    const september = {
+      month: '2026-09',
+      complete: true,
+      summary: {
+        climbersWhoLit: 4,
+        climbsLit: 30,
+        boardsLit: 2,
+        gymsWithActivity: 1,
+        sendsLogged: 12,
+        climbersWhoLogged: 3,
+        newAccounts: 2,
+      },
+      topGyms: [{ rank: 1, gymName: 'Alpha Gym', gymSlug: 'alpha-gym', climbers: 4, climbsLit: 30, boards: 2 }],
+      topClimbers: [
+        { rank: 1, climberName: 'Alice Secretname', sends: 7, flashes: 2, sendDays: 3 },
+        { rank: 2, climberName: null, sends: 5, flashes: 0, sendDays: 2 },
+      ],
+    };
+    const october = { ...september, month: '2026-10', complete: false };
+
+    let infoSpy: ReturnType<typeof vi.spyOn>;
+    const loggedLines = (): string[] => infoSpy.mock.calls.map((call: unknown[]) => String(call[0]));
+
+    beforeEach(() => {
+      capture.captureBackendEvent.mockReset().mockReturnValue(true);
+      capture.flushBackendEvents.mockClear();
+      infoSpy = vi.spyOn(logger, 'info');
+      recap.computeCommunityMonthlyStats.mockReset().mockResolvedValue({
+        months: [september, october],
+        skippedMonths: [],
+      });
+    });
+
+    afterEach(() => {
+      infoSpy.mockRestore();
+    });
+
+    it('measures the window and sends 21 personless events per month', async () => {
+      const { context: jobContext } = context('community-monthly-stats');
+      await communityMonthlyStatsFamily.execute(jobContext, { months: 2, dryRun: false });
+      expect(recap.computeCommunityMonthlyStats).toHaveBeenCalledWith({
+        database,
+        now: expect.any(Date),
+        months: 2,
+        signal: jobContext.signal,
+      });
+      const calls = capture.captureBackendEvent.mock.calls;
+      expect(calls).toHaveLength(42);
+      expect(calls.filter(([eventName]) => eventName === 'Community Monthly Summary')).toHaveLength(2);
+      expect(calls.filter(([eventName]) => eventName === 'Community Monthly Rank')).toHaveLength(40);
+      for (const [, options] of calls) {
+        expect(options.systemDistinctId).toBe('system:community-monthly');
+        expect(options.uuid).toMatch(/^[0-9a-f-]{36}$/);
+      }
+      expect(calls[0][1]).toMatchObject({
+        timestamp: new Date('2026-09-01T12:00:00.000Z'),
+        properties: { month: '2026-09', complete: true, climbsLit: 30 },
+      });
+      expect(capture.flushBackendEvents).toHaveBeenCalledTimes(1);
+      expect(loggedLines().at(-1)).toBe('community-monthly-stats emitted 42 of 42 events for 2 months');
+    });
+
+    it('succeeds with analytics disabled', async () => {
+      capture.captureBackendEvent.mockReturnValue(false);
+      await expect(
+        communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, { months: 13, dryRun: false }),
+      ).resolves.toBeUndefined();
+      expect(loggedLines().at(-1)).toContain('analytics disabled, nothing emitted');
+      expect(capture.flushBackendEvents).not.toHaveBeenCalled();
+    });
+
+    it('emits nothing on a dry run and never logs a climber name', async () => {
+      await communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, {
+        months: 2,
+        dryRun: true,
+      });
+      expect(capture.captureBackendEvent).not.toHaveBeenCalled();
+      expect(capture.flushBackendEvents).not.toHaveBeenCalled();
+      const logged = loggedLines().join('\n');
+      expect(logged).toContain('1. <named> (7 sends, 2 flashes, 3 days)');
+      expect(logged).toContain('2. <anonymous> (5 sends, 0 flashes, 2 days)');
+      expect(logged).toContain('Alpha Gym');
+      expect(logged).toContain('2026-10 (partial)');
+      expect(logged).not.toContain('Secretname');
     });
   });
 

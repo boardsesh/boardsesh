@@ -137,6 +137,13 @@ describe('snapshotActiveUsers', () => {
     expect(uuids[2]).not.toBe(uuids[0]);
   });
 
+  it('keeps the uuid every snapshot since 2026-10-15 was sent under', async () => {
+    // Pinned from the implementation that shipped the event. A change here
+    // would land a re-run day as a second event instead of collapsing into it.
+    await snapshotActiveUsers({ now: RUN_AT });
+    expect(captureBackendEventMock.mock.calls[0]?.[1].uuid).toBe('3a051544-ac77-5665-9333-f8e22060254b');
+  });
+
   it('re-runs a missed day from a later morning, dated and keyed to that day', async () => {
     const userId = await createUser();
     await seedActivity([

@@ -271,6 +271,7 @@ module. The module declares:
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `spray-wall-health` | `batch` | 600 s | 1, after 300 s | 6 days | `weekly`, or the backfilled `weekStart` |
+| `community-monthly-stats` | `batch` | 900 s | 1, after 300 s | 20 h | the window size, `months` (`2` daily, `13` Mondays) |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 48 600 s (the fan-out budget) | `aurora` / `kilter` |
@@ -362,6 +363,7 @@ fence (`context.transaction`). The worker never imports
 | `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 600 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
 | `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 300 s | `board_climb_grades` (no coefficients: the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
 | `spray-wall-health` | `45 8 * * 1` | `{ weekStart?, dryRun? }` | 300 s | nothing in Postgres; one `Spray Wall Health Weekly` PostHog event (`docs/growth-metrics.md`) | none — new with #6062 |
+| `community-monthly-stats` | `30 7 * * 0,2-6` (`daily`, `{ months: 2 }`), `30 7 * * 1` (`weekly`, `{ months: 13 }`) | `{ months = 2 (1 to 13), dryRun? }` | 300 s | nothing in Postgres; 21 `Community Monthly Summary` / `Community Monthly Rank` PostHog events per month with lighting (`docs/growth-metrics.md`, "Community monthly recap") | none, new |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
@@ -489,8 +491,9 @@ above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
 `user_hold_classifications`, `board_climb_grades`, `board_grade_coefficients`,
 `board_climb_neighbors` (SELECT, INSERT, DELETE), `board_climb_neighbor_runs`
 and `board_climb_neighbor_group_runs`. The neighbours job reads only
-`board_climbs` besides its own tables. On `users` it may read `id` and insert `(id, name, email)` only, for the two
-reserved system users. For `export-board-snapshots` it also reads the catalogue
+`board_climbs` besides its own tables. On `users` it may insert `(id, name, email)` only, for the two
+reserved system users, and read `id`, plus `name` and `created_at` for the
+community recap below; never `email` or `image`. For `export-board-snapshots` it also reads the catalogue
 tables (`board_products`, `board_layouts`, `board_product_sizes`,
 `board_placement_roles`, `board_leds`, `board_kits`, `board_difficulty_grades`,
 `board_attempts`, and `board_beta_links` without `created_by_user_id`,
@@ -506,6 +509,38 @@ earlier estimates and, for the wide-angle job, the angle job's 25°/40° rows),
 and write only `board_climb_grades` and, for the angle job,
 `board_grade_coefficients`. All of these are already granted for the grade
 job.
+
+`community-monthly-stats` is read-only and adds column grants
+(`COMMUNITY_MONTHLY_STATS_GRANTS`) on top of the list above:
+
+| Table | Columns | Why |
+| --- | --- | --- |
+| `board_climb_events` | `source` | Only Boardsesh's own LED writes count as lighting. |
+| `user_boards` | `is_unlisted` | A gym ranks only on its public, listed boards (`ENUMERABLE_GYM_BOARDS`). |
+| `gyms` | `id, name, slug, is_public, deleted_at` | The gym ranking: the public name and slug, and the flags that keep private and deleted gyms out. No owner, contact or location. |
+| `boardsesh_ticks` | `uuid` | The tick privacy rule finds a tick's audience in `content_privacy` by its uuid. |
+| `users` | `name, created_at` | New accounts per month, and a ranked climber's fallback name. |
+| `user_profiles` | `display_name, anonymous_on_foreign_boards` | A ranked climber's chosen name and their opt-out from being named. |
+| `resource_privacy` | `kind, resource_id, audience, inherit_followers` | The spray-wall half of the tick privacy rule. |
+| `resource_grants` | `kind, resource_id, user_id, status` | The same. |
+| `user_follows` | `follower_id, following_id` | The same. |
+| `gym_members` | `gym_id, user_id` | The same. |
+
+The last four come from `sprayClimbVisibilityCondition`, which the tick
+privacy rule applies to every send: `resource_privacy` decides whether a spray
+wall is public. The grant, follow and membership branches compare against the
+viewer, which is null for the recap, so they never match a row, but PostgreSQL
+checks the privileges of every table a statement names before running it. The
+batch login can therefore read who follows whom, gym memberships and board
+grants; it reads no dates, roles, inviters or location audiences on those
+tables.
+
+The family's schedule exists only once the backend has booted with it, and the
+backend deploys after `migrate`, so its first scheduled run already has these
+grants (see "A new worker image can start before the migrator has run"). An
+operator run enqueued before `migrate` finishes fails with `permission denied`
+and retries once.
+
 `packages/backend/src/services/__tests__/job-queue-roles.test.ts` runs every
 family under exactly these grants, and `job-queue-roles-snapshots.test.ts` runs
 the snapshot exporter under a real login with them plus `pg_read_all_stats`; a
@@ -524,10 +559,12 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-climb
 node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-snapshots '{"mode":"nightly"}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-angle-estimates '{"validateOnly":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-wide-angle-estimates '{"dryRun":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue community-monthly-stats '{"months":2,"dryRun":true}'
 ```
 
 Each family has one dedup key (per board for hold features and neighbours, per
-mode for snapshots, one weekly slot for both MoonBoard jobs), so a manual run
+mode for snapshots, one weekly slot for both MoonBoard jobs, per window size
+for the community recap), so a manual run
 enqueued while the nightly or weekly run is queued returns that queued run with
 `ALREADY_QUEUED`; enqueue again once it has started.
 The reverse holds too: a manual run still queued when the nightly schedule fires

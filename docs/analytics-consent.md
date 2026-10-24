@@ -259,7 +259,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | Android install-referrer attribution | Consent, everywhere | The Play referrer is not even read before the climber's own Allow: reading it is access to information on the device for attribution (ePrivacy Art. 5(3)). Play keeps it for 90 days after install, and the first Allow triggers the read. `Install Attributed` and the install person properties are sent only after the climber's own Allow (`isAttributionPublicationGranted`). The region default does not enable them. |
 | iOS Apple Ads attribution | Consent, everywhere | Native token acquisition, the first-party backend exchange with Apple, and campaign-linked PostHog publication require the climber's own current Allow; the region default never enables them. The exchange sends `basis`, and the backend refuses anything but `explicit` (absent, from an older app, reads as explicit). Tokens are never persisted or sent to diagnostics. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
-| Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
+| Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). One exception: the community recap names public, non-anonymous climbers in a month's top ten, the names a signed-out visitor already sees on a board leaderboard ([below](#named-climbers-in-the-community-recap)). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
 | OTA health ping | Legitimate interest | Anonymous: one random id per install (`ota-install:<uuid>`, the same id that buckets signed-out flags, with the same 13-month lifetime), no account, no person profile, no GeoIP. Per install so adoption and emergency rates can count phones, not launches. If the app cannot read or persist its install id, install-level health is skipped until storage recovers; the launch-only signed-out flag fallback does not enter these counts. |
 
@@ -297,6 +297,39 @@ Live Activity events (and their `... Attribution Gap` twins) carry
 joined into a funnel. A plain hash would not do: session ids travel in join
 links, and anyone holding one could recompute it. With the salt unset, both
 properties are omitted. Rotating the salt breaks joins across the rotation.
+
+### Named climbers in the community recap
+
+One backend event carries a person's name, as a written exception to the rule
+above: `Community Monthly Rank.climberName`, the name of a climber in a
+month's top ten by sends (the community recap, see
+[growth-metrics.md](./growth-metrics.md#community-monthly-recap)). It is kept
+to what a signed-out visitor can already see:
+
+- **Who can be named.** Only a climber whose account is public and who has not
+  chosen "Stay anonymous on boards I don't own", the people a signed-out
+  visitor sees named on a board leaderboard. Everyone else in the top ten is
+  sent with `climberName: null` and keeps their rank and counts.
+- **What is ranked.** Only sends a signed-out visitor may read
+  (`tickPrivacyCondition` with no viewer), so a private account's sends
+  (except any it marked public itself), `only_me` and followers-only sends
+  never move anyone up the list.
+- **What travels with the name.** Nothing that identifies the account: no id,
+  email, avatar or profile link, and the event's distinct id is the fixed
+  `system:community-monthly`, so PostHog makes no person of it and no consent
+  record or person erasure applies to it.
+- **How a name leaves PostHog.** The recap re-sends the last 2 months every
+  morning and the last 13 every Monday under the same event uuids, and the
+  dashboard keeps only the newest copy of each uuid. A climber who goes
+  private, turns on anonymity or deletes their account is unnamed (or drops
+  out of the ranking) in the current and previous month by the next morning,
+  and in every month of the 13-month window within 7 days. Older copies stay
+  in PostHog but are superseded; a query that does not dedupe by uuid can
+  still read them.
+
+Not covered: a month older than 13 months is no longer re-sent, so its rows
+keep the names they last carried. A climber who wants their name out of an
+older month needs those events deleted in PostHog by hand.
 
 ## Erasure
 

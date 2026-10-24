@@ -31,6 +31,7 @@ describe('family registry', () => {
       'user-data-export',
       'spray-wall-art',
       'spray-wall-health',
+      'community-monthly-stats',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

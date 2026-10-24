@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { and, countDistinct, gte, lt, lte } from 'drizzle-orm';
 import type { ActiveUsersPlatform, ActiveUsersSnapshotResult, UserActivityPurgeResult } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db, type Database } from '../db/client';
 import { captureBackendEvent } from './analytics/posthog';
+import { deterministicEventUuid } from './analytics/deterministic-event-uuid';
 import { utcDayOf } from './user-activity';
 import { logger } from '../utils/logger';
 
@@ -74,14 +74,9 @@ async function countActiveUsers(database: Database, firstDay: string, lastDay: s
 /**
  * A UUID derived from the day, so a second send for the same day (an operator
  * re-running the job) is the same PostHog event and collapses into the first.
- * RFC 4122 name-based layout (version 5 nibble, variant bits) over SHA-1.
  */
 function snapshotEventUuid(day: string): string {
-  const digest = createHash('sha1').update(`boardsesh:active-users-snapshot:${day}`).digest();
-  digest[6] = (digest[6] & 0x0f) | 0x50;
-  digest[8] = (digest[8] & 0x3f) | 0x80;
-  const hex = digest.subarray(0, 16).toString('hex');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  return deterministicEventUuid(`boardsesh:active-users-snapshot:${day}`);
 }
 
 function platformPropertyName(prefix: string, platform: ActiveUsersPlatform): string {

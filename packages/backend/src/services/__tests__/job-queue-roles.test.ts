@@ -46,6 +46,8 @@ import { refreshHoldFeaturesFamily } from '../../workers/families/refresh-hold-f
 import { refreshMoonboardAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-angle-estimates';
 import { refreshMoonboardWideAngleEstimatesFamily } from '../../workers/families/refresh-moonboard-wide-angle-estimates';
 import { sprayWallHealthFamily } from '../../workers/families/spray-wall-health';
+import { communityMonthlyStatsFamily } from '../../workers/families/community-monthly-stats';
+import { computeCommunityMonthlyStats } from '../community-monthly-stats';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
@@ -197,6 +199,70 @@ describe('worker login entries', () => {
     expect(() => parseWorkerLogin('batch=robert"; DROP')).toThrow('Invalid job queue role');
   });
 });
+
+const COMMUNITY_RECAP_USER_ID = `${FIXTURE_PREFIX}recap-climber`;
+const COMMUNITY_RECAP_GYM_NAME = 'Recap Fixture Gym';
+const COMMUNITY_RECAP_CLIMBER_NAME = 'Recap Fixture Climber';
+
+/** One public gym board, one lit climb and one native send, this month, by a named public climber. */
+async function seedCommunityRecap(ownerDatabase: JobDatabase): Promise<void> {
+  const now = new Date().toISOString();
+  await ownerDatabase.insert(dbSchema.users).values({
+    id: COMMUNITY_RECAP_USER_ID,
+    email: `${COMMUNITY_RECAP_USER_ID}@example.invalid`,
+    name: COMMUNITY_RECAP_CLIMBER_NAME,
+  });
+  const [gym] = await ownerDatabase
+    .insert(dbSchema.gyms)
+    .values({
+      uuid: randomUUID(),
+      name: COMMUNITY_RECAP_GYM_NAME,
+      slug: 'recap-fixture-gym',
+      ownerId: COMMUNITY_RECAP_USER_ID,
+    })
+    .returning({ id: dbSchema.gyms.id });
+  const [board] = await ownerDatabase
+    .insert(dbSchema.userBoards)
+    .values({
+      uuid: randomUUID(),
+      slug: `${COMMUNITY_RECAP_USER_ID}-board`,
+      ownerId: COMMUNITY_RECAP_USER_ID,
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '1',
+      name: 'Recap fixture wall',
+      gymId: gym.id,
+    })
+    .returning({ id: dbSchema.userBoards.id });
+  await ownerDatabase.insert(dbSchema.boardClimbEvents).values({
+    boardId: board.id,
+    boardType: 'kilter',
+    climbUuid: KILTER_CLIMBS[0],
+    angle: 40,
+    userId: COMMUNITY_RECAP_USER_ID,
+    seq: 1,
+    confirmedAt: now,
+  });
+  await ownerDatabase.insert(dbSchema.boardseshTicks).values({
+    uuid: randomUUID(),
+    userId: COMMUNITY_RECAP_USER_ID,
+    boardType: 'kilter',
+    climbUuid: KILTER_CLIMBS[0],
+    angle: 40,
+    status: 'send',
+    climbedAt: now,
+    boardId: board.id,
+  });
+}
+
+/** The recap fixture's user owns its gym and board (their lighting cascades); its tick has no foreign key here. */
+async function clearCommunityRecap(ownerDatabase: JobDatabase): Promise<void> {
+  await ownerDatabase
+    .delete(dbSchema.boardseshTicks)
+    .where(eq(dbSchema.boardseshTicks.userId, COMMUNITY_RECAP_USER_ID));
+  await ownerDatabase.delete(dbSchema.users).where(eq(dbSchema.users.id, COMMUNITY_RECAP_USER_ID));
+}
 
 /**
  * The batch login's grant list, proven: every batch family runs under a role
@@ -387,10 +453,37 @@ describe('batch worker grants', () => {
       // queries touch under the restricted login.
       await sprayWallHealthFamily.execute(context('spray-wall-health'), { dryRun: false });
 
+      // The monthly community recap over one seeded month: a named climber's
+      // native send and a lit climb on a public gym's board. Every scan runs
+      // as the restricted login, including the tick privacy rule (account,
+      // item audience, the climb's listing and its spray-wall half) and the
+      // naming join, and the read-back proves those paths returned rows.
+      await seedCommunityRecap(ownerDatabase);
+      await communityMonthlyStatsFamily.execute(context('community-monthly-stats'), { months: 13, dryRun: false });
+      const [recapMonth] = (await computeCommunityMonthlyStats({ database, now: new Date(), months: 1 })).months;
+      expect(recapMonth?.topGyms).toContainEqual(
+        expect.objectContaining({ gymName: COMMUNITY_RECAP_GYM_NAME, climbers: 1, climbsLit: 1, boards: 1 }),
+      );
+      expect(recapMonth?.topClimbers).toContainEqual(
+        expect.objectContaining({ climberName: COMMUNITY_RECAP_CLIMBER_NAME, sends: 1, sendDays: 1 }),
+      );
+      expect(recapMonth?.summary.newAccounts).toBeGreaterThanOrEqual(1);
+
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
-      await expect(restricted`SELECT display_name FROM user_profiles LIMIT 1`).rejects.toThrow('permission denied');
-      await expect(restricted`SELECT follower_id FROM user_follows LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT avatar_url FROM user_profiles LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT image FROM users LIMIT 1`).rejects.toThrow('permission denied');
+      // The recap reads a gym's public name and slug, never how to reach it.
+      await expect(restricted`SELECT contact_email FROM gyms LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT owner_id FROM gyms LIMIT 1`).rejects.toThrow('permission denied');
+      // The recap's tick privacy rule names the follow, grant and membership
+      // tables (see COMMUNITY_MONTHLY_STATS_GRANTS); only their key columns.
+      await expect(restricted`SELECT created_at FROM user_follows LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT role FROM gym_members LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT invited_by FROM resource_grants LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT location_audience FROM resource_privacy LIMIT 1`).rejects.toThrow(
+        'permission denied',
+      );
       await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT session_id FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT name FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');
@@ -421,6 +514,7 @@ describe('batch worker grants', () => {
     } finally {
       await restricted.end();
       await clearBatchJobFixture(ownerDatabase);
+      await clearCommunityRecap(ownerDatabase);
       await owner.unsafe(`DROP OWNED BY "${role}"`);
       await owner.unsafe(`DROP ROLE "${role}"`);
       await owner.end();
