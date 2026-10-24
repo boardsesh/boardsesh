@@ -1,5 +1,6 @@
 // The workout runner's inputs, read once (#6291): the queue, what Next lands on,
-// the run's tick log and the rest timer's state, turned into the pure
+// the run's tick log, the rest timer's state and whether this phone may move the
+// wall (the scheduler's crew rule), turned into the pure
 // `describeWorkoutRunner` readout. Every runner surface (the Record tab's
 // "Your workout" card, the player's cards) reads through here, so they agree.
 //
@@ -18,6 +19,7 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { useWorkoutRunLog } from '../lib/workout-run-store';
 import { describeWorkoutRunner, type WorkoutRunnerReadout } from '../lib/workout-runner-readout';
 import { useRestTimerState } from './use-rest-timer';
+import { useSessionTimerDriver } from './use-session-timer-driver';
 
 export type WorkoutRunner = {
   /** Null once no staged climb is left in the queue. */
@@ -37,6 +39,9 @@ export function useWorkoutRunner(sessionId: string, run: WorkoutRun): WorkoutRun
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
   const restState = useRestTimerState();
   const log = useWorkoutRunLog(sessionId);
+  // In a crew only the phone holding the wall moves it, so a passenger's rest
+  // never promises the next climb. The scheduler reads the same rule.
+  const { canAdvanceQueue } = useSessionTimerDriver();
 
   const queueUuids = useMemo(() => queue.map((item) => item.uuid), [queue]);
 
@@ -63,8 +68,8 @@ export function useWorkoutRunner(sessionId: string, run: WorkoutRun): WorkoutRun
   const currentUuid = currentClimbQueueItem?.uuid ?? null;
   const nextUuid = nextItem?.uuid ?? null;
   const readout = useMemo(
-    () => describeWorkoutRunner({ run, queueUuids, currentUuid, nextUuid, log, rest: restState }),
-    [run, queueUuids, currentUuid, nextUuid, log, restState],
+    () => describeWorkoutRunner({ run, queueUuids, currentUuid, nextUuid, log, rest: restState, canAdvanceQueue }),
+    [run, queueUuids, currentUuid, nextUuid, log, restState, canAdvanceQueue],
   );
 
   const resumeUuid = readout?.resumeUuid ?? null;

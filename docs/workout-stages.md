@@ -208,23 +208,30 @@ agree on these points:
 - **Phase.** `climbing`; `resting`, when the current climb's stage paces the timer, the timer
   is armed with a rest to count from (paused counts), and its last tick was on the current climb;
   or `done`, when the climber is past every staged climb, or on the last one and it met its
-  stage's rule (sent on limit, logged anywhere else). The rest is the store's `stagePacing`, the
-  value the timer runs on, and whether it moves the wall is `restAdvanceAllowed`, the
-  scheduler's own rule: after a fall on a limit climb it reads "Then try again".
+  stage's rule (sent on limit; on the minute, logged, or its last beat ran out with nothing
+  after it, which latches `queueEnded`; logged anywhere else). The rest is the store's
+  `stagePacing`, the value the timer runs on, and whether it moves the wall is the scheduler's
+  own rule: this phone may move it (`useSessionTimerDriver().canAdvanceQueue`) and
+  `restAdvanceAllowed`. After a fall on a limit climb it reads "Then try again"; on a crew phone
+  that does not hold the wall it says only the climber driving the wall moves the queue, and
+  "Turn on" promises only to time the rests. A beat that found nothing to move on to stops the
+  clock, and the last climb on the minute counts down to "Workout ends in".
 - **What the card shows.** Where the current climb sits ("4x4 · Round 2 of 4 · 3 of 4", and
   "· Try 3" on a limit climb, in the player's subtitle too) over the climb itself, which opens
   the player. A paced stage adds the rest line (the `RestTimerClock` leaf, then the next
-  climb) or, with the timer off, "Rest timer off · Turn on" (`armRestTimerForWorkout`). Nothing
-  above the clock leaf re-renders per second.
+  climb) or, with the timer off, "Rest timer off · Turn on" (`armRestTimerForWorkout`). The rest
+  line is one element to a screen reader ("Round rest. Rest timer, 2:58 left. Then Crimp City",
+  the overrun in words through `restTimerClockAccessibilityLabel`), so it is a leaf that reads
+  the live display; nothing above it re-renders per second.
 - **Next** is what Next lands on (`selectNextQueueItemWithSuggestions`, with the scheduler's
   board rules), so a list the climber is walking counts. `startsRound` and `startsStage` mark
   the boundaries.
 - **Outcomes.** Every queued staged climb is `sent` (a flash or send logged on it), `tried`
   (ticks but no send), `skipped` (the current climb is past it with nothing logged) or
-  `upcoming`, per stage (`climbs`, `tally`) and in total. A finished stage with anything
-  logged on it shows its tally in place of the climb count; one passed with nothing logged
-  keeps the count, since its climbs may have been logged elsewhere. "Workout done" carries
-  the totals.
+  `upcoming`, per stage (`climbs`, `tally`). A finished stage with anything logged on it
+  (`logged`) shows its tally in place of the climb count; one passed with nothing logged keeps
+  the count, since its climbs may have been logged elsewhere. `totals`, which "Workout done"
+  carries, add up the `logged` stages only, by the same rule.
 - **Off the plan.** When the climb on the wall is in no stage (Start ran while another climb
   was up, or the climber wandered off), the card offers "Start your workout" (or "Back to your
   workout"): it puts the first staged climb not reached yet on the wall and stops walking any
