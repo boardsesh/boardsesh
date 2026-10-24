@@ -49,6 +49,13 @@ The shots scripts add `shot=<timestamp>` to every `--story` capture, so shooting
 already on screen again (after an edit, or with another `--theme`) still gets a fresh
 `[stories] ready` line instead of waiting out the 15 s timeout.
 
+Only the focused story applies its `theme` and `variant` parameters. Earlier story routes can
+stay mounted in the navigation stack; they stop writing appearance preferences while blurred,
+so opening a dark Material story after a light Liquid Glass story settles on the new choice.
+Focused parameter or preference changes are checked again, and returning to an earlier story
+reapplies its parameters. Leaving a story keeps the current appearance; blur does not reset it.
+Missing or invalid parameters leave that preference alone, and matching preferences avoid a write.
+
 Stories only exist in a dev bundle (the simulator dev client, `vp run dev:mobile`). A store
 build or OTA update sends `dev/stories/*` home.
 
