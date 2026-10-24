@@ -40,6 +40,8 @@ import {
 } from '../../../lib/workout-run-store';
 import { track } from '../../../lib/analytics';
 import { hapticSuccess } from '../../../lib/haptics';
+import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
+import { nowMs } from '../../../lib/clock';
 import { spacing } from '../../../theme/tokens';
 import { getDefaultTargetGrade, toRailGrades } from '../pre-session/generator-controls';
 import { WorkoutBlockFields } from '../pre-session/WorkoutBlockFields';
@@ -246,6 +248,10 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       return;
     }
     setWorkoutRun(sessionId, result.run);
+    // The added block's own pacing, not the run's: adding a volume block to a
+    // workout that once had a 4x4 must not turn back on a timer the climber
+    // switched off.
+    armRestTimerForWorkout(sessionId, blockRun, nowMs());
     track(SHARED_EVENTS.SessionQueueGenerated, {
       // One block and never a warm-up, so both fields hold the same type here;
       // `phase` tells this add apart from a pre-session workout.

@@ -13,6 +13,8 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
 import { setWorkoutRun } from '../../../lib/workout-run-store';
+import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
+import { nowMs } from '../../../lib/clock';
 import { Card } from '../../Card';
 import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
@@ -284,7 +286,11 @@ export function PreSessionView({
         // Remember which stage each queued climb belongs to, so the session
         // screen and the player can say "Warm-up · 2 of 5". Keyed by the same
         // queue-item uuids just appended; it never goes over the wire.
-        if (generatedRun) setWorkoutRun(newSessionId, generatedRun);
+        if (generatedRun) {
+          setWorkoutRun(newSessionId, generatedRun);
+          // A timed block runs hands-free: its rest timer is on from Start.
+          armRestTimerForWorkout(newSessionId, generatedRun, nowMs());
+        }
         track(SHARED_EVENTS.SessionQueueGenerated, {
           // The first workout block's type, so single-workout funnels keep their
           // meaning. Never a warm-up: null if a queue ever starts with no workout block.
