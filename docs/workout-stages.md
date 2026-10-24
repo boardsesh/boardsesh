@@ -123,7 +123,9 @@ The limits that follow:
   that slot may hold only part of the run (see below), and the next write of a part
   removes the other slot, so a slot that failed to read would be lost for good. With the
   store empty a tick is not logged and nothing is written; the next hydrate, which "Add
-  a block" runs first, reads both again.
+  a block" runs first, reads both again. When that read fails too (`hydrateWorkoutRun`
+  resolves `'failed'`), "Add a block" queues and writes nothing and stays open with an
+  error; another tap tries again.
 - **Both slots, one session.** That happens only after a rollback mid-session. This
   bundle wrote a timed run to `_v2` and removed `_v1`; the older bundle, which never
   reads, writes or clears `_v2`, then saw no run and stored its "Add a block" alone in

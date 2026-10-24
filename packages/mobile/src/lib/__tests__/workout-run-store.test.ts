@@ -490,6 +490,35 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     expect(getWorkoutRunForSession('session-1')).toEqual({ stages: [...timedRun.stages, blockAddedAfterRollback] });
   });
 
+  it("reports 'failed' when a slot read fails and 'clean' when both read", async () => {
+    await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
+    storage.getItem.mockImplementationOnce(async (key: string) => {
+      throw new Error(`could not read ${key}`);
+    });
+
+    await expect(hydrateWorkoutRun('session-1')).resolves.toBe('failed');
+    expect(getWorkoutRunState()).toBeNull();
+
+    await expect(hydrateWorkoutRun('session-1')).resolves.toBe('clean');
+    expect(getWorkoutRunForSession('session-1')).toEqual(timedRun);
+    // Already in memory, and a clean read that finds no run, are clean too.
+    await expect(hydrateWorkoutRun('session-1')).resolves.toBe('clean');
+    resetWorkoutRunStoreForTests();
+    await expect(hydrateWorkoutRun('session-2')).resolves.toBe('clean');
+  });
+
+  it("reports 'failed' when a write for another session stops the read before both slots", async () => {
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run }));
+
+    const hydrate = hydrateWorkoutRun('session-1');
+    // Another session ends before the read reaches `_v1`.
+    const clear = clearWorkoutRunForSession('session-2');
+
+    await expect(hydrate).resolves.toBe('failed');
+    await clear;
+    expect(getWorkoutRunState()).toBeNull();
+  });
+
   it('leaves out a _v1 stage whose id names a _v2 stage of another kind', async () => {
     await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
     await storage.setItem(

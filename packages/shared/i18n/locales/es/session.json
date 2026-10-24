@@ -709,6 +709,7 @@
       "addBlockPreviewTitle": "Bloques que se añaden",
       "addBlockPreviewEmpty": "Ningún bloque encaja en esta fase. Prueba otro grado.",
       "addBlockQueueFull": "Tu cola está llena. Quita algunos bloques y vuelve a intentarlo.",
+      "addWorkoutBlockReadError": "No se pudo añadir la fase. Inténtalo de nuevo.",
       "addWorkoutPromptTitle": "Añadir una fase de entrenamiento",
       "addWorkoutPromptSubtitle": "Pon en cola una pirámide, una escalera o volumen después de tus bloques",
       "inStatsSends": "Encadenes",

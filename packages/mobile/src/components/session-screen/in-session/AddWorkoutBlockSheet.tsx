@@ -208,12 +208,21 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     // A cold start may still be reading this session's run from storage. Reading
     // the store before it lands would see no run and overwrite the slot with
     // only this block, losing the workout queued at Start.
-    await hydrateWorkoutRun(sessionId);
+    const hydrateResult = await hydrateWorkoutRun(sessionId);
     if (!visibleRef.current || sessionIdRef.current !== sessionId) {
       submittedRef.current = false;
       setIsSubmitting(false);
       // The preview was built for the session that just left.
       if (visibleRef.current) onClose();
+      return;
+    }
+    // The stored run could not be read, so the store may not hold it. Writing
+    // this block now would store it alone and remove the slot that holds the
+    // rest. Nothing is queued, so a retry, which reads the slots again, is safe.
+    if (hydrateResult === 'failed') {
+      setError(t('mobile.session.addWorkoutBlockReadError'));
+      submittedRef.current = false;
+      setIsSubmitting(false);
       return;
     }
     // Belt and braces for this path: never queue a uuid twice.

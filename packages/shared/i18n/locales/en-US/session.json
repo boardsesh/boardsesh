@@ -709,6 +709,7 @@
       "addBlockPreviewTitle": "Climbs to add",
       "addBlockPreviewEmpty": "No climbs fit this block. Try another grade.",
       "addBlockQueueFull": "Your queue is full. Clear a few climbs, then try again.",
+      "addWorkoutBlockReadError": "Couldn't add this block. Try again.",
       "addWorkoutPromptTitle": "Add a workout block",
       "addWorkoutPromptSubtitle": "Queue a pyramid, ladder or volume set after your climbs",
       "inStatsSends": "Sends",

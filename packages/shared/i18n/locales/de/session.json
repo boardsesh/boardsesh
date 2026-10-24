@@ -709,6 +709,7 @@
       "addBlockPreviewTitle": "Diese Boulder kommen dazu",
       "addBlockPreviewEmpty": "Keine Boulder passen zu diesem Block. Probier einen anderen Grad.",
       "addBlockQueueFull": "Deine Warteschlange ist voll. Nimm ein paar Boulder raus und versuch es nochmal.",
+      "addWorkoutBlockReadError": "Block konnte nicht hinzugefügt werden. Versuch es nochmal.",
       "addWorkoutPromptTitle": "Workout-Block hinzufügen",
       "addWorkoutPromptSubtitle": "Häng eine Pyramide, eine Leiter oder Volumen hinter deine Boulder",
       "inStatsSends": "Begehungen",

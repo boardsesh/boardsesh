@@ -535,6 +535,42 @@ describe('AddWorkoutBlockSheet', () => {
       'new-stage-uuid',
     ]);
   });
+
+  it('writes nothing and stays open when the stored run cannot be read', async () => {
+    const startRun: WorkoutRun = {
+      stages: [{ id: 'stage-start', kind: 'volume', itemUuids: ['s1'], targetGrade: 16 }],
+    };
+    storage.getItem.mockImplementation(async () => JSON.stringify({ sessionId: 'session-1', run: startRun }));
+    storage.getItem.mockImplementationOnce(async (key: string) => {
+      throw new Error(`could not read ${key}`);
+    });
+    storage.setItem.mockClear();
+    storage.removeItem.mockClear();
+    readyPreview(['v1']);
+    const { onClose } = renderSheet(true);
+
+    await press();
+
+    // Storing the block alone would remove the slot holding the Start run.
+    expect(getWorkoutRunForSession('session-1')).toBeNull();
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(screen.getByText(/error:addWorkoutBlockReadError/)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(sheet.topBar?.trailing.disabled).toBe(false);
+
+    // The next tap reads the slots again and keeps the Start run.
+    await press();
+
+    expect(getWorkoutRunForSession('session-1')?.stages.map((stage) => stage.id)).toEqual([
+      'stage-start',
+      'new-stage-uuid',
+    ]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('lists every climb of the block with the preview rows, thumbnails and all', () => {
     const uuids = Array.from({ length: 12 }, (_unused, index) => `v${index + 1}`);
     readyPreview(uuids);

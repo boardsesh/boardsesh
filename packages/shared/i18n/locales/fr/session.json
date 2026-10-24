@@ -709,6 +709,7 @@
       "addBlockPreviewTitle": "Blocs à ajouter",
       "addBlockPreviewEmpty": "Aucun bloc ne correspond à cette phase. Essaie une autre cotation.",
       "addBlockQueueFull": "Ta file d'attente est pleine. Retires-en quelques blocs, puis réessaie.",
+      "addWorkoutBlockReadError": "Impossible d'ajouter la phase. Réessaie.",
       "addWorkoutPromptTitle": "Ajouter une phase d'entraînement",
       "addWorkoutPromptSubtitle": "Mets une pyramide, une échelle ou du volume en file après tes blocs",
       "inStatsSends": "Croix",

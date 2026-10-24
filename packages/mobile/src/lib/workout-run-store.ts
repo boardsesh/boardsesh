@@ -329,14 +329,28 @@ export function getWorkoutRunLog(sessionId: string | null): readonly WorkoutTick
 }
 
 /**
+ * How a hydrate ended. `'clean'`: the store holds `sessionId`'s run, or both
+ * slots were read and gave none to load. `'failed'`: neither, so a stored run
+ * for the session may be missing from the store, and a write made from it now
+ * ("Add a block") would remove the slot it did not read.
+ */
+export type WorkoutRunHydrateResult = 'clean' | 'failed';
+
+/** After a hydrate stopped early: clean only if the store holds the session's run anyway. */
+function hydrateResultForHeldRun(sessionId: string): WorkoutRunHydrateResult {
+  return state?.sessionId === sessionId ? 'clean' : 'failed';
+}
+
+/**
  * Load the stored run for `sessionId` after a cold start. No-op when the store
  * already holds that session's run, and a stored run for another session
  * misses. Both slots are read, `_v2` first; the one naming this session is the
  * run, and when both name it they are merged (`mergeSlotsForSession`). A read
- * that fails, of either slot, leaves the store as it is (see the catch).
+ * that fails, of either slot, leaves the store as it is (see the catch) and
+ * reports `'failed'`, unless the store holds the session's run anyway.
  */
-export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
-  if (state?.sessionId === sessionId) return;
+export async function hydrateWorkoutRun(sessionId: string): Promise<WorkoutRunHydrateResult> {
+  if (state?.sessionId === sessionId) return 'clean';
   const generationAtRead = writeGeneration;
   let hydrated: WorkoutRunRecord | null = null;
   for (const key of STORAGE_KEYS_IN_READ_ORDER) {
@@ -354,9 +368,11 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
       // good (read from `_v2` alone, it removes the block `_v1` holds). With
       // the store left empty a tick is not logged and nothing is written, and
       // the next hydrate (Add a block runs one first) reads both slots again.
-      return;
+      return hydrateResultForHeldRun(sessionId);
     }
-    if (generationAtRead !== writeGeneration) return;
+    // A write landed mid-read. It is newer, so this read stops; whatever slot it
+    // did not reach yet is unread.
+    if (generationAtRead !== writeGeneration) return hydrateResultForHeldRun(sessionId);
     if (record?.sessionId !== sessionId) continue;
     hydrated = hydrated ? mergeSlotsForSession(hydrated, record) : record;
   }
@@ -364,8 +380,9 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
   // stages of a kind this bundle does not know. A _v1 slot naming the same session
   // is merged in above, before this check, so the second case reaches here only
   // when there is no _v1 fallback.
-  if (!hydrated || hydrated.run.stages.length === 0) return;
+  if (!hydrated || hydrated.run.stages.length === 0) return 'clean';
   setState(hydrated);
+  return 'clean';
 }
 
 /** Forget the run, in memory and on disk. */
