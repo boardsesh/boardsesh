@@ -36,17 +36,20 @@ until workout stages land (#5379).
   `FullSync`, then a `CurrentClimbChanged` under the same sequence, so the native Live
   Activity socket still lights the wall.
 - **No native change.** **No Postgres migration.** The backend ships first and can reach 100%
-  while every phone is still old. Old phones in a crew get the no-copy fix from the server.
-  The new mobile JS then ships by OTA behind a flag.
+  while every phone is still old. Old phones in a crew get the no-copy fix from the server for
+  the opens they actually send there: session-history taps, the board history sheet, track
+  swipes and Put on the wall. Their logbook, search and similar-climb taps are already previews
+  in a crew and send nothing. The issue's logbook example is a solo case on shipped builds, so
+  only the OTA fixes it. The new mobile JS ships by OTA behind a flag.
 
 | Question | Answer |
 | --- | --- |
 | What marks the History / Up next line? | The Now slot, which is the current climb's index. When nothing is current, `historyCount`. |
 | Where does History live? | In the same `queue` array, before the Now slot. Oldest first. At most 100 entries, trimmed when it reaches 125. |
 | Wire change | Two optional output fields (`QueueState.historyCount`, `QueueState.lastChangedAt`) and three optional arguments (`setCurrentClimb(placement:)`, `setQueue(historyCount:)`, `joinSession(initialHistoryCount:)`). No new event type, no new event field. |
-| Storage change | Two Redis hash fields. No Postgres change. |
+| Storage change | Three Redis hash fields. No Postgres change. |
 | Native change | None. |
-| Old binaries | In a crew: no copies, after a flash of one round trip. Solo: unchanged until they take the OTA. |
+| Old binaries | In a crew: no copies from the opens they send there, after a flash of one round trip. Solo (including the issue's logbook case): unchanged until they take the OTA. |
 | Kill switches | Backend `QUEUE_NOW_SLOT_PERCENT` (unset means 0, today's rules). Mobile `queue-now-slot` (positive, read `=== true`) and `stale-current-hold-kill` (read `!== true`). |
 
 ## Why not take the current climb out of the array
@@ -114,7 +117,9 @@ it while nothing is current, and the next current climb puts the line back.
 1. The current climb is in `queue` or `null`. Nothing stores an orphan.
 2. Putting a climb on the wall never adds a second copy of a climb already in `queue`.
 3. Up next changes only through `addQueueItem`, `reorderQueueItem`, `setQueue` (Add to queue,
-   Play next, workouts), a removal, or a step back on the queue walk (section 7).
+   Play next, workouts, Undo, playlist replace), a removal, or a step back on the queue walk
+   (section 7). `replaceQueueItem` and `mirrorSessionClimb` rewrite one entry in place and keep
+   its index, so they change no membership.
 4. History holds at most 125 entries and is trimmed to 100. The whole array holds at most
    `MAX_SYNCED_QUEUE_ITEMS` = 500 (`shared/queue/src/limits.ts:17`).
 
@@ -129,6 +134,7 @@ reducer, the same way `state-hash.ts` is shared so the two sides can't drift (#2
 | `historyOf(state)`, `upNextOf(state)` | The two slices. Readers never do index arithmetic on `queue` themselves. |
 | `placeOnWall(state, item, placement)` | The table below. Returns `{ queue, current, historyCount, rewrite }`. |
 | `capHistory(state)` | Trims History, oldest first (section 5). |
+| `reorderAcrossLine(state, oldIndex, newIndex)` | The reorder rule with nothing current (section 7, reducer table). |
 | `chooseQueueEvent(before, request, after)` | Which event to publish (section 2). |
 
 `placement` is `NOW`, `STEP` or absent. Absent means a shipped client, the native socket,
@@ -169,7 +175,7 @@ result, and old phones keep today's behaviour there (section 3, residual 5). New
 | --- | --- |
 | Store the current climb outside `queue` | Every shipped reader breaks (table above). |
 | Store `history[]`, `current`, `upNext[]` as three new fields and build the flat array on read | Old clients need the flat array for months, so every write keeps two encodings in step. Delta events would need list-relative copies of every index. An old backend instance in a rolling deploy writes `queue` and leaves the lists stale. Payload and Redis hash double. The flat array plus one integer loses nothing. |
-| Keep the server on today's rules and dedupe only in new clients | Old phones in a crew keep putting copies into the room's Up next for months, and new phones display them. The LED path keeps inserting a copy of a queued climb. |
+| Keep the server on today's rules and dedupe only in new clients | Old phones in a crew keep putting copies into the room's Up next for months through session-history taps, the board history sheet and Put on the wall, and new phones display them. The LED path keeps inserting a copy of a queued climb. |
 | Park the room's current climb on the server after a long gap (#4979) | It reaches old binaries. With nothing current their Next goes to `queue[0]` (`findNextQueueItem`, `shared/play-view/src/queue-navigation.ts:53`), the oldest History climb, and the Swift reducer shows index 0 (`SessionQueueState.swift:115-116`). Section 6 holds the auto-send on the phone instead. |
 
 ---
@@ -209,11 +215,18 @@ type QueueState {
   keeps flat positions. Both sides derive `historyCount` from a delta with the same function.
 - `addQueueItem` gains one failure: a GraphQL error with `extensions.code = 'QUEUE_FULL'`
   (section 5).
-- The mobile `QUEUE_UPDATES_SUBSCRIPTION` (`src/lib/graphql/operations.ts:1229`) and the
-  joinSession document select the two new fields. That changes the pinned document hashes, so
-  the screenshot fixtures must be re-recorded
-  (`src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts`). The native
-  `SessionWebSocketManager.swift` document doesn't change.
+- The documents live in two places. Mobile's own `QUEUE_UPDATES_SUBSCRIPTION`
+  (`src/lib/graphql/operations.ts:1229`) selects the two new fields. The joinSession document
+  is `JOIN_SESSION` in `packages/shared/graphql/src/operations/queue-session.ts:62`; the same
+  file holds `SET_CURRENT_CLIMB` (`:167`, today only `$item`, `$shouldAddToQueue`,
+  `$correlationId`), `SET_QUEUE` (`:254`) and `SET_QUEUE_WITH_BASELINE` (`:281`), which gain
+  `$placement` and `$historyCount`. The variables are built in
+  `packages/shared/queue-react/src/create-queue-mutations.ts` (`setCurrentClimb` signature
+  `:176`, variables `:398-403`). These changes alter the pinned document hashes, so the
+  screenshot fixtures must be re-recorded
+  (`src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts`, which imports
+  `@boardsesh/graphql/operations` too). The native `SessionWebSocketManager.swift` document
+  doesn't change.
 
 ### Which event the server publishes
 
@@ -223,7 +236,8 @@ check, not a table someone has to keep in sync:
 | Case | Event |
 | --- | --- |
 | The request's `item.uuid` was already in `queue`, and the array after the write equals the array before it (`none`, `next`, `step`) | `CurrentClimbChanged`, with the origin's `clientId` and `correlationId`, as today |
-| The array after the write is the array before it with the request's item inserted at the Now slot (`insert`, no trim) | `FullSync`, as today (`services/queue-navigation.ts:94-99`) |
+| The array after the write is the array before it with the request's item inserted at the Now slot (`insert`, no trim), and the request carried `shouldAddToQueue: true` or `placement` | `FullSync`, as today (`services/queue-navigation.ts:94-99`) |
+| The same `insert`, but the request carried neither (the native socket's Next / Previous with a stale item that already left the queue) | `FullSync`, then the trailing `CurrentClimbChanged` under the same sequence. Today this request stores an orphan and publishes `CurrentClimbChanged` (`queue-navigation.ts:40-59`, `:103-111`), which is what repaints the wall from a locked phone. The trailing event keeps that repaint. |
 | Anything else (`move-*`, `dedupe-*`, a trim) | `FullSync`, then `CurrentClimbChanged` for the new current climb under the **same sequence**, with the origin's `clientId` and `correlationId: null` |
 
 Why each half matters:
@@ -252,23 +266,35 @@ crewmate's newly opened climb. That is today's behaviour and stays out of scope.
 
 ### Redis (`services/redis-session-store.ts`)
 
-- `UPDATE_QUEUE_STATE_CAS_SCRIPT` (`:95-150`) takes one more ARGV and writes two more fields in
-  the same `HSET` (`:139-147`): `historyCount`, and `historyCountVersion` set to the new
-  version. They move atomically with `queue` under the same version check. `saveSession` and
-  the non-CAS `updateQueueState` (`:212`) write them too.
+- `UPDATE_QUEUE_STATE_CAS_SCRIPT` (`:95-150`) takes one more ARGV and writes up to three more
+  fields in the same `HSET` (`:139-147`): `historyCount`, `historyCountVersion` set to the new
+  version, and `queueChangedAt` (below). They move atomically with `queue` under the same
+  version check. The non-CAS `updateQueueState` (`:212`) writes them with the same comparison;
+  `saveSession` copies what it is given.
 - **Rolling deploys.** For a few minutes two backend instances run the old and the new script.
   An old-script write leaves a stale `historyCount`. On read, `historyCount` counts only when
   `historyCountVersion == version`; otherwise the reader derives it: the current index, or 0
   when nothing is current, which is today's display.
-- `lastChangedAt` reads the existing `lastActivity` field, which the CAS script already stamps on
-  every queue write (`:147`). No new field for it.
+- `lastChangedAt` reads a third new field, `queueChangedAt`. `lastActivity` can't stand in for
+  it: the CAS script stamps `lastActivity` on every write (`:147`), including an old phone's
+  whole-queue write-back that changes nothing, and a Postgres restore copies
+  `sessions.lastActivity`, which tick logging (`graphql/resolvers/ticks/mutations.ts:1024`,
+  `:1548`, `:1895`), title and notes edits (`social/session-mutations.ts:154`) and board-path
+  changes (`room-manager/session-discovery.ts:82`) also bump. The new script already reads the
+  stored hash, so it compares `queueJson` and `currentClimbJson` with the stored values and
+  stamps `queueChangedAt` only when either differs. `saveSession` copies it unchanged. When
+  `historyCountVersion` is stale (an old-script write), the reader falls back to `lastActivity`,
+  which that old write just stamped.
 
 ### Postgres (`packages/db/src/schema/app/sessions.ts:172-182`)
 
 **No migration.** `board_session_queues` keeps `queue` and `current_climb_queue_item`.
 `historyCount` isn't persisted. On a dormant restore (`services/room-manager/session-restoration.ts:81-108`)
-it comes back from the stored current index, or 0 when nothing was current. `lastChangedAt`
-comes back from `sessions.lastActivity`, which the restore already copies (`:99`).
+it comes back from the stored current index, or 0 when nothing was current. `queueChangedAt`
+comes back from `board_session_queues.updated_at`, which every queue flush writes
+(`services/room-manager/queue-state.ts:218-292`), not from `sessions.lastActivity`. That is
+approximate: a write-back that changed nothing still bumps `updated_at`, so a dormant room can
+restore as "changed recently" and light its climb on connect. It never errs the other way.
 
 This only costs anything for a room that sits past the 4 h Redis TTL with nothing current.
 Non-permanent sessions end after 1 h idle (`docs/websocket-implementation.md`, "Inactivity
@@ -286,8 +312,11 @@ The Postgres-only single-instance fallback keeps `historyCount` in memory, and i
 `updateQueueState(sessionId, queue, current, version, historyCount?)`
 (`services/room-manager/queue-state.ts:82`) gains an optional last argument. When it is
 omitted, it derives the value from the current index. Legacy writers that only move the pointer
-(`navigateToQueueItem`, `services/queue-navigation.ts:127-183`; the widget and Garmin
-`navigateSessionQueue`; controller `navigateQueue`) stay correct with no edits.
+or rewrite one entry in place stay correct with no edits: `navigateToQueueItem`
+(`services/queue-navigation.ts:127-183`), the widget and Garmin `navigateSessionQueue`,
+controller `navigateQueue`, `replaceQueueItem` (`graphql/resolvers/queue/mutations.ts:313-361`,
+swaps an entry by uuid and keeps the Now slot's index when the swapped entry was current) and
+`mirrorSessionClimb` (`services/queue-mirror.ts:14-36`, rewrites the current entry in place).
 `getQueueState` (`:401`) returns `historyCount` and `lastChangedAt` beside `queue`.
 
 ---
@@ -302,12 +331,13 @@ server runs `placeOnWall` for every request. Old clients never send `placement`.
 
 | Sender | Sends | Server result |
 | --- | --- | --- |
-| Old JS, any list tap | `setCurrentClimb(fresh uuid, shouldAddToQueue: true)` (`src/providers/queue-provider.tsx:2116`) | `insert`, or a `dedupe-*` when the climb is already there |
+| Old JS, a committed open in a crew: a session-history tap (`src/components/session-screen/in-session/InSessionView.tsx:135`, `:447`), the board history sheet (`src/providers/drawer-host-provider.tsx:1061-1067`), Put on the wall after a preview, a playlist activation | `setCurrentClimb(fresh uuid, shouldAddToQueue: true)` (`src/providers/queue-provider.tsx:2116`). The board history sheet reuses the queue-item uuid when it has one. | `insert`, or a `dedupe-*` when the climb is already there |
+| Old JS, logbook / feed / profile / search open or similar-climb tap in a crew | Nothing. A fresh open in a shared session is a preview (`PlayCore.tsx:870` `browseByDefault`, `use-play-selection-controller.ts:158`, `:179`); similar climbs takes the preview path too (`:356`). Solo, these send nothing either, because there is no server. | — |
+| Old JS, track swipe | `setCurrentClimb` with the neighbour's queue entry when queued (`findQueuedListNeighbour`), else a fresh uuid from `resolveCommittableQueueItem` (`src/lib/climb-to-queue-item.ts:209-215`) | `step` / `next` for a queued neighbour, `insert` or `dedupe-*` for a fresh one |
 | Old JS, Next / Previous on the queue | `setCurrentClimb(neighbour's uuid)` | `next` / `step`: pointer only |
 | Old JS, queue-row tap | `setCurrentClimb(that row's uuid)` | `move-up-next`, or `step` for a History row |
-| Old JS, similar climbs | `addQueueItem(Z)` at the end, then `setCurrentClimb(Z)` | `QueueItemAdded`, then `move-up-next` |
-| Old JS, reconnect / empty-room reseed / playlist replace | `setQueue(queue, current)`, no `historyCount` | Line = index of current. Caps apply (section 5). |
-| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan |
+| Old JS, Undo after a remove, playlist replace or clear, workout append, empty-room reseed after a failed seed | `setQueue(queue, current)`, no `historyCount` (`queue-provider.tsx:1677-1683` `setQueue`, `:1692` `restoreQueueItems`, `:1754` `appendQueueItems`; `reSeedQueueRef`, `:976`) | Line = index of current. Caps apply (section 5). |
+| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan, with the trailing `CurrentClimbChanged` so the wall still repaints |
 | Widget, Garmin | REST navigate, server-side index ± 1 with wrap-around (`handlers/session-queue-actions.ts:30-69`) | Pointer only, unchanged |
 | ESP32 LED detect | `setClimbFromLedPositions` (`controller/mutations.ts:233-262`) | Now goes through `placeOnWall` with a fresh uuid, so a queued climb is reused instead of copied |
 
@@ -320,18 +350,18 @@ old one, in the same crew with O's Live Activity running, the kiosk and the ESP3
 | --- | --- | --- | --- | --- | --- |
 | S1 | N opens X from search (`NOW`) | A B **X** C D | `FullSync` | A B X C D | Swift index 2. Kiosk Up next C D. |
 | S2 | N opens D from its logbook. N resolves it locally and sends D's own uuid with `NOW`. | A B **D** C | `FullSync` + same-seq `CurrentClimbChanged(D)` | A B D C | Swift repaints D |
-| S3 | **The issue's case.** O taps C in its logbook. O mints C′ and shows A B C′ C D. | A B **C** D (`dedupe-up-next`) | `FullSync` + trailing | C′ is gone, C is current. O showed C′ for one round trip. | Repaint C |
-| S4 | O opens B again (B′) | A B C D, B current (`dedupe-current`) | `FullSync` + trailing | B′ is gone | Re-lights B |
+| S3 | **The issue's case, in a crew.** O taps C in the session's history (in a crew, a logbook tap is a preview and sends nothing). O mints C′ and shows A B C′ C D. | A B **C** D (`dedupe-up-next`) | `FullSync` + trailing | C′ is gone, C is current. O showed C′ for one round trip. | Repaint C |
+| S4 | O taps B in the session's history (B′) | A B C D, B current (`dedupe-current`) | `FullSync` + trailing | B′ is gone | Re-lights B |
 | S5 | O swipes forward on a search track to new climb Y | A B **Y** C D (`insert`) | `FullSync` | unchanged | as today |
 | S6 | O swipes back on a track to A. The shipped client reuses A's History uuid. | **A** B C D (`step`): B moves into Up next | `CurrentClimbChanged(A)` | pointer move, as today | Swift pointer, repaint |
 | S7 | O taps queue row D, skipping C | A B **D** C (`move-up-next`) | `FullSync` + trailing | A B D C. Today C would have gone to History. | Repaint D |
-| S8 | O taps similar climb Z | A B C D Z, then A B **Z** C D | `QueueItemAdded`, then `FullSync` + trailing | A B Z C D | Repaint Z |
+| S8 | O previews D from its logbook (sends nothing), then taps Put on the wall. O mints D′ and shows A B D′ C D. | A B **D** C (`dedupe-up-next`) | `FullSync` + trailing | A B D C | Repaint D |
 | S9 | O's lock-screen Next | A B **C** D (`next`) | `CurrentClimbChanged(C)` | pointer move | Swift index +1, as it predicted |
 | S10 | ESP32 reads C off the LEDs | A B **C** D (`dedupe-up-next`, no suggested copy) | `FullSync` + controller `CurrentClimbChanged` (existing pattern) | A B C D | ESP32 keeps its clientId check |
 | S11 | Anyone removes B, the current climb | A C D, nothing current, `historyCount` 1 | `QueueItemRemoved` | Nothing current. Shows A C D as Up next, as today. | Swift index clamps onto C, as today. Kiosk Up next C D. |
 | S12 | After S11, O presses Next | O's Next is `queue[0]` = A (`findNextQueueItem`). A current, `historyCount` 0. | `CurrentClimbChanged(A)` | pointer move, as today | Swift finds A |
 | S13 | After S11, N presses Next instead | C = `queue[historyCount]` becomes current, A stays History | `CurrentClimbChanged(C)` | pointer move | Swift finds C |
-| S14 | O's socket drops; on reconnect it writes its whole queue back | its last `FullSync` state, unchanged | `FullSync` | no change | — |
+| S14 | O removes A. While O's Undo `setQueue` is in flight, N taps queue row D (`move-up-next`). | N's move lands first: B **D** C. Then O's Undo, composed from O's live state before N's `FullSync` reached it: A B C D, B current. The #3933 merge replays only `QueueItemAdded`, so N's move is lost. | `FullSync`, `FullSync` | A B C D, B current | Repaint D. The Undo `FullSync` moves Swift's index to B without a repaint. |
 
 ### The 60 s hash watchdog
 
@@ -349,8 +379,16 @@ check resyncs.
 
 ### An old phone writing the whole queue back
 
-`setQueue` paths: Add to queue, playlist replace, and the empty-room reseed (`reSeedQueueRef`,
-`use-session-realtime.ts:137`).
+Shipped mobile calls `setQueue` from four places. Add to queue is `addQueueItem`
+(`queue-provider.tsx:1347`), and a reconnect only resubscribes and applies the server's
+`FullSync`, so neither writes the queue back.
+
+- `setQueue` (`queue-provider.tsx:1677-1683`): playlist replace and clear.
+- `restoreQueueItems` (`:1692`): Undo after a remove. It composes from the phone's live state
+  right before sending (`src/lib/queue-undo.ts:30`), with `baselineSequence`.
+- `appendQueueItems` (`:1754`): the workout append.
+- `reSeedQueueRef` (`:976`): only after a failed seed, when the server answers with an empty
+  room (`use-session-realtime.ts:548-562`).
 
 - The payload contains the phone's current climb, because the old reducer inserts any current
   climb it gets. So the orphan branch (`queue/mutations.ts:396-412`) doesn't fire.
@@ -365,6 +403,12 @@ check resyncs.
   no longer wedge sync this way.
 - No per-item field is added, so there is nothing for an old client to strip on write-back
   (the #3927 / #3995 class stays closed).
+- **A reshape inside the write's round trip is lost (S14).** The #3933 merge
+  (`set-queue-merge.ts`) replays only `QueueItemAdded` events that landed after the baseline;
+  a `FullSync`-only change in that window is overwritten (`docs/websocket-implementation.md`,
+  "Sequence Assignment"). That is true today. F3 makes it more common, because every `move-*`
+  and `dedupe-*` is now such a change, so a crewmate's queue-row tap or session-history re-tap
+  inside an old phone's Undo round trip is reverted, current climb included.
 
 **No flapping.** Flapping needs two writers that disagree about the stored state and keep
 writing it back. Old clients and the server agree on the encoding exactly: one array, current
@@ -378,14 +422,32 @@ it is.
    and #4979.
 2. **A flash of one round trip** in S3, S4, S7 and S8.
 3. **The coalescer's deferred add.** If O's `setCurrentClimb(C′)` is superseded or throttled,
-   the shipped coalescer re-sends C′ as a plain `addQueueItem`
-   (`shared/queue-runtime/src/set-current-climb-coalescer.ts`, `queue-provider.tsx:1844-1874`).
-   The server can't tell that from a deliberate Add to queue, so C′ stays.
-4. **A `setQueue` composed inside the gap** writes the copy back.
+   the shipped code re-sends C′ as a plain `addQueueItem`, and the copy lands in Up next:
+   - Throttled (`recoverThrottledQueueAdd`, `queue-provider.tsx:1844-1874`): the position is
+     C′'s index in O's local queue, which is O's Now slot, so the server puts C′ at the head of
+     Up next.
+   - Superseded (`sendDeferredQueueAdd`, `shared/queue-react/src/create-queue-mutations.ts:405-437`,
+     fired from `set-current-climb-coalescer.ts` `fireDeferredQueueAdd`): the position is read
+     live when it fires. If C′ is still local, it lands just after O's newer pick, inside Up
+     next. If a `FullSync` already wiped C′ and it isn't in the removal ledger, the add goes
+     without a position and the server appends it to the end of Up next.
+
+   The server can't tell either from a deliberate Add to queue, so C′ stays. Recognising a
+   deferred add of a climb already present (same `climb.uuid` and angle) and dropping it would
+   be a design change, because a deliberate duplicate add looks the same. Not in this design.
+4. **A `setQueue` composed inside the gap** writes the copy back, and a `setQueue` in flight
+   while a crewmate moves or dedupes reverts that move (S14).
 5. **History-row taps and track back-swipes onto a History entry** are pointer moves (S6): the
    climbs after that entry move back into Up next.
-6. **Nothing current.** Their queue sheet shows History as Up next and their Next goes to
-   `queue[0]` (S12).
+6. **Nothing current.** Their queue sheet shows History as Up next, their Next goes to
+   `queue[0]` (S12), and their Live Activity falls back to `queue[0]`, the oldest History climb
+   (`use-live-activity.ts:461`, `:528`). All three are today's behaviour.
+7. **Playlist suggestion mode resets more often.** Every `FullSync` runs `INITIAL_QUEUE_DATA`,
+   which sets `playlistSuggestionSource: null` (`shared/queue/src/reducer.ts:98`). A crewmate's
+   queue-row tap or session-history re-tap is a pointer event today and a `FullSync` under F3,
+   so it now cancels an old phone's playlist suggestion mode.
+8. **Old-phone drags across the line with nothing current** are clamped (section 7, reducer
+   table). The phone sees the clamp as one `FullSync`.
 
 ---
 
@@ -407,12 +469,16 @@ Old binaries see more `FullSync` events (moves, dedupes, History trims), each fo
 same-sequence `CurrentClimbChanged`, and otherwise today's behaviour. History is trimmed to 100,
 so the Live Activity's "4 / 120" position text counts at most 125 History climbs.
 
-One edge exists today and stays: with nothing current, Swift sets index 0
+One edge exists today and stays on the native side: with nothing current, Swift sets index 0
 (`SessionQueueState.swift:115-116`), so the lock screen shows the oldest climb. That happens
-after S11. JS doesn't start or update a Live Activity with nothing current
-(`src/lib/live-activity/use-live-activity.ts:464-465`, `:531-532`), so it is rare. Not worth a
-store build. If it ever is, a separate `release/next` PR can teach Swift to read
-`historyCount`, with a Fable review.
+after S11, an ordinary removal of the current climb. JS doesn't avoid it today: a queue with
+no current climb keeps the activity alive (`hasContent`, `src/lib/live-activity/use-live-activity.ts:308`),
+and both send paths fall back to `queue[0]` (`:461`, `:528`) and send its index. Under F3
+`queue[0]` is History's oldest climb. The fix is JS and rides the OTA: new phones fall back to
+`queue[upNextStart]`, the climb Next would pick (S13), or end the update when Up next is empty
+(section 7, other readers). Swift's own `FullSync` handling still lands on index 0 until a
+JS update overwrites it; teaching Swift to read `historyCount` is a separate, optional
+`release/next` PR with a Fable review.
 
 No Bluetooth or Live Activity file changes, so the Fable / Astra rule isn't triggered by a
 path. Two PRs still get a Fable review because they change what the wall lights: the backend
@@ -439,12 +505,24 @@ climbs, not one per climb.
 | `setCurrentClimb` (insert or move) | Uncapped insert | `capHistory` after placing. Never rejected: the climb that left the Now slot is History and can go. | `FullSync` + trailing |
 | `setClimbFromLedPositions` | Uncapped insert | Same | `FullSync` + controller event |
 | `addQueueItem` | Uncapped | `capHistory` first. If Now + Up next is already 500, reject with `QUEUE_FULL`. New clients pre-check and say "Up next is full (500)". An old phone's optimistic add is undone by the next resync. | `FullSync` instead of `QueueItemAdded` |
-| `addQueueItem` with a position inside History | Inserted there | Honoured while a climb is current, so an old coalescer's deferred add for a superseded open lands in History, not Up next. Clamped to `historyCount` only when nothing is current, so an old Play next sent at position 0 lands at the head of Up next. | `FullSync` when it clamped |
+| `addQueueItem` with a position inside History | Inserted there | Honoured while a climb is current, as today. Clamped to `historyCount` only when nothing is current, so an old Play next sent at position 0 lands at the head of Up next. (An old coalescer's deferred add never targets History: it lands in Up next, section 3 residual 3.) | `FullSync` when it clamped |
 | `setQueue`, `joinSession` seed | Throw above 500 | Accept up to 1,000 raw items (still a memory guard), then `capHistory`. Throw only when Now + Up next alone exceed 500. | `FullSync` (already) |
 | `setQueue` #3933 merge survivors (`set-queue-merge.ts`) | Re-appended at the end | Unchanged | — |
 | History | Unbounded inside 500 | 100, trimmed at 125 | — |
-| Mobile bulk append (`queue-provider.tsx:1735-1750`) | Clamps to `500 - queue.length` | Clamps to `500 - (Now + Up next)`, trimming History locally with the same `capHistory` | — |
-| New mobile reducer | — | `capHistory` after every local insert or move, so a new phone matches before the `FullSync` arrives | — |
+| Mobile bulk append (`queue-provider.tsx:1735-1750`) | Clamps to `500 - queue.length` | Clamps to `500 - (Now + Up next)`, trimming History in the payload with the same `capHistory`. That is a whole-queue write the server stores as sent, so it can't drift. | — |
+| New mobile reducer, solo | — | `capHistory` after every local insert or move | — |
+| New mobile reducer, in a session | — | Never trims on its own. The server's trim is the only one, and it arrives as a `FullSync` (+ trailing). | — |
+
+**Who trims, and why the client doesn't in a session.** The server caps every request that
+carries `placement` and every `setQueue` that carries `historyCount`, whatever
+`QUEUE_NOW_SLOT_PERCENT` says. Requests without either (old phones, the native socket, the LED
+path, and every `addQueueItem`, which has no `placement` argument) are capped only in sessions
+inside the percent. If the new reducer trimmed locally in a session outside the percent, its
+array would differ from the server's at 125 History entries, with no `FullSync` to correct it:
+a pointer move is echo-suppressed and an add is a plain `QueueItemAdded`. The 60 s watchdog
+(`use-session-realtime.ts:972-1035`) compares membership and order, would resync to the
+untrimmed array, and the next move would trim again: a `Queue Sync Hash Drift` loop on new
+builds. Leaving the trim to the server removes the loop at any percent.
 
 Swap the inline `500` in both resolvers for `MAX_SYNCED_QUEUE_ITEMS` in the same PR (the
 `limits.ts` comment tracks it).
@@ -465,10 +543,23 @@ background-adopt gate (`consumeBackgroundAdoptSendGate`, `:562`) stops it. Add a
 beside it:
 
 1. The queue provider keeps `lastQueueChangeAt`: the time of the last change to `queue` or the
-   current climb. Solo, a cold start seeds it from the snapshot's `savedAt`
-   (`src/lib/queue-snapshot-store.ts:55`, written on every save and only used for debugging
-   today). In a session, the join `FullSync` seeds it from `lastChangedAt`, and each later
-   event sets it to the time it arrived.
+   current climb. It advances only on `DELTA_UPDATE_CURRENT_CLIMB` (local or server),
+   `DELTA_ADD_QUEUE_ITEM`, `DELTA_REMOVE_QUEUE_ITEM`, `DELTA_REORDER_QUEUE_ITEM`, a
+   `SET_QUEUE` or `INITIAL_QUEUE_DATA` that comes from a server event or a climber's action,
+   and `CLEAR_QUEUE`. It never advances on the restore's `UPDATE_QUEUE`, on `HYDRATE_CLIMBS` or
+   on `REGRADE_CLIMBS`, which replace the array without anyone changing the queue.
+   - **Solo: a new snapshot field, not `savedAt`.** `savedAt` can't seed it. The save effect
+     (`src/providers/queue/use-queue-persistence.ts:237-262`) depends on `queue`, so it fires
+     after the cold-start restore (`:121-133` dispatches `UPDATE_QUEUE`, a new `queue`
+     identity), after every hydrate and regrade, and when the board settles, and
+     `setStoredQueueSnapshot` stamps a fresh `savedAt` on every write
+     (`src/lib/queue-snapshot-store.ts:51-56`). A climber who opens the app daily without
+     touching the queue, the #4979 report, would refresh `savedAt` daily and never be held.
+     So `LocalQueueSnapshot` gains `lastQueueChangeAt`, owned by the provider and written
+     through the save effect unchanged; the restore seeds the in-memory value from it. An older
+     snapshot without the field seeds from `savedAt` once, which errs towards lighting.
+   - **In a session**, the join `FullSync` seeds it from `lastChangedAt`, and each later event
+     sets it to the time it arrived.
 2. When the auto-sender would send and `now - lastQueueChangeAt >= 4 h`, it records the current
    uuid as held and skips the send.
 3. The hold releases when the current climb's uuid changes (a tap, Next, a crewmate's pick) or
@@ -481,7 +572,8 @@ beside it:
 | Solo, cold start, snapshot 4 h or older (`use-queue-persistence.ts:121-158` never checks age today) | Dark. History and Up next come back as they were. |
 | Solo, app left in memory overnight | Dark, from the in-memory `lastQueueChangeAt` |
 | Session, `lastChangedAt` under 4 h | Lights, as today |
-| Session restored from Postgres after 4 h or more | Dark on new phones. The room's state is not touched. |
+| Session, `lastChangedAt` 4 h or older (Redis `queueChangedAt`; ticks and no-op write-backs don't move it) | Dark on new phones. The room's state is not touched. |
+| Session restored from Postgres after 4 h or more | Dark on new phones, unless a write within 4 h bumped `board_session_queues.updated_at` without changing the queue (section 2): then it lights. The room's state is not touched. |
 | Old JS bundle | Lights, as today, until it takes the OTA |
 
 Why a hold and not a queue change:
@@ -511,10 +603,12 @@ applies its rules and the client follows the `FullSync`.
 | `DELTA_UPDATE_CURRENT_CLIMB`, server event | Never re-runs placement. The pointer goes to the named uuid. Only when that uuid is missing (a dropped add) is it inserted at `upNextStart`, which matches today's insert-after-current. |
 | `INITIAL_QUEUE_DATA`, `UPDATE_QUEUE` (`:80-127`) | Take `historyCount` from the payload. Missing means derive. |
 | `DELTA_ADD_QUEUE_ITEM` | Same History rule as the server (section 5). |
-| `DELTA_REMOVE_QUEUE_ITEM`, `DELTA_REORDER_QUEUE_ITEM` | Keep the line. Removing the current climb sets `historyCount` to its index. |
+| `DELTA_REMOVE_QUEUE_ITEM` | Keeps the line. Removing the current climb sets `historyCount` to its index. |
+| `DELTA_REORDER_QUEUE_ITEM` | With a climb current, the line follows it, as today. With nothing current, `reorderAcrossLine` in `now-slot.ts` (shared with the `reorderQueueItem` resolver) decides. A move within one side leaves `historyCount` alone. A History entry dragged below the line joins Up next and `historyCount` drops by one; the array is what an old phone predicted, so the resolver publishes the plain reorder event. An Up next entry dragged above the line (an old phone sees one flat Up next list, `queue-list-model.ts:33-37`, and `reorderQueueItem` moves by index, `queue/mutations.ts:195-201`) is clamped to `newIndex = historyCount`, the head of Up next, so it keeps the old phone's intent instead of being filed under History; the resolver publishes a `FullSync` when it clamped. The clamp runs only in the resolver (inside the percent) and on a new phone's own drag. A reorder event from the server is applied as given, and `historyCount` moves by one in whichever direction the entry crossed, the same derivation on both sides, so a session outside the percent can't drift. |
 | `HYDRATE_CLIMBS` (`:402-423`), `REGRADE_CLIMBS` (`:478-484`) | Freeze History by `index < upNextStart - (current ? 1 : 0)` instead of `index < currentIndex`, so a History climb keeps its climbed-at grade with nothing current. A History climb moved into Now is re-graded, like any current climb. |
 | `CLEAR_QUEUE` | `historyCount = 0` |
 | `SET_CURRENT_CLIMB` (`:50-63`) | Routed through `placeOnWall`, so it no longer appends for an orphan |
+| `SET_CURRENT_CLIMB_QUEUE_ITEM` (`:65-73`) | Appends an orphan `suggested` item today. Nothing outside tests dispatches it, so it is deleted in the cleanup PR; until then it is routed through `placeOnWall` like `SET_CURRENT_CLIMB`. |
 
 `sync-coordinator.ts:94-105` passes `historyCount` from `FullSync`. `:143-173` keeps today's
 mapping; the reducer decides what to do with it.
@@ -524,6 +618,9 @@ mapping; the reducer decides what to do with it.
 | Area | Change | Where |
 | --- | --- | --- |
 | `setCurrentClimb` | Runs `placeOnWall` locally, then sends the item it resolved to (an existing entry's uuid when the climb is already queued) with `placement: NOW`. Callers keep minting fresh items with `climbToQueueItem`; no caller needs its own "already queued" check. | `src/providers/queue-provider.tsx:2068-2116`, `dispatchSetCurrent` `:1912-2016` |
+| Mutation plumbing (shared) | `useQueueMutations().setCurrentClimb` (`packages/shared/queue-react/src/create-queue-mutations.ts:176`) gains an optional trailing `placement`, so any other importer keeps compiling unchanged; the variables at `:398-403` pass it. `setQueue` gains an optional `historyCount`. The coalescer's `SetCurrentClimbArgs` (`packages/shared/queue-runtime/src/set-current-climb-coalescer.ts:31-35`) carries `placement` through to `sendArgs`; its deferred-add decision (`fireDeferredQueueAdd`, keyed on `shouldAddToQueue`) is unchanged. `queue-provider.tsx:43` imports this hook. | `create-queue-mutations.ts`, `set-current-climb-coalescer.ts` |
+| Documents (shared) | `SET_CURRENT_CLIMB` gains `$placement`, `SET_QUEUE` and `SET_QUEUE_WITH_BASELINE` gain `$historyCount`, `JOIN_SESSION` gains `$initialHistoryCount` and selects the two new `QueueState` fields | `packages/shared/graphql/src/operations/queue-session.ts:62`, `:167`, `:254`, `:281` |
+| Subscription document (mobile) | `QUEUE_UPDATES_SUBSCRIPTION` selects `historyCount` and `lastChangedAt` in `FullSync.state` | `src/lib/graphql/operations.ts:1229` |
 | Throttled open | A throttled `move-*` or `dedupe-*` reorders the array, so it can't use the "pointer self-heals" skip. It resyncs like any failed write. A throttled `insert` keeps `recoverThrottledQueueAdd`. | `queue-provider.tsx:1974-2000`, `:1844` |
 | `nextClimb` on a track | Sends `NOW`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. | `queue-provider.tsx:2234-2258` |
 | `previousClimb` | On a track: `NOW` (the list's previous climb, from History or new). With no track, walking the queue (rule 4): `STEP`. | `queue-provider.tsx:2261-2281` |
@@ -535,8 +632,9 @@ mapping; the reducer decides what to do with it.
 | Play next | `playNextInsertPosition` returns `upNextStart`: still `currentIndex + 1` with a climb current, `historyCount` (not 0) without one. Play next on a History row still moves it to the head of Up next. | `shared/queue/src/play-next.ts:91-139` |
 | Queue list model | History = `queue[0, upNextStart)` even with nothing current | `shared/play-view/src/queue-list-model.ts:33-37` |
 | Other readers | `QueueSheet.tsx:293`, `src/providers/queue/use-queue-regrade.ts:116-120`, `src/providers/queue/use-queue-resolve-climbs.ts:30`, `countFutureQueueItems` in `src/lib/playlists/use-playlist-activation.ts:258` all use `upNextStart` | — |
+| Live Activity | With nothing current, the fallback `currentClimbQueueItem ?? queue[0]` becomes `queue[upNextStart]` (the climb Next would pick, S13), and with an empty Up next it sends no climb. Today's fallback shows History's oldest climb as current after S11. | `src/lib/live-activity/use-live-activity.ts:308`, `:461-464`, `:528-531` |
 | Playlist replace | `buildPlaylistQueue` keeps the History prefix (today it drops it) and sends `historyCount` | `use-playlist-activation.ts:268` |
-| Persistence | Snapshot gains `historyCount`. An optional field, so the key `boardsesh_local_queue_snapshot_v1` keeps its suffix. | `src/lib/queue-snapshot-store.ts:22-29`, `use-queue-persistence.ts:121-158` |
+| Persistence | Snapshot gains `historyCount` and `lastQueueChangeAt` (section 6). Both optional, so the key `boardsesh_local_queue_snapshot_v1` keeps its suffix. | `src/lib/queue-snapshot-store.ts:22-29`, `use-queue-persistence.ts:121-158` |
 | Dead code | `pruneSuggestedQueueItemsAfterCurrent` (`shared/queue/src/playlist-suggestions.ts`) and the `sessionIdRef.current == null` prune switch (`queue-provider.tsx:1950`). Nothing browse-origin reaches Up next any more. Deleted in the cleanup PR, once the legacy branch goes. | — |
 
 ### The other follow-ups
@@ -555,7 +653,9 @@ mapping; the reducer decides what to do with it.
 - **F4 (#6667):** play from the list sends only `setCurrentClimb`. "Tapping a playlist loads it
   into my queue" appends to Up next under the section 5 rules and keeps History.
 - **F6 (#6669):** the section labels read the same list model.
-- **Workouts (#5379):** `appendQueueItems` is unchanged.
+- **Workouts (#5379):** `appendQueueItems` keeps its behaviour, but it is a whole-queue
+  `setQueue` (`queue-provider.tsx:1754`), so from a new phone it sends `historyCount` like
+  every other `setQueue`. Undo (`restoreQueueItems`) does the same.
 
 ---
 
@@ -567,8 +667,8 @@ mapping; the reducer decides what to do with it.
 | --- | --- | --- | --- | --- |
 | 0 | main | This doc. | — | 1/5 |
 | 1 | main | `shared/queue/src/now-slot.ts` and its tests, the frozen legacy fixture and the legacy-client simulation (section 9). No callers. | — | 2/5 |
-| 2 | main | Backend: schema additions; Redis fields and script; `updateQueueState` optional `historyCount`; `placeOnWall` in `setCurrentClimbAndPublish` (`services/queue-navigation.ts:20-115`), `setClimbFromLedPositions`, `addQueueItem`, `setQueue`, `joinSession`, `removeQueueItem`; `chooseQueueEvent` and the trailing event; caps; readers that use `upNextStart` with nothing current (kiosk preview, `navigateSessionQueue`, controller `navigateQueue`); mutation metrics; `QUEUE_NOW_SLOT_PERCENT`. Fable review for the trailing event. | PR 1 | 4/5 |
-| 3 | main (OTA) | Mobile section 7 behind `queue-now-slot`; the subscription and join documents; re-recorded screenshot fixtures. | **PR 2 live on production Railway** and checked with a query that selects `historyCount`. A bundle that selects it against an old schema fails validation and loses all queue sync. The `release/next` train's OTAs talk to the production backend too, so the rule holds there. | 4/5 |
+| 2 | main | Backend: schema additions; Redis fields and script; `updateQueueState` optional `historyCount`; `placeOnWall` in `setCurrentClimbAndPublish` (`services/queue-navigation.ts:20-115`), `setClimbFromLedPositions`, `addQueueItem`, `setQueue`, `joinSession`, `removeQueueItem`, `reorderQueueItem`; `chooseQueueEvent` and the trailing event; caps; readers that use `upNextStart` with nothing current (kiosk preview, `navigateSessionQueue`, controller `navigateQueue`); mutation metrics; `QUEUE_NOW_SLOT_PERCENT`. Fable review for the trailing event. | PR 1 | 4/5 |
+| 3 | main (OTA) | Mobile section 7 behind `queue-now-slot`; the shared documents in `packages/shared/graphql/src/operations/queue-session.ts` (`JOIN_SESSION`, `SET_CURRENT_CLIMB`, `SET_QUEUE`, `SET_QUEUE_WITH_BASELINE`) and mobile's `QUEUE_UPDATES_SUBSCRIPTION`; `placement` and `historyCount` through `@boardsesh/queue-react` `create-queue-mutations.ts` and the coalescer's `SetCurrentClimbArgs`; re-recorded screenshot fixtures. | **PR 2 live on production Railway** and checked with a query that selects `historyCount`. A bundle that selects it against an old schema fails validation and loses all queue sync. The `release/next` train's OTAs talk to the production backend too, so the rule holds there. | 4/5 |
 | 4 | main (OTA) | #4979 hold (section 6) behind `stale-current-hold-kill`. Fable review. | PR 3 (needs `lastChangedAt`) | 4/5 |
 | 5 | main | Docs: rule 3 and inconsistency 3 in `docs/climb-lists-and-queue.md`; the Queue Mutations table, the deferred-add and Play next paragraphs and the Redis structures in `docs/websocket-implementation.md`. | with PR 3 | 1/5 |
 | 6 | main | Cleanup: delete the legacy reducer branch, the prune, the `queue-now-slot` flag. | 2 weeks at 100% with the numbers below flat | 2/5 |
@@ -583,11 +683,18 @@ split by build.
 
 - **Backend `QUEUE_NOW_SLOT_PERCENT`** (Railway variable, 0-100). A session is in when the
   FNV-1a hash of its id mod 100 is below it. Unset or unparseable means 0, so it fails closed.
-  It governs requests **without** `placement` (old clients, the native socket, the LED path)
-  and the caps. At 0 those requests follow today's code exactly. Requests **with** `placement`
-  always get the new rules, so a new phone's optimistic state never disagrees with the server.
-  The backend has no flag reader, so this follows the `SYNC_DAEMON_DISABLED` env pattern. A
-  change redeploys in a few minutes.
+  It governs requests **without** `placement` (old clients, the native socket, the LED path,
+  every `addQueueItem` and `reorderQueueItem`) and their caps. At 0 those requests follow
+  today's code exactly. Requests **with** `placement`, and `setQueue` with `historyCount`,
+  always get the new rules and the caps, so a new phone's optimistic state never disagrees
+  with the server. New phones don't trim History locally in a session (section 5), so a
+  session outside the percent is not a drift state for them.
+  This is the first percent-style env gate in the backend. The nearest precedent the backend
+  actually reads is `OG_CARD_TEXT_DISABLED` (`handlers/og-climb.ts:62`), read once at module
+  load; `SYNC_DAEMON_DISABLED` is read by `packages/sync-runtime/src/daemon-switch.ts`, not the
+  backend. PR 2 adds a small parser beside the gate: trim, `Number.parseInt`, `NaN` to 0,
+  clamp to 0-100, with tests. Read once at load, so a change needs a redeploy or restart, a
+  few minutes.
 - **Mobile `queue-now-slot`**, a positive flag in `FEATURE_FLAG_DEFINITIONS`
   (`src/providers/feature-flags-provider.tsx:67`), read `=== true`. Unresolved or off: today's
   reducer, no `placement`. Flipping it mid-session is safe, because both reducers produce
@@ -596,7 +703,10 @@ split by build.
 - **Mobile `stale-current-hold-kill`** for PR 4, read `!== true`, so unresolved means the hold
   is on (`docs/feature-flags.md`, kill switches).
 
-Turn the mobile flag off before lowering the backend percentage.
+Lowering the percent while PR 3 bundles are live is safe for sync: old-client requests in the
+excluded sessions go back to today's rules, new-client requests keep the new ones, and the two
+produce states each side accepts. What it costs is the no-copy fix for old phones in those
+sessions. Turn the mobile flag off first only when the goal is today's behaviour everywhere.
 
 ### Telemetry
 
@@ -610,6 +720,7 @@ was measured, so old and new clients can be compared.
 | Share of opens that were `dedupe-*` | Near 0 means the match key is wrong |
 | Daily read-only query on `board_session_queues`: rooms where one climb appears more than once in Up next | Not falling as the ramp goes up. Measure the baseline before PR 2. |
 | `QUEUE_FULL` rejections, and rooms whose Now + Up next alone exceed 500 | Any sustained count |
+| `Queue Sync Stale Event Ignored` (`use-session-realtime.ts:571-578`) per session-hour | Expected to rise in step with the `FullSync` + trailing count, because every JS subscriber drops the trailing event as `ignore-stale`. Bad is a rise beyond that ratio. |
 | New `Board Stale Current Held` (`ageHours`, `solo` / `session`) and its release reason | Holds with no release (a stuck gate) |
 | APNs `buildContentStateFromQueueState` returning null | Any rise |
 
@@ -618,7 +729,7 @@ was measured, so old and new clients can be compared.
 - Mobile flag off: seconds. A bad bundle: `vp run ota:rollout -- revert`.
 - `QUEUE_NOW_SLOT_PERCENT=0`: minutes.
 - Nothing needs to move back. Every state either rule set writes is a valid state for the
-  other: one array, current climb in it. Older code ignores the two Redis fields. There is no
+  other: one array, current climb in it. Older code ignores the three Redis fields. There is no
   Postgres change to undo.
 - Don't roll the backend back past PR 2 while PR 3 bundles are in the field: their documents
   select `historyCount`, and an old schema rejects the whole subscription.
@@ -632,26 +743,27 @@ was measured, so old and new clients can be compared.
 | `shared/queue/src/__tests__/now-slot.test.ts` (new) | Every row of the `placeOnWall` table. The issue's A, B, C example. The match key: angle and board type, mirror ignored. A moved entry keeps uuid, `tickedBy`, `addedByUser` and mirror. `item: null`. `capHistory` at 125 → 100 and at 500. `QUEUE_FULL`. Orphan append. `upNextStart` with and without a current climb. |
 | `shared/queue/src/__tests__/__fixtures__/legacy-queue-2026-10.ts` (new) | A frozen copy of today's `reducer.ts` current-climb branch and `mapQueueEventToAction`, plus a TS port of `QueueStateReducer` from `SessionQueueState.swift`. Later edits to the live reducer can't change what "an old client" does. |
 | `shared/queue/src/__tests__/legacy-client-sim.test.ts` (new) | A server model built on `now-slot.ts`, two frozen legacy clients, one Swift port and two new clients, over 1,000 seeded random operations: opens, logbook re-taps, track swipes both ways, queue-row taps, steps, adds, removes, reorders, `setQueue` write-backs, trims. After every published event: every client's v1 and v2 hashes equal the server's, and the Swift port's current uuid is in its list. **For every `CurrentClimbChanged` the server publishes, the frozen legacy reducer applied to the pre-state gives exactly the stored array.** No orphan is ever stored. |
-| `shared/queue/src/__tests__/reducer.test.ts` | Local `NOW` / `STEP`. Server events skip placement. `historyCount` across remove, reorder, clear and `FullSync`. HYDRATE / REGRADE freeze History with nothing current. Legacy mode unchanged (existing cases stay green). |
+| `shared/queue/src/__tests__/reducer.test.ts` | Local `NOW` / `STEP`. Server events skip placement. `historyCount` across remove, reorder, clear and `FullSync`. Nothing current: a local drag of an Up next entry above the line is clamped to the head of Up next; a History entry dragged below it lowers `historyCount` by one; a server reorder event across the line is applied as given. In a session the reducer never trims History; solo it trims at 125. HYDRATE / REGRADE freeze History with nothing current. Legacy mode unchanged (existing cases stay green). |
 | `shared/queue/src/__tests__/sync-coordinator.test.ts`, `play-next.test.ts`, `state-hash.test.ts` | `historyCount` through `FullSync`. Play next with nothing current and `historyCount` 3 lands at 3. The hash ignores `historyCount`. |
 | `shared/play-view/src/__tests__/queue-navigation.test.ts`, `queue-list-model.test.ts` | Nothing current with History. Next from nothing starts at the line. Track Previous and Next onto queued neighbours. |
-| `shared/queue-runtime/src/__tests__/set-current-climb-coalescer.test.ts` | A superseded open's deferred add lands in History on the server. |
-| `backend/src/__tests__/queue-navigation.test.ts` | `setCurrentClimbAndPublish` per `rewrite`: the right event, the trailing event's same sequence and null `correlationId`, `FullSync` on a trim. Percent 0 gives today's results for placement-less calls; placement-carrying calls get the new rules at any percent. |
-| `backend/src/__tests__/mixed-crew-now-slot.test.ts` (new, real Redis) | S1 to S14 from section 3, through the real resolvers, with a legacy-fixture subscriber and a new-reducer subscriber. Includes the watchdog firing inside the gap, a `setQueue` composed inside the gap (the residual is asserted, not hidden), and a coalescer deferred add after a dedupe. |
-| `backend/src/__tests__/queue-now-slot-redis.test.ts` (new) | Rolling deploy: write with the old Lua script, read with the new one, `historyCountVersion` stale, line derived. Dormant restore derives `historyCount` and carries `lastChangedAt`. |
+| `shared/queue-runtime/src/__tests__/set-current-climb-coalescer.test.ts` | `placement` is carried through `sendArgs`. A superseded open's deferred add carries its live local position: just after the newer pick when the slot is still local, no position (server appends to the end of Up next) when a `FullSync` removed it. The residual is asserted, not hidden. |
+| `backend/src/__tests__/queue-navigation.test.ts` | `setCurrentClimbAndPublish` per `rewrite`: the right event, the trailing event's same sequence and null `correlationId`, `FullSync` on a trim. Percent 0 gives today's results for placement-less calls; placement-carrying calls get the new rules at any percent. Percent 0, placement `NOW`, History at 125: the server trims and publishes `FullSync` + trailing. A native-shaped request (no `shouldAddToQueue`, no `placement`) with a stale item: `insert` plus the trailing event. The percent parser: unset, `abc`, `-5`, `150`. |
+| `backend/src/__tests__/mixed-crew-now-slot.test.ts` (new, real Redis) | S1 to S14 from section 3, through the real resolvers, with a legacy-fixture subscriber and a new-reducer subscriber. S14 is the Undo case: O removes A, N's `move-up-next` lands while O's Undo `setQueue` is in flight; the test records the resulting array and current climb as the residual. Includes the watchdog firing inside the gap, a `setQueue` composed inside the gap, a coalescer deferred add after a dedupe, an old-phone reorder across the line with nothing current (clamped, `FullSync`), and a 130-entry History in a session outside the percent with a new phone pressing Next (no hash drift). |
+| `backend/src/__tests__/queue-now-slot-redis.test.ts` (new) | Rolling deploy: write with the old Lua script, read with the new one, `historyCountVersion` stale, line derived, `lastChangedAt` from `lastActivity`. `queueChangedAt` moves on a real change and not on a no-op `setQueue` write-back or a tick. Dormant restore derives `historyCount` and takes `lastChangedAt` from `board_session_queues.updated_at`. |
 | `backend/src/__tests__/set-queue-concurrent-add-merge.test.ts`, `queue-sync-fixes.test.ts` | `historyCount` input. A 600-item old payload is trimmed, not thrown. Orphan appended, not cleared. `addQueueItem` `QUEUE_FULL` and the History position rule. |
 | `backend/src/__tests__/board-queue-preview.test.ts`, `navigate-queue.test.ts`, `widget-navigate.test.ts`, `session-state.test.ts`, `apns.test.ts`, `controller.test.ts` | Nothing current with History: the kiosk's Up next starts at the line; widget next goes to `queue[historyCount]`. The LED path reuses a queued climb and keeps its controller event. APNs never sees an orphan. |
 | `mobile/src/providers/__tests__/queue-provider-now-slot.test.tsx` (new), `queue-provider-play-next.test.tsx` | Logbook tap on a queued climb: no copy. Similar climbs leaves Up next alone. Track walk forward and back leaves Up next alone. Flag off sends no `placement`. |
-| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts`, `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new) | A 5 h snapshot holds; a 1 h snapshot lights. In memory for 5 h holds. A session join with `lastChangedAt` 5 h ago holds. Each release: a new current, a crewmate's pick, the lightbulb. The kill switch turns the hold off. |
+| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts`, `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new) | A snapshot whose `lastQueueChangeAt` is 5 h old holds; 1 h lights. The app relaunched three times over five days with no queue change still holds (the save effect rewrites `savedAt` but not `lastQueueChangeAt`). A hydrate or regrade doesn't advance it. A snapshot without the field seeds from `savedAt`. In memory for 5 h holds. A session join with `lastChangedAt` 5 h ago holds. Each release: a new current, a crewmate's pick, the lightbulb. The kill switch turns the hold off. |
+| `mobile/src/lib/live-activity/__tests__/use-live-activity.test.tsx` | Nothing current with History and Up next: the update names Up next[0], not `queue[0]`. Nothing current and Up next empty: no climb sent. Flag off: today's `queue[0]`. |
 | `mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` | Passes after re-recording. |
 | `mobile/ios-tests/LiveActivityWidgetTests.swift` | No change. The Swift port in the legacy fixture pins what the shipped reducer receives. |
 
 Device QA for PR 3 needs two phones in one session: one on the new bundle, one on an embedded
 old build with a Live Activity and a board connected. Tester steps for the PR body:
 
-1. Queue three climbs → open the second from Logbook → no copy.
+1. Queue three climbs → open the second from session history → no copy.
 2. Open a climb from Search → Up next unchanged.
-3. Old phone: Logbook tap on a queued climb → copy vanishes.
+3. Old phone: tap a queued climb in session history → copy vanishes.
 4. Old phone locked → new phone taps a queue row → board lights it.
 
 ---
