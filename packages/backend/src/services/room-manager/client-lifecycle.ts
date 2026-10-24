@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { normaliseOrphanCurrent } from '@boardsesh/queue';
 import { resolveSessionBoardId } from '../session-board-binding';
 import { getPrivacySettings, legacyResourceAudience, requireResourceAccess } from '../privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
@@ -248,9 +249,15 @@ export async function joinSession(
   // when a current climb was sent, but the guard says what it means.
   const hasSeed = (initialQueue !== undefined && initialQueue.length > 0) || !!initialCurrentClimb;
   if (isNewSession && hasSeed) {
-    const seedQueue = initialQueue ?? [];
-    logger.info(`[RoomManager] Initializing queue for new session ${sessionId} with ${seedQueue.length} items`);
-    await updateQueueStateImmediate(sessionId, seedQueue, initialCurrentClimb || null, 0, initialHistoryCount ?? 0);
+    // Invariant 1: never store an orphan, even from a caller that skipped the
+    // resolver's normalisation.
+    const seed = normaliseOrphanCurrent({
+      queue: initialQueue ?? [],
+      currentClimbQueueItem: initialCurrentClimb || null,
+      historyCount: initialHistoryCount ?? 0,
+    });
+    logger.info(`[RoomManager] Initializing queue for new session ${sessionId} with ${seed.queue.length} items`);
+    await updateQueueStateImmediate(sessionId, seed.queue, seed.currentClimbQueueItem, 0, seed.historyCount);
   }
 
   // Update Redis session state
