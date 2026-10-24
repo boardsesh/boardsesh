@@ -13,6 +13,7 @@ import {
   type GetGymBoardsForSwitcherQueryResponse,
 } from '@boardsesh/graphql/operations/gyms';
 import { getHttpClient } from '../client';
+import { extractGraphqlCode } from '../extract-error-message';
 import type { GetMyBoardsQueryResponse } from '../operations';
 import { gymBoardsQueryKey, myBoardsQueryKey } from '../query-keys';
 
@@ -53,9 +54,30 @@ function boardsAtGymFromRoster(
 }
 
 /**
+ * The gym's boards, or an empty list when the server refuses to list them.
+ *
+ * `gymBoards` answers NOT_FOUND for a gym that is missing, deleted, or private
+ * to a viewer who can't edit it, and masks which on purpose. For the switcher
+ * all three mean "no boards this viewer may list", so the answer is no rows
+ * rather than an error (which would be retried, reported and refetched on every
+ * open). Every other failure propagates.
+ */
+async function requestGymBoards(gymUuid: string | null): Promise<GetGymBoardsForSwitcherQueryResponse> {
+  try {
+    return await getHttpClient().request<GetGymBoardsForSwitcherQueryResponse>(GET_GYM_BOARDS_FOR_SWITCHER, {
+      gymUuid,
+    });
+  } catch (error) {
+    if (extractGraphqlCode(error) === 'NOT_FOUND') return { gymBoards: [] };
+    throw error;
+  }
+}
+
+/**
  * The boards a gym has linked, ordered by the server (name, then age, then
  * uuid — a stable order so a row can't move between refetches under a tapping
- * finger). Disabled until a gym uuid resolves, so the switcher can render while
+ * finger). A gym the viewer can't list (NOT_FOUND) reads as an empty list.
+ * Disabled until a gym uuid resolves, so the switcher can render while
  * the active board's gym is still loading.
  *
  * The plain HTTP client, not `offlineAwareRequest`: that router is a closed
@@ -74,8 +96,7 @@ export function useGymBoards(gymUuid: string | null) {
 
   return useQuery({
     queryKey: gymBoardsQueryKey(gymUuid),
-    queryFn: () =>
-      getHttpClient().request<GetGymBoardsForSwitcherQueryResponse>(GET_GYM_BOARDS_FOR_SWITCHER, { gymUuid }),
+    queryFn: () => requestGymBoards(gymUuid),
     select: (data) => data.gymBoards,
     enabled: gymUuid != null,
     staleTime: GYM_BOARDS_STALE_TIME_MS,

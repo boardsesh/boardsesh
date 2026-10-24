@@ -13,10 +13,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { GET_GYM_BOARDS_FOR_SWITCHER } from '@boardsesh/graphql/operations/gyms';
 import type { GetMyBoardsQueryResponse } from '../../operations';
+import { shouldRetryQuery } from '../../query-retry';
 import { gymBoardsQueryKey, GYM_BOARDS_QUERY_KEY, myBoardsQueryKey } from '../../query-keys';
 
 const requestMock = vi.hoisted(() => vi.fn());
@@ -64,9 +65,13 @@ function seedRoster(queryClient: QueryClient, boards: UserBoard[]) {
   queryClient.setQueryData(myBoardsQueryKey(), roster);
 }
 
-function makeWrapper() {
+function makeWrapper(options: { onError?: (error: unknown) => void; realRetry?: boolean } = {}) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    queryCache: new QueryCache({ onError: options.onError }),
+    defaultOptions: {
+      queries: options.realRetry ? { retry: shouldRetryQuery, retryDelay: 0 } : { retry: false },
+      mutations: { retry: false },
+    },
   });
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -169,5 +174,55 @@ describe('useGymBoards', () => {
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
     expect(result.current.isPlaceholderData).toBe(false);
+  });
+
+  describe('when the server will not list the gym', () => {
+    // The shape graphql-request delivers: an Error carrying the response body.
+    function graphqlRejection(message: string, code: string) {
+      return Object.assign(new Error(message), {
+        response: { status: 200, errors: [{ message, extensions: { code } }] },
+      });
+    }
+    const notFound = () => graphqlRejection('Gym not found', 'NOT_FOUND');
+
+    it("answers a gym the viewer can't list with no rows, not an error", async () => {
+      requestMock.mockRejectedValue(notFound());
+      const { queryClient, Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useGymBoards(GYM_UUID), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.isError).toBe(false);
+      expect(result.current.data).toEqual([]);
+      expect(queryClient.getQueryData(gymBoardsQueryKey(GYM_UUID))).toEqual({ gymBoards: [] });
+    });
+
+    it('does not report a NOT_FOUND to error tracking', async () => {
+      requestMock.mockRejectedValue(notFound());
+      const onError = vi.fn();
+      const { Wrapper } = makeWrapper({ onError });
+      const { result } = renderHook(() => useGymBoards(GYM_UUID), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('asks once, not three times', async () => {
+      requestMock.mockRejectedValue(notFound());
+      const { Wrapper } = makeWrapper({ realRetry: true });
+      const { result } = renderHook(() => useGymBoards(GYM_UUID), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(requestMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('still surfaces any other failure', async () => {
+      requestMock.mockRejectedValue(graphqlRejection('boom', 'INTERNAL_SERVER_ERROR'));
+      const onError = vi.fn();
+      const { Wrapper } = makeWrapper({ onError });
+      const { result } = renderHook(() => useGymBoards(GYM_UUID), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(onError).toHaveBeenCalledTimes(1);
+    });
   });
 });
