@@ -9,11 +9,18 @@
 //
 // Every reader goes through `resolveEffectiveRestPacing` (via
 // `hooks/use-effective-rest-pacing.ts`), so a new source plugs in here and never
-// in the scheduler, the pill or the sheet. Today only `settings` is wired; the
-// stage and crew inputs are always null until their PRs land. See
-// docs/rest-timer.md.
+// in the scheduler, the pill or the sheet. `settings` and `stage` are wired: the
+// stage input is what `RestTimerPacingSync` resolved for the climb on the wall
+// (`resolveStageRestPacing`). The crew input stays null until #5382's mobile PR.
+// See docs/rest-timer.md and docs/workout-stages.md ("Pacing").
 
-import type { WorkoutStageKind } from '@boardsesh/playlist-generator';
+import {
+  stageRestSeconds,
+  type WorkoutRun,
+  type WorkoutRunPosition,
+  type WorkoutStageKind,
+  type WorkoutStagePacing,
+} from '@boardsesh/playlist-generator';
 import type { RestTimerMode } from './rest-timer';
 
 /**
@@ -35,22 +42,6 @@ export type RestPacingSettings = {
   mode: RestTimerMode;
   autoAdvance: boolean;
 };
-
-/**
- * A workout stage's own pacing, as the shared playlist generator derives it from
- * the block options (contracts §1). Mirrors `WorkoutStagePacing` in
- * `@boardsesh/playlist-generator`'s pacing module, which lands in a parallel PR;
- * the pacing PR swaps this for that import. The two are structurally identical,
- * so nothing typed against either breaks on the swap.
- */
-export type WorkoutStagePacing =
-  | { mode: 'onTheMinute'; restSeconds: number }
-  | {
-      mode: 'afterTick';
-      restSeconds: number;
-      restBetweenRoundsSeconds?: number;
-      advanceOn: 'tick' | 'send';
-    };
 
 /** The pacing of the stage the current climb belongs to, resolved for the timer. */
 export type RestTimerStagePacing = {
@@ -165,4 +156,109 @@ export function anchorAfterFire({
 }: Pick<EffectiveRestPacing, 'mode' | 'advanceOn'>): 'now' | 'keep' | 'clear' {
   if (mode === 'onTheMinute') return 'keep';
   return advanceOn === 'deadline' ? 'now' : 'clear';
+}
+
+/**
+ * The pacing of the climb on the wall, when its workout stage paces the timer.
+ * `position` is `locateInRun` for that climb, worked out once by the caller.
+ * Null when the climb is in no stage, or in a stage that keeps the climber's own
+ * settings (warm-up, volume, pyramid, ladder, grade focus).
+ *
+ * `targetSeconds` is the rest AFTER this climb: a 4x4's round rest when the
+ * climb closes its round, the changeover for a rest of 0, the interval on the
+ * minute (`stageRestSeconds`).
+ */
+export function resolveStageRestPacing({
+  sessionId,
+  run,
+  position,
+  queueItemUuid,
+}: {
+  sessionId: string;
+  run: WorkoutRun;
+  position: WorkoutRunPosition | null;
+  queueItemUuid: string | null;
+}): RestTimerStagePacing | null {
+  if (position === null || queueItemUuid === null) return null;
+  const stage = run.stages.find((runStage) => runStage.id === position.stageId);
+  const stagePacing = stage?.pacing;
+  if (!stage || !stagePacing) return null;
+  // Rounds rank by what is still queued, so the last queued climb of a round
+  // closes it even after the climber removed one.
+  const closesRound = position.round !== undefined && position.round.positionInRound === position.round.roundSize;
+  return {
+    sessionId,
+    stageId: stage.id,
+    kind: stage.kind,
+    queueItemUuid,
+    mode: stagePacing.mode,
+    targetSeconds: stageRestSeconds(stagePacing, closesRound),
+    // On the minute, the beat itself moves the wall: logged or not, the next
+    // climb comes up on time.
+    advanceOn: stagePacing.mode === 'onTheMinute' ? 'deadline' : stagePacing.advanceOn,
+    closesRound,
+    stagePacing,
+  };
+}
+
+function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePacing): boolean {
+  if (left.mode === 'onTheMinute' || right.mode === 'onTheMinute') {
+    return left.mode === right.mode && left.restSeconds === right.restSeconds;
+  }
+  return (
+    left.restSeconds === right.restSeconds &&
+    left.restBetweenRoundsSeconds === right.restBetweenRoundsSeconds &&
+    left.advanceOn === right.advanceOn
+  );
+}
+
+/**
+ * Field by field, so the sync can write a freshly built object every render and
+ * the store still only changes when the pacing does.
+ */
+export function sameStagePacing(left: RestTimerStagePacing | null, right: RestTimerStagePacing | null): boolean {
+  if (left === right) return true;
+  if (left === null || right === null) return false;
+  return (
+    left.sessionId === right.sessionId &&
+    left.stageId === right.stageId &&
+    left.kind === right.kind &&
+    left.queueItemUuid === right.queueItemUuid &&
+    left.mode === right.mode &&
+    left.targetSeconds === right.targetSeconds &&
+    left.advanceOn === right.advanceOn &&
+    left.closesRound === right.closesRound &&
+    sameWorkoutStagePacing(left.stagePacing, right.stagePacing)
+  );
+}
+
+/**
+ * What a change of stage pacing does to a running timer's anchor.
+ *
+ *   anchorNow    the beat starts now: an on-the-minute stage begins, or its
+ *                interval changed. Its first climb gets a whole interval instead
+ *                of the tail of whatever window was running (or no window at all,
+ *                after a rest that waited for a tick).
+ *   waitForTick  the rest waits for the next tick: on-the-minute ended (its
+ *                anchor means nothing to an after-tick rest), or a new climb of a
+ *                tick or send stage is on the wall. That climb's rest starts when
+ *                the climber logs it, never from the last climb's tick.
+ *   none         keep the anchor.
+ *
+ * The climber's own settings changing is not a transition: the sheet's controls
+ * re-arm the timer themselves.
+ */
+export type RestTimerPacingTransition = 'none' | 'anchorNow' | 'waitForTick';
+
+export function planRestTimerPacingTransition(
+  previous: EffectiveRestPacing,
+  next: EffectiveRestPacing,
+): RestTimerPacingTransition {
+  if (previous.stage === null && next.stage === null) return 'none';
+  if (next.mode === 'onTheMinute') {
+    return previous.mode === 'onTheMinute' && previous.targetSeconds === next.targetSeconds ? 'none' : 'anchorNow';
+  }
+  if (previous.mode === 'onTheMinute') return 'waitForTick';
+  const newClimbOnTheWall = next.stage !== null && next.stage.queueItemUuid !== previous.stage?.queueItemUuid;
+  return newClimbOnTheWall && next.advanceOn !== 'deadline' ? 'waitForTick' : 'none';
 }

@@ -213,6 +213,10 @@ const storage = vi.hoisted(() => ({
   removeItem: vi.fn(async () => undefined),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }));
+// Whether a block arms the timer is pinned in rest-timer-effective.test.ts; here,
+// only that "Add to session" hands it the block it just added.
+const restTimerEffective = vi.hoisted(() => ({ armRestTimerForWorkout: vi.fn(() => false) }));
+vi.mock('../../../../lib/rest-timer-effective', () => restTimerEffective);
 
 import {
   getWorkoutRunForSession,
@@ -257,6 +261,7 @@ beforeEach(() => {
   queue.appendQueueItems.mockReset();
   queue.appendQueueItems.mockImplementation((items: unknown[]) => items.length);
   analytics.track.mockReset();
+  restTimerEffective.armRestTimerForWorkout.mockClear();
   preview.calls = [];
   preview.status = 'ready';
   preview.items = [];
@@ -402,6 +407,13 @@ describe('AddWorkoutBlockSheet', () => {
       stageCount: 1,
       phase: 'in_session',
     });
+    // The added block's own stages decide whether the timer comes on, never
+    // the rest of the run.
+    expect(restTimerEffective.armRestTimerForWorkout).toHaveBeenCalledExactlyOnceWith(
+      'session-1',
+      preview.staged.run,
+      expect.any(Number),
+    );
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

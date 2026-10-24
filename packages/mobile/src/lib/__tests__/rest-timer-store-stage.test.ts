@@ -1,0 +1,235 @@
+// The rest-timer store's workout context (#5380, #6231): the stage pacing of the
+// climb on the wall, the last tick and the queue item it was logged on, and what
+// a fire or a stage change does to the anchor. The default arguments must keep
+// every existing caller on exactly today's behaviour.
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  applyRestTimerStagePacing,
+  armRestTimer,
+  clearRestTimerQueueEnded,
+  disarmRestTimer,
+  getRestTimerState,
+  noteRestTimerAutoAdvanceFired,
+  noteRestTimerQueueEnded,
+  noteRestTimerTick,
+  pauseRestTimer,
+  resetRestTimerStoreForTests,
+  subscribeRestTimer,
+} from '../rest-timer-store';
+import type { RestTimerStagePacing } from '../rest-timer-pacing';
+
+const T0 = Date.parse('2026-09-11T10:00:00.000Z');
+const tickAt = (offsetSeconds: number) => new Date(T0 + offsetSeconds * 1000).toISOString();
+
+const LIMIT_STAGE: RestTimerStagePacing = {
+  sessionId: 'session-1',
+  stageId: 'stage-limit',
+  kind: 'limitBouldering',
+  queueItemUuid: 'queue-1',
+  mode: 'afterTick',
+  targetSeconds: 180,
+  advanceOn: 'send',
+  closesRound: false,
+  stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+};
+
+const EMOM_STAGE: RestTimerStagePacing = {
+  sessionId: 'session-1',
+  stageId: 'stage-emom',
+  kind: 'onTheMinute',
+  queueItemUuid: 'queue-2',
+  mode: 'onTheMinute',
+  targetSeconds: 60,
+  advanceOn: 'deadline',
+  closesRound: false,
+  stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
+};
+
+beforeEach(() => {
+  resetRestTimerStoreForTests();
+});
+
+describe('the last tick', () => {
+  it('records how a tick went and the queue item it was logged on, in both cadences', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: T0 + 5_000,
+      lastTick: { status: 'attempt', queueItemUuid: 'queue-1' },
+    });
+
+    armRestTimer('onTheMinute', T0, 'session-1');
+    noteRestTimerTick(tickAt(20), 'onTheMinute', T0 + 20_000, { status: 'send', queueItemUuid: 'queue-2' });
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: T0,
+      lastTick: { status: 'send', queueItemUuid: 'queue-2' },
+    });
+  });
+
+  it('keeps the last one when a tick names no outcome (a cold-start read of the session)', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });
+    noteRestTimerTick(tickAt(9), 'afterTick', T0 + 9_000);
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: T0 + 9_000,
+      lastTick: { status: 'send', queueItemUuid: 'queue-1' },
+    });
+  });
+
+  it('is forgotten on arm and on disarm, so an old tick never moves a new rest', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });
+    armRestTimer('afterTick', T0 + 10_000, 'session-1');
+    expect(getRestTimerState().lastTick).toBeNull();
+
+    noteRestTimerTick(tickAt(15), 'afterTick', T0 + 15_000, { status: 'send', queueItemUuid: 'queue-1' });
+    disarmRestTimer();
+    expect(getRestTimerState().lastTick).toBeNull();
+  });
+
+  it('is never recorded while the timer is off', () => {
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().lastTick).toBeNull();
+  });
+});
+
+describe('the fire', () => {
+  function armWithSend(): number {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid: 'queue-1' });
+    return getRestTimerState().cycleId;
+  }
+
+  it('restarts an after-tick rest at the fire by default, as it always has', () => {
+    const cycleId = armWithSend();
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(true);
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: T0 + 60_000,
+      lastTick: { status: 'send', queueItemUuid: 'queue-1' },
+      lastFiredDeadlineMs: T0 + 60_000,
+    });
+  });
+
+  it('keeps an on-the-minute beat by default', () => {
+    armRestTimer('onTheMinute', T0, 'session-1');
+    const { cycleId } = getRestTimerState();
+    noteRestTimerAutoAdvanceFired(cycleId, 'onTheMinute', T0 + 60_000, T0 + 60_000);
+    expect(getRestTimerState().anchorMs).toBe(T0);
+  });
+
+  it('under a tick or send rule leaves no anchor and forgets the tick, so the next climb waits for its own', () => {
+    const cycleId = armWithSend();
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear')).toBe(true);
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: null,
+      lastTick: null,
+      isRunning: true,
+      lastFiredDeadlineMs: T0 + 180_000,
+      cycleId: cycleId + 1,
+    });
+  });
+
+  it('still refuses a stale cycle, whatever the anchor rule', () => {
+    const cycleId = armWithSend();
+    expect(noteRestTimerAutoAdvanceFired(cycleId - 1, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear')).toBe(false);
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0, lastTick: { status: 'send' } });
+  });
+});
+
+describe('a refilled queue', () => {
+  it('restarts an after-tick rest by default, and waits for a tick under a tick or send rule', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid: 'queue-1' });
+    noteRestTimerQueueEnded();
+    clearRestTimerQueueEnded(T0 + 300_000, 'afterTick');
+    expect(getRestTimerState()).toMatchObject({ queueEnded: false, anchorMs: T0 + 300_000 });
+
+    noteRestTimerQueueEnded();
+    clearRestTimerQueueEnded(T0 + 400_000, 'afterTick', 'clear');
+    expect(getRestTimerState()).toMatchObject({ queueEnded: false, anchorMs: null });
+  });
+});
+
+describe('the stage pacing', () => {
+  it('is stored while the timer is off, and arming or turning it off keeps it', () => {
+    applyRestTimerStagePacing(LIMIT_STAGE, T0, 'waitForTick');
+    expect(getRestTimerState()).toMatchObject({ stagePacing: LIMIT_STAGE, armed: false, anchorMs: null });
+
+    armRestTimer('afterTick', T0, 'session-1');
+    expect(getRestTimerState().stagePacing).toBe(LIMIT_STAGE);
+    disarmRestTimer();
+    expect(getRestTimerState().stagePacing).toBe(LIMIT_STAGE);
+  });
+
+  it('changes nothing, and tells no one, when the pacing is the same', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    applyRestTimerStagePacing(LIMIT_STAGE, T0, 'waitForTick');
+    const before = getRestTimerState();
+    let notified = 0;
+    subscribeRestTimer(() => {
+      notified += 1;
+    });
+
+    applyRestTimerStagePacing({ ...LIMIT_STAGE, stagePacing: { ...LIMIT_STAGE.stagePacing } }, T0 + 5_000, 'anchorNow');
+
+    expect(getRestTimerState()).toBe(before);
+    expect(notified).toBe(0);
+  });
+
+  it('anchorNow starts an on-the-minute beat at the stage change, mid-window or not', () => {
+    // A warm-up rest fired at T0 + 300 s and the first on-the-minute climb is up.
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(240), 'afterTick', T0 + 240_000);
+    const { cycleId, lastTickAt } = getRestTimerState();
+
+    applyRestTimerStagePacing(EMOM_STAGE, T0 + 300_000, 'anchorNow');
+
+    expect(getRestTimerState()).toMatchObject({
+      stagePacing: EMOM_STAGE,
+      anchorMs: T0 + 300_000,
+      pausedElapsedSeconds: 0,
+      cycleId: cycleId + 1,
+      lastTickAt,
+    });
+  });
+
+  it('waitForTick clears the anchor so the new climb rests only once it is logged', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid: 'queue-0' });
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 60_000, T0 + 60_000);
+    const { cycleId } = getRestTimerState();
+
+    applyRestTimerStagePacing(LIMIT_STAGE, T0 + 61_000, 'waitForTick');
+
+    expect(getRestTimerState()).toMatchObject({
+      stagePacing: LIMIT_STAGE,
+      anchorMs: null,
+      cycleId: cycleId + 1,
+      lastFiredDeadlineMs: T0 + 60_000,
+      lastTickAt: tickAt(0),
+    });
+  });
+
+  it('only stores the pacing while paused: resume sets its own anchor', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0);
+    pauseRestTimer(T0 + 30_000);
+    const paused = getRestTimerState();
+
+    applyRestTimerStagePacing(EMOM_STAGE, T0 + 40_000, 'anchorNow');
+
+    expect(getRestTimerState()).toMatchObject({
+      stagePacing: EMOM_STAGE,
+      isRunning: false,
+      anchorMs: paused.anchorMs,
+      pausedElapsedSeconds: 30,
+      cycleId: paused.cycleId,
+    });
+  });
+
+  it('goes back to null when the workout is over', () => {
+    applyRestTimerStagePacing(LIMIT_STAGE, T0, 'none');
+    applyRestTimerStagePacing(null, T0 + 1_000, 'none');
+    expect(getRestTimerState().stagePacing).toBeNull();
+  });
+});
