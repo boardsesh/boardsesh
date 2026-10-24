@@ -53,20 +53,20 @@ const HAPTIC_PLAYERS: Readonly<Record<RestTimerCueHaptic, () => void>> = {
   success: hapticSuccess,
 };
 
-// `undefined` = not created yet; `null` = this binary has none (or making one
-// failed). Created on the first cue that wants a sound and kept for the app run,
-// so a 1 Hz countdown never builds a player per second.
+// `undefined` = not created yet, or the last one failed; `null` = this binary has
+// none. Created on the first cue that wants a sound and kept while it works, so a
+// 1 Hz countdown never builds a player per second. A player that throws, while
+// being built or while playing, is dropped: the next cue builds a fresh one
+// instead of the timer staying silent until the app restarts.
 let soundPlayer: SoundPlayer | null | undefined;
 
-function getSoundPlayer(): SoundPlayer | null {
-  if (soundPlayer === undefined) {
-    try {
-      soundPlayer = createSoundPlayer();
-    } catch {
-      soundPlayer = null;
-    }
+function playCueSound(sound: RestTimerCueSound): void {
+  try {
+    if (soundPlayer === undefined) soundPlayer = createSoundPlayer();
+    soundPlayer?.play(sound);
+  } catch {
+    soundPlayer = undefined;
   }
-  return soundPlayer;
 }
 
 /** Whether this binary can play the cue sounds. The Sound setting row shows only where this is true. */
@@ -86,10 +86,11 @@ export function playRestTimerCue(cue: RestTimerCue): void {
     // A haptic is decoration; the advance it accompanies has already happened.
   }
 
+  // The haptic has already played, so a slow or failing player never holds it back.
   try {
     // Availability first: on a binary with no sound this never reads the setting.
     if (!isRestTimerSoundAvailable() || !getSetting('restTimerSound')) return;
-    getSoundPlayer()?.play(REST_TIMER_CUE_SOUND[cue.kind]);
+    playCueSound(REST_TIMER_CUE_SOUND[cue.kind]);
   } catch {
     // The sink reports its own failures; a beep that did not play is not a
     // reason to break the timer.

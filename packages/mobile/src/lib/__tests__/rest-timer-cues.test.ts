@@ -143,16 +143,58 @@ describe('sound', () => {
     expect(sound.createSoundPlayer).toHaveBeenCalledTimes(1);
   });
 
-  it('does not retry a player that failed to build once', () => {
+  it('plays the haptic when building the player throws, and builds it again on the next cue', () => {
     sound.supported = true;
-    sound.createSoundPlayer.mockImplementation(() => {
-      throw new Error('no audio session');
-    });
+    const player = makePlayer();
+    sound.createSoundPlayer
+      .mockImplementationOnce(() => {
+        throw new Error('no audio session');
+      })
+      .mockReturnValue(player);
 
     expect(() => playRestTimerCue({ kind: 'advance' })).not.toThrow();
-    expect(() => playRestTimerCue({ kind: 'advance' })).not.toThrow();
-    expect(sound.createSoundPlayer).toHaveBeenCalledTimes(1);
+    expect(haptics.medium).toHaveBeenCalledTimes(1);
+
+    playRestTimerCue({ kind: 'advance' });
+    expect(sound.createSoundPlayer).toHaveBeenCalledTimes(2);
     expect(haptics.medium).toHaveBeenCalledTimes(2);
+    expect(player.play).toHaveBeenCalledWith('final');
+  });
+
+  it('drops a player that throws while playing, and builds a fresh one on the next cue', () => {
+    sound.supported = true;
+    const broken = {
+      play: vi.fn(() => {
+        throw new Error('player gone');
+      }),
+    };
+    const fresh = makePlayer();
+    sound.createSoundPlayer.mockReturnValueOnce(broken).mockReturnValue(fresh);
+
+    playRestTimerCue({ kind: 'countdownTick', secondsLeft: 2 });
+    expect(haptics.selection).toHaveBeenCalledTimes(1);
+
+    playRestTimerCue({ kind: 'countdownTick', secondsLeft: 1 });
+    expect(sound.createSoundPlayer).toHaveBeenCalledTimes(2);
+    expect(broken.play).toHaveBeenCalledTimes(1);
+    expect(fresh.play).toHaveBeenCalledWith('tick');
+    expect(haptics.selection).toHaveBeenCalledTimes(2);
+
+    // A player that works is kept: the next cue does not build another.
+    playRestTimerCue({ kind: 'advance' });
+    expect(sound.createSoundPlayer).toHaveBeenCalledTimes(2);
+  });
+
+  it('plays the haptic before it builds or plays the sound', () => {
+    sound.supported = true;
+    const player = makePlayer();
+    sound.createSoundPlayer.mockReturnValue(player);
+
+    playRestTimerCue({ kind: 'reached' });
+
+    const hapticAt = haptics.success.mock.invocationCallOrder[0];
+    expect(hapticAt).toBeLessThan(sound.createSoundPlayer.mock.invocationCallOrder[0]);
+    expect(hapticAt).toBeLessThan(player.play.mock.invocationCallOrder[0]);
   });
 
   it('never throws when the player does, and the haptic still plays', () => {

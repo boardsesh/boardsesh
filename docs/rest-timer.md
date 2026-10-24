@@ -80,7 +80,8 @@ Rules the scheduler keeps:
 - Countdown ticks and the single `warning` never both play for one rest.
 - `playRestTimerCue` never throws. The haptic always plays. The sound plays only when
   `isRestTimerSoundAvailable()` and the `restTimerSound` setting are both true, and the player is
-  built once, on the first cue that wants it.
+  built on the first cue that wants it and kept while it works. One that throws is dropped, so
+  the next cue builds a fresh one.
 
 ## Sound (native train)
 
