@@ -28,7 +28,11 @@ import {
   readBluetoothUnavailableReason,
   trackBluetoothUnavailable,
 } from '../bluetooth-unavailable';
-import { alertBluetoothUnavailable, bluetoothBlockedBody } from '../bluetooth-unavailable-alert';
+import {
+  alertBluetoothPermissionDenied,
+  alertBluetoothUnavailable,
+  bluetoothBlockedBody,
+} from '../bluetooth-unavailable-alert';
 
 // Echo the key so assertions name the exact copy each state gets.
 const echoSettings = ((key: string) => key) as unknown as TFunction<'settings'>;
@@ -112,6 +116,35 @@ describe('bluetoothBlockedBody', () => {
   it('names Location on Android 11 and older, which gate scans on it', () => {
     reactNativePermissionHarness.platform.Version = 30;
     expect(bluetoothBlockedBody(echoSettings)).toBe('ble.blockedBodyLocation');
+  });
+});
+
+describe('alertBluetoothPermissionDenied', () => {
+  it('keeps the "allow permissions" copy and adds Cancel and Try again', () => {
+    alertBluetoothPermissionDenied({ t: echoSettings, onRetry: vi.fn() });
+
+    expect(mockAlert.alert).toHaveBeenCalledWith(
+      'ble.permissionRequired',
+      'ble.errorPermissionDenied',
+      expect.any(Array),
+    );
+    expect(lastAlertButtons()).toEqual([
+      { text: 'ble.cancel', style: 'cancel' },
+      { text: 'ble.tryAgain', onPress: expect.any(Function) },
+    ]);
+  });
+
+  it('retries only when Try again is tapped, and leaves the tracking to the caller', () => {
+    const onRetry = vi.fn();
+    alertBluetoothPermissionDenied({ t: echoSettings, onRetry });
+    expect(onRetry).not.toHaveBeenCalled();
+
+    lastAlertButtons()
+      .find((button) => button.text === 'ble.tryAgain')
+      ?.onPress?.();
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(mockTrack).not.toHaveBeenCalled();
   });
 });
 
