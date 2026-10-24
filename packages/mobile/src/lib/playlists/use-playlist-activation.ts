@@ -262,9 +262,18 @@ export type PlaylistAddToQueueState = {
   isAppending: boolean;
 };
 
+export type PlaylistActivationOptions = {
+  /**
+   * A deliberate play, not a row tap: the playlist's Play button. "Light
+   * problems when tapping the list" is about row taps, so it does not turn
+   * this into a preview. The crew rule still does.
+   */
+  deliberate?: boolean;
+};
+
 export type PlaylistActivationResult = {
   /** Callback to wire onto a climb row tap. */
-  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => Promise<void>;
+  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => Promise<void>;
   /** Bulk additive queueing for the detail screen's "Add to queue" row. */
   addToQueue: PlaylistAddToQueueState;
 };
@@ -1134,7 +1143,7 @@ export function usePlaylistActivation({
   // the caller already dispatched, so it doesn't re-commit or treat this as a
   // preview.
   const activatePlaylistClimb = useCallback(
-    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
+    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, activationOptions?: PlaylistActivationOptions) => {
       if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
@@ -1199,12 +1208,13 @@ export function usePlaylistActivation({
       // (`previewOnly`), so a tap must not take their wall; or the climber
       // turned off "Light problems when tapping the list" (issue #6665: every
       // list reads it, not only search). The setting is read here, at the tap,
-      // so the callback does not change identity when it flips.
+      // so the callback does not change identity when it flips. A deliberate
+      // play (the playlist's Play button) is not a row tap and skips it.
       //
       // Ordered ahead of `replaceQueueOnActivate` deliberately: replacing a
       // crew's whole queue is the loudest write in the app, and a row tap must
       // never be it.
-      if (previewOnlyRef.current || !getSetting('lightOnClimbTap')) {
+      if (previewOnlyRef.current || (!activationOptions?.deliberate && !getSetting('lightOnClimbTap'))) {
         const target = resolveTarget(climb);
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
