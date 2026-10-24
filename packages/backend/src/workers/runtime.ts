@@ -8,12 +8,12 @@ import { enqueueOn } from '../services/job-queue';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from './jobs';
 import { requireProviderSecrets, type WorkerConfig } from './config';
 import { familiesForRole } from './families';
-import { watchJobQueueStall } from './stall-watchdog';
+import { watchWorkerJobQueue } from './stall-watchdog';
 
 export async function startWorker(
   config: WorkerConfig,
   hooks: {
-    /** The job queue stayed silent past the stall watchdog's limit; the caller exits. */
+    /** The stall watchdog gave up on this worker (stall-watchdog.ts); the caller exits. */
     onStalled: () => void;
   },
 ) {
@@ -38,6 +38,8 @@ export async function startWorker(
   let polling: Promise<void> | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let stopStallWatch: (() => void) | undefined;
+  // When the job being run loses its lease, on performance.now()'s clock (stall-watchdog.ts).
+  let jobLeaseEndsAt: number | undefined;
   const started = Date.now();
   const health = createServer((request, response) => {
     const healthy = ready && !stopping && Date.now() - lastContact < 60_000;
@@ -120,12 +122,15 @@ export async function startWorker(
         for (const job of jobs) {
           if (stopping) break;
           active++;
+          // The same lease executeBackgroundJob aborts at: startedOn + expireInSeconds.
+          jobLeaseEndsAt = performance.now() + (job.startedOn.getTime() + job.expireInSeconds * 1000 - Date.now());
           try {
             const outcome = await executeBackgroundJob(database, boss, job, handler, shutdown.signal);
             if (outcome === 'succeeded') completed++;
             if (outcome === 'failed') failed++;
           } finally {
             active--;
+            jobLeaseEndsAt = undefined;
           }
         }
       } catch {
@@ -154,16 +159,12 @@ export async function startWorker(
     monitor.unref();
     // Startup's probe just completed a round trip on this pool, which is where
     // the watchdog starts counting (#6683).
-    stopStallWatch = watchJobQueueStall({
-      roundTrip: () => assertQueuePrimary(boss.getDb()),
+    stopStallWatch = watchWorkerJobQueue({
+      boss,
+      role: config.role,
       isStopping: () => stopping,
-      onStalled: (silentMs) => {
-        logger.error('[worker] job queue unreachable, exiting so Docker restarts the worker', {
-          role: config.role,
-          silentSeconds: Math.round(silentMs / 1000),
-        });
-        hooks.onStalled();
-      },
+      jobLeaseEndsAt: () => jobLeaseEndsAt,
+      onStalled: hooks.onStalled,
     });
     logger.info('[worker] started', { role: config.role, paused: config.paused });
   } catch (error) {

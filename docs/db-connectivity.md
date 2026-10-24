@@ -528,20 +528,47 @@ fires:
 `job-queue-dead-socket.test.ts` reproduces it with a fake server that swallows
 a query on an open socket.
 
-**It is write-safe.** The only write on a worker's pg-boss pool is `fetch`, and
-nothing retries it. A fetch whose answer was lost may have activated a job on
-the server. The backend supervisor then fails that job on its missed heartbeat
-and pg-boss retries it, exactly as when a worker dies. The retry is a new
-attempt with its own claim. That job uses one retry. Run I/O (`touch`,
-`complete`, `fail`, `send`) never touches this pool: it goes through the Drizzle
-adapter on the application pool.
+**Giving up tells the server nothing, so the server gets a shorter deadline.**
+A statement the client abandons keeps running on the server. A backend waiting
+on a lock never looks at its socket while `client_connection_check_interval` is
+0, the default. Once the lock clears, an abandoned `fetch` commits and activates
+a job no worker receives. Meanwhile the poll loop has sent its next fetch, 2 s
+later on a fresh connection, and that one can activate a different job.
 
-**The backend's pool has no deadline.** Its supervision and maintenance passes,
-such as the queue-stats pass that seq-scans `pgboss.job_common`, can
-legitimately run longer than 30 s. A client-side deadline would drop the
-connection and leave the statement running on the server. `statement_timeout`
-is no substitute for any of this: the server enforces it, and the server never
-sees a query that went missing, or an answer that was lost on the way back.
+So worker pools also set `statement_timeout`
+(`WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS`, 25 s). pg sends it as a startup
+parameter (`getStartupConf` in `pg/lib/client.js`). A server that is alive but
+slow, or stuck behind a lock, cancels the statement at 25 s and rolls it back
+(SQLSTATE 57014) before the client's 30 s deadline. Nothing commits behind the
+worker's back, and the connection stays usable. The 30 s `query_timeout` only
+fires when the server has gone silent.
+`job-queue-server-deadline.test.ts` holds an advisory lock against a real
+server and checks that the blocked statement is cancelled and never commits.
+
+The startup parameter needs a direct connection to Postgres. Every client,
+workers included, connects straight to the primary, because PgBouncer was never
+deployed ("PgBouncer: parked" above). A worker's TLS is verified against our own
+CA, whose leaf names only `pgdr.boardsesh.com` and the Railway-internal host
+(`docs/pg-primary-tls-rollout.md`), so nothing in between terminates the
+session. If a pooler is ever put in front of the workers, move the deadline onto
+the worker logins with `ALTER ROLE <worker login> SET statement_timeout = '25s'`.
+PgBouncer rejects any startup parameter that is not in
+`ignore_startup_parameters`, so every worker connection would fail.
+
+**What a lost fetch costs.** Nothing runs twice: run I/O (`touch`, `complete`,
+`fail`, `send`) never touches this pool, because it goes through the Drizzle
+adapter on the application pool. The only write here is `fetch`. A fetch whose
+answer was lost on a silent connection may still have activated a job. The
+backend supervisor fails that job once its heartbeat window passes, which takes
+30–900 s depending on the family, plus up to 1–3 min for the supervise pass. Until
+then the job holds its `stately` singleton key. pg-boss retries it as a new
+attempt with its own claim if the family has retries left; that uses one. A
+family with `retryLimit: 0` loses that run outright. `provider-routine-cycle` is
+one; its next cycle, five minutes later, covers it.
+
+**The backend's pool has neither deadline.** Its supervision and maintenance
+passes, such as the queue-stats pass that seq-scans `pgboss.job_common`, can
+legitimately run longer than 30 s.
 
 ## Health endpoints
 

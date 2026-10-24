@@ -10,7 +10,9 @@ vi.mock('../../utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), 
  * startup handshake, then reads the first connection's first query and never
  * answers it while keeping the socket open. The kernel has acknowledged the
  * bytes, so nothing on the client side ever errors. That is what a TCP proxy
- * does when its upstream leg vanishes. Every later connection is answered.
+ * does when its upstream leg vanishes. Every later connection is answered, in
+ * the simple protocol and in the extended one that pg uses for a parameterised
+ * query such as pg-boss's fetch.
  */
 
 const SSL_REQUEST_CODE = 80877103;
@@ -26,6 +28,14 @@ function backendMessage(type: string, body: Buffer): Buffer {
 const AUTHENTICATION_OK = backendMessage('R', Buffer.from([0, 0, 0, 0]));
 const READY_FOR_QUERY = backendMessage('Z', Buffer.from('I', 'latin1'));
 const COMMAND_COMPLETE = backendMessage('C', Buffer.from('SELECT 0\0', 'latin1'));
+// Answers Parse, Bind, Describe (portal) and Execute, in order, once their Sync arrives.
+const EXTENDED_QUERY_REPLY = Buffer.concat([
+  backendMessage('1', Buffer.alloc(0)),
+  backendMessage('2', Buffer.alloc(0)),
+  backendMessage('n', Buffer.alloc(0)),
+  COMMAND_COMPLETE,
+  READY_FOR_QUERY,
+]);
 
 async function startSilentAfterAckPostgres() {
   const sockets: Socket[] = [];
@@ -57,13 +67,14 @@ async function startSilentAfterAckPostgres() {
         if (pending.length < 5 || pending.length < pending.readInt32BE(1) + 1) return;
         const type = String.fromCharCode(pending.readUInt8(0));
         pending = pending.subarray(pending.readInt32BE(1) + 1);
-        if (type !== 'Q') continue;
+        // A simple query ends at its Q message, an extended one at its Sync.
+        if (type !== 'Q' && type !== 'S') continue;
         if (connection === 0) {
           // Received and acknowledged, never answered.
           resolveSwallowed();
           continue;
         }
-        socket.write(Buffer.concat([COMMAND_COMPLETE, READY_FOR_QUERY]));
+        socket.write(type === 'Q' ? Buffer.concat([COMMAND_COMPLETE, READY_FOR_QUERY]) : EXTENDED_QUERY_REPLY);
       }
     });
   });
@@ -85,7 +96,7 @@ async function startSilentAfterAckPostgres() {
 type QueuePool = {
   open(): Promise<void>;
   close(): Promise<void>;
-  executeSql(text: string): Promise<{ rows: unknown[] }>;
+  executeSql(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
 };
 
 function track(promise: Promise<unknown>) {
@@ -126,7 +137,7 @@ describe('a job-queue query that never gets an answer (#6683)', () => {
   it('worker pool: drops the stuck query and its socket, then serves the next query on a fresh connection', async () => {
     const { server, pool } = await openPool('worker');
 
-    const stuck = track(pool.executeSql('SELECT 1'));
+    const stuck = track(pool.executeSql('SELECT $1::int AS fetched', [1]));
     await server.swallowed;
     await vi.advanceTimersByTimeAsync(WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS);
 
@@ -135,7 +146,7 @@ describe('a job-queue query that never gets an answer (#6683)', () => {
     // pg destroyed the dead socket rather than leaving it to linger.
     if (!server.sockets[0].destroyed) await once(server.sockets[0], 'close');
 
-    await expect(pool.executeSql('SELECT 1')).resolves.toMatchObject({ rows: [] });
+    await expect(pool.executeSql('SELECT $1::int AS fetched', [1])).resolves.toMatchObject({ rows: [] });
     expect(server.sockets).toHaveLength(2);
   });
 

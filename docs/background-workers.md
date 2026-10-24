@@ -1078,19 +1078,33 @@ two workers sat unhealthy for three days. Each had one job-queue query that
 never got an answer, and that query held the worker's only pg-boss connection.
 Two guards now cover this:
 
-- **A 30 s read deadline on the worker's pg-boss pool**
-  (`WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS`). A query with no answer after 30 s is
-  dropped along with its socket, and the next poll opens a fresh connection. The
-  worker logs one `[worker] poll failed` and carries on. See
+- **Deadlines on the worker's pg-boss pool.** The server cancels and rolls back
+  any statement still running after 25 s (`WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS`).
+  The client drops a query with no answer after 30 s, along with its socket
+  (`WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS`). Either way the worker logs one
+  `[worker] poll failed`, and the next poll opens a fresh connection. See
   [`docs/db-connectivity.md`](db-connectivity.md), "Worker job-queue read
-  deadline", for why it is write-safe and why the backend's pool has none.
-- **A stall watchdog** (`packages/backend/src/workers/stall-watchdog.ts`). Every
-  30 s it runs one round trip on the pg-boss pool, on its own timer. If none has
-  succeeded for 10 minutes, it logs
-  `[worker] job queue unreachable, exiting so Docker restarts the worker` and the
-  process exits with code 1. A long job does not count as silence, because a
-  running job never uses that pool. Each run's I/O goes through the Drizzle
-  adapter, on the application pool.
+  deadline", for why the server's deadline is the shorter one, what a lost fetch
+  costs, and why the backend's pool has neither.
+- **A stall watchdog** (`packages/backend/src/workers/stall-watchdog.ts`). It
+  exits the process with code 1 in either of two cases:
+  - **No round trip has succeeded for 10 minutes.** Every 30 s, on its own timer,
+    it runs one round trip on the pg-boss pool. It then logs
+    `[worker] job queue unreachable, exiting so Docker restarts the worker`. A
+    long job does not count as silence, because a running job never uses that
+    pool: each run's I/O goes through the Drizzle adapter, on the application
+    pool.
+  - **The poll loop is still inside one job 10 minutes after that job's lease
+    (`startedOn + expireInSeconds`) ended.** It then logs
+    `[worker] job still running past its lease, exiting so Docker restarts the
+    worker`. This is the same wedge on the application pool: a query or call
+    inside the job that never returns. By then the attempt is already lost.
+    pg-boss expires it, and the attempt fence refuses its writes, so exiting
+    loses nothing.
+
+  The watchdog keeps time on a monotonic clock, so a wall-clock step changes
+  nothing. A check that arrives more than a minute late means the process was
+  suspended or blocked. Silence then starts counting again from that check.
 
 Restart cadence during a real outage comes from Docker's restart manager. The
 delay starts at 100 ms and doubles on each restart up to 1 minute. It drops back

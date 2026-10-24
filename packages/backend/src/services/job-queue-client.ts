@@ -98,10 +98,10 @@ export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
  * checkout then waited 10 s and failed, once a minute, for days.
  *
  * With this set, pg rejects the stuck query, pg-pool discards the client, and
- * pg destroys its socket. The next poll opens a fresh connection. Nothing is
- * retried: a fetch whose answer was lost may have activated a job on the
- * server, and the backend supervisor fails and retries that job on its missed
- * heartbeat, as it does when a worker dies.
+ * pg destroys its socket. The next poll opens a fresh connection. Giving up
+ * tells the server nothing, so this deadline is only for a server that has
+ * gone silent. A live server that is merely slow is handled by
+ * {@link WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS} first.
  *
  * Workers only. Every worker statement on this pool is a short read or the
  * fetch; run I/O goes through the Drizzle adapter. The backend's pool runs
@@ -110,11 +110,26 @@ export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
  */
 export const WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS = 30_000;
 
+/**
+ * The server-side deadline for the same statements, deliberately shorter than
+ * {@link WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS}. A fetch the client abandons keeps
+ * running on the server: a backend waiting on a lock never looks at its socket.
+ * Once the lock clears it commits, and activates a job no worker receives,
+ * while the poll loop has already sent the next fetch on a fresh connection.
+ * With this set, a live server cancels the statement at 25 s and rolls it back
+ * (SQLSTATE 57014) before the client gives up, so nothing commits behind the
+ * worker's back. pg sends it as a startup parameter, which a direct connection
+ * honours (workers connect straight to the primary; see docs/db-connectivity.md,
+ * "PgBouncer: parked").
+ */
+export const WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS = 25_000;
+
 // pg-boss hands its whole config to `pg.Pool`, which hands it to each
-// `pg.Client`, so pg reads `query_timeout` from here. pg-boss's option type just
-// does not list it.
-const WORKER_JOB_QUEUE_POOL_OPTIONS: { query_timeout: number } = {
+// `pg.Client`, so pg reads both from here. pg-boss's option type just does not
+// list them.
+const WORKER_JOB_QUEUE_POOL_OPTIONS: { query_timeout: number; statement_timeout: number } = {
   query_timeout: WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS,
+  statement_timeout: WORKER_JOB_QUEUE_STATEMENT_TIMEOUT_MS,
 };
 
 /** Shared connection factory. Only the backend owns scheduling/supervision. */
