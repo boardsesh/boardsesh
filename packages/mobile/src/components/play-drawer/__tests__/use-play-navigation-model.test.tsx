@@ -159,4 +159,67 @@ describe('usePlayNavigationModel', () => {
     expect(result.current.navigationSuggestionSource).toBeNull();
     expect(result.current.navigationState.nextItem).toBe(queue[1]);
   });
+
+  // #6238: walking a list, the queue button badges Up next, the same number
+  // the end card offers.
+  describe('the Up next badge', () => {
+    const now = item('a');
+    const queued = [item('q1'), item('q2')];
+    const queue = [now, ...queued];
+    const projects: PlaylistSuggestionSource = {
+      playlistUuid: 'smart:projects',
+      activatedClimbUuid: 'a',
+      boardKey: 'kilter:1',
+      climbs: [now.climb, item('b').climb, item('c').climb],
+      label: 'Projects',
+      total: 3,
+    };
+
+    it('counts Up next while a named list is walked, before its end', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: projects }),
+      );
+      expect(result.current.currentTrackLabel.kind).toBe('counted');
+      expect(result.current.trackEndCard).toBeNull();
+      expect(result.current.listWalkUpNextCount).toBe(2);
+    });
+
+    it('shows none while playing from the queue', () => {
+      const { result } = renderHook(() => usePlayNavigationModel(inputs(queue)));
+      expect(result.current.currentTrackLabel.kind).toBe('hidden');
+      expect(result.current.listWalkUpNextCount).toBeNull();
+    });
+
+    // A crew preview opened from a list while the room's queue holds climbs
+    // added with no Now: the whole queue is Up next, as the queue sheet says.
+    it('counts the whole queue when the queue has no Now, end card included', () => {
+      const preview = item('c');
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queued),
+          displayedQueueItem: preview,
+          displayedClimb: preview.climb,
+          drawerPreviewItem: preview,
+          drawerPreviewSuggestionSource: projects,
+          currentClimbQueueItem: null,
+        }),
+      );
+      expect(result.current.currentTrackLabel.kind).toBe('counted');
+      expect(result.current.listWalkUpNextCount).toBe(2);
+      // No Now to go back to: the card carries on into the queue.
+      expect(result.current.trackEndCard).toEqual({
+        listName: 'Projects',
+        upNextCount: 2,
+        firstUpNextName: 'Climb q1',
+        action: { kind: 'nextInQueue', target: queued[0] },
+      });
+    });
+
+    it('follows the queue as climbs are added', () => {
+      const initialProps = { ...inputs(queue), playlistSuggestionSource: projects };
+      const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps });
+      rerender({ ...initialProps, queue: [...queue, item('q3')] });
+      expect(result.current.listWalkUpNextCount).toBe(3);
+    });
+  });
 });

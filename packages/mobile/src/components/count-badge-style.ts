@@ -25,6 +25,14 @@ export const countBadgeBox = {
   justifyContent: 'center',
 } as const satisfies ViewStyle;
 
+/** Past two digits a badge says "99+": a third digit would outgrow the button. */
+const COUNT_BADGE_MAX_SHOWN = 99;
+
+/** The text a count badge draws: the count, or "99+" once it passes two digits. */
+export function formatCountBadge(count: number): string {
+  return count > COUNT_BADGE_MAX_SHOWN ? `${COUNT_BADGE_MAX_SHOWN}+` : String(count);
+}
+
 /** Weight only: the size and line height come from the `caption2` variant. */
 export const countBadgeText = {
   fontWeight: '600',

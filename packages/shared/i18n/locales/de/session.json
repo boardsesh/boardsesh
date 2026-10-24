@@ -789,6 +789,9 @@
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
       "queueCountAria": "Warteschlange, {{count}} Boulder",
+      "queueUpNextAria_zero": "Warteschlange, nichts als Nächstes",
+      "queueUpNextAria_one": "Warteschlange, als Nächstes {{count}} Boulder",
+      "queueUpNextAria_other": "Warteschlange, als Nächstes {{count}} Boulder",
       "changeAngle": "Winkel ändern"
     },
     "track": {
@@ -801,6 +804,7 @@
         "titleUnnamed": "Ende der Liste",
         "finished": "Das war die ganze Liste, und in deiner Warteschlange kommt danach nichts mehr.",
         "keepGoing": "Weiter mit deiner Warteschlange ({{upNextCount}})",
+        "firstUpNext": "Als Erstes: {{name}}",
         "stay": "Hierbleiben"
       }
     },

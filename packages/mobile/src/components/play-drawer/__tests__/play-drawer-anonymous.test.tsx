@@ -2139,6 +2139,8 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     session.currentItem = itemLast;
     render(drawerElement('member', committedTargetFor(last)));
     expect(lastLiveHeaderProps().trackLabel ?? null).toBeNull();
+    // Playing from the queue, Next is Up next already: no badge.
+    expect(lastActionBarProps().upNextBadgeCount).toBeNull();
   });
 
   it('keeps Next live at the end of the list, and opens the end card instead of the queue', () => {
@@ -2153,8 +2155,15 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     expect(lastTrackEndCardProps().model).toMatchObject({
       listName: 'Projects',
       upNextCount: 1,
+      firstUpNextName: 'Queued',
       action: { kind: 'nextInQueue', target: itemQueued },
     });
+  });
+
+  // #6238: Next plays the list, so the queue button keeps Up next in sight.
+  it('badges the queue button with Up next while it walks a list', () => {
+    onTheLastClimbOfProjects();
+    expect(lastActionBarProps().upNextBadgeCount).toBe(1);
   });
 
   it('carries on with the queue solo, leaving the list behind', () => {

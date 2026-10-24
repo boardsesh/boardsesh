@@ -789,6 +789,9 @@
       "removeFavoriteAria": "Retirer des favoris",
       "climbActionsAria": "Actions du bloc",
       "queueCountAria": "File, {{count}} blocs",
+      "queueUpNextAria_zero": "File d'attente, rien à suivre",
+      "queueUpNextAria_one": "File, {{count}} bloc à suivre",
+      "queueUpNextAria_other": "File, {{count}} blocs à suivre",
       "changeAngle": "Changer l’inclinaison"
     },
     "track": {
@@ -801,6 +804,7 @@
         "titleUnnamed": "Fin de la liste",
         "finished": "C'est toute la liste, et rien n'attend dans ta file d'attente après ce bloc.",
         "keepGoing": "Continuer avec ta file d'attente ({{upNextCount}})",
+        "firstUpNext": "D'abord : {{name}}",
         "stay": "Rester ici"
       }
     },

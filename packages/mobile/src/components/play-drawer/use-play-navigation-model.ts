@@ -16,7 +16,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { canLoadMoreOfTrack, trackForCounting } from '../../lib/playlists/track-pager';
 import type { BoardConfig } from './play-drawer-types';
-import { resolveTrackEndCard } from './track-end';
+import { countUpNext, resolveListWalkUpNextBadge, resolveTrackEndCard } from './track-end';
 
 /**
  * The frames a swipe peek may draw, or null when the neighbouring climb belongs
@@ -177,27 +177,38 @@ export function usePlayNavigationModel({
     [labelSource, previousHeaderClimbUuid],
   );
 
+  // Where the queue's Now sits: one Map read off the prepared queue, never a scan.
+  const currentClimbQueueItemUuid = currentClimbQueueItem?.uuid;
+  const committedQueueIndex = useMemo(
+    () => (currentClimbQueueItemUuid ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItemUuid) ?? -1) : -1),
+    [preparedQueue, currentClimbQueueItemUuid],
+  );
+  // The queue button's Up next count while a list is walked (#6238): the same
+  // count the end card offers, so Up next stays in sight before the list ends.
+  // Null when no list is walked.
+  const listWalkUpNextCount = resolveListWalkUpNextBadge(
+    currentTrackLabel,
+    countUpNext(queue.length, committedQueueIndex),
+  );
+
   // Past the list's last climb: the end card, and where "Keep going with your
   // queue" goes. Only worked out at the end of a list; everywhere else it is null
   // and costs nothing. Withheld while more of the list is on its way.
   const atTrackEnd = navigationState.atTrackEnd;
-  const previewPinned = drawerPreviewItem != null;
+  // A preview goes back to Now only when there is one to go back to.
+  const previewOverNow = drawerPreviewItem != null && currentClimbQueueItem != null;
   const trackEndCard = useMemo(() => {
     if (!atTrackEnd) return null;
-    const committedQueueIndex = currentClimbQueueItem
-      ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItem.uuid) ?? -1)
-      : -1;
-    const queueSuccessor =
-      committedQueueIndex >= 0
-        ? selectNextQueueItemWithSuggestions(
-            queue,
-            currentClimbQueueItem,
-            null,
-            navigationBoardConfig,
-            isReachableClimb,
-            preparedQueue,
-          ).item
-        : null;
+    // From Now, or from the top of the queue without one. A Now that is not
+    // in the queue walks nothing, and the card falls back to the first climb.
+    const queueSuccessor = selectNextQueueItemWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      null,
+      navigationBoardConfig,
+      isReachableClimb,
+      preparedQueue,
+    ).item;
     return resolveTrackEndCard({
       navigationState: { atTrackEnd },
       moreToLoad: canLoadMoreOfTrack(navigationSuggestionSource),
@@ -205,10 +216,11 @@ export function usePlayNavigationModel({
       queue,
       committedQueueIndex,
       queueSuccessor,
-      previewPinned,
+      previewOverNow,
     });
   }, [
     atTrackEnd,
+    committedQueueIndex,
     currentClimbQueueItem,
     preparedQueue,
     queue,
@@ -216,7 +228,7 @@ export function usePlayNavigationModel({
     isReachableClimb,
     navigationSuggestionSource,
     currentTrackLabel,
-    previewPinned,
+    previewOverNow,
   ]);
   const nextHeaderBoard = useMemo(
     () => resolveClimbRenderBoard(nextHeaderClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
@@ -296,6 +308,7 @@ export function usePlayNavigationModel({
     nextTrackLabel,
     previousTrackLabel,
     trackEndCard,
+    listWalkUpNextCount,
     nextHeaderClimb,
     previousHeaderClimb,
     nextHeaderBoard,

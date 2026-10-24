@@ -23,7 +23,7 @@ import { glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
-import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
+import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from '../count-badge-style';
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -32,6 +32,13 @@ type PlayDrawerActionBarProps = {
   supportsMirroring: boolean;
   isFavorited: boolean;
   remainingQueueCount: number;
+  /**
+   * Up next while the player walks a list (#6238), when Next plays the list and
+   * not the queue: badged on the queue button and spoken in its label. Zero
+   * draws no badge but still speaks Up next; null (no list walked) keeps the
+   * plain queue label.
+   */
+  upNextBadgeCount?: number | null;
   /** Filled/lit visual — OR'd in the parent (this device's BLE, a board-presence
    *  holder, or the session wall-lit signal). Visual only. */
   lightbulbActive: boolean;
@@ -150,6 +157,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   supportsMirroring,
   isFavorited,
   remainingQueueCount,
+  upNextBadgeCount = null,
   lightbulbActive,
   lightbulbConnected,
   lightbulbPending = false,
@@ -273,7 +281,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               }
             />
           ) : layout.leadingSlot === 'queue' ? (
-            <QueueButton size="lg" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+            <QueueButton
+              size="lg"
+              remainingCount={remainingQueueCount}
+              upNextBadgeCount={upNextBadgeCount}
+              onPress={onOpenQueue}
+            />
           ) : null}
         </View>
         {/* Previous and next switched off leaves both slots standing empty,
@@ -424,7 +437,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   ) : null;
                 case 'queue':
                   return (
-                    <QueueButton key={item} size="sm" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+                    <QueueButton
+                      key={item}
+                      size="sm"
+                      remainingCount={remainingQueueCount}
+                      upNextBadgeCount={upNextBadgeCount}
+                      onPress={onOpenQueue}
+                    />
                   );
               }
             })
@@ -461,19 +480,55 @@ type QueueButtonProps = {
   size: ButtonSize;
   /** Climbs a forward swipe can still reach; spoken, never drawn. */
   remainingCount: number;
+  /**
+   * Up next while a list is walked, spoken instead of `remainingCount` and
+   * badged when above zero; null when no list is walked.
+   */
+  upNextBadgeCount: number | null;
   onPress: () => void;
 };
 
 // A queue means nothing without a wall or a session, and the sheet it opens is
 // a write surface, so an anonymous reader never gets one (see `viewer`).
-function QueueButton({ size, remainingCount, onPress }: QueueButtonProps) {
+//
+// Walking a list, a forward swipe counts the list, so "N climbs" would say
+// nothing about the queue: the badge and the label carry Up next instead.
+function QueueButton({ size, remainingCount, upNextBadgeCount, onPress }: QueueButtonProps) {
   const { t } = useTranslation('session');
+  const listWalked = upNextBadgeCount !== null;
   return (
     <ActionButton
       size={size}
       iconName="queue"
       onPress={onPress}
-      accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingCount })}
+      accessibilityLabel={
+        listWalked
+          ? t('playView.actionBar.queueUpNextAria', { count: upNextBadgeCount })
+          : t('playView.actionBar.queueCountAria', { count: remainingCount })
+      }
+      badge={
+        listWalked && upNextBadgeCount > 0 ? (
+          // On the button's corner, like the tick count. Drawn only: the
+          // button's label already says the number.
+          <View
+            style={styles.countBadge}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            testID="play-drawer-queue-badge"
+          >
+            <Text
+              variant="caption2"
+              color={iosSystemColors.white}
+              numeric
+              maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
+              style={styles.countText}
+            >
+              {formatCountBadge(upNextBadgeCount)}
+            </Text>
+          </View>
+        ) : undefined
+      }
     />
   );
 }
@@ -548,7 +603,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
             maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
             style={styles.countText}
           >
-            {ascentCount > 99 ? '99' : String(ascentCount)}
+            {formatCountBadge(ascentCount)}
           </Text>
         </View>
       )}
