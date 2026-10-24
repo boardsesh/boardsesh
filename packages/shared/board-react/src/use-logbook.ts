@@ -200,6 +200,11 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   const { data: batchEntries, dataUpdatedAt: batchUpdatedAt } = fetchQuery;
   useEffect(() => {
     if (!batchEntries) return;
+    // Reconnect/account cleanup can remove the batch after this render but
+    // before passive effects run. Never recreate fetched markers from that
+    // retired answer: the live query must still own these rows and timestamp.
+    const currentBatch = queryClient.getQueryState(fetchLogbookQueryKey(boardName, newUuids));
+    if (currentBatch?.data !== batchEntries || currentBatch.dataUpdatedAt !== batchUpdatedAt) return;
     if (batchEntries === lastMergedRef.current && batchUpdatedAt === lastMergedAtRef.current) return;
     lastMergedRef.current = batchEntries;
     lastMergedAtRef.current = batchUpdatedAt;
