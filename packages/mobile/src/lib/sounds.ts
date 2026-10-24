@@ -23,8 +23,15 @@
 // hands it back. Android's expo-audio ignores `keepAudioSessionActive` and gives
 // up audio focus as each beep ends, so there the music dips once per tick.
 // Leaving the foreground hands the session back at once, and coming back hands
-// it back once more (see the AppState listener). Nothing plays in the
-// background: the binary has no `audio` background mode.
+// it back once more (see the AppState listener).
+//
+// Foreground only. The binary has no `audio` background mode, but that alone
+// does not keep a beep from playing: iOS keeps running the JavaScript timers that
+// fire the cues for a while after the app leaves the foreground, and expo-audio's
+// `play()` activates the session with no app-state check. So a beep starts only
+// while `AppState` is `active`, checked when it is asked for and again just
+// before it plays. `inactive` counts as away: a phone call, Control Center, the
+// app switcher, the first moment of a lock.
 
 import { AppState, Platform } from 'react-native';
 import type * as ExpoAudioModule from 'expo-audio';
@@ -150,6 +157,11 @@ function reportSoundFailure(step: SoundStep, error: unknown): void {
   });
 }
 
+/** Whether a beep may start now; see "Foreground only" in the header. */
+function isInForeground(): boolean {
+  return AppState.currentState === 'active';
+}
+
 async function withDeadline<Result>(call: Promise<Result>): Promise<Result> {
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
@@ -270,11 +282,16 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
 
   return {
     play(sound) {
+      // Away from the foreground the cue is the haptic alone, and whatever the
+      // session is doing (held, or being handed back) carries on untouched.
+      if (!isInForeground()) return;
       playRequestCount += 1;
       const requestNumber = playRequestCount;
       cancelIdleRelease();
       enqueue('play', async () => {
         try {
+          // The app can leave the foreground while this beep waits its turn.
+          if (!isInForeground()) return;
           if (!audioModeSet) {
             // Until the mode is set the session would STOP the climber's
             // music, so a failure here skips the beep; the next cue tries again.
@@ -289,6 +306,8 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
           const player = players[sound];
           // A finished player stays at its end; it has to be rewound before it plays again.
           await withDeadline(player.seekTo(0));
+          // Or while it rewinds. A session it turned on is handed back as usual.
+          if (!isInForeground()) return;
           player.play();
         } finally {
           if (holdsSession) armIdleRelease(requestNumber);

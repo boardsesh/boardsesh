@@ -424,15 +424,37 @@ describe('handing the session back', () => {
     expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('hands back a beep still queued when the app goes to the background', async () => {
+  it('drops a beep still queued when the app goes to the background, and turns nothing on', async () => {
     const fake = makeFakeAudio();
     const player = makePlayer(fake);
 
     player.play('tick');
     emitAppState('background');
-    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
 
-    expect(fake.nativeCalls).toEqual(['set audio mode', 'seek tick 0', 'play tick', 'audio off']);
+    expect(fake.nativeCalls).toEqual([]);
+  });
+
+  it('hands back the session a beep turned on when the app leaves while it rewinds', async () => {
+    const fake = makeFakeAudio();
+    let finishRewind: () => void = () => {};
+    fake.players.final.seekTo.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRewind = resolve;
+        }),
+    );
+    const player = makePlayer(fake);
+
+    player.play('final');
+    await settle();
+    emitAppState('background');
+    finishRewind();
+    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+
+    expect(fake.players.final.play).not.toHaveBeenCalled();
+    expect(fake.nativeCalls).toEqual(['set audio mode', 'audio off']);
   });
 
   it('has nothing to hand back when no beep has played', async () => {
@@ -455,6 +477,50 @@ describe('handing the session back', () => {
     await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
 
     expect(fake.setIsAudioActiveAsync).not.toHaveBeenCalled();
+  });
+});
+
+// iOS keeps the cue timers running for a while after the app leaves, and
+// expo-audio's play() turns the session on there. A beep from a phone the
+// climber just locked or switched away from is the bug this guards.
+describe('away from the foreground', () => {
+  it.each(['background', 'inactive'])('plays nothing and touches no native audio while %s', async (state) => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    emitAppState(state);
+    player.play('tick');
+    player.play('final');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+
+    expect(fake.nativeCalls).toEqual([]);
+  });
+
+  it('plays again once the app is back in the foreground', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    emitAppState('background');
+    player.play('tick');
+    emitAppState('active');
+    player.play('final');
+    await settle();
+
+    expect(fake.nativeCalls).toEqual(['set audio mode', 'seek final 0', 'play final']);
+  });
+
+  // The session the earlier beep holds is handed back on its own schedule.
+  it('keeps the idle hand-back of a beep that played before a phone call', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('tick');
+    await settle();
+    emitAppState('inactive');
+    player.play('tick');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+
+    expect(fake.nativeCalls).toEqual(['set audio mode', 'seek tick 0', 'play tick', 'audio off']);
   });
 });
 

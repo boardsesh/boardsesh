@@ -125,8 +125,14 @@ The climber's music:
 - A player that cannot be built throws (after its report) instead of returning null, so the cue
   module builds a fresh one on the next cue. If the tick player was built and the final one
   failed, the tick player is removed first.
-- Foreground only. The JavaScript timers that fire the cues stop in the background anyway, and a
-  locked-phone alert is #6530's local notification.
+- Foreground only. A beep starts only while `AppState` is `active`, checked when the cue asks for
+  it and again just before it plays, so one queued as the app leaves is dropped. `inactive`
+  counts as away (a phone call, Control Center, the app switcher). The missing `audio` background
+  mode is not enough on its own: iOS keeps running the JavaScript timers that fire the cues for a
+  while after the app leaves (the simulator played a tick and a final tone 7 to 15 s after another
+  app came forward), and expo-audio 57.0.5's `play()` turns the session on without checking. The
+  rest of the cue (the haptic call, the wall advancing) is unchanged. A locked-phone alert is
+  #6530's local notification.
 
 The config plugin entry in `app.config.ts` turns off background playback and background
 recording (their defaults add the `audio` UIBackgroundMode and the Android media-playback
