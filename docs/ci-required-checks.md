@@ -87,23 +87,25 @@ JSON
 **We do not use that**, for a reason that would have bitten on the first OTA
 publish: classic required status checks also gate **direct pushes** to the
 branch, and classic protection has no per-actor bypass for them
-(`bypass_pull_request_allowances` covers the review requirement only). Three
+(`bypass_pull_request_allowances` covers the review requirement only). Four
 workflows push commits straight to `main` as the `boardsesh-repo-bot` app:
 
 | workflow | commit |
 | --- | --- |
 | `mobile-ota-production.yml` | `chore(changelog): refresh from merged PRs [skip ci]` |
+| `production-deploy.yml` | `chore(changelog): refresh from promoted OTA [skip ci]` |
 | `refresh-acknowledgements.yml` | `chore: refresh acknowledgements + OSS licenses [skip ci]` |
 | `mobile-screenshots-android.yml` | the Play-store screenshot set (`commit_to_main` dispatch) |
 
-Two of the three carry `[skip ci]`, so no CI run — and therefore no `ci-status`
-check — can ever exist on those commits, and the push is evaluated before any run
-could report anyway. Classic enforcement would reject all three.
+Three of the four carry `[skip ci]`, so no CI run — and therefore no `ci-status`
+check — can ever exist on those commits. The screenshot commit deliberately
+omits `[skip ci]` so store metadata publication runs. All four pushes are evaluated
+before their commits can report checks, so classic enforcement would reject them.
 
 A **repository ruleset** can express the same requirement with explicit bypass
 actors, so the bot keeps pushing and contributors outside those actors must pass
 CI. The live ruleset also gives repository administrators an `always` bypass, so
-they can merge without CI; it is not limited to the bot's three direct-push
+they can merge without CI; it is not limited to the bot's four direct-push
 workflows. No repository workflow currently merges PRs with the bot token. Any
 future bot merge automation must verify the required checks independently or
 migrate the bot's direct writes before removing this exception.

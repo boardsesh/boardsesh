@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { githubYamlPaths, jobBlocks, isWorkflow } from './helpers/workflow-yaml';
+import { githubYamlPaths, jobBlocks, isWorkflow, withoutCommentLines } from './helpers/workflow-yaml';
 
 /**
  * `.github/rulesets/main-require-ci-status.json` is the payload that makes
@@ -101,18 +101,23 @@ describe('the main required-checks ruleset payload', () => {
   });
 
   it('still has workflows that push to main as that app', () => {
-    // The bypass is only justified while something actually needs it. These
-    // commits carry [skip ci], so no CI run — and no ci-status check — can ever
-    // exist on them; without the bypass the push is rejected. If this list ever
-    // empties, drop the bypass_actors entry instead of leaving a hole.
+    // Direct pushes need the bypass because checks cannot report before the
+    // push is accepted. Most skip CI, but screenshot commits deliberately run
+    // store metadata publication. Keep the documented inventory complete and
+    // ignore commented examples when identifying the app's direct pushers.
     const pushers = githubYamlPaths()
-      .map((path) => ({ path, source: readFileSync(path, 'utf8') }))
+      .map((path) => ({ path, source: withoutCommentLines(readFileSync(path, 'utf8')).join('\n') }))
       .filter(
         ({ source }) =>
           isWorkflow(source) && source.includes('git push origin HEAD:main') && source.includes('OTA_PUSH_APP_ID'),
       )
       .map(({ path }) => path);
 
-    expect(pushers.length).toBeGreaterThan(0);
+    expect(pushers.sort()).toEqual([
+      '.github/workflows/mobile-ota-production.yml',
+      '.github/workflows/mobile-screenshots-android.yml',
+      '.github/workflows/production-deploy.yml',
+      '.github/workflows/refresh-acknowledgements.yml',
+    ]);
   });
 });
