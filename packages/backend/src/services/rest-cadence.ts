@@ -50,10 +50,15 @@ export const MAX_REST_CADENCE_ELAPSED_MS = 4 * 60 * 60 * 1000;
 export const MAX_REST_CADENCE_PAUSED_SECONDS = MAX_REST_CADENCE_ELAPSED_MS / 1000;
 
 /**
- * How far back a TICK may re-anchor. A tick that waited longer in an offline
- * queue anchors at most a minute in the past, so a replayed tick can never fire
- * an instant advance on a long-gone rest. restCadenceTickAnchorMs floors it
- * further.
+ * The oldest a TICK may be and still count as a climb just done. A TICK's
+ * `elapsedMs` is the time since the climber logged it, from its own climbedAt;
+ * one older than this is history (yesterday's session logged with the date
+ * picker, a save that sat in an offline queue) and never earns an advance
+ * (isHistoricalRestCadenceTick). Exactly a minute is still fresh. It is the
+ * phone's AUTO_ADVANCE_MAX_BACKDATE_MS (`isTickFreshEnoughToArm` in mobile's
+ * rest-timer-auto-advance.ts), with the same boundary. The name is from when
+ * every TICK was clamped to it; a fresh tick is inside it, so nothing is
+ * clamped any more.
  */
 export const REST_CADENCE_LATE_CLAMP_MS = 60_000;
 
@@ -81,6 +86,34 @@ export const REST_CADENCE_FIRE_EARLY_TOLERANCE_MS = 2_000;
  * next beat.
  */
 export const REST_CADENCE_FIRE_LATE_TOLERANCE_MS = 5_000;
+
+/**
+ * Older than any rest the clock can hold: the longest rest in either mode
+ * (1 h) plus REST_CADENCE_FIRE_LATE_TOLERANCE_MS. A historical TICK this old
+ * belongs to no rest, so it never starts one on a clock that has none running
+ * (historicalTickChangesNothing). It is a fixed number, never the stored
+ * length, because a later CONFIGURE can change the length.
+ */
+export const REST_CADENCE_OLDER_THAN_ANY_REST_MS =
+  Math.max(REST_CADENCE_TARGET_SECONDS.afterTick.max, REST_CADENCE_TARGET_SECONDS.onTheMinute.max) * 1000 +
+  REST_CADENCE_FIRE_LATE_TOLERANCE_MS;
+
+/**
+ * How much closer than one interval an afterTick deadline may sit to the last
+ * one claimed (lastFiredBeatMs) and still be claimed. Every anchor the clock
+ * reaches by its normal moves sits at most this far before the last advance:
+ * a FIRE re-anchors at the later of now and its beat; a fresh TICK floors at
+ * the beat; a RESET or a CONFIGURE anchor NOW with elapsedMs 0 lands at now,
+ * at most the early tolerance (2 s) before a beat an early FIRE claimed; and
+ * RESUME moves the fired beat with the anchor, off by under a second (PAUSE
+ * freezes whole seconds). So the next deadline is at least one interval minus
+ * this after the last. A closer one can only come from a CONFIGURE that
+ * reaches back (anchor NOW with an elapsedMs past the last advance, or KEEP
+ * onto an anchor from before it), and claiming it would move the wall twice
+ * inside one rest. FIRE refuses it; that deadline then goes stale like a
+ * missed one.
+ */
+export const REST_CADENCE_AFTER_TICK_SPACING_SLACK_MS = REST_CADENCE_FIRE_EARLY_TOLERANCE_MS + 1_000;
 
 /** Internal retries for an un-fenced write that lost a compare-and-set race. */
 export const REST_CADENCE_CAS_ATTEMPTS = 5;
@@ -227,28 +260,116 @@ export function claimableRestCadenceBeatMs(state: RestCadenceState, nowMs: numbe
 }
 
 /**
+ * Whether a TICK is history: logged more than REST_CADENCE_LATE_CLAMP_MS
+ * before it reached the server, judged on its own `elapsedMs`. The phone
+ * judges its own ticks the same way (`isTickFreshEnoughToArm`). A missing
+ * elapsed means the tick is from now.
+ */
+export function isHistoricalRestCadenceTick(elapsedMs: number | null | undefined): boolean {
+  return (elapsedMs ?? 0) > REST_CADENCE_LATE_CLAMP_MS;
+}
+
+/**
  * Where a TICK at server time `nowMs` starts the rest: `elapsedMs` before now
- * (clamped to REST_CADENCE_LATE_CLAMP_MS), but never earlier than the rest
- * already running (the stored anchor) or the last advance (lastFiredBeatMs),
- * and never in the future. So a backdated tick, such as a crewmate's tick on
- * the previous climb that reached the server late, can no longer shorten a
- * running rest or start one before the wall last moved. Without the floor, a
- * tick dated 55 s back that landed 2 s after an advance on a 60 s rest fired
- * the next advance 7 s later.
+ * (bounded by MAX_REST_CADENCE_ELAPSED_MS, which the wire enforces too), but
+ * never earlier than the rest already running (the stored anchor) or the last
+ * advance (lastFiredBeatMs), and never in the future. So a backdated tick,
+ * such as a crewmate's tick on the previous climb that reached the server
+ * late, can no longer shorten a running rest or start one before the wall
+ * last moved. Without the floor, a tick dated 55 s back that landed 2 s after
+ * an advance on a 60 s rest fired the next advance 7 s later.
  *
  * The cap at now matters because both floors can sit ahead of the server
  * clock: an early FIRE anchors on a beat up to the early tolerance (2 s)
  * ahead, and RESUME can shift the fired beat about a second further (PAUSE
  * freezes whole seconds). The first tick of a session, with no anchor and
  * nothing fired, anchors where it always did.
+ *
+ * A historical tick that changes the clock at all (historicalTickChangesNothing
+ * says when it does not) takes this floor too, so every anchor a TICK writes
+ * sits at or after the last advance, whatever a later CONFIGURE does to the
+ * length or the mode. On a running rest it never rewinds that rest; a tick
+ * newer than a stale anchor can still move it forward, never before the last
+ * advance.
  */
 function restCadenceTickAnchorMs(
   previous: Pick<RestCadenceState, 'anchorMs' | 'lastFiredBeatMs'>,
   elapsedMs: number | null | undefined,
   nowMs: number,
 ): number {
-  const reportedMs = nowMs - clampMs(elapsedMs, REST_CADENCE_LATE_CLAMP_MS);
-  return Math.min(nowMs, Math.max(reportedMs, previous.anchorMs ?? reportedMs, previous.lastFiredBeatMs ?? reportedMs));
+  const tickMs = nowMs - clampMs(elapsedMs, MAX_REST_CADENCE_ELAPSED_MS);
+  return Math.min(nowMs, Math.max(tickMs, previous.anchorMs ?? tickMs, previous.lastFiredBeatMs ?? tickMs));
+}
+
+/**
+ * Whether an afterTick deadline sits closer to the last claimed one than a
+ * full interval minus REST_CADENCE_AFTER_TICK_SPACING_SLACK_MS: a deadline
+ * only a CONFIGURE reaching back can produce. A defence in depth behind the
+ * TICK floor, so no sequence of actions moves the wall twice inside one rest.
+ */
+function tooSoonAfterLastAfterTickBeat(
+  previous: Pick<RestCadenceState, 'lastFiredBeatMs' | 'targetSeconds'>,
+  beatMs: number,
+): boolean {
+  if (previous.lastFiredBeatMs === null || previous.targetSeconds === null) return false;
+  const intervalMs = previous.targetSeconds * 1000;
+  return beatMs < previous.lastFiredBeatMs + intervalMs - REST_CADENCE_AFTER_TICK_SPACING_SLACK_MS;
+}
+
+/**
+ * Whether a historical TICK leaves the clock exactly as it is: it keeps the
+ * last tick either way (restCadenceLastTickAfter), so here it also writes no
+ * anchor and changes no running state.
+ *
+ * - afterTick, paused: the pause and the rest it froze stand, as on the phone
+ *   (noteRestTimerTick keeps a paused timer paused for a historical tick).
+ *   Resuming would count up from yesterday.
+ * - No rest running (no anchor: waiting for a tick) and older than any rest
+ *   (REST_CADENCE_OLDER_THAN_ANY_REST_MS): the clock keeps waiting. The phone
+ *   anchors such a tick at its own time, where its deadline is long gone.
+ *   The server does not, because a stale anchor before the last advance comes
+ *   back to life under a later CONFIGURE: KEEP onto a longer rest puts its
+ *   deadline seconds after the last advance, and KEEP onto onTheMinute (a
+ *   stage change to the same interval) puts a grid beat there. Waiting, it
+ *   has nothing to revive.
+ *
+ * Every other historical tick goes through the floor: one on a running rest
+ * (it never rewinds that rest), and one on a waiting clock that is no older
+ * than the longest rest, which starts its rest no earlier than the last
+ * advance. Floored, neither can authorize anything or bring a beat closer
+ * than the last advance allows.
+ */
+function historicalTickChangesNothing(
+  previous: Pick<RestCadenceState, 'mode' | 'isRunning' | 'anchorMs'>,
+  elapsedMs: number | null | undefined,
+): boolean {
+  if (!isHistoricalRestCadenceTick(elapsedMs)) return false;
+  if (previous.mode === 'afterTick' && !previous.isRunning) return true;
+  return previous.anchorMs === null && (elapsedMs ?? 0) > REST_CADENCE_OLDER_THAN_ANY_REST_MS;
+}
+
+/**
+ * The last tick after a TICK lands. A historical tick keeps the last one, so
+ * it never authorizes a FIRE under tick or send. A tick naming no queue item
+ * keeps it too, as the phone's `lastTickAfter` does: the phone names none when
+ * the tick was on another climb or at another angle than the one lit
+ * (`attributeTickToQueueItem`), so it can neither earn an advance nor take the
+ * place of a tick that did.
+ *
+ * The phone also keeps a tick on the climb on the wall when a late one names
+ * another queue item. The server cannot see which climb is on the wall, so a
+ * fresh tick naming a queue item always replaces the last one; the holder's
+ * own check (`restAdvanceAllowed`, the last tick must be on the current climb)
+ * still refuses to fire on a tick from another climb.
+ */
+function restCadenceLastTickAfter(
+  previous: Pick<RestCadenceState, 'lastTick'>,
+  input: RestCadenceInput,
+  status: RestCadenceTickStatus,
+): RestCadenceLastTick | null {
+  const queueItemUuid = input.tickQueueItemUuid ?? null;
+  if (isHistoricalRestCadenceTick(input.elapsedMs) || queueItemUuid === null) return previous.lastTick;
+  return { queueItemUuid, status };
 }
 
 /**
@@ -301,10 +422,9 @@ export function applyRestCadenceAction(
 
     case 'TICK': {
       if (!input.tickStatus) return NOT_APPLICABLE;
-      const lastTick: RestCadenceLastTick = {
-        queueItemUuid: input.tickQueueItemUuid ?? null,
-        status: input.tickStatus,
-      };
+      // Applicable but unchanged, so nothing is written or published.
+      if (historicalTickChangesNothing(previous, input.elapsedMs)) return { applicable: true, next: previous };
+      const lastTick = restCadenceLastTickAfter(previous, input, input.tickStatus);
       if (previous.mode === 'onTheMinute') {
         // Holding the beat is the whole mode: a tick only starts a clock that has no anchor yet.
         const anchorMs = previous.anchorMs ?? restCadenceTickAnchorMs(previous, input.elapsedMs, nowMs);
@@ -332,6 +452,7 @@ export function applyRestCadenceAction(
       const beatMs = claimableRestCadenceBeatMs(previous, nowMs);
       if (beatMs === null) return NOT_APPLICABLE;
       if (previous.lastFiredBeatMs !== null && beatMs <= previous.lastFiredBeatMs) return NOT_APPLICABLE;
+      if (previous.mode === 'afterTick' && tooSoonAfterLastAfterTickBeat(previous, beatMs)) return NOT_APPLICABLE;
       const fired = { ...previous, lastFiredBeatMs: beatMs };
       const anchor = anchorAfterFire(previous);
       if (anchor === 'now') {

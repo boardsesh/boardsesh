@@ -9592,8 +9592,10 @@ export type SessionRestCadenceInput = {
   /**
    * Milliseconds already elapsed in the cycle when the client sent the call,
    * 0..14400000. ARM and CONFIGURE with anchor NOW anchor at server now minus
-   * this; TICK clamps it to 60 s. Omitted means 0, except on ARM, where an
-   * omitted value leaves the clock waiting for a tick.
+   * this. On TICK it is the tick's own age, from its climbedAt, capped at
+   * 14400000 by the client: over 60000 the tick is history and never earns an
+   * advance. Omitted means 0, except on ARM, where an omitted value leaves the
+   * clock waiting for a tick.
    */
   elapsedMs?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -9608,7 +9610,7 @@ export type SessionRestCadenceInput = {
   isRunning?: InputMaybe<Scalars['Boolean']['input']>;
   /** PAUSE only: the frozen elapsed, 0..14400. Defaults to the elapsed the server computes from its anchor. */
   pausedElapsedSeconds?: InputMaybe<Scalars['Int']['input']>;
-  /** TICK only: the queue item the tick was logged against, when it was the current queue item */
+  /** TICK only: the queue item the tick was logged against, when it was the current queue item. Without one the tick keeps the last tick. */
   tickQueueItemUuid?: InputMaybe<Scalars['ID']['input']>;
   /** TICK only (required): 'flash', 'send' or 'attempt' */
   tickStatus?: InputMaybe<Scalars['String']['input']>;
