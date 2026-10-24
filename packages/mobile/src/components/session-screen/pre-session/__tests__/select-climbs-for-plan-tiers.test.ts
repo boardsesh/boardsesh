@@ -10,7 +10,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'qi-0' }));
 vi.mock('../../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 
 import { offlineAwareRequest } from '../../../../lib/graphql/offline-request';
-import { buildClimbSearchInput, fetchGradePool, searchTiers } from '../select-climbs-for-plan';
+import { buildClimbSearchInput, fetchGradePool, isBenchmarkClimb, searchTiers } from '../select-climbs-for-plan';
 
 const offlineAwareRequestMock = vi.mocked(offlineAwareRequest);
 
@@ -26,8 +26,18 @@ const signedOut = (filters: PreviewFilters = DEFAULT_WORKOUT_FILTERS): PreviewFe
   filters,
 });
 
-/** One climb of a fake catalogue, with the climber's history at this angle. */
-type CatalogueClimb = { uuid: string; tried?: boolean; sent?: boolean; benchmark?: boolean };
+/**
+ * One climb of a fake catalogue, with the climber's history at this angle.
+ * `unflaggedBenchmark` is a climb the server's onlyBenchmarks keeps although it
+ * comes back with no benchmark difficulty, as many Kilter climbs do.
+ */
+type CatalogueClimb = {
+  uuid: string;
+  tried?: boolean;
+  sent?: boolean;
+  benchmark?: boolean;
+  unflaggedBenchmark?: boolean;
+};
 
 const climbs = (prefix: string, count: number, history: Omit<CatalogueClimb, 'uuid'> = {}): CatalogueClimb[] =>
   Array.from({ length: count }, (_, index) => ({ uuid: `${prefix}-${index}`, ...history }));
@@ -46,13 +56,13 @@ function serveCatalogue(catalogue: readonly CatalogueClimb[]) {
         !(input.hideAttempted && climb.tried) &&
         !(input.hideCompleted && climb.sent) &&
         !(input.showOnlyAttempted && !climb.tried) &&
-        !(input.onlyBenchmarks && !climb.benchmark),
+        !(input.onlyBenchmarks && !climb.benchmark && !climb.unflaggedBenchmark),
     );
     const page = input.page ?? 0;
     const pageSize = input.pageSize ?? 20;
     const pageClimbs = matching
       .slice(page * pageSize, (page + 1) * pageSize)
-      .map(({ uuid }) => ({ uuid, name: uuid }) as Climb);
+      .map(({ uuid, benchmark }) => ({ uuid, name: uuid, benchmark_difficulty: benchmark ? '22' : null }) as Climb);
     return { searchClimbs: { climbs: pageClimbs, hasMore: (page + 1) * pageSize < matching.length } };
   });
 }
@@ -108,6 +118,15 @@ describe('searchTiers', () => {
   it('is a single tier with no personal flags signed out or unfiltered', () => {
     expect(searchTiers({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true }, false)).toEqual([{}]);
     expect(searchTiers(undefined, true)).toEqual([{}]);
+  });
+});
+
+describe('isBenchmarkClimb', () => {
+  it('takes a positive benchmark difficulty as a benchmark, as the row ribbon does', () => {
+    expect(isBenchmarkClimb({ benchmark_difficulty: '22' })).toBe(true);
+    expect(isBenchmarkClimb({ benchmark_difficulty: null })).toBe(false);
+    expect(isBenchmarkClimb({ benchmark_difficulty: '0' })).toBe(false);
+    expect(isBenchmarkClimb({ benchmark_difficulty: 'NaN' })).toBe(false);
   });
 });
 
@@ -276,6 +295,49 @@ describe('fetchGradePool tiers', () => {
     expect(requestedFlags()).toHaveLength(3);
     expect(requestedFlags().every((flags) => flags.onlyBenchmarks)).toBe(true);
     expect(pool.climbs).toEqual([]);
+  });
+
+  it('drops rows Benchmarks only gets back that are not benchmarks, and reads on for the real ones', async () => {
+    // Kilter: the server's onlyBenchmarks lets through climbs with no benchmark difficulty.
+    serveCatalogue([
+      ...climbs('unflagged', 50, { unflaggedBenchmark: true }),
+      ...climbs('benchmark', 4, { benchmark: true }),
+      ...climbs('sent-benchmark', 2, { benchmark: true, sent: true }),
+    ]);
+
+    const pool = await fetchGradePool(15, signedIn({ ...DEFAULT_WORKOUT_FILTERS, onlyBenchmarks: true }), 20);
+
+    expect(pool.climbs.map((climb) => climb.uuid)).toEqual([
+      'benchmark-0',
+      'benchmark-1',
+      'benchmark-2',
+      'benchmark-3',
+      'sent-benchmark-0',
+      'sent-benchmark-1',
+    ]);
+    expect(pool.topUpTiers.get('sent-benchmark-0')).toBe(2);
+    // Every tier ran out, so this is every benchmark at the grade.
+    expect(pool.exhausted).toBe(true);
+  });
+
+  it('stops paging at the usual bound when the rows Benchmarks only gets back are not benchmarks', async () => {
+    serveCatalogue(climbs('unflagged', 400, { unflaggedBenchmark: true }));
+
+    const pool = await fetchGradePool(15, signedIn({ ...DEFAULT_WORKOUT_FILTERS, onlyBenchmarks: true }), 20);
+
+    // Three pages per tier (the one the target needs plus two), three tiers.
+    expect(offlineAwareRequestMock).toHaveBeenCalledTimes(9);
+    expect(pool.climbs).toEqual([]);
+    // The grade was not read to the end, so a rebuild may look again.
+    expect(pool.exhausted).toBe(false);
+  });
+
+  it('keeps every row of a search without Benchmarks only, benchmark or not', async () => {
+    serveCatalogue([...climbs('fresh', 3), ...climbs('benchmark', 2, { benchmark: true })]);
+
+    const pool = await fetchGradePool(15, signedIn(), 20);
+
+    expect(pool.climbs).toHaveLength(5);
   });
 
   it('fills a sparse grade with what it has', async () => {

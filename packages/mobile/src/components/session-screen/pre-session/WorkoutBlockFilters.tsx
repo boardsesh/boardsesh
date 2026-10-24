@@ -1,8 +1,8 @@
 // One block's climb filters: min ascents, min rating, climb bias, Skip what I've
 // sent, Benchmarks only where the board has benchmarks and, where the board has
 // smaller sizes, tall or wide climbs only. A collapsed disclosure at the bottom
-// of the block's fields, with a one-line summary, so the Record tab's block
-// cards and the in-session "Add a block" sheet both get it.
+// of the block's fields, with a summary line under its title, so the Record
+// tab's block cards and the in-session "Add a block" sheet both get it.
 
 import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -108,10 +108,25 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
     if (baseOptions.includes(filters.minAscents)) return baseOptions;
     return [...baseOptions, filters.minAscents].sort((first, second) => first - second);
   }, [filters.minAscents]);
+  const title = t('mobile.session.preGeneratorClimbFilters');
   // Signed out a stored Skip what I've sent does nothing, so the line leaves it out too.
   const summary = useMemo(
     () => blockFiltersSummary(isAuthenticated ? filters : { ...filters, skipSent: false }, t),
     [filters, isAuthenticated, t],
+  );
+  // While closed, the title with the line under it, wrapping across the card's
+  // width. Beside the title on one line it cut off at "Skip…" on a 393 pt phone
+  // once Skip sent or Benchmarks was on, even in English.
+  const collapsedHeader = useMemo(
+    () => (
+      <View style={styles.collapsedHeader}>
+        <Text variant="headline">{title}</Text>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {summary}
+        </Text>
+      </View>
+    ),
+    [summary, systemColors.secondaryLabel, title],
   );
   const climbBiasOptions = useMemo(
     () => CLIMB_BIAS_OPTIONS.map((climbBias) => ({ key: climbBias, label: climbBiasLabel(climbBias, t) })),
@@ -124,7 +139,7 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
   );
 
   return (
-    <CollapsibleSection title={t('mobile.session.preGeneratorClimbFilters')} summary={summary}>
+    <CollapsibleSection title={title} summary={collapsedHeader} hideTitleWhenCollapsed>
       <View style={styles.body}>
         <View>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
@@ -271,6 +286,9 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
 const styles = StyleSheet.create({
   body: {
     gap: spacing[4],
+  },
+  collapsedHeader: {
+    gap: spacing[1],
   },
   subsectionLabel: {
     marginBottom: spacing[2],

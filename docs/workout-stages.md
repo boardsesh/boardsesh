@@ -280,6 +280,16 @@ climb. The rows carry the usual sent marks, so a top-up shows as one.
   Kilter layout 1, 13 to 41 on Tension and 28 to 65 on MoonBoard (the catalogue counts
   in [#6719](https://github.com/boardsesh/boardsesh/pull/6719),
   `docs/workout-catalogue-depth.md`), so a 20-climb block shows a shortfall on most boards.
+- **Kilter rows that are not benchmarks.** On Kilter the server's `onlyBenchmarks` keeps
+  climbs that come back with no benchmark difficulty: it counts 45,327 benchmarks on
+  layout 1 at 40° (size 10, sets 1 and 20) against a few hundred real ones, which filled a 20-climb V6 block with one
+  benchmark. Its `benchmark_difficulty > 0` is true for NaN in Postgres, and NaN maps to
+  no benchmark on the row, so NaN in Kilter's stored stats is the likely cause. MoonBoard
+  and Tension return only benchmarks. `fetchGradePool` drops every row that is not a
+  benchmark (`isBenchmarkClimb`, the ribbon's own test), so the block shows a shortfall
+  instead, and reads on to the next page within the usual page bound. On a page full of
+  such rows that bound is what the grade costs: up to three requests per tier, nine for
+  the default tiers. The server fix belongs to the search filter, not the workout.
 - **Requests.** Every search shares the climber's 120-a-minute SearchClimbs budget with the
   Climbs list. A grade the first tier fills costs one request, the same one as before: a
   switch that is off adds no key, so the screenshot fixtures still replay it. A short
@@ -305,6 +315,10 @@ climb. The rows carry the usual sent marks, so a top-up shows as one.
 - **Defaults stay global.** `minAscents 5` and `minRating 2` are unchanged; the
   measurement behind that is in
   [#6719](https://github.com/boardsesh/boardsesh/pull/6719) (`docs/workout-catalogue-depth.md`).
+- **The closed filters line.** While Climb filters is closed, its line (min ascents,
+  stars, climb bias, then Skip sent and Benchmarks when on) sits under the title and
+  wraps across the card. Beside the title on one line it cut off at "Skip…" on a 393 pt
+  phone, in English, before Benchmarks could show.
 
 ## What comes next
 

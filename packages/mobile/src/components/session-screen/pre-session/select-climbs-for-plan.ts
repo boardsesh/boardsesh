@@ -118,6 +118,22 @@ export function buildClimbSearchInput(
   return withGradeSource(input, boardseshGrades);
 }
 
+/**
+ * Whether a search row is a benchmark: a positive benchmark difficulty, the
+ * same test that draws the benchmark ribbon on a row.
+ *
+ * Benchmarks only checks every row with it, because the server's
+ * `onlyBenchmarks` is not enough on Kilter. Its `benchmark_difficulty > 0` lets
+ * through about 45,000 Kilter layout 1 climbs at 40° that come back with no
+ * benchmark difficulty, against the few hundred benchmarks the board has. NaN
+ * in the stored value is the one value that passes that SQL test and maps to
+ * no benchmark (Postgres ranks NaN above every number). Without the check a
+ * Kilter block filled up with climbs that are not benchmarks.
+ */
+export function isBenchmarkClimb(climb: Pick<Climb, 'benchmark_difficulty'>): boolean {
+  return Number(climb.benchmark_difficulty) > 0;
+}
+
 /** How many climbs to fetch for a grade that `demand` slots draw from. */
 export function gradePoolTarget(demand: number): number {
   return Math.max(POOL_SIZE_PER_GRADE, demand + POOL_SLACK_PER_GRADE);
@@ -152,6 +168,10 @@ function topUpTarget(demand: number): number {
  * pool with what the earlier ones found; only a failing first tier fails the
  * fetch.
  *
+ * Under Benchmarks only a row that is not a benchmark (`isBenchmarkClimb`) is
+ * dropped and does not count towards the target, so the fetch reads on to the
+ * next page instead. Paging still stops at `maxPagesPerTier`.
+ *
  * The pool is `exhausted` when its last tier ran out: it then holds every climb
  * the grade has under these filters, and a rebuild reuses it instead of asking
  * again. A request sent while offline never counts, since the empty offline
@@ -172,6 +192,7 @@ export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, de
   // tier has no answer and fails the capture, so a capture reads the first tier
   // only. To show top-ups in captures, remove this and re-record the set.
   const tiers = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? allTiers.slice(0, 1) : allTiers;
+  const benchmarksOnly = ctx.filters?.onlyBenchmarks === true;
   const climbs: Climb[] = [];
   const seenUuids = new Set<string>();
   const topUpTiers = new Map<string, number>();
@@ -191,6 +212,7 @@ export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, de
         for (const climb of pageClimbs) {
           if (seenUuids.has(climb.uuid)) continue;
           seenUuids.add(climb.uuid);
+          if (benchmarksOnly && !isBenchmarkClimb(climb)) continue;
           climbs.push(climb);
           if (tierIndex > 0) topUpTiers.set(climb.uuid, tierIndex);
         }

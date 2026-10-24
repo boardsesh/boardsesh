@@ -22,9 +22,26 @@ vi.mock('../../../../theme/tokens', () => ({ spacing: {} }));
 vi.mock('../../../../theme/variants', () => ({
   selectByVariant: (_variant: string, values: { liquidGlass: unknown }) => values.liquidGlass,
 }));
+// Draws the closed header the section would show: the summary in the title's
+// place when it asks for that, else the title.
 vi.mock('../../../CollapsibleSection', () => ({
-  CollapsibleSection: ({ summary, children }: { summary?: string; children?: ReactNode }) =>
-    createElement('section', { 'data-testid': 'filters', 'data-summary': summary }, children),
+  CollapsibleSection: ({
+    title,
+    summary,
+    hideTitleWhenCollapsed,
+    children,
+  }: {
+    title: string;
+    summary?: ReactNode;
+    hideTitleWhenCollapsed?: boolean;
+    children?: ReactNode;
+  }) =>
+    createElement(
+      'section',
+      { 'data-testid': 'filters' },
+      createElement('header', { 'data-testid': 'collapsed-header' }, hideTitleWhenCollapsed ? summary : title),
+      children,
+    ),
 }));
 vi.mock('../../../SegmentedControl', () => ({ SegmentedControl: () => null }));
 vi.mock('../../../StarRating', () => ({ StarRating: () => null }));
@@ -117,9 +134,21 @@ describe('WorkoutBlockFilters', () => {
     expect(skip?.disabled).toBe(true);
     expect(skip?.checked).toBe(false);
     expect(skip?.getAttribute('aria-description')).toBe('mobile.session.preGeneratorSkipSentSignedOut');
-    expect(screen.getByTestId('filters').getAttribute('data-summary')).not.toContain(
+    expect(screen.getByTestId('collapsed-header').textContent).not.toContain(
       'mobile.session.preGeneratorSkipSentSummary',
     );
+  });
+
+  it('shows the title and the whole filter line under it while closed', () => {
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true });
+
+    const header = screen.getByTestId('collapsed-header');
+    expect(header.textContent).toBe(
+      'mobile.session.preGeneratorClimbFilters' +
+        blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, t),
+    );
+    expect(header.textContent).toContain('mobile.session.preGeneratorSkipSentSummary');
+    expect(header.textContent).toContain('mobile.session.preGeneratorOnlyBenchmarksSummary');
   });
 
   it('keeps Benchmarks only usable signed out: benchmarks need no account', () => {
