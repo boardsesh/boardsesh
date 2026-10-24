@@ -58,6 +58,7 @@ import {
   saveAuroraCredential,
   saveKilterCredential,
 } from '../services/aurora-credentials';
+import { logger } from '../utils/logger';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
 import {
   AURORA_USER_ID,
@@ -263,22 +264,42 @@ describe('the first sync after a new account links a login another account synce
   const CLIMB_UUID = 'psync-climb-producer';
   const WATERMARK = '2026-05-03 00:00:00.000000';
   const FROM_THE_BEGINNING = '1970-01-01 00:00:00.000000';
+  const LOGBOOK_TABLES = ['ascents', 'bids', 'circuits'];
+
+  // Spies a test installs, restored after it whatever it asserted.
+  const spies: Array<{ mockRestore(): void }> = [];
 
   const cleanUp = async () => {
     await removeFixtures(database, [FIRST_USER], [CLIMB_UUID]);
     await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
     await db.execute(sql`DELETE FROM playlist_ownership WHERE user_id = ${USER_ID}`);
+    await db.execute(sql`DELETE FROM logbook_sync_skips WHERE user_id IN (${USER_ID}, ${FIRST_USER})`);
   };
 
-  /** The first account synced this login: its watermark is on every user table it pulls. */
-  const firstAccountSynced = async () => {
-    await insertLinkedTensionAccount(database, FIRST_USER, CLIMB_UUID);
-    for (const tableName of ['users', 'ascents', 'bids', 'circuits']) {
+  /** A watermark on every user table the first account's syncs pulled. */
+  const seedCursor = async () => {
+    for (const tableName of ['users', ...LOGBOOK_TABLES]) {
       await db.execute(sql`
         INSERT INTO board_user_syncs (board_type, user_id, table_name, last_synchronized_at)
         VALUES (${FIXTURE_BOARD}, ${AURORA_USER_ID}, ${tableName}, ${WATERMARK})
       `);
     }
+  };
+
+  const logbookCursorTables = async () =>
+    Array.from(
+      await db.execute<{ table_name: string }>(sql`
+        SELECT table_name FROM board_user_syncs
+         WHERE board_type = ${FIXTURE_BOARD} AND user_id = ${AURORA_USER_ID}
+           AND table_name IN ('ascents', 'bids', 'circuits')
+         ORDER BY table_name`),
+      (row) => row.table_name,
+    );
+
+  /** The first account synced this login: its cursor, and one pulled send (no quality, one attempt). */
+  const firstAccountSynced = async () => {
+    await insertLinkedTensionAccount(database, FIRST_USER, CLIMB_UUID);
+    await seedCursor();
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at, origin, aurora_id, aurora_type)
       VALUES ('psync-first-tick', ${FIRST_USER}, ${FIXTURE_BOARD}, ${CLIMB_UUID}, 40, 'send', '2026-05-01 22:00:00',
@@ -286,22 +307,28 @@ describe('the first sync after a new account links a login another account synce
     `);
   };
 
+  /** The form body of the first /sync request: the watermark of every table it asks for. */
+  const firstSyncRequest = (fetchMock: ReturnType<typeof stubAuroraApi>['fetchMock']) => {
+    const [syncBody] = fetchMock.mock.calls
+      .filter(([input]) => typeof input === 'string' && input.endsWith('/sync'))
+      .map(([, init]) => init?.body);
+    if (typeof syncBody !== 'string') throw new Error('the sync sent no /sync request with a form body');
+    return new URLSearchParams(syncBody);
+  };
+
+  const runNextJob = async (expectedRunId: string | null | undefined) => {
+    const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    expect(job?.id).toBe(expectedRunId);
+    return executeBackgroundJob(database, boss, job, handlerForRole(role), new AbortController().signal);
+  };
+
   /** Link the second account and run the sync that link queued against a stand-in Aurora. */
   const linkAndRunFirstSync = async () => {
     signInMock.mockResolvedValue({ token: 'aurora-token', user_id: AURORA_USER_ID });
     const status = await link();
     const aurora = stubAuroraApi({ pages: [fullSyncPage(CLIMB_UUID)] });
-    const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
-    expect(job?.id).toBe(status.syncRunId);
-    expect(await executeBackgroundJob(database, boss, job, handlerForRole(role), new AbortController().signal)).toBe(
-      'succeeded',
-    );
-    // The first /sync request carries the watermark of every table it asks for.
-    const [syncBody] = aurora.fetchMock.mock.calls
-      .filter(([input]) => typeof input === 'string' && input.endsWith('/sync'))
-      .map(([, init]) => init?.body);
-    if (typeof syncBody !== 'string') throw new Error('the sync sent no /sync request with a form body');
-    return new URLSearchParams(syncBody);
+    expect(await runNextJob(status.syncRunId)).toBe('succeeded');
+    return firstSyncRequest(aurora.fetchMock);
   };
 
   const tickOwners = async () =>
@@ -314,6 +341,7 @@ describe('the first sync after a new account links a login another account synce
   beforeEach(cleanUp);
   afterEach(() => {
     vi.unstubAllGlobals();
+    for (const spy of spies.splice(0)) spy.mockRestore();
   });
   afterAll(cleanUp);
 
@@ -340,15 +368,88 @@ describe('the first sync after a new account links a login another account synce
   it('leaves every send the first account still holds with it when that account only unlinked', async () => {
     await firstAccountSynced();
     await deleteAuroraCredential(FIRST_USER, FIXTURE_BOARD);
+    const warnSpy = vi.spyOn(console, 'warn');
+    spies.push(warnSpy);
 
     const request = await linkAndRunFirstSync();
 
     expect(request.get('ascents')).toBe(FROM_THE_BEGINNING);
-    // The re-read ascent belongs to the first account and stays there; the bid
-    // nobody held lands on the new account.
+    // The re-read ascent stays the first account's; the bid nobody held lands
+    // on the new account.
     expect(await tickOwners()).toEqual([
       { auroraId: 'psync-ascent-1', userId: FIRST_USER },
       { auroraId: 'psync-bid-1', userId: USER_ID },
     ]);
+    // No applier path rewrites a tick's user_id, so ownership alone can't fail:
+    // the first account's row must also keep its content (the re-read ascent
+    // carries quality 3 and 3 attempts).
+    const firstRows = await db.execute<{ quality_null: boolean; attempt_count: number; never_synced: boolean }>(sql`
+      SELECT quality IS NULL AS quality_null, attempt_count, aurora_synced_at IS NULL AS never_synced
+        FROM boardsesh_ticks WHERE uuid = 'psync-first-tick'`);
+    expect(Array.from(firstRows, (row) => ({ ...row }))).toEqual([
+      { quality_null: true, attempt_count: 1, never_synced: true },
+    ]);
+    // The foreign-owner partition refused it, not only the write-time predicate.
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('psync-ascent-1 already linked to a different'));
+    // And it was refused, not inserted and quarantined for the new account.
+    const skips = await db.execute<{ aurora_id: string }>(
+      sql`SELECT aurora_id FROM logbook_sync_skips WHERE user_id = ${USER_ID}`,
+    );
+    expect(Array.from(skips, (row) => row.aurora_id)).toEqual([]);
+  });
+
+  it('a run of the previous link that is between pages cannot write its watermark over the reset', async () => {
+    const LATER = '2026-06-01 00:00:00.000000';
+    // A page that only moves the cursor: no ticks, so a relink after it still
+    // finds no footprint and resets again.
+    const cursorPage = (complete: boolean) => ({
+      users: [{ id: AURORA_USER_ID, username: 'climber', created_at: '2024-01-01 00:00:00' }],
+      user_syncs: LOGBOOK_TABLES.map((tableName) => ({
+        table_name: tableName,
+        last_synchronized_at: LATER,
+        user_id: AURORA_USER_ID,
+      })),
+      _complete: complete,
+    });
+    signInMock.mockResolvedValue({ token: 'aurora-token', user_id: AURORA_USER_ID });
+    const first = await link('pw1');
+    let second: Awaited<ReturnType<typeof link>> | undefined;
+    stubAuroraApi({
+      pages: [cursorPage(false), cursorPage(true)],
+      onRequest: async (kind, index) => {
+        // The first page has committed its cursor; relink before the second.
+        if (kind === 'sync' && index === 1) second = await link('pw2');
+      },
+    });
+
+    // The old run's second page meets the new link generation and is refused,
+    // so the reset holds. The cursor first: it is what a regression breaks.
+    const oldRun = await runNextJob(first.syncRunId);
+    expect(await logbookCursorTables()).toEqual([]);
+    expect(oldRun).toBe('failed');
+
+    const aurora = stubAuroraApi({ pages: [cursorPage(true)] });
+    expect(await runNextJob(second?.syncRunId)).toBe('succeeded');
+    expect(firstSyncRequest(aurora.fetchMock).get('ascents')).toBe(FROM_THE_BEGINNING);
+  });
+
+  it('logs a reset only once the link has committed', async () => {
+    await seedCursor();
+    signInMock.mockResolvedValue({ token: 'aurora-token', user_id: AURORA_USER_ID });
+    const infoSpy = vi.spyOn(logger, 'info');
+    spies.push(infoSpy);
+    const resetLines = () =>
+      // winston's overloads type the arguments loosely; match on their JSON.
+      infoSpy.mock.calls.filter((call) => JSON.stringify(call).includes('(#6692)'));
+
+    setPendingFailure.next = new Error('simulated failure after enqueue');
+    await expect(link()).rejects.toThrow('simulated failure after enqueue');
+    // Rolled back with the link: the rows are back and nothing was counted.
+    expect(await logbookCursorTables()).toEqual(LOGBOOK_TABLES);
+    expect(resetLines()).toEqual([]);
+
+    await link();
+    expect(await logbookCursorTables()).toEqual([]);
+    expect(resetLines()).toHaveLength(1);
   });
 });

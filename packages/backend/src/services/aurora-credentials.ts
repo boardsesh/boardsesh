@@ -262,15 +262,22 @@ const PER_LINKER_LOGBOOK_TABLES = ['ascents', 'bids', 'circuits'];
  * a climber relinking their own login never re-pulls, and never gets back a
  * tick they deleted here (`deleteTick` hard-deletes, and Aurora is not told).
  *
- * Nothing moves between accounts. The next sync re-reads Aurora, and the
+ * Nothing another account holds moves. The next sync re-reads Aurora, and the
  * appliers still refuse every tick and playlist another Boardsesh user owns
- * (`applyLogbookChunk`'s foreign partition, the circuits owner guard). So when
- * the first account only unlinked and still holds the sends, they stay with it;
- * joining two accounts is the account-merge work in #3278 / #3541, not a sync.
+ * (`applyLogbookChunk`'s foreign partition, the circuits owner guard); what
+ * nobody here holds any more lands on this linker. So when the first account
+ * only unlinked and still holds the sends, they stay with it; joining two
+ * accounts is the account-merge work in #3278 / #3541, not a sync.
  *
  * Runs in the link transaction after the credential write, so it takes the
  * `board_user_syncs` rows after the control and credential rows, the order a
- * fenced sync batch locks them in. Returns how many cursor rows it cleared.
+ * fenced sync batch locks them in. It relies on the link-generation fence:
+ * `updateUserSyncs` overwrites, so a run of an earlier link between two pages
+ * would write its old watermark back if `assertLinkGenerationCurrent` let its
+ * next page through. Returns how many cursor rows it cleared.
+ *
+ * Known miss (docs/aurora-sync.md): the footprint asks "has this user synced
+ * this board", not "did this user last move this cursor".
  */
 async function resetLogbookCursorForFirstTimeLinker(
   tx: CredentialTransaction,
@@ -494,7 +501,7 @@ export async function saveAuroraCredential(input: {
   const encryptedPassword = encrypt(input.password);
   const encryptedToken = encrypt(loginResponse.token);
 
-  const syncRunId = await db.transaction(async (tx) => {
+  const { syncRunId, clearedCursorRows } = await db.transaction(async (tx) => {
     // Block the link if another Boardsesh user already actively owns this upstream
     // account. Runs before either the INSERT or UPDATE branch below.
     await assertNoConflictingAuroraOwner(tx, {
@@ -586,24 +593,28 @@ export async function saveAuroraCredential(input: {
       });
     }
 
-    const clearedCursorRows = await resetLogbookCursorForFirstTimeLinker(tx, {
+    const cleared = await resetLogbookCursorForFirstTimeLinker(tx, {
       userId: input.userId,
       boardType: input.boardType,
       auroraUserId,
     });
-    if (clearedCursorRows > 0) {
-      logger.info(
-        `[aurora-credentials] user=${input.userId} board=${input.boardType}: no synced sends or circuits from this board yet; cleared ${clearedCursorRows} logbook cursor rows so the first sync reads the whole history (#6692)`,
-      );
-    }
 
-    return requestProviderSyncOn(tx, {
+    const runId = await requestProviderSyncOn(tx, {
       userId: input.userId,
       boardType: input.boardType,
       linkGeneration,
       requestedBy: 'link',
     });
+    return { syncRunId: runId, clearedCursorRows: cleared };
   });
+
+  // After the commit: a link that rolls back (a failed enqueue) restores the
+  // rows, so logging inside the transaction would count resets that never held.
+  if (clearedCursorRows > 0) {
+    logger.info(
+      `[aurora-credentials] user=${input.userId} board=${input.boardType}: no synced sends or circuits from this board yet; cleared ${clearedCursorRows} logbook cursor rows so the first sync reads the whole history (#6692)`,
+    );
+  }
 
   return {
     boardType: input.boardType,

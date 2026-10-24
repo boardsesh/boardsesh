@@ -140,21 +140,43 @@ are cleared, because they become the linker's own ticks and playlists. Users,
 walls, drafts and tags land in rows keyed on the Aurora login, which every
 later linker already reads.
 
-- **Nothing moves between accounts.** The re-read goes through the same
+- **Nothing another account holds moves.** The re-read goes through the same
   appliers, which refuse every tick and playlist another Boardsesh user owns.
-  If the first account only unlinked and still holds the sends, they stay with
-  it, and the second account still sees none of them. Joining two accounts is
-  the account-merge work in #3278 / #3541, not a sync.
+  Upstream sends that nobody here holds any more do land on the second
+  account. That includes sends the first account deleted here, and is what the
+  re-read is for. If the first account only unlinked and still holds the
+  sends, they stay with it, and the second account still sees none of them.
+  Joining two accounts is the account-merge work in #3278 / #3541, not a sync.
 - **A climber relinking their own login keeps the watermark**, with or without
   an unlink in between, because their synced ticks or playlists survive the
   unlink.
+- **It relies on the link-generation fence.** `updateUserSyncs` overwrites
+  the watermark (it doesn't keep the later of two values), and a run carries
+  the watermark in memory from page to page. So a run of an earlier link that
+  is between pages would write its old watermark back over the reset. Every
+  link rotates the generation, and `fencedBatchRunner`'s
+  `assertLinkGenerationCurrent` refuses that run's next page.
+- **Cost.** Each reset costs one full read of the login's history: at most 50
+  pages a run, resumed on the next run. The link mutation has no rate limit of
+  its own, so a climber who relinks again and again without gaining a
+  footprint re-reads the history each time. That happens when the first
+  account still holds every send, or the login is empty.
 - **Known false positive.** A climber who synced the login before but holds
   none of its ticks or playlists now (they deleted them all, or the login has
   no history) re-reads it on relink. `deleteTick` hard-deletes and Aurora is
   never told, so ticks they deleted here come back, as on any watermark reset.
-- **Known false negative.** A climber who synced a *different* login on the
-  same board keeps the watermark of the login they link now. A mapping holds
-  one login per board, so this needs a switch of logins.
+- **Known false negatives.** The footprint asks "has this user synced this
+  board", not "did this user last move this cursor", so it misses two resets:
+  - A climber who synced a *different* login on the same board keeps the
+    watermark of the login they link now. A mapping holds one login per board,
+    so this needs a switch of logins.
+  - Account A syncs login X, then unlinks, or its credential expires. Account
+    B links X, gets the reset and the full read, and pulls new sends from then
+    on. B is deleted, so those ticks cascade away while the watermark stays at
+    B's. A relinks X, has a footprint, gets no reset, and resumes from B's
+    watermark. Every send B pulled is lost to both accounts. The fix is to
+    record which Boardsesh user last moved the cursor, which needs a new
+    column. That is a follow-up.
 - Climbers who linked before this change are not reset after the fact. A
   relink resets them, because they have no footprint.
 
