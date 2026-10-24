@@ -447,7 +447,7 @@
       "workoutPacingInterval": "{{stage}} · Un bloque nuevo cada {{interval}}",
       "workoutPacingAdvanceTick": "Pasa al siguiente bloque cuando registres este.",
       "workoutPacingAdvanceSend": "Pasa al siguiente bloque cuando encadenes este. Registra un intento para descansar y volver a probar.",
-      "workoutPacingAdvanceBeat": "Pasa al siguiente bloque en cada ventana.",
+      "workoutPacingAdvanceBeat": "Pasa al siguiente bloque en cada intervalo.",
       "pause": "Pausar",
       "resume": "Reanudar",
       "reset": "Reiniciar",
