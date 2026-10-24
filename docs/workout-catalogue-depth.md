@@ -17,7 +17,7 @@ How many climbs a generated workout can draw on, per board and grade, at each qu
 
 - `minAscents` in 0, 1, 5, 10, 50, 100 (`board_climb_stats.ascensionist_count >= n`)
 - `minRating` in 0, 2, 3, 3.5 (`quality_average >= n`)
-- benchmarks only: no or yes (`benchmark_difficulty > 0`)
+- benchmarks only: no or yes (`benchmark_difficulty > 0` and not NaN, the server rule in `realBenchmarkCondition`)
 
 It mirrors the server search in `create-climb-filters.ts`: the grade is `ROUND(display_difficulty)`, and only listed, published, visible climbs count. A climb with no ascent count or no rating passes only the 0 threshold, as in the server. The workout sends `gradeAccuracy: 'moderate'`. The server reads it with `parseFloat` (`mapSearchInputToParams`) and gets `NaN`, and `createClimbFilters` adds the accuracy condition only for a truthy value, so the search runs with no accuracy filter. The offline search skips it the same way. These tables match that. `'moderate'` is the filter picker's label for the wire value `'0.1'`; if the workout ever sends `'0.1'`, every climb whose crowd average sits more than 0.1 from its rounded grade drops out and these counts no longer hold.
 
