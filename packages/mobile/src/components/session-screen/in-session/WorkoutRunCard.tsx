@@ -9,8 +9,8 @@
 // Split in two so the session screen pays nothing for it: the outer component
 // reads only the session id and the run, and the queue and rest-timer
 // subscriptions live in the inner one (`useWorkoutRunner`), mounted only while a
-// run exists. Nothing here re-renders per second: the countdown is the
-// `RestTimerClock` leaf.
+// run exists. Only the rest line re-renders per second, a leaf that reads the live
+// clock for its spoken sentence; nothing above it does.
 
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -21,7 +21,11 @@ import { Card } from '../../Card';
 import { Icon } from '../../Icon';
 import { PressableSurface } from '../../PressableSurface';
 import { Text } from '../../Text';
-import { RestTimerClock } from '../../queue-control/RestTimerPill';
+import {
+  RestTimerClock,
+  restTimerClockAccessibilityLabel,
+  useRestTimerDisplay,
+} from '../../queue-control/RestTimerPill';
 import { hapticSelection } from '../../../lib/haptics';
 import { nowMs } from '../../../lib/clock';
 import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
@@ -87,6 +91,8 @@ function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
 }
 
 const TALLY_SEPARATOR = ' · ';
+/** Between the parts of one spoken sentence, as the rest timer sheet's hero clock joins its own. */
+const SPOKEN_SEPARATOR = '. ';
 
 /** "3 sent · 1 tried · 1 skipped", leaving out what is zero. Null when nothing was sent, tried or skipped. */
 function tallyLabel(tally: WorkoutClimbTally, t: TranslateWorkoutStage): string | null {
@@ -104,8 +110,7 @@ function tallyLabel(tally: WorkoutClimbTally, t: TranslateWorkoutStage): string 
  * climbs may well have been logged somewhere else.
  */
 function stageStatus(stage: WorkoutRunnerStageReadout, t: TranslateWorkoutStage): string {
-  const loggedSomething = stage.tally.sent + stage.tally.tried > 0;
-  const tally = stage.finished && loggedSomething ? tallyLabel(stage.tally, t) : null;
+  const tally = stage.finished && stage.logged ? tallyLabel(stage.tally, t) : null;
   if (tally !== null) return tally;
   if (stage.remainingAfterCurrent === null) return t('mobile.session.workoutStageClimbs', { count: stage.size });
   if (stage.remainingAfterCurrent === 0) return t('mobile.session.workoutStageLastClimb');
@@ -158,7 +163,7 @@ function WorkoutRunCardContent({
       {inProgress && resumeItem ? <ResumeWorkoutRow readout={readout} item={resumeItem} /> : null}
       {inProgress && readout.rest?.timing ? <RestLine rest={readout.rest} nextItem={nextItem} /> : null}
       {inProgress && readout.rest && !readout.rest.armed ? (
-        <TurnOnRestTimerRow sessionId={sessionId} run={run} />
+        <TurnOnRestTimerRow sessionId={sessionId} run={run} drivesWall={readout.rest.drivesWall} />
       ) : null}
       <View style={styles.stageList}>
         {readout.stages.map((stage) => {
@@ -208,7 +213,11 @@ function WorkoutRunCardContent({
   );
 }
 
-/** "Workout done", with what it came to once anything was logged on this phone. */
+/**
+ * "Workout done", with what it came to once anything was logged on this phone:
+ * the totals of the blocks logged here, so a block climbed on another phone
+ * never reads as skipped.
+ */
 function WorkoutDoneLine({ totals }: { totals: WorkoutClimbTally }) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
@@ -331,29 +340,49 @@ function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; it
 /** Which rest is counting down, as a word beside the clock. */
 function restLabel(rest: WorkoutRunnerRest, t: TranslateWorkoutStage): string {
   if (rest.paused) return t('mobile.workoutRunner.timerPausedLabel');
-  if (rest.mode === 'onTheMinute') return t('mobile.workoutRunner.nextBeatLabel');
+  if (rest.mode === 'onTheMinute') {
+    return rest.endsWorkout ? t('mobile.workoutRunner.workoutEndsLabel') : t('mobile.workoutRunner.nextBeatLabel');
+  }
   return rest.closesRound ? t('mobile.workoutRunner.roundRestLabel') : t('mobile.workoutRunner.restLabel');
 }
 
 /**
- * "Rest 1:42 / Then Crimp City". The digits are the `RestTimerClock` leaf, so
- * only it re-renders per second. After a fall on a limit climb the rest leads
- * back to the same climb: "Then try again".
+ * "Rest 1:42 / Then Crimp City". After a fall on a limit climb the rest leads
+ * back to the same climb: "Then try again". On a crew phone that does not hold
+ * the wall, the rest moves nothing, so it says who moves the queue instead.
+ *
+ * A leaf: it reads the live display (`useRestTimerDisplay`) so a screen reader
+ * hears one sentence ("Round rest. Rest timer, 2:58 left. Then Crimp City"),
+ * with the overrun spoken as words rather than "minus zero twelve", so it
+ * re-renders once a second and nothing above it does. The digits are the
+ * `RestTimerClock` leaf.
  */
 function RestLine({ rest, nextItem }: { rest: WorkoutRunnerRest; nextItem: ClimbQueueItem | null }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const display = useRestTimerDisplay();
   const nextName = nextItem?.climb.name ?? null;
-  const caption = !rest.advances
+  const caption = rest.staysOnClimb
     ? t('mobile.workoutRunner.thenTryAgain')
-    : nextName
-      ? t('mobile.workoutRunner.thenNext', { name: nextName })
-      : null;
+    : !rest.drivesWall
+      ? t('mobile.restTimer.autoAdvanceBlocked')
+      : nextName
+        ? t('mobile.workoutRunner.thenNext', { name: nextName })
+        : null;
+  const label = restLabel(rest, t);
+  const spokenParts = [label, restTimerClockAccessibilityLabel(display, t)];
+  if (caption) spokenParts.push(caption);
   return (
-    <View style={styles.restLine} testID="workout-runner-rest">
+    <View
+      style={styles.restLine}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={spokenParts.join(SPOKEN_SEPARATOR)}
+      testID="workout-runner-rest"
+    >
       <View style={styles.restClockRow}>
         <Text variant="body" color={systemColors.secondaryLabel}>
-          {restLabel(rest, t)}
+          {label}
         </Text>
         <RestTimerClock variant="headline" />
       </View>
@@ -369,8 +398,18 @@ function RestLine({ rest, nextItem }: { rest: WorkoutRunnerRest; nextItem: Climb
 /**
  * A timed block with the rest timer off: nothing moves on its own. One tap arms
  * it on the block's own rest (`armRestTimerForWorkout`), the same arm Start makes.
+ * On a crew phone that does not hold the wall the timer only times the rests,
+ * and the hint says so.
  */
-function TurnOnRestTimerRow({ sessionId, run }: { sessionId: string; run: WorkoutRun }) {
+function TurnOnRestTimerRow({
+  sessionId,
+  run,
+  drivesWall,
+}: {
+  sessionId: string;
+  run: WorkoutRun;
+  drivesWall: boolean;
+}) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   return (
@@ -382,7 +421,9 @@ function TurnOnRestTimerRow({ sessionId, run }: { sessionId: string; run: Workou
       feedback="opacity"
       accessibilityRole="button"
       accessibilityLabel={t('mobile.workoutRunner.turnOnAccessibilityLabel')}
-      accessibilityHint={t('mobile.workoutRunner.turnOnHint')}
+      accessibilityHint={
+        drivesWall ? t('mobile.workoutRunner.turnOnHint') : t('mobile.workoutRunner.turnOnPassengerHint')
+      }
       style={styles.turnOnRow}
       testID="workout-runner-turn-on"
     >

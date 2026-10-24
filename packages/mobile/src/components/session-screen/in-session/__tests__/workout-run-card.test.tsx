@@ -45,10 +45,22 @@ vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: ()
 vi.mock('../../../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V5', color: '#000000' }) }),
 }));
-// The live clock is its own leaf; here it only has to show where it sits.
+// The live clock is its own leaf; here it only has to show where it sits. The
+// rest line reads the display for its spoken sentence: 12 s over the rest.
 vi.mock('../../../queue-control/RestTimerPill', () => ({
   RestTimerClock: () => createElement('span', { 'data-testid': 'rest-clock' }, 'clock'),
+  useRestTimerDisplay: () => ({
+    phase: 'exceeded',
+    displayLabel: '-0:12',
+    targetLabel: '3m',
+    remainingSeconds: -12,
+  }),
+  restTimerClockAccessibilityLabel: ({ remainingSeconds }: { remainingSeconds: number | null }) =>
+    `overrunAria:${remainingSeconds}`,
 }));
+// Solo by default: this phone moves its own wall.
+const timerDriver = vi.hoisted(() => ({ canAdvanceQueue: true }));
+vi.mock('../../../../hooks/use-session-timer-driver', () => ({ useSessionTimerDriver: () => timerDriver }));
 const armRestTimerForWorkout = vi.hoisted(() => vi.fn());
 vi.mock('../../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout }));
 function setQueue(uuids: string[]): void {
@@ -82,8 +94,17 @@ vi.mock('../../../Card', () => ({
 }));
 vi.mock('../../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress, testID }: { children?: ReactNode; onPress?: () => void; testID?: string }) =>
-    createElement('button', { onClick: onPress, 'data-testid': testID }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    testID,
+    accessibilityHint,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    testID?: string;
+    accessibilityHint?: string;
+  }) => createElement('button', { onClick: onPress, 'data-testid': testID, 'data-hint': accessibilityHint }, children),
 }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../Text', () => ({
@@ -131,6 +152,7 @@ beforeEach(() => {
   queueActions.setCurrentClimb.mockClear();
   drawerHost.openPlayDrawer.mockClear();
   armRestTimerForWorkout.mockClear();
+  timerDriver.canAdvanceQueue = true;
   queueState.playlistSuggestionSource = null;
   queueListeners.clear();
   queueState.sessionId = 'session-1';
@@ -234,6 +256,7 @@ describe('WorkoutRunCard', () => {
       onTheWall('a');
       render(createElement(WorkoutRunCard));
 
+      expect(screen.getByTestId('workout-runner-turn-on').getAttribute('data-hint')).toBe('turnOnHint');
       fireEvent.click(screen.getByTestId('workout-runner-turn-on'));
       expect(armRestTimerForWorkout).toHaveBeenCalledWith('session-1', timedRun, expect.any(Number));
       expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
@@ -250,6 +273,8 @@ describe('WorkoutRunCard', () => {
       act(() => logTick('b', 'send'));
       const restLine = screen.getByTestId('workout-runner-rest');
       expect(restLine.textContent).toBe('roundRestLabelclockthenNext');
+      // One sentence to a screen reader, the overrun in words rather than signed digits.
+      expect(restLine.getAttribute('aria-label')).toBe('roundRestLabel. overrunAria:-12. thenNext');
       expect(screen.queryByTestId('workout-runner-turn-on')).toBeNull();
 
       // Turning the timer off brings the offer back and stops the clock.
@@ -267,6 +292,18 @@ describe('WorkoutRunCard', () => {
 
       act(() => logTick('l1', 'attempt'));
       expect(screen.getByTestId('workout-runner-rest').textContent).toBe('restLabelclockthenTryAgain');
+    });
+
+    it('never promises the next climb on a crew phone that does not hold the wall', () => {
+      timerDriver.canAdvanceQueue = false;
+      setWorkoutRun('session-1', timedRun);
+      onTheWall('b');
+      render(createElement(WorkoutRunCard));
+      expect(screen.getByTestId('workout-runner-turn-on').getAttribute('data-hint')).toBe('turnOnPassengerHint');
+
+      act(() => armRestTimer('afterTick', 1000, 'session-1'));
+      act(() => logTick('b', 'send'));
+      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('roundRestLabelclockautoAdvanceBlocked');
     });
 
     it('says what each finished block came to, and keeps the climb count for one with nothing logged', () => {
@@ -287,7 +324,7 @@ describe('WorkoutRunCard', () => {
       ]);
     });
 
-    it('finishes with the totals once the last climb is logged, and Add a block stays', () => {
+    it('finishes with the totals of the blocks logged here once the last climb is logged, and Add a block stays', () => {
       setWorkoutRun('session-1', run);
       queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'm2']);
       queueState.currentClimbQueueItem = { uuid: 'm2' };
@@ -295,7 +332,10 @@ describe('WorkoutRunCard', () => {
       noteWorkoutRunTick('session-1', { queueItemUuid: 'm2', status: 'send', climbedAt: '2026-10-24T12:01:00.000Z' });
       render(createElement(WorkoutRunCard, { onAddBlock: vi.fn() }));
 
-      expect(screen.getByTestId('workout-runner-done').textContent).toBe('donetallySent:2 · tallySkipped:3');
+      // The warm-up has nothing logged on this phone, so it keeps its climb count
+      // and adds nothing to the totals: it may have been logged on another phone.
+      expect(screen.getByTestId('workout-runner-done').textContent).toBe('donetallySent:2');
+      expect(rowTexts()[0]).toBe('workout-stage|preWorkoutSectionWarmUpworkoutStageClimbs:3');
       expect(screen.queryByTestId('workout-runner-current')).toBeNull();
       expect(screen.queryByText('overallPosition')).toBeNull();
       expect(screen.getByTestId('workout-add-block')).toBeTruthy();

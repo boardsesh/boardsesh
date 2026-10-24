@@ -6,8 +6,9 @@
 // Pure, and built on `describeWorkoutRun` and `locateInRun`, so the runner, the
 // card and the player subtitle never disagree about positions. The rest comes
 // from the rest-timer store's `stagePacing`, the same value the timer and the
-// auto-advance scheduler run on, and whether that rest moves the wall is
-// `restAdvanceAllowed`, the scheduler's own rule. No clock: countdown digits only
+// auto-advance scheduler run on, and whether that rest moves the wall is the
+// scheduler's own rule: this phone may move it (`canAdvanceQueue`) and the
+// stage's rule is met (`restAdvanceAllowed`). No clock: countdown digits only
 // ever come from the `RestTimerClock` leaf, never from here.
 //
 // Outcomes come from the phone-side tick log (`workout-run-store`): the server's
@@ -29,7 +30,7 @@ import { describeWorkoutRun, type WorkoutStageReadout } from './workout-run-read
 /** The rest-timer fields the runner reads. `RestTimerState` itself satisfies it. */
 export type WorkoutRunnerRestSnapshot = Pick<
   RestTimerState,
-  'armed' | 'isRunning' | 'anchorMs' | 'lastTick' | 'stagePacing'
+  'armed' | 'isRunning' | 'anchorMs' | 'lastTick' | 'stagePacing' | 'queueEnded'
 >;
 
 export type WorkoutRunnerInput = {
@@ -45,6 +46,11 @@ export type WorkoutRunnerInput = {
   nextUuid: string | null;
   log: readonly WorkoutTickLogEntry[];
   rest: WorkoutRunnerRestSnapshot;
+  /**
+   * This phone may move the wall (`useSessionTimerDriver().canAdvanceQueue`):
+   * solo, or holding the wall in a crew. The scheduler never moves it otherwise.
+   */
+  canAdvanceQueue: boolean;
 };
 
 export type WorkoutRunnerPhase = 'climbing' | 'resting' | 'done';
@@ -72,6 +78,11 @@ export type WorkoutRunnerStageReadout = WorkoutStageReadout & {
   climbs: WorkoutClimbOutcome[];
   /** Nothing in the stage is left to climb, and the climber is past it (or the workout is done). */
   finished: boolean;
+  /**
+   * Something in the stage was sent or tried on this phone. A stage passed with
+   * nothing logged here may well have been climbed on another phone.
+   */
+  logged: boolean;
 };
 
 export type WorkoutRunnerCurrent = {
@@ -102,8 +113,21 @@ export type WorkoutRunnerRest = {
   /** The rest after the current climb: a 4x4's round rest, the changeover, the interval. */
   targetSeconds: number;
   advanceOn: RestAdvanceRule;
-  /** When this rest runs out, the wall moves on (`restAdvanceAllowed`). False after a fall on a limit climb. */
+  /**
+   * When this rest runs out, this phone moves the wall on: `drivesWall` and not
+   * `staysOnClimb`, the scheduler's whole rule.
+   */
   advances: boolean;
+  /**
+   * The stage's rule keeps the climb on the wall when the rest runs out
+   * (`restAdvanceAllowed` says no): after a fall on a limit climb, the next try
+   * is on it. Whichever phone holds the wall.
+   */
+  staysOnClimb: boolean;
+  /** This phone may move the wall (`canAdvanceQueue`). In a crew, only the phone holding it does. */
+  drivesWall: boolean;
+  /** On the minute, on the last staged climb: its beat ends the workout. */
+  endsWorkout: boolean;
   /** The current climb ends its round, so this is the longer round rest. */
   closesRound: boolean;
   armed: boolean;
@@ -112,7 +136,7 @@ export type WorkoutRunnerRest = {
   /**
    * The timer is timing this rest, so a clock is worth showing: resting after
    * the tick, or on the minute, whose beat runs whether the climb was logged yet
-   * or not.
+   * or not, until a beat finds nothing to move on to (`queueEnded`).
    */
   timing: boolean;
 };
@@ -134,6 +158,11 @@ export type WorkoutRunnerReadout = {
    */
   resumeUuid: string | null;
   stages: WorkoutRunnerStageReadout[];
+  /**
+   * What the `logged` stages came to, together. A stage with nothing logged on
+   * this phone adds nothing, its passed climbs included, as its row keeps its
+   * climb count: they may have been logged on another phone.
+   */
   totals: WorkoutClimbTally;
 };
 
@@ -196,14 +225,16 @@ function addToTally(tally: WorkoutClimbTally, outcome: WorkoutClimbOutcomeKind):
  * like `describeWorkoutRun`, so the card falls back to offering a fresh block.
  *
  * - `done`: the climber is past every staged climb, or on the last one and it met
- *   its stage's rule (sent, on a stage that stays until sent; logged, on any other).
+ *   its stage's rule (sent, on a stage that stays until sent; on the minute, its
+ *   beat ran out with nothing after it, or it was logged; logged, on any other).
  * - `resting`: the current climb's stage paces the timer, the timer is armed with
  *   a rest to count from, and the last tick it took was on the current climb.
  *   Paused counts: the rest is still the rest, frozen.
  * - `climbing`: everything else, an off-plan current climb included.
  *
  * A staged climb is `skipped` once the current climb sits after it in the queue
- * with nothing logged on it. Only queued climbs count, as everywhere in the run.
+ * (or its last beat ran out) with nothing logged on it. Only queued climbs count,
+ * as everywhere in the run.
  */
 export function describeWorkoutRunner({
   run,
@@ -212,6 +243,7 @@ export function describeWorkoutRunner({
   nextUuid,
   log,
   rest,
+  canAdvanceQueue,
 }: WorkoutRunnerInput): WorkoutRunnerReadout | null {
   const runReadout = describeWorkoutRun(run, queueUuids, currentUuid);
   if (!runReadout) return null;
@@ -229,23 +261,6 @@ export function describeWorkoutRunner({
   const climbLogs = logByQueueItem(log);
   const climbLog = (uuid: string): ClimbLog => climbLogs.get(uuid) ?? NOT_LOGGED;
 
-  // Queue order: the map's keys keep the order uuids were first seen in.
-  const stagedInQueueOrder = [...queuePositionByUuid.keys()].filter((uuid) => stageIdByUuid.has(uuid));
-  const currentQueuePosition = currentUuid === null ? undefined : queuePositionByUuid.get(currentUuid);
-  const isPassed = (uuid: string): boolean =>
-    currentQueuePosition !== undefined && (queuePositionByUuid.get(uuid) ?? Infinity) < currentQueuePosition;
-
-  const lastStagedUuid = stagedInQueueOrder.at(-1);
-  const lastStagedMetItsRule = (() => {
-    if (lastStagedUuid === undefined || lastStagedUuid !== currentUuid) return false;
-    const logged = climbLog(lastStagedUuid);
-    const stageId = stageIdByUuid.get(lastStagedUuid);
-    return stageHoldsUntilSent(stageId === undefined ? undefined : runStageById.get(stageId))
-      ? logged.sent
-      : logged.attempts > 0;
-  })();
-  const done = lastStagedUuid !== undefined && (isPassed(lastStagedUuid) || lastStagedMetItsRule);
-
   // The store's stage pacing is the current climb's once RestTimerPacingSync has
   // seen it; until then (one effect later) there is no rest to describe.
   const stagePacing =
@@ -254,6 +269,30 @@ export function describeWorkoutRunner({
     rest.stagePacing.stageId === position.stageId
       ? rest.stagePacing
       : null;
+
+  // Queue order: the map's keys keep the order uuids were first seen in.
+  const stagedInQueueOrder = [...queuePositionByUuid.keys()].filter((uuid) => stageIdByUuid.has(uuid));
+  const lastStagedUuid = stagedInQueueOrder.at(-1);
+  const onLastStaged = lastStagedUuid !== undefined && lastStagedUuid === currentUuid;
+  // On the minute the beat moves the climber on, logged or not. On the last
+  // staged climb with nothing after it, the beat that ran out finds no climb and
+  // the scheduler latches `queueEnded`: the climber is past that climb too.
+  const lastBeatRanOut = onLastStaged && stagePacing?.mode === 'onTheMinute' && rest.queueEnded;
+  const currentQueuePosition = currentUuid === null ? undefined : queuePositionByUuid.get(currentUuid);
+  const isPassed = (uuid: string): boolean =>
+    (currentQueuePosition !== undefined && (queuePositionByUuid.get(uuid) ?? Infinity) < currentQueuePosition) ||
+    (lastBeatRanOut && uuid === currentUuid);
+
+  const lastStagedMetItsRule = (() => {
+    if (lastStagedUuid === undefined || !onLastStaged) return false;
+    const logged = climbLog(lastStagedUuid);
+    const stageId = stageIdByUuid.get(lastStagedUuid);
+    return stageHoldsUntilSent(stageId === undefined ? undefined : runStageById.get(stageId))
+      ? logged.sent
+      : logged.attempts > 0;
+  })();
+  const done = lastStagedUuid !== undefined && (isPassed(lastStagedUuid) || lastStagedMetItsRule);
+
   const resting =
     !done &&
     stagePacing !== null &&
@@ -281,12 +320,13 @@ export function describeWorkoutRunner({
     const stageUuids = new Set(runStage?.itemUuids.filter((uuid) => stageIdByUuid.get(uuid) === stageReadout.id));
     const climbs = stagedInQueueOrder.filter((uuid) => stageUuids.has(uuid)).map(outcomeOf);
     const tally = emptyTally();
-    for (const { outcome } of climbs) {
-      addToTally(tally, outcome);
-      addToTally(totals, outcome);
+    for (const { outcome } of climbs) addToTally(tally, outcome);
+    const logged = tally.sent + tally.tried > 0;
+    if (logged) {
+      for (const { outcome } of climbs) addToTally(totals, outcome);
     }
     const nothingLeft = climbs.every(({ outcome }) => outcome !== 'upcoming');
-    return { ...stageReadout, tally, climbs, finished: nothingLeft && (done || !stageReadout.isCurrent) };
+    return { ...stageReadout, tally, climbs, finished: nothingLeft && (done || !stageReadout.isCurrent), logged };
   });
 
   const current: WorkoutRunnerCurrent | null =
@@ -324,20 +364,29 @@ export function describeWorkoutRunner({
             roundOf(nextStageId, nextUuid) !== roundOf(nextStageId, currentUuid),
         };
 
+  // The scheduler's rule, both halves: the stage's rule is met, and this phone
+  // may move the wall.
+  const staysOnClimb =
+    stagePacing !== null &&
+    !restAdvanceAllowed({
+      advanceOn: stagePacing.advanceOn,
+      currentQueueItemUuid: currentUuid,
+      lastTick: rest.lastTick,
+    });
+  const onTheMinute = stagePacing?.mode === 'onTheMinute';
   const restReadout: WorkoutRunnerRest | null = stagePacing
     ? {
         mode: stagePacing.mode,
         targetSeconds: stagePacing.targetSeconds,
         advanceOn: stagePacing.advanceOn,
-        advances: restAdvanceAllowed({
-          advanceOn: stagePacing.advanceOn,
-          currentQueueItemUuid: currentUuid,
-          lastTick: rest.lastTick,
-        }),
+        advances: canAdvanceQueue && !staysOnClimb,
+        staysOnClimb,
+        drivesWall: canAdvanceQueue,
+        endsWorkout: onTheMinute && onLastStaged,
         closesRound: stagePacing.closesRound,
         armed: rest.armed,
         paused: rest.armed && !rest.isRunning,
-        timing: rest.armed && rest.anchorMs !== null && (resting || (!done && stagePacing.mode === 'onTheMinute')),
+        timing: rest.armed && rest.anchorMs !== null && (resting || (!done && onTheMinute && !rest.queueEnded)),
       }
     : null;
 

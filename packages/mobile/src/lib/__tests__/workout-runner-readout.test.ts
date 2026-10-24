@@ -43,6 +43,7 @@ const IDLE: WorkoutRunnerRestSnapshot = {
   anchorMs: null,
   lastTick: null,
   stagePacing: null,
+  queueEnded: false,
 };
 
 /** The stage pacing RestTimerPacingSync would have stored for `uuid`. */
@@ -56,8 +57,12 @@ function stagePacingFor(uuid: string, workoutRun: WorkoutRun = run, queueUuids: 
 }
 
 /** Armed and running, with the store's stage pacing for `uuid` and the given last tick. */
-function armedOn(uuid: string, lastTick: RestTimerLastTick | null, anchorMs: number | null = 1000) {
-  return { armed: true, isRunning: true, anchorMs, lastTick, stagePacing: stagePacingFor(uuid) };
+function armedOn(
+  uuid: string,
+  lastTick: RestTimerLastTick | null,
+  anchorMs: number | null = 1000,
+): WorkoutRunnerRestSnapshot {
+  return { armed: true, isRunning: true, anchorMs, lastTick, stagePacing: stagePacingFor(uuid), queueEnded: false };
 }
 
 let tickSecond = 0;
@@ -73,6 +78,7 @@ function readoutFor(overrides: Partial<WorkoutRunnerInput> & Pick<WorkoutRunnerI
     nextUuid: null,
     log: [],
     rest: IDLE,
+    canAdvanceQueue: true,
     ...overrides,
   });
   if (!readout) throw new Error('expected a readout');
@@ -89,6 +95,7 @@ describe('describeWorkoutRunner', () => {
         nextUuid: null,
         log: [],
         rest: IDLE,
+        canAdvanceQueue: true,
       }),
     ).toBeNull();
   });
@@ -172,11 +179,29 @@ describe('describeWorkoutRunner', () => {
         targetSeconds: 180,
         advanceOn: 'tick',
         advances: true,
+        staysOnClimb: false,
+        drivesWall: true,
+        endsWorkout: false,
         closesRound: true,
         armed: true,
         paused: false,
         timing: true,
       });
+    });
+
+    it('never says the rest moves the wall on a crew phone that does not hold it', () => {
+      // A passenger (or nobody holding the wall): the scheduler never calls
+      // nextClimb from this phone, so the rest still times, but moves nothing.
+      const readout = readoutFor({
+        currentUuid: 'b',
+        nextUuid: 'a2',
+        log: [tick('b', 'send')],
+        rest: armedOn('b', { status: 'send', queueItemUuid: 'b' }),
+        canAdvanceQueue: false,
+      });
+
+      expect(readout.phase).toBe('resting');
+      expect(readout.rest).toMatchObject({ advances: false, staysOnClimb: false, drivesWall: false, timing: true });
     });
 
     it('is not resting on a tick logged on the previous climb', () => {
@@ -186,7 +211,7 @@ describe('describeWorkoutRunner', () => {
       });
 
       expect(readout.phase).toBe('climbing');
-      expect(readout.rest).toMatchObject({ advances: false, timing: false });
+      expect(readout.rest).toMatchObject({ advances: false, staysOnClimb: true, timing: false });
     });
 
     it('rests after a fall on a limit climb without moving the wall, and counts the next try', () => {
@@ -197,7 +222,13 @@ describe('describeWorkoutRunner', () => {
       });
 
       expect(readout.phase).toBe('resting');
-      expect(readout.rest).toMatchObject({ advanceOn: 'send', advances: false, targetSeconds: 180 });
+      expect(readout.rest).toMatchObject({
+        advanceOn: 'send',
+        advances: false,
+        staysOnClimb: true,
+        drivesWall: true,
+        targetSeconds: 180,
+      });
       expect(readout.current).toEqual({ queueItemUuid: 'l1', attempts: 1, sent: false, tryNumber: 2 });
     });
 
@@ -229,11 +260,81 @@ describe('describeWorkoutRunner', () => {
           anchorMs: 1000,
           lastTick: null,
           stagePacing: stagePacingFor('e1', emom, emomQueue),
+          queueEnded: false,
         },
+        canAdvanceQueue: true,
       });
 
       expect(readout?.phase).toBe('climbing');
-      expect(readout?.rest).toMatchObject({ mode: 'onTheMinute', targetSeconds: 60, advances: true, timing: true });
+      expect(readout?.rest).toMatchObject({
+        mode: 'onTheMinute',
+        targetSeconds: 60,
+        advances: true,
+        endsWorkout: false,
+        timing: true,
+      });
+    });
+
+    describe('an on-the-minute finisher', () => {
+      // A warm-up, then two climbs on the minute to end the workout.
+      const emomFinish: WorkoutRun = {
+        stages: [
+          { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+          { id: 'emom', kind: 'onTheMinute', itemUuids: ['e1', 'e2'], pacing: ON_THE_MINUTE },
+        ],
+      };
+      const finishQueue = ['w1', 'e1', 'e2'];
+      const onTheMinuteOn = (uuid: string, queueEnded: boolean): WorkoutRunnerRestSnapshot => ({
+        armed: true,
+        isRunning: true,
+        anchorMs: 1000,
+        lastTick: null,
+        stagePacing: stagePacingFor(uuid, emomFinish, finishQueue),
+        queueEnded,
+      });
+      const finisherReadout = (queueEnded: boolean, log: WorkoutTickLogEntry[] = []) =>
+        describeWorkoutRunner({
+          run: emomFinish,
+          queueUuids: finishQueue,
+          currentUuid: 'e2',
+          nextUuid: null,
+          log,
+          rest: onTheMinuteOn('e2', queueEnded),
+          canAdvanceQueue: true,
+        });
+
+      it('counts down to the end of the workout on the last climb', () => {
+        const readout = finisherReadout(false, [tick('w1', 'send')]);
+
+        expect(readout?.phase).toBe('climbing');
+        expect(readout?.rest).toMatchObject({ endsWorkout: true, timing: true });
+      });
+
+      it('is done once the last beat runs out with nothing after it, logged or not', () => {
+        const readout = finisherReadout(true, [tick('w1', 'send'), tick('e1', 'send')]);
+
+        expect(readout?.phase).toBe('done');
+        expect(readout?.rest?.timing).toBe(false);
+        const emomStage = readout?.stages.find((stage) => stage.id === 'emom');
+        expect(emomStage?.finished).toBe(true);
+        expect(emomStage?.climbs.at(-1)).toMatchObject({ queueItemUuid: 'e2', outcome: 'skipped' });
+        expect(readout?.totals).toEqual({ sent: 2, tried: 0, skipped: 1, total: 3 });
+      });
+
+      it('stops the clock mid-workout once a beat finds nothing to move on to', () => {
+        const readout = describeWorkoutRunner({
+          run: emomFinish,
+          queueUuids: finishQueue,
+          currentUuid: 'e1',
+          nextUuid: null,
+          log: [],
+          rest: onTheMinuteOn('e1', true),
+          canAdvanceQueue: true,
+        });
+
+        expect(readout?.phase).toBe('climbing');
+        expect(readout?.rest).toMatchObject({ endsWorkout: false, timing: false });
+      });
     });
 
     it('says the paced stage has its timer off', () => {
@@ -261,6 +362,7 @@ describe('describeWorkoutRunner', () => {
         nextUuid: null,
         log: [tick('b2', 'attempt')],
         rest: armedOn('b2', { status: 'attempt', queueItemUuid: 'b2' }),
+        canAdvanceQueue: true,
       });
 
       expect(done?.phase).toBe('done');
@@ -293,7 +395,7 @@ describe('describeWorkoutRunner', () => {
   });
 
   describe('tallies', () => {
-    it('counts sent, tried and skipped per stage and in total, from this phone’s log', () => {
+    it('counts sent, tried and skipped per stage, and totals the stages logged on this phone', () => {
       const readout = readoutFor({
         currentUuid: 'a2',
         log: [
@@ -317,7 +419,22 @@ describe('describeWorkoutRunner', () => {
         { queueItemUuid: 'b2', attempts: 0, sent: false, outcome: 'upcoming' },
       ]);
       expect(byStage.limit.tally).toEqual({ sent: 0, tried: 0, skipped: 0, total: 2 });
-      expect(readout.totals).toEqual({ sent: 1, tried: 1, skipped: 2, total: 8 });
+      expect([byStage.warm.logged, byStage.four.logged, byStage.limit.logged]).toEqual([true, true, false]);
+      expect(readout.totals).toEqual({ sent: 1, tried: 1, skipped: 2, total: 6 });
+    });
+
+    it('leaves a stage with nothing logged here out of the totals: it may have been logged on another phone', () => {
+      // The 4x4 was logged on a partner's phone; only the limit climbs were logged here.
+      const readout = readoutFor({
+        currentUuid: 'l2',
+        log: [tick('l1', 'send'), tick('l2', 'send')],
+      });
+
+      expect(readout.phase).toBe('done');
+      const byStage = Object.fromEntries(readout.stages.map((stage) => [stage.id, stage]));
+      expect(byStage.four.tally).toMatchObject({ skipped: 4 });
+      expect(byStage.four.logged).toBe(false);
+      expect(readout.totals).toEqual({ sent: 2, tried: 0, skipped: 0, total: 2 });
     });
 
     it('counts a send after falls as sent, and a climb ticked out of order where it is', () => {
@@ -338,7 +455,7 @@ describe('describeWorkoutRunner', () => {
       const readout = readoutFor({ queueUuids: [...queue, 'hand-queued'], currentUuid: 'hand-queued' });
 
       expect(readout.stages.every((stage) => stage.finished)).toBe(true);
-      expect(readout.totals).toEqual({ sent: 0, tried: 0, skipped: 8, total: 8 });
+      expect(readout.totals).toEqual({ sent: 0, tried: 0, skipped: 0, total: 0 });
     });
   });
 
