@@ -19,6 +19,7 @@ import { deterministicEventUuid } from '../deterministic-event-uuid';
 const SEPTEMBER: CommunityMonth = {
   month: '2026-09',
   complete: true,
+  namesRetired: false,
   summary: {
     climbersWhoLit: 412,
     climbsLit: 9031,

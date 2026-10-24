@@ -275,14 +275,16 @@ describe('batch family registration', () => {
       { key: 'weekly', cron: '30 7 * * 1', tz: undefined },
     ]);
     const [daily, weekly] = communityMonthlyStatsFamily.schedules ?? [];
-    expect(await daily.fanOut(database)).toEqual([{ payload: { months: 2, dryRun: false } }]);
-    expect(await weekly.fanOut(database)).toEqual([{ payload: { months: 13, dryRun: false } }]);
+    expect(await daily.fanOut(database)).toEqual([{ payload: { months: 2, retireMonths: 0, dryRun: false } }]);
+    // The Monday run also retires the names of the month just behind its window.
+    expect(await weekly.fanOut(database)).toEqual([{ payload: { months: 13, retireMonths: 1, dryRun: false } }]);
     // Each slot's payload is one the worker accepts, under its own key.
+    const keys: Array<string | undefined> = [];
     for (const schedule of [daily, weekly]) {
       const [request] = await schedule.fanOut(database);
-      const parsed = communityMonthlyStatsFamily.payload.parse(request.payload);
-      expect(communityMonthlyStatsFamily.singletonKey?.(parsed)).toBe(String(request.payload.months));
+      keys.push(communityMonthlyStatsFamily.singletonKey?.(communityMonthlyStatsFamily.payload.parse(request.payload)));
     }
+    expect(keys).toEqual(['2', '13+1']);
   });
 
   it('fans the neighbours schedule out to one job per board, cheapest first', async () => {
@@ -374,19 +376,43 @@ describe('payloads and dedup keys', () => {
   });
 
   it('community-monthly-stats defaults to two months and keys by the window size', () => {
-    expect(communityMonthlyStatsFamily.payload.parse({})).toEqual({ months: 2, dryRun: false });
-    expect(communityMonthlyStatsFamily.payload.parse({ months: 13, dryRun: true })).toEqual({
+    expect(communityMonthlyStatsFamily.payload.parse({})).toEqual({ months: 2, retireMonths: 0, dryRun: false });
+    expect(communityMonthlyStatsFamily.payload.parse({ months: 13, retireMonths: 3, dryRun: true })).toEqual({
       months: 13,
+      retireMonths: 3,
       dryRun: true,
     });
-    expect(communityMonthlyStatsFamily.payload.parse({ months: 1 })).toEqual({ months: 1, dryRun: false });
+    expect(communityMonthlyStatsFamily.payload.parse({ months: 1 })).toEqual({
+      months: 1,
+      retireMonths: 0,
+      dryRun: false,
+    });
     for (const months of [0, 14, 1.5, '2', -1]) {
       expect(communityMonthlyStatsFamily.payload.safeParse({ months }).success, String(months)).toBe(false);
     }
+    for (const retireMonths of [-1, 13, 0.5]) {
+      expect(
+        communityMonthlyStatsFamily.payload.safeParse({ months: 13, retireMonths }).success,
+        String(retireMonths),
+      ).toBe(false);
+    }
+    // Retiring a month inside the window would strip names the weekly run puts back.
+    expect(communityMonthlyStatsFamily.payload.safeParse({ months: 2, retireMonths: 1 }).success).toBe(false);
     expect(communityMonthlyStatsFamily.payload.safeParse({ months: 2, month: '2026-09' }).success).toBe(false);
     expect(communityMonthlyStatsFamily.payload.safeParse({ dryRun: 'yes' }).success).toBe(false);
-    expect(communityMonthlyStatsFamily.singletonKey?.({ months: 2, dryRun: false })).toBe('2');
-    expect(communityMonthlyStatsFamily.singletonKey?.({ months: 13, dryRun: true })).toBe('13');
+  });
+
+  it("community-monthly-stats keeps a dry run out of a real run's queue slot", () => {
+    const key = (months: number, retireMonths: number, dryRun: boolean) =>
+      communityMonthlyStatsFamily.singletonKey?.({ months, retireMonths, dryRun });
+    expect(key(2, 0, false)).toBe('2');
+    expect(key(2, 0, true)).toBe('2:dry-run');
+    expect(key(13, 1, false)).toBe('13+1');
+    expect(key(13, 1, true)).toBe('13+1:dry-run');
+    expect(key(13, 0, false)).toBe('13');
+    expect(
+      new Set([key(2, 0, false), key(2, 0, true), key(13, 1, false), key(13, 1, true), key(13, 0, false)]).size,
+    ).toBe(5);
   });
 
   it('spray-wall-health defaults to the live weekly slot and keys a backfill by its week', () => {
@@ -650,6 +676,7 @@ describe('execute', () => {
         { rank: 1, climberName: 'Alice Secretname', sends: 7, flashes: 2, sendDays: 3 },
         { rank: 2, climberName: null, sends: 5, flashes: 0, sendDays: 2 },
       ],
+      namesRetired: false,
     };
     const october = { ...september, month: '2026-10', complete: false };
 
@@ -672,11 +699,12 @@ describe('execute', () => {
 
     it('measures the window and sends 21 personless events per month', async () => {
       const { context: jobContext } = context('community-monthly-stats');
-      await communityMonthlyStatsFamily.execute(jobContext, { months: 2, dryRun: false });
+      await communityMonthlyStatsFamily.execute(jobContext, { months: 2, retireMonths: 0, dryRun: false });
       expect(recap.computeCommunityMonthlyStats).toHaveBeenCalledWith({
         database,
         now: expect.any(Date),
         months: 2,
+        retireMonths: 0,
         signal: jobContext.signal,
       });
       const calls = capture.captureBackendEvent.mock.calls;
@@ -698,7 +726,11 @@ describe('execute', () => {
     it('succeeds with analytics disabled', async () => {
       capture.captureBackendEvent.mockReturnValue(false);
       await expect(
-        communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, { months: 13, dryRun: false }),
+        communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, {
+          months: 13,
+          retireMonths: 1,
+          dryRun: false,
+        }),
       ).resolves.toBeUndefined();
       expect(loggedLines().at(-1)).toContain('analytics disabled, nothing emitted');
       expect(capture.flushBackendEvents).not.toHaveBeenCalled();
@@ -707,6 +739,7 @@ describe('execute', () => {
     it('emits nothing on a dry run and never logs a climber name', async () => {
       await communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, {
         months: 2,
+        retireMonths: 0,
         dryRun: true,
       });
       expect(capture.captureBackendEvent).not.toHaveBeenCalled();
@@ -717,6 +750,25 @@ describe('execute', () => {
       expect(logged).toContain('Alpha Gym');
       expect(logged).toContain('2026-10 (partial)');
       expect(logged).not.toContain('Secretname');
+    });
+
+    it('sends a retired month like any other, under the same uuids, with the names the compute removed', async () => {
+      const retired = {
+        ...september,
+        month: '2025-09',
+        namesRetired: true,
+        topClimbers: september.topClimbers.map((climber) => ({ ...climber, climberName: null })),
+      };
+      recap.computeCommunityMonthlyStats.mockResolvedValue({ months: [retired, september], skippedMonths: [] });
+      const { context: jobContext } = context('community-monthly-stats');
+      await communityMonthlyStatsFamily.execute(jobContext, { months: 13, retireMonths: 1, dryRun: false });
+      expect(recap.computeCommunityMonthlyStats.mock.calls[0][0]).toMatchObject({ months: 13, retireMonths: 1 });
+      const retiredClimbers = capture.captureBackendEvent.mock.calls
+        .map(([, options]) => options.properties ?? {})
+        .filter((properties) => properties.month === '2025-09' && properties.list === 'climbers');
+      expect(retiredClimbers).toHaveLength(10);
+      for (const properties of retiredClimbers) expect(properties.climberName).toBeNull();
+      expect(retiredClimbers[0]).toMatchObject({ rank: 1, empty: false, named: false, sends: 7 });
     });
   });
 

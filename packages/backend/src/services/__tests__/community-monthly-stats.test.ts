@@ -403,4 +403,62 @@ describe('computeCommunityMonthlyStats', () => {
     expect(march.topClimbers).toHaveLength(10);
     expect(march.summary.gymsWithActivity).toBe(11);
   });
+
+  it('retires the names of the month behind a full window and keeps its counts and ranks', async () => {
+    const gym = await createGym('Alpha Gym', { slug: 'alpha-gym' });
+    const board = await createBoard({ gymId: gym });
+    const alice = await createUser(`${PREFIX}alice`, { name: 'alice', displayName: 'Alice D' });
+    const bob = await createUser(`${PREFIX}bob`, { name: 'Bob' });
+    // February 2024 is the 14th month back from March 2025: just behind the window.
+    await lightClimb(board, alice, '2024-02-10T10:00:00.000Z');
+    await logTick(alice, '2024-02-10T10:00:00.000Z', { status: 'flash' });
+    await logTick(alice, '2024-02-11T10:00:00.000Z');
+    await logTick(bob, '2024-02-12T10:00:00.000Z');
+    await lightClimb(board, alice, '2025-03-03T10:00:00.000Z');
+    await logSends(alice, 1);
+
+    const stats = await computeCommunityMonthlyStats({ database: db, now: NOW, months: 13, retireMonths: 1 });
+
+    expect(stats.months.map(({ month, namesRetired }) => ({ month, namesRetired }))).toEqual([
+      { month: '2024-02', namesRetired: true },
+      { month: '2025-03', namesRetired: false },
+    ]);
+    const [retired, current] = stats.months;
+    expect(retired).toMatchObject({
+      complete: true,
+      summary: { climbersWhoLit: 1, climbsLit: 1, sendsLogged: 3, climbersWhoLogged: 2, gymsWithActivity: 1 },
+      // Gyms are not people: their rows are re-sent as they are.
+      topGyms: [{ rank: 1, gymName: 'Alpha Gym', gymSlug: 'alpha-gym', climbers: 1, climbsLit: 1, boards: 1 }],
+    });
+    expect(retired.topClimbers).toEqual([
+      { rank: 1, climberName: null, sends: 2, flashes: 1, sendDays: 2 },
+      { rank: 2, climberName: null, sends: 1, flashes: 0, sendDays: 1 },
+    ]);
+    expect(current.topClimbers).toEqual([{ rank: 1, climberName: 'Alice D', sends: 1, flashes: 0, sendDays: 1 }]);
+    // The twelve months between had no lighting.
+    expect(stats.skippedMonths).toHaveLength(12);
+    expect(JSON.stringify(stats)).not.toContain('Bob');
+  });
+
+  it('skips a month behind the window that nobody lit a climb in, like any other', async () => {
+    const board = await createBoard();
+    const alice = await createUser(`${PREFIX}alice`, { name: 'alice' });
+    await logTick(alice, '2024-02-10T10:00:00.000Z');
+    await lightClimb(board, alice, '2025-03-03T10:00:00.000Z');
+
+    const stats = await computeCommunityMonthlyStats({ database: db, now: NOW, months: 13, retireMonths: 1 });
+
+    expect(stats.months.map((communityMonth) => communityMonth.month)).toEqual(['2025-03']);
+    expect(stats.skippedMonths[0]).toBe('2024-02');
+    expect(stats.skippedMonths).toHaveLength(13);
+  });
+
+  it('retires months only behind the full window', async () => {
+    await expect(computeCommunityMonthlyStats({ database: db, now: NOW, months: 2, retireMonths: 1 })).rejects.toThrow(
+      RangeError,
+    );
+    await expect(
+      computeCommunityMonthlyStats({ database: db, now: NOW, months: 13, retireMonths: 13 }),
+    ).rejects.toThrow(RangeError);
+  });
 });

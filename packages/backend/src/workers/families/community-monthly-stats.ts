@@ -6,6 +6,7 @@ import {
 } from '../../services/analytics/community-monthly-events';
 import {
   COMMUNITY_MAX_MONTHS,
+  COMMUNITY_MAX_RETIRE_MONTHS,
   computeCommunityMonthlyStats,
   type CommunityMonth,
 } from '../../services/community-monthly-stats';
@@ -27,15 +28,29 @@ import type { BackgroundJobFamilyModule } from './types';
  * on anonymity or deletes their account drops out of every month in the
  * window within 7 days. The first Monday run is also the 12-month backfill.
  *
+ * Names age out: the Monday run also re-sends the month just behind its
+ * window (`retireMonths: 1`) with every climber name removed, so a name lives
+ * in PostHog for at most the 13-month window plus a week. Each month sits in
+ * that position for four or five Mondays, so one missed run does not leave
+ * its names behind. After the family was off for longer, enqueue
+ * `{"months":13,"retireMonths":N}` with N covering the weeks it missed.
+ *
  * 07:30 UTC, after the nightly refreshes and the 07:15 snapshot export, so
  * the batch worker (one job at a time) is usually free.
  */
 const payload = z
   .object({
     months: z.number().int().min(1).max(COMMUNITY_MAX_MONTHS).default(2),
+    retireMonths: z.number().int().min(0).max(COMMUNITY_MAX_RETIRE_MONTHS).default(0),
     dryRun: z.boolean().default(false),
   })
-  .strict();
+  .strict()
+  // Retiring a month inside the window would strip names the next weekly run
+  // puts back; only months behind the full window can be retired.
+  .refine(({ months, retireMonths }) => retireMonths === 0 || months === COMMUNITY_MAX_MONTHS, {
+    message: `retireMonths needs months = ${COMMUNITY_MAX_MONTHS}`,
+    path: ['retireMonths'],
+  });
 
 /** A dry run's log line: counts and ranks, never a climber's name. */
 function describeMonth(communityMonth: CommunityMonth): string {
@@ -46,7 +61,8 @@ function describeMonth(communityMonth: CommunityMonth): string {
     (climber) =>
       `${climber.rank}. ${climber.climberName === null ? '<anonymous>' : '<named>'} (${climber.sends} sends, ${climber.flashes} flashes, ${climber.sendDays} days)`,
   );
-  return `${communityMonth.month}${communityMonth.complete ? '' : ' (partial)'}: ${JSON.stringify(communityMonth.summary)}; gyms: ${gyms.join('; ') || 'none'}; climbers: ${climbers.join('; ') || 'none'}`;
+  const state = communityMonth.namesRetired ? ' (names retired)' : communityMonth.complete ? '' : ' (partial)';
+  return `${communityMonth.month}${state}: ${JSON.stringify(communityMonth.summary)}; gyms: ${gyms.join('; ') || 'none'}; climbers: ${climbers.join('; ') || 'none'}`;
 }
 
 export const communityMonthlyStatsFamily: BackgroundJobFamilyModule<z.infer<typeof payload>> = {
@@ -65,19 +81,30 @@ export const communityMonthlyStatsFamily: BackgroundJobFamilyModule<z.infer<type
     heartbeatSeconds: 300,
   },
   payload,
-  // One key per window size, so the Monday 13-month run never swallows (or is
-  // swallowed by) a 2-month one.
-  singletonKey: ({ months }) => String(months),
+  // One key per window and retirement, so the Monday run never swallows (or
+  // is swallowed by) a 2-month one, and a dry run never takes a real run's
+  // place in the queue.
+  singletonKey: ({ months, retireMonths, dryRun }) =>
+    `${months}${retireMonths ? `+${retireMonths}` : ''}${dryRun ? ':dry-run' : ''}`,
   schedules: [
-    { key: 'daily', cron: '30 7 * * 0,2-6', fanOut: async () => [{ payload: { months: 2, dryRun: false } }] },
-    { key: 'weekly', cron: '30 7 * * 1', fanOut: async () => [{ payload: { months: 13, dryRun: false } }] },
+    {
+      key: 'daily',
+      cron: '30 7 * * 0,2-6',
+      fanOut: async () => [{ payload: { months: 2, retireMonths: 0, dryRun: false } }],
+    },
+    {
+      key: 'weekly',
+      cron: '30 7 * * 1',
+      fanOut: async () => [{ payload: { months: COMMUNITY_MAX_MONTHS, retireMonths: 1, dryRun: false } }],
+    },
   ],
-  async execute(context, { months, dryRun }) {
+  async execute(context, { months, retireMonths, dryRun }) {
     const log = jobLogger(context);
     const stats = await computeCommunityMonthlyStats({
       database: context.database,
       now: new Date(),
       months,
+      retireMonths,
       signal: context.signal,
     });
     const skipped = stats.skippedMonths.length ? `; no lit climbs, skipped: ${stats.skippedMonths.join(', ')}` : '';

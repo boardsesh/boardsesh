@@ -541,10 +541,11 @@ are not repeated here: read them from `Active Users Snapshot` (above).
   the month it measures.
 - **Re-sent on purpose.** Every day at 07:30 UTC the family re-sends the
   current and the previous month (`months: 2`); every Monday it re-sends the
-  current month and the twelve before it (`months: 13`). The first Monday run
-  is the 12-month backfill. The current month fills in day by day (`complete`
-  is false until it ends), and the previous month settles once late lighting
-  has landed.
+  current month and the twelve before it (`months: 13`), plus the month just
+  behind that window with every climber name removed (`retireMonths: 1`, see
+  "Names age out" below). The first Monday run is the 12-month backfill. The
+  current month fills in day by day (`complete` is false until it ends), and
+  the previous month settles once late lighting has landed.
 - **Dedupe by uuid, keep the newest.** Every re-send reuses the same uuid: a
   v5 hash of `boardsesh:community-monthly:<month>:summary` or
   `boardsesh:community-monthly:<month>:<list>:<rank>`. A query can still see
@@ -606,9 +607,24 @@ board the climber does not own (`boardLeaderboard`):
 
 A climber who goes private, turns on anonymity or deletes their account drops
 out of the current and previous month by the next morning, and out of every
-month in the 13-month window by the next Monday. A month older than that is
-no longer re-sent and keeps the names it last carried
-([analytics-consent.md](./analytics-consent.md#named-climbers-in-the-community-recap)).
+month in the 13-month window by the next Monday.
+
+**Names age out.** The Monday run also re-sends the 14th month back, the one
+that just left the window, under its same uuids with `climberName: null` and
+`named: false` on every climbers row. Its counts, ranks and gym rows are
+re-measured as usual. So a name lives in PostHog for at most 13 months plus
+one week, and every month that still holds names is re-sent at least weekly.
+Each month spends four or five Mondays in that 14th position, so one missed
+run does not leave its names behind. A month with no lighting is skipped there
+like anywhere else.
+
+If the family is off (`BATCH_FAMILIES_DISABLED`, worker down) for more than
+four weeks, a month can pass that position without a run and keep its names.
+Once it runs again, enqueue one catch-up run that retires every month it
+missed, for example after eight weeks off:
+`operator.ts enqueue community-monthly-stats '{"months":13,"retireMonths":2}'`
+(`retireMonths` goes up to 12 and only with `months: 13`; see
+[analytics-consent.md](./analytics-consent.md#named-climbers-in-the-community-recap)).
 
 **What may be published.** Totals and per-gym counts may go in the post. A
 count of Boardsesh users split by board brand may not, so no tile breaks these

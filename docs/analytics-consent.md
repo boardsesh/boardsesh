@@ -326,10 +326,17 @@ to what a signed-out visitor can already see:
   and in every month of the 13-month window within 7 days. Older copies stay
   in PostHog but are superseded; a query that does not dedupe by uuid can
   still read them.
+- **Names age out.** The Monday run also re-sends the month that just left
+  the 13-month window with every climber name removed, under the same uuids.
+  A name therefore lives in PostHog for at most 13 months plus one week, and
+  every month that still holds a name is re-sent at least weekly, so the
+  7-day bound above holds for all of them. A month spends four or five Mondays
+  in that position, so one missed run does not strand its names.
 
-Not covered: a month older than 13 months is no longer re-sent, so its rows
-keep the names they last carried. A climber who wants their name out of an
-older month needs those events deleted in PostHog by hand.
+Not covered: if the family does not run for more than four weeks, a month can
+leave the window without the run that removes its names. Once it runs again,
+enqueue `{"months":13,"retireMonths":N}` on the batch worker with N covering
+the months it missed (docs/background-workers.md, operator runs).
 
 ## Erasure
 

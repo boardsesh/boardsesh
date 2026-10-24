@@ -51,6 +51,12 @@ export const COMMUNITY_TOP_LIST_SIZE = 10;
 /** The widest window a run may cover: the current month plus twelve complete ones. */
 export const COMMUNITY_MAX_MONTHS = 13;
 
+/**
+ * The most months a run may retire behind a full window. The weekly run
+ * retires one; more is for catching up after the family was off for weeks.
+ */
+export const COMMUNITY_MAX_RETIRE_MONTHS = 12;
+
 export type CommunityMonthSummary = {
   /** Distinct climbers behind a lit climb. */
   climbersWhoLit: number;
@@ -94,6 +100,12 @@ export type CommunityMonth = {
   month: string;
   /** False for the month that has not ended yet. */
   complete: boolean;
+  /**
+   * A month just behind the window, re-measured so its events can be re-sent
+   * with every climber name removed: `climberName` is null on every row, the
+   * counts and ranks are unchanged.
+   */
+  namesRetired: boolean;
   summary: CommunityMonthSummary;
   topGyms: CommunityGymRank[];
   topClimbers: CommunityClimberRank[];
@@ -102,7 +114,7 @@ export type CommunityMonth = {
 export type CommunityMonthlyStats = {
   /** Months with at least one lit climb, oldest first. */
   months: CommunityMonth[];
-  /** Months in the window with no lit climb: no cohort, so nothing is reported for them. */
+  /** Months scanned with no lit climb: no cohort, so nothing is reported for them. */
   skippedMonths: string[];
 };
 
@@ -111,6 +123,13 @@ export type ComputeCommunityMonthlyStatsOptions = {
   now: Date;
   /** The current UTC month plus the `months - 1` before it. 1 to {@link COMMUNITY_MAX_MONTHS}. */
   months: number;
+  /**
+   * How many months just behind a full window to also measure with every
+   * climber name removed (`namesRetired`), so names age out of PostHog instead
+   * of staying on rows nothing re-sends. Only with a full window: retiring a
+   * month inside it would strip names the weekly run puts back. Default 0.
+   */
+  retireMonths?: number;
   signal?: AbortSignal;
 };
 
@@ -136,6 +155,11 @@ export function communityMonthWindow(now: Date, months: number): CommunityMonthW
   if (!Number.isInteger(months) || months < 1 || months > COMMUNITY_MAX_MONTHS) {
     throw new RangeError(`months must be an integer from 1 to ${COMMUNITY_MAX_MONTHS}, got ${months}`);
   }
+  return monthsEndingAt(now, months);
+}
+
+/** `count` UTC calendar months ending with `now`'s, oldest first. */
+function monthsEndingAt(now: Date, months: number): CommunityMonthWindow {
   const year = now.getUTCFullYear();
   const currentMonthIndex = now.getUTCMonth();
   const monthStarts = Array.from({ length: months }, (_, offset) =>
@@ -166,17 +190,30 @@ function monthOf(column: SQLWrapper) {
 }
 
 /**
- * Compute every month in the window. Five statements whatever the window's
- * size, each one scan grouped by month: lighting totals, the gym ranking,
- * sending totals, the climber ranking, and new accounts. Read-only.
+ * Compute every month in the window, plus `retireMonths` behind it with the
+ * climber names removed. Five statements whatever the window's size, each one
+ * scan grouped by month: lighting totals, the gym ranking, sending totals, the
+ * climber ranking, and new accounts. Read-only.
  */
 export async function computeCommunityMonthlyStats({
   database,
   now,
   months,
+  retireMonths = 0,
   signal,
 }: ComputeCommunityMonthlyStatsOptions): Promise<CommunityMonthlyStats> {
-  const window = communityMonthWindow(now, months);
+  communityMonthWindow(now, months);
+  if (!Number.isInteger(retireMonths) || retireMonths < 0 || retireMonths > COMMUNITY_MAX_RETIRE_MONTHS) {
+    throw new RangeError(
+      `retireMonths must be an integer from 0 to ${COMMUNITY_MAX_RETIRE_MONTHS}, got ${retireMonths}`,
+    );
+  }
+  if (retireMonths > 0 && months !== COMMUNITY_MAX_MONTHS) {
+    throw new RangeError(`retireMonths needs the full ${COMMUNITY_MAX_MONTHS}-month window, got months=${months}`);
+  }
+  // The retired months are the oldest ones scanned, just behind the window.
+  const window = monthsEndingAt(now, months + retireMonths);
+  const retiredMonths = new Set(window.months.slice(0, retireMonths));
   // The tick and lit-event timestamps read as strings in the client, so their
   // bounds go out as ISO strings; `users.created_at` takes Dates.
   const startIso = window.start.toISOString();
@@ -328,9 +365,11 @@ export async function computeCommunityMonthlyStats({
     }
     const monthGyms = gymRows.filter((row) => row.month === month);
     const sends = sendsByMonth.get(month);
+    const namesRetired = retiredMonths.has(month);
     result.months.push({
       month,
       complete: monthIsComplete(month, now),
+      namesRetired,
       summary: {
         climbersWhoLit: lit.climbersWhoLit,
         climbsLit: lit.climbsLit,
@@ -352,7 +391,7 @@ export async function computeCommunityMonthlyStats({
         .filter((row) => row.month === month)
         .map(({ rank, climberName, sends: sendCount, flashes, sendDays }) => ({
           rank,
-          climberName,
+          climberName: namesRetired ? null : climberName,
           sends: sendCount,
           flashes,
           sendDays,

@@ -459,7 +459,11 @@ describe('batch worker grants', () => {
       // item audience, the climb's listing and its spray-wall half) and the
       // naming join, and the read-back proves those paths returned rows.
       await seedCommunityRecap(ownerDatabase);
-      await communityMonthlyStatsFamily.execute(context('community-monthly-stats'), { months: 13, dryRun: false });
+      await communityMonthlyStatsFamily.execute(context('community-monthly-stats'), {
+        months: 13,
+        retireMonths: 1,
+        dryRun: false,
+      });
       const [recapMonth] = (await computeCommunityMonthlyStats({ database, now: new Date(), months: 1 })).months;
       expect(recapMonth?.topGyms).toContainEqual(
         expect.objectContaining({ gymName: COMMUNITY_RECAP_GYM_NAME, climbers: 1, climbsLit: 1, boards: 1 }),

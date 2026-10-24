@@ -62,10 +62,10 @@ export type BackendAnalyticsEvent =
  * link travels with it, and the recap re-sends every month in its window daily
  * (the last 2 months) and every Monday (the last 13), so a climber who goes
  * private, turns on anonymity or deletes their account loses their name from
- * every month in that window within 7 days. A month older than 13 is no
- * longer re-sent and keeps the names it was last sent with. Nothing else may
- * name a person here (docs/analytics-consent.md, "Named climbers in the
- * community recap").
+ * every month in that window within 7 days. The Monday run also re-sends the
+ * month that just left the window with every name removed, so a name lives
+ * here for at most 13 months plus a week. Nothing else may name a person here
+ * (docs/analytics-consent.md, "Named climbers in the community recap").
  */
 interface CaptureBackendEventOptions {
   properties?: AnalyticsProperties;

@@ -271,7 +271,7 @@ module. The module declares:
 | `refresh-moonboard-angle-estimates` | `batch` | 1,800 s | 1, after 900 s | 6 days | `weekly` |
 | `refresh-moonboard-wide-angle-estimates` | `batch` | 7,200 s | 1, after 900 s | 6 days | `weekly` |
 | `spray-wall-health` | `batch` | 600 s | 1, after 300 s | 6 days | `weekly`, or the backfilled `weekStart` |
-| `community-monthly-stats` | `batch` | 900 s | 1, after 300 s | 20 h | the window size, `months` (`2` daily, `13` Mondays) |
+| `community-monthly-stats` | `batch` | 900 s | 1, after 300 s | 20 h | `months`, `+retireMonths` when set, `:dry-run` on a dry run (`2` daily, `13+1` Mondays) |
 | `aurora-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:boardType:linkGeneration` |
 | `kilter-user-sync` | `interactive-import` | 1800 s (heartbeat 300 s) | 3, 30 s backoff to 300 s | 2 h | `userId:kilter:linkGeneration` |
 | `provider-routine-cycle` | `routine-provider` | 600 s (heartbeat 300 s) | none | 48 600 s (the fan-out budget) | `aurora` / `kilter` |
@@ -363,7 +363,7 @@ fence (`context.transaction`). The worker never imports
 | `refresh-moonboard-angle-estimates` | `0 8 * * 1` | `{ publish = true, validateOnly?, dryRun? }` | 600 s | `board_grade_coefficients`, `board_climb_grades` | `refresh-moonboard-angle-estimates.yml` |
 | `refresh-moonboard-wide-angle-estimates` | `30 8 * * 1` | `{ publish = true, dryRun? }` | 300 s | `board_climb_grades` (no coefficients: the angle surface is refit from `board_climb_stats` every run) | `refresh-moonboard-wide-angle-estimates.yml` |
 | `spray-wall-health` | `45 8 * * 1` | `{ weekStart?, dryRun? }` | 300 s | nothing in Postgres; one `Spray Wall Health Weekly` PostHog event (`docs/growth-metrics.md`) | none — new with #6062 |
-| `community-monthly-stats` | `30 7 * * 0,2-6` (`daily`, `{ months: 2 }`), `30 7 * * 1` (`weekly`, `{ months: 13 }`) | `{ months = 2 (1 to 13), dryRun? }` | 300 s | nothing in Postgres; 21 `Community Monthly Summary` / `Community Monthly Rank` PostHog events per month with lighting (`docs/growth-metrics.md`, "Community monthly recap") | none, new |
+| `community-monthly-stats` | `30 7 * * 0,2-6` (`daily`, `{ months: 2 }`), `30 7 * * 1` (`weekly`, `{ months: 13, retireMonths: 1 }`) | `{ months = 2 (1 to 13), retireMonths = 0 (0 to 12, only with months 13), dryRun? }` | 300 s | nothing in Postgres; 21 `Community Monthly Summary` / `Community Monthly Rank` PostHog events per month with lighting (`docs/growth-metrics.md`, "Community monthly recap") | none, new |
 
 Measured on GitHub Actions against production in Sep 2026: recommendations
 about 25 s, hold features about 60 s, grades about 4 minutes, of which the
@@ -560,11 +560,18 @@ node --import tsx packages/backend/src/workers/operator.ts enqueue export-board-
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-angle-estimates '{"validateOnly":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue refresh-moonboard-wide-angle-estimates '{"dryRun":true}'
 node --import tsx packages/backend/src/workers/operator.ts enqueue community-monthly-stats '{"months":2,"dryRun":true}'
+node --import tsx packages/backend/src/workers/operator.ts enqueue community-monthly-stats '{"months":13,"retireMonths":2}'
 ```
 
+The last line is the community recap's catch-up after the family was off for
+more than four weeks: it removes climber names from the months that left the
+13-month window while it was off (see `docs/growth-metrics.md`, "Names age
+out").
+
 Each family has one dedup key (per board for hold features and neighbours, per
-mode for snapshots, one weekly slot for both MoonBoard jobs, per window size
-for the community recap), so a manual run
+mode for snapshots, one weekly slot for both MoonBoard jobs, per window and
+retirement for the community recap, whose dry runs get a key of their own), so
+a manual run
 enqueued while the nightly or weekly run is queued returns that queued run with
 `ALREADY_QUEUED`; enqueue again once it has started.
 The reverse holds too: a manual run still queued when the nightly schedule fires
