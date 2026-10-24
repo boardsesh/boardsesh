@@ -13,6 +13,7 @@ const harness = vi.hoisted(() => ({
   appStateListener: null as null | ((state: string) => void),
   sent: [] as (LiveActivityRestTimerOptions | null)[],
   supportsRestTimer: true,
+  pacingOverride: null as null | { targetSeconds: number; mode: 'afterTick' | 'onTheMinute' },
 }));
 
 const settingsStore = vi.hoisted(() => ({
@@ -49,6 +50,19 @@ vi.mock('../../../settings', async () => {
         };
       }, []);
       return [settingsStore.values[key], vi.fn()];
+    },
+  };
+});
+
+// Stage and crew pacing reach the hook as a different resolved value; the
+// override stands in for them. Without one the real hook reads the settings.
+vi.mock('../../../hooks/use-effective-rest-pacing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../hooks/use-effective-rest-pacing')>();
+  return {
+    ...actual,
+    useEffectiveRestPacing: () => {
+      const resolved = actual.useEffectiveRestPacing();
+      return harness.pacingOverride === null ? resolved : { ...resolved, ...harness.pacingOverride };
     },
   };
 });
@@ -107,6 +121,7 @@ beforeEach(() => {
   harness.sent = [];
   harness.appStateListener = null;
   harness.supportsRestTimer = true;
+  harness.pacingOverride = null;
   settingsStore.values = {
     restTimerTargetSeconds: 120,
     restTimerMode: 'afterTick',
@@ -122,6 +137,17 @@ afterEach(() => {
 });
 
 describe('LiveActivityRestTimerSync', () => {
+  it('counts the effective rest, not the raw setting, when something else paces the timer', () => {
+    harness.pacingOverride = { targetSeconds: 45, mode: 'afterTick' };
+    renderSync();
+    armAndTick();
+
+    const running = harness.sent.at(-1);
+    expect(running?.status).toBe('running');
+    expect(running?.targetSeconds).toBe(45);
+    expect(running?.deadlineMs).toBe(T0 + 45_000);
+  });
+
   it('stays silent on a binary that predates the rest timer: no sends, no timeouts, no app-state listener', () => {
     harness.supportsRestTimer = false;
     renderSync();
