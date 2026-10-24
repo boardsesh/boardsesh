@@ -140,7 +140,11 @@ export const generateLadderPlan = (options: LadderOptions, grades: GeneratorGrad
   const startIndex = targetIndex >= 0 ? Math.max(0, targetIndex - stepCount + 1) : -1;
   let currentIndex = slots.length;
 
-  for (let step = 0; step < stepCount; step++) {
+  const descending = options.descending === true;
+
+  for (let position = 0; position < stepCount; position++) {
+    // Steps are built easiest first; a descending ladder walks them in reverse.
+    const step = descending ? stepCount - 1 - position : position;
     const grade =
       step === stepCount - 1
         ? options.targetGrade
@@ -151,7 +155,7 @@ export const generateLadderPlan = (options: LadderOptions, grades: GeneratorGrad
     for (let climb = 0; climb < climbsPerStep; climb++) {
       slots.push({
         grade,
-        section: step === stepCount - 1 ? 'peak' : 'increasing',
+        section: step === stepCount - 1 ? 'peak' : descending ? 'decreasing' : 'increasing',
         index: currentIndex++,
       });
     }

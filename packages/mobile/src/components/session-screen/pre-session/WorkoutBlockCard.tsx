@@ -79,6 +79,9 @@ function blockSettingsSummary(
         t('mobile.session.preGeneratorBlockSummarySteps', { count: options.numberOfSteps }),
         t('mobile.session.preGeneratorBlockSummaryPerStep', { count: options.climbsPerStep }),
       );
+      if (options.type === 'ladder' && options.descending === true) {
+        parts.push(t('mobile.session.preGeneratorBlockSummaryHardestFirst'));
+      }
       break;
     case 'gradeFocus':
       parts.push(t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }));

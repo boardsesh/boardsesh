@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
+  DEFAULT_LADDER_OPTIONS,
   DEFAULT_LIMIT_BOULDERING_OPTIONS,
   DEFAULT_ON_THE_MINUTE_OPTIONS,
   type GeneratorOptions,
@@ -74,5 +75,14 @@ describe('blockSummary for timed blocks', () => {
 
   it('leaves the untimed summaries as they were', () => {
     expect(summaryOf({ ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 4 })).toBe('V4 · Climbs(15)');
+  });
+});
+
+describe('blockSummary for a ladder', () => {
+  it('adds hardest first only when the ladder runs down', () => {
+    expect(summaryOf({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 5 })).toBe('V5 · Steps(5) · PerStep(2)');
+    expect(summaryOf({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 5, descending: true })).toBe(
+      'V5 · Steps(5) · PerStep(2) · mobile.session.preGeneratorBlockSummaryHardestFirst',
+    );
   });
 });
