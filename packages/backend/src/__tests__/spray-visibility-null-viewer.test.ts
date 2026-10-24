@@ -3,14 +3,20 @@
  * compares a row with the viewer (owner, grants, follows, gym membership), so a
  * reader with no viewer needs no privilege on those tables. This pins that the
  * shortcut changes nothing: for every wall shape, with and without the
- * unlisted capability, the new SQL returns what the full rule returned, and
+ * unlisted capability, in the column form and the reference form (the one read
+ * under a negation), the new SQL returns what the full rule returned, and
  * signed-in readers still take the full rule.
  */
 import { like, sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import * as dbSchema from '@boardsesh/db/schema';
-import { rowsOf, sprayClimbVisibilityCondition, sprayLayoutVisibilitySql } from '@boardsesh/db/queries';
+import {
+  rowsOf,
+  sprayClimbVisibilityCondition,
+  sprayLayoutVisibilitySql,
+  sprayReferenceVisibilityCondition,
+} from '@boardsesh/db/queries';
 import { db } from '../db/client';
 
 const PREFIX = 'spray-null-viewer-';
@@ -21,21 +27,10 @@ const MEMBER = `${PREFIX}member`;
 const STRANGER = `${PREFIX}stranger`;
 const FIRST_LAYOUT = 990_800;
 
-/**
- * `sprayLayoutVisibilitySql` exactly as it read before the signed-out
- * shortcut: the full rule, with the viewer bound as a parameter.
- */
-function fullRuleVisibilitySql(layoutId: number, viewer: string | null, wallUuid: string | null): SQL {
+/** `sprayResourceVisibility` exactly as it read before the signed-out shortcut. */
+function fullRuleResourceVisibility(viewer: string | null, wallUuid: string | null): SQL {
   const capability = wallUuid == null ? sql`false` : sql`ub.uuid = ${wallUuid}::text`;
-  return sql`SELECT EXISTS (
-    SELECT 1
-    FROM spray_walls sw
-    JOIN user_boards ub ON ub.uuid = sw.board_uuid
-    WHERE sw.layout_id = ${layoutId}
-      AND sw.deleted_at IS NULL
-      AND ub.deleted_at IS NULL
-      AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
-      AND (
+  return sql`(
     ub.owner_id = ${viewer}::text OR (
       NOT EXISTS (SELECT 1 FROM resource_grants revoked
         WHERE revoked.kind = 'board' AND revoked.resource_id = ub.uuid
@@ -62,8 +57,45 @@ function fullRuleVisibilitySql(layoutId: number, viewer: string | null, wallUuid
               WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text)))
       )
     )
-  )
+  )`;
+}
+
+/** `sprayLayoutVisibilitySql` over the full rule. */
+function fullRuleVisibilitySql(layoutId: number, viewer: string | null, wallUuid: string | null): SQL {
+  return sql`SELECT EXISTS (
+    SELECT 1
+    FROM spray_walls sw
+    JOIN user_boards ub ON ub.uuid = sw.board_uuid
+    WHERE sw.layout_id = ${layoutId}
+      AND sw.deleted_at IS NULL
+      AND ub.deleted_at IS NULL
+      AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
+      AND ${fullRuleResourceVisibility(viewer, wallUuid)}
   ) AS visible`;
+}
+
+/** `sprayReferenceVisibilityCondition` over the full rule. */
+function fullRuleReferenceSql(climbUuid: string, viewer: string | null): SQL {
+  return sql`SELECT NOT EXISTS (
+    SELECT 1
+    FROM board_climbs ref_climb
+    WHERE ref_climb.uuid = ${climbUuid}
+      AND ref_climb.board_type = 'spray'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM spray_walls sw
+        JOIN user_boards ub ON ub.uuid = sw.board_uuid
+        WHERE sw.layout_id = ref_climb.layout_id
+          AND sw.deleted_at IS NULL
+          AND ub.deleted_at IS NULL
+          AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
+          AND ${fullRuleResourceVisibility(viewer, null)}
+      )
+  ) AS visible`;
+}
+
+function referenceSql(climbUuid: string, viewer: string | null): SQL {
+  return sql`SELECT ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`${climbUuid}::text` }, viewer)} AS visible`;
 }
 
 type WallShape = {
@@ -74,6 +106,8 @@ type WallShape = {
   isUnlisted?: boolean;
   inGym?: boolean;
   hidden?: boolean;
+  /** The spray wall row soft-deleted, its board left alone. */
+  wallDeleted?: boolean;
   grantFor?: { userId: string; status: 'approved' | 'revoked' };
 };
 
@@ -90,7 +124,15 @@ const WALLS: WallShape[] = [
   { name: 'legacy-unlisted', isPublic: true, isUnlisted: true },
   { name: 'legacy-private-gym', isPublic: false, inGym: true },
   { name: 'legacy-public-hidden', isPublic: true, hidden: true },
+  { name: 'deleted-wall', isPublic: true, wallDeleted: true },
+  { name: 'legacy-private-unlisted', isPublic: false, isUnlisted: true },
 ];
+
+const VIEWERS = [null, OWNER, FOLLOWER, GRANTEE, MEMBER, STRANGER];
+
+function climbOf(wallName: string): string {
+  return `${PREFIX}climb-${wallName}`;
+}
 
 const wallUuids = new Map<string, string>();
 
@@ -99,6 +141,7 @@ async function clearFixtures(): Promise<void> {
     .select({ uuid: dbSchema.userBoards.uuid })
     .from(dbSchema.userBoards)
     .where(like(dbSchema.userBoards.ownerId, `${PREFIX}%`));
+  await db.delete(dbSchema.boardClimbs).where(like(dbSchema.boardClimbs.uuid, `${PREFIX}%`));
   await db.delete(dbSchema.resourceGrants).where(like(dbSchema.resourceGrants.resourceId, `${PREFIX}%`));
   await db.delete(dbSchema.resourcePrivacy).where(like(dbSchema.resourcePrivacy.resourceId, `${PREFIX}%`));
   await db.delete(dbSchema.sprayWalls).where(sql`${dbSchema.sprayWalls.boardUuid} IN ${boards}`);
@@ -142,6 +185,15 @@ beforeAll(async () => {
       boardUuid: uuid,
       layoutId,
       hiddenAt: wall.hidden ? new Date('2026-01-01T00:00:00.000Z') : null,
+      deletedAt: wall.wallDeleted ? new Date('2026-01-01T00:00:00.000Z') : null,
+    });
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: climbOf(wall.name),
+      boardType: 'spray',
+      layoutId,
+      name: wall.name,
+      isDraft: false,
+      isListed: true,
     });
     if (wall.audience) {
       await db.insert(dbSchema.resourcePrivacy).values({
@@ -172,7 +224,7 @@ describe('spray-wall visibility for a signed-out reader', () => {
     const mismatches: string[] = [];
     for (const [index, wall] of WALLS.entries()) {
       const layoutId = FIRST_LAYOUT + index;
-      for (const viewer of [null, OWNER, FOLLOWER, GRANTEE, MEMBER, STRANGER]) {
+      for (const viewer of VIEWERS) {
         for (const capability of [null, wallUuids.get(wall.name) ?? null]) {
           const current = await visible(sprayLayoutVisibilitySql(layoutId, viewer, capability));
           const full = await visible(fullRuleVisibilitySql(layoutId, viewer, capability));
@@ -199,7 +251,26 @@ describe('spray-wall visibility for a signed-out reader', () => {
       'explicit-public-revoked',
       'legacy-public',
       'legacy-unlisted',
+      'legacy-private-unlisted',
     ]);
+  });
+
+  it('keeps the reference form, read under a negation, equal to the full rule', async () => {
+    const mismatches: string[] = [];
+    // A reference whose climb row is gone stays readable, as it always was.
+    for (const climbUuid of [...WALLS.map((wall) => climbOf(wall.name)), `${PREFIX}climb-missing`]) {
+      for (const viewer of VIEWERS) {
+        const current = await visible(referenceSql(climbUuid, viewer));
+        const full = await visible(fullRuleReferenceSql(climbUuid, viewer));
+        if (current !== full) mismatches.push(`${climbUuid} viewer=${viewer}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+    const readable: string[] = [];
+    for (const wall of WALLS) {
+      if (await visible(referenceSql(climbOf(wall.name), null))) readable.push(wall.name);
+    }
+    expect(readable).toEqual(['explicit-public', 'explicit-public-revoked', 'legacy-public']);
   });
 
   it('names no follow, grant or membership table for a signed-out reader, and keeps them for a viewer', () => {

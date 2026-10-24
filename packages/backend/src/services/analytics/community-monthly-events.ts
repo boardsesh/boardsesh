@@ -117,7 +117,14 @@ export function buildCommunityMonthlyEvents(communityMonth: CommunityMonth): Com
       timestamp: communityMonthlyEventTimestamp(month),
       properties: { month, complete, ...summary },
     },
-    ...rankEvents(communityMonth, communityMonth.topGyms, communityMonth.topClimbers),
+    ...rankEvents(
+      communityMonth,
+      communityMonth.topGyms,
+      // A retired month never carries a name, whatever the compute handed over.
+      communityMonth.namesRetired
+        ? communityMonth.topClimbers.map((climber) => ({ ...climber, climberName: null }))
+        : communityMonth.topClimbers,
+    ),
   ];
 }
 

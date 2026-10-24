@@ -188,6 +188,19 @@ function monthIsComplete(month: string, now: Date): boolean {
   return utcMonthStart(year, monthNumber).getTime() <= now.getTime();
 }
 
+/**
+ * A display name fit to publish, or null. Trimmed of Unicode whitespace, and
+ * it must hold at least one letter or digit in any script: a name of tabs,
+ * no-break spaces or zero-width characters would otherwise go out as an
+ * invisible `climberName` with `named: true`. Checked here rather than with a
+ * Postgres `[[:alnum:]]`, whose answer for non-Latin letters depends on the
+ * database's collation (`'李'` fails under "C").
+ */
+export function publishableClimberName(displayName: string | null): string | null {
+  const trimmed = displayName?.trim() ?? '';
+  return /[\p{L}\p{N}]/u.test(trimmed) ? trimmed : null;
+}
+
 const climbEvents = dbSchema.boardClimbEvents;
 const ticks = dbSchema.boardseshTicks;
 const users = dbSchema.users;
@@ -444,7 +457,7 @@ export async function computeCommunityMonthlyStats({
         .filter((row) => row.month === month)
         .map(({ rank, climberName, sends: sendCount, flashes, sendDays }) => ({
           rank,
-          climberName: namesRetired ? null : climberName,
+          climberName: namesRetired ? null : publishableClimberName(climberName),
           sends: sendCount,
           flashes,
           sendDays,

@@ -138,6 +138,24 @@ describe('Community monthly events', () => {
     expect(communityMonthlyEventUuid('2026-09', 'climbers', 3)).toBe('e88ebd8a-116b-5172-96ee-2df80b8278a8');
   });
 
+  it('never names anyone in a retired month, even when handed names', () => {
+    const climberRows = buildCommunityMonthlyEvents({ ...SEPTEMBER, namesRetired: true }).filter(
+      (monthEvent) => monthEvent.properties.list === 'climbers',
+    );
+    expect(climberRows).toHaveLength(10);
+    for (const monthEvent of climberRows) expect(monthEvent.properties.climberName).toBeNull();
+    expect(climberRows.slice(0, 2).map((monthEvent) => monthEvent.properties)).toEqual([
+      expect.objectContaining({ rank: 1, empty: false, named: false, sends: 140 }),
+      expect.objectContaining({ rank: 2, empty: false, named: false, sends: 120 }),
+    ]);
+    // Gym rows are not people's names: unchanged.
+    expect(
+      buildCommunityMonthlyEvents({ ...SEPTEMBER, namesRetired: true }).find(
+        (monthEvent) => monthEvent.properties.list === 'gyms' && monthEvent.properties.rank === 1,
+      )?.properties.gymName,
+    ).toBe('Alpha Gym');
+  });
+
   it('sends a month with no lighting as 20 empty rank rows under the same uuids, and no summary', () => {
     const emptyEvents = buildCommunityEmptyMonthEvents({ month: '2026-09', complete: true });
     expect(emptyEvents).toHaveLength(20);

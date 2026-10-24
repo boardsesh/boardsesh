@@ -17,6 +17,7 @@ import { buildCommunityMonthlyEvents } from '../analytics/community-monthly-even
 import {
   communityMonthWindow,
   computeCommunityMonthlyStats,
+  publishableClimberName,
   type CommunityMonthlyStats,
 } from '../community-monthly-stats';
 
@@ -473,6 +474,29 @@ describe('computeCommunityMonthlyStats', () => {
     for (const userId of [anonymous, alice, bob, carol, privateClimber]) expect(serialized).not.toContain(userId);
     for (const name of ['Hidden', 'Private Pat', 'Bob Account', 'Carol Account']) {
       expect(serialized).not.toContain(name);
+    }
+  });
+
+  it('names no one whose display name has no letter or digit in it, in any script', async () => {
+    const board = await createBoard();
+    const displayNames = ['\t\t', '\u00a0\u00a0', '\u200b\u200d', 'Åsa', '李'];
+    for (const [index, displayName] of displayNames.entries()) {
+      const climber = await createUser(`${PREFIX}script-${index}`, { name: `Account ${index}`, displayName });
+      if (index === 0) await lightClimb(board, climber, '2025-03-02T10:00:00.000Z');
+      await logSends(climber, displayNames.length - index);
+    }
+
+    const [march] = (await compute(1)).months;
+
+    expect(march.topClimbers.map(({ climberName }) => climberName)).toEqual([null, null, null, 'Åsa', '李']);
+  });
+
+  it('publishes a display name only when it has a letter or digit once trimmed', () => {
+    expect(publishableClimberName('  Ægir\u00a0')).toBe('Ægir');
+    expect(publishableClimberName('李')).toBe('李');
+    expect(publishableClimberName('٣')).toBe('٣');
+    for (const invisible of [null, '', '   ', '\t\n', '\u00a0', '\u200b', '\ufeff', '...', '—']) {
+      expect(publishableClimberName(invisible)).toBeNull();
     }
   });
 
