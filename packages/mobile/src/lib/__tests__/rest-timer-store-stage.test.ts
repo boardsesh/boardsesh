@@ -14,6 +14,7 @@ import {
   noteRestTimerTick,
   pauseRestTimer,
   resetRestTimerStoreForTests,
+  resumeRestTimer,
   subscribeRestTimer,
 } from '../rest-timer-store';
 import type { RestTimerStagePacing } from '../rest-timer-pacing';
@@ -74,6 +75,22 @@ describe('the last tick', () => {
       anchorMs: T0 + 9_000,
       lastTick: { status: 'send', queueItemUuid: 'queue-1' },
     });
+  });
+
+  it('keeps the last one when a tick counts for no queue item, so a list tick never cancels an earned advance', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });
+    noteRestTimerTick(tickAt(60), 'afterTick', T0 + 60_000, { status: 'attempt', queueItemUuid: null });
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: T0 + 60_000,
+      lastTickAt: tickAt(60),
+      lastTick: { status: 'send', queueItemUuid: 'queue-1' },
+    });
+
+    // Nothing to keep: it stays empty rather than taking the list tick.
+    armRestTimer('afterTick', T0 + 100_000, 'session-1');
+    noteRestTimerTick(tickAt(105), 'afterTick', T0 + 105_000, { status: 'send', queueItemUuid: null });
+    expect(getRestTimerState().lastTick).toBeNull();
   });
 
   it('is forgotten on arm and on disarm, so an old tick never moves a new rest', () => {
@@ -142,11 +159,17 @@ describe('a refilled queue', () => {
     noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid: 'queue-1' });
     noteRestTimerQueueEnded();
     clearRestTimerQueueEnded(T0 + 300_000, 'afterTick');
-    expect(getRestTimerState()).toMatchObject({ queueEnded: false, anchorMs: T0 + 300_000 });
+    expect(getRestTimerState()).toMatchObject({
+      queueEnded: false,
+      anchorMs: T0 + 300_000,
+      lastTick: { status: 'send', queueItemUuid: 'queue-1' },
+    });
 
     noteRestTimerQueueEnded();
     clearRestTimerQueueEnded(T0 + 400_000, 'afterTick', 'clear');
-    expect(getRestTimerState()).toMatchObject({ queueEnded: false, anchorMs: null });
+    // The send's rest already ran out at the dead end: like the fire, the
+    // refill forgets it, so a Reset or a tick-less re-anchor cannot walk on.
+    expect(getRestTimerState()).toMatchObject({ queueEnded: false, anchorMs: null, lastTick: null });
   });
 });
 
@@ -210,20 +233,42 @@ describe('the stage pacing', () => {
     });
   });
 
-  it('only stores the pacing while paused: resume sets its own anchor', () => {
+  it('applies to a paused timer too, so Resume gives the first climb on the minute its whole interval', () => {
     armRestTimer('afterTick', T0, 'session-1');
     noteRestTimerTick(tickAt(0), 'afterTick', T0);
-    pauseRestTimer(T0 + 30_000);
+    pauseRestTimer(T0 + 40_000);
     const paused = getRestTimerState();
 
-    applyRestTimerStagePacing(EMOM_STAGE, T0 + 40_000, 'anchorNow');
+    applyRestTimerStagePacing(EMOM_STAGE, T0 + 50_000, 'anchorNow');
 
     expect(getRestTimerState()).toMatchObject({
       stagePacing: EMOM_STAGE,
       isRunning: false,
-      anchorMs: paused.anchorMs,
-      pausedElapsedSeconds: 30,
-      cycleId: paused.cycleId,
+      pausedElapsedSeconds: 0,
+      cycleId: paused.cycleId + 1,
+    });
+
+    // Without the reset, Resume would rebase on the 40 s of the warm-up rest
+    // and the first beat would land 20 s in.
+    resumeRestTimer(T0 + 70_000);
+    expect(getRestTimerState()).toMatchObject({ isRunning: true, anchorMs: T0 + 70_000 });
+  });
+
+  it('waitForTick on a paused timer drops the last climb’s rest instead of carrying it onto the new one', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid: 'queue-0' });
+    pauseRestTimer(T0 + 30_000);
+    const paused = getRestTimerState();
+
+    applyRestTimerStagePacing(LIMIT_STAGE, T0 + 35_000, 'waitForTick');
+
+    expect(getRestTimerState()).toMatchObject({
+      stagePacing: LIMIT_STAGE,
+      isRunning: false,
+      anchorMs: null,
+      pausedElapsedSeconds: 0,
+      cycleId: paused.cycleId + 1,
+      lastTickAt: tickAt(0),
     });
   });
 

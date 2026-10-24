@@ -178,11 +178,14 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
 - **Which climb a tick is for.** The tick path (`use-tick-saver.ts`) reads the committed
   current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
   only when it is that climb's. The status and queue item go to the rest timer (`lastTick`)
-  and to the run's tick log. A tick on any other climb counts for no queue item.
+  and to the run's tick log. A tick on any other climb counts for no queue item, and leaves the
+  rest timer's last tick as it was: it says nothing about the climb on the wall.
 - **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute
   stage starting, or changing interval, starts its beat at that moment, so its first climb gets
   a whole interval. A new climb of a `tick` or `send` stage, or on the minute ending, clears
-  the anchor: the rest waits for the next tick. A paused timer only takes the new pacing.
+  the anchor: the rest waits for the next tick. A paused timer takes the change too, so Resume
+  starts a fresh rest instead of carrying the last climb's into the new stage: the first climb
+  on the minute still gets a whole interval.
 - **Arming.** Start, and "Add a block", arm the timer when the workout (for a mid-session
   block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
   timed block runs hands-free. A timer the climber already set up is left alone, and arming

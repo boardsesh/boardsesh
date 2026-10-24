@@ -128,14 +128,14 @@ describe('syncRestTimerStagePacing', () => {
     expect(getRestTimerState().cycleId).toBe(before.cycleId);
   });
 
-  it('leaves a paused timer’s anchor alone', () => {
+  it('moves a paused timer’s anchor too, and leaves it paused', () => {
     armRestTimer('afterTick', T0, 'session-1');
     noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', T0);
     pauseRestTimer(T0 + 20_000);
 
     syncRestTimerStagePacing(onTheMinuteClimb('e1'), T0 + 30_000);
 
-    expect(getRestTimerState()).toMatchObject({ anchorMs: T0, isRunning: false, pausedElapsedSeconds: 20 });
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0 + 30_000, isRunning: false, pausedElapsedSeconds: 0 });
   });
 });
 

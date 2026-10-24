@@ -87,9 +87,9 @@ export type RestTimerState = {
    */
   stagePacing: RestTimerStagePacing | null;
   /**
-   * The last tick this phone logged while armed: its status and the queue item
-   * it was logged on. Cleared on arm, on disarm and by a fire that waits for the
-   * next tick, so one tick never moves the wall twice.
+   * The last tick this phone logged on a queue item while armed: its status and
+   * that queue item. Cleared on arm, on disarm, and by a fire or a refilled queue
+   * that waits for the next tick, so one tick never moves the wall twice.
    */
   lastTick: RestTimerLastTick | null;
 };
@@ -158,8 +158,10 @@ export function disarmRestTimer(): void {
  * anchor if it somehow has none.
  *
  * `tick` is how it went and the queue item it was logged on, from the tick path.
- * Left out (a tick read back from the session after a cold start, which names no
- * queue item), the last one this phone logged stands.
+ * Left out (a tick read back from the session after a cold start), or naming no
+ * queue item (a climb from a list or the logbook), the last one this phone logged
+ * stands: such a tick says nothing about the climb on the wall, so it must not
+ * cancel an advance that climb already earned.
  */
 export function noteRestTimerTick(
   climbedAt: string,
@@ -169,7 +171,8 @@ export function noteRestTimerTick(
 ): void {
   if (!state.armed) return;
   const tickMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const lastTick = tick ? { status: tick.status, queueItemUuid: tick.queueItemUuid } : state.lastTick;
+  const lastTick =
+    tick && tick.queueItemUuid !== null ? { status: tick.status, queueItemUuid: tick.queueItemUuid } : state.lastTick;
 
   if (mode === 'onTheMinute') {
     setState({
@@ -301,7 +304,9 @@ export function noteRestTimerQueueEnded({ listEnded = false }: { listEnded?: boo
  * the dead-end latch so the timer picks its beat back up without waiting for the
  * next tick, and rolls the cycle so the scheduler has a change to react to.
  * Under a tick or send rule (`anchorAfter: 'clear'`) it waits for the next tick
- * instead: refilling a queue is not a reason to walk the climber on.
+ * instead, and forgets the last one as the fire does: that tick's rest already
+ * ran out at the dead end, and refilling a queue is not a reason to walk the
+ * climber on. Kept, a Reset or a tick-less re-anchor would walk them on with it.
  */
 export function clearRestTimerQueueEnded(
   nowMs: number,
@@ -318,6 +323,7 @@ export function clearRestTimerQueueEnded(
     // moment the queue became advanceable. `onTheMinute` computes its deadline
     // forward from now, so its beat self-heals and the phase is worth keeping.
     anchorMs: anchorFor(anchorAfter, nowMs),
+    lastTick: anchorAfter === 'clear' ? null : state.lastTick,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
   });
@@ -336,11 +342,15 @@ export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: numb
 
 /**
  * The workout stage on the wall changed (`RestTimerPacingSync`). Stores it and,
- * while the timer runs, applies the planned transition
+ * while armed, applies the planned transition
  * (`planRestTimerPacingTransition`): `anchorNow` starts the beat now,
  * `waitForTick` clears the anchor so the rest starts at the next tick. Both
- * roll the cycle and keep `lastFiredDeadlineMs` and `lastTickAt`. Paused or
- * unarmed, only the pacing is stored: resume and arm set their own anchor.
+ * zero the paused elapsed, roll the cycle and keep `isRunning`,
+ * `lastFiredDeadlineMs` and `lastTickAt`. A paused timer takes the transition
+ * too: Resume rebases on the paused elapsed, so carrying it would land the new
+ * stage mid-window (the first climb on the minute short of its interval, or the
+ * last climb's rest carried onto the new one). Unarmed, only the pacing is
+ * stored: arm sets its own anchor.
  */
 export function applyRestTimerStagePacing(
   next: RestTimerStagePacing | null,
@@ -348,7 +358,7 @@ export function applyRestTimerStagePacing(
   transition: RestTimerPacingTransition,
 ): void {
   if (sameStagePacing(state.stagePacing, next)) return;
-  if (!state.armed || !state.isRunning || transition === 'none') {
+  if (!state.armed || transition === 'none') {
     setState({ ...state, stagePacing: next });
     return;
   }

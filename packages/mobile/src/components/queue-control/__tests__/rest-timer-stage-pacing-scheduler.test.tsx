@@ -118,7 +118,10 @@ import {
   armRestTimer,
   getRestTimerState,
   noteRestTimerTick,
+  pauseRestTimer,
+  resetRestTimer,
   resetRestTimerStoreForTests,
+  resumeRestTimer,
 } from '../../../lib/rest-timer-store';
 import type { RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
 import { resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../lib/workout-run-store';
@@ -368,6 +371,23 @@ describe('4x4: every climb waits for its own tick', () => {
     expect(nextClimb).not.toHaveBeenCalled();
   });
 
+  it('still moves on when a climb from a list is logged during the round rest', () => {
+    startWorkout(FOUR_BY_FOUR, ['a1', 'b1', 'a2', 'b2'], 'b1');
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(10_000);
+
+    // Something off the wall, logged from a list: it counts for no queue item,
+    // so b1's tick still stands and its round rest still moves the wall.
+    logTick('send', null);
+    expect(getRestTimerState().lastTick).toMatchObject({ queueItemUuid: 'b1' });
+
+    advance(30_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('a2');
+  });
+
   it('a manual Next mid-rest does not move the wall a second time', () => {
     startWorkout(FOUR_BY_FOUR, ['a1', 'b1', 'a2', 'b2']);
     renderRuntime();
@@ -458,6 +478,28 @@ describe('on the minute', () => {
     expect(current()).toBe('e2');
   });
 
+  it('gives the first climb its whole interval after a pause carried across the stage change', () => {
+    harness.settings = { ...harness.settings, restTimerAutoAdvance: true, restTimerTargetSeconds: 300 };
+    startWorkout(WARM_UP_THEN_ON_THE_MINUTE, ['w1', 'e1', 'e2', 'e3']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+
+    // Paused 40 s into the warm-up rest, then on to the first climb by hand.
+    advance(40_000);
+    act(() => pauseRestTimer(harness.nowMs));
+    act(() => nextClimb());
+    expect(current()).toBe('e1');
+    advance(5_000);
+    act(() => resumeRestTimer(harness.nowMs));
+
+    advance(14_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('e2');
+  });
+
   it('moves on every beat whether or not anything was logged', () => {
     startWorkout(WARM_UP_THEN_ON_THE_MINUTE, ['e1', 'e2', 'e3']);
     renderRuntime();
@@ -490,6 +532,31 @@ describe('the end of the queue under a tick rule', () => {
 
     advance(600_000);
     expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('never walks on after the refill with the send whose rest ran out, on a Reset or a tick-less re-anchor', () => {
+    startWorkout(LIMIT, ['l1']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(180_000);
+    expect(getRestTimerState().queueEnded).toBe(true);
+
+    act(() =>
+      harness.setQueueData({ queue: [queueItem('l1'), queueItem('later')], currentClimbQueueItem: queueItem('l1') }),
+    );
+    expect(getRestTimerState().lastTick).toBeNull();
+
+    // The climber taps Reset on the running timer.
+    act(() => resetRestTimer(harness.nowMs));
+    advance(600_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+
+    // A tick read back from the session (the same account's other phone).
+    act(() => noteRestTimerTick(new Date(harness.nowMs).toISOString(), 'afterTick', harness.nowMs));
+    advance(600_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(current()).toBe('l1');
   });
 });
 

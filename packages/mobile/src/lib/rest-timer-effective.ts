@@ -15,8 +15,8 @@ import {
 import { applyRestTimerStagePacing, armRestTimer, getRestTimerState } from './rest-timer-store';
 
 /**
- * Store the stage pacing of the climb now on the wall, moving a running timer's
- * anchor the way the change calls for (`planRestTimerPacingTransition`). A
+ * Store the stage pacing of the climb now on the wall, moving an armed timer's
+ * anchor (paused too) the way the change calls for (`planRestTimerPacingTransition`). A
  * no-op while the pacing is the same, so the caller can run it on every queue
  * change.
  */
