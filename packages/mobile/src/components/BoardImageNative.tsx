@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -11,7 +11,11 @@ import { MoonBoardGridLabels } from './board/MoonBoardGridLabels';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 import { isBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
-import { getPrivacyCredentialGeneration, getPrivacyRevocationGeneration } from '../lib/privacy/privacy-cache';
+import {
+  getPrivacyCredentialGeneration,
+  getPrivacyRevocationGeneration,
+  subscribeToPrivacyRevocations,
+} from '../lib/privacy/privacy-cache';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtIdentity,
@@ -274,6 +278,19 @@ const BoardImageNative = React.memo(function BoardImageNative({
 
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, frames);
 
+  // Every credential bump also bumps the revocation generation, so one
+  // subscription covers both. Reading through the store keeps the value stable
+  // for the whole render and re-renders this board when either moves, which is
+  // what drops a displayed overlay that belonged to the previous account.
+  const privacyGenerations = useSyncExternalStore(subscribeToPrivacyRevocations, readPrivacyGenerations);
+  const retainedOverlayIdentity = useMemo(
+    () =>
+      retainDisplayedOverlay && frames
+        ? JSON.stringify([overlayRetainIdentity(boardName, layoutId, sizeId, setIds), frames, privacyGenerations])
+        : undefined,
+    [retainDisplayedOverlay, frames, boardName, layoutId, sizeId, setIds, privacyGenerations],
+  );
+
   // One element for both stacks (the bridge and the live board), memoised so
   // `LayeredClimbImage`'s memo still holds across this component's renders.
   // Never on a mirrored board: the art's letters would read backwards.
@@ -347,16 +364,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
           retainPreviousOverlayFor={
             retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
           }
-          retainDisplayedOverlayFor={
-            retainDisplayedOverlay && frames
-              ? JSON.stringify([
-                  overlayRetainIdentity(boardName, layoutId, sizeId, setIds),
-                  frames,
-                  getPrivacyRevocationGeneration(),
-                  getPrivacyCredentialGeneration(),
-                ])
-              : undefined
-          }
+          retainDisplayedOverlayFor={retainedOverlayIdentity}
           underOverlay={underOverlay}
           aboveOverlay={gridLabels}
           // Only once the loader has given up: a null overlay during an ordinary
@@ -368,5 +376,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     </View>
   );
 });
+
+const readPrivacyGenerations = (): string => `${getPrivacyRevocationGeneration()}:${getPrivacyCredentialGeneration()}`;
 
 export { BoardImageNative };

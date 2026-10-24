@@ -417,19 +417,22 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       ? revealed === null || revealed.key !== revealIdentity
       : revealWithOverlay === 'first-paint' && revealed === null && !everShownRef.current;
   if (!awaitingOverlay && !hidden) everShownRef.current = true;
+  const hasBackgrounds = backgroundPaths.length > 0;
   artReadinessRef.current = () =>
     !hidden &&
     !awaitingOverlay &&
     missingBackgroundCount === 0 &&
-    backgroundPaths.length > 0 &&
+    hasBackgrounds &&
     (!overlayRequired || mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true) &&
     backgroundPaths.every(
       (path) => mountedNativeLayersRef.current.get(nativeBackgroundIdentity(path))?.displayed === true,
     );
+  // `displayAttempt` already serialises the background paths; `hasBackgrounds`
+  // is listed so the deps name every value the readiness check closes over.
   useLayoutEffect(() => {
     onArtReadinessChange?.(artReadinessRef.current());
     return () => onArtReadinessChange?.(false);
-  }, [displayAttempt, missingBackgroundCount, overlayRequired, onArtReadinessChange, awaitingOverlay]);
+  }, [displayAttempt, missingBackgroundCount, overlayRequired, onArtReadinessChange, awaitingOverlay, hasBackgrounds]);
   useEffect(() => {
     if (!awaitingOverlay) return;
     const timer = setTimeout(() => setRevealed({ key: revealIdentity }), OVERLAY_REVEAL_TIMEOUT_MS);
