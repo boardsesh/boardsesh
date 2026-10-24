@@ -35,6 +35,31 @@ it from the toolbar chip's menu, and the sheet stays open. With no searches yet,
 will show there. Unpinning hides the toolbar chip and keeps the searches; pinning it again brings
 it back. The iOS 26 empty search field still lists recent searches either way.
 
+### Empty-search recovery
+
+A resolved empty search shows the selected board, angle, and active filter labels. Each removable
+restriction has an explicit "Remove …" action that removes only that restriction. The climb name,
+board configuration, angle and every other filter stay selected. Removing a status restriction also
+keeps the separately selected popularity threshold.
+
+Sort order, other-angle selection and climb type stay outside these recovery actions. Tall/Wide
+filters with enforced locks stay selected too. The existing Filters sheet is always available,
+including searches with no removable restrictions. Recovery does not broaden angles, change name
+matching, invent suggested climbs, or change search analytics.
+
+Loading and placeholder results, query errors, unavailable offline filters, missing or queued
+offline catalogs, and an unset Spraywall keep their existing states. A downloaded catalog with a
+supported search uses the same recovery actions as online search.
+
+Dev stories under **Climb search / Empty recovery** show the former state, the recovery actions,
+and an empty search with no removable filters.
+
+Simulator captures of the dev stories (example query and filters):
+
+| Before | After |
+| --- | --- |
+| ![Former empty search](images/empty-search-before.png) | ![Search recovery actions](images/empty-search-after.png) |
+
 ### Legacy Web Board Page Climb List
 
 The following describes the earlier web climbing surface. The current climbing UI lives in the

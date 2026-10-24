@@ -76,6 +76,7 @@ import {
   type ClimbTypeFilter,
 } from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
+import { SearchEmptyRecovery } from '../../../src/components/search/SearchEmptyRecovery';
 import { GradeRangeRail, type GradeRailChange } from '../../../src/components/grade';
 import { buildGradeRailStops } from '../../../src/lib/grade-stops';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
@@ -2003,6 +2004,15 @@ function ClimbListInner() {
     () => ({ tall: tallLockEnforced, wide: wideLockEnforced }),
     [tallLockEnforced, wideLockEnforced],
   );
+  // The normal status token also resets popularity. Empty-search recovery must
+  // remove exactly the chosen restriction, keeping every other pick intact.
+  const recoveryFilterTokens = useMemo(
+    () =>
+      filterTokens.map((token) =>
+        token.key === 'status' ? { ...token, clear: () => patchFilters({ status: 'any' }) } : token,
+      ),
+    [filterTokens, patchFilters],
+  );
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it
   // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
@@ -2572,17 +2582,14 @@ function ClimbListInner() {
                     ) : null}
                   </View>
                 ) : isEmpty ? (
-                  <View style={styles.emptyContainer}>
-                    <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
-                    </Text>
-                    <Text variant="subheadline" style={styles.emptySubtitle}>
-                      {name.length > 0
-                        ? t('mobile.emptyState.noMatches.description', { query: name })
-                        : t('mobile.emptyState.noClimbs.subtitle')}
-                    </Text>
-                  </View>
+                  <SearchEmptyRecovery
+                    query={name}
+                    boardName={activeBoard?.name ?? boardName}
+                    angle={angle}
+                    tokens={recoveryFilterTokens}
+                    lockedDimensions={lockedDimensions}
+                    onOpenFilters={handleOpenFilters}
+                  />
                 ) : null
               }
             />

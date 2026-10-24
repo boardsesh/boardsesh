@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   // Whether the climb search is fetching its first page — the other half of the
   // initial-skeleton gate.
   isClimbsLoading: false,
+  realFilterTokens: false,
   searchState: {
     filters: {} as Record<string, unknown>,
     boardFilters: {} as Record<string, unknown>,
@@ -69,6 +70,8 @@ const mocks = vi.hoisted(() => ({
   statefulSearch: false,
   searchListeners: new Set<() => void>(),
   setName: vi.fn(),
+  patchFilters: vi.fn(),
+  patchBoardFilters: vi.fn(),
   replaceSearch: vi.fn(),
   filterSheetProps: undefined as FilterSheetProps | undefined,
   searchInput: undefined as { filters: unknown; boardFilters: unknown; name: string } | undefined,
@@ -84,6 +87,7 @@ const mocks = vi.hoisted(() => ({
   // Offline empty-state fixtures: connectivity, whether the search itself
   // failed, and what the active board's catalog looks like on this device.
   isOffline: false,
+  offlineSearchSupported: true,
   searchFailed: false,
   searchError: null as Error | null,
   refetchClimbs: vi.fn(),
@@ -341,7 +345,16 @@ vi.mock('../../../../src/hooks/use-climb-list-playlist-memberships', () => ({
   useClimbListPlaylistMemberships: () => {},
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-item-1' }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { board?: string; angle?: number; filter?: string; filters?: string }) => {
+      if (key === 'mobile.emptyState.recovery.scope') return `${options?.board} · ${options?.angle}°`;
+      if (key === 'mobile.emptyState.recovery.filters') return `Active filters: ${options?.filters}`;
+      if (key === 'mobile.search.removeFilterAria') return `Remove ${options?.filter}`;
+      return key;
+    },
+  }),
+}));
 
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: {
@@ -355,6 +368,7 @@ vi.mock('@boardsesh/analytics', () => ({
 vi.mock('@boardsesh/climb-filters', async (importOriginal) => {
   const original = await importOriginal<typeof import('@boardsesh/climb-filters')>();
   return {
+    ...original,
     hasActiveClimbFilters: original.hasActiveClimbFilters,
     normalizeRetiredFilters: original.normalizeRetiredFilters,
     DEFAULT_CLIMB_FILTER_STATE: {},
@@ -420,8 +434,8 @@ vi.mock('../../../../src/providers/climb-search-provider', async () => {
       setGrade: mocks.setGrade,
       setName: mocks.setName,
       replaceSearch: mocks.replaceSearch,
-      patchFilters: vi.fn(),
-      patchBoardFilters: vi.fn(),
+      patchFilters: mocks.patchFilters,
+      patchBoardFilters: mocks.patchBoardFilters,
     }),
   };
 });
@@ -647,6 +661,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    radii: { button: 12 },
     systemColors: {
       background: '#fff',
       label: '#111',
@@ -765,6 +780,9 @@ vi.mock('../../../../src/offline/use-offline-catalog-state', () => ({
   useOfflineCatalogState: () => mocks.offlineCatalog,
 }));
 vi.mock('../../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => mocks.isOffline }));
+vi.mock('../../../../src/db/queries/search-climbs-local', () => ({
+  isOfflineSearchSupported: () => mocks.offlineSearchSupported,
+}));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   // Options captured, not swallowed: `previewOnly` is how the screen tells the
@@ -829,7 +847,13 @@ vi.mock('../../../../src/lib/filter-summary', () => ({
   buildClimbFilterSummary: () => null,
 }));
 
-vi.mock('../../../../src/lib/filter-tokens', () => ({ getActiveFilterTokens: () => [] }));
+vi.mock('../../../../src/lib/filter-tokens', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../../src/lib/filter-tokens')>();
+  return {
+    getActiveFilterTokens: (...args: Parameters<typeof original.getActiveFilterTokens>) =>
+      mocks.realFilterTokens ? original.getActiveFilterTokens(...args) : [],
+  };
+});
 vi.mock('../../../../src/lib/search-name', () => ({
   normalizeSearchName: (text: string) => text.trim(),
   visibleSearchTextNeedsSync: () => false,
@@ -882,6 +906,7 @@ beforeEach(() => {
   mocks.setActiveBoard.mockReset();
   mocks.push.mockClear();
   mocks.isClimbsLoading = false;
+  mocks.realFilterTokens = false;
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.statefulSearch = false;
   mocks.searchListeners.clear();
@@ -908,7 +933,20 @@ beforeEach(() => {
       for (const listener of mocks.searchListeners) listener();
     },
   );
+  mocks.patchFilters.mockReset();
+  mocks.patchFilters.mockImplementation((patch: Partial<ClimbFilters>) => {
+    if (!mocks.statefulSearch) return;
+    mocks.searchState = { ...mocks.searchState, filters: { ...mocks.searchState.filters, ...patch } };
+    for (const listener of mocks.searchListeners) listener();
+  });
+  mocks.patchBoardFilters.mockReset();
+  mocks.patchBoardFilters.mockImplementation((patch: Partial<ClimbBoardFilterState>) => {
+    if (!mocks.statefulSearch) return;
+    mocks.searchState = { ...mocks.searchState, boardFilters: { ...mocks.searchState.boardFilters, ...patch } };
+    for (const listener of mocks.searchListeners) listener();
+  });
   mocks.isOffline = false;
+  mocks.offlineSearchSupported = true;
   mocks.searchFailed = false;
   mocks.searchError = null;
   mocks.refetchClimbs.mockReset();
@@ -1416,6 +1454,104 @@ describe('ClimbList previous results standing in for a loading search', () => {
 // arming the download flips the scope out of 'off', which takes the CTA away —
 // so a branch keyed on "is it downloaded?" would keep telling the user their
 // board isn't on their phone, with nothing left to tap.
+describe('ClimbList empty-search recovery', () => {
+  beforeEach(() => {
+    mocks.searchClimbs = [];
+    mocks.realFilterTokens = true;
+    mocks.statefulSearch = true;
+    mocks.carrySearchGeometry = true;
+  });
+
+  it.each([false, true])(
+    'removes one restriction while preserving query and board intent, offline=%s',
+    async (offline) => {
+      mocks.isOffline = offline;
+      const filters = { ...DEFAULT_FILTERS, minRating: 4, minAscents: 20, setter: ['Sam'] };
+      const boardFilters = { onlyBenchmarks: true };
+      mocks.getLastSearch.mockResolvedValue({ filters, boardFilters, searchText: 'Moonage', updatedAt: 1 });
+      mocks.searchClimbsForInput = (input) =>
+        (input?.filters as ClimbFilters)?.minRating == null ? [mocks.climb] : [];
+      const boardBefore = { ...mocks.activeBoard };
+      const { findByRole, findByText, queryByTestId } = render(<ClimbList />);
+
+      expect(await findByText('kilter · 40°')).toBeTruthy();
+      fireEvent.click(await findByRole('button', { name: 'Remove mobile.search.rating' }));
+
+      expect(await findByRole('button', { name: 'Moonage' })).toBeTruthy();
+      expect(mocks.searchInput).toEqual({
+        filters: { ...filters, minRating: undefined },
+        boardFilters,
+        name: 'Moonage',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1',
+        angle: 40,
+      });
+      expect(mocks.activeBoard).toEqual(boardBefore);
+      expect(queryByTestId('search-empty-recovery')).toBeNull();
+      expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    },
+  );
+
+  it('removes status without the normal token’s popularity reset', async () => {
+    const filters = { ...DEFAULT_FILTERS, status: 'projects', minAscents: 20, sortBy: 'quality' };
+    const boardFilters = { onlyBenchmarks: true };
+    mocks.getLastSearch.mockResolvedValue({ filters, boardFilters, searchText: 'Moonage', updatedAt: 1 });
+    const { findByRole } = render(<ClimbList />);
+
+    fireEvent.click(await findByRole('button', { name: 'Remove mobile.filter.popularityUnrepeated' }));
+
+    expect(mocks.searchState).toEqual({
+      filters: { ...filters, status: 'any' },
+      boardFilters,
+      name: 'Moonage',
+    });
+    expect(mocks.patchFilters).toHaveBeenCalledExactlyOnceWith({ status: 'any' });
+    expect(mocks.patchBoardFilters).not.toHaveBeenCalled();
+  });
+
+  it('opens Filters for an unfiltered empty search without clearing the name', async () => {
+    mocks.getLastSearch.mockResolvedValue({
+      filters: DEFAULT_FILTERS,
+      boardFilters: {},
+      searchText: 'Moonage',
+      updatedAt: 1,
+    });
+    const { findByRole } = render(<ClimbList />);
+
+    fireEvent.click(await findByRole('button', { name: 'mobile.emptyState.recovery.openFilters' }));
+
+    expect(mocks.filterSheetProps?.searchName).toBe('Moonage');
+    expect(mocks.searchState.name).toBe('Moonage');
+    expect(mocks.patchFilters).not.toHaveBeenCalled();
+    expect(mocks.patchBoardFilters).not.toHaveBeenCalled();
+  });
+
+  it.each(['loading', 'placeholder', 'error', 'offline-filter', 'catalog-missing', 'catalog-queued'] as const)(
+    'keeps %s ahead of recovery',
+    async (state) => {
+      mocks.isClimbsLoading = state === 'loading';
+      mocks.isPlaceholderData = state === 'placeholder';
+      mocks.searchFailed = state === 'error';
+      mocks.searchError = state === 'error' ? new Error('Invalid search input') : null;
+      mocks.isOffline = state.startsWith('catalog') || state === 'offline-filter';
+      mocks.offlineSearchSupported = state !== 'offline-filter';
+      mocks.offlineCatalog = state === 'catalog-missing' ? 'missing' : state === 'catalog-queued' ? 'queued' : null;
+      mocks.getLastSearch.mockResolvedValue({
+        filters: state === 'offline-filter' ? { ...DEFAULT_FILTERS, onlyWithBetaVideos: true } : DEFAULT_FILTERS,
+        boardFilters: {},
+        searchText: 'Moonage',
+        updatedAt: 1,
+      });
+      const { queryByTestId } = render(<ClimbList />);
+      await waitFor(() => expect(mocks.searchInput?.name).toBe('Moonage'));
+
+      expect(queryByTestId('search-empty-recovery')).toBeNull();
+    },
+  );
+});
+
 describe('ClimbList offline catalog empty states', () => {
   beforeEach(() => {
     mocks.searchClimbs = [];

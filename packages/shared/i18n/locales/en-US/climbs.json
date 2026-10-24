@@ -418,6 +418,12 @@
       "boardRestoreFailed": {
         "title": "Couldn’t restore your board",
         "description": "Try again to get back to your climbs."
+      },
+      "recovery": {
+        "scope": "{{board}} · {{angle}}°",
+        "filters": "Active filters: {{filters}}",
+        "removeHint": "Remove one filter to try again. Your search and setup stay selected.",
+        "openFilters": "Adjust filters"
       }
     },
     "detail": {

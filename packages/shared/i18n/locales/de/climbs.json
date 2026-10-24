@@ -418,6 +418,12 @@
       "boardRestoreFailed": {
         "title": "Dein Board konnte nicht wiederhergestellt werden",
         "description": "Versuch es erneut, um zu deinen Bouldern zurückzukehren."
+      },
+      "recovery": {
+        "scope": "{{board}} · {{angle}}°",
+        "filters": "Aktive Filter: {{filters}}",
+        "removeHint": "Entferne einen Filter und versuche es erneut. Deine Suche und Einstellungen bleiben ausgewählt.",
+        "openFilters": "Filter anpassen"
       }
     },
     "detail": {

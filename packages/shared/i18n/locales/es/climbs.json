@@ -418,6 +418,12 @@
       "boardRestoreFailed": {
         "title": "No se pudo recuperar tu plafón",
         "description": "Inténtalo de nuevo para volver a tus bloques."
+      },
+      "recovery": {
+        "scope": "{{board}} · {{angle}}°",
+        "filters": "Filtros activos: {{filters}}",
+        "removeHint": "Quita un filtro para volver a intentarlo. Se mantienen la búsqueda y la configuración.",
+        "openFilters": "Ajustar filtros"
       }
     },
     "detail": {
