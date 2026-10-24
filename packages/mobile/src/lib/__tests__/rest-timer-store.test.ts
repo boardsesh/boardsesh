@@ -277,12 +277,36 @@ describe('a tick dated more than a minute before it lands is history', () => {
     pauseRestTimer(T0 + 20_000);
 
     // Floored, it would resume from T0 with the paused 20 s counted as rest:
-    // 60 s up at T0 + 60 s, 30 s after this tick.
+    // 60 s up at T0 + 60 s, 30 s after this tick. Anchored at its own time it
+    // would drop the pause and count up from yesterday. It does neither.
+    const paused = getRestTimerState();
     noteRestTimerTick(YESTERDAY, 'afterTick', T0 + 30_000);
 
-    expect(getRestTimerState()).toMatchObject({ anchorMs: Date.parse(YESTERDAY), isRunning: true });
-    expect(isAutoAdvanceDeadlineStale(afterTickDeadlineMs(T0 + 30_000), T0 + 30_000)).toBe(true);
+    expect(getRestTimerState()).toMatchObject({
+      isRunning: false,
+      pausedElapsedSeconds: 20,
+      anchorMs: paused.anchorMs,
+      lastTick: paused.lastTick,
+      lastTickAt: YESTERDAY,
+    });
   });
+
+  it.each(['afterTick', 'onTheMinute'] as const)(
+    'leaves the dead-end latch set for a historical tick (%s), and a fresh one clears it',
+    (mode) => {
+      armRestTimer(mode, T0, 'session-1');
+      noteRestTimerTick(tickAt(0), mode, T0);
+      noteRestTimerQueueEnded();
+      const latched = getRestTimerState();
+
+      noteRestTimerTick(YESTERDAY, mode, T0 + 30_000);
+      expect(getRestTimerState().queueEnded).toBe(true);
+      expect(getRestTimerState().cycleId).toBe(mode === 'onTheMinute' ? latched.cycleId : latched.cycleId + 1);
+
+      noteRestTimerTick(tickAt(40), mode, T0 + 40_000);
+      expect(getRestTimerState().queueEnded).toBe(false);
+    },
+  );
 
   it('still picks a rest up from a cold start’s last session tick, however old, as it always did', () => {
     armRestTimer('afterTick', T0, 'session-1');

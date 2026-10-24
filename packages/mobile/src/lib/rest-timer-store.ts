@@ -249,10 +249,18 @@ export function noteRestTimerTick(
       // Deliberately NOT re-anchored — holding the beat is the whole mode — but
       // the cycle still has to roll when the latch clears, or the scheduler has
       // no change to react to and the timer stays stuck on a dead end that is
-      // no longer dead.
-      queueEnded: false,
-      cycleId: state.queueEnded ? state.cycleId + 1 : state.cycleId,
+      // no longer dead. A historical tick says nothing about the climber going
+      // on now, so it leaves the latch alone.
+      queueEnded: isFresh ? false : state.queueEnded,
+      cycleId: state.queueEnded && isFresh ? state.cycleId + 1 : state.cycleId,
     });
+    return;
+  }
+
+  if (!isFresh && !state.isRunning) {
+    // A historical tick on a paused timer: the pause and the rest it froze
+    // stand. Resuming here would lose the pause and count up from yesterday.
+    setState({ ...state, lastTickAt: climbedAt });
     return;
   }
 
@@ -264,8 +272,9 @@ export function noteRestTimerTick(
     isRunning: true,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
-    // A fresh tick means the climber is still going; give the queue another look.
-    queueEnded: false,
+    // A fresh tick means the climber is still going; give the queue another
+    // look. A historical one leaves the dead-end latch as it was.
+    queueEnded: isFresh ? false : state.queueEnded,
   });
 }
 
