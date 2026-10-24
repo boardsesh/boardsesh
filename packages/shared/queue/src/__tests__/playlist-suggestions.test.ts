@@ -209,7 +209,7 @@ describe('prepared playlist tracks', () => {
   });
 });
 
-// Issue #6664: the player names the list ("From Projects · 4 of 23") and pages
+// Issue #6664: the player names the list ("Projects · 4 of 23") and pages
 // past the first load. A count is only ever shown while it is right.
 describe('named, counted tracks', () => {
   const list = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));

@@ -10,7 +10,6 @@ import {
   resolveTrackLabel,
   selectNextQueueItemWithSuggestions,
   type ReachableClimbPredicate,
-  type TrackLabelModel,
 } from '@boardsesh/play-view';
 import { toBoardName } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
@@ -45,7 +44,6 @@ const PREFETCH_AHEAD = 3;
 /** Content-keyed to keep renderer warming stable across queue broadcasts. */
 const PREFETCH_FRAMES_SEPARATOR = '\n';
 const NO_PREFETCH_FRAMES: string[] = [];
-const NO_TRACK_LABEL: TrackLabelModel = { kind: 'hidden' };
 
 type PlayNavigationInputs = {
   queue: ClimbQueueItem[];
@@ -155,26 +153,16 @@ export function usePlayNavigationModel({
   const nextHeaderClimb = navigationState.canNext ? (navigationState.nextItem?.climb ?? null) : null;
   const previousHeaderClimb = navigationState.canPrevious ? (navigationState.prevItem?.climb ?? null) : null;
 
-  // "From Projects · 4 of 23" (issue #6664): the list the player is walking,
-  // read off the RESOLVED track, so the name goes the moment swipes stop
-  // following it. Each neighbour carries its own position, so a swipe slides
-  // "5 of 23" in rather than changing the number on landing.
+  // "Projects · 4 of 23" (issue #6664): the list the player is walking, read
+  // off the RESOLVED track, so the name goes the moment swipes stop following
+  // it. It sits in the top bar, which doesn't swipe, so the count changes on
+  // landing and the neighbours need no label of their own.
   const displayedClimbUuid = displayedClimb?.uuid;
   // A track that can't load the rest of its list ends early, so it shows no count.
   const labelSource = useMemo(() => trackForCounting(navigationSuggestionSource), [navigationSuggestionSource]);
   const currentTrackLabel = useMemo(
     () => resolveTrackLabel(labelSource, displayedClimbUuid),
     [labelSource, displayedClimbUuid],
-  );
-  const nextHeaderClimbUuid = nextHeaderClimb?.uuid;
-  const previousHeaderClimbUuid = previousHeaderClimb?.uuid;
-  const nextTrackLabel = useMemo(
-    () => (nextHeaderClimbUuid ? resolveTrackLabel(labelSource, nextHeaderClimbUuid) : NO_TRACK_LABEL),
-    [labelSource, nextHeaderClimbUuid],
-  );
-  const previousTrackLabel = useMemo(
-    () => (previousHeaderClimbUuid ? resolveTrackLabel(labelSource, previousHeaderClimbUuid) : NO_TRACK_LABEL),
-    [labelSource, previousHeaderClimbUuid],
   );
 
   // Past the list's last climb: the end card, and where "Keep going with your
@@ -293,8 +281,6 @@ export function usePlayNavigationModel({
     navigationSuggestionSource,
     navigationState,
     currentTrackLabel,
-    nextTrackLabel,
-    previousTrackLabel,
     trackEndCard,
     nextHeaderClimb,
     previousHeaderClimb,

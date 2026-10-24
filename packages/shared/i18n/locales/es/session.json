@@ -809,8 +809,9 @@
       "changeAngle": "Cambiar ángulo"
     },
     "track": {
-      "from": "Desde {{name}}",
-      "fromPosition": "Desde {{name}} · {{position}} de {{total}}",
+      "position": "{{position}} de {{total}}",
+      "playingFromAria": "Lista: {{name}}",
+      "playingFromPositionAria": "Lista: {{name}}, {{position}} de {{total}}",
       "searchResults": "Resultados de búsqueda",
       "setterClimbs": "Bloques de {{name}}",
       "end": {

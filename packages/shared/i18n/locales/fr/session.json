@@ -809,8 +809,9 @@
       "changeAngle": "Changer l’inclinaison"
     },
     "track": {
-      "from": "Depuis {{name}}",
-      "fromPosition": "Depuis {{name}} · {{position}} sur {{total}}",
+      "position": "{{position}} sur {{total}}",
+      "playingFromAria": "Liste : {{name}}",
+      "playingFromPositionAria": "Liste : {{name}}, {{position}} sur {{total}}",
       "searchResults": "Résultats de recherche",
       "setterClimbs": "Blocs de {{name}}",
       "end": {

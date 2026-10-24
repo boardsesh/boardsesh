@@ -144,37 +144,38 @@ describe('PlayDrawerHeader workout stage subtitle', () => {
   });
 });
 
-describe('PlayDrawerHeader track label (#6664)', () => {
+describe('PlayDrawerHeader stats line', () => {
   const subtitle = (container: HTMLElement) => container.querySelector('[data-variant="caption1"]')?.textContent;
 
-  // The list the player walks rides the stats line, first, so it costs the
-  // board no height and truncation takes the stats rather than the name.
-  it('leads the stats line with the list the player is walking', () => {
+  // #6664 put the list the player walks at the front of this line, and on a
+  // phone the sends and stars at its tail were cut off. The list now lives in
+  // the top bar, so this line is the climb's own facts.
+  it('prints the sends and stars first', () => {
     const { container } = render(
       createElement(PlayDrawerHeader, {
         ...baseProps,
         ascensionistCount: 12,
-        trackLabel: 'From Projects · 4 of 23',
+        qualityAverage: '3.2',
       }),
     );
-    expect(subtitle(container)).toBe('From Projects · 4 of 23 · 12 sends');
+    expect(subtitle(container)).toBe('12 sends · 3.2★');
   });
 
-  // The workout stage leads so truncation never hides it (#5379); the list follows.
-  it('puts a workout position ahead of the list', () => {
+  // The workout stage leads so truncation never hides it (#5379).
+  it('puts a workout position ahead of the stats', () => {
     const { container } = render(
       createElement(PlayDrawerHeader, {
         ...baseProps,
-        trackLabel: 'From Projects',
+        ascensionistCount: 12,
         workoutStageLabel: 'Warm-up · 2 of 5',
       }),
     );
-    expect(subtitle(container)).toBe('Warm-up · 2 of 5 · From Projects');
+    expect(subtitle(container)).toBe('Warm-up · 2 of 5 · 12 sends');
   });
 
   it('keeps the stats line when there is nothing to print on it', () => {
     // An empty line can measure shorter than a full one, which would step the
-    // board between a climb with a label and one without.
+    // board between a climb with stats and one without.
     const { container } = render(createElement(PlayDrawerHeader, baseProps));
     expect(subtitle(container)).toBe('​');
   });

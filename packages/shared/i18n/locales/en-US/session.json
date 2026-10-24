@@ -809,8 +809,9 @@
       "changeAngle": "Change angle"
     },
     "track": {
-      "from": "From {{name}}",
-      "fromPosition": "From {{name}} · {{position}} of {{total}}",
+      "position": "{{position}} of {{total}}",
+      "playingFromAria": "Playing from {{name}}",
+      "playingFromPositionAria": "Playing from {{name}}, {{position}} of {{total}}",
       "searchResults": "Search results",
       "setterClimbs": "{{name}}'s climbs",
       "end": {
