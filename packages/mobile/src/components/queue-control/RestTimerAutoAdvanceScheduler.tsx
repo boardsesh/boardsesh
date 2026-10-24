@@ -244,19 +244,35 @@ export function RestTimerAutoAdvanceScheduler() {
   // `reached` cue, and the digits go red (the colour lives in the pill). Never
   // while an advance is pending, so the two terminal cues can't double up.
   //
-  // The latch is the INSTANT that was cued, not the cycle: lengthening the rest
+  // The latch belongs to one rest, and a rest is its anchor: a re-arm, a reset,
+  // a new tick, an after-tick advance and a resume each count from a new one, so
+  // nothing an earlier rest cued carries over. A rest starts handled through the
+  // moment this scheduler first saw its anchor, so a mark that went by before
+  // then is never cued late: before a pause (Resume rebases the anchor on the
+  // paused elapsed), before this mount, behind a back-dated tick. Within a rest
+  // the latch is the INSTANT that was cued, not the cycle: lengthening the rest
   // mid-cycle (1 min → 5 min) is a new mark to reach, and on the minute every
   // beat is one. An advance that fired on a beat already had its cue, so that
   // beat counts as cued too. State, not a ref, so the wake lock below lets go
   // once the cue has played.
-  const [reachedCuedAtMs, setReachedCuedAtMs] = useState<number | null>(null);
   const { anchorMs, armed, isRunning, lastFiredDeadlineMs } = timerState;
   const atDeadEnd = timerState.queueEnded;
   const renderedAtMs = nowMs();
+  const [storedReachedLatch, setReachedLatch] = useState<ReachedLatch>(() => ({
+    anchorMs,
+    handledThroughMs: renderedAtMs,
+  }));
+  let reachedLatch = storedReachedLatch;
+  if (!Object.is(reachedLatch.anchorMs, anchorMs)) {
+    // A new rest. Adopted during render, so no effect below ever runs with the
+    // last rest's latch (`Object.is`, so a NaN anchor cannot loop the render).
+    reachedLatch = { anchorMs, handledThroughMs: renderedAtMs };
+    setReachedLatch(reachedLatch);
+  }
   const handledThroughMs =
-    reachedCuedAtMs === null || lastFiredDeadlineMs === null
-      ? (reachedCuedAtMs ?? lastFiredDeadlineMs)
-      : Math.max(reachedCuedAtMs, lastFiredDeadlineMs);
+    lastFiredDeadlineMs === null
+      ? reachedLatch.handledThroughMs
+      : Math.max(reachedLatch.handledThroughMs, lastFiredDeadlineMs);
   const reachedAtMs =
     armed && isRunning && !scheduled
       ? getRestTimerReachedAtMs({ mode, anchorMs, targetSeconds, nowMs: renderedAtMs, handledThroughMs })
@@ -268,7 +284,7 @@ export function RestTimerAutoAdvanceScheduler() {
     // a rest end that lands a second late still gets `advance`, so it still
     // gets `reached` too.
     const cueReached = () => {
-      setReachedCuedAtMs(reachedAtMs);
+      setReachedLatch({ anchorMs, handledThroughMs: reachedAtMs });
       if (!isRestTimerReachedCueLate(reachedAtMs, nowMs())) playRestTimerCue({ kind: 'reached' });
     };
     const scheduledAtMs = nowMs();
@@ -286,7 +302,7 @@ export function RestTimerAutoAdvanceScheduler() {
     const timeouts = scheduleLeadCues(reachedAtMs, leadSeconds, scheduledAtMs, chooseCountdown);
     timeouts.push(setTimeout(cueReached, remainingMs));
     return () => clearCueTimeouts(timeouts);
-  }, [atDeadEnd, chooseCountdown, leadSeconds, reachedAtMs]);
+  }, [anchorMs, atDeadEnd, chooseCountdown, leadSeconds, reachedAtMs]);
 
   // Keep the screen up while an advance is pending: timers are suspended in the
   // background and BLE writes need the app active, so a sleeping phone is a
@@ -354,6 +370,9 @@ export function RestTimerAutoAdvanceScheduler() {
 // where docs/rest-timer.md says each PR edits.
 
 type CueTimeout = ReturnType<typeof setTimeout>;
+
+/** The rest a `reached` latch belongs to (its anchor), and the latest instant of it that needs no cue. */
+type ReachedLatch = { anchorMs: number | null; handledThroughMs: number };
 
 /** Plays a countdown cue unless it landed late: a timeout flushed on resume says nothing. */
 function playCueUnlessLate(cue: Parameters<typeof playRestTimerCue>[0], dueAtMs: number): void {

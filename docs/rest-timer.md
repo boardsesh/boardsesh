@@ -139,11 +139,19 @@ The cues, from the scheduler:
 - Off: one `warning` where the countdown would start, then the terminal cue.
 - The choice is made by the first cue that lands for a rest and kept for that rest, so a toggle
   mid-countdown never plays ticks and the warning together. A change before the countdown starts
-  applies to that rest.
+  applies to that rest. Resume counts on from a new anchor, so a change made while paused applies
+  to the seconds left.
 - The countdown plays before `reached` too: auto-advance off, a crew passenger, a dead end. On the
   minute with nothing moving the wall, every beat counts down and buzzes. The latch is the instant
   that was cued, and a beat an advance fired on counts as cued, so a beat never gets `advance` and
   `reached`. After a dead end, no further beat counts down until the queue moves again.
+- The `reached` latch belongs to one rest, and a rest is its anchor: a re-arm (the cadence switch
+  is one), a Reset, a new tick, an `afterTick` advance and a Resume each start a new one, so
+  nothing an earlier rest cued silences the next, whichever way the phone's clock moved. A rest
+  starts handled through the moment the scheduler first saw its anchor, so a mark that went by
+  before then never plays: the mark a paused rest already passed (Resume rebases the anchor on the
+  paused elapsed), one the last mount played before a disarm and re-arm brought the same tick
+  back, or one behind a back-dated tick (the advance never fires for those either).
 - A countdown tick or the warning that lands more than 750 ms late (`REST_TIMER_CUE_LATE_MS`)
   says nothing. That is a timeout flushed on a resume from the background, for a second the
   climber never saw.
