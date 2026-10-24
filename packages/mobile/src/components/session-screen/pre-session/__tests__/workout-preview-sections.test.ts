@@ -18,7 +18,7 @@ function makePreview(uuid: string, section: PlannedClimbSlot['section'], index: 
 
 function describeRows(items: PreviewItem[], stages?: WorkoutStage[]): string[] {
   return buildPreviewListRows(items, stages).map((row) => {
-    if (row.kind === 'stage') return `STAGE ${row.stageKind}:${row.count}`;
+    if (row.kind === 'stage') return `STAGE ${row.stageKind}${row.isCoolDown ? ' (cool-down)' : ''}:${row.count}`;
     if (row.kind === 'section') return `${row.section}:${row.count}`;
     return row.preview.item.uuid;
   });
@@ -159,5 +159,45 @@ describe('buildPreviewListRows', () => {
 
     expect(rows.filter((row) => row.kind === 'stage')).toHaveLength(2);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('heads a cool-down after one block as its own section', () => {
+    const items = [
+      makePreview('v1', 'main', 0, 'volume'),
+      makePreview('v2', 'main', 1, 'volume'),
+      makePreview('c1', 'coolDown', 2, 'cool'),
+      makePreview('c2', 'coolDown', 3, 'cool'),
+    ];
+
+    expect(describeRows(items, [VOLUME_STAGE, { ...WARM_UP_STAGE, id: 'cool' }])).toEqual([
+      'main:2',
+      'v1',
+      'v2',
+      'coolDown:2',
+      'c1',
+      'c2',
+    ]);
+  });
+
+  it('heads a warm-up after the last of several blocks as a cool-down, and a warm-up before them as a warm-up', () => {
+    const items = [
+      makePreview('w1', 'warmUp', 0, 'warm'),
+      makePreview('p1', 'peak', 1, 'pyramid'),
+      makePreview('v1', 'main', 2, 'volume'),
+      makePreview('c1', 'coolDown', 3, 'cool'),
+    ];
+    const stages = [WARM_UP_STAGE, PYRAMID_STAGE, VOLUME_STAGE, { ...WARM_UP_STAGE, id: 'cool' }];
+
+    expect(describeRows(items, stages)).toEqual([
+      'STAGE warmUp:1',
+      'w1',
+      'STAGE pyramid:1',
+      'p1',
+      'STAGE volume:1',
+      'v1',
+      'STAGE warmUp (cool-down):1',
+      'c1',
+    ]);
+    expect(buildPreviewListRows(items, stages)[0]).not.toHaveProperty('isCoolDown');
   });
 });

@@ -138,18 +138,35 @@ function lastWorkoutOptions(blocks: readonly WorkoutBlockSpec[]): GeneratorOptio
   return null;
 }
 
+/** A workout block a warm-up takes its grade from, with its 1-based block number. */
+export type WarmUpGradeSource = { targetGrade: number; blockNumber: number };
+
 /**
  * What the warm-up at `position` ramps to: the first workout block after it,
- * with its 1-based block number. Null when no workout block follows, and the
- * warm-up then plans no climbs (`generateStagedPlan` gives it nothing to ramp to).
+ * with its 1-based block number. Null when no workout block follows; the
+ * warm-up then eases off from the block before it (`coolDownSource`).
  */
-export function warmUpTarget(
-  blocks: readonly WorkoutBlockSpec[],
-  position: number,
-): { targetGrade: number; blockNumber: number } | null {
+export function warmUpTarget(blocks: readonly WorkoutBlockSpec[], position: number): WarmUpGradeSource | null {
   for (let after = position + 1; after < blocks.length; after++) {
     const options = workoutOptionsAt(blocks, after);
     if (options) return { targetGrade: options.targetGrade, blockNumber: after + 1 };
+  }
+  return null;
+}
+
+/**
+ * What the warm-up at `position` eases off from when no workout block follows
+ * it: the nearest workout block before it, with its 1-based block number. Its
+ * climbs then step back down from where that block ends, hardest first
+ * (`generateStagedPlan`): below its last climb, never above its grade. Null when a workout block follows (it ramps up to
+ * that one, `warmUpTarget`) or none comes before, and a warm-up with no workout
+ * block on either side plans no climbs.
+ */
+export function coolDownSource(blocks: readonly WorkoutBlockSpec[], position: number): WarmUpGradeSource | null {
+  if (warmUpTarget(blocks, position)) return null;
+  for (let before = position - 1; before >= 0; before--) {
+    const options = workoutOptionsAt(blocks, before);
+    if (options) return { targetGrade: options.targetGrade, blockNumber: before + 1 };
   }
   return null;
 }

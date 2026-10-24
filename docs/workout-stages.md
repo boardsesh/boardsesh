@@ -22,17 +22,24 @@ wide only). Each block becomes one **stage**. The code lives in
   `options` carry. The generator plans grades only, so filters never change a slot.
 - `generateStagedPlan(plan, grades)` fills every stage with grade slots. Each slot names
   its stage id. A warm-up ramps to the grade of the first workout stage after it,
-  skipping any warm-ups in between. With no workout stage after it, it plans no climbs
-  (partner warm-ups carry their own `targetGrade` and use that instead). A warm-up plus
-  one workout plans exactly what the single-type generator always planned.
+  skipping any warm-ups in between (partner warm-ups carry their own `targetGrade` and
+  use that instead). With no workout stage after it, it is a **cool-down**: the climbs
+  the same warm-up would plan up to the grade the nearest workout stage before it ends
+  on, hardest first, in the `coolDown` section. That stage ends on its last planned
+  climb, capped at its target grade (a volume spread can end above it), so the first
+  cool-down climb is always easier than the climb before it. A standard warm-up after a
+  V5 volume block plans V4, V3, V2, V1. After a V15 pyramid, which ends on V13, it plans
+  V12 down to V9 rather than climbing back up to V14. A warm-up with no workout stage on
+  either side plans no climbs. A warm-up plus one workout plans exactly what the
+  single-type generator always planned.
 - `WorkoutRun` is what actually got queued: per stage, the queue-item uuids that belong
   to it (`buildWorkoutRun`). A stage with no climbs is left out. A workout stage also
   keeps its `targetGrade`, and every stage keeps its `filters`, so a block added later
-  can start from them. Both are optional: a run stored before they existed still loads
-  under the same storage key. A stage whose stored `filters` this bundle cannot read
-  (a malformed field, or a climb bias it does not know) loses just that field; the
-  stage and the run load, so the next mid-session block cannot overwrite the stages
-  queued at Start.
+  can start from them. A warm-up planned as a cool-down keeps `coolDown: true`. All
+  three are optional: a run stored before they existed still loads under the same
+  storage key. A stage whose stored `filters` this bundle cannot read (a malformed
+  field, or a climb bias it does not know) loses just that field; the stage and the run
+  load, so the next mid-session block cannot overwrite the stages queued at Start.
 - A timed stage also keeps its **pacing** (`WorkoutStagePacing`, `pacing.ts`), and a 4x4
   its **rounds**. Pacing is worked out from the block's options by `pacingForOptions` and
   stored only on the run stage, because a run keeps no options. On the minute paces
@@ -56,7 +63,12 @@ wide only). Each block becomes one **stage**. The code lives in
   For a climb with a round it also gives `round`: the round's rank among the stage's
   rounds with queued climbs (ranked by the stored number, so a reordered queue still
   says round 2 for a round-2 climb) and the climb's place in it, so the player reads
-  "4x4 · Round 2 of 4 · 3 of 4".
+  "4x4 · Round 2 of 4 · 3 of 4". A climb of a stage marked `coolDown` gets `isCoolDown`,
+  and the card and the player name the stage "Cool-down". The mark comes from the plan,
+  not the queue order, because the stage's climbs step down wherever they sit: a
+  cool-down the climber moves in front of the workout, or one a mid-session block lands
+  after, still reads "Cool-down". A warm-up that ramps up (one the climber drags behind
+  the workout, or a partner warm-up with its own `targetGrade`) never does.
 
 Stage kinds use the partner API block names (`warmUp`, `volume`, `pyramid`, `ladder`,
 `gradeFocus`, `onTheMinute`, `fourByFour`, `limitBouldering`; see `docs/partner-api.md`,
@@ -163,7 +175,9 @@ starts empty: no blocks means no workout, and the climber picks every climb. "Ad
 block" appends a workout block at the last workout block's grade, with the next type. A
 card's type chips turn any block into a warm-up or another workout type. A workout card
 holds its target grade and counts; a warm-up card holds its length and names the block
-it ramps to, or says nothing follows it. Any block can move up or down or be removed. The cap is five
+it ramps to (`warmUpTarget`). After the last workout block it names the block it eases
+off from instead (`coolDownSource`), and the preview heads its climbs "Cool-down". A
+warm-up with no workout block on either side says it needs one. Any block can move up or down or be removed. The cap is five
 blocks, warm-ups included (`MAX_WORKOUT_BLOCKS` in `workout-blocks.ts`).
 
 Every block, warm-ups included, has its own climb filters, in a folded "Climb filters"
@@ -204,7 +218,7 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 `ModalSheet` over the session screen:
 
 - It offers the workout types only, never a warm-up: mid-session the climber is already
-  warm, and a warm-up with no workout block after it would plan no climbs.
+  warm, and the sheet plans its one block alone, where a warm-up plans no climbs.
 - The block opens on the run's last workout stage: same type, same target grade. With no
   run it opens on volume at the board's middle grade. A last stage of a type the sheet
   has no chip for (a timed block, read after a rollback to a bundle that does not offer
@@ -227,10 +241,15 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 - "Add to session" appends the climbs to the end of the queue with no
   `activateFirstWhenIdle`, the same way the playlist "Add to queue" row does, so it does
   not move the wall on this phone. Then the block's stage is appended to the run (or
-  becomes the run). Climbs cut by the queue's size cap get no stage; a climb whose wire
-  send fails afterwards keeps its stage, which is harmless because readers count only
-  queued climbs. Climbs already in the queue are left out, and a second tap during the
-  slide-down does nothing. The pure part is `add-workout-block.ts`.
+  becomes the run). That holds after a cool-down too: the new block lands after the
+  cool-down, which keeps its "Cool-down" name, and the climber drags the cool-down
+  climbs below the block to finish on them. Slotting the block in front of the cool-down
+  would need a positioned insert the queue does not have: a per-item add carries no
+  position and the server appends. Climbs cut by the queue's size cap get no stage; a
+  climb whose wire send fails afterwards keeps its stage, which is harmless because
+  readers count only queued climbs. Climbs already in the queue are left out, and a
+  second tap during the slide-down does nothing. The pure part is
+  `add-workout-block.ts`.
 - Before it composes the run, the confirm waits for the store to finish reading this
   session's run after a cold start, so the run queued at Start is never overwritten.
 - `Session Queue Generated` fires with `phase: 'in_session'`. Start sends

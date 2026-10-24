@@ -10,19 +10,25 @@ import { spacing } from '../../../theme/tokens';
 type WorkoutPreviewStageHeadingProps = {
   stageKind: WorkoutStageKind;
   count: number;
+  /** A warm-up after the last block, headed "Cool-down". */
+  isCoolDown?: boolean;
 };
 
 /**
  * "Pyramid · 9 climbs" over each block of a workout built from several blocks.
  * Sits above that block's section headings, so it reads one step louder.
  */
-function WorkoutPreviewStageHeadingComponent({ stageKind, count }: WorkoutPreviewStageHeadingProps) {
+function WorkoutPreviewStageHeadingComponent({
+  stageKind,
+  count,
+  isCoolDown = false,
+}: WorkoutPreviewStageHeadingProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   return (
     <View style={styles.heading} accessibilityRole="header">
       <Text variant="subheadline" color={systemColors.label} style={styles.text}>
-        {t('mobile.session.preWorkoutSectionHeading', { section: workoutStageName(stageKind, t), count })}
+        {t('mobile.session.preWorkoutSectionHeading', { section: workoutStageName(stageKind, t, isCoolDown), count })}
       </Text>
     </View>
   );

@@ -11,7 +11,14 @@ export type PreviewSection = PlannedClimbSlot['section'];
 
 /** One FlashList row of the workout preview: a stage heading, a section heading or a climb. */
 export type PreviewListRow =
-  | { kind: 'stage'; key: string; stageKind: WorkoutStageKind; count: number }
+  | {
+      kind: 'stage';
+      key: string;
+      stageKind: WorkoutStageKind;
+      count: number;
+      /** Set only on a warm-up stage planned after the last workout block, which steps back down. */
+      isCoolDown?: true;
+    }
   | { kind: 'section'; key: string; section: PreviewSection; count: number }
   | { kind: 'climb'; key: string; preview: PreviewItem };
 
@@ -26,7 +33,8 @@ export type PreviewListRow =
  *
  * Two or more blocks get a stage heading over each stage ("Pyramid · 9 climbs"),
  * then that stage's section headings when it has more than one section, so a
- * pyramid still shows its way up and down and a volume block shows none.
+ * pyramid still shows its way up and down and a volume block shows none. A
+ * warm-up after the last block is headed as the cool-down it plans.
  *
  * Sections are consecutive runs (`groupSlotsBySection`), so a pyramid's
  * "increasing" and "decreasing" halves stay apart around the peak.
@@ -49,7 +57,14 @@ export function buildPreviewListRows(
     const stageItems = items.slice(groupStart, groupEnd);
     const stageKind = stageId === undefined ? undefined : kindByStageId.get(stageId);
     if (stageKind !== undefined) {
-      rows.push({ kind: 'stage', key: `stage-${stageId}`, stageKind, count: stageItems.length });
+      const stageRow: Extract<PreviewListRow, { kind: 'stage' }> = {
+        kind: 'stage',
+        key: `stage-${stageId}`,
+        stageKind,
+        count: stageItems.length,
+      };
+      if (stageItems[0].slot.section === 'coolDown') stageRow.isCoolDown = true;
+      rows.push(stageRow);
     }
     rows.push(...buildSectionRows(stageItems, `section-${stageId ?? groupStart}`));
     groupStart = groupEnd;

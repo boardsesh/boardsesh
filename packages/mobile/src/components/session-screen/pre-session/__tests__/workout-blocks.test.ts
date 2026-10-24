@@ -23,6 +23,7 @@ import {
   canAddBlock,
   changeBlockType,
   clearUnavailableSizeFilters,
+  coolDownSource,
   firstWorkoutType,
   hasWorkoutBlocks,
   moveBlock,
@@ -344,17 +345,42 @@ describe('warm-ups in the plan', () => {
     ).toEqual([16, 17, 18, 19]);
   });
 
-  it('plans no climbs for a warm-up with no workout block after it', () => {
+  it('eases a warm-up with no workout block after it off from the block before it', () => {
     expect(warmUpTarget(blocks, 3)).toBeNull();
-    expect(plannedSlots().map((slot) => slot.stageId)).toEqual([
-      'first',
-      'middle',
-      'middle',
-      'middle',
-      'middle',
-      'third',
-      'third',
+    expect(coolDownSource(blocks, 3)).toEqual({ targetGrade: 20, blockNumber: 3 });
+    expect(
+      plannedSlots()
+        .filter((slot) => slot.stageId === 'trailing')
+        .map((slot) => [slot.section, slot.grade]),
+    ).toEqual([
+      ['coolDown', 19],
+      ['coolDown', 18],
+      ['coolDown', 17],
+      ['coolDown', 16],
     ]);
+  });
+
+  it('gives a warm-up with a workout block after it nothing to ease off from', () => {
+    expect(coolDownSource(blocks, 1)).toBeNull();
+  });
+
+  it('skips warm-ups between the trailing warm-up and the last workout block', () => {
+    const trailing = [...blocks, warmUp('after-trailing')];
+
+    expect(coolDownSource(trailing, 4)).toEqual({ targetGrade: 20, blockNumber: 3 });
+  });
+
+  it('gives a warm-up with no workout block on either side nothing to ramp to or ease off from, and plans none', () => {
+    const lone = [warmUp('first'), warmUp('second')];
+
+    expect(warmUpTarget(lone, 1)).toBeNull();
+    expect(coolDownSource(lone, 1)).toBeNull();
+    expect(
+      generateStagedPlan(
+        planFromBlocks(lone, (position) => lone[position].id),
+        GRADES,
+      ),
+    ).toEqual([]);
   });
 });
 

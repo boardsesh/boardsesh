@@ -19,6 +19,11 @@ export type WorkoutStageReadout = {
   isCurrent: boolean;
   /** Climbs after the current one in this stage. Null on every stage but the current one. */
   remainingAfterCurrent: number | null;
+  /**
+   * A warm-up planned after the last workout block, stepping back down from
+   * it, so it reads "Cool-down" wherever its climbs sit in the queue.
+   */
+  isCoolDown: boolean;
 };
 
 export type WorkoutRunReadout = {
@@ -56,6 +61,7 @@ export function describeWorkoutRun(
         size: position.stageSize,
         isCurrent,
         remainingAfterCurrent: isCurrent && current ? current.remainingInStage : null,
+        isCoolDown: position.isCoolDown === true,
       },
     });
   }
@@ -68,11 +74,15 @@ export function describeWorkoutRun(
 /** Minimal translate signature so the label helpers stay out of React. */
 export type TranslateWorkoutStage = (key: string, options?: Record<string, string | number>) => string;
 
-/** The stage's name, reusing the workout picker's labels. Literal keys so the i18n analyser sees each one. */
-export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStage): string {
+/**
+ * The stage's name, reusing the workout picker's labels. Literal keys so the
+ * i18n analyser sees each one. `isCoolDown` names a warm-up after the last
+ * workout block "Cool-down"; it changes no other kind.
+ */
+export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStage, isCoolDown = false): string {
   switch (kind) {
     case 'warmUp':
-      return t('mobile.session.preWorkoutSectionWarmUp');
+      return isCoolDown ? t('mobile.session.preWorkoutSectionCoolDown') : t('mobile.session.preWorkoutSectionWarmUp');
     case 'volume':
       return t('mobile.session.preGeneratorVolume');
     case 'pyramid':
@@ -91,11 +101,12 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
 }
 
 /**
- * "Warm-up · 2 of 5", the player's subtitle part for a workout climb. A climb
- * with a round counts within its round instead: "4x4 · Round 2 of 4 · 3 of 4".
+ * "Warm-up · 2 of 5", the player's subtitle part for a workout climb, or
+ * "Cool-down · 2 of 5" after the last block. A climb with a round counts within
+ * its round instead: "4x4 · Round 2 of 4 · 3 of 4".
  */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
-  const stage = workoutStageName(position.kind, t);
+  const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
   if (position.round) {
     return t('mobile.session.workoutStageRoundPosition', {
       stage,

@@ -22,8 +22,8 @@ describe('describeWorkoutRun', () => {
     const readout = describeWorkoutRun(run, ['w1', 'w2', 'm1', 'm2', 'm3'], 'm1');
 
     expect(readout?.stages).toEqual([
-      { id: 'warm', kind: 'warmUp', size: 2, isCurrent: false, remainingAfterCurrent: null },
-      { id: 'main', kind: 'pyramid', size: 3, isCurrent: true, remainingAfterCurrent: 2 },
+      { id: 'warm', kind: 'warmUp', size: 2, isCurrent: false, remainingAfterCurrent: null, isCoolDown: false },
+      { id: 'main', kind: 'pyramid', size: 3, isCurrent: true, remainingAfterCurrent: 2, isCoolDown: false },
     ]);
     expect(readout?.current).toMatchObject({ stageId: 'main', positionInStage: 1, stageSize: 3 });
   });
@@ -39,13 +39,78 @@ describe('describeWorkoutRun', () => {
     const readout = describeWorkoutRun(run, ['m2', 'hand-queued'], 'hand-queued');
 
     expect(readout?.stages).toEqual([
-      { id: 'main', kind: 'pyramid', size: 1, isCurrent: false, remainingAfterCurrent: null },
+      { id: 'main', kind: 'pyramid', size: 1, isCurrent: false, remainingAfterCurrent: null, isCoolDown: false },
     ]);
     expect(readout?.current).toBeNull();
   });
 
   it('is null once none of the workout is left in the queue', () => {
     expect(describeWorkoutRun(run, ['hand-queued'], 'hand-queued')).toBeNull();
+  });
+});
+
+describe('cool-downs', () => {
+  const coolDownRun: WorkoutRun = {
+    stages: [
+      { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+      { id: 'main', kind: 'volume', itemUuids: ['m1', 'm2'] },
+      { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2', 'c3'], coolDown: true },
+    ],
+  };
+  const queue = ['w1', 'm1', 'm2', 'c1', 'c2', 'c3'];
+
+  it('flags the warm-up planned as a cool-down, and only that one', () => {
+    const readout = describeWorkoutRun(coolDownRun, queue, 'c2');
+
+    expect(readout?.stages.map((stage) => [stage.id, stage.isCoolDown])).toEqual([
+      ['warm', false],
+      ['main', false],
+      ['cool', true],
+    ]);
+    expect(readout?.stages[2]).toMatchObject({ isCurrent: true, remainingAfterCurrent: 1 });
+  });
+
+  it('reads "Cool-down" on the card and in the player', () => {
+    const readout = describeWorkoutRun(coolDownRun, queue, 'c2');
+    const coolDown = readout?.stages[2];
+    const position = readout?.current;
+    expect(coolDown && position).toBeTruthy();
+    if (!coolDown || !position) return;
+
+    expect(workoutStageName(coolDown.kind, t, coolDown.isCoolDown)).toBe('mobile.session.preWorkoutSectionCoolDown');
+    expect(formatWorkoutStagePosition(position, t)).toBe(
+      'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionCoolDown,position=2,total=3)',
+    );
+  });
+
+  it('still reads "Cool-down" once the climber queues its climbs before the workout', () => {
+    const readout = describeWorkoutRun(coolDownRun, ['c1', 'c2', 'c3', 'w1', 'm1', 'm2'], 'c1');
+
+    expect(readout?.stages.map((stage) => [stage.id, stage.isCoolDown])).toEqual([
+      ['cool', true],
+      ['warm', false],
+      ['main', false],
+    ]);
+    if (!readout?.current) throw new Error('expected a current climb');
+    expect(formatWorkoutStagePosition(readout.current, t)).toBe(
+      'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionCoolDown,position=1,total=3)',
+    );
+  });
+
+  it('reads "Warm-up" for a warm-up queued last that was not planned as a cool-down', () => {
+    const rampsUp: WorkoutRun = {
+      stages: [
+        { id: 'main', kind: 'volume', itemUuids: ['m1'] },
+        { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+      ],
+    };
+    const readout = describeWorkoutRun(rampsUp, ['m1', 'w1'], 'w1');
+
+    expect(readout?.stages.every((stage) => !stage.isCoolDown)).toBe(true);
+  });
+
+  it('never names a workout stage a cool-down', () => {
+    expect(workoutStageName('volume', t, true)).toBe('mobile.session.preGeneratorVolume');
   });
 });
 
