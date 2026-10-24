@@ -55,6 +55,13 @@ type DrainContext = {
    * re-drive the loop with the most-recent climb (the lightbulb re-take path).
    */
   reassert: () => void;
+  /**
+   * Simulate a new physical BLE link (a `connectionGeneration` bump): retire the
+   * "already on the wall" caches once and re-drive the loop with the most-recent
+   * climb. The component sees this even when the rendered `isConnected` flag
+   * never flipped, so the sender was never remounted.
+   */
+  newConnectionGeneration: () => void;
 };
 
 type DrainLoopOptions = {
@@ -77,6 +84,7 @@ function createDrainLoop(
   let lastSentSignature: string | null = null;
   let lastEnqueuedItem: ClimbQueueItem | null = null;
   let reassertPending = false;
+  let connectionChangedPending = false;
   // Mirror of lastSkipReportedUuidRef / lastUnresolvedReportedUuidRef: report a
   // given spill / unresolved uuid once, clear it when a sendable climb is seen.
   let lastSpillReported: string | null = null;
@@ -140,6 +148,15 @@ function createDrainLoop(
           continue;
         }
         lastUnresolvedReported = null;
+
+        // A new physical link retires everything we believed about the wall.
+        // In the component this sits BEFORE the connect-initial-send seed so a
+        // connect that DID write its own initialFrames still suppresses the
+        // duplicate; here (no seed modelled) it just clears the dedup.
+        if (connectionChangedPending) {
+          connectionChangedPending = false;
+          lastSentSignature = null;
+        }
 
         // Honour a pending reassert when the climb is picked up (survives an
         // in-flight write that re-set the signature on completion).
@@ -216,6 +233,22 @@ function createDrainLoop(
       // signature when it picks the climb up (mirrors the component, and
       // survives an in-flight write).
       reassertPending = true;
+      if (!lastEnqueuedItem) return;
+      const item = lastEnqueuedItem;
+      if (isWriting) {
+        pendingClimb = item;
+        return;
+      }
+      isWriting = true;
+      void drain(item);
+    },
+
+    newConnectionGeneration() {
+      if (abortController.signal.aborted) return;
+      // Mirrors the component: the prop change flags a pending link change and
+      // re-drives the drain via the effect's connectionGeneration dep, so the
+      // current climb is re-sent even though nothing about it changed.
+      connectionChangedPending = true;
       if (!lastEnqueuedItem) return;
       const item = lastEnqueuedItem;
       if (isWriting) {
@@ -444,6 +477,62 @@ describe('BluetoothAutoSender drain loop', () => {
       await loop.flush();
 
       // The reasserted climb re-fires after the in-flight write completed.
+      loop.resolveCurrentWrite();
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
+    });
+  });
+
+  describe('new connection generation (relight after a link change — #4413)', () => {
+    it('re-sends the unchanged current climb over a brand-new link', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(1);
+
+      // A connect that lands while the app already renders `isConnected` never
+      // remounts the sender, so without the generation bump nothing here would
+      // re-drive the loop and the wall would keep whatever it was left showing.
+      loop.newConnectionGeneration();
+      await loop.flush();
+
+      expect(loop.sendCallCount()).toBe(2);
+      expect(loop.sentUuids()).toEqual(['climb-A', 'climb-A']);
+    });
+
+    it('resumes deduping byte-identical broadcasts on the same link', async () => {
+      const loop = createDrainLoop('instant');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+
+      loop.newConnectionGeneration();
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(2);
+
+      // One-shot: no further link change, so the re-broadcast is suppressed
+      // again and the success haptic doesn't double-fire.
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      await loop.flush();
+      expect(loop.sendCallCount()).toBe(2);
+    });
+
+    it('re-pushes after the in-flight write completes when the link changes mid-write', async () => {
+      const loop = createDrainLoop('deferred');
+
+      loop.enqueue(makeQueueItem('climb-A', 'p1r15'));
+      expect(loop.sendCallCount()).toBe(1);
+
+      // The link is replaced while the previous write is still hanging. The
+      // completing write re-sets the dedup signature, so the flag has to be
+      // consumed on pickup rather than at request time.
+      loop.newConnectionGeneration();
+
+      loop.resolveCurrentWrite();
+      await loop.flush();
       loop.resolveCurrentWrite();
       await loop.flush();
 
