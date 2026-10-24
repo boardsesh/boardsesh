@@ -40,6 +40,7 @@ export const PlayListContext = memo(function PlayListContext({ parts, style, tes
           color={systemColors.secondaryLabel}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          numeric
           style={styles.count}
         >
           {` · ${parts.count}`}
@@ -65,6 +66,5 @@ const styles = StyleSheet.create({
   },
   count: {
     flexShrink: 0,
-    fontVariant: ['tabular-nums'],
   },
 });

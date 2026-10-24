@@ -31,15 +31,22 @@ vi.mock('../../Text', () => ({
   Text: ({
     children,
     numberOfLines,
+    numeric,
     style,
   }: {
     children?: ReactNode;
     numberOfLines?: number;
-    style?: { flexShrink?: number };
+    numeric?: boolean;
+    style?: { flexShrink?: number; textAlign?: string };
   }) =>
     createElement(
       'span',
-      { 'data-lines': numberOfLines, 'data-shrink': style?.flexShrink === undefined ? undefined : style.flexShrink },
+      {
+        'data-lines': numberOfLines,
+        'data-numeric': numeric ? 'true' : undefined,
+        'data-shrink': style?.flexShrink === undefined ? undefined : style.flexShrink,
+        'data-align': style?.textAlign,
+      },
       children,
     ),
 }));
@@ -61,6 +68,18 @@ describe('PlayListContext', () => {
     expect(name?.getAttribute('data-lines')).toBe('1');
     expect(count?.textContent).toBe(' · 1 of 29,182');
     expect(count?.getAttribute('data-shrink')).toBe('0');
+    expect(count?.getAttribute('data-numeric')).toBe('true');
+  });
+
+  // A cut name's "…" stops short of its box; right-aligned, the spare room
+  // falls on the outer edge instead of between the name and the count.
+  it('right-aligns the name so a cut one sits against the count', () => {
+    const { container } = render(
+      createElement(PlayListContext, {
+        parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
+      }),
+    );
+    expect(texts(container)[0]?.getAttribute('data-align')).toBe('right');
   });
 
   it('prints the name alone when the count is not known', () => {

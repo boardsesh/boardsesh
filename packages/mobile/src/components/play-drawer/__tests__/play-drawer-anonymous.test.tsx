@@ -2142,6 +2142,25 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     expect(lastListParts()).toMatchObject({ name: 'Projects' });
   });
 
+  /** The props of the header waiting beside the current one. */
+  function neighbourHeaderProps(side: 'next' | 'previous'): Props | undefined {
+    const neighbour = recorded.swipeableHeader.at(-1)?.[side];
+    if (!neighbour || typeof neighbour !== 'object' || !('props' in neighbour)) return undefined;
+    return neighbour.props as Props;
+  }
+
+  // The header sliding in once promised the list, and a crew's swipe opens a
+  // preview that walks none (#5403). The top bar doesn't swipe and names only
+  // the climb on screen, so no header, sliding in or not, carries a list.
+  it('never promises a list on the header sliding in, even when the swipe opens a preview (crew)', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    onTheLastClimbOfProjects();
+    const previous = neighbourHeaderProps('previous');
+    expect(previous).toBeDefined();
+    expect(previous).not.toHaveProperty('trackLabel');
+  });
+
   it('names nothing for a climb with no list', () => {
     session.useRealNavigation = true;
     session.queue = [itemLast, itemQueued];
