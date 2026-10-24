@@ -173,12 +173,16 @@ reducer, the same way `state-hash.ts` is shared so the two sides can't drift (#2
 | Export | What it does |
 | --- | --- |
 | `upNextStart(queue, current, historyCount)` | `indexOf(current) + 1` when the current climb is in `queue`, else (nothing current, or an orphan) `historyCount ?? 0`. Every reader that today does `findIndex(current)` and treats -1 as "all Up next" calls this instead. |
-| `historyOf(state)`, `upNextOf(state)` | The two slices. Readers never do index arithmetic on `queue` themselves. |
-| `placeOnWall(state, item, placement)` | The table below. Returns `{ queue, current, historyCount, rewrite }`. |
-| `capHistory(state)` | Trims History, oldest first (section 5). |
+| `historyLine(state)`, `historyOf(state)`, `upNextOf(state)` | The line and the two slices. Readers never do index arithmetic on `queue` themselves. |
+| `placeOnWall(state, item, placement, shouldAddToQueue)` | The table below. `shouldAddToQueue` only tells a shipped row tap (`true`) from an old Next on the `next-from-line` row. Returns `{ queue, currentClimbQueueItem, historyCount, rewrite }`, a state the other functions take as is. Never trims. |
+| `capHistory(state, headroom)` | Trims History, oldest first (section 5). `headroom` is the number of entries about to be added (1 before `addQueueItem`). Returns the state plus `trimmedCount`. |
+| `isUpNextFull(state, adding)`, `QUEUE_FULL` | The cap check on Now + Up next and the `addQueueItem` error code (section 5). |
+| `isSameWallClimb(a, b)` | The match key (below). |
+| `normaliseOrphanCurrent(state)` | Invariant 1: inserts an orphan current climb at the line, for a stored orphan and a payload orphan alike. `placeOnWall` calls it first. |
+| `clampInsertPosition(state, position)` | The `addQueueItem` History position rule (section 5), resolver only. |
 | `lineAfterDelta(state, delta)` | The `historyCount` after an add, remove, reorder, trim or clear (table above). The resolvers and the reducer both call it, so a delta can't move the line differently on the two sides. |
 | `reorderAcrossLine(state, oldIndex, newIndex)` | The clamp for an Up next entry dragged above the line with nothing current (section 7, reducer table), then `lineAfterDelta`. |
-| `normaliseHistoryCount(input, queue, current)` | Validates a client-sent `historyCount` / `initialHistoryCount` (section 2). |
+| `normaliseHistoryCount(input, queue, current)` | Clamps a client-sent `historyCount` / `initialHistoryCount` after `QueueIndexSchema` (section 2). Returns `null` when there is no input, and the caller derives the line from the stored History (section 3). |
 | `chooseQueueEvent(before, request, after)` | Which event to publish (section 2). |
 
 `placement` is `NOW`, `STEP` or absent. Absent means a shipped client, the native socket,
@@ -339,6 +343,7 @@ check, not a table someone has to keep in sync:
 | Case | Event |
 | --- | --- |
 | The request's `item.uuid` was already in `queue`, the array after the write equals the array before it, and the new current climb is the request's item (`none`, `next`, `step`) | `CurrentClimbChanged`, with the origin's `clientId` and `correlationId`, as today |
+| `item: null` (`clear`) and the array is unchanged | `CurrentClimbChanged(null)`, as today. A shipped reducer clears its current climb and keeps its array. |
 | The array after the write is the array before it with the request's item inserted at the Now slot (`insert`, no trim), and the request carried `shouldAddToQueue: true` or `placement` | `FullSync`, as today (`services/queue-navigation.ts:94-99`) |
 | The same `insert`, but the request carried neither (the native socket's Next / Previous with a stale item that already left the queue) | `FullSync`, then the trailing `CurrentClimbChanged` under the same sequence, at every percent. Today this request stores an orphan and publishes `CurrentClimbChanged` (`queue-navigation.ts:40-59`, `:103-111`), which is what repaints the wall from a locked phone. The trailing event keeps that repaint. Shipped clients already expect the insert: the old JS reducer puts a `CurrentClimbChanged`'s missing climb right after its current one (`sync-coordinator.ts:143-173` → `reducer.ts:289-299`), which is the Now slot, so today's orphan is itself a drift the `FullSync` removes. |
 | Anything else (`move-*`, `dedupe-*`, `next-from-line`, a trim, an orphan normalised) | `FullSync`, then `CurrentClimbChanged` for the new current climb under the **same sequence**, with the origin's `clientId` and `correlationId: null` |

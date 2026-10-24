@@ -27,6 +27,43 @@ export type { Climb, ClimbQueueItem, QueueItemUser, ClimbRegradePatch, ClimbAuth
 
 export { MAX_SYNCED_QUEUE_ITEMS } from './limits';
 
+// The Now slot (F3, #6666): the History / Now / Up next line in the flat queue
+// and the one rule for putting a climb on the wall. Shared by the backend
+// resolvers and the reducer. See docs/current-climb-outside-queue.md.
+export {
+  HISTORY_TRIM_AT,
+  HISTORY_KEEP_COUNT,
+  QUEUE_FULL,
+  historyLine,
+  upNextStart,
+  historyOf,
+  upNextOf,
+  isUpNextFull,
+  isSameWallClimb,
+  normaliseOrphanCurrent,
+  placeOnWall,
+  capHistory,
+  lineAfterDelta,
+  reorderAcrossLine,
+  clampInsertPosition,
+  normaliseHistoryCount,
+  chooseQueueEvent,
+} from './now-slot';
+export type {
+  NowSlotClimb,
+  NowSlotQueueItem,
+  NowSlotState,
+  NowSlotResolvedState,
+  CurrentClimbPlacement,
+  NowSlotRewrite,
+  NowSlotPlacement,
+  CappedHistory,
+  QueueLineDelta,
+  ReorderAcrossLine,
+  NowSlotRequest,
+  NowSlotQueueEvent,
+} from './now-slot';
+
 export {
   insertQueueItemIdempotent,
   evaluateQueueEventSequence,
