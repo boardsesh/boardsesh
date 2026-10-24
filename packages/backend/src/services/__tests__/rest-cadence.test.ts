@@ -168,8 +168,16 @@ describe('applyRestCadenceAction', () => {
     });
 
     it('clamps a late tick to a minute ago, so a replayed tick cannot fire an instant advance', () => {
-      expect(next(reduce(clock(), { action: 'TICK', tickStatus: 'send', elapsedMs: 3_600_000 }))?.anchorMs).toBe(
+      const longRest = clock({ anchorMs: NOW - 10 * 60_000 });
+      expect(next(reduce(longRest, { action: 'TICK', tickStatus: 'send', elapsedMs: 3_600_000 }))?.anchorMs).toBe(
         NOW - 60_000,
+      );
+    });
+
+    it('the first tick of a session anchors where the climber logged it', () => {
+      const waiting = clock({ anchorMs: null, lastFiredBeatMs: null });
+      expect(next(reduce(waiting, { action: 'TICK', tickStatus: 'send', elapsedMs: 4_000 }))?.anchorMs).toBe(
+        NOW - 4_000,
       );
     });
 
@@ -191,6 +199,107 @@ describe('applyRestCadenceAction', () => {
 
     it('never changes who set the clock', () => {
       expect(next(reduce(clock(), { action: 'TICK', tickStatus: 'send' }))?.setByParticipantId).toBe(PEER);
+    });
+
+    describe('a backdated tick never starts a rest before the running one or the last advance (#6724 review)', () => {
+      const SIXTY: RestCadenceConfig = { ...AFTER_TICK, targetSeconds: 60 };
+      const fireAt = (state: RestCadenceState, nowMs: number) =>
+        applyRestCadenceAction(state, { action: 'FIRE', expectedRevision: 1 }, nowMs, ME);
+      const at = (state: RestCadenceState, input: RestCadenceInput, nowMs: number) =>
+        next(applyRestCadenceAction(state, input, nowMs, ME))!;
+      // A 60 s rest whose deadline B is NOW.
+      const B = NOW;
+      const dueAtB = clock({ ...SIXTY, anchorMs: B - 60_000 });
+
+      it('a tick dated 55 s back, 2 s after an advance, waits a full rest from the advance', () => {
+        const advanced = next(fireAt(dueAtB, B))!;
+        const lateTick = at(advanced, { action: 'TICK', tickStatus: 'send', elapsedMs: 55_000 }, B + 2_000);
+        // Without the floor this anchored at B - 53 s, so the next advance fired at B + 7 s.
+        expect(lateTick.anchorMs).toBe(B);
+        for (const nowMs of [B + 5_000, B + 7_000, B + 60_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1]) {
+          expect(fireAt(lateTick, nowMs)).toEqual({ applicable: false });
+        }
+        expect(next(fireAt(lateTick, B + 60_000))?.lastFiredBeatMs).toBe(B + 60_000);
+      });
+
+      it("a crewmate's late tick on the previous climb keeps the rest the new climb's tick started", () => {
+        const advanced = next(fireAt(dueAtB, B))!;
+        const newClimb = at(advanced, { action: 'TICK', tickQueueItemUuid: 'item-2', tickStatus: 'send' }, B + 20_000);
+        expect(newClimb.anchorMs).toBe(B + 20_000);
+        // Logged at B - 5 s, it reaches the server at B + 30 s.
+        const previousClimb = at(
+          newClimb,
+          { action: 'TICK', tickQueueItemUuid: 'item-1', tickStatus: 'send', elapsedMs: 35_000 },
+          B + 30_000,
+        );
+        expect(previousClimb.anchorMs).toBe(B + 20_000);
+        expect(claimableRestCadenceBeatMs(previousClimb, B + 80_000)).toBe(B + 80_000);
+        expect(
+          claimableRestCadenceBeatMs(previousClimb, B + 80_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1),
+        ).toBeNull();
+      });
+
+      it('a fresh tick still restarts the rest from the tick', () => {
+        const ticked = at(dueAtB, { action: 'TICK', tickStatus: 'send', elapsedMs: 1_000 }, B - 30_000);
+        expect(ticked.anchorMs).toBe(B - 31_000);
+      });
+
+      it('never anchors in the future after an early FIRE stored a beat ahead of now', () => {
+        // The holder fired 2 s early: the advance anchored on B, 2 s ahead of the server clock.
+        const advanced = next(fireAt(dueAtB, B - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS))!;
+        expect(advanced).toMatchObject({ anchorMs: B, lastFiredBeatMs: B });
+        for (const elapsedMs of [0, 55_000]) {
+          const ticked = at(advanced, { action: 'TICK', tickStatus: 'send', elapsedMs }, B - 1_500);
+          expect(ticked.anchorMs).toBe(B - 1_500);
+        }
+      });
+
+      it('never anchors in the future after RESUME shifted the fired beat past now', () => {
+        // onTheMinute: an early FIRE on B, a PAUSE straight after (58 whole seconds frozen), RESUME 100 s later.
+        const fired = next(fireAt(clock({ ...ON_THE_MINUTE, anchorMs: B - 60_000 }), B - 2_000))!;
+        const paused = at(fired, { action: 'PAUSE' }, B - 1_900);
+        const resumed = at(paused, { action: 'RESUME' }, B + 100_000);
+        expect(resumed).toMatchObject({ anchorMs: B + 42_000, lastFiredBeatMs: B + 102_000 });
+        // A stage boundary that waits for a tick, then the tick: it fills the anchor with the floored value.
+        const waiting = at(resumed, { action: 'CONFIGURE', config: ON_THE_MINUTE, anchor: 'CLEAR' }, B + 100_100);
+        const ticked = at(waiting, { action: 'TICK', tickStatus: 'send', elapsedMs: 20_000 }, B + 100_500);
+        expect(ticked.anchorMs).toBe(B + 100_500);
+        // Its first beat is a full interval later, after the fired one.
+        expect(next(fireAt(ticked, B + 160_500))?.lastFiredBeatMs).toBe(B + 160_500);
+      });
+
+      it('onTheMinute fills an empty anchor no earlier than the last advance', () => {
+        const waiting = clock({ ...ON_THE_MINUTE, anchorMs: null, lastFiredBeatMs: B });
+        expect(at(waiting, { action: 'TICK', tickStatus: 'send', elapsedMs: 55_000 }, B + 2_000).anchorMs).toBe(B);
+        // A beat it already holds is never moved.
+        const holding = clock({ ...ON_THE_MINUTE, anchorMs: B - 60_000, lastFiredBeatMs: B });
+        expect(at(holding, { action: 'TICK', tickStatus: 'send' }, B + 2_000).anchorMs).toBe(B - 60_000);
+      });
+
+      it.each(['tick', 'send'] as const)(
+        'afterTick + %s: a late tick on the previous climb after an advance starts a full rest from the advance',
+        (advanceOn) => {
+          const staged = clock({
+            ...SIXTY,
+            advanceOn,
+            anchorMs: B - 60_000,
+            lastTick: { queueItemUuid: 'item-1', status: 'send' },
+          });
+          const advanced = next(fireAt(staged, B))!;
+          expect(advanced).toMatchObject({ anchorMs: null, lastTick: null, lastFiredBeatMs: B });
+          const lateTick = at(
+            advanced,
+            { action: 'TICK', tickQueueItemUuid: 'item-1', tickStatus: 'send', elapsedMs: 55_000 },
+            B + 2_000,
+          );
+          expect(lateTick.anchorMs).toBe(B);
+          expect(fireAt(lateTick, B + 7_000)).toEqual({ applicable: false });
+          expect(fireAt(lateTick, B + 60_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1)).toEqual({
+            applicable: false,
+          });
+          expect(next(fireAt(lateTick, B + 60_000))?.lastFiredBeatMs).toBe(B + 60_000);
+        },
+      );
     });
   });
 
@@ -350,7 +459,7 @@ describe('applyRestCadenceAction', () => {
         expect(next(fire(fired, 0, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS))?.lastFiredBeatMs).toBe(nextBeat);
       });
 
-      it('afterTick refuses a deadline at or before the last beat it fired, such as a tick dated before that advance', () => {
+      it('afterTick refuses a deadline at or before the last beat it fired, such as a CONFIGURE NOW dated before that advance', () => {
         expect(fire(due({ anchorMs: NOW - 95_000, lastFiredBeatMs: NOW - 5_000 }))).toEqual({ applicable: false });
         expect(next(fire(due({ anchorMs: NOW - 95_000, lastFiredBeatMs: NOW - 5_001 })))?.lastFiredBeatMs).toBe(
           NOW - 5_000,
@@ -487,16 +596,16 @@ describe('applyRestCadenceAction', () => {
         expect(next(fireAt(resumed, NOW + 20_000))?.lastFiredBeatMs).toBe(NOW + 20_000);
       });
 
-      it('RESET forgets the fired beat and the last tick, like ARM', () => {
+      it('RESET clears the last tick and keeps the fired beat, as the phone does', () => {
         const previous = clock({ lastFiredBeatMs: NOW - 1_000, lastTick: { queueItemUuid: 'item-1', status: 'send' } });
         expect(next(reduce(previous, { action: 'RESET' }))).toMatchObject({
           anchorMs: NOW,
-          lastFiredBeatMs: null,
+          lastFiredBeatMs: NOW - 1_000,
           lastTick: null,
         });
         expect(next(reduce(previous, { action: 'RESET', isRunning: false }))).toMatchObject({
           anchorMs: null,
-          lastFiredBeatMs: null,
+          lastFiredBeatMs: NOW - 1_000,
           lastTick: null,
         });
       });
@@ -509,7 +618,7 @@ describe('applyRestCadenceAction', () => {
         const fired = next(fireAt(dueNow, NOW - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS))!;
         expect(fired.lastFiredBeatMs).toBe(NOW);
         const reset = at(fired, { action: 'RESET' }, NOW - 1_500);
-        expect(reset.lastFiredBeatMs).toBeNull();
+        expect(reset.lastFiredBeatMs).toBe(NOW);
 
         for (const nowMs of [NOW - 1_500, NOW, NOW + 3_000, NOW + 20_000]) {
           expect(fireAt(reset, nowMs)).toEqual({ applicable: false });
@@ -517,6 +626,20 @@ describe('applyRestCadenceAction', () => {
         // The first beat after the RESET is a full interval after it.
         const intervalMs = (dueNow.targetSeconds ?? 0) * 1000;
         expect(next(fireAt(reset, NOW - 1_500 + intervalMs))?.lastFiredBeatMs).toBe(NOW - 1_500 + intervalMs);
+      });
+
+      it('a backdated TICK after a RESET cannot re-anchor onto the beat an early FIRE claimed before it', () => {
+        // An early FIRE claims B = NOW at NOW - 2 s, a RESET lands at NOW - 1.5 s, and a tick
+        // dated 59 s back lands at NOW - 1 s. Clearing the fired beat on RESET let this anchor at
+        // NOW - 60 s and the FIRE at NOW apply a second time.
+        const due = clock({ ...AFTER_TICK, targetSeconds: 60, anchorMs: NOW - 60_000 });
+        const fired = next(fireAt(due, NOW - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS))!;
+        const reset = at(fired, { action: 'RESET' }, NOW - 1_500);
+        const ticked = at(reset, { action: 'TICK', tickStatus: 'send', elapsedMs: 59_000 }, NOW - 1_000);
+        expect(ticked).toMatchObject({ lastFiredBeatMs: NOW, anchorMs: NOW - 1_000 });
+        expect(fireAt(ticked, NOW)).toEqual({ applicable: false });
+        expect(fireAt(ticked, NOW + 3_000)).toEqual({ applicable: false });
+        expect(next(fireAt(ticked, NOW + 59_000))?.lastFiredBeatMs).toBe(NOW + 59_000);
       });
 
       it.each(['tick', 'send'] as const)(

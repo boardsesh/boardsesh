@@ -323,6 +323,24 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
       { nowMs: NOW + 761_000, input: { action: 'FIRE' } },
       { nowMs: NOW + 762_000, input: { action: 'TICK', tickQueueItemUuid: 'item-2', tickStatus: 'flash' } },
       { nowMs: NOW + 822_000, input: { action: 'FIRE' } },
+      // #6724 review. A 60 s rest due at NOW + 900 s; an early FIRE claims it, a RESET follows, then a
+      // tick dated 59 s back: RESET keeps the fired beat, and the tick anchors no later than now.
+      {
+        nowMs: NOW + 900_000,
+        input: { action: 'ARM', config: { ...onTheMinute, mode: 'afterTick' }, elapsedMs: 60_000 },
+      },
+      { nowMs: NOW + 900_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS, input: { action: 'FIRE' } },
+      { nowMs: NOW + 898_500, input: { action: 'RESET' } },
+      { nowMs: NOW + 899_000, input: { action: 'TICK', tickStatus: 'send', elapsedMs: 59_000 } },
+      { nowMs: NOW + 900_000, input: { action: 'FIRE' } },
+      // An on-time FIRE, then a tick dated 55 s back 2 s later: it waits a full rest from the advance.
+      { nowMs: NOW + 959_000, input: { action: 'FIRE' } },
+      {
+        nowMs: NOW + 961_000,
+        input: { action: 'TICK', tickQueueItemUuid: 'item-3', tickStatus: 'send', elapsedMs: 55_000 },
+      },
+      { nowMs: NOW + 966_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 1_019_000, input: { action: 'FIRE' } },
     ];
     /** Run every step, fencing each FIRE on the revision the manager holds at that moment. */
     const run = async (manager: RoomManager) => {
@@ -370,6 +388,39 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
         false,
         true,
         true,
+        // ARM, early FIRE, RESET, backdated TICK, FIRE on the beat already claimed.
+        true,
+        true,
+        true,
+        true,
+        false,
+        // On-time FIRE, backdated TICK, FIRE where that tick would have put the deadline, the full rest.
+        true,
+        true,
+        false,
+        true,
+      ]);
+      expect(redisOutcomes.slice(-9).map((commit) => commit.stored.cadence?.anchorMs ?? null)).toEqual([
+        NOW + 840_000,
+        NOW + 900_000,
+        NOW + 898_500,
+        NOW + 899_000,
+        NOW + 899_000,
+        NOW + 959_000,
+        NOW + 959_000,
+        NOW + 959_000,
+        NOW + 1_019_000,
+      ]);
+      expect(redisOutcomes.slice(-9).map((commit) => commit.stored.cadence?.lastFiredBeatMs ?? null)).toEqual([
+        null,
+        NOW + 900_000,
+        NOW + 900_000,
+        NOW + 900_000,
+        NOW + 900_000,
+        NOW + 959_000,
+        NOW + 959_000,
+        NOW + 959_000,
+        NOW + 1_019_000,
       ]);
       expect(redisOutcomes.map((commit) => commit.stored.cadence?.lastFiredBeatMs ?? null)).toContain(NOW + 250_000);
       expect(memoryOutcomes).toEqual(redisOutcomes);
