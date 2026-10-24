@@ -617,6 +617,9 @@
       "preGeneratorMainSetVariability": "Grad-Streuung",
       "preGeneratorNumberOfSteps": "Stufen",
       "preGeneratorClimbsPerStep": "Boulder pro Stufe",
+      "preGeneratorHardestFirst": "Schwerste zuerst",
+      "preGeneratorHardestFirstDescription": "Starte bei deiner Top-Schwierigkeit und arbeite dich runter.",
+      "preGeneratorBlockSummaryHardestFirst": "schwerste zuerst",
       "preGeneratorNumberOfClimbs": "Boulder",
       "preGeneratorClimbsPerRound": "Boulder pro Runde",
       "preGeneratorRounds": "Runden",
@@ -811,8 +814,9 @@
       "changeAngle": "Winkel ändern"
     },
     "track": {
-      "from": "Aus {{name}}",
-      "fromPosition": "Aus {{name}} · {{position}} von {{total}}",
+      "position": "{{position}} von {{total}}",
+      "playingFromAria": "Liste: {{name}}",
+      "playingFromPositionAria": "Liste: {{name}}, {{position}} von {{total}}",
       "searchResults": "Suchergebnisse",
       "setterClimbs": "Boulder von {{name}}",
       "end": {

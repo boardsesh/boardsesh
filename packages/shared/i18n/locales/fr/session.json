@@ -617,6 +617,9 @@
       "preGeneratorMainSetVariability": "Écart de cotation",
       "preGeneratorNumberOfSteps": "Paliers",
       "preGeneratorClimbsPerStep": "Blocs par palier",
+      "preGeneratorHardestFirst": "Le plus dur d'abord",
+      "preGeneratorHardestFirstDescription": "Commence à ton niveau max et descends palier par palier.",
+      "preGeneratorBlockSummaryHardestFirst": "le plus dur d'abord",
       "preGeneratorNumberOfClimbs": "Blocs",
       "preGeneratorClimbsPerRound": "Blocs par tour",
       "preGeneratorRounds": "Tours",
@@ -811,8 +814,9 @@
       "changeAngle": "Changer l’inclinaison"
     },
     "track": {
-      "from": "Depuis {{name}}",
-      "fromPosition": "Depuis {{name}} · {{position}} sur {{total}}",
+      "position": "{{position}} sur {{total}}",
+      "playingFromAria": "Liste : {{name}}",
+      "playingFromPositionAria": "Liste : {{name}}, {{position}} sur {{total}}",
       "searchResults": "Résultats de recherche",
       "setterClimbs": "Blocs de {{name}}",
       "end": {

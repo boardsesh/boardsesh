@@ -165,6 +165,7 @@ card's type chips turn any block into a warm-up or another workout type. A worko
 holds its target grade and counts; a warm-up card holds its length and names the block
 it ramps to, or says nothing follows it. Any block can move up or down or be removed. The cap is five
 blocks, warm-ups included (`MAX_WORKOUT_BLOCKS` in `workout-blocks.ts`).
+A ladder block has a "Hardest first" switch (`descending` on `LadderOptions`): the steps run from the target grade down, the first step is the peak and the rest are decreasing, and a warm-up before it still ramps to the target grade.
 
 Every block, warm-ups included, has its own climb filters, in a folded "Climb filters"
 disclosure under the block's fields (`WorkoutBlockFilters`, rendered by

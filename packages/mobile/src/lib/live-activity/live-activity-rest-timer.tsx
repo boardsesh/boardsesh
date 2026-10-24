@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { useSetting } from '../../settings';
 import { nowMs } from '../clock';
@@ -37,8 +38,9 @@ type UseLiveActivityRestTimerOptions = {
 export function useLiveActivityRestTimer({ sessionId, activityStartCount }: UseLiveActivityRestTimerOptions): void {
   const { t } = useTranslation('session');
   const restState = useRestTimerState();
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
-  const [mode] = useSetting('restTimerMode');
+  // The rest the timer actually runs on (settings today; a workout stage or the
+  // crew clock once those feed the resolver), so the Lock Screen matches the pill.
+  const { targetSeconds, mode } = useEffectiveRestPacing();
   const [showOnLockScreen] = useSetting('restTimerShowOnLockScreen');
   // Bumped by the deadline timeout and by app-state changes: both mean "the
   // clock moved, look again", which no store event would say.

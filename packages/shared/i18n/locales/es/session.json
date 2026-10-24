@@ -617,6 +617,9 @@
       "preGeneratorMainSetVariability": "Rango de grado",
       "preGeneratorNumberOfSteps": "Pasos",
       "preGeneratorClimbsPerStep": "Bloques por paso",
+      "preGeneratorHardestFirst": "Primero lo más difícil",
+      "preGeneratorHardestFirstDescription": "Empieza en tu grado máximo y baja paso a paso.",
+      "preGeneratorBlockSummaryHardestFirst": "primero lo más difícil",
       "preGeneratorNumberOfClimbs": "Bloques",
       "preGeneratorClimbsPerRound": "Bloques por ronda",
       "preGeneratorRounds": "Rondas",
@@ -811,8 +814,9 @@
       "changeAngle": "Cambiar ángulo"
     },
     "track": {
-      "from": "Desde {{name}}",
-      "fromPosition": "Desde {{name}} · {{position}} de {{total}}",
+      "position": "{{position}} de {{total}}",
+      "playingFromAria": "Lista: {{name}}",
+      "playingFromPositionAria": "Lista: {{name}}, {{position}} de {{total}}",
       "searchResults": "Resultados de búsqueda",
       "setterClimbs": "Bloques de {{name}}",
       "end": {

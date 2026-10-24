@@ -306,6 +306,9 @@
         },
         "developer": {
           "title": "Desarrollo"
+        },
+        "timers": {
+          "title": "Temporizadores"
         }
       },
       "development": "Desarrollo",
@@ -846,6 +849,27 @@
         "title": "Vista del bloque",
         "valueDefault": "Predeterminada",
         "valueCustom": "Personalizada"
+      },
+      "timers": {
+        "restTitle": "Descanso",
+        "restLength": "Descanso",
+        "restLengthOff": "Desactivado",
+        "modeLabel": "Cadencia",
+        "modeAfterTick": "Tras cada bloque",
+        "modeEvery": "Cada {{length}}",
+        "modeOnTheMinute": "Ritmo fijo",
+        "modeAfterTickHint": "Tu descanso vuelve a empezar cada vez que registras un intento o un encadene.",
+        "modeOnTheMinuteHint": "Ventanas fijas desde que lo activas. Registrar intentos o encadenes nunca reinicia el reloj.",
+        "autoAdvance": "Pasar al siguiente bloque",
+        "autoAdvanceHint": "Lo enciende en el plafón por ti, solo con Boardsesh abierto.",
+        "autoAdvanceBlocked": "Solo quien controla el plafón puede mover la cola.",
+        "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
+        "cuesTitle": "Avisos",
+        "cuesFooter": "Desactivados, sigues recibiendo una vibración de aviso antes de que el plafón avance solo.",
+        "countdownCues": "Cuenta atrás de los últimos segundos",
+        "countdownCuesHint": "Una vibración en cada uno de los últimos segundos, para que estés en las presas cuando se encienda el siguiente bloque.",
+        "sound": "Sonido",
+        "soundHint": "Reproduce un tono con los avisos. Suena aunque el móvil esté en silencio y no corta tu música."
       }
     },
     "sendRecovery": {

@@ -2,11 +2,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 import {
   parseLaunchedPid,
   parseReleaseLaunchArgs,
   reportMatchesReleaseLaunch,
   runReleaseLaunchSmoke,
+  workflowWarning,
   type ReleaseLaunchDependencies,
   type ReleaseLaunchSummary,
   type SmokeCommandResult,
@@ -126,6 +128,12 @@ function modernReport(reportPid = pid, reportDevice?: string): string {
 }
 
 describe('Release launch CLI and PID parsing', () => {
+  it('escapes a warning so it stays one GitHub Actions annotation', () => {
+    expect(workflowWarning('launchctl list: 100% stuck\r\n::error::forged')).toBe(
+      '::warning title=iOS Release launch smoke::launchctl list: 100%25 stuck%0D%0A::error::forged',
+    );
+  });
+
   it('requires explicit app, simulator UDID and evidence directory', () => {
     expect(
       parseReleaseLaunchArgs(['--app', '/Release/Boardsesh.app', '--device', device, '--evidence-dir', '/evidence']),
@@ -244,7 +252,8 @@ describe('Release simulator launch smoke', () => {
       bundleIdentifier,
     ]);
     expect(smoke.events.slice(-6)).toEqual(['preserve', 'spawn', 'spawn', 'terminate', 'preserved-passed', 'release']);
-    expect(smoke.commandCalls.every((call) => call.timeoutMs > 0 && call.timeoutMs <= 180_000)).toBe(true);
+    expect(smoke.commandCalls.every((call) => call.timeoutMs > 0 && call.timeoutMs <= 300_000)).toBe(true);
+    expect(smoke.summary().diagnosticWarnings).toBeUndefined();
     expect(smoke.commandCalls.find((call) => call.args[1] === 'install')?.args).toEqual([
       'simctl',
       'install',
@@ -371,12 +380,112 @@ describe('Release simulator launch smoke', () => {
     expect(smoke.summary().status).toBe('failed');
   });
 
-  it('fails unavailable process/log evidence and retains a failed summary', async () => {
+  it('keeps a measured pass when process/log evidence times out, and records a warning', async () => {
+    // Runs 40105247401 and 40116242780: the PID lived 20 s with no crash report, then
+    // `launchctl list` hit its limit and that alone failed the job.
     const smoke = fixture();
     smoke.controls.timeoutAction = 'spawn';
-    await expect(smoke.run()).rejects.toThrow(/Diagnostic collection failed/);
-    expect(smoke.summary().status).toBe('failed');
+    const warnings = [
+      'Diagnostic collection failed: launchctl list: spawnSync ETIMEDOUT',
+      'Diagnostic collection failed: log show: spawnSync ETIMEDOUT',
+    ];
+    await expect(smoke.run()).resolves.toMatchObject({ status: 'passed', diagnosticWarnings: warnings });
+    expect(smoke.summary()).toMatchObject({ status: 'passed', crashReports: [], diagnosticWarnings: warnings });
+    expect(smoke.summary().error).toBeUndefined();
+    expect(smoke.events.slice(-3)).toEqual(['terminate', 'preserved-passed', 'release']);
     expect(smoke.release).toHaveBeenCalledOnce();
+  });
+
+  it('names a failed diagnostic by its stderr or exit status', async () => {
+    const smoke = fixture();
+    smoke.controls.failAction = 'spawn';
+    await expect(smoke.run()).resolves.toMatchObject({
+      status: 'passed',
+      diagnosticWarnings: [
+        'Diagnostic collection failed: launchctl list: spawn fixture failure',
+        'Diagnostic collection failed: log show: spawn fixture failure',
+      ],
+    });
+    const silent = fixture();
+    const { run } = silent.dependencies;
+    silent.dependencies.run = (command, args, timeoutMs) =>
+      args[1] === 'spawn' ? { status: 3, stdout: '', stderr: '' } : run(command, args, timeoutMs);
+    await expect(silent.run()).resolves.toMatchObject({
+      diagnosticWarnings: expect.arrayContaining([expect.stringMatching(/launchctl list: exit status 3$/)]),
+    });
+    const noisy = fixture();
+    const noisyRun = noisy.dependencies.run;
+    noisy.dependencies.run = (command, args, timeoutMs) =>
+      args[1] === 'spawn' ? { status: 1, stdout: '', stderr: 'x'.repeat(5_000) } : noisyRun(command, args, timeoutMs);
+    const { diagnosticWarnings } = await noisy.run();
+    expect(diagnosticWarnings?.[0]).toBe(`Diagnostic collection failed: launchctl list: ${'x'.repeat(300)}…`);
+  });
+
+  it('gives each diagnostic 60 s and the install 300 s', async () => {
+    const smoke = fixture();
+    await smoke.run();
+    const timeouts = new Map(
+      smoke.commandCalls.map((call) => [
+        call.args.slice(call.args[1] === 'spawn' ? 3 : 1, 5).join(' '),
+        call.timeoutMs,
+      ]),
+    );
+    expect(timeouts.get('launchctl list')).toBe(60_000);
+    expect(timeouts.get('log show')).toBe(60_000);
+    expect(timeouts.get(`install ${device} ${smoke.options.appPath}`)).toBe(300_000);
+  });
+
+  it('fits every command bound and the survival window inside the workflow step timeout', async () => {
+    const smoke = fixture();
+    await smoke.run();
+    const workflow = parse(
+      readFileSync(join(import.meta.dirname, '../../.github/workflows/ios-rn-ci.yml'), 'utf8'),
+    ) as { jobs: Record<string, { steps: { name?: string; 'timeout-minutes'?: number }[] }> };
+    const step = workflow.jobs['build-and-test'].steps.find(
+      (candidate) => candidate.name === 'Launch the Release app and watch for crashes',
+    );
+    const worstCaseMs = smoke.commandCalls.reduce((total, call) => total + call.timeoutMs, 20_000);
+    // A cancelled step loses its summary, so keep a few minutes for tsx startup and polling overhead.
+    expect(worstCaseMs + 3 * 60_000).toBeLessThanOrEqual((step?.['timeout-minutes'] ?? 0) * 60_000);
+  });
+
+  it.each([
+    ['exits', { deadAt: 5_000 }, /Original app PID 12345 exited after 5000ms/],
+    ['writes a fresh crash report', { crash: true }, /Fresh crash report/],
+  ] as const)('still fails when the PID %s and diagnostics also time out', async (_label, failure, message) => {
+    const smoke = fixture();
+    smoke.controls.timeoutAction = 'spawn';
+    if ('deadAt' in failure) smoke.controls.deadAt = failure.deadAt;
+    if ('crash' in failure) {
+      const report = { path: '/host/DiagnosticReports/Boardsesh-new.ips', modifiedMs: 1, bytes: 100 };
+      smoke.controls.currentReports = () => [report];
+      smoke.controls.reportContents.set(report.path, modernReport());
+    }
+    await expect(smoke.run()).rejects.toThrow(message);
+    expect(smoke.summary().status).toBe('failed');
+    expect(smoke.summary().error).toMatch(message);
+    expect(smoke.summary().diagnosticWarnings).toHaveLength(2);
+    expect(smoke.release).toHaveBeenCalledOnce();
+  });
+
+  it('records how long each simulator command took', async () => {
+    const smoke = fixture();
+    const { now, run } = smoke.dependencies;
+    let commandTimeMs = 0;
+    smoke.dependencies.now = () => now() + commandTimeMs;
+    smoke.dependencies.run = (command, args, timeoutMs) => {
+      if (args[1] === 'install') commandTimeMs += 90_000;
+      if (args[3] === 'launchctl') commandTimeMs += 45_000;
+      return run(command, args, timeoutMs);
+    };
+    await smoke.run();
+    const commands = readFileSync(join(smoke.options.evidenceDir, 'commands.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { args: string[]; durationMs: number });
+    expect(commands.find((entry) => entry.args[1] === 'install')?.durationMs).toBe(90_000);
+    expect(commands.find((entry) => entry.args[3] === 'launchctl')?.durationMs).toBe(45_000);
+    expect(commands.find((entry) => entry.args[1] === 'launch')?.durationMs).toBe(0);
   });
 
   it('keeps the original launch failure when cleanup also fails', async () => {

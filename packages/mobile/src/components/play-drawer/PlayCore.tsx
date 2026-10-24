@@ -52,7 +52,9 @@ import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
-import { formatTrackLabel } from './track-label-text';
+import { formatTrackLabelParts } from './track-label-text';
+import { PlayListContext } from './PlayListContext';
+import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
@@ -713,8 +715,6 @@ export function PlayCore({
     navigationSuggestionSource,
     navigationState,
     currentTrackLabel,
-    nextTrackLabel,
-    previousTrackLabel,
     trackEndCard,
     nextHeaderClimb,
     previousHeaderClimb,
@@ -738,14 +738,29 @@ export function PlayCore({
     enhancementsReady,
   });
 
-  // The header names the list the player is walking (#6664): "From Projects ·
-  // 4 of 23". Each neighbour has its own (see `nextTrackLabelText` below), for
-  // the same reason as the workout label.
+  // The top bar names the list the player is walking (#6664): "Projects · 4 of
+  // 23". Not the header's stats line, where it pushed the sends and stars off
+  // the end.
   const trackLocale = i18n.language;
-  const currentTrackLabelText = useMemo(
-    () => formatTrackLabel(currentTrackLabel, t, trackLocale),
+  const currentTrackParts = useMemo(
+    () => formatTrackLabelParts(currentTrackLabel, t, trackLocale),
     [currentTrackLabel, t, trackLocale],
   );
+  // The list label sits between ⌄ and the timer + ⋯ cluster, so it needs the
+  // cluster's width, which grows when the rest timer comes up. Null until the
+  // cluster has laid out (see `resolveTopListContextFrame`).
+  const [topTrailingContentWidth, setTopTrailingContentWidth] = useState<number | null>(null);
+  const handleTopTrailingLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = Math.ceil(event.nativeEvent.layout.width);
+    setTopTrailingContentWidth((previous) => (previous === measured ? previous : measured));
+  }, []);
+  const topListContextFrame = resolveTopListContextFrame({
+    isPane,
+    chromeButtonSize,
+    trailingContentWidth: topTrailingContentWidth,
+    hasMenu: !isAnonymous,
+    gap: spacing[2],
+  });
   // More of a long list arrives as the climber nears the end of what is loaded.
   const getCommittedSuggestionSource = useCallback(
     () => getQueueSnapshot().playlistSuggestionSource,
@@ -906,20 +921,6 @@ export function PlayCore({
     lightOnSwipe,
     inSharedSession: browseByDefault,
   });
-  // The neighbours' "From Projects · 5 of 23", so a swipe slides the right one
-  // in. Not where the swipe opens a preview off the committed climb (a crew
-  // here, or Light on swipe off): that preview has no list of its own (#5403,
-  // a preview walks only the track it was opened with), so its header names
-  // none, and the climb sliding in must not promise one.
-  const swipeOpensTracklessPreview = !isPreview && !navigationCommits;
-  const nextTrackLabelText = useMemo(
-    () => (swipeOpensTracklessPreview ? null : formatTrackLabel(nextTrackLabel, t, trackLocale)),
-    [swipeOpensTracklessPreview, nextTrackLabel, t, trackLocale],
-  );
-  const previousTrackLabelText = useMemo(
-    () => (swipeOpensTracklessPreview ? null : formatTrackLabel(previousTrackLabel, t, trackLocale)),
-    [swipeOpensTracklessPreview, previousTrackLabel, t, trackLocale],
-  );
   // --- Busy-wall confirm -----------------------------------------------------
   //
   // Someone else lit a climb while you were browsing. Taking the wall silently
@@ -1535,7 +1536,6 @@ export function PlayCore({
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
     workoutStageLabel,
-    trackLabel: currentTrackLabelText,
   });
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
@@ -1869,7 +1869,7 @@ export function PlayCore({
                           close chevron; the route keeps both. */}
                         {!isPane ? (
                           <>
-                            <View style={sheetStyles.indicator} />
+                            <View style={[sheetStyles.indicator, styles.grabber]} />
                             {/* A chevron, not an xmark: the player minimises, it isn't closed. */}
                             <ChromeIconButton
                               icon="chevron.down"
@@ -1878,6 +1878,24 @@ export function PlayCore({
                               style={styles.closeButton}
                             />
                           </>
+                        ) : null}
+                        {/* The list the player walks (#6664), under the grabber. Takes no
+                          touches of its own, but keeps them (no pointerEvents="none"),
+                          which on Android would hide it from TalkBack's explore by touch. */}
+                        {currentTrackParts ? (
+                          <View
+                            style={[
+                              styles.topListContext,
+                              {
+                                height: chromeButtonSize,
+                                left: topListContextFrame.left,
+                                right: topListContextFrame.right,
+                              },
+                              topListContextFrame.measured ? null : styles.topListContextUnmeasured,
+                            ]}
+                          >
+                            <PlayListContext parts={currentTrackParts} testID="play-drawer-track-label" />
+                          </View>
                         ) : null}
                         {/* Mirrored across the grabber from the close chevron: the rest
                           timer (#5378), then ⋯. The timer has its own host — and so its
@@ -1888,41 +1906,43 @@ export function PlayCore({
                           the commit bar and the switch-board scrim, so ⋯ stays in reach
                           while browsing and on another board's climb. */}
                         <View style={[styles.topTrailing, { height: chromeButtonSize }]} pointerEvents="box-none">
-                          <View style={styles.restTimerSlot}>
-                            <RestTimerPillHost compact />
-                          </View>
-                          {/* Every row is an account action, and the signed-out reader's
+                          <View style={styles.topTrailingContent} onLayout={handleTopTrailingLayout}>
+                            <View style={styles.restTimerSlot}>
+                              <RestTimerPillHost compact />
+                            </View>
+                            {/* Every row is an account action, and the signed-out reader's
                             gate bounces most of their targets to login. Mounted a frame
                             after the board, like the rest of the drawer's reads; the
                             placeholder holds its place so the timer never jumps. */}
-                          {isAnonymous ? null : (
-                            <View style={styles.menuSlot}>
-                              {enhancementsReady ? (
-                                <PlayDrawerActionsMenu
-                                  climb={displayedClimb}
-                                  boardConfig={renderBoardConfig}
-                                  queueItemUuid={displayedQueueSlotUuid}
-                                  isAuthenticated={isAuthenticated}
-                                  hidden={actionBarLayout.hidden}
-                                  boardMismatch={showBoardMismatch}
-                                  isFavorited={isFavorited}
-                                  isMirrored={isMirrored}
-                                  onToggleFavorite={handleToggleFavoriteFromMenu}
-                                  onToggleMirror={handleMirror}
-                                  onOpenAngle={isAngleAdjustable ? handleOpenAngleSelector : undefined}
-                                  onTick={handleOpenTickForClimb}
-                                  onAddBetaVideo={handleOpenAddBetaVideoForClimb}
-                                  onReportClimb={handleOpenReportClimbForClimb}
-                                  onSelectPlaylist={handleOpenAddToPlaylistForClimb}
-                                  onOpenQueue={onOpenQueue}
-                                  onOpenViewOptions={handleOpenSectionsSettings}
-                                  dismissPlayerAndWait={dismissPlayerAndWait}
-                                />
-                              ) : (
-                                <View style={styles.menuPlaceholder} />
-                              )}
-                            </View>
-                          )}
+                            {isAnonymous ? null : (
+                              <View style={styles.menuSlot}>
+                                {enhancementsReady ? (
+                                  <PlayDrawerActionsMenu
+                                    climb={displayedClimb}
+                                    boardConfig={renderBoardConfig}
+                                    queueItemUuid={displayedQueueSlotUuid}
+                                    isAuthenticated={isAuthenticated}
+                                    hidden={actionBarLayout.hidden}
+                                    boardMismatch={showBoardMismatch}
+                                    isFavorited={isFavorited}
+                                    isMirrored={isMirrored}
+                                    onToggleFavorite={handleToggleFavoriteFromMenu}
+                                    onToggleMirror={handleMirror}
+                                    onOpenAngle={isAngleAdjustable ? handleOpenAngleSelector : undefined}
+                                    onTick={handleOpenTickForClimb}
+                                    onAddBetaVideo={handleOpenAddBetaVideoForClimb}
+                                    onReportClimb={handleOpenReportClimbForClimb}
+                                    onSelectPlaylist={handleOpenAddToPlaylistForClimb}
+                                    onOpenQueue={onOpenQueue}
+                                    onOpenViewOptions={handleOpenSectionsSettings}
+                                    dismissPlayerAndWait={dismissPlayerAndWait}
+                                  />
+                                ) : (
+                                  <View style={styles.menuPlaceholder} />
+                                )}
+                              </View>
+                            )}
+                          </View>
                         </View>
                       </View>
 
@@ -1971,7 +1991,6 @@ export function PlayCore({
                                 layoutId={previousHeaderBoard.layoutId}
                                 angle={previousHeaderBoard.angle}
                                 workoutStageLabel={previousWorkoutStageLabel}
-                                trackLabel={previousTrackLabelText}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -1988,7 +2007,6 @@ export function PlayCore({
                                 layoutId={nextHeaderBoard.layoutId}
                                 angle={nextHeaderBoard.angle}
                                 workoutStageLabel={nextWorkoutStageLabel}
-                                trackLabel={nextTrackLabelText}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -2233,7 +2251,32 @@ const styles = StyleSheet.create({
   firstScreenContent: {
     flex: 1,
   },
-  // Centers the grabber; the close button overlays the left edge.
+  // At the top of the row, as on a system sheet, so the list label can sit
+  // under it on the buttons' centre line.
+  grabber: {
+    position: 'absolute',
+    top: 5,
+  },
+  // Spans the room ⌄ and the timer + ⋯ cluster leave (insets set inline), and
+  // centres the label on the buttons' centre line.
+  topListContext: {
+    position: 'absolute',
+    top: 0,
+    justifyContent: 'center',
+  },
+  topListContextUnmeasured: {
+    opacity: 0,
+  },
+  // Hugs the timer and ⋯ so its width says how much of the row they use; it
+  // shrinks with the timer, so a long time still never crosses the grabber.
+  topTrailingContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  // Lines the close button, ⋯ and the list label up on one centre line; the
+  // grabber sits at its top and the close button overlays the left edge.
   topRow: {
     height: 44,
     alignItems: 'center',

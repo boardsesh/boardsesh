@@ -47,6 +47,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
   general: 'cog-outline',
   climbs: 'format-list-bulleted',
   home: 'home-outline',
+  timers: 'timer-outline',
   earlyAccess: 'flask-outline',
   developer: 'wrench-outline',
   export: 'export-variant',

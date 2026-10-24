@@ -41,7 +41,12 @@ import {
   canViewUserActivity,
   climbDraftVisibilityCondition,
 } from '../../../services/privacy';
-import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
+import {
+  toConfidenceTier,
+  notAuroraTwinDuplicate,
+  withSerialPlan,
+  realBenchmarkCondition,
+} from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard } from '@boardsesh/board-config';
@@ -83,9 +88,11 @@ import type { GraphQLResolveInfo } from 'graphql';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
 // counts as benchmark when the stats row says so or the tick itself was
-// imported as one.
+// imported as one. The stats side goes through realBenchmarkCondition, so a NaN
+// benchmark_difficulty (tens of thousands of Kilter rows) is not a benchmark
+// here either (#6232).
 const resolvedBenchmarkExpr = sql<boolean>`CASE
-  WHEN COALESCE(${dbSchema.boardClimbStats.benchmarkDifficulty}, 0) > 0 OR ${dbSchema.boardseshTicks.isBenchmark} = true THEN true
+  WHEN ${realBenchmarkCondition(dbSchema.boardClimbStats.benchmarkDifficulty)} OR ${dbSchema.boardseshTicks.isBenchmark} = true THEN true
   ELSE false
 END`;
 

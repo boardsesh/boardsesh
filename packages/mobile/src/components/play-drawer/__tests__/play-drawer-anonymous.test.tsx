@@ -56,6 +56,7 @@ const recorded = vi.hoisted(() => ({
   actionsMenu: [] as Props[],
   liveHeader: [] as Props[],
   trackEndCard: [] as Props[],
+  listContext: [] as Props[],
   swipeableHeader: [] as { next?: ReactNode; previous?: ReactNode }[],
   panePlaceholder: 0,
 }));
@@ -286,6 +287,13 @@ vi.mock('../TrackEndCard', () => ({
   TrackEndCard: (props: Props) => {
     recorded.trackEndCard.push(props);
     return createElement('div', { 'data-testid': 'track-end-card' });
+  },
+}));
+// Recorded: the top bar's "Projects · 4 of 23" (#6664) is a join this file pins.
+vi.mock('../PlayListContext', () => ({
+  PlayListContext: (props: Props) => {
+    recorded.listContext.push(props);
+    return createElement('div', { 'data-testid': 'play-drawer-track-label' });
   },
 }));
 vi.mock('../DeferredSections', () => ({
@@ -555,6 +563,7 @@ beforeEach(() => {
   recorded.actionsMenu = [];
   recorded.liveHeader = [];
   recorded.trackEndCard = [];
+  recorded.listContext = [];
   recorded.swipeableHeader = [];
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
@@ -2062,7 +2071,7 @@ describe('PlayDrawer — which board forward navigation is scanned against', () 
 // rules are pure and tested in @boardsesh/play-view (`resolveTrackLabel`, the
 // end-of-track result) and in `track-end.test.ts`; what only a render can see
 // is that PlayCore wires them in. Dropping any of the three joins below (the
-// header label, Next staying live at the end, Next opening the card) left every
+// top bar label, Next staying live at the end, Next opening the card) left every
 // other test green.
 describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   const climb = (uuid: string, name: string): Climb => ({ ...CLIMB, uuid, name }) as unknown as Climb;
@@ -2106,31 +2115,50 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     return props;
   }
 
-  it('names the list in the header while it walks one, with the count', () => {
-    onTheLastClimbOfProjects();
-    expect(lastLiveHeaderProps().trackLabel).toBe('playView.track.fromPosition');
-  });
-
-  /** The track label on the header waiting beside the current one. */
-  function neighbourTrackLabel(side: 'next' | 'previous'): unknown {
-    const neighbour = recorded.swipeableHeader.at(-1)?.[side];
-    if (!neighbour || typeof neighbour !== 'object' || !('props' in neighbour)) return undefined;
-    return (neighbour.props as Props).trackLabel;
+  /** What the top bar says about the list, or null when it says nothing. */
+  function lastListParts(): unknown {
+    return recorded.listContext.at(-1)?.parts ?? null;
   }
 
-  it("slides the neighbour's own label in with a swipe that walks the list", () => {
+  it('names the list in the top bar while it walks one, with the count', () => {
     onTheLastClimbOfProjects();
-    expect(neighbourTrackLabel('previous')).toBe('playView.track.fromPosition');
+    expect(lastListParts()).toEqual({
+      name: 'Projects',
+      count: 'playView.track.position',
+      accessibilityLabel: 'playView.track.playingFromPositionAria',
+    });
   });
 
-  it('promises no list on the neighbour when the swipe opens a preview with none (crew)', () => {
-    // A crew is here, so a swipe off the committed climb opens a preview, and a
-    // preview walks only the track it was opened with (#5403): none.
+  // On the stats line it pushed the sends and stars off the end of a phone.
+  it('keeps the list off the header, so its stats line has the sends and stars', () => {
+    onTheLastClimbOfProjects();
+    expect(lastLiveHeaderProps()).not.toHaveProperty('trackLabel');
+  });
+
+  it('still names the list in a crew', () => {
     session.isShared = true;
     session.sessionId = 'session-1';
     onTheLastClimbOfProjects();
-    expect(lastLiveHeaderProps().trackLabel).toBe('playView.track.fromPosition');
-    expect(neighbourTrackLabel('previous') ?? null).toBeNull();
+    expect(lastListParts()).toMatchObject({ name: 'Projects' });
+  });
+
+  /** The props of the header waiting beside the current one. */
+  function neighbourHeaderProps(side: 'next' | 'previous'): Props | undefined {
+    const neighbour = recorded.swipeableHeader.at(-1)?.[side];
+    if (!neighbour || typeof neighbour !== 'object' || !('props' in neighbour)) return undefined;
+    return neighbour.props as Props;
+  }
+
+  // The header sliding in once promised the list, and a crew's swipe opens a
+  // preview that walks none (#5403). The top bar doesn't swipe and names only
+  // the climb on screen, so no header, sliding in or not, carries a list.
+  it('never promises a list on the header sliding in, even when the swipe opens a preview (crew)', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    onTheLastClimbOfProjects();
+    const previous = neighbourHeaderProps('previous');
+    expect(previous).toBeDefined();
+    expect(previous).not.toHaveProperty('trackLabel');
   });
 
   it('names nothing for a climb with no list', () => {
@@ -2138,7 +2166,7 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     session.queue = [itemLast, itemQueued];
     session.currentItem = itemLast;
     render(drawerElement('member', committedTargetFor(last)));
-    expect(lastLiveHeaderProps().trackLabel ?? null).toBeNull();
+    expect(lastListParts()).toBeNull();
   });
 
   it('keeps Next live at the end of the list, and opens the end card instead of the queue', () => {

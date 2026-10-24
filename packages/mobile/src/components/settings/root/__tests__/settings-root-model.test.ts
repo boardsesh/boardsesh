@@ -34,14 +34,14 @@ describe('buildSettingsRootModel — order', () => {
   it('signed in: General, Privacy, Account, Connected apps; then Board, Climbs & grades and Home', () => {
     expect(rowKeysBySection(makeInput())).toEqual([
       ['app', ['general', 'privacy', 'account', 'integrations']],
-      ['climbing', ['board', 'climbs', 'home']],
+      ['climbing', ['board', 'climbs', 'home', 'timers']],
     ]);
   });
 
   it('signed out: the same groups, without Account', () => {
     expect(rowKeysBySection(makeInput({ visible: { account: false, earlyAccess: false, developer: false } }))).toEqual([
       ['app', ['general', 'privacy', 'integrations']],
-      ['climbing', ['board', 'climbs', 'home']],
+      ['climbing', ['board', 'climbs', 'home', 'timers']],
     ]);
   });
 
@@ -106,11 +106,13 @@ describe('buildSettingsRootModel — rows', () => {
   });
 
   it('shows the current look and grade format as values', () => {
-    const input = makeInput({ values: { board: 'Aura', climbs: 'V grade', home: 'Focused' } });
+    const input = makeInput({ values: { board: 'Aura', climbs: 'V grade', home: 'Focused', timers: '3:00' } });
     expect(navRow(input, 'board').value).toBe('Aura');
     expect(navRow(input, 'climbs').value).toBe('V grade');
     expect(navRow(input, 'home').value).toBe('Focused');
     expect(navRow(input, 'home').icon).toBe('home');
+    expect(navRow(input, 'timers').value).toBe('3:00');
+    expect(navRow(input, 'timers').icon).toBe('timers');
     expect(navRow(input, 'general').value).toBeUndefined();
   });
 
@@ -121,5 +123,6 @@ describe('buildSettingsRootModel — rows', () => {
     expect(SETTINGS_ROOT_ROUTES.board).toBe('/settings/board-look');
     expect(SETTINGS_ROOT_ROUTES.climbs).toBe('/settings/climbs');
     expect(SETTINGS_ROOT_ROUTES.home).toBe('/settings/home');
+    expect(SETTINGS_ROOT_ROUTES.timers).toBe('/settings/timers');
   });
 });

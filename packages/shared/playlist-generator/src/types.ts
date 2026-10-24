@@ -42,6 +42,8 @@ export type LadderOptions = {
   type: 'ladder';
   numberOfSteps: number;
   climbsPerStep: number;
+  /** Run the steps hardest first and ease down. Absent means up (the default). */
+  descending?: boolean;
 } & BaseGeneratorOptions;
 
 export type GradeFocusOptions = {

@@ -7,8 +7,10 @@ import { createElement, isValidElement, type ReactElement, type ReactNode } from
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
+  DEFAULT_LADDER_OPTIONS,
   DEFAULT_LIMIT_BOULDERING_OPTIONS,
   DEFAULT_ON_THE_MINUTE_OPTIONS,
+  DEFAULT_PYRAMID_OPTIONS,
   type GeneratorOptions,
 } from '@boardsesh/playlist-generator';
 
@@ -35,6 +37,7 @@ vi.mock('react-native-reanimated', () => ({
   withSpring: (value: number) => value,
 }));
 vi.mock('../../../Stepper', () => ({ Stepper: () => null }));
+vi.mock('../../../SwitchRow', () => ({ SwitchRow: () => null }));
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -70,6 +73,33 @@ function pickerFor(element: RowElement): PickerProps {
   if (!props) throw new Error('no picker rendered');
   return props;
 }
+
+describe('workoutStepperRows for a ladder', () => {
+  it('ends with a Hardest first switch that sets descending', () => {
+    const onOptionsChange = vi.fn();
+    const options = { ...DEFAULT_LADDER_OPTIONS, targetGrade: 18 };
+    const rows = rowsFor(options, onOptionsChange);
+
+    expect(rows.map((row) => row.key)).toEqual(['numberOfSteps', 'climbsPerStep', 'descending']);
+    const switchProps = rows[2].element.props as { value: boolean; onValueChange: (next: boolean) => void };
+    expect(rows[2].element.props).toMatchObject({
+      label: 'mobile.session.preGeneratorHardestFirst',
+      value: false,
+    });
+    switchProps.onValueChange(true);
+    expect(onOptionsChange).toHaveBeenCalledWith({ ...options, descending: true });
+  });
+
+  it('shows the switch on when descending', () => {
+    const rows = rowsFor({ ...DEFAULT_LADDER_OPTIONS, targetGrade: 18, descending: true });
+    expect(rows[2].element.props).toMatchObject({ value: true });
+  });
+
+  it('gives a pyramid no switch', () => {
+    const rows = rowsFor({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 18 });
+    expect(rows.map((row) => row.key)).toEqual(['numberOfSteps', 'climbsPerStep']);
+  });
+});
 
 describe('workoutStepperRows for timed blocks', () => {
   it('gives a 4x4 its climbs per round (2 to 10), rounds (1 to 10) and both rests', () => {

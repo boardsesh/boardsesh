@@ -19,6 +19,9 @@ let inAppBoardConnection = 'connectedByMe';
 let settings: Record<string, unknown> = {};
 let currentNowMs = Date.parse('2026-09-11T10:00:00.000Z');
 let appStateListener: ((state: string) => void) | null = null;
+// Stands in for a workout stage or the crew clock pacing the rest, which only
+// changes what the wake lock does: the seam resolves settings alone on main.
+let pacingSourceOverride: 'stage' | 'crew' | null = null;
 
 // The gym roster behind this is a React Query hook reaching the GraphQL client,
 // which pulls react-native's Flow source into a harness that mocks it narrowly.
@@ -97,6 +100,17 @@ vi.mock('../../../settings', () => ({
 
 vi.mock('../../../lib/clock', () => ({ nowMs: () => currentNowMs }));
 
+vi.mock('../../../hooks/use-effective-rest-pacing', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../hooks/use-effective-rest-pacing')>();
+  return {
+    ...actual,
+    useEffectiveRestPacing: () => {
+      const pacing = actual.useEffectiveRestPacing();
+      return pacingSourceOverride === null ? pacing : { ...pacing, source: pacingSourceOverride };
+    },
+  };
+});
+
 // The scheduler names the moment; which haptic and sound that is lives in the
 // cue module and is pinned by its own tests.
 vi.mock('../../../lib/rest-timer-cues', () => ({ playRestTimerCue: vi.fn() }));
@@ -105,10 +119,13 @@ import { playRestTimerCue } from '../../../lib/rest-timer-cues';
 import type { RestTimerCueKind } from '../../../lib/rest-timer-cues';
 import {
   armRestTimer,
+  disarmRestTimer,
   getRestTimerState,
   noteRestTimerTick,
   pauseRestTimer,
+  resetRestTimer,
   resetRestTimerStoreForTests,
+  resumeRestTimer,
 } from '../../../lib/rest-timer-store';
 import { RestTimerAutoAdvanceScheduler } from '../RestTimerAutoAdvanceScheduler';
 
@@ -127,6 +144,21 @@ function advance(ms: number) {
   });
 }
 
+/**
+ * Advance a few milliseconds at a time, so each countdown cue lands on time.
+ * `advance` moves the clock first, so a cue it flushes reads as late.
+ */
+function advanceInSteps(ms: number, stepMs = 50) {
+  for (let elapsedMs = 0; elapsedMs < ms; elapsedMs += stepMs) advance(Math.min(stepMs, ms - elapsedMs));
+}
+
+/** Every cue played so far, in order, with the countdown's seconds spelled out. */
+function playedCues(): string[] {
+  return vi
+    .mocked(playRestTimerCue)
+    .mock.calls.map(([cue]) => (cue.kind === 'countdownTick' ? `tick:${cue.secondsLeft}` : cue.kind));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
@@ -141,7 +173,13 @@ beforeEach(() => {
   inAppBoardConnection = 'connectedByMe';
   currentNowMs = T0;
   appStateListener = null;
-  settings = { restTimerTargetSeconds: 60, restTimerAutoAdvance: true, restTimerMode: 'afterTick' };
+  pacingSourceOverride = null;
+  settings = {
+    restTimerTargetSeconds: 60,
+    restTimerAutoAdvance: true,
+    restTimerMode: 'afterTick',
+    restTimerCountdownCues: true,
+  };
 });
 
 afterEach(() => {
@@ -553,9 +591,29 @@ describe('the screen wake lock', () => {
 
 // What the climber hears and feels. Each moment names a cue; the cue module maps
 // it to the same haptic the timer always played (warning light, advance medium,
-// reached success).
+// reached success) and the countdown's selection tick.
 describe('cues', () => {
-  it('warns once ahead of the advance, then plays the advance cue with the move', () => {
+  it('counts the last three seconds down, then plays the advance with the move', () => {
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_999);
+    expect(playedCues()).toEqual([]);
+    advanceInSteps(1);
+    expect(playedCues()).toEqual(['tick:3']);
+    advanceInSteps(2_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1']);
+    expect(nextClimb).not.toHaveBeenCalled();
+
+    advanceInSteps(999);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advanceInSteps(1);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance']);
+  });
+
+  it('warns once instead, with per-second cues off', () => {
+    settings = { ...settings, restTimerCountdownCues: false };
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
@@ -567,39 +625,395 @@ describe('cues', () => {
 
     advance(3_000);
     expect(nextClimb).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['warning', 'advance']);
+    expect(playedCues()).toEqual(['warning', 'advance']);
   });
 
-  // The one gap in "one terminal cue per deadline" (docs/rest-timer.md, Cues):
-  // a dead end shows the toast and plays neither `advance` nor `reached`. The
-  // countdown (#5396) closes it; flip these assertions there, not by accident.
+  it.each([
+    { targetSeconds: 120, ticks: ['tick:4', 'tick:3', 'tick:2', 'tick:1'] },
+    { targetSeconds: 180, ticks: ['tick:5', 'tick:4', 'tick:3', 'tick:2', 'tick:1'] },
+  ])('counts a longer lead before a $targetSeconds s rest', ({ targetSeconds, ticks }) => {
+    settings = { ...settings, restTimerTargetSeconds: targetSeconds };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(targetSeconds * 1000 - ticks.length * 1000 - 1);
+    expect(playedCues()).toEqual([]);
+    advanceInSteps(ticks.length * 1000 + 1);
+    expect(playedCues()).toEqual([...ticks, 'advance']);
+  });
+
+  it('keeps at most six timeouts for one rest: five cues and the advance', () => {
+    settings = { ...settings, restTimerTargetSeconds: 300 };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    expect(vi.getTimerCount()).toBe(6);
+  });
+
+  it('counts down before the reached cue with auto-advance off, and leaves the queue alone', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('counts down and buzzes every beat on the minute with auto-advance off', () => {
+    settings = { ...settings, restTimerAutoAdvance: false, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };
+    act(() => {
+      armRestTimer('onTheMinute', currentNowMs, 'session-1');
+    });
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advanceInSteps(20_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+    advanceInSteps(20_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached', 'tick:3', 'tick:2', 'tick:1', 'reached']);
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  // The gap SEAM pinned in "one terminal cue per deadline" (docs/rest-timer.md,
+  // Cues): a dead end used to show the toast and play neither `advance` nor
+  // `reached`. The countdown closes it: the rest ran out and the wall did not
+  // move, so it is `reached`.
   it.each([
     { where: 'the queue', endsAtTrack: false },
     { where: 'a list', endsAtTrack: true },
-  ])('plays the warning and no terminal cue at the end of $where, where the wall did not move', ({ endsAtTrack }) => {
+  ])('counts down, then plays the reached cue at the end of $where, where the wall did not move', ({ endsAtTrack }) => {
     canNext = false;
     atTrackEnd = endsAtTrack;
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
-    advance(60_000);
+    advance(56_000);
+    advanceInSteps(4_000);
     expect(nextClimb).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['warning']);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
 
-    // The latch holds the rest past its mark: still no late `reached`.
-    advance(120_000);
-    expect(cueCount('reached')).toBe(0);
-    expect(cueCount('advance')).toBe(0);
+    // The latch holds the rest past its mark: no second `reached`, no countdown
+    // to a beat that will not come.
+    advanceInSteps(120_000, 500);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
   });
 
-  it('gives a passenger the reached cue, never the warning or the advance', () => {
+  // One terminal cue per rest end: the `reached` cue keeps the advance's 5 s
+  // grace, so a JS stall that still lets the advance move the wall never leaves
+  // a dead end or a rest with auto-advance off silent.
+  it.each([
+    { where: 'with the move', wallMoves: true, terminalCue: 'advance' },
+    { where: 'at a dead end', wallMoves: false, terminalCue: 'reached' },
+  ])('plays the terminal cue $where when the rest end lands 1.5 s late', ({ wallMoves, terminalCue }) => {
+    canNext = wallMoves;
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1']);
+
+    // The JS thread stalls across the rest's end and the fire lands 1.5 s late.
+    advance(1_501);
+    expect(nextClimb).toHaveBeenCalledTimes(wallMoves ? 1 : 0);
+    expect(getRestTimerState().queueEnded).toBe(!wallMoves);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', terminalCue]);
+  });
+
+  it('plays the reached cue a stall held up 1 s with auto-advance off', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    advance(1_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('plays no reached cue for a rest end past the advance grace', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    advance(5_002);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1']);
+  });
+
+  it('plays one reached cue at a dead end on the minute, and no beats after it', () => {
+    canNext = false;
+    settings = { ...settings, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };
+    act(() => {
+      armRestTimer('onTheMinute', currentNowMs, 'session-1');
+    });
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advanceInSteps(20_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+    advanceInSteps(60_000, 500);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('never adds a reached cue to a beat the advance already fired on', () => {
+    // Turning auto-advance off straight after an on-the-minute advance must not
+    // replay that beat as `reached`.
+    settings = { ...settings, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };
+    act(() => {
+      armRestTimer('onTheMinute', currentNowMs, 'session-1');
+    });
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+    advanceInSteps(20_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance']);
+
+    settings = { ...settings, restTimerAutoAdvance: false };
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    advanceInSteps(100);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance']);
+
+    advanceInSteps(19_900);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance', 'tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('gives a passenger the countdown and the reached cue, never the advance', () => {
     isCrewSession = true;
     inAppBoardConnection = 'heldByPeer';
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('never plays ticks and the warning for one rest when the setting flips mid-countdown', () => {
+    armWithTick();
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(1_500);
+    expect(playedCues()).toEqual(['tick:3']);
+
+    settings = { ...settings, restTimerCountdownCues: false };
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    advanceInSteps(2_500);
+    // This rest keeps the countdown it started; the next one warns.
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance']);
+
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'advance', 'warning', 'advance']);
+  });
+
+  it('takes a setting changed before the countdown starts', () => {
+    armWithTick();
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(30_000);
+    settings = { ...settings, restTimerCountdownCues: false };
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    advance(26_000);
+    advanceInSteps(4_000);
+    expect(playedCues()).toEqual(['warning', 'advance']);
+  });
+
+  it('drops the rest of the countdown when a new tick starts another rest', () => {
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(2_500);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2']);
+
+    act(() => {
+      noteRestTimerTick(new Date(currentNowMs).toISOString(), 'afterTick', currentNowMs);
+    });
+    advanceInSteps(2_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2']);
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('says nothing for cues the app slept through', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    // The JS timer queue froze at 0:50 and flushes ten minutes later.
+    advance(50_000);
+    act(() => {
+      currentNowMs += 600_000;
+      vi.advanceTimersByTime(600_000);
+    });
+    expect(playedCues()).toEqual([]);
+  });
+});
+
+describe('the wake lock around a reached cue', () => {
+  it('holds the screen up until the reached cue when a workout stage paces the rest', () => {
+    pacingSourceOverride = 'stage';
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+    expect(keepAwakeCalls.at(-1)).toEqual({ active: true, tag: 'rest-timer' });
+
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(cueCount('reached')).toBe(1);
+    // The cue has landed; nothing is left to wait for.
+    expect(keepAwakeCalls.at(-1)).toEqual({ active: false, tag: 'rest-timer' });
+  });
+
+  it('keeps it through every beat for a crew passenger on the minute', () => {
+    pacingSourceOverride = 'crew';
+    isCrewSession = true;
+    inAppBoardConnection = 'heldByPeer';
+    settings = { ...settings, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };
+    act(() => {
+      armRestTimer('onTheMinute', currentNowMs, 'session-1');
+    });
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advanceInSteps(20_000);
+    expect(cueCount('reached')).toBe(1);
+    expect(keepAwakeCalls.at(-1)).toEqual({ active: true, tag: 'rest-timer' });
+  });
+
+  it('never holds it for a climber’s own rest with auto-advance off', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    expect(keepAwakeCalls.every(({ active }) => !active)).toBe(true);
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(keepAwakeCalls.every(({ active }) => !active)).toBe(true);
+  });
+
+  it('lets go at a dead end even when a stage paces the rest', () => {
+    pacingSourceOverride = 'stage';
+    canNext = false;
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(4_000);
+    expect(getRestTimerState().queueEnded).toBe(true);
+    expect(keepAwakeCalls.at(-1)).toEqual({ active: false, tag: 'rest-timer' });
+  });
+});
+
+// The reached latch belongs to one rest, and a rest is its anchor (#6730
+// review). Whatever an earlier rest cued says nothing about the next one, and a
+// mark the climber already heard is never played again because the anchor moved
+// under it.
+describe('the reached cue across rests', () => {
+  it.each([
+    {
+      boundary: 'a disarm and a re-arm',
+      nextMode: 'afterTick',
+      startNextRest: () => {
+        disarmRestTimer();
+        armRestTimer('afterTick', currentNowMs, 'session-1');
+        noteRestTimerTick(new Date(currentNowMs).toISOString(), 'afterTick', currentNowMs);
+      },
+    },
+    { boundary: 'a reset', nextMode: 'afterTick', startNextRest: () => resetRestTimer(currentNowMs) },
+    {
+      // The sheet's cadence switch re-arms with the scheduler still mounted.
+      boundary: 'a cadence switch',
+      nextMode: 'onTheMinute',
+      startNextRest: () => armRestTimer('onTheMinute', currentNowMs, 'session-1'),
+    },
+  ])(
+    'cues the next rest’s mark once after $boundary, with the clock set back in between',
+    ({ nextMode, startNextRest }) => {
+      settings = { ...settings, restTimerAutoAdvance: false, restTimerTargetSeconds: 300 };
+      armWithTick();
+      const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+      advance(300_000);
+      expect(cueCount('reached')).toBe(1);
+
+      // The phone's clock is corrected back ten minutes (NTP, or the climber).
+      // The timer queue runs on a monotonic clock and does not move.
+      currentNowMs -= 600_000;
+      settings = { ...settings, restTimerTargetSeconds: 60, restTimerMode: nextMode };
+      act(() => {
+        startNextRest();
+        rerender(<RestTimerAutoAdvanceScheduler />);
+      });
+
+      advance(60_000);
+      expect(cueCount('reached')).toBe(2);
+      advance(30_000);
+      expect(cueCount('reached')).toBe(2);
+    },
+  );
+
+  it('never replays the reached cue when a rest paused just past its mark resumes', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
     advance(60_000);
-    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['reached']);
+    expect(cueCount('reached')).toBe(1);
+
+    // Paused at 1:01. Resume rebases the anchor on the paused elapsed, so the
+    // clock picks up at 1:01, past a mark the climber already heard.
+    advance(1_500);
+    act(() => pauseRestTimer(currentNowMs));
+    advance(8_000);
+    act(() => resumeRestTimer(currentNowMs));
+    advance(120_000);
+    expect(cueCount('reached')).toBe(1);
+  });
+
+  it('keeps one countdown and one reached cue per beat on the minute across a pause', () => {
+    settings = { ...settings, restTimerAutoAdvance: false, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };
+    act(() => {
+      armRestTimer('onTheMinute', currentNowMs, 'session-1');
+    });
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advanceInSteps(20_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+
+    // Paused a second and a half into the next beat, resumed at 0:01 of it.
+    advance(1_500);
+    act(() => pauseRestTimer(currentNowMs));
+    advance(8_000);
+    act(() => resumeRestTimer(currentNowMs));
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+
+    advanceInSteps(19_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached', 'tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('never replays the reached cue the last mount played when a re-arm brings the same tick back', () => {
+    // RestTimerRuntime unmounts the scheduler on a disarm, and on the re-arm
+    // RestTimerSessionSync hands the store the session's last tick again.
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    const tickAt = new Date(currentNowMs).toISOString();
+    const firstMount = render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(cueCount('reached')).toBe(1);
+
+    advance(1_000);
+    act(() => disarmRestTimer());
+    firstMount.unmount();
+
+    advance(1_000);
+    act(() => armRestTimer('afterTick', currentNowMs, 'session-1'));
+    render(<RestTimerAutoAdvanceScheduler />);
+    act(() => noteRestTimerTick(tickAt, 'afterTick', currentNowMs));
+
+    advance(10_000);
+    expect(cueCount('reached')).toBe(1);
   });
 });

@@ -123,7 +123,6 @@ export type AppSettings = {
    * launches too, until the chip hides it again.
    */
   gradeRowShown: boolean;
-  keepScreenAwake: boolean;
   /**
    * Rest timer (#5378) — the shape of the timer, not whether it is armed.
    * Arming is deliberately in-memory (see `rest-timer-store.ts`): a flag set

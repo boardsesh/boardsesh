@@ -11,6 +11,7 @@ import {
   TENSION_BENCHMARK_HOLDOUT_REMAINDER,
 } from './constants';
 import { gradeBandForDifficulty } from './blend';
+import { realBenchmarkCondition } from '../climbs/benchmark';
 import type { GateResult } from './types';
 
 export interface TensionBenchmarkHoldoutRow {
@@ -35,10 +36,16 @@ export interface TensionBenchmarkPrediction {
   stage2High: number | null;
 }
 
+// A held-out row needs a real benchmark grade to be scored against. NaN would
+// turn every MAE into NaN and fail the gates; realBenchmarkCondition also never
+// yields NULL, so `NOT (predicate)` in the rater and behavior fits keeps every
+// row that is not held out.
+const holdoutBenchmarkCondition = realBenchmarkCondition(sql`s.benchmark_difficulty`);
+
 export function buildTensionBenchmarkHoldoutPredicate(): SQL {
   return sql`
     s.board_type = 'tension'
-    AND s.benchmark_difficulty IS NOT NULL
+    AND ${holdoutBenchmarkCondition}
     AND ABS(('x' || SUBSTR(md5(s.climb_uuid || ':' || s.angle::text), 1, 8))::bit(32)::int)
       % ${TENSION_BENCHMARK_HOLDOUT_MODULUS} = ${TENSION_BENCHMARK_HOLDOUT_REMAINDER}
   `;
@@ -54,7 +61,7 @@ export function buildTensionBenchmarkHoldoutSql(): SQL {
     FROM board_climb_stats s
     JOIN board_climbs bc ON bc.board_type = s.board_type AND bc.uuid = s.climb_uuid
     WHERE s.board_type = 'tension'
-      AND s.benchmark_difficulty IS NOT NULL
+      AND ${holdoutBenchmarkCondition}
       AND s.display_difficulty IS NOT NULL
       AND bc.is_listed = true
       AND COALESCE(bc.is_draft, false) = false

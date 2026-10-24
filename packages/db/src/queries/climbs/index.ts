@@ -43,6 +43,7 @@ export {
   type StatsColumnKey,
 } from './effective-stats';
 export { getClimbStars } from './climb-stars';
+export { realBenchmarkCondition } from './benchmark';
 export { getGradeLabel } from './grade-lookup';
 export { populateDenormalizedColumns } from './populate-denormalized-columns';
 export { getSetterStats } from './setter-stats';

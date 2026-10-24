@@ -307,6 +307,27 @@ describe('getClimb', () => {
     expect(climbQueryText).toContain('NULL::text as "userId"');
     expect(climbQueryText).not.toContain('climbs.user_id');
   });
+
+  it('returns no benchmark grade for a NaN benchmark_difficulty, which passes "> 0" in Postgres', async () => {
+    mockSqlTag.mockResolvedValueOnce([{ ...canonicalRow9, uuid: 'published-uuid' }]);
+
+    await getClimb({
+      board_name: 'moonboard',
+      layout_id: 3,
+      size_id: 1,
+      set_ids: [1],
+      angle: 40,
+      climb_uuid: 'published-uuid',
+    });
+
+    const [queryStrings] = mockSqlTag.mock.calls[0];
+    const climbQueryText = Array.from(queryStrings as TemplateStringsArray)
+      .join(' ')
+      .replace(/\s+/g, ' ');
+    expect(climbQueryText).toContain(
+      "CASE WHEN climb_stats.benchmark_difficulty > 0 AND climb_stats.benchmark_difficulty <> 'NaN'::double precision THEN",
+    );
+  });
 });
 
 describe('getClimbStatsForAllAngles', () => {

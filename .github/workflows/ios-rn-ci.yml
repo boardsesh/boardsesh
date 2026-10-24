@@ -285,8 +285,9 @@ jobs:
       - name: Launch the Release app and watch for crashes
         id: release-smoke
         # Leave time for the helper's bounded cold boot/install commands and
-        # diagnostic collection; external cancellation would lose its summary.
-        timeout-minutes: 15
+        # diagnostic collection (about 14.5 min if every bound is hit);
+        # external cancellation would lose its summary.
+        timeout-minutes: 20
         run: >-
           vp exec tsx scripts/ios-release-launch-smoke.ts
           --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app

@@ -55,7 +55,9 @@ That block is compiled only into Release builds (`#if !DEBUG`). On native-input 
 builds an ad-hoc-signed Release simulator app, checks its embedded framework ABI, then cold-launches
 that same app and watches its original PID for 20 seconds. Process death or a fresh crash report
 for that launch fails the job; stdout, stderr and diagnostics are saved in the Release launch
-artifact. The CI DSN points at localhost so native Sentry starts without contacting Sentry.
+artifact. Diagnostics (`launchctl list`, `log show`) run after that verdict: one that fails or
+passes its 60 s limit adds a warning to the summary and the step output but does not change the
+result. Each command's `durationMs` is in `commands.jsonl`. The CI DSN points at localhost so native Sentry starts without contacting Sentry.
 Dev clients, navigation smokes and screenshot captures remain Debug. This launch check proves
 native process survival, not sign-in, rendered content, or delivery of a published OTA update.
 

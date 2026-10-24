@@ -34,6 +34,9 @@
         },
         "developer": {
           "title": "Entwicklung"
+        },
+        "timers": {
+          "title": "Timer"
         }
       },
       "development": "Entwicklung",
@@ -574,6 +577,27 @@
         "title": "Boulder-Ansicht",
         "valueDefault": "Standard",
         "valueCustom": "Benutzerdefiniert"
+      },
+      "timers": {
+        "restTitle": "Pause",
+        "restLength": "Pause",
+        "restLengthOff": "Aus",
+        "modeLabel": "Takt",
+        "modeAfterTick": "Nach jedem Boulder",
+        "modeEvery": "Alle {{length}}",
+        "modeOnTheMinute": "Fester Takt",
+        "modeAfterTickHint": "Deine Pause startet neu, sobald du einen Versuch oder eine Begehung einträgst.",
+        "modeOnTheMinuteHint": "Feste Zeitfenster ab dem Einschalten. Versuche oder Begehungen setzen die Uhr nie zurück.",
+        "autoAdvance": "Zum nächsten Boulder wechseln",
+        "autoAdvanceHint": "Boardsesh beleuchtet ihn für dich am Board, nur solange Boardsesh offen ist.",
+        "autoAdvanceBlocked": "Nur wer das Board steuert, kann die Warteschlange weiterschalten.",
+        "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
+        "cuesTitle": "Signale",
+        "cuesFooter": "Wenn sie aus sind, bekommst du trotzdem eine Warn-Vibration, bevor das Board von selbst weiterschaltet.",
+        "countdownCues": "Letzte Sekunden herunterzählen",
+        "countdownCuesHint": "Eine Vibration bei jeder der letzten Sekunden, damit du an den Griffen bist, wenn der nächste Boulder leuchtet.",
+        "sound": "Ton",
+        "soundHint": "Spielt einen Ton zu den Signalen. Er läuft auch im Stumm-Modus und lässt deine Musik weiterlaufen."
       }
     },
     "sendRecovery": {

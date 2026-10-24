@@ -1528,6 +1528,96 @@ describe('tickQueries — behavior fixes', () => {
     });
   });
 
+  describe('benchmark flag needs a real benchmark_difficulty (#6232)', () => {
+    // Postgres ranks NaN above every number, so `> 0` alone called a NaN stats
+    // row a benchmark. Kilter holds tens of thousands of them.
+    const BENCHMARK_CASES = [
+      { key: 'nan', benchmarkDifficulty: undefined, isBenchmark: false },
+      { key: 'null', benchmarkDifficulty: undefined, isBenchmark: false },
+      { key: 'zero', benchmarkDifficulty: 0, isBenchmark: false },
+      { key: 'real', benchmarkDifficulty: 15, isBenchmark: true },
+    ] as const;
+    const caseClimbUuid = (key: string) => `${CLIMB_PREFIX}benchmark-${key}`;
+    const caseTickUuid = (key: string) => `bench-case-${key}`;
+
+    type BenchmarkFeedItem = { uuid: string; climbUuid: string; isBenchmark: boolean };
+
+    const seedBenchmarkCases = async () => {
+      for (const [index, benchmarkCase] of BENCHMARK_CASES.entries()) {
+        const climbUuid = caseClimbUuid(benchmarkCase.key);
+        await insertClimb(climbUuid, `Benchmark case ${benchmarkCase.key}`);
+        await insertBoardClimbStats({
+          climbUuid,
+          displayDifficulty: 15,
+          benchmarkDifficulty: benchmarkCase.benchmarkDifficulty,
+        });
+        await insertTick({
+          uuid: caseTickUuid(benchmarkCase.key),
+          climbUuid,
+          climbedAt: `2026-06-2${index}T10:00:00`,
+          status: 'send',
+        });
+      }
+      // A SQL literal, not a bound parameter: a bound NaN is not portable across drivers.
+      await db.execute(sql`
+        UPDATE board_climb_stats SET benchmark_difficulty = 'NaN'::double precision
+        WHERE board_type = 'kilter' AND climb_uuid = ${caseClimbUuid('nan')}
+      `);
+    };
+
+    const expectedFlags = Object.fromEntries(
+      BENCHMARK_CASES.map((benchmarkCase) => [caseClimbUuid(benchmarkCase.key), benchmarkCase.isBenchmark]),
+    );
+
+    it('flags only the real benchmark in the flat feed, and benchmarkOnly returns only it', async () => {
+      await seedBenchmarkCases();
+
+      const all = await callUserAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0 });
+      const items = all.items as unknown as BenchmarkFeedItem[];
+      expect(Object.fromEntries(items.map((item) => [item.climbUuid, item.isBenchmark]))).toEqual(expectedFlags);
+
+      const benchmarksOnly = await callUserAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0, benchmarkOnly: true });
+      const benchmarkItems = benchmarksOnly.items as unknown as BenchmarkFeedItem[];
+      expect(benchmarkItems.map((item) => item.climbUuid)).toEqual([caseClimbUuid('real')]);
+      expect(benchmarksOnly.totalCount).toBe(1);
+    });
+
+    it('flags only the real benchmark in the grouped feed, and benchmarkOnly returns only its group', async () => {
+      await seedBenchmarkCases();
+
+      const all = await callUserGroupedAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0 });
+      expect(Object.fromEntries(all.groups.map((group) => [group.climbUuid, group.isBenchmark]))).toEqual(
+        expectedFlags,
+      );
+      for (const group of all.groups) {
+        expect(group.items.every((item) => item.isBenchmark === group.isBenchmark)).toBe(true);
+      }
+
+      const benchmarksOnly = await callUserGroupedAscentsFeed(TEST_USER_ID, {
+        limit: 20,
+        offset: 0,
+        benchmarkOnly: true,
+      });
+      expect(benchmarksOnly.groups.map((group) => group.climbUuid)).toEqual([caseClimbUuid('real')]);
+      expect(benchmarksOnly.totalCount).toBe(1);
+    });
+
+    it('still flags a NaN-stats climb when the tick itself was logged as a benchmark', async () => {
+      await seedBenchmarkCases();
+      await db.execute(sql`UPDATE boardsesh_ticks SET is_benchmark = true WHERE uuid = ${caseTickUuid('nan')}`);
+
+      const all = await callUserAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0 });
+      const items = all.items as unknown as BenchmarkFeedItem[];
+      expect(items.find((item) => item.climbUuid === caseClimbUuid('nan'))?.isBenchmark).toBe(true);
+
+      const benchmarksOnly = await callUserAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0, benchmarkOnly: true });
+      const benchmarkItems = benchmarksOnly.items as unknown as BenchmarkFeedItem[];
+      const benchmarkClimbUuids = benchmarkItems.map((item) => item.climbUuid);
+      expect(benchmarkClimbUuids).toHaveLength(2);
+      expect(benchmarkClimbUuids).toEqual(expect.arrayContaining([caseClimbUuid('nan'), caseClimbUuid('real')]));
+    });
+  });
+
   describe('userAscentCaptionMatches — quoted-name caption suggestions', () => {
     it('matches the quoted climb name anywhere in the logbook and returns board art', async () => {
       const climbUuid = CLIMB_PREFIX + 'caption-purple';

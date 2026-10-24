@@ -105,7 +105,10 @@ async function fetchClimbFromDb(
         ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id,
         ROUND(climb_stats.quality_average::numeric, 2) as quality_average,
         ROUND(climb_stats.difficulty_average::numeric - climb_stats.display_difficulty::numeric, 2) AS difficulty_error,
-        CASE WHEN climb_stats.benchmark_difficulty > 0 THEN climb_stats.benchmark_difficulty::text ELSE NULL END as benchmark_difficulty,
+        -- realBenchmarkCondition's rule, written out because this is a postgres-js
+        -- template: NaN passes "> 0" in Postgres and would come back as 'NaN' (#6232).
+        CASE WHEN climb_stats.benchmark_difficulty > 0 AND climb_stats.benchmark_difficulty <> 'NaN'::double precision
+          THEN climb_stats.benchmark_difficulty::text ELSE NULL END as benchmark_difficulty,
         climbs.is_draft, climbs.is_hidden, climbs.created_at, climbs.published_at, climbs.characteristics,
         climbs.compatible_size_ids as "compatibleSizeIds"
         FROM resolved_climb

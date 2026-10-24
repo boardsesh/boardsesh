@@ -48,7 +48,7 @@ describe('iOS Release launch workflow', () => {
     expect(smoke.run).toContain('--app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app');
     expect(smoke.run).toContain("--device '${{ steps.simulator.outputs.udid }}'");
     expect(smoke.run).toContain("--evidence-dir '${{ runner.temp }}/ios-release-launch-smoke'");
-    expect(smoke['timeout-minutes']).toBe(15);
+    expect(smoke['timeout-minutes']).toBe(20);
     expect(smoke.if).toBeUndefined();
     expect(steps.indexOf(smoke)).toBeLessThan(steps.indexOf(requiredStep('Add RN Swift test target')));
   });

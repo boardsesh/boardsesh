@@ -14,7 +14,8 @@
  * each built by the real generator on the board's real grade table. The
  * predicates mirror the server search (create-climb-filters.ts): rounded display_difficulty,
  * ascensionist_count >= minAscents, quality_average >= minRating,
- * benchmark_difficulty > 0, and is_listed / not draft / not hidden.
+ * a real benchmark_difficulty above 0 (realBenchmarkCondition: NaN does not
+ * count), and is_listed / not draft / not hidden.
  *
  * Run: node --import tsx packages/db/scripts/analyze-workout-candidates.ts [--format md|json] [--min-climbs 1000]
  * Writes nothing: every query runs in a READ ONLY transaction.
@@ -23,6 +24,7 @@ import { and, count, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { createScriptDb } from './db-connection.js';
 import { boardClimbStats, boardClimbs } from '../src/schema/boards/unified.js';
+import { realBenchmarkCondition } from '../src/queries/climbs/benchmark.js';
 import {
   MIN_ASCENTS_THRESHOLDS,
   MIN_RATING_THRESHOLDS,
@@ -71,8 +73,11 @@ const searchableClimbConditions = [
  * parameter, so the copy in GROUP BY renders the same text as the SELECT.
  */
 const roundedGrade = sql<number>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)::int`;
-/** A NULL benchmark difficulty is "not a benchmark", never a third group. */
-const isBenchmark = sql<boolean>`COALESCE(${boardClimbStats.benchmarkDifficulty}, 0) > 0`;
+/**
+ * The server's benchmark rule. It is never NULL, so a NULL benchmark difficulty
+ * is "not a benchmark", never a third group, and NaN is not a benchmark either.
+ */
+const isBenchmark = realBenchmarkCondition(boardClimbStats.benchmarkDifficulty);
 
 const DEFAULT_COMBO: FilterCombo = { minAscents: 5, minRating: 2, benchmarksOnly: false };
 const BENCHMARK_COMBO: FilterCombo = { minAscents: 0, minRating: 0, benchmarksOnly: true };

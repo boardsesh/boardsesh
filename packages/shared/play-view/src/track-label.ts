@@ -1,7 +1,7 @@
 import { findPlaylistClimbIndex, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 /**
- * What the player says about the list it is walking: "From Projects · 4 of 23"
+ * What the player says about the list it is walking: "Projects · 4 of 23"
  * (issue #6664, closing #3841, where a climber swiped expecting the list they
  * had just tapped in and got whatever was queued).
  *

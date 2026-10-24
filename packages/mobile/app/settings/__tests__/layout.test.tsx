@@ -156,6 +156,7 @@ const SETTINGS_PAGES = [
   'board-look/accessibility',
   'climbs',
   'home',
+  'timers',
   'early-access',
   'developer',
   'climb-list',
@@ -246,6 +247,7 @@ describe('the settings stack', () => {
       board: 'board-look/index',
       climbs: 'climbs',
       home: 'home',
+      timers: 'timers',
       earlyAccess: 'early-access',
       developer: 'developer',
     } as const;

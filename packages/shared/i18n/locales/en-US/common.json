@@ -34,6 +34,9 @@
         },
         "developer": {
           "title": "Developer"
+        },
+        "timers": {
+          "title": "Timers"
         }
       },
       "development": "Development",
@@ -574,6 +577,27 @@
         "title": "Climb view",
         "valueDefault": "Default",
         "valueCustom": "Custom"
+      },
+      "timers": {
+        "restTitle": "Rest",
+        "restLength": "Rest",
+        "restLengthOff": "Off",
+        "modeLabel": "Cadence",
+        "modeAfterTick": "After each climb",
+        "modeEvery": "Every {{length}}",
+        "modeOnTheMinute": "Fixed window",
+        "modeAfterTickHint": "Your rest restarts every time you log an attempt or a send.",
+        "modeOnTheMinuteHint": "Fixed windows from the moment you turn it on. Logging attempts or sends never resets the clock.",
+        "autoAdvance": "Move to the next climb",
+        "autoAdvanceHint": "Lights it on the wall for you, only while Boardsesh is open.",
+        "autoAdvanceBlocked": "Only the climber driving the wall can move the queue.",
+        "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
+        "cuesTitle": "Cues",
+        "cuesFooter": "Off, you still get one heads-up buzz before the wall moves on its own.",
+        "countdownCues": "Count down the last seconds",
+        "countdownCuesHint": "A buzz on each of the final seconds, so you are on the holds when the next climb lights up.",
+        "sound": "Sound",
+        "soundHint": "Play a tone with the cues. It plays over the silent switch and keeps your music going."
       }
     },
     "sendRecovery": {

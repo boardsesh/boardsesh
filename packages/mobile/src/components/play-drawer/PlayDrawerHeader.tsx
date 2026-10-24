@@ -86,18 +86,10 @@ type PlayDrawerHeaderProps = {
    *  whether to show the "set at N°" marker under the grade. */
   angle?: number;
   /** Where this climb sits in the workout generated at Start ("Warm-up · 2 of
-   *  5", #5379). Leads the subtitle so truncation never hides it. */
+   *  5", #5379). Leads the subtitle so truncation never hides it. The list the
+   *  player walks is not on this line: it is in the top bar (`PlayListContext`),
+   *  because here it pushed the sends and stars off the end. */
   workoutStageLabel?: string | null;
-  /**
-   * The list the player is walking, "From Projects · 4 of 23" (#6664). On the
-   * stats line, after a workout stage, rather than a line of its own: the first screen is a
-   * fixed height and the board is `flex: 1` inside it, so a new line would come
-   * straight off the holds. The name, the stats and the 2pt gap fit inside the
-   * 44pt row the wall-state pill already reserves, so the label costs no board
-   * art, and the line is there with or without it, so the board never steps
-   * between a climb that has one and a climb that does not.
-   */
-  trackLabel?: string | null;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -122,7 +114,6 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   statsAngle,
   angle,
   workoutStageLabel,
-  trackLabel,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -144,10 +135,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
   const subtitleParts: string[] = [];
-  // The workout stage, then where swipes go: truncation takes the stats from
-  // the end, never these two.
+  // The workout stage leads: truncation takes the stats from the end, never it.
   if (workoutStageLabel) subtitleParts.push(workoutStageLabel);
-  if (trackLabel) subtitleParts.push(trackLabel);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
@@ -209,16 +198,10 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 every draft. */}
             {isDraft ? <DraftChip style={styles.draftChip} testID="play-drawer-climb-draft" /> : null}
           </View>
-          <Text
-            variant="caption1"
-            color={systemColors.secondaryLabel}
-            style={styles.subtitleText}
-            numberOfLines={1}
-            testID={trackLabel ? 'play-drawer-track-label' : undefined}
-          >
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitleText} numberOfLines={1}>
             {/* Never an empty string: an empty line measures shorter than a full
                 one at large text sizes, and a climb with no stats would then
-                step the board when the track label comes or goes. */}
+                step the board against one that has them. */}
             {subtitleParts.length > 0 ? subtitleParts.join(' · ') : ZERO_WIDTH_SPACE}
             {setterUsername && onPressSetter ? (
               <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
@@ -314,7 +297,6 @@ export type LivePlayDrawerHeaderProps = {
   onLongPressName?: () => void;
   onPressSetter?: () => void;
   workoutStageLabel?: string | null;
-  trackLabel?: string | null;
 };
 
 type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
@@ -334,7 +316,6 @@ export function useLivePlayDrawerHeaderModel({
   onLongPressName,
   onPressSetter,
   workoutStageLabel = null,
-  trackLabel = null,
 }: LivePlayDrawerHeaderProps): LivePlayDrawerHeaderModel | null {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
@@ -400,7 +381,6 @@ export function useLivePlayDrawerHeaderModel({
       statsAngle: climb.statsAngle,
       angle,
       workoutStageLabel,
-      trackLabel,
     };
     return Object.freeze({
       headerProps: Object.freeze(headerProps),
@@ -435,7 +415,6 @@ export function useLivePlayDrawerHeaderModel({
     climb?.statsAngle,
     angle,
     workoutStageLabel,
-    trackLabel,
     hasLeading,
     hasLongPressName,
     hasSetterAction,

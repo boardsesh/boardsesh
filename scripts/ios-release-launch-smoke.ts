@@ -13,6 +13,12 @@ import { acquireSimulatorLease, processIsAlive } from './lib/ios-simulator-lease
 
 const survivalWindowMs = 20_000;
 const pollIntervalMs = 1_000;
+// macos-26 runners took 72-118 s to install the Release app (2026-10-18/24), and two
+// runs died at the old 120 s limit before the app ever launched.
+const installTimeoutMs = 300_000;
+// `launchctl list` and `log show` only describe a launch the poll loop already judged.
+// On 2026-10-24 `log show` took about 28 s and `launchctl list` passed 30 s.
+const diagnosticTimeoutMs = 60_000;
 const simulatorUdidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,6 +56,8 @@ export interface ReleaseLaunchSummary {
   observations: { elapsedMs: number; alive: boolean }[];
   crashReports: string[];
   diagnosticsDir?: string;
+  /** Simulator evidence that could not be gathered. Never changes the launch verdict. */
+  diagnosticWarnings?: string[];
   error?: string;
   cleanupError?: string;
 }
@@ -164,6 +172,19 @@ function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function commandFailure(result: SmokeCommandResult): string {
+  const stderr = result.stderr.trim();
+  // A warning is one annotation line; the full stderr stays in commands.jsonl.
+  const shortStderr = stderr.length > 300 ? `${stderr.slice(0, 300)}…` : stderr;
+  return result.error ?? (shortStderr || `exit status ${result.status}`);
+}
+
+/** One GitHub Actions `::warning::` line; the message cannot end or forge the command. */
+export function workflowWarning(message: string): string {
+  const escaped = message.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+  return `::warning title=iOS Release launch smoke::${escaped}`;
+}
+
 /** Install once, cold-launch once, and keep the original process alive for the entire window. */
 export async function runReleaseLaunchSmoke(
   options: ReleaseLaunchOptions,
@@ -187,10 +208,12 @@ export async function runReleaseLaunchSmoke(
     }
   };
   const run = (command: string, args: string[], timeoutMs: number): SmokeCommandResult => {
+    const startedAt = dependencies.now();
     const result = dependencies.run(command, args, timeoutMs);
+    const durationMs = Math.round(dependencies.now() - startedAt);
     appendFileSync(
       join(options.evidenceDir, 'commands.jsonl'),
-      `${JSON.stringify({ command, args, timeoutMs, ...result })}\n`,
+      `${JSON.stringify({ command, args, timeoutMs, durationMs, ...result })}\n`,
     );
     return result;
   };
@@ -226,7 +249,7 @@ export async function runReleaseLaunchSmoke(
     if (!device) throw new Error(`Selected simulator ${options.device} is unavailable.`);
     if (device.state !== 'Booted') checked('xcrun', ['simctl', 'boot', options.device], 120_000);
     checked('xcrun', ['simctl', 'bootstatus', options.device, '-b'], 180_000);
-    checked('xcrun', ['simctl', 'install', options.device, options.appPath], 120_000);
+    checked('xcrun', ['simctl', 'install', options.device, options.appPath], installTimeoutMs);
     directories = dependencies.reportDirectories(options.device);
     baseline = dependencies.snapshotReports(directories);
     const launchOutput = checked(
@@ -275,48 +298,48 @@ export async function runReleaseLaunchSmoke(
     summary.error = failureMessage(error);
   } finally {
     // Gather while the selected device and original process still exist, before terminating anything.
+    // The verdict above is final: a slow or hung simulator diagnostic is a warning, never a pass or fail.
     try {
       if (lease) {
-        let diagnosticFailure: string | undefined;
+        const diagnosticFailures: string[] = [];
+        const diagnostic = (args: string[]): SmokeCommandResult => {
+          const result = run('xcrun', args, diagnosticTimeoutMs);
+          if (result.status !== 0 || result.error) {
+            // `simctl spawn <udid> launchctl list` is reported as "launchctl list".
+            const command = args
+              .slice(args.indexOf(options.device) + 1)
+              .slice(0, 2)
+              .join(' ');
+            diagnosticFailures.push(`${command}: ${commandFailure(result)}`);
+          }
+          return result;
+        };
         summary.diagnosticsDir = dependencies.preserveDiagnostics({
           udid: options.device,
           debugDir: options.evidenceDir,
           nativeLogPath: join(options.evidenceDir, 'app-stderr.log'),
           reportDirectories: directories,
           baseline,
-          runCommand: (args) => {
-            const result = run('xcrun', args, 30_000);
-            if (result.status !== 0 || result.error)
-              diagnosticFailure = result.error ?? result.stderr ?? 'Process evidence unavailable.';
-            return result;
-          },
+          runCommand: diagnostic,
         });
         if (summary.pid !== undefined) {
-          const logs = run(
-            'xcrun',
-            [
-              'simctl',
-              'spawn',
-              options.device,
-              'log',
-              'show',
-              '--style',
-              'compact',
-              '--last',
-              '2m',
-              '--predicate',
-              `processIdentifier == ${summary.pid}`,
-            ],
-            30_000,
-          );
+          const logs = diagnostic([
+            'simctl',
+            'spawn',
+            options.device,
+            'log',
+            'show',
+            '--style',
+            'compact',
+            '--last',
+            '2m',
+            '--predicate',
+            `processIdentifier == ${summary.pid}`,
+          ]);
           writeFileSync(join(options.evidenceDir, 'device.log'), `${logs.stdout}\n${logs.stderr}`);
-          if (logs.status !== 0 || logs.error)
-            diagnosticFailure = logs.error ?? logs.stderr ?? 'Device logs unavailable.';
         }
-        if (diagnosticFailure) {
-          summary.status = 'failed';
-          summary.error ??= `Diagnostic collection failed: ${diagnosticFailure}`;
-        }
+        if (diagnosticFailures.length > 0)
+          summary.diagnosticWarnings = diagnosticFailures.map((failure) => `Diagnostic collection failed: ${failure}`);
       }
     } catch (error) {
       summary.status = 'failed';
@@ -348,6 +371,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.log(
         `[ios-release-smoke] ${summary.bundleIdentifier} PID ${summary.pid} survived 20 seconds on ${summary.device}.`,
       );
+      for (const warning of summary.diagnosticWarnings ?? []) console.log(workflowWarning(warning));
       if (summary.cleanupError) console.warn(`[ios-release-smoke] Cleanup: ${summary.cleanupError}`);
     },
     (error: unknown) => {

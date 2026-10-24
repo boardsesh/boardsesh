@@ -41,6 +41,7 @@ export type MoreIconName =
   | 'general'
   | 'climbs'
   | 'home'
+  | 'timers'
   | 'earlyAccess'
   | 'developer'
   | 'export'

@@ -53,7 +53,7 @@ Player wording is being agreed with #6229. Until then this page uses these words
 | Word                         | Meaning                                                                                                                        | In code                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | List                         | Any screen that shows climbs in rows: search results, a playlist, your logbook, a session, the queue.                          | —                                                    |
-| Track, shown as "From …"     | The list the player is walking. Since F1 the header's stats line names it: "From Projects · 4 of 23" (the count only when it is known to be right). | `playlistSuggestionSource`, `resolveTrackLabel`      |
+| Track, shown in the top bar  | The list the player is walking. The player's top bar, between ⌄ and ⋯, names it: "Projects · 4 of 23" (the count only when it is known to be right). A long name is cut at its end; the count never is. F1 first put it on the header's stats line, where it pushed the sends and stars off the end. | `playlistSuggestionSource`, `resolveTrackLabel`      |
 | Queue                        | Your climbs in order: **History** (climbs before the current one), **Now** (the current climb), **Up next**. In a crew, the room's queue. | `queue`, `currentClimbQueueItem`                     |
 | Preview                      | The player shows a climb without making it current.                                                                             | `previewQueueItem`                                   |
 | Browsing (back chip)         | A preview whose swipes are guaranteed not to touch the wall.                                                                    | `WallPillState 'browsing'`                           |
@@ -445,8 +445,8 @@ _The queue sheet. (1) History. (2) The current climb. (3) Up next. (4) Suggestio
 Seven rules. Each one reuses a part that already exists in the code: the list track from
 #4829, the browse preview and Put on the wall from #4281, and Add to queue from #4731.
 
-1. **Tap a climb in any list and the player plays from that list**, and says so in its header:
-   "From Projects · 4 of 23".
+1. **Tap a climb in any list and the player plays from that list**, and says so in its top bar:
+   "Projects · 4 of 23".
 2. **Swipes walk that list and stop at its ends.** The last swipe shows an end card, "Keep going
    with your queue (3)", instead of dropping silently into older queue climbs.
 3. **The queue holds only what you or your crew add**: swipe to queue, Play next, Add to queue,
@@ -490,7 +490,7 @@ player names that list, walks it, and stops at its end card.
 
 | Surface                                  | Today                                                                                     | After                                                                                              |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Search results                           | Inserts the climb into the queue (a second copy if it was already queued) and walks the results, named "From Search results", to the end card (F1). | Plays from the results. Nothing is added to Up next (F1, F3).                                      |
+| Search results                           | Inserts the climb into the queue (a second copy if it was already queued) and walks the results, named "Search results" in the top bar, to the end card (F1). | Plays from the results. Nothing is added to Up next (F1, F3).                                      |
 | Playlist                                 | Replaces the queue, after "Start playlist?" if anything is queued, and walks it as the named playlist to the end card (F1). Play-all on Material only. | Plays from the playlist. Play button in both looks. Add to queue copies it in. The switch keeps today's replace (F4). |
 | For You and smart lists                  | Replaces the queue, same prompt; walks it as the named list (F1).                         | Plays from the list (F4).                                                                          |
 | Setter page                              | Replaces the queue, same prompt; walks it as the setter's list (F1).                      | Plays from the setter's list (F4).                                                                 |
@@ -546,7 +546,7 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `packages/shared/play-view/src/browse-defaults.ts`                     | The crew gate, `shouldDefaultToBrowse`.                                                                        |
 | `packages/shared/playlists-react/src/fetch-playlist-suggestion-climbs.ts` | A track's first load, the one-page `fetchPlaylistTrackPage`, the 1,000-climb track bound and the 20-page replace drain. |
 | `src/lib/playlists/track-pager.ts`, `src/components/play-drawer/use-track-paging.ts` | Paging a track past what is loaded, one page as the climber nears its end.                               |
-| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The header's "From Projects · 4 of 23" and the end card model.                                  |
+| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The top bar's "Projects · 4 of 23" and the end card model.                                      |
 | `src/lib/playlists/use-playlist-activation.ts`                         | Every list tap that goes through a track: wrong board, crew preview, replace, insert.                         |
 | `src/components/play-drawer/use-play-selection-controller.ts`          | Opens without a track (logbook, sessions, profile, feed) and the similar-climbs tap.                          |
 | `src/components/play-drawer/play-drawer-navigation.ts`                 | Whether a swipe stays a preview or commits.                                                                    |

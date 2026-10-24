@@ -221,6 +221,33 @@ describe('generateStagedPlan matches generateWorkoutPlan', () => {
     expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => slot.grade)).toEqual([1, 2, 3, 4, 10]);
   });
 
+  it('ramps a warm-up to the top grade of a descending ladder after it', () => {
+    const plan: WorkoutPlan = {
+      stages: [
+        { id: 'warm', kind: 'warmUp', warmUpType: 'standard' },
+        {
+          id: 'ladder',
+          kind: 'ladder',
+          options: {
+            ...DEFAULT_LADDER_OPTIONS,
+            warmUp: 'none',
+            descending: true,
+            targetGrade: 20,
+            numberOfSteps: 3,
+            climbsPerStep: 1,
+          },
+        },
+      ],
+    };
+    const staged = generateStagedPlan(plan, DENSE_GRADES);
+    const warmUpGrades = staged.filter((slot) => slot.section === 'warmUp').map((slot) => slot.grade);
+    const ladderGrades = staged.filter((slot) => slot.stageId === 'ladder').map((slot) => slot.grade);
+
+    expect(warmUpGrades).toEqual([16, 17, 18, 19]);
+    expect(ladderGrades).toEqual([20, 19, 18]);
+    expect(staged.map((slot) => slot.index)).toEqual(staged.map((_, position) => position));
+  });
+
   it('generates nothing for a workout stage whose kind does not match its options', () => {
     // Persisted data can drift from the types; it must not throw.
     const driftedStage = {
