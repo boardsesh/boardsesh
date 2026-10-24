@@ -124,4 +124,20 @@ describe('useWorkoutPreview with timed blocks', () => {
 
     expect(result.current.items.map(({ item }) => item.uuid)).not.toEqual(expect.arrayContaining(rowUuids));
   });
+
+  it('rebuilds the run on an on-the-minute interval change and keeps the climbs on screen', async () => {
+    const onTheMinute = { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 18 };
+    const { result, rerender } = renderPreview(onTheMinute);
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const rows = rowsOf(result.current.items);
+    const newInterval = onTheMinute.intervalSeconds + 15;
+
+    rerender({ selection: selectionWith({ ...onTheMinute, intervalSeconds: newInterval }) });
+    await waitFor(() =>
+      expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toMatchObject({ restSeconds: newInterval }),
+    );
+
+    expect(result.current.status).toBe('ready');
+    expect(rowsOf(result.current.items)).toEqual(rows);
+  });
 });

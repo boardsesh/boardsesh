@@ -12,6 +12,7 @@ import type { GeneratorGradeScale, GeneratorOptions, PlannedClimbSlot, WarmUpTyp
 export type WorkoutStageKind = 'warmUp' | WorkoutType;
 
 // A record so a kind added to the union fails to compile until it is listed here.
+// Key order is the kinds' display and test order: WORKOUT_STAGE_KINDS is built from it.
 const STAGE_KIND_FLAGS: Record<WorkoutStageKind, true> = {
   warmUp: true,
   volume: true,

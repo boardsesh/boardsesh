@@ -56,6 +56,17 @@ describe('blockSummary for timed blocks', () => {
     ).toBe('V6 · Climbs(4) · Rounds(4) · ClimbRest(0:30)');
   });
 
+  it('says no rest at all for a 4x4 with both rests at zero', () => {
+    expect(
+      summaryOf({
+        ...DEFAULT_FOUR_BY_FOUR_OPTIONS,
+        targetGrade: 6,
+        restBetweenClimbsSeconds: 0,
+        restBetweenRoundsSeconds: 0,
+      }),
+    ).toBe('V6 · Climbs(4) · Rounds(4)');
+  });
+
   it('says how many limit climbs and the rest after each attempt', () => {
     expect(summaryOf({ ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 8 })).toBe('V8 · Climbs(3) · Rest(3:00)');
     expect(summaryOf({ ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 8, restSeconds: 0 })).toBe('V8 · Climbs(3)');
