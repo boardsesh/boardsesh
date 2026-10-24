@@ -605,11 +605,8 @@ describe('board-snapshot export ↔ live pull parity', () => {
     await insertClimb({ uuid: 'imported-catalog', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await insertClimb({ uuid: 'authored-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'authored-private'`);
-    await insertClimb({ uuid: 'deleted-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await insertClimb({ uuid: 'deleted-public', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = 'deleted-public'`);
-    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
-      VALUES ('climb', 'deleted-private', NULL, 'only_me')`);
     await insertStat({
       climbUuid: 'imported-catalog',
       angle: 40,
@@ -623,13 +620,6 @@ describe('board-snapshot export ↔ live pull parity', () => {
       updatedAt: '2026-05-01T00:00:00Z',
     });
     await insertGrade({ climbUuid: 'authored-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
-    await insertStat({
-      climbUuid: 'deleted-private',
-      angle: 40,
-      faUsername: 'Deleted private author',
-      updatedAt: '2026-05-01T00:00:00Z',
-    });
-    await insertGrade({ climbUuid: 'deleted-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
     const filePath = join(workDir, 'privacy-artifact.db');
     const gradesFilePath = join(workDir, 'privacy-grades.db');
     const result = await exportLayoutSnapshot({

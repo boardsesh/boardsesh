@@ -126,6 +126,15 @@ describeWithDatabase('the deprecated climb audience (real DB)', () => {
     expect(await stored(draft.uuid)).toEqual({ isDraft: true, isListed: false, policies: 0, announced: false });
   });
 
+  it('rejects a climb policy row: the CHECK no longer allows climb (0281)', async () => {
+    await expect(
+      db.execute(
+        sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+          VALUES ('climb', 'no-such-climb', ${SETTER}, 'only_me')`,
+      ),
+    ).rejects.toMatchObject({ cause: { message: expect.stringContaining('content_privacy_type_check') } });
+  });
+
   it('parses a MoonBoard publish with a restricted audience as a draft', () => {
     const parsed = SaveMoonBoardClimbInputSchema.parse({
       boardType: 'moonboard',

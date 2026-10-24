@@ -1961,6 +1961,20 @@
       "when": 1792293023786,
       "tag": "0279_owner_comment_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 280,
+      "version": "7",
+      "when": 1792359789077,
+      "tag": "0280_drop_stray_climb_content_privacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 281,
+      "version": "7",
+      "when": 1792381059935,
+      "tag": "0281_narrow_content_privacy_type_check",
+      "breakpoints": true
     }
   ]
 }
