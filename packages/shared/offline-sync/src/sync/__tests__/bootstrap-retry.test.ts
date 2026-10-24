@@ -750,4 +750,84 @@ describe('bootstrap-retry persistence', () => {
       }).eligible,
     ).toBe(true);
   });
+
+  /**
+   * The real database behind a recorder: statements the MAIN connection ran, and
+   * each transaction's statements in order. Transactions still run on their own
+   * file-backed connection, so every row lands for real.
+   */
+  function recordingDatabase() {
+    const mainWrites: string[] = [];
+    const transactions: string[][] = [];
+    const recorded = {
+      execAsync: (source: string) => db.execAsync(source),
+      runAsync: (source: string, params: string[]) => {
+        mainWrites.push(source);
+        return db.runAsync(source, params);
+      },
+      getFirstAsync: (source: string, params: string[]) => db.getFirstAsync(source, params),
+      getAllAsync: (source: string, params: string[]) => db.getAllAsync(source, params),
+      withExclusiveTransactionAsync: (task: (txn: TestSqliteDb) => Promise<void>) =>
+        db.withExclusiveTransactionAsync(async (txn) => {
+          const statements: string[] = [];
+          transactions.push(statements);
+          await task({
+            execAsync: (source: string) => {
+              statements.push(source);
+              return txn.execAsync(source);
+            },
+            runAsync: (source: string, params: string[]) => {
+              statements.push(source);
+              return txn.runAsync(source, params);
+            },
+            getFirstAsync: (source: string, params: string[]) => {
+              statements.push(source);
+              return txn.getFirstAsync(source, params);
+            },
+            getAllAsync: (source: string, params: string[]) => {
+              statements.push(source);
+              return txn.getAllAsync(source, params);
+            },
+          } as unknown as TestSqliteDb);
+        }),
+    } as unknown as TestSqliteDb;
+    return { db: recorded, mainWrites, transactions };
+  }
+
+  it('takes the write lock with the busy timeout armed before writing a retry state (#5851)', async () => {
+    // A fresh transaction connection starts at busy_timeout 0 and expo opens it
+    // with a deferred BEGIN: without these three statements first, the INSERT
+    // failed the instant any other connection held the lock.
+    const recording = recordingDatabase();
+
+    await writeBootstrapRetryState(recording.db, 'kilter:1:5', burn(state(), 'transport'));
+
+    expect(recording.transactions).toHaveLength(1);
+    expect(recording.transactions[0].slice(0, 3)).toEqual(['PRAGMA busy_timeout = 5000', 'COMMIT', 'BEGIN IMMEDIATE']);
+    expect(recording.mainWrites).toEqual([]);
+  });
+
+  it('restores a budget in ONE foreground-sized transaction that also clears the caption (#5851)', async () => {
+    let current = state();
+    for (let failure = 0; failure < MAX_BOOTSTRAP_ATTEMPTS; failure += 1) current = burn(current, 'structural-device');
+    await writeBootstrapRetryState(db, 'kilter:1:5', current);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      'bootstrap-paged-fallback:kilter:1:5',
+      '1',
+    ]);
+    const recording = recordingDatabase();
+
+    await restoreBootstrapRetryBudget(recording.db, 'kilter:1:5');
+
+    // The climber is waiting on the Download confirm: the tap ladder's 2.5 s, not
+    // the background ladder's three 5 s waits.
+    expect(recording.transactions).toHaveLength(1);
+    const [statements] = recording.transactions;
+    expect(statements.slice(0, 3)).toEqual(['PRAGMA busy_timeout = 2500', 'COMMIT', 'BEGIN IMMEDIATE']);
+    // Read under the same lock it writes under, and the caption goes with it.
+    expect(statements.some((statement) => statement.startsWith('SELECT key, value FROM sync_meta'))).toBe(true);
+    expect(statements).toContain('DELETE FROM sync_meta WHERE key = ?');
+    expect(recording.mainWrites).toEqual([]);
+    expect(await readMeta('bootstrap-paged-fallback:kilter:1:5')).toBeNull();
+  });
 });

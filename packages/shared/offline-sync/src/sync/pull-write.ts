@@ -7,12 +7,20 @@
 // import cycle back through the pull client.
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
-import { beginImmediateWrite, OFFLINE_DB_BUSY_TIMEOUT_MS } from '../db/pragmas';
+import {
+  beginImmediateWrite,
+  OFFLINE_DB_BUSY_TIMEOUT_MS,
+  OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS,
+  OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+} from '../db/pragmas';
+import { isDatabaseLockedError } from '../db/lock-errors';
 import {
   runLocalWriteWithRetry,
   OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
   OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
   OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
+  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+  type LocalWriteRetryOptions,
 } from '../db/write-retry';
 import { TABLE_CONFIGS } from './table-config';
 
@@ -98,25 +106,168 @@ export function buildMultiRowInsertSql(
  * the ladder's default `shouldRetry` is `isDatabaseLockedError`, so it rethrows
  * immediately.
  *
- * A recovered lock reports NOTHING: `runLocalWriteWithRetry` is silent unless
- * attempt 1 threw, and no `onSettled` is passed, so the only lock that still
- * reaches telemetry is one the ladder could not win — which surfaces exactly where
- * it did before, as a failed cycle.
+ * TELEMETRY (issue #5851). Every call names its `site`. A write whose first
+ * attempt lost the lock reports once through the injected settle reporter
+ * (`setPullWriteSettledReporter`), recovered or not, so "how often does a
+ * background write meet a held lock, and for how long" is a number rather than
+ * an inference. A write the ladder could not win still surfaces where it did
+ * before, as a failed cycle, and now carries its site on the error
+ * (`getSqliteWriteSite`), so the report names the statement that lost.
+ *
+ * NEVER CALL THIS FROM INSIDE A TRANSACTION. It opens its own connection; from
+ * inside another write transaction that connection waits on the caller's own
+ * lock for the whole ladder and then fails. Pass the transaction executor to the
+ * helper instead.
  */
-export async function runPullWrite(
+export async function runPullWrite<T = void>(
   db: OfflineDatabase,
+  task: (transaction: SqlExecutor) => Promise<T>,
+  options: PullWriteOptions,
+): Promise<T> {
+  const sizing = options.sizing ?? 'background';
+  const ladder = PULL_WRITE_LADDERS[sizing];
+  let result: T | undefined;
+  try {
+    await runLocalWriteWithRetry(
+      (attempt) =>
+        db.withExclusiveTransactionAsync(async (transaction) => {
+          await beginImmediateWrite(transaction, ladder.busyTimeoutMs(attempt));
+          result = await task(transaction);
+        }),
+      {
+        maxAttempts: ladder.maxAttempts,
+        retryDelayMs: ladder.retryDelayMs,
+        budgetMs: ladder.budgetMs,
+        onSettled: ({ attempts, error, recovered, elapsedMs }) => {
+          // A non-lock throw on attempt 1 is a task's own control flow (an abort
+          // sentinel, a guard), not contention, and is not worth an event.
+          if (!isDatabaseLockedError(error)) return;
+          pullWriteSettledReporter?.({ site: options.site, sizing, attempts, recovered, elapsedMs });
+        },
+      },
+    );
+  } catch (error) {
+    if (isDatabaseLockedError(error)) tagSqliteWriteSite(error, options.site);
+    throw error;
+  }
+  return result as T;
+}
+
+/**
+ * `runPullWrite` for a write that must not land once a teardown has: `canWrite`
+ * runs INSIDE the writer lock, after `BEGIN IMMEDIATE`, on every attempt. That is
+ * the placement the page writes and the holds index already use, and the one a
+ * marker write needs most. A teardown holds the lock for seconds, so a write
+ * that waited behind it (or lost attempt 1 to it and retried) would otherwise put
+ * back the marker the teardown just deleted — a `scope-complete:` outliving its
+ * rows, or `user_data_complete` vouching for a wiped logbook.
+ *
+ * Any read the write depends on belongs in `task` too, so it reads under the same
+ * lock it writes under. A read on the main connection can be a snapshot older
+ * than the last commit, and a value derived from it would be a lost update.
+ *
+ * Resolves `true` when the task ran and committed, `false` when `canWrite`
+ * refused it (nothing was written). The caller maps `false` onto its own
+ * teardown exit.
+ */
+export async function runGuardedPullWrite(
+  db: OfflineDatabase,
+  options: PullWriteOptions & { canWrite: () => boolean },
   task: (transaction: SqlExecutor) => Promise<void>,
-): Promise<void> {
-  await runLocalWriteWithRetry(
-    () =>
-      db.withExclusiveTransactionAsync(async (transaction) => {
-        await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
-        await task(transaction);
-      }),
-    {
-      maxAttempts: OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
-      retryDelayMs: OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
-      budgetMs: OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
+): Promise<boolean> {
+  return runPullWrite(
+    db,
+    async (transaction) => {
+      if (!options.canWrite()) return false;
+      await task(transaction);
+      return true;
     },
+    options,
   );
+}
+
+/**
+ * `background` — the pull and every engine write nobody waits on: three attempts,
+ * the full 5 s wait each, inside a 20 s budget (OFFLINE_BACKGROUND_WRITE_*).
+ * `foreground` — a write the climber just tapped for (the Download confirm): the
+ * log-ascent sheet's two-attempt ladder, 2.5 s then 1.5 s, so a held lock cannot
+ * hold the screen for the background ladder's 15 s.
+ */
+export type PullWriteSizing = 'background' | 'foreground';
+
+export type PullWriteOptions = {
+  /**
+   * Low-cardinality label for telemetry: what the write is, never which scope.
+   * `deletions-coverage`, `scope-complete`, `bootstrap-retry-state`, ….
+   */
+  site: string;
+  /** Default `background`. */
+  sizing?: PullWriteSizing;
+};
+
+type PullWriteLadder = Required<Pick<LocalWriteRetryOptions, 'maxAttempts' | 'retryDelayMs' | 'budgetMs'>> & {
+  busyTimeoutMs: (attempt: number) => number;
+};
+
+const PULL_WRITE_LADDERS: Record<PullWriteSizing, PullWriteLadder> = {
+  background: {
+    maxAttempts: OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
+    retryDelayMs: OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
+    budgetMs: OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
+    busyTimeoutMs: () => OFFLINE_DB_BUSY_TIMEOUT_MS,
+  },
+  foreground: {
+    maxAttempts: 2,
+    retryDelayMs: 150,
+    budgetMs: OFFLINE_LOCAL_WRITE_BUDGET_MS,
+    busyTimeoutMs: (attempt) =>
+      attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+  },
+};
+
+/** One background write whose first attempt lost the SQLite write lock. */
+export type PullWriteSettledReport = {
+  site: string;
+  sizing: PullWriteSizing;
+  /** Attempts run, 1-based. */
+  attempts: number;
+  /** True when a later attempt committed; false when the ladder gave up. */
+  recovered: boolean;
+  /** First attempt to settle, wall clock. */
+  elapsedMs: number;
+};
+
+let pullWriteSettledReporter: ((report: PullWriteSettledReport) => void) | null = null;
+
+/**
+ * Register the platform's sink for `PullWriteSettledReport`s. One sink per
+ * process; returns the unregister. The engine stays analytics-free — mobile maps
+ * the report onto its own event.
+ */
+export function setPullWriteSettledReporter(reporter: (report: PullWriteSettledReport) => void): () => void {
+  pullWriteSettledReporter = reporter;
+  return () => {
+    if (pullWriteSettledReporter === reporter) pullWriteSettledReporter = null;
+  };
+}
+
+const SQLITE_WRITE_SITE = 'sqliteWriteSite';
+
+function tagSqliteWriteSite(error: unknown, site: string): void {
+  if (typeof error !== 'object' || error === null) return;
+  try {
+    if (!Object.isExtensible(error) || SQLITE_WRITE_SITE in error) return;
+    // Non-enumerable: the error keeps its identity and its serialised shape, and
+    // reporters read the site through `getSqliteWriteSite`.
+    Object.defineProperty(error, SQLITE_WRITE_SITE, { value: site, enumerable: false, configurable: true });
+  } catch {
+    // A diagnostic label must never replace the error it describes.
+  }
+}
+
+/** The `site` of the background write a lock error escaped from, if any. */
+export function getSqliteWriteSite(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const site = (error as { [SQLITE_WRITE_SITE]?: unknown })[SQLITE_WRITE_SITE];
+  return typeof site === 'string' ? site : null;
 }

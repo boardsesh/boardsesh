@@ -23,42 +23,46 @@ export async function removeDeletedClimbLocally(
   canWrite: () => boolean,
 ): Promise<boolean> {
   let removed = false;
-  await runPullWrite(db, async (transaction) => {
-    removed = false;
-    if (!canWrite()) return;
-    const row = await transaction.getFirstAsync<{ layout_id: number | null }>(
-      'SELECT layout_id FROM board_climbs WHERE uuid = ? AND board_type = ?',
-      [climb.uuid, climb.boardType],
-    );
-    await transaction.runAsync('DELETE FROM board_climb_stats WHERE board_type = ? AND climb_uuid = ?', [
-      climb.boardType,
-      climb.uuid,
-    ]);
-    await transaction.runAsync('DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid = ?', [
-      climb.boardType,
-      climb.uuid,
-    ]);
-    // No user filter on the favourite and playlist deletes: the local database
-    // holds one account's data at a time (sign-out clears it, and every write is
-    // fenced by `canWrite`), so every row here is the signed-in climber's own.
-    await transaction.runAsync('DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ?', [
-      climb.boardType,
-      climb.uuid,
-    ]);
-    // Climb uuids are unique across boards, and the local table carries no board.
-    await transaction.runAsync('DELETE FROM playlist_climbs WHERE climb_uuid = ?', [climb.uuid]);
-    const deleted = await transaction.runAsync('DELETE FROM board_climbs WHERE uuid = ? AND board_type = ?', [
-      climb.uuid,
-      climb.boardType,
-    ]);
-    removed = (deleted?.changes ?? 0) > 0;
-    if (removed && row?.layout_id != null) {
-      await removeClimbFromHoldIndex(transaction, {
-        uuid: climb.uuid,
-        boardType: climb.boardType,
-        layoutId: row.layout_id,
-      });
-    }
-  });
+  await runPullWrite(
+    db,
+    async (transaction) => {
+      removed = false;
+      if (!canWrite()) return;
+      const row = await transaction.getFirstAsync<{ layout_id: number | null }>(
+        'SELECT layout_id FROM board_climbs WHERE uuid = ? AND board_type = ?',
+        [climb.uuid, climb.boardType],
+      );
+      await transaction.runAsync('DELETE FROM board_climb_stats WHERE board_type = ? AND climb_uuid = ?', [
+        climb.boardType,
+        climb.uuid,
+      ]);
+      await transaction.runAsync('DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid = ?', [
+        climb.boardType,
+        climb.uuid,
+      ]);
+      // No user filter on the favourite and playlist deletes: the local database
+      // holds one account's data at a time (sign-out clears it, and every write is
+      // fenced by `canWrite`), so every row here is the signed-in climber's own.
+      await transaction.runAsync('DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ?', [
+        climb.boardType,
+        climb.uuid,
+      ]);
+      // Climb uuids are unique across boards, and the local table carries no board.
+      await transaction.runAsync('DELETE FROM playlist_climbs WHERE climb_uuid = ?', [climb.uuid]);
+      const deleted = await transaction.runAsync('DELETE FROM board_climbs WHERE uuid = ? AND board_type = ?', [
+        climb.uuid,
+        climb.boardType,
+      ]);
+      removed = (deleted?.changes ?? 0) > 0;
+      if (removed && row?.layout_id != null) {
+        await removeClimbFromHoldIndex(transaction, {
+          uuid: climb.uuid,
+          boardType: climb.boardType,
+          layoutId: row.layout_id,
+        });
+      }
+    },
+    { site: 'deleted-climb' },
+  );
   return removed;
 }

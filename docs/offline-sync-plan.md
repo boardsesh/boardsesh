@@ -1149,8 +1149,58 @@ refresh tail — goes through `runPullWrite`, which does two things the raw
   table skipped, no checkpoint advanced, no `scope-complete:` marker — so the board
   stayed stale until the next 30s wake met the same contention.
 
-A recovered lock reports nothing. One the ladder cannot win still surfaces as a
-failed cycle through `warnCycleError`, so a genuinely wedged database stays visible.
+A recovered lock reports nothing to Sentry. One the ladder cannot win still surfaces
+as a failed cycle through `warnCycleError`, so a genuinely wedged database stays
+visible. Since #5851 every recovered or exhausted lock also reaches PostHog as
+`Offline Background Write Retried` (`site`, `attempts`, `recovered`, `elapsedMs`),
+and an exhausted one tags its cycle failure with `sqliteWriteSite`.
+
+**Why the cycle never writes on the main connection** (issue #5851)
+
+The page writes were on the ladder; the cycle's ~25 `sync_meta` marker writes were
+not. They were autocommit `runAsync` calls on the main connection: the deletions
+coverage stamp, `user_data_complete`, `scope-complete:`, the start stamps, and about
+twenty bootstrap retry-state and fallback markers. The coverage stamp runs on every
+cycle whose deletions page comes back empty, and it was the write behind Sentry
+BOARDSESH-QS: `NativeStatement.runAsync` → code 5 in phase `deletions` with nothing
+processed. Deletions- and bootstrap-phase cycle failures reached 6.6% of active iOS
+2.6.0+18 users and 12% of Android 2001310 users in the week to 2026-10-24.
+
+The main connection is the one place a write cannot wait. expo runs async calls on a
+concurrent pool, and a convenience query keeps its statement open between the native
+`run` that steps the first row and the `finalize` a JS hop later, so while local
+reads refetch, the main connection is usually inside a READ transaction. An
+autocommit write there is a read→write upgrade, and SQLite runs no busy handler for
+an upgrade: it fails at once with SQLITE_BUSY when another connection holds the
+lock, or with SQLITE_BUSY_SNAPSHOT (517, printed as plain code 5) when another
+connection has committed since the read began. The 5 s `busy_timeout` never applies.
+`testing/shared-main-connection.ts` reproduces both against real SQLite.
+
+So every cycle write now goes through `runPullWrite` / `runGuardedPullWrite`: its
+own connection, `BEGIN IMMEDIATE`, the background ladder. Three rules come with it:
+
+- **The teardown guard runs inside the lock.** A marker write that waited behind
+  `removeBoardScopeData` or a sign-out wipe (or lost an attempt to it and retried)
+  would otherwise put back the marker the teardown just deleted — a
+  `scope-complete:` with no rows behind it, or `user_data_complete` vouching for a
+  wiped logbook. `runGuardedPullWrite` evaluates `canWrite` after `BEGIN IMMEDIATE`
+  on every attempt.
+- **A read the write depends on is read under the same lock.** A main-connection read
+  can be a snapshot older than the last commit; deriving a write from it on another
+  connection is a lost update (the grades attempt counter, the start stamp, the
+  Started-once marker, the reused-artifact free round). Main reads stay only as cheap
+  pre-checks whose stale answer can skip a write but never cause one.
+- **One decision, one commit.** A retry state and its fallback caption, or the
+  `bootstrap-done:` marker and the free-round clear, commit together.
+
+Cost: each marker is one short-lived connection. A steady-state cycle with nothing
+new writes one marker (deletions coverage); a board mid-download adds three (start
+stamp, Started, completion). `restoreBootstrapRetryBudget`, which the Download
+confirm awaits, runs on the foreground ladder (2.5 s then 1.5 s) instead.
+
+Not covered: the mutation drainer still writes `pending_mutations` through the main
+connection (`queue.ts`), and those writes now meet more cross-connection commits
+than before. Watch phase-`null` `exception` cycle failures after the OTA.
 
 **Why the launch gate opens before the schema is ready**
 
@@ -1259,7 +1309,11 @@ Each convenience-query statement is finalized once. SQLite frees the statement e
 when `sqlite3_finalize` reports a non-success result, so both Android and iOS mark the
 native statement finalized before throwing that error. If execution or reading
 already failed, cleanup preserves that primary error and attaches secondary cleanup
-failures for diagnosis. A cleanup failure after an otherwise successful operation
+failures for diagnosis. That is what the 2.5.0 `finalizeAsync` → "database is locked"
+reports were: `sqlite3_finalize` re-reports the step's SQLITE_BUSY, and the upstream
+helper's `finally` let that replace the real error. On a 2.6.0 binary the same
+failure names `runAsync`; the lock it lost is the subject of "Why the cycle never
+writes on the main connection" above. A cleanup failure after an otherwise successful operation
 still rejects the operation. This includes `UPDATE ... RETURNING`: receiving a row
 does not prove the write committed successfully.
 

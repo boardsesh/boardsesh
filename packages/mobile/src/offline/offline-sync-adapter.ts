@@ -33,6 +33,8 @@ import {
   pullSync as pullSyncCore,
   setBackgrounded,
   isScopeDownloadComplete,
+  setPullWriteSettledReporter,
+  getSqliteWriteSite,
   type DrainOptions,
   type MutationDeadLetterReporter,
   type MutationDeliveryEvent,
@@ -55,6 +57,7 @@ import {
   type SyncOptions,
   type SyncProgressSink,
   type AbandonedDownloadInfo,
+  type PullWriteSettledReport,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { getErrorStatus, isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
@@ -637,7 +640,11 @@ const warnCycleError = (error: unknown) => {
   const errorKind = classifyCycleErrorKind(error, expected, status);
   const phase = progress?.phase ?? null;
   const currentTable = progress?.currentTable ?? null;
-  const errorSignature = `${phase ?? 'unknown'}|${currentTable ?? 'none'}|${errorKind}|${status ?? 'none'}`;
+  // Which background write lost the SQLite lock, when that is what ended the
+  // cycle (#5851). The stack stops at expo's CodedError, so without this the
+  // statement that lost is a guess.
+  const sqliteWriteSite = getSqliteWriteSite(error);
+  const errorSignature = `${phase ?? 'unknown'}|${currentTable ?? 'none'}|${errorKind}|${status ?? 'none'}|${sqliteWriteSite ?? 'none'}`;
   const now = Date.now();
   const shouldReport =
     errorSignature !== lastCycleErrorSignature || now < lastCycleErrorAt || now - lastCycleErrorAt >= 300_000;
@@ -650,6 +657,9 @@ const warnCycleError = (error: unknown) => {
       status,
       errorKind,
       offlineEngineEnabled: isOfflineEngineEnabled(),
+      // Absent rather than null when no background write lost the lock, so every
+      // older failure shape is unchanged.
+      ...(sqliteWriteSite ? { sqliteWriteSite } : {}),
     });
     lastCycleErrorSignature = errorSignature;
     lastCycleErrorAt = now;
@@ -665,6 +675,7 @@ const warnCycleError = (error: unknown) => {
         source: 'offline-sync',
         kind: 'cycle',
         phase: progress?.phase ?? 'unknown',
+        ...(sqliteWriteSite ? { sqliteWriteSite } : {}),
       },
       extra: {
         currentTable: progress?.currentTable ?? null,
@@ -687,8 +698,29 @@ export function __resetCycleErrorDedupeForTests(): void {
   lastCycleErrorAt = 0;
 }
 
-// Feeds setBackgrounded() (Sentry BOARDSESH-AN) and the metered-link flag above;
-// call once for the app's lifetime — see OfflineSyncBridge.
+/**
+ * One background SQLite write lost the lock on its first attempt (#5851). Only
+ * contended writes reach here, so the event's count is the contention rate and
+ * `elapsedMs` is how long the holder really kept the lock. Never throws: the
+ * engine also guards the call, and a broken report must not fail a write.
+ */
+function reportBackgroundWriteRetried(report: PullWriteSettledReport): void {
+  try {
+    track(SHARED_EVENTS.OfflineBackgroundWriteRetried, {
+      site: report.site,
+      sizing: report.sizing,
+      attempts: report.attempts,
+      recovered: report.recovered,
+      elapsedMs: report.elapsedMs,
+    });
+  } catch (reportError) {
+    if (__DEV__) console.warn('[Sync] background write report failed:', reportError);
+  }
+}
+
+// Feeds setBackgrounded() (Sentry BOARDSESH-AN), the metered-link flag above and
+// the background-write telemetry sink; call once for the app's lifetime — see
+// OfflineSyncBridge.
 export function startBackgroundTracking(): () => void {
   const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
     if (nextState === 'background') setBackgrounded(true);
@@ -697,9 +729,11 @@ export function startBackgroundTracking(): () => void {
   const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
     isConnectionMetered = readMetered(state);
   });
+  const unregisterWriteTelemetry = setPullWriteSettledReporter(reportBackgroundWriteRetried);
   return () => {
     subscription.remove();
     unsubscribeNetInfo();
+    unregisterWriteTelemetry();
   };
 }
 

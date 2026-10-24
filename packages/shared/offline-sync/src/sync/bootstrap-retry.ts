@@ -63,6 +63,7 @@
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { isNetworkError } from '../mutation-queue/error-classification';
 import { classifySqliteLockError } from '../db/lock-errors';
+import { runPullWrite, type PullWriteSizing } from './pull-write';
 
 // --- sync_meta keys -----------------------------------------------------------
 //
@@ -710,9 +711,39 @@ export async function readBootstrapRetryState(
  * `structuralFailures` and settle the scope again — the confirmed retry
  * silently lost. A plain `SqlExecutor` (no transaction method) still works; it
  * just falls back to the two autocommit statements.
+ *
+ * The transaction is `runPullWrite`'s (issue #5851): its own connection opened
+ * `BEGIN IMMEDIATE` with the busy timeout armed, on the ladder `sizing` names. It
+ * used to be a bare `withExclusiveTransactionAsync`, whose fresh connection
+ * starts at `busy_timeout = 0` and whose deferred `BEGIN` let the first INSERT
+ * fail the instant any other connection held the lock.
+ *
+ * Pass the MAIN handle here, never a transaction executor: expo's transaction
+ * object has `withExclusiveTransactionAsync` too, and a nested connection would
+ * wait on its caller's own lock. Inside a transaction, call
+ * `writeBootstrapRetryRows` instead.
  */
 export async function writeBootstrapRetryState(
   db: SqlExecutor | OfflineDatabase,
+  scopeKey: string,
+  state: BootstrapRetryState,
+  options: { sizing?: PullWriteSizing } = {},
+): Promise<BootstrapRetryState> {
+  if ('withExclusiveTransactionAsync' in db) {
+    return runPullWrite(db, (txn) => writeBootstrapRetryRows(txn, scopeKey, state), {
+      site: 'bootstrap-retry-state',
+      sizing: options.sizing,
+    });
+  }
+  return writeBootstrapRetryRows(db, scopeKey, state);
+}
+
+/**
+ * The rows `writeBootstrapRetryState` writes, on the executor given: for a
+ * caller that is already inside the write transaction it wants them in.
+ */
+export async function writeBootstrapRetryRows(
+  txn: SqlExecutor,
   scopeKey: string,
   state: BootstrapRetryState,
 ): Promise<BootstrapRetryState> {
@@ -726,30 +757,19 @@ export async function writeBootstrapRetryState(
     : Math.min(state.structuralFailures, MAX_BOOTSTRAP_ATTEMPTS - 1);
   const mirrored: BootstrapRetryState = { ...state, mirroredAttempts: legacyAttempts };
 
-  const writeRows = async (txn: SqlExecutor): Promise<void> => {
+  await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${BOOTSTRAP_RETRY_PREFIX}${scopeKey}`,
+    JSON.stringify(mirrored),
+  ]);
+  await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    String(legacyAttempts),
+  ]);
+  if (mirrored.legacyHealSpent) {
     await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-      `${BOOTSTRAP_RETRY_PREFIX}${scopeKey}`,
-      JSON.stringify(mirrored),
+      `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
+      '1',
     ]);
-    await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-      `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
-      String(legacyAttempts),
-    ]);
-    if (mirrored.legacyHealSpent) {
-      await txn.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-        `${BOOTSTRAP_ATTEMPTS_HEALED_PREFIX}${scopeKey}`,
-        '1',
-      ]);
-    }
-  };
-
-  // Never called from inside another transaction — every call site settles a
-  // bootstrap decision between phases, not during the snapshot import — so the
-  // exclusive lock here can't nest.
-  if ('withExclusiveTransactionAsync' in db) {
-    await db.withExclusiveTransactionAsync(writeRows);
-  } else {
-    await writeRows(db);
   }
   return mirrored;
 }
@@ -785,10 +805,20 @@ export async function restoreBootstrapRetryBudget(
   db: SqlExecutor | OfflineDatabase,
   scopeKey: string,
 ): Promise<BootstrapRetryState> {
-  const { state } = await readBootstrapRetryState(db, scopeKey, { now: 0, random: () => 0 }, false);
-  const written = await writeBootstrapRetryState(db, scopeKey, clearRetryStateForUserRequest(state));
-  await clearBootstrapPagedFallback(db, scopeKey);
-  return written;
+  // Read, rewrite and clear under ONE write lock: the state is read-modify-write,
+  // and a read on the main connection can be a snapshot older than a cycle's
+  // settle that committed since. Foreground-sized — the climber has just
+  // confirmed the download and the kick waits on this.
+  const restore = async (txn: SqlExecutor): Promise<BootstrapRetryState> => {
+    const { state } = await readBootstrapRetryState(txn, scopeKey, { now: 0, random: () => 0 }, false);
+    const written = await writeBootstrapRetryRows(txn, scopeKey, clearRetryStateForUserRequest(state));
+    await clearBootstrapPagedFallback(txn, scopeKey);
+    return written;
+  };
+  if ('withExclusiveTransactionAsync' in db) {
+    return runPullWrite(db, restore, { site: 'bootstrap-retry-restore', sizing: 'foreground' });
+  }
+  return restore(db);
 }
 
 /** Cheap page-boundary check; a retry never needs to reset or remove downloaded rows. */

@@ -70,7 +70,7 @@ import {
   shouldSkipPagedPull,
   hasUserRequestedBootstrapRetry,
   spendUserRequest,
-  writeBootstrapRetryState,
+  writeBootstrapRetryRows,
   type BootstrapFailureKind,
   type BootstrapRetryState,
 } from './bootstrap-retry';
@@ -96,7 +96,7 @@ import {
   resetUserDataForLostCoverage,
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
-import { runPullWrite } from './pull-write';
+import { runGuardedPullWrite, runPullWrite } from './pull-write';
 import { writePullDocuments } from './document-writer';
 export { toSqliteValue } from './document-writer';
 import {
@@ -798,24 +798,28 @@ async function upsertDocuments(
   // commit overhead by 10 while giving the drainer no meaningful extra window —
   // it can interleave between pages either way.
   let committed = false;
-  await runPullWrite(db, async (transaction) => {
-    // A retried attempt re-runs this whole body, and the rollback of the failed one
-    // means none of its rows are there — so reset rather than carry the last
-    // attempt's verdict into this one.
-    committed = false;
-    if (page && !page.canWrite()) return;
-    await writePullDocuments(
-      transaction,
-      tableName,
-      documents,
-      allowedColumns,
-      transientColumns,
-      page?.preserveNewerRows ?? false,
-      onSchemaDrift,
-    );
-    await page?.afterUpsert(transaction);
-    committed = true;
-  });
+  await runPullWrite(
+    db,
+    async (transaction) => {
+      // A retried attempt re-runs this whole body, and the rollback of the failed one
+      // means none of its rows are there — so reset rather than carry the last
+      // attempt's verdict into this one.
+      committed = false;
+      if (page && !page.canWrite()) return;
+      await writePullDocuments(
+        transaction,
+        tableName,
+        documents,
+        allowedColumns,
+        transientColumns,
+        page?.preserveNewerRows ?? false,
+        onSchemaDrift,
+      );
+      await page?.afterUpsert(transaction);
+      committed = true;
+    },
+    { site: 'pull-page' },
+  );
   return committed;
 }
 
@@ -963,15 +967,19 @@ async function syncTable(
     // viewer's metadata always keeps the ordinary saved cursor, never artifact W.
     if (checkpoint?.snapshotSupplement && !supplement && !refresh) {
       let cleared = false;
-      await runPullWrite(db, async (transaction) => {
-        cleared = false;
-        if (!canWrite()) return;
-        await setCheckpoint(transaction, checkpointKey, {
-          updatedAt: checkpoint.updatedAt,
-          syncSeq: checkpoint.syncSeq,
-        });
-        cleared = true;
-      });
+      await runPullWrite(
+        db,
+        async (transaction) => {
+          cleared = false;
+          if (!canWrite()) return;
+          await setCheckpoint(transaction, checkpointKey, {
+            updatedAt: checkpoint.updatedAt,
+            syncSeq: checkpoint.syncSeq,
+          });
+          cleared = true;
+        },
+        { site: 'supplement-clear' },
+      );
       if (!cleared) return finish(false);
     }
     while (hasMore) {
@@ -1001,15 +1009,19 @@ async function syncTable(
       } catch (cause) {
         if (!supplement || !rejectsSnapshotSupplement(cause)) throw cause;
         let cleared = false;
-        await runPullWrite(db, async (transaction) => {
-          cleared = false;
-          if (!canWrite()) return;
-          await setCheckpoint(transaction, checkpointKey, {
-            updatedAt: checkpoint!.updatedAt,
-            syncSeq: checkpoint!.syncSeq,
-          });
-          cleared = true;
-        });
+        await runPullWrite(
+          db,
+          async (transaction) => {
+            cleared = false;
+            if (!canWrite()) return;
+            await setCheckpoint(transaction, checkpointKey, {
+              updatedAt: checkpoint!.updatedAt,
+              syncSeq: checkpoint!.syncSeq,
+            });
+            cleared = true;
+          },
+          { site: 'supplement-clear' },
+        );
         if (!cleared) return finish(false);
         supplement = null;
         cursor = { updatedAt: checkpoint!.updatedAt, syncSeq: checkpoint!.syncSeq };
@@ -1027,12 +1039,16 @@ async function syncTable(
         if (supplement) {
           const artifactWatermark = supplement.artifactWatermark;
           let promoted = false;
-          await runPullWrite(db, async (transaction) => {
-            promoted = false;
-            if (!canWrite()) return;
-            await setCheckpoint(transaction, checkpointKey, artifactWatermark);
-            promoted = true;
-          });
+          await runPullWrite(
+            db,
+            async (transaction) => {
+              promoted = false;
+              if (!canWrite()) return;
+              await setCheckpoint(transaction, checkpointKey, artifactWatermark);
+              promoted = true;
+            },
+            { site: 'supplement-promote' },
+          );
           if (!promoted) return finish(false);
           supplement = null;
           cursor = artifactWatermark;
@@ -1161,18 +1177,22 @@ async function syncTable(
       // before #5302 this transaction's later write had to upgrade a READ
       // transaction and lost instantly under any contention, `busy_timeout`
       // notwithstanding.
-      await runPullWrite(db, async (transaction) => {
-        completed = false;
-        if (!canWrite()) return;
-        await markSchemaRefreshComplete(
-          transaction,
-          tableName,
-          boardScope.scopeKey,
-          lastCursor,
-          refresh ? 'refresh' : 'download',
-        );
-        completed = true;
-      });
+      await runPullWrite(
+        db,
+        async (transaction) => {
+          completed = false;
+          if (!canWrite()) return;
+          await markSchemaRefreshComplete(
+            transaction,
+            tableName,
+            boardScope.scopeKey,
+            lastCursor,
+            refresh ? 'refresh' : 'download',
+          );
+          completed = true;
+        },
+        { site: 'refresh-tail' },
+      );
       if (!completed) return finish(false);
     }
 
@@ -1244,161 +1264,165 @@ async function processDeletions(
     // asked to keep. Filled inside the transaction, used after it commits.
     const pageDeletedRows = new Map<string, Record<string, unknown>[]>();
     try {
-      await runPullWrite(db, async (transaction) => {
-        // A retried attempt starts from a rollback: nothing it found was deleted.
-        pageInvalidations.length = 0;
-        pageDeletedRows.clear();
-        // Expo opens this wrapper with deferred BEGIN: entering the callback is
-        // NOT writer-lock ownership — `beginImmediateWrite` inside runPullWrite is
-        // what takes it, before the first statement below rather than because of
-        // it. Re-writing the page's current cursor (or creating the epoch cursor on
-        // page one) then runs with the writer lock already held, so it still
-        // waits behind a purge and the guard after it still rolls this write back
-        // if the purge won.
-        // If we won, a purge cannot finish until this transaction commits or
-        // rolls back. This closes the queue gap where a stale page could otherwise
-        // commit after a wipe that landed between callback entry and first DELETE.
-        await setCheckpoint(transaction, checkpointKey, cursor ?? epochCursor);
-        if (isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded()) {
-          throw new DeletionPageAbortedError();
-        }
-
-        for (const deletion of result.deletions) {
-          const config = TABLE_CONFIGS[deletion.tableName];
-          if (!config) continue;
-
-          const pkColumns = config.primaryKeyColumns;
-
-          // Resurrection guard: a tombstone must not delete a row NEWER than the
-          // deletion (delete-then-re-add on another device — the re-added row and
-          // the stale tombstone can arrive in the same pull). Rows the tombstone
-          // post-dates are deleted; ties delete too (same-transaction recreate),
-          // which converges because deletions are applied BEFORE the table pulls.
-          const hasUpdatedAt = config.localColumns.includes('updated_at');
-          const guardClause = hasUpdatedAt ? ' AND (updated_at IS NULL OR updated_at <= ?)' : '';
-          const guardParams = hasUpdatedAt ? [deletion.deletedAt] : [];
-          let rowsDeleted = 0;
-          // Set for a deleted climb: the one board whose lists lost a row.
-          let changedBoard: BoardScopeKey | undefined;
-
-          if (pkColumns.length === 1) {
-            // Read what the platform will need once the row is gone. Only the
-            // single-key branch: `captureOnDelete` exists for `spray_walls`,
-            // whose key is one column, and a composite-key table would need the
-            // same split the DELETE below does — add it there when one asks.
-            let captured: Record<string, unknown> | null = null;
-            // A climb leaves the device-derived holds index with it (below). Its
-            // postings are per (board, layout), so read those now, before the row
-            // is gone.
-            const deletedClimb =
-              deletion.tableName === 'board_climbs'
-                ? await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
-                    'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
-                    [deletion.recordId],
-                  )
-                : null;
-            if (config.captureOnDelete && config.captureOnDelete.length > 0) {
-              captured = await transaction.getFirstAsync<Record<string, unknown>>(
-                `SELECT ${config.captureOnDelete.join(', ')} FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?`,
-                [deletion.recordId],
-              );
-            }
-            const deleteResult = await transaction.runAsync(
-              `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
-              [deletion.recordId, ...guardParams],
-            );
-            rowsDeleted = deleteResult?.changes ?? 0;
-            if (deletedClimb?.board_type && deletedClimb.layout_id !== null) {
-              changedBoard = { boardType: deletedClimb.board_type, layoutId: deletedClimb.layout_id };
-            }
-            // Local cascade: the server's whole-playlist delete cascades
-            // playlist_climbs in Postgres but deliberately emits NO child
-            // tombstones (see 0144's NULL-parent guard), and the local SQLite has
-            // no FK cascade — without this, a deleted playlist's climb rows would
-            // accumulate as invisible orphans forever. Gated on the parent delete
-            // actually removing a row so a resurrection-guarded (stale) playlist
-            // tombstone doesn't strip a live playlist's climbs.
-            if (deletion.tableName === 'playlists' && (deleteResult?.changes ?? 0) > 0) {
-              await transaction.runAsync(`DELETE FROM playlist_climbs WHERE playlist_uuid = ?`, [deletion.recordId]);
-            }
-            // Same local cascade for the device-derived holds index: nothing on
-            // the server tombstones it, because the server never sent it. Gated
-            // the same way, so a resurrection-guarded tombstone keeps a live
-            // climb indexed.
-            if (deletedClimb?.board_type && deletedClimb.layout_id !== null && (deleteResult?.changes ?? 0) > 0) {
-              await removeClimbFromHoldIndex(transaction, {
-                uuid: deletion.recordId,
-                boardType: deletedClimb.board_type,
-                layoutId: deletedClimb.layout_id,
-              });
-            }
-            // Only when the row really went: a resurrection-guarded tombstone
-            // leaves a live row behind, and deleting its photograph would blank
-            // a wall the device still has.
-            if (captured && (deleteResult?.changes ?? 0) > 0) {
-              const rows = pageDeletedRows.get(deletion.tableName) ?? [];
-              rows.push(captured);
-              pageDeletedRows.set(deletion.tableName, rows);
-            }
-          } else {
-            // Backend encodes composite PKs as exactly N colon-separated segments
-            // matching primaryKeyColumns order (e.g. "kilter:uuid:40" for
-            // board_climb_stats with PK [board_type, climb_uuid, angle]). The split
-            // must produce exactly pkColumns.length parts — if not, skip the deletion
-            // rather than silently deleting the wrong row.
-            const recordIdParts = deletion.recordId.split(':');
-            if (recordIdParts.length !== pkColumns.length) {
-              console.warn(
-                `[Sync] Skipping deletion: expected ${pkColumns.length} PK parts for ${deletion.tableName}, got ${recordIdParts.length} from "${deletion.recordId}"`,
-              );
-              continue;
-            }
-            const whereClause = pkColumns.map((col) => `${col} = ?`).join(' AND ');
-            const deleteResult = await transaction.runAsync(
-              `DELETE FROM ${deletion.tableName} WHERE ${whereClause}${guardClause}`,
-              [...recordIdParts, ...guardParams],
-            );
-            rowsDeleted = deleteResult?.changes ?? 0;
-            // A stats or grade row hangs off a climb, and the server deletes them
-            // ahead of it, so the climb is normally still here to say which board
-            // this was. Without it a deleted wall climb with one ascent would
-            // refresh every board's lists through its stats tombstone. Only read
-            // for a row that was really removed: most of these name boards the
-            // device never held.
-            const climbUuid = recordIdParts[pkColumns.indexOf('climb_uuid')];
-            if (config.isPerBoard && rowsDeleted > 0 && climbUuid !== undefined) {
-              const climb = await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
-                'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
-                [climbUuid],
-              );
-              if (climb?.board_type && climb.layout_id !== null) {
-                changedBoard = { boardType: climb.board_type, layoutId: climb.layout_id };
-              }
-            }
+      await runPullWrite(
+        db,
+        async (transaction) => {
+          // A retried attempt starts from a rollback: nothing it found was deleted.
+          pageInvalidations.length = 0;
+          pageDeletedRows.clear();
+          // Expo opens this wrapper with deferred BEGIN: entering the callback is
+          // NOT writer-lock ownership — `beginImmediateWrite` inside runPullWrite is
+          // what takes it, before the first statement below rather than because of
+          // it. Re-writing the page's current cursor (or creating the epoch cursor on
+          // page one) then runs with the writer lock already held, so it still
+          // waits behind a purge and the guard after it still rolls this write back
+          // if the purge won.
+          // If we won, a purge cannot finish until this transaction commits or
+          // rolls back. This closes the queue gap where a stale page could otherwise
+          // commit after a wipe that landed between callback entry and first DELETE.
+          await setCheckpoint(transaction, checkpointKey, cursor ?? epochCursor);
+          if (isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded()) {
+            throw new DeletionPageAbortedError();
           }
 
-          // Board tombstones go to every device, for every board (#6302), in
-          // volume: a fresh install replays thousands of stats rows for boards it
-          // never held. One that removes nothing here says nothing, where it used
-          // to refetch every climb list on screen. The price is a board that is
-          // not downloaded: its lists come from the network, and a climb deleted
-          // there now stays until the list goes stale, like any other change made
-          // on the server. A user-table tombstone always counts. Those are the
-          // climber's own rows, few, and can be on screen from the network without
-          // ever having been pulled into SQLite.
-          if (config.isPerBoard && rowsDeleted === 0) continue;
-          pageInvalidations.push({ keys: config.invalidateKeys, board: changedBoard });
-        }
+          for (const deletion of result.deletions) {
+            const config = TABLE_CONFIGS[deletion.tableName];
+            if (!config) continue;
 
-        // A purge/background transition may start while we hold the writer lock.
-        // Roll back before publishing the page cursor so the purge can take the
-        // lock next; if it starts after this guard, it necessarily runs after our
-        // commit and clears this cursor itself.
-        if (isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded()) {
-          throw new DeletionPageAbortedError();
-        }
-        await setCheckpoint(transaction, checkpointKey, result.cursor);
-      });
+            const pkColumns = config.primaryKeyColumns;
+
+            // Resurrection guard: a tombstone must not delete a row NEWER than the
+            // deletion (delete-then-re-add on another device — the re-added row and
+            // the stale tombstone can arrive in the same pull). Rows the tombstone
+            // post-dates are deleted; ties delete too (same-transaction recreate),
+            // which converges because deletions are applied BEFORE the table pulls.
+            const hasUpdatedAt = config.localColumns.includes('updated_at');
+            const guardClause = hasUpdatedAt ? ' AND (updated_at IS NULL OR updated_at <= ?)' : '';
+            const guardParams = hasUpdatedAt ? [deletion.deletedAt] : [];
+            let rowsDeleted = 0;
+            // Set for a deleted climb: the one board whose lists lost a row.
+            let changedBoard: BoardScopeKey | undefined;
+
+            if (pkColumns.length === 1) {
+              // Read what the platform will need once the row is gone. Only the
+              // single-key branch: `captureOnDelete` exists for `spray_walls`,
+              // whose key is one column, and a composite-key table would need the
+              // same split the DELETE below does — add it there when one asks.
+              let captured: Record<string, unknown> | null = null;
+              // A climb leaves the device-derived holds index with it (below). Its
+              // postings are per (board, layout), so read those now, before the row
+              // is gone.
+              const deletedClimb =
+                deletion.tableName === 'board_climbs'
+                  ? await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
+                      'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
+                      [deletion.recordId],
+                    )
+                  : null;
+              if (config.captureOnDelete && config.captureOnDelete.length > 0) {
+                captured = await transaction.getFirstAsync<Record<string, unknown>>(
+                  `SELECT ${config.captureOnDelete.join(', ')} FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?`,
+                  [deletion.recordId],
+                );
+              }
+              const deleteResult = await transaction.runAsync(
+                `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
+                [deletion.recordId, ...guardParams],
+              );
+              rowsDeleted = deleteResult?.changes ?? 0;
+              if (deletedClimb?.board_type && deletedClimb.layout_id !== null) {
+                changedBoard = { boardType: deletedClimb.board_type, layoutId: deletedClimb.layout_id };
+              }
+              // Local cascade: the server's whole-playlist delete cascades
+              // playlist_climbs in Postgres but deliberately emits NO child
+              // tombstones (see 0144's NULL-parent guard), and the local SQLite has
+              // no FK cascade — without this, a deleted playlist's climb rows would
+              // accumulate as invisible orphans forever. Gated on the parent delete
+              // actually removing a row so a resurrection-guarded (stale) playlist
+              // tombstone doesn't strip a live playlist's climbs.
+              if (deletion.tableName === 'playlists' && (deleteResult?.changes ?? 0) > 0) {
+                await transaction.runAsync(`DELETE FROM playlist_climbs WHERE playlist_uuid = ?`, [deletion.recordId]);
+              }
+              // Same local cascade for the device-derived holds index: nothing on
+              // the server tombstones it, because the server never sent it. Gated
+              // the same way, so a resurrection-guarded tombstone keeps a live
+              // climb indexed.
+              if (deletedClimb?.board_type && deletedClimb.layout_id !== null && (deleteResult?.changes ?? 0) > 0) {
+                await removeClimbFromHoldIndex(transaction, {
+                  uuid: deletion.recordId,
+                  boardType: deletedClimb.board_type,
+                  layoutId: deletedClimb.layout_id,
+                });
+              }
+              // Only when the row really went: a resurrection-guarded tombstone
+              // leaves a live row behind, and deleting its photograph would blank
+              // a wall the device still has.
+              if (captured && (deleteResult?.changes ?? 0) > 0) {
+                const rows = pageDeletedRows.get(deletion.tableName) ?? [];
+                rows.push(captured);
+                pageDeletedRows.set(deletion.tableName, rows);
+              }
+            } else {
+              // Backend encodes composite PKs as exactly N colon-separated segments
+              // matching primaryKeyColumns order (e.g. "kilter:uuid:40" for
+              // board_climb_stats with PK [board_type, climb_uuid, angle]). The split
+              // must produce exactly pkColumns.length parts — if not, skip the deletion
+              // rather than silently deleting the wrong row.
+              const recordIdParts = deletion.recordId.split(':');
+              if (recordIdParts.length !== pkColumns.length) {
+                console.warn(
+                  `[Sync] Skipping deletion: expected ${pkColumns.length} PK parts for ${deletion.tableName}, got ${recordIdParts.length} from "${deletion.recordId}"`,
+                );
+                continue;
+              }
+              const whereClause = pkColumns.map((col) => `${col} = ?`).join(' AND ');
+              const deleteResult = await transaction.runAsync(
+                `DELETE FROM ${deletion.tableName} WHERE ${whereClause}${guardClause}`,
+                [...recordIdParts, ...guardParams],
+              );
+              rowsDeleted = deleteResult?.changes ?? 0;
+              // A stats or grade row hangs off a climb, and the server deletes them
+              // ahead of it, so the climb is normally still here to say which board
+              // this was. Without it a deleted wall climb with one ascent would
+              // refresh every board's lists through its stats tombstone. Only read
+              // for a row that was really removed: most of these name boards the
+              // device never held.
+              const climbUuid = recordIdParts[pkColumns.indexOf('climb_uuid')];
+              if (config.isPerBoard && rowsDeleted > 0 && climbUuid !== undefined) {
+                const climb = await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
+                  'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
+                  [climbUuid],
+                );
+                if (climb?.board_type && climb.layout_id !== null) {
+                  changedBoard = { boardType: climb.board_type, layoutId: climb.layout_id };
+                }
+              }
+            }
+
+            // Board tombstones go to every device, for every board (#6302), in
+            // volume: a fresh install replays thousands of stats rows for boards it
+            // never held. One that removes nothing here says nothing, where it used
+            // to refetch every climb list on screen. The price is a board that is
+            // not downloaded: its lists come from the network, and a climb deleted
+            // there now stays until the list goes stale, like any other change made
+            // on the server. A user-table tombstone always counts. Those are the
+            // climber's own rows, few, and can be on screen from the network without
+            // ever having been pulled into SQLite.
+            if (config.isPerBoard && rowsDeleted === 0) continue;
+            pageInvalidations.push({ keys: config.invalidateKeys, board: changedBoard });
+          }
+
+          // A purge/background transition may start while we hold the writer lock.
+          // Roll back before publishing the page cursor so the purge can take the
+          // lock next; if it starts after this guard, it necessarily runs after our
+          // commit and clears this cursor itself.
+          if (isSigningOut() || hasPurgeLanded(purgeToken) || isBackgrounded()) {
+            throw new DeletionPageAbortedError();
+          }
+          await setCheckpoint(transaction, checkpointKey, result.cursor);
+        },
+        { site: 'deletions-page' },
+      );
     } catch (error) {
       if (error instanceof DeletionPageAbortedError) return { reachedTail: false };
       throw error;
@@ -1533,6 +1557,10 @@ async function settleBootstrapFailure(
     builtAt: string | null;
     now: number;
     random: () => number;
+    /** Read inside the writer lock; false refuses the whole settle (a wipe landed). */
+    canWrite: () => boolean;
+    /** Stamp the paged-fallback marker even when the scope is not terminal. */
+    forcePagedFallback?: boolean;
   },
 ): Promise<{
   state: BootstrapRetryState;
@@ -1541,6 +1569,8 @@ async function settleBootstrapFailure(
   cause: unknown;
   /** False for the free manifest-transport case: nothing was written to sync_meta. */
   persisted: boolean;
+  /** True when a wipe refused the write: nothing was written, and the scope is going away. */
+  refused: boolean;
 }> {
   const { state, cause, stage, builtAt, now, random } = input;
   const failureKind = classifyBootstrapFailure({ cause, stage });
@@ -1550,19 +1580,30 @@ async function settleBootstrapFailure(
     // Charging a per-scope budget for a bad response can terminal every board
     // on a device from one broken publish. Keep all manifest failures cap- and
     // cooldown-exempt; the scheduler supplies the bounded-frequency retry.
-    return { state, failureKind, expected, cause, persisted: false };
+    return { state, failureKind, expected, cause, persisted: false, refused: false };
   }
   const scheduled = nextRetryState({ state, failureKind, builtAt, now, random });
-  const written = await writeBootstrapRetryState(db, scopeKey, scheduled);
-  if (isTerminal(written)) {
-    await markBootstrapPagedFallback(db, scopeKey);
-  } else {
-    // Preserve the prior fallback marker until the new attempt has a durable
-    // outcome. Clearing it here avoids an abort window where the UI observes a
-    // transient decision that this run never finished making.
-    await clearBootstrapPagedFallback(db, scopeKey);
-  }
-  return { state: written, failureKind, expected, cause, persisted: true };
+  // The budget, its legacy mirror and the fallback caption are one decision, so
+  // they commit together, behind the wipe guard (issue #5851).
+  const written = await runPullWrite(
+    db,
+    async (transaction) => {
+      if (!input.canWrite()) return null;
+      const rows = await writeBootstrapRetryRows(transaction, scopeKey, scheduled);
+      if (input.forcePagedFallback || isTerminal(rows)) {
+        await markBootstrapPagedFallback(transaction, scopeKey);
+      } else {
+        // Preserve the prior fallback marker until the new attempt has a durable
+        // outcome. Clearing it here avoids an abort window where the UI observes a
+        // transient decision that this run never finished making.
+        await clearBootstrapPagedFallback(transaction, scopeKey);
+      }
+      return rows;
+    },
+    { site: 'bootstrap-settle' },
+  );
+  if (!written) return { state, failureKind, expected, cause, persisted: false, refused: true };
+  return { state: written, failureKind, expected, cause, persisted: true, refused: false };
 }
 
 async function resolveManifestOnce(
@@ -1779,6 +1820,66 @@ async function runBootstrapPhase(params: {
     return null;
   };
 
+  /**
+   * The subset of `teardownVerdict` a WRITE must respect: a sign-out, a global
+   * wipe, or a purge of this scope's own namespace. Backgrounding is left out on
+   * purpose — it pauses new work but has never invalidated a decision this phase
+   * already reached, and the writes below have always landed in the background.
+   */
+  const wipeVerdict = (scopeKey: string): TeardownVerdict | null => {
+    if (isSigningOut() || hasPurgeLanded(purgeToken)) return { reason: 'aborted-wipe', kind: 'cycle' };
+    const namespace = purgeNamespaceForScopeKey(scopeKey);
+    if (namespace !== undefined && hasPurgeLanded(purgeToken, namespace)) {
+      return { reason: 'aborted-wipe', kind: 'scope' };
+    }
+    return null;
+  };
+  /** What a refused write leaves the caller with; `cycle` when no flag says. */
+  const refusedWriteVerdict = (scopeKey: string): TeardownVerdict =>
+    wipeVerdict(scopeKey) ?? { reason: 'aborted-wipe', kind: 'cycle' };
+
+  /**
+   * Every bootstrap-metadata write goes through here (issue #5851): its own
+   * connection opened `BEGIN IMMEDIATE`, the background retry ladder, and the
+   * wipe guard read INSIDE the writer lock. These used to be autocommit writes
+   * on the main connection, where a write is usually a read→write upgrade that
+   * SQLite fails at once rather than waiting — about 15 of them sat outside any
+   * catch and unwound the whole phase on one loss. Resolves false, having
+   * written nothing, when a wipe landed first.
+   */
+  const writeScopeMetadata = (
+    scopeKey: string,
+    site: string,
+    task: (transaction: SqlExecutor) => Promise<void>,
+  ): Promise<boolean> => runGuardedPullWrite(db, { site, canWrite: () => wipeVerdict(scopeKey) === null }, task);
+
+  /**
+   * `writeBootstrapRetryState`, guarded the same way. `alsoInTransaction` puts a
+   * marker that belongs to the same decision in the same commit. Resolves the
+   * state that was written, or null when a wipe refused it.
+   */
+  const writeRetryState = (
+    scopeKey: string,
+    state: BootstrapRetryState,
+    alsoInTransaction?: (transaction: SqlExecutor, written: BootstrapRetryState) => Promise<void>,
+  ): Promise<BootstrapRetryState | null> =>
+    runPullWrite(
+      db,
+      async (transaction) => {
+        if (wipeVerdict(scopeKey) !== null) return null;
+        const written = await writeBootstrapRetryRows(transaction, scopeKey, state);
+        await alsoInTransaction?.(transaction, written);
+        return written;
+      },
+      { site: 'bootstrap-retry-state' },
+    );
+
+  /** `markBootstrapPagedFallback`, guarded. False when a wipe refused it. */
+  const markPagedFallback = (scopeKey: string): Promise<boolean> =>
+    writeScopeMetadata(scopeKey, 'bootstrap-paged-fallback', (transaction) =>
+      markBootstrapPagedFallback(transaction, scopeKey),
+    );
+
   // The terminal-event invariant, enforced structurally rather than site by site
   // (issue #4316). Armed at the Started emission below and closed from the
   // per-scope `finally`, so an exit nobody registered — a future `break`, a
@@ -1842,6 +1943,21 @@ async function runBootstrapPhase(params: {
     // literal 0 for the same reason. A teardown spends no retry budget, so any
     // other number here would claim a scope had used up an attempt it still has.
     onSnapshotBootstrapError?.({ scopeKey, stage, attempt: 0, cause, expected: true, aborted: true, reason });
+  };
+
+  /**
+   * Close the funnel for a scope whose metadata write a wipe refused, and say
+   * whether the cycle or only this scope stops. For the writes after Started; a
+   * refusal before it exits the way the loop-top check does, without a report.
+   */
+  const abortRefusedWrite = (
+    scopeKey: string,
+    stage: BootstrapErrorInput['stage'],
+    cause: unknown,
+  ): TeardownVerdict['kind'] => {
+    const verdict = refusedWriteVerdict(scopeKey);
+    reportBootstrapAbort(scopeKey, stage, verdict.reason, cause);
+    return verdict.kind;
   };
 
   const onBootstrapMetadataChanged = options?.onBootstrapMetadataChanged;
@@ -2025,11 +2141,20 @@ async function runBootstrapPhase(params: {
         record.progressScopeKey = null;
         return interrupted.kind;
       }
-      const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
+      // The count is read-modify-write, so it is read under the lock it is
+      // written under: from a stale main-connection read it would lose an attempt.
+      const counted = { attempt: 0 };
+      const recorded = await writeScopeMetadata(scope.scopeKey, 'grades-bootstrap-attempt', async (transaction) => {
+        counted.attempt = await recordGradesBootstrapAttempt(transaction, scope.scopeKey);
+      });
+      if (!recorded) {
+        record.progressScopeKey = null;
+        return abortRefusedWrite(scope.scopeKey, 'grades-download', result.cause);
+      }
       onSnapshotBootstrapError?.({
         scopeKey: scope.scopeKey,
         stage: 'grades-download',
-        attempt,
+        attempt: counted.attempt,
         cause: result.cause,
         expected: isNetworkError(result.cause),
       });
@@ -2075,8 +2200,18 @@ async function runBootstrapPhase(params: {
         reportBootstrapAbort(scope.scopeKey, 'grades-import', resolved.reason, cause);
         return resolved.kind;
       }
-      const attempt = await recordGradesBootstrapAttempt(db, scope.scopeKey);
-      onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'grades-import', attempt, cause, expected: false });
+      const counted = { attempt: 0 };
+      const recorded = await writeScopeMetadata(scope.scopeKey, 'grades-bootstrap-attempt', async (transaction) => {
+        counted.attempt = await recordGradesBootstrapAttempt(transaction, scope.scopeKey);
+      });
+      if (!recorded) return abortRefusedWrite(scope.scopeKey, 'grades-import', cause);
+      onSnapshotBootstrapError?.({
+        scopeKey: scope.scopeKey,
+        stage: 'grades-import',
+        attempt: counted.attempt,
+        cause,
+        expected: false,
+      });
     } finally {
       record.progressScopeKey = null;
     }
@@ -2191,7 +2326,17 @@ async function runBootstrapPhase(params: {
         // value — the migration grants one clean pass, and the mirror has to say
         // so or a rollback would re-read the pre-migration count.
         if (migratedFromLegacy && retryState.hasPriorSnapshotFailure) {
-          retryState = await writeBootstrapRetryState(db, scope.scopeKey, retryState);
+          const persisted = await writeRetryState(scope.scopeKey, retryState);
+          if (!persisted) {
+            // A wipe refused the write. Nothing has started for this scope yet, so
+            // it exits the way the loop-top check does.
+            if (refusedWriteVerdict(scope.scopeKey).kind === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
+          retryState = persisted;
           metadataSettled = true;
         }
 
@@ -2216,7 +2361,13 @@ async function runBootstrapPhase(params: {
         // cheaper than the pre-#4313 over-cap path that consulted it every cycle.
         const isRearmCandidate = !verdict.eligible && verdict.reason === 'terminal' && verdict.canRearm;
         if (!verdict.eligible && !isRearmCandidate) {
-          if (verdict.reason === 'terminal') await markBootstrapPagedFallback(db, scope.scopeKey);
+          if (verdict.reason === 'terminal' && !(await markPagedFallback(scope.scopeKey))) {
+            if (refusedWriteVerdict(scope.scopeKey).kind === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
           // Set on BOTH not-eligible arms deliberately: the pre-#4313 bail did
           // the same for a checkpointed scope so My Boards re-reads the row even
           // though this run did not mutate its markers.
@@ -2334,26 +2485,35 @@ async function runBootstrapPhase(params: {
           // Only a genuinely DIFFERENT build is worth another round; the same
           // artifact would fail the same way.
           if (!isEntryUsable || entry.builtAt === retryState.failedBuiltAt) {
-            await markBootstrapPagedFallback(db, scope.scopeKey);
+            // A refused write needs no exit of its own: this scope is done either way.
+            await markPagedFallback(scope.scopeKey);
             metadataSettled = true;
             continue;
           }
-          retryState = await writeBootstrapRetryState(
-            db,
-            scope.scopeKey,
-            rearmForNewArtifact(retryState, entry.builtAt),
-          );
           // The scope was carrying a paged-fallback marker that My Boards renders
           // as "using the slower download". It is back on the snapshot path as of
-          // this line, and the download below can run for 18 minutes — leaving the
-          // marker up would tell the climber the wrong story for the whole of it.
-          // A later failure re-stamps it.
-          await clearBootstrapPagedFallback(db, scope.scopeKey);
+          // this commit, and the download below can run for 18 minutes — leaving
+          // the marker up would tell the climber the wrong story for the whole of
+          // it. A later failure re-stamps it. Same transaction as the re-arm: they
+          // are one decision.
+          const rearmed = await writeRetryState(
+            scope.scopeKey,
+            rearmForNewArtifact(retryState, entry.builtAt),
+            (transaction) => clearBootstrapPagedFallback(transaction, scope.scopeKey),
+          );
+          if (!rearmed) {
+            if (refusedWriteVerdict(scope.scopeKey).kind === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
+          retryState = rearmed;
           metadataSettled = true;
         }
 
         if (resolution.status === 'absent') {
-          await markBootstrapPagedFallback(db, scope.scopeKey);
+          await markPagedFallback(scope.scopeKey);
           metadataSettled = true;
           continue; // permanent miss, no burn
         }
@@ -2365,6 +2525,7 @@ async function runBootstrapPhase(params: {
             builtAt: null,
             now: evaluatedAt,
             random,
+            canWrite: () => wipeVerdict(scope.scopeKey) === null,
           });
           retryState = settled.state;
           // A cap-exempt transport failure persists nothing, so there is no settled
@@ -2378,7 +2539,7 @@ async function runBootstrapPhase(params: {
             manifestFailurePolicy.failOpen ? MANIFEST_FAIL_OPEN_RETRY_DELAY_MS : MANIFEST_RETRY_DELAY_MS,
           );
           if (manifestFailurePolicy.failOpen) {
-            await markBootstrapPagedFallback(db, scope.scopeKey);
+            await markPagedFallback(scope.scopeKey);
             metadataSettled = true;
           } else if (shouldSkipPagedPull({ retryState, hasBoardCheckpoint, now: evaluatedAt })) {
             skipPagedPull.add(scope.scopeKey);
@@ -2386,12 +2547,12 @@ async function runBootstrapPhase(params: {
           continue;
         }
         if (!entry) {
-          await markBootstrapPagedFallback(db, scope.scopeKey);
+          await markPagedFallback(scope.scopeKey);
           metadataSettled = true;
           continue; // layout not exported yet — permanent miss, no burn
         }
         if (!isEntryUsable) {
-          await markBootstrapPagedFallback(db, scope.scopeKey);
+          await markPagedFallback(scope.scopeKey);
           metadataSettled = true;
           continue;
         }
@@ -2417,7 +2578,10 @@ async function runBootstrapPhase(params: {
         // fresh bootstrap (confirmed behind a size-disclosing dialog moments ago)
         // and a user-requested retry are consented and ignore the probe.
         if (bootstrapKind === 'heal-over-partial' && !isUserRequested && !(await isOnUnmeteredNetwork())) {
-          retryState = await writeBootstrapRetryState(db, scope.scopeKey, deferHeal(retryState, evaluatedAt));
+          const deferred = await writeRetryState(scope.scopeKey, deferHeal(retryState, evaluatedAt));
+          // Refused: a wipe owns this scope now, and it schedules nothing.
+          if (!deferred) continue;
+          retryState = deferred;
           metadataSettled = true;
           if (retryState.retryAfter !== null) {
             onBootstrapRetryDue?.({ scopeKey: scope.scopeKey, retryAt: retryState.retryAfter });
@@ -2429,7 +2593,15 @@ async function runBootstrapPhase(params: {
         // failure schedules an ordinary cooldown instead of leaving a standing
         // metered-link override that keeps pulling ~100 MB over cellular.
         if (isUserRequested) {
-          retryState = await writeBootstrapRetryState(db, scope.scopeKey, spendUserRequest(retryState));
+          const spent = await writeRetryState(scope.scopeKey, spendUserRequest(retryState));
+          if (!spent) {
+            if (refusedWriteVerdict(scope.scopeKey).kind === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
+          retryState = spent;
           params.retryRequestsAtBootstrap.set(scope.scopeKey, false);
           metadataSettled = true;
         }
@@ -2673,9 +2845,18 @@ async function runBootstrapPhase(params: {
               now: evaluatedAt,
               random,
             });
-            retryState = await writeBootstrapRetryState(db, scope.scopeKey, pause.state);
-            metadataSettled = true;
-            if (pause.charged) {
+            // The terminal caption rides the same commit as the budget it describes.
+            const paused = await writeRetryState(scope.scopeKey, pause.state, async (transaction, written) => {
+              if (pause.charged && isTerminal(written)) await markBootstrapPagedFallback(transaction, scope.scopeKey);
+            });
+            if (!paused) {
+              // A wipe landed while the phone was in the pocket. That is the
+              // story this scope's funnel gets, not a pause. Always a cycle-level
+              // exit below: a background verdict is never per-scope.
+              abortRefusedWrite(scope.scopeKey, 'download', cachedDownload.cause);
+            } else if (pause.charged) {
+              retryState = paused;
+              metadataSettled = true;
               // Still `aborted: true` — the climber's phone went in a pocket,
               // that is what happened — but `attempt` tells the truth about the
               // budget, exactly as reportSettledFailure spells it, and the retry
@@ -2708,8 +2889,9 @@ async function runBootstrapPhase(params: {
               } else {
                 onBootstrapRetryCleared?.(scope.scopeKey);
               }
-              if (isTerminal(retryState)) await markBootstrapPagedFallback(db, scope.scopeKey);
             } else {
+              retryState = paused;
+              metadataSettled = true;
               reportBootstrapAbort(scope.scopeKey, 'download', downloadTeardown, cachedDownload.cause);
             }
           } else {
@@ -2745,12 +2927,20 @@ async function runBootstrapPhase(params: {
               builtAt: entry.builtAt,
               now: evaluatedAt,
               random,
+              canWrite: () => wipeVerdict(scope.scopeKey) === null,
+              // Overrides the settle's non-terminal clear: this decision is
+              // already durable — the crawl is what serves the scope now — so My
+              // Boards should say so instead of waiting a cycle.
+              forcePagedFallback: true,
             });
+            if (settled.refused) {
+              if (abortRefusedWrite(scope.scopeKey, 'download', cachedDownload.cause) === 'cycle') {
+                cycleInterrupted = true;
+                break;
+              }
+              continue;
+            }
             retryState = settled.state;
-            // Overrides settleBootstrapFailure's non-terminal clear: this
-            // decision is already durable — the crawl is what serves the scope
-            // now — so My Boards should say so instead of waiting a cycle.
-            await markBootstrapPagedFallback(db, scope.scopeKey);
             metadataSettled = true;
             reportSettledFailure(scope, 'download', settled, evaluatedAt);
             continue;
@@ -2762,7 +2952,15 @@ async function runBootstrapPhase(params: {
             builtAt: entry.builtAt,
             now: evaluatedAt,
             random,
+            canWrite: () => wipeVerdict(scope.scopeKey) === null,
           });
+          if (settled.refused) {
+            if (abortRefusedWrite(scope.scopeKey, 'download', cachedDownload.cause) === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
           retryState = settled.state;
           metadataSettled = true;
           reportSettledFailure(scope, 'download', settled, evaluatedAt);
@@ -2784,7 +2982,15 @@ async function runBootstrapPhase(params: {
         // the ~2-minute cooldown — a board unreachable by both paths.
         const withTransportCleared = clearTransportFailures(retryState);
         if (withTransportCleared !== retryState) {
-          retryState = await writeBootstrapRetryState(db, scope.scopeKey, withTransportCleared);
+          const cleared = await writeRetryState(scope.scopeKey, withTransportCleared);
+          if (!cleared) {
+            if (abortRefusedWrite(scope.scopeKey, 'download', null) === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
+          retryState = cleared;
           metadataSettled = true;
         }
 
@@ -2895,13 +3101,20 @@ async function runBootstrapPhase(params: {
           phases.importBatches = (phases.importBatches ?? 0) + imported.importBatches;
           artifactImported.set(download.filePath, true);
           // The scope imported an artifact, so any free-round marker it carries
-          // describes a build that no longer matters.
-          await clearReusedImportFailure(db, scope.scopeKey);
-          // The heal flag rides the persisted marker, not a per-cycle set: the
-          // scope usually reaches completion in a LATER cycle (board_climb_grades
-          // is not a snapshot table and still crawls), and an in-memory set
-          // reports false for exactly the runs the flag exists to filter out.
-          await markBootstrapDone(db, scope.scopeKey, { healed: hasBoardCheckpoint });
+          // describes a build that no longer matters. The heal flag rides the
+          // persisted marker, not a per-cycle set: the scope usually reaches
+          // completion in a LATER cycle (board_climb_grades is not a snapshot
+          // table and still crawls), and an in-memory set reports false for
+          // exactly the runs the flag exists to filter out.
+          //
+          // One guarded commit (issue #5851). A wipe that lands after the import
+          // committed refuses it, and the refusal takes the import's own
+          // teardown path in the catch below.
+          const markedDone = await writeScopeMetadata(scope.scopeKey, 'bootstrap-done', async (transaction) => {
+            await clearReusedImportFailure(transaction, scope.scopeKey);
+            await markBootstrapDone(transaction, scope.scopeKey, { healed: hasBoardCheckpoint });
+          });
+          if (!markedDone) throw new SnapshotWipedError();
           metadataSettled = true;
           // The one settlement the guard cannot infer from a report: the scope's
           // terminal event is the Completed the board-data loop fires once the
@@ -2973,7 +3186,13 @@ async function runBootstrapPhase(params: {
             // structural failure, charged below. Refusing without recording the
             // refusal left the scope exactly as eligible as it was, so the same
             // ~100 MB artifact came down again on every cycle, forever.
-            await markBootstrapPagedFallback(db, scope.scopeKey);
+            if (!(await markPagedFallback(scope.scopeKey))) {
+              if (abortRefusedWrite(scope.scopeKey, 'import', error) === 'cycle') {
+                cycleInterrupted = true;
+                break;
+              }
+              continue;
+            }
             metadataSettled = true;
             onSnapshotBootstrapError?.({
               scopeKey: scope.scopeKey,
@@ -3007,12 +3226,24 @@ async function runBootstrapPhase(params: {
           // `MAX_BOOTSTRAP_LOCK_FAILURES` and, unlike transport, is NOT reset by
           // the next cycle's zero-byte reuse of this very file.
           const importLostTheLock = classifySqliteLockError(error).locked;
-          if (
-            !importLostTheLock &&
-            download.reused &&
-            (await getReusedImportFailure(db, scope.scopeKey)) !== entry.builtAt
-          ) {
-            await recordReusedImportFailure(db, scope.scopeKey, entry.builtAt);
+          // Whether this build already had its free round is read under the lock
+          // that records it: read on the main connection, a stale answer would
+          // grant the same build a second free round.
+          const freeRound = { granted: false };
+          if (!importLostTheLock && download.reused) {
+            const decided = await writeScopeMetadata(scope.scopeKey, 'reused-import-failure', async (transaction) => {
+              freeRound.granted = (await getReusedImportFailure(transaction, scope.scopeKey)) !== entry.builtAt;
+              if (freeRound.granted) await recordReusedImportFailure(transaction, scope.scopeKey, entry.builtAt);
+            });
+            if (!decided) {
+              if (abortRefusedWrite(scope.scopeKey, 'import', error) === 'cycle') {
+                cycleInterrupted = true;
+                break;
+              }
+              continue;
+            }
+          }
+          if (freeRound.granted) {
             await source.deleteArtifact(download.filePath).catch(() => {});
             artifactImported.delete(download.filePath);
             downloadByLayout.delete(layoutKey);
@@ -3045,7 +3276,15 @@ async function runBootstrapPhase(params: {
             builtAt: entry.builtAt,
             now: evaluatedAt,
             random,
+            canWrite: () => wipeVerdict(scope.scopeKey) === null,
           });
+          if (settled.refused) {
+            if (abortRefusedWrite(scope.scopeKey, 'import', error) === 'cycle') {
+              cycleInterrupted = true;
+              break;
+            }
+            continue;
+          }
           retryState = settled.state;
           metadataSettled = true;
           reportSettledFailure(scope, 'import', settled, evaluatedAt);
@@ -3455,9 +3694,30 @@ async function performPullSync(
     // work. The in-memory Map is now a read-through cache over the sync_meta
     // stamp so a cycle costs at most one extra SELECT per scope.
     const scopeStartedAt = new Map<string, number>();
+    // A board's markers may not land once its rows are being torn down: a
+    // sign-out, a global wipe, or a purge of the board's own namespace. Read
+    // inside the writer lock by every marker write below (issue #5851).
+    const scopeWritable = (scopeKey: string): boolean =>
+      !isSigningOut() && !hasPurgeLanded(purgeToken, purgeNamespaceForScopeKey(scopeKey));
     const stampScopeStart = async (scopeKey: string): Promise<void> => {
       if (scopeStartedAt.has(scopeKey)) return;
-      scopeStartedAt.set(scopeKey, await ensureScopeDownloadStartedAt(db, scopeKey, Date.now()));
+      // A board already complete when the cycle began has no download to time.
+      // Stamping it anyway was a write per board per cycle that the
+      // completion marker then deleted again.
+      if (!pendingDownloads.has(scopeKey)) return;
+      // Read and written under one lock: the stamp is read-modify-write, and a
+      // read on the main connection can be older than the last commit.
+      const stamp: { startedAt?: number } = {};
+      await runGuardedPullWrite(
+        db,
+        { site: 'scope-download-started-at', canWrite: () => scopeWritable(scopeKey) },
+        async (transaction) => {
+          stamp.startedAt = await ensureScopeDownloadStartedAt(transaction, scopeKey, Date.now());
+        },
+      );
+      // Refused: the board is being torn down, and the caller's own purge check
+      // after this await takes it from here.
+      if (stamp.startedAt !== undefined) scopeStartedAt.set(scopeKey, stamp.startedAt);
     };
 
     // Per-scope phase breakdown for ScopeDownloadCompleteInfo.phases, accumulated
@@ -3477,18 +3737,32 @@ async function performPullSync(
     // snapshot that fails and retries emits one event and a paged crawl that spans
     // cycles is not skipped. Both are how the naive in-cycle version broke.
     const emitScopeDownloadStartOnce = async (info: ScopeDownloadStartInfo): Promise<void> => {
+      // Cheap pre-check on the main connection: almost every call finds the
+      // marker. The decision itself is re-made under the writer lock below, so a
+      // stale read here can only cost a transaction, never a second Started.
       if (await isScopeDownloadStarted(db, info.scopeKey)) return;
-      await markScopeDownloadStarted(db, info.scopeKey);
-      // BACKFILL, NOT A START. A scope whose download already completed — every
-      // board on a device that upgrades into this build — is not starting one now,
-      // and it can never emit Completed again either (that event is guarded by the
-      // `scope-complete:` marker it already carries). Emitting here would give the
-      // funnel one unmatched Started per already-downloaded board on the first
-      // cycle after release: a phantom abandonment spike, in exactly the window
-      // the baseline is read from. Write the marker (so this is still once-ever)
-      // and stay silent.
-      if (await isScopeDownloadComplete(db, info.scopeKey)) return;
-      options?.onScopeDownloadStart?.(info);
+      const decision = { emit: false };
+      await runGuardedPullWrite(
+        db,
+        { site: 'scope-download-started', canWrite: () => scopeWritable(info.scopeKey) },
+        async (transaction) => {
+          decision.emit = false;
+          if (await isScopeDownloadStarted(transaction, info.scopeKey)) return;
+          await markScopeDownloadStarted(transaction, info.scopeKey);
+          // BACKFILL, NOT A START. A scope whose download already completed —
+          // every board on a device that upgrades into this build — is not
+          // starting one now, and it can never emit Completed again either (that
+          // event is guarded by the `scope-complete:` marker it already carries).
+          // Emitting here would give the funnel one unmatched Started per
+          // already-downloaded board on the first cycle after release: a phantom
+          // abandonment spike, in exactly the window the baseline is read from.
+          // Write the marker (so this is still once-ever) and stay silent.
+          decision.emit = !(await isScopeDownloadComplete(transaction, info.scopeKey));
+        },
+      );
+      // Emitted after the commit, never from inside the attempt: a retried
+      // attempt must not announce the same Started twice.
+      if (decision.emit) options?.onScopeDownloadStart?.(info);
     };
     // Per-scope payload size and stage timings, recorded by the bootstrap phase and
     // read back by Completed below. Run-local on purpose: a cycle that did not do
@@ -3553,7 +3827,24 @@ async function performPullSync(
     // The coverage marker advances ONLY on a completed pass. An aborted one (sign-out,
     // purge, backgrounding) consumed an unknown prefix of the stream, so claiming a
     // fresh retention window off it would hide a real gap. See deletions-coverage.ts.
-    if (deletionsResult.reachedTail) await setDeletionsCoverageAt(db, Date.now());
+    if (deletionsResult.reachedTail) {
+      // Its own transaction, never an autocommit write on the main connection
+      // (issue #5851). The main connection is shared with every local read, so a
+      // write there is usually a read→write upgrade: SQLite skips the busy
+      // handler for those and fails the write the instant another connection
+      // holds the lock or has committed since that read began (SQLITE_BUSY /
+      // SQLITE_BUSY_SNAPSHOT, both "database is locked"). This was the write
+      // behind BOARDSESH-QS, and one loss ended the whole cycle here.
+      //
+      // Guarded inside the lock: a sign-out deletes this marker, and one that
+      // landed after the wipe would vouch for the next account's tombstones.
+      const stamped = await runGuardedPullWrite(
+        db,
+        { site: 'deletions-coverage', canWrite: () => !isSigningOut() && !hasPurgeLanded(purgeToken) },
+        (transaction) => setDeletionsCoverageAt(transaction, Date.now()),
+      );
+      if (!stamped) return reportInterruptedCycle();
+    }
     finishGlobalStep();
 
     let allUserTablesReachedTail = true;
@@ -3589,14 +3880,31 @@ async function performPullSync(
     // would otherwise stamp `user_data_complete` over data that is being deleted.
     if (cycleAborted()) return reportInterruptedCycle();
     if (allUserTablesReachedTail) {
+      // A cheap pre-check on the main connection: once the marker is down, every
+      // later cycle has nothing to write. A stale "already complete" can only
+      // skip a write, which is the safe direction; the decision to write is
+      // re-made under the lock.
       const userDataWasComplete = await isUserDataComplete(db);
       if (cycleAborted()) return reportInterruptedCycle();
-      await markUserDataComplete(db);
-      if (cycleAborted()) return reportInterruptedCycle();
-      // A local reader may have declined earlier in this cycle while the
-      // completion gate was closed. Wake it even when no tick rows changed,
-      // once per completed initial sync rather than on every empty pull.
-      if (!userDataWasComplete) invalidations.addFilters({ queryKey: ['localTicks'] });
+      if (!userDataWasComplete) {
+        const marker = { newlyComplete: false };
+        // Guarded inside the lock (issue #5851): a sign-out wipe that lands while
+        // this waits would otherwise find `user_data_complete` written back over
+        // the logbook it just deleted.
+        const marked = await runGuardedPullWrite(
+          db,
+          { site: 'user-data-complete', canWrite: () => !cycleAborted() },
+          async (transaction) => {
+            marker.newlyComplete = !(await isUserDataComplete(transaction));
+            if (marker.newlyComplete) await markUserDataComplete(transaction);
+          },
+        );
+        if (!marked || cycleAborted()) return reportInterruptedCycle();
+        // A local reader may have declined earlier in this cycle while the
+        // completion gate was closed. Wake it even when no tick rows changed,
+        // once per completed initial sync rather than on every empty pull.
+        if (marker.newlyComplete) invalidations.addFilters({ queryKey: ['localTicks'] });
+      }
     } else allPullsReachedTail = false;
     if (!deletionsResult.reachedTail) allPullsReachedTail = false;
     // The tombstones and all seven user tables, as one refresh. After the marker
@@ -3767,35 +4075,46 @@ async function performPullSync(
       if (cycleAborted()) return reportInterruptedCycle();
       if (scopePurged(boardScope) || retiredWalls.has(scopeKey)) continue;
       if (allTablesReachedTail) {
-        const wasScopeComplete = await isScopeDownloadComplete(db, scopeKey);
-        // Checked again after the read, so the window between the decision and the
-        // write is one statement rather than one await.
+        // A cheap pre-check on the main connection. A board complete before this
+        // cycle has nothing to write, and a stale "complete" can only skip a
+        // write, which is the safe direction.
+        const completeBeforeLock = await isScopeDownloadComplete(db, scopeKey);
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) continue;
+        if (completeBeforeLock && !continuePagedScope) continue;
+        // One transaction for the decision and the marker, with the teardown
+        // guards read INSIDE the writer lock (issue #5851). removeBoardScopeData
+        // holds that lock for seconds, so a completion that waited behind it (or
+        // lost an attempt to it and retried) would otherwise write
+        // `scope-complete:` back over a board that has no rows any more — the
+        // marker scope-teardown.ts's invariant #1 calls unrecoverable.
+        //
         // Serialize the final retry read with completion: a request arriving on
         // the terminal page must not lose to a completed marker before its queued run.
-        if (continuePagedScope) {
-          let completionCommitted = false;
-          await runPullWrite(db, async (transaction) => {
-            completionCommitted = false;
+        const completion = { committed: false, wasScopeComplete: completeBeforeLock };
+        await runPullWrite(
+          db,
+          async (transaction) => {
+            completion.committed = false;
             if (cycleAborted() || scopePurged(boardScope)) return;
-            if (!(await continuePagedScope(transaction))) return;
+            if (continuePagedScope && !(await continuePagedScope(transaction))) return;
             if (cycleAborted() || scopePurged(boardScope)) return;
-            await markScopeDownloadComplete(transaction, scopeKey);
-            completionCommitted = true;
-          });
-          if (!completionCommitted) {
-            if (yieldedForRetry) return reportInterruptedCycle();
-            allPullsReachedTail = false;
-            continue;
-          }
-        } else {
-          // Clears the persisted start stamp as well as writing the complete marker.
-          await markScopeDownloadComplete(db, scopeKey);
+            completion.wasScopeComplete = await isScopeDownloadComplete(transaction, scopeKey);
+            // Clears the persisted start stamp as well as writing the complete marker.
+            if (!completion.wasScopeComplete) await markScopeDownloadComplete(transaction, scopeKey);
+            completion.committed = true;
+          },
+          { site: 'scope-complete' },
+        );
+        if (!completion.committed) {
+          if (yieldedForRetry) return reportInterruptedCycle();
+          if (continuePagedScope) allPullsReachedTail = false;
+          if (cycleAborted()) return reportInterruptedCycle();
+          continue;
         }
         if (cycleAborted()) return reportInterruptedCycle();
         if (scopePurged(boardScope)) continue;
-        if (wasScopeComplete) continue;
+        if (completion.wasScopeComplete) continue;
         reportDownload(scopeKey, 'finishing', 1);
         downloadTrackers.get(scopeKey)?.cancel();
         pendingDownloads.delete(scopeKey);
@@ -3954,27 +4273,31 @@ async function performPullSync(
           expectedEpochs.set(namespace, before + 1);
         }
         assertRetirementActive();
-        await runPullWrite(db, async (transaction) => {
-          deletedRows.length = 0;
-          deletedScopes.length = 0;
-          assertRetirementActive();
-          for (const { scope, row } of candidates) {
-            const current = await transaction.getFirstAsync<Record<string, unknown>>(
-              'SELECT * FROM spray_walls WHERE layout_id = ?',
-              [scope.layoutId],
-            );
+        await runPullWrite(
+          db,
+          async (transaction) => {
+            deletedRows.length = 0;
+            deletedScopes.length = 0;
             assertRetirementActive();
-            // Both snapshots use SELECT * through the same SQLite driver. Compare
-            // the whole row: sync_seq is a stable ID, not an update generation.
-            // Any mismatch conservatively keeps a newer or differently shaped row.
-            if (!current || JSON.stringify(current) !== JSON.stringify(row)) continue;
-            await removeBoardScopeRows(transaction, scope, scope.scopeKey, []);
-            deletedRows.push(row);
-            deletedScopes.push(scope);
+            for (const { scope, row } of candidates) {
+              const current = await transaction.getFirstAsync<Record<string, unknown>>(
+                'SELECT * FROM spray_walls WHERE layout_id = ?',
+                [scope.layoutId],
+              );
+              assertRetirementActive();
+              // Both snapshots use SELECT * through the same SQLite driver. Compare
+              // the whole row: sync_seq is a stable ID, not an update generation.
+              // Any mismatch conservatively keeps a newer or differently shaped row.
+              if (!current || JSON.stringify(current) !== JSON.stringify(row)) continue;
+              await removeBoardScopeRows(transaction, scope, scope.scopeKey, []);
+              deletedRows.push(row);
+              deletedScopes.push(scope);
+              assertRetirementActive();
+            }
             assertRetirementActive();
-          }
-          assertRetirementActive();
-        });
+          },
+          { site: 'spray-wall-retirement' },
+        );
         if (deletedRows.length > 0) {
           // The platform removes renderer registrations before invalidation can
           // start an active refetch that would otherwise restore stale content.

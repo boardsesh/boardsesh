@@ -46,31 +46,35 @@ export async function mirrorSavedClimb(
   }
   let committed = false;
   try {
-    await runPullWrite(db, async (transaction) => {
-      committed = false;
-      if (!canWrite()) return;
-      if (!(await isScopeDownloadComplete(transaction, offlineBoardKey(scope)))) return;
-      if ((await getLocalUserId(transaction)) !== result.viewerId) return;
-      if (!canWrite()) return;
-      for (const [tableName, documents] of [
-        ['board_climbs', [climb]],
-        ['board_climb_stats', stats],
-      ] as const) {
-        const config = TABLE_CONFIGS[tableName];
-        await writePullDocuments(
-          transaction,
-          tableName,
-          documents,
-          config.localColumns,
-          config.transientColumns ?? [],
-          true,
-        );
-        // A credential transition during a native bridge await must roll back
-        // the earlier table too, rather than grafting a prior account's wall.
-        if (!canWrite()) throw new StaleMirrorError();
-      }
-      committed = true;
-    });
+    await runPullWrite(
+      db,
+      async (transaction) => {
+        committed = false;
+        if (!canWrite()) return;
+        if (!(await isScopeDownloadComplete(transaction, offlineBoardKey(scope)))) return;
+        if ((await getLocalUserId(transaction)) !== result.viewerId) return;
+        if (!canWrite()) return;
+        for (const [tableName, documents] of [
+          ['board_climbs', [climb]],
+          ['board_climb_stats', stats],
+        ] as const) {
+          const config = TABLE_CONFIGS[tableName];
+          await writePullDocuments(
+            transaction,
+            tableName,
+            documents,
+            config.localColumns,
+            config.transientColumns ?? [],
+            true,
+          );
+          // A credential transition during a native bridge await must roll back
+          // the earlier table too, rather than grafting a prior account's wall.
+          if (!canWrite()) throw new StaleMirrorError();
+        }
+        committed = true;
+      },
+      { site: 'saved-climb-mirror' },
+    );
   } catch (error) {
     if (!(error instanceof StaleMirrorError)) throw error;
   }

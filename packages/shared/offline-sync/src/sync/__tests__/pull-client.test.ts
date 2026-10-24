@@ -34,6 +34,20 @@ import { triggerSync, isSyncInFlight, __resetSyncSchedulerStateForTests } from '
 
 type SqlCall = { sql: string; params: unknown[] };
 
+/**
+ * The two markers an empty cycle stamps, each in its own transaction since
+ * #5851: deletions coverage and user_data_complete. Transaction and statement
+ * counts below add them explicitly rather than hiding them.
+ */
+const EMPTY_CYCLE_MARKER_TRANSACTIONS = 2;
+/** A board downloading for the first time adds three: its start stamp, its Started marker, its completion. */
+const PENDING_SCOPE_MARKER_TRANSACTIONS = 3;
+const EMPTY_CYCLE_MARKER_KEYS = new Set(['deletions-coverage', USER_DATA_COMPLETE_KEY]);
+const isMarkerWrite = ([sql, params]: unknown[]): boolean =>
+  String(sql).includes('sync_meta') &&
+  Array.isArray(params) &&
+  EMPTY_CYCLE_MARKER_KEYS.has(String((params as unknown[])[0]));
+
 function createMockDb() {
   const sqlCalls: SqlCall[] = [];
   const mockTxn = {
@@ -327,7 +341,10 @@ describe('pullSync', () => {
 
     // Both board tables pulled to their tail → the scope's "initial download
     // complete" marker is written (the gate for local-first reads).
-    expect(markScopeDownloadComplete).toHaveBeenCalledWith(db, 'kilter:1:5');
+    expect(markScopeDownloadComplete).toHaveBeenCalledWith(expect.anything(), 'kilter:1:5');
+    // Inside its own transaction, never an autocommit write on the main
+    // connection (#5851).
+    expect(vi.mocked(markScopeDownloadComplete).mock.calls[0][0]).not.toBe(db);
   });
 
   it('paginates correctly with cursor updates', async () => {
@@ -395,8 +412,8 @@ describe('pullSync', () => {
     // One transaction for the 120-row page — per-batch transactions multiplied
     // commit overhead ~10× across a big board download.
     const transactionCalls = (db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls;
-    expect(transactionCalls.length).toBe(1);
-    expect(mockTxn.runAsync).toHaveBeenCalledTimes(1);
+    expect(transactionCalls.length).toBe(1 + EMPTY_CYCLE_MARKER_TRANSACTIONS);
+    expect(mockTxn.runAsync.mock.calls.filter((call) => !isMarkerWrite(call))).toHaveLength(1);
   });
 
   it('splits a page into multiple multi-row statements when it exceeds the bind-variable chunk size', async () => {
@@ -453,7 +470,9 @@ describe('pullSync', () => {
     expect(totalRowsInserted).toBe(100);
 
     // Still one exclusive transaction for the whole page, batching or not.
-    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+      1 + EMPTY_CYCLE_MARKER_TRANSACTIONS + PENDING_SCOPE_MARKER_TRANSACTIONS,
+    );
   });
 
   it('updates checkpoint after each page', async () => {
@@ -514,11 +533,15 @@ describe('pullSync', () => {
     setupGraphqlFetchForAllTables();
     let userDataComplete = false;
     const completionAtRefresh: boolean[] = [];
-    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(async (_sql: string, params: unknown[]) => {
+    const readCompletion = async (_sql: string, params: unknown[]) => {
       if (params[0] === USER_DATA_COMPLETE_KEY) return userDataComplete ? { key: USER_DATA_COMPLETE_KEY } : null;
       return null;
-    });
-    (db.runAsync as ReturnType<typeof vi.fn>).mockImplementation(async (sql: string, params: unknown[]) => {
+    };
+    // The pre-check reads the main connection; the decision and the write happen
+    // in the marker's own transaction (#5851).
+    (db.getFirstAsync as ReturnType<typeof vi.fn>).mockImplementation(readCompletion);
+    mockTxn.getFirstAsync.mockImplementation(readCompletion);
+    mockTxn.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
       sqlCalls.push({ sql, params });
       if (params[0] === USER_DATA_COMPLETE_KEY) userDataComplete = true;
     });
@@ -550,7 +573,7 @@ describe('pullSync', () => {
 
   it('does not refresh local ticks when a purge lands during the completion write', async () => {
     setupGraphqlFetchForAllTables();
-    (db.runAsync as ReturnType<typeof vi.fn>).mockImplementation(async (sql: string, params: unknown[]) => {
+    mockTxn.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
       sqlCalls.push({ sql, params });
       if (params[0] === USER_DATA_COMPLETE_KEY) beginGlobalPurge();
     });
@@ -736,8 +759,10 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
-    expect(mockTxn.runAsync).toHaveBeenCalledTimes(2);
+    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(
+      1 + EMPTY_CYCLE_MARKER_TRANSACTIONS,
+    );
+    expect(mockTxn.runAsync.mock.calls.filter((call) => !isMarkerWrite(call))).toHaveLength(2);
     expect(setCheckpoint).toHaveBeenNthCalledWith(1, mockTxn, 'checkpoint:deletions', {
       updatedAt: '1970-01-01T00:00:00.000Z',
       syncSeq: '0',

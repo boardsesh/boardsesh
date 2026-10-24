@@ -177,7 +177,10 @@ describe('board_data pull under write-lock contention (#5302)', () => {
     expect(statsWrites[0].params).toEqual(expect.arrayContaining(['climb-1', 'climb-2']));
     // The user-visible consequence: the scope reached its tail, so local-first
     // search may serve this board instead of showing it as still downloading.
-    expect(markScopeDownloadComplete).toHaveBeenCalledWith(contended.db, SCOPE_KEY);
+    expect(markScopeDownloadComplete).toHaveBeenCalledWith(expect.anything(), SCOPE_KEY);
+    // Inside its own transaction, never an autocommit write on the main
+    // connection (#5851).
+    expect(vi.mocked(markScopeDownloadComplete).mock.calls[0][0]).not.toBe(contended.db);
   });
 
   it('takes the write lock before the transaction runs anything of its own', async () => {

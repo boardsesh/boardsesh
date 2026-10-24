@@ -466,16 +466,20 @@ async function buildHoldIndex(
     const expectedRaw = rawWatermark;
     let tally: WriteTally = { holdSetsWritten: 0, holdSetsDeleted: 0, postingsWritten: 0 };
     try {
-      await runPullWrite(db, async (txn) => {
-        tally = { holdSetsWritten: 0, holdSetsDeleted: 0, postingsWritten: 0 };
-        if (!shouldContinue() || !(await isScopeDownloadComplete(txn, scopeKey))) {
-          throw new HoldIndexChunkAbortedError();
-        }
-        if ((await readRawWatermark(txn, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();
-        if ((await readHoldIndexGeneration(txn, boardType, layoutId)) !== generation)
-          throw new HoldIndexChunkAbortedError();
-        await task(txn, tally);
-      });
+      await runPullWrite(
+        db,
+        async (txn) => {
+          tally = { holdSetsWritten: 0, holdSetsDeleted: 0, postingsWritten: 0 };
+          if (!shouldContinue() || !(await isScopeDownloadComplete(txn, scopeKey))) {
+            throw new HoldIndexChunkAbortedError();
+          }
+          if ((await readRawWatermark(txn, scopeKey)) !== expectedRaw) throw new HoldIndexChunkAbortedError();
+          if ((await readHoldIndexGeneration(txn, boardType, layoutId)) !== generation)
+            throw new HoldIndexChunkAbortedError();
+          await task(txn, tally);
+        },
+        { site: 'hold-index' },
+      );
       result.holdSetsWritten += tally.holdSetsWritten;
       result.holdSetsDeleted += tally.holdSetsDeleted;
       result.postingsWritten += tally.postingsWritten;

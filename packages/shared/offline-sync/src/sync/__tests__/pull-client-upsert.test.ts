@@ -97,6 +97,8 @@ function createMockDb() {
     // The upsert transaction sets busy_timeout via execAsync first; a no-op that
     // stays out of sqlCalls keeps the runAsync-based assertions unchanged.
     execAsync: vi.fn(async () => {}),
+    // Marker writes read their own state under the lock (#5851).
+    getFirstAsync: vi.fn().mockResolvedValue(null),
   };
   const db = {
     runAsync: vi.fn(async (sql: string, params: unknown[]) => {
