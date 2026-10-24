@@ -349,13 +349,31 @@ describe('placeOnWall', () => {
     });
 
     it('an old phone’s Next (queue[0], shouldAddToQueue false) lights Up next[0] and History stays (S12)', () => {
-      for (const shouldAddToQueue of [false, undefined]) {
-        const placed = placeOnWall(idle, a, undefined, shouldAddToQueue);
-        expect(placed.rewrite).toBe('next-from-line');
-        expect(uuids(placed.queue)).toEqual(['A', 'B', 'C', 'D', 'E']);
-        expect(placed.currentClimbQueueItem).toBe(d);
-        expect(placed.historyCount).toBe(3);
-      }
+      const placed = placeOnWall(idle, a, undefined, false);
+      expect(placed.rewrite).toBe('next-from-line');
+      expect(uuids(placed.queue)).toEqual(['A', 'B', 'C', 'D', 'E']);
+      expect(placed.currentClimbQueueItem).toBe(d);
+      expect(placed.historyCount).toBe(3);
+    });
+
+    it('the native socket on queue[0] (no shouldAddToQueue) lights the climb named, never Up next[0]', () => {
+      // Swift keeps the cleared climb's index after CurrentClimbChanged(null),
+      // so its Previous from History [A B] names A: a backward press.
+      const afterClear = state([a, b, c, d], null, 2);
+      const previous = placeOnWall(afterClear, a);
+      expect(previous.rewrite).toBe('move-history');
+      expect(previous.currentClimbQueueItem).toBe(a);
+      expect(uuids(previous.queue)).toEqual(['B', 'A', 'C', 'D']);
+      expect(uuids(upNextOf(previous))).toEqual(['C', 'D']);
+
+      const moved = placeOnWall(idle, a);
+      expect(moved.rewrite).toBe('move-history');
+      expect(moved.currentClimbQueueItem).toBe(a);
+
+      const stepped = placeOnWall(state([a, d, e], null, 1), a);
+      expect(stepped.rewrite).toBe('step');
+      expect(stepped.currentClimbQueueItem).toBe(a);
+      expect(uuids(stepped.queue)).toEqual(['A', 'D', 'E']);
     });
 
     it('next-from-line with 60 History climbs keeps all 60 (S15)', () => {
@@ -421,9 +439,18 @@ describe('placeOnWall', () => {
 
     it('a History entry with NOW moves onto the line', () => {
       const placed = placeOnWall(idle, a, 'NOW');
+      expect(placed.rewrite).toBe('move-history');
       expect(uuids(placed.queue)).toEqual(['B', 'C', 'A', 'D', 'E']);
       expect(uuids(historyOf(placed))).toEqual(['B', 'C']);
       expect(uuids(upNextOf(placed))).toEqual(['D', 'E']);
+    });
+
+    it('History’s last entry with NOW already sits on the line: a pointer step', () => {
+      const placed = placeOnWall(idle, c, 'NOW');
+      expect(placed.rewrite).toBe('step');
+      expect(placed.currentClimbQueueItem).toBe(c);
+      expect(uuids(placed.queue)).toEqual(['A', 'B', 'C', 'D', 'E']);
+      expect(placed.historyCount).toBe(2);
     });
 
     it('an Up next entry at k > 0 moves onto the line', () => {
@@ -603,6 +630,14 @@ describe('lineAfterDelta (the line table)', () => {
     expect(lineAfterDelta(idle, { kind: 'add', index: 4 })).toBe(2);
   });
 
+  it('add at an out-of-range index appends, as insertQueueItemIdempotent does', () => {
+    expect(lineAfterDelta(idle, { kind: 'add', index: -1 })).toBe(2);
+    expect(lineAfterDelta(idle, { kind: 'add', index: 5 })).toBe(2);
+    expect(lineAfterDelta(idle, { kind: 'add', index: Number.NaN })).toBe(2);
+    const withCurrent = state([a, b, c, d], b);
+    expect(lineAfterDelta(withCurrent, { kind: 'add', index: -1 })).toBe(1);
+  });
+
   it('remove at i: −1 when i < historyCount, else unchanged', () => {
     expect(lineAfterDelta(idle, { kind: 'remove', uuid: 'A' })).toBe(1);
     expect(lineAfterDelta(idle, { kind: 'remove', uuid: 'B' })).toBe(1);
@@ -683,6 +718,12 @@ describe('lineAfterDelta (the line table)', () => {
           const upNextAfter = reordered.slice(line).filter(({ uuid }) => uuid !== moved.uuid);
           expect(historyAfter.every(({ uuid }) => historyBefore.has(uuid))).toBe(true);
           expect(upNextAfter.every(({ uuid }) => !historyBefore.has(uuid))).toBe(true);
+          // The moved entry joins the side its new neighbours are on; on the
+          // line itself it keeps its own side.
+          const wasHistory = oldIndex < historyCount;
+          const lineWithoutMoved = wasHistory ? historyCount - 1 : historyCount;
+          const expectHistory = newIndex < lineWithoutMoved || (newIndex === lineWithoutMoved && wasHistory);
+          expect(newIndex < line).toBe(expectHistory);
         }
       }
     }
@@ -831,6 +872,12 @@ describe('chooseQueueEvent', () => {
   it('nothing current: a new phone’s Next to queue[historyCount] is a pointer event (S13)', () => {
     const idle = state([a, b, c, d], null, 2);
     expect(eventFor(c, { placement: 'NOW' }, idle)).toBe('pointer');
+  });
+
+  it('nothing current: NOW on History’s last entry is a pointer event, rewrite step', () => {
+    const idle = state([a, b, c, d], null, 2);
+    expect(placeOnWall(idle, b, 'NOW').rewrite).toBe('step');
+    expect(eventFor(b, { placement: 'NOW' }, idle)).toBe('pointer');
   });
 
   it('nothing current: no History reshape is a pointer event', () => {
