@@ -58,11 +58,13 @@ import { reportHandledError } from '../error-reporting';
 import { track } from '../analytics';
 import { toSchemaClimb } from '../climb-types';
 import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
+import { getSetting } from '../../settings/hooks';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
 import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
+import type { BoardConfig } from '../../providers/drawer-host-provider';
 
 /** Which board-scoped fetch a canary report came from. */
 type EmptyBoardFetchOp = 'replace-queue-empty' | 'append-queue-empty';
@@ -217,6 +219,24 @@ export type UsePlaylistActivationOptions = {
    */
   previewOnly?: boolean;
   /**
+   * The board config the player draws a tapped climb on when it stays on the
+   * active board: a tick's own size and angle, so a send logged at 45° opens at
+   * 45° as it always has. Handed to the drawer, which only keeps it when it
+   * differs from the active board. Return null to draw on the active board.
+   * A climb on another board model goes through `viewOnlyBoard` instead.
+   */
+  drawerBoardFor?: (climb: Climb) => BoardConfig | null;
+  /**
+   * The loaded rows are the list itself, from its first row (a logbook, a
+   * session's ticks, a profile's climbs), and `fetchPage` pages that same list.
+   * A tap then plays from the rows on screen without asking the server for the
+   * list again, and the track carries on through `fetchPage` from the page the
+   * rows end in while `hasMoreRows` says there is more.
+   */
+  loadedRowsAreTheList?: boolean;
+  /** With `loadedRowsAreTheList`: the list has rows past the ones loaded. */
+  hasMoreRows?: boolean;
+  /**
    * The loaded rows are this list's own pages, from the top, for the board a
    * preview carries on with (search: the same frozen search on the active
    * board). A preview's track then asks for the page after the rows instead of
@@ -306,6 +326,9 @@ export function usePlaylistActivation({
   fetchTotal,
   viewOnlyBoard,
   previewOnly = false,
+  drawerBoardFor,
+  loadedRowsAreTheList = false,
+  hasMoreRows = false,
   loadedRowsArePages = false,
   refreshErrorMessage,
   replaceQueueOnActivate = false,
@@ -358,6 +381,9 @@ export function usePlaylistActivation({
   // the callback only needs at tap time.
   const previewOnlyRef = useRef(previewOnly);
   previewOnlyRef.current = previewOnly;
+  // Same reason: a list that pages in flips this on every page.
+  const hasMoreRowsRef = useRef(hasMoreRows);
+  hasMoreRowsRef.current = hasMoreRows;
 
   // The climbs the screen has loaded, mirrored into a ref so the empty-fetch
   // canary below can read them without putting `allClimbs` in
@@ -542,6 +568,22 @@ export function usePlaylistActivation({
         setIds: activeBoard.setIds,
         angle: activeBoard.angle,
       };
+      // The rows on screen are the list from its top, so the first load is
+      // already in hand: play from them, and page on from where they end.
+      if (loadedRowsAreTheList) {
+        const loadedClimbs = loadedClimbsRef.current;
+        return {
+          climbs: loadedClimbs,
+          ...(hasMoreRowsRef.current
+            ? {
+                continuation: {
+                  loaderId: registerPageLoader(board, target.isClimbable),
+                  nextPage: Math.floor(loadedClimbs.length / PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE),
+                },
+              }
+            : {}),
+        };
+      }
       const countedTotal = fetchTotalSafely(board, signal);
       const load = await fetchPlaylistSuggestionClimbs({
         activatedClimbUuid,
@@ -566,7 +608,7 @@ export function usePlaylistActivation({
             }),
       };
     },
-    [activeBoard, fetchPage, fetchTotalSafely, registerPageLoader],
+    [activeBoard, fetchPage, fetchTotalSafely, loadedRowsAreTheList, registerPageLoader],
   );
 
   const fetchAllClimbsForBoard = useCallback(
@@ -1088,13 +1130,18 @@ export function usePlaylistActivation({
    * kept, as previews always have.
    */
   const previewContinuation = useCallback(
-    (board: ActivationFetchBoard) => ({
-      loaderId: registerPageLoader(board, acceptEveryClimb),
-      nextPage: loadedRowsArePages
-        ? Math.floor(loadedClimbsRef.current.length / PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE)
-        : 0,
-    }),
-    [registerPageLoader, loadedRowsArePages],
+    (board: ActivationFetchBoard) => {
+      // A list whose rows are the whole of it has nothing more to load.
+      if (loadedRowsAreTheList && !hasMoreRowsRef.current) return undefined;
+      return {
+        loaderId: registerPageLoader(board, acceptEveryClimb),
+        nextPage:
+          loadedRowsArePages || loadedRowsAreTheList
+            ? Math.floor(loadedClimbsRef.current.length / PLAYLIST_SUGGESTION_REFRESH_PAGE_SIZE)
+            : 0,
+      };
+    },
+    [registerPageLoader, loadedRowsArePages, loadedRowsAreTheList],
   );
 
   // Open the drawer immediately, then let the shared hook commit the climb. The
@@ -1107,13 +1154,21 @@ export function usePlaylistActivation({
     (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
       if (privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
-      // details retained by a menu or native gesture callback.
-      const climb = loadedClimbsByUuid.get(requestedClimb.uuid) ?? requestedClimb;
+      // details retained by a menu or native gesture callback. Not when it is
+      // the same climb at another angle: a logbook holds a climb once per angle
+      // it was sent at, the track keeps the first, and the row the climber
+      // tapped is the one they mean.
+      const loadedClimb = loadedClimbsByUuid.get(requestedClimb.uuid);
+      const climb = loadedClimb && loadedClimb.angle === requestedClimb.angle ? loadedClimb : requestedClimb;
       const schemaClimb = toSchemaClimb(climb);
       const readyBoardArt =
         tappedBoardArt?.climbUuid === climb.uuid && tappedBoardArt.frames === climb.frames ? tappedBoardArt : undefined;
 
-      const openingArtOptions = readyBoardArt ? { readyBoardArt } : {};
+      const drawerBoard = drawerBoardFor?.(climb) ?? null;
+      const openingArtOptions = {
+        ...(readyBoardArt ? { readyBoardArt } : {}),
+        ...(drawerBoard ? { boardConfig: drawerBoard } : {}),
+      };
 
       // Wrong-board playlist climb: open a view-only drawer against the playlist's
       // board instead of mutating the active-board queue. The drawer navigates the
@@ -1143,6 +1198,7 @@ export function usePlaylistActivation({
         });
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
+          // After the opening options: the wrong board always wins.
           boardConfig: viewOnlyBoardConfig,
           previewQueueItem: item,
           playlistSuggestionSource: previewSuggestionSource,
@@ -1150,15 +1206,22 @@ export function usePlaylistActivation({
         return Promise.resolve();
       }
 
-      // Browse-only tap on the ACTIVE board (a shared session). Same landing as
-      // the wrong-board branch above — drawer opens on the tapped climb, queue
-      // untouched — with two differences: no board override (this climb is on the
-      // board the climber is standing at), and the suggestion source is keyed to
-      // the ACTIVE board so the drawer's swipes walk this list instead of the
-      // queue. Ordered ahead of `replaceQueueOnActivate` deliberately: replacing a
+      // Browse-only tap on the ACTIVE board. Same landing as the wrong-board
+      // branch above — drawer opens on the tapped climb, queue untouched — with
+      // two differences: no board override (this climb is on the board the
+      // climber is standing at), and the suggestion source is keyed to the
+      // ACTIVE board so the drawer's swipes walk this list instead of the queue.
+      //
+      // Two reasons, either one enough: there are other climbers in the session
+      // (`previewOnly`), so a tap must not take their wall; or the climber
+      // turned off "Light problems when tapping the list" (issue #6665: every
+      // list reads it, not only search). The setting is read here, at the tap,
+      // so the callback does not change identity when it flips.
+      //
+      // Ordered ahead of `replaceQueueOnActivate` deliberately: replacing a
       // crew's whole queue is the loudest write in the app, and a row tap must
       // never be it.
-      if (previewOnlyRef.current) {
+      if (previewOnlyRef.current || !getSetting('lightOnClimbTap')) {
         const target = resolveTarget(climb);
         openPlayDrawer(schemaClimb, {
           ...openingArtOptions,
@@ -1311,6 +1374,7 @@ export function usePlaylistActivation({
       setQueue,
       sourceId,
       viewOnlyBoard,
+      drawerBoardFor,
       privacyGeneration,
     ],
   );

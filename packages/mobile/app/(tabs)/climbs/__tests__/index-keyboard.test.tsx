@@ -1601,22 +1601,6 @@ describe('ClimbList shared-session row taps', () => {
     expect(mocks.activationOptions?.previewOnly).toBe(true);
   });
 
-  // The setting is about the climber's own board; the crew rule is about
-  // everyone else's. With lighting off AND a crew, the tap must still take the
-  // seeded path rather than the bare preview open, or swiping on from it would
-  // walk the queue instead of the results.
-  it('prefers the seeded browse over the bare preview when both reasons apply', async () => {
-    mocks.isSharedSession = true;
-    mocks.lightOnClimbTap = false;
-    const { findByText } = render(<ClimbList />);
-
-    fireEvent.click(await findByText('Moonage'));
-
-    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
-    expect(mocks.activationOptions?.previewOnly).toBe(true);
-  });
-
   it('leaves a solo tap committing', async () => {
     mocks.isSharedSession = false;
     const { findByText } = render(<ClimbList />);
@@ -1629,18 +1613,17 @@ describe('ClimbList shared-session row taps', () => {
 });
 
 describe('ClimbList lightOnClimbTap setting', () => {
-  it('opens the pressed climb as a view-only preview instead of activating it when the setting is off', async () => {
+  // The activation hook reads the setting at the tap now, for every list (issue
+  // #6665), so a preview carries the results as its track and swipes walk them
+  // (#5157). The screen no longer opens a bare, trackless preview of its own.
+  it('routes the tap through the activation hook when the setting is off', async () => {
     mocks.lightOnClimbTap = false;
     const { findByText } = render(<ClimbList />);
 
     fireEvent.click(await findByText('Moonage'));
 
-    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
-    const [openedClimb, options] = mocks.openPlayDrawer.mock.calls[0];
-    expect(openedClimb).toBe(mocks.climb);
-    expect(options?.previewQueueItem?.climb?.uuid).toBe('climb-1');
-    // Doesn't touch the queue or the board — no commit, no BLE re-arm.
-    expect(mocks.activateClimb).not.toHaveBeenCalled();
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' }, undefined);
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
   });
 });
 
