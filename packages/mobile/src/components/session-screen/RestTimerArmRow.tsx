@@ -24,6 +24,7 @@ import {
 } from '../queue-control/RestTimerSheet';
 import { spacing } from '../../theme/tokens';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
+import { RestTimerCrewNote } from '../queue-control/RestTimerCrewNote';
 
 /**
  * The arm switch plus, once armed, the controls a climber sets a session up
@@ -32,6 +33,9 @@ import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
  * 3:00") gets set up, and without the choice here the timer could only ever run
  * "after each send", restarting on every attempt. Changing it re-arms the live
  * timer — the section itself handles that.
+ *
+ * In a crew the switch drives the session's shared clock (#5382): turning it on
+ * or off does so for everyone, and a crewmate's clock turns it on here.
  */
 export function RestTimerArmRow() {
   const { t } = useTranslation('session');
@@ -66,6 +70,8 @@ export function RestTimerArmRow() {
             onValueChange={handleArm}
           />
         </ShowcaseAnchorView>
+        {/* In a crew the switch is the crew's (#5382): it turns the shared clock on or off. */}
+        <RestTimerCrewNote placement="armRow" />
         {armed ? (
           <View style={styles.controls}>
             <RestTimerLengthControl />

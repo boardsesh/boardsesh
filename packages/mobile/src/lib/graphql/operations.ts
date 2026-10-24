@@ -1085,6 +1085,26 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         durationMinutes
         goal
       }
+      ... on SessionRestCadenceChanged {
+        restCadence {
+          mode
+          targetSeconds
+          autoAdvance
+          advanceOn
+          source
+          isRunning
+          anchorAt
+          pausedElapsedSeconds
+          lastFiredBeatAt
+          lastTickQueueItemUuid
+          lastTickStatus
+          setByParticipantId
+        }
+        revision
+        serverNow
+        isSnapshot
+        action
+      }
     }
   }
 `;
@@ -1110,12 +1130,48 @@ export type SessionLiveStatsEvent = {
   goal?: string | null;
 };
 
+/**
+ * The crew's shared rest clock as `SessionRestCadenceChanged.restCadence`
+ * carries it (#5382). Instants are server epoch ms as decimal strings; `mode`,
+ * `advanceOn` and `source` are open strings, so a value this app does not know
+ * means the clock is unsupported here (lib/crew-rest-cadence.ts).
+ */
+export type SessionRestCadenceWire = {
+  mode: string;
+  targetSeconds?: number | null;
+  autoAdvance: boolean;
+  advanceOn: string;
+  source: string;
+  isRunning: boolean;
+  anchorAt?: string | null;
+  pausedElapsedSeconds: number;
+  lastFiredBeatAt?: string | null;
+  lastTickQueueItemUuid?: string | null;
+  lastTickStatus?: string | null;
+  setByParticipantId?: string | null;
+};
+
+/** `SessionRestCadenceChanged`, from the subscription or a `setSessionRestCadence` reply. */
+export type SessionRestCadenceChangeWire = {
+  restCadence?: SessionRestCadenceWire | null;
+  revision: number;
+  serverNow: string;
+  isSnapshot: boolean;
+  action?: string | null;
+};
+
 // Envelope for the session-updates subscription. Fields specific to events the
 // mobile app reacts to are optional so a plain `__typename` + field check
 // narrows cleanly without a brittle discriminated union; events we don't handle
 // fall through the guard. Extend as more event handling lands.
 export type SessionUpdateEvent = {
   __typename: string;
+  // SessionRestCadenceChanged — the crew rest clock (SessionRestCadenceChangeWire)
+  restCadence?: SessionRestCadenceWire | null;
+  revision?: number;
+  serverNow?: string;
+  isSnapshot?: boolean;
+  action?: string | null;
   // SessionBoardPathChanged / SessionNameChanged
   boardPath?: string;
   changedByParticipantId?: string | null;

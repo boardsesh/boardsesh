@@ -31,6 +31,7 @@ import {
   isPseudonymDisplayName,
   normalizeDocument,
   replayCompatibleFixtureResponse,
+  SESSION_REST_CADENCE_SELECTION,
   type GraphqlFixtureFile,
   pseudonymDisplayName,
   pseudonymHandle,
@@ -166,6 +167,47 @@ describe('legacy manufacturer-board replay compatibility', () => {
       replayCompatibleFixtureResponse(current.replace('uuid boardType', 'uuid boardType name'), recorded),
     ).toBeNull();
     expect(replayCompatibleFixtureResponse(current.replace('versionId', 'newField'), recorded)).toBeNull();
+  });
+});
+
+describe('legacy SessionUpdates replay compatibility', () => {
+  const legacy =
+    'subscription SessionUpdates($sessionId: ID!) { sessionUpdates(sessionId: $sessionId) { __typename ' +
+    '... on SessionRosterSnapshot { users { id username } boardPath } ... on SessionEnded { reason } } }';
+  const current = legacy.replace(
+    '... on SessionEnded { reason } }',
+    `... on SessionEnded { reason } ${SESSION_REST_CADENCE_SELECTION} }`,
+  );
+  const fixture = (sessionUpdates: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'SessionUpdates',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { sessionId: 'session-1' },
+    response: { data: { sessionUpdates } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('replays the recorded roster frame unchanged under the document with the rest clock member', () => {
+    const recorded = fixture({ __typename: 'SessionRosterSnapshot', users: [], boardPath: 'kilter/8/25/26/35' });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({ response: recorded.response });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture({ __typename: 'SessionRosterSnapshot', users: [], boardPath: '' });
+    expect(replayCompatibleFixtureResponse(current.replace('username', 'username avatarUrl'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace('serverNow', 'serverTime'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already holds a rest clock frame', () => {
+    const recorded = fixture({ __typename: 'SessionRestCadenceChanged', revision: 1 });
+    expect(replayCompatibleFixtureResponse(current, recorded)).toBeNull();
   });
 });
 

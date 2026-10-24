@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
 import { DevScenarioOverrides } from './DevScenarioOverrides';
+import { getScenarioOverrides, subscribeScenarioOverrides, type ScenarioOverrides } from './scenario-overrides';
 
 /**
  * The only door from app code into the story harness.
@@ -22,6 +23,25 @@ function PassThrough({ children }: { children: ReactNode }) {
 export const DevScenarioOverridesHost: (props: { children: ReactNode }) => ReactNode = __DEV__
   ? DevScenarioOverrides
   : PassThrough;
+
+/** Who a story says holds the wall (`ScenarioOverrides.wall`). */
+export type DevScenarioWall = NonNullable<ScenarioOverrides['wall']>;
+
+const getScenarioWall = (): DevScenarioWall | null => getScenarioOverrides()?.wall ?? null;
+
+function useScenarioWallFromStories(): DevScenarioWall | null {
+  return useSyncExternalStore(subscribeScenarioOverrides, getScenarioWall, getScenarioWall);
+}
+
+function noScenarioWall(): DevScenarioWall | null {
+  return null;
+}
+
+/**
+ * A story's fake wall holder, for the wall-driver rule (the rest timer's crew
+ * stories, #5382). Always null in production, where no story ever runs.
+ */
+export const useDevScenarioWall: () => DevScenarioWall | null = __DEV__ ? useScenarioWallFromStories : noScenarioWall;
 
 /** The story index and story screens, or `null` in a production bundle. */
 export function loadStoryScreens(): typeof import('./screens') | null {

@@ -24,6 +24,7 @@ vi.mock('../../../settings', () => ({ getSetting: () => 'afterTick' }));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => currentNowMs }));
 
 import {
+  adoptCrewCadence,
   armRestTimer,
   getRestTimerState,
   noteRestTimerTick,
@@ -113,5 +114,33 @@ describe('cold-start hydration', () => {
 
     render(<RestTimerSessionSync />);
     expect(getRestTimerState().anchorMs).toBeNull();
+  });
+});
+
+describe('a crew clock', () => {
+  it('is never re-anchored on this climber’s own last tick: the seed already carries the crew’s', () => {
+    sessionId = 'session-1';
+    adoptCrewCadence({
+      sessionId: 'session-1',
+      revision: 3,
+      config: {
+        mode: 'afterTick',
+        targetSeconds: 60,
+        autoAdvance: true,
+        advanceOn: 'deadline',
+        source: 'settings',
+        setByParticipantId: 'participant-sam',
+      },
+      isRunning: true,
+      anchorMs: T0 - 20_000,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: T0 - 20_000,
+      lastFiredBeatServerMs: null,
+    });
+    sessionDetail = { ticks: [{ userId: 'me', climbedAt: new Date(T0 - 5_000).toISOString() }] };
+    render(<RestTimerSessionSync />);
+    expect(getRestTimerState().anchorMs).toBe(T0 - 20_000);
   });
 });

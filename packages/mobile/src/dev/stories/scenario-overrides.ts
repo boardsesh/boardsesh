@@ -44,6 +44,16 @@ export type ScenarioOverrides = {
      */
     sessionUsers?: SessionUser[];
   };
+  /**
+   * Who holds the wall, as the wall-driver rule sees it (the rest timer's crew
+   * states, #5382): this phone, a named crewmate, or nobody. Patches only
+   * `useSessionTimerDriver`, so the lightbulb and the Bluetooth surfaces keep
+   * the real board link.
+   */
+  wall?: {
+    connection: 'connectedByMe' | 'heldByPeer' | 'disconnected';
+    holderDisplayName?: string | null;
+  };
 };
 
 type Listener = () => void;

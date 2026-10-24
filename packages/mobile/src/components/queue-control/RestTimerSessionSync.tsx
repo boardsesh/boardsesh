@@ -45,10 +45,12 @@ export function RestTimerSessionSync() {
 
   // Cold start mid-rest: the store is empty but the session already knows when
   // your last tick landed. `getNewerTickAt` is what stops a stale server read
-  // rewinding a live local anchor.
+  // rewinding a live local anchor. Not while following the crew's clock: its
+  // anchor is the crew's last tick or beat, not this climber's, and the seed
+  // that brought it back already carries it (#5382).
   useEffect(() => {
     const state = getRestTimerState();
-    if (!state.armed || !sessionId) return;
+    if (!state.armed || !sessionId || state.crew !== null) return;
 
     const hydratedTickAt = getLatestUserSessionTickAt(sessionDetail?.ticks, userId);
     if (!hydratedTickAt) return;

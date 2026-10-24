@@ -66,6 +66,8 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: harness.sessionId }),
+  // The crew note's "is anyone else here" (pinned in rest-timer-crew-note.test.tsx).
+  useIsCrewSession: () => false,
 }));
 
 vi.mock('../../../settings', () => ({ getSetting: (key: string) => harness.settings[key] }));

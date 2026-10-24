@@ -278,8 +278,8 @@ const REST_CADENCE_CHANGE_FIELDS = `
 
 // Change the crew rest clock. FIRE carries expectedRevision (compare-and-set);
 // `applied: false` means the change did not land and the wall must not move.
-// Used by the backend's headless test client; the mobile app keeps its own
-// documents in packages/mobile/src/lib/graphql/operations.ts.
+// Sent by the mobile app through @boardsesh/queue-react's createQueueMutations,
+// and by the backend's headless test client.
 export const SET_SESSION_REST_CADENCE = `
   mutation SetSessionRestCadence($input: SessionRestCadenceInput!) {
     setSessionRestCadence(input: $input) {
