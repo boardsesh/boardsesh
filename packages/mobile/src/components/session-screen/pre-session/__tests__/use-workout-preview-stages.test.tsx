@@ -364,13 +364,18 @@ describe('useWorkoutPreview stages', () => {
     const gradesIn = (section: string) =>
       result.current.items.filter((preview) => preview.slot.section === section).map((preview) => preview.slot.grade);
     expect(gradesIn('warmUp')).toEqual([18, 19, 20, 21]);
-    // The trailing warm-up steps back down from the pyramid's grade, hardest first.
-    expect(gradesIn('coolDown')).toEqual([21, 20, 19, 18]);
+    // The 3-step pyramid ends on 21; the trailing warm-up carries on down from there, hardest first.
+    expect(gradesIn('coolDown')).toEqual([20, 19, 18, 17]);
     expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid', 'warmUp']);
 
     // Start queues the cool-down last, in the order it was planned.
     const { items, run } = result.current.toStagedQueueItems();
-    expect(run?.stages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid', 'warmUp']);
+    expect(run?.stages.map((stage) => [stage.kind, stage.coolDown])).toEqual([
+      ['volume', undefined],
+      ['warmUp', undefined],
+      ['pyramid', undefined],
+      ['warmUp', true],
+    ]);
     expect(items.slice(-4).map((item) => item.uuid)).toEqual(run?.stages[3].itemUuids);
   });
 

@@ -20,8 +20,8 @@ export type WorkoutStageReadout = {
   /** Climbs after the current one in this stage. Null on every stage but the current one. */
   remainingAfterCurrent: number | null;
   /**
-   * A warm-up queued after every workout stage: it was planned stepping back
-   * down from the last block, so it reads "Cool-down".
+   * A warm-up planned after the last workout block, stepping back down from
+   * it, so it reads "Cool-down" wherever its climbs sit in the queue.
    */
   isCoolDown: boolean;
 };
