@@ -122,9 +122,8 @@ export function EditProfileScreen() {
         }
       }
 
-      // Nothing left to persist — e.g. an avatar-only save whose upload failed.
-      // Stay on the screen (no router.back) so the user can retry; the warning
-      // toast already fired, and `finally` still resets the saving state.
+      // With no profile fields to persist, keep the form open for another try.
+      // `finally` still resets the saving state.
       if (input.displayName === undefined && input.avatarUrl === undefined) {
         return;
       }
