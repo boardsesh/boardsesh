@@ -245,17 +245,20 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 
 ### Sent climbs and benchmarks
 
-Issue [#6232](https://github.com/boardsesh/boardsesh/issues/6232). A pool takes the
-climbs you have not sent first and tops up with the ones you have. `fetchGradePool`
-(`select-climbs-for-plan.ts`) reads the filters' search tiers (`searchTiers`) in order,
-each returning everything the one before it does and more, and stops as soon as the pool
-holds its target (every slot at the grade plus 10, at least 50):
+Issue [#6232](https://github.com/boardsesh/boardsesh/issues/6232). Under the default
+Unfamiliar bias a pool takes the climbs you have not tried first and tops up with the ones
+you have tried, then the ones you have sent. `fetchGradePool` (`select-climbs-for-plan.ts`)
+reads the filters' search tiers (`searchTiers`) in order, each returning everything the one
+before it does and more. The first tier reads up to the pool's target (every slot at the
+grade plus 10, at least 50), as the one request always did. A later tier is read only while
+the pool holds fewer than every slot plus 10: the 50 floor is refresh headroom, and the
+first tier's climbs already give a row somewhere to go.
 
-| Climb bias           | Tiers, best first                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Unfamiliar (default) | never tried (`hideAttempted` + `hideCompleted`), then tried but not sent (`hideCompleted`), then sent (no flag) |
-| Attempted            | tried, not sent (`showOnlyAttempted` + `hideCompleted`), then tried and sent (`showOnlyAttempted`)              |
-| Any                  | not sent (`hideCompleted`), then sent (no flag)                                                                 |
+| Climb bias           | Tiers, best first                                                                                               | With Skip what I've sent                                |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Unfamiliar (default) | never tried (`hideAttempted` + `hideCompleted`), then tried but not sent (`hideCompleted`), then sent (no flag) | the first two                                           |
+| Attempted            | tried (`showOnlyAttempted`), one search as before                                                               | tried, not sent (`showOnlyAttempted` + `hideCompleted`) |
+| Any                  | every climb (no flag), one search as before                                                                     | not sent (`hideCompleted`)                              |
 
 A climb a later tier adds is a top-up, named in the pool's `topUpTiers` with the tier it
 came from. A pool is shuffled within each tier (`shuffleByTier`), on the first build and
@@ -265,29 +268,43 @@ climb. The rows carry the usual sent marks, so a top-up shows as one.
 
 - **Default change.** Unfamiliar used to hide every climb you had tried or sent, so a
   grade you had climbed out came up short. It is now a preference: those climbs fill in
-  after the new ones. Attempted and Any put unsent climbs first too.
-- **Skip what I've sent** (`skipSent`) keeps only the tiers with `hideCompleted`, so a
+  after the new ones. Attempted and Any are picked on purpose, so they send the one
+  search they always did, sent climbs mixed in.
+- **Skip what I've sent** (`skipSent`) keeps only searches with `hideCompleted`, so a
   grade you have sent out shows a shortfall instead of sent climbs. It reads your
   logbook: signed out the switch is disabled and says why, and the fetch drops it.
 - **Benchmarks only** (`onlyBenchmarks`) adds `onlyBenchmarks: true` to every tier and
   never falls back to other climbs. It needs no account. It is hidden on spray walls and
   Woods, which have no benchmarks, except while it is on, so a block brought over from
   another board can still turn it off. Benchmarks are scarce: a median of 10 per grade on
-  Kilter layout 1, 13 to 41 on Tension and 28 to 65 on MoonBoard
-  ([workout catalogue depth](workout-catalogue-depth.md)), so a 20-climb block shows a
-  shortfall on most boards.
-- **Requests.** A grade the first tier fills costs one request, the same one as before:
-  a switch that is off adds no key, so the screenshot fixtures still replay it. A short
-  grade costs one more request per tier it reads, each paged the usual way. A top-up
-  tier that fails keeps what the earlier tiers found; a failing first tier fails the
-  preview as before. Screenshot captures read the first tier only: the pinned fixture set
-  has no answer for a second tier where the first came back short (Woods, and MoonBoard
-  at the recorded grade). Remove that line and re-record the set to show top-ups there.
+  Kilter layout 1, 13 to 41 on Tension and 28 to 65 on MoonBoard (the catalogue counts
+  in [#6719](https://github.com/boardsesh/boardsesh/pull/6719),
+  `docs/workout-catalogue-depth.md`), so a 20-climb block shows a shortfall on most boards.
+- **Requests.** Every search shares the climber's 120-a-minute SearchClimbs budget with the
+  Climbs list. A grade the first tier fills costs one request, the same one as before: a
+  switch that is off adds no key, so the screenshot fixtures still replay it. A short
+  grade costs one more request per tier it reads, each paged the usual way. A top-up tier
+  that fails keeps what the earlier tiers found; a failing first tier fails the preview as
+  before. Screenshot captures read the first tier only: the pinned fixture set has no
+  answer for a second tier where the first came back short (Woods, and MoonBoard at the
+  recorded grade). Remove that line and re-record the set to show top-ups there.
+- **Short pools are searched once.** A pool whose last tier ran out holds every climb its
+  grade has under its filters (`GradePool.exhausted`, kept per pool key in
+  `exhaustedPoolKeys`). A rebuild reuses it whatever the demand, so a thin grade, a
+  Benchmarks only block or Skip what I've sent do not search again each time another
+  block changes. A pool is never marked so when a tier failed, the fetch stopped early,
+  or a request went out offline (the empty offline answer says nothing about the grade):
+  those are fetched again when they come up short, as before.
+- **Superseded builds stop.** Every fetch carries `isCurrent`, false once a newer build
+  or the debounce has moved past it. `fetchGradePool` checks it before each request, so
+  quick edits do not send the top-up tiers of builds nobody will see, and a row refresh
+  that is superseded mid-fetch leaves the cached pools alone.
 - **Stored filters.** Both fields are optional and left off when off. Filters stored
   before them still read (`isStageFilters`), the default filters, pool keys and preview
   keys are what they were, and an older bundle that reads a stored `true` ignores it.
 - **Defaults stay global.** `minAscents 5` and `minRating 2` are unchanged; the
-  measurement behind that is in [workout catalogue depth](workout-catalogue-depth.md).
+  measurement behind that is in
+  [#6719](https://github.com/boardsesh/boardsesh/pull/6719) (`docs/workout-catalogue-depth.md`).
 
 ## What comes next
 

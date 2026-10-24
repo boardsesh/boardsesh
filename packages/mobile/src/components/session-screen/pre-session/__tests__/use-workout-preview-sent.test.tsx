@@ -2,13 +2,20 @@
 // The preview against the REAL generator with a pool that tops up with sent
 // climbs (#6232): unsent climbs fill the rows first, a shuffle keeps them
 // first, Start queues exactly the rows on screen, and Skip what I've sent or
-// signing out reach the fetch the way the switch says.
+// signing out reach the fetch the way the switch says. Then the search budget:
+// a grade with nothing more to find is not searched again on every edit, and a
+// build the climber has moved past is told to stop.
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { DEFAULT_GRADE_FOCUS_OPTIONS, type GeneratorGradeScale } from '@boardsesh/playlist-generator';
-import { DEFAULT_WORKOUT_FILTERS, singleBlockSelection, type GeneratorSelection } from '../workout-blocks';
-import type { FetchGradePool, GradePool } from '../workout-preview-pool';
+import {
+  DEFAULT_WORKOUT_FILTERS,
+  singleBlockSelection,
+  type GeneratorSelection,
+  type WorkoutBlock,
+} from '../workout-blocks';
+import { NO_TOP_UPS, type FetchGradePool, type GradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
@@ -97,5 +104,68 @@ describe('useWorkoutPreview with sent climbs as top-up', () => {
 
     expect(fetchPool.mock.calls[0][1].filters).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any' });
     expect(result.current.toStagedQueueItems().run?.stages[0].filters?.skipSent).toBe(true);
+  });
+});
+
+describe('useWorkoutPreview search budget', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A thin block at grade 12 and a block at grade 18 the climber keeps editing. */
+  function twoBlocks(deepClimbs: number): GeneratorSelection {
+    const block = (id: string, targetGrade: number, numberOfClimbs: number): WorkoutBlock => ({
+      id,
+      kind: 'workout',
+      options: { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade, numberOfClimbs },
+      filters: DEFAULT_WORKOUT_FILTERS,
+    });
+    return { blocks: [block('thin', 12, 4), block('deep', 18, deepClimbs)] };
+  }
+
+  it('searches a grade with nothing more to find once, however often another block changes', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async (grade) =>
+      grade === 12
+        ? {
+            climbs: [{ uuid: 'thin-0' } as Climb, { uuid: 'thin-1' } as Climb],
+            topUpTiers: NO_TOP_UPS,
+            exhausted: true,
+          }
+        : poolAt(grade),
+    );
+    const { result, rerender } = renderHook(
+      ({ selection }: { selection: GeneratorSelection }) =>
+        useWorkoutPreview(selection, board, { isAuthenticated: true }, { fetchPool, grades }),
+      { initialProps: { selection: twoBlocks(2) } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    for (let deepClimbs = 3; deepClimbs <= 8; deepClimbs++) {
+      rerender({ selection: twoBlocks(deepClimbs) });
+      await waitFor(() => expect(result.current.plannedCount).toBe(4 + deepClimbs));
+    }
+
+    expect(fetchPool.mock.calls.filter(([grade]) => grade === 12)).toHaveLength(1);
+    // The thin block shows what its grade has: a shortfall, not a fresh search.
+    expect(result.current.items.filter((preview) => preview.slot.grade === 12)).toHaveLength(2);
+  });
+
+  it("tells a superseded build's searches to stop", async () => {
+    vi.useFakeTimers();
+    const fetchPool = vi.fn<FetchGradePool>(() => new Promise<GradePool>(() => undefined));
+    const { rerender } = renderHook(
+      ({ selection }: { selection: GeneratorSelection }) =>
+        useWorkoutPreview(selection, board, { isAuthenticated: true }, { fetchPool, grades }),
+      { initialProps: { selection: gradeFocus(3) } },
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    const firstBuild = fetchPool.mock.calls[0][1];
+    expect(firstBuild.isCurrent?.()).toBe(true);
+
+    rerender({ selection: gradeFocus(4) });
+
+    expect(firstBuild.isCurrent?.()).toBe(false);
   });
 });

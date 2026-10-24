@@ -28,6 +28,13 @@ export type PreviewFetchContext = {
    * from the slot they fetch for. Absent → no filtering.
    */
   filters?: PreviewFilters;
+  /**
+   * False once the build or row refresh this fetch serves has been superseded.
+   * The fetch checks it before every request and stops there, so a build the
+   * climber has already moved past spends no more of the search budget.
+   * Absent → always current.
+   */
+  isCurrent?: () => boolean;
 };
 
 /**
@@ -48,6 +55,13 @@ export type GradePool = {
    * and then the ones you have sent.
    */
   topUpTiers: TopUpTiers;
+  /**
+   * True when the pool holds every climb the grade has under these filters, so
+   * fetching it again, for any demand, would bring back the same climbs. Absent
+   * or false when the fetch stopped early, a tier failed, or a request went out
+   * offline: such a pool is fetched again when it comes up short.
+   */
+  exhausted?: boolean;
 };
 
 /**
@@ -124,6 +138,8 @@ export type WorkoutPreviewData = {
    * no entry has none: every climb in it came from the first tier.
    */
   poolTopUpTiers?: Map<string, TopUpTiers>;
+  /** The pools that hold every climb their grade has (`GradePool.exhausted`), by pool key. */
+  exhaustedPoolKeys?: Set<string>;
   /** climb.uuid currently shown across ALL rows (refresh never re-picks one). */
   usedUuids: Set<string>;
 };
@@ -217,12 +233,14 @@ export type PoolCache = {
   pools: ReadonlyMap<string, Climb[]>;
   poolDemands?: ReadonlyMap<string, number>;
   poolTopUpTiers?: ReadonlyMap<string, TopUpTiers>;
+  exhaustedPoolKeys?: ReadonlySet<string>;
 };
 
 export type BuiltPools = {
   pools: Map<string, Climb[]>;
   poolDemands: Map<string, number>;
   poolTopUpTiers: Map<string, TopUpTiers>;
+  exhaustedPoolKeys: Set<string>;
 };
 
 /**
@@ -235,8 +253,12 @@ export type BuiltPools = {
  *
  * A pool in `cache` under the same key, fetched for at least the demand it needs
  * now, is reused as it is, so changing one block's filters fetches only that
- * block's pools. The caller passes a cache only when the board and sign-in are
- * the ones the cache was fetched for.
+ * block's pools. So is a cached pool that holds every climb its grade has
+ * (`GradePool.exhausted`), whatever the demand: a thin grade, a Benchmarks only
+ * block or Skip what I've sent come back short by nature, and fetching them
+ * again on every edit would spend the search budget for the same climbs. The
+ * caller passes a cache only when the board and sign-in are the ones the cache
+ * was fetched for.
  */
 export async function buildPoolsReusing(
   slots: readonly PreviewSlot[],
@@ -253,28 +275,34 @@ export async function buildPoolsReusing(
   const pools = new Map<string, Climb[]>();
   const poolDemands = new Map<string, number>();
   const poolTopUpTiers = new Map<string, TopUpTiers>();
+  const exhaustedPoolKeys = new Set<string>();
   await Promise.all(
     Array.from(slotByKey, async ([key, slot]) => {
       const demand = demandByGrade.get(slot.grade) ?? 0;
       const cachedPool = cache?.pools.get(key);
       const cachedDemand = cache?.poolDemands?.get(key);
-      // A pool that came back short (offline, a flaky fetch) is fetched again
-      // rather than starving its block until Regenerate.
-      if (cachedPool && cachedDemand !== undefined && cachedDemand >= demand && cachedPool.length >= demand) {
+      const cachedExhausted = cache?.exhaustedPoolKeys?.has(key) === true;
+      // Any other pool that came back short (offline, a flaky fetch) is fetched
+      // again rather than starving its block until Regenerate.
+      const coversDemand =
+        cachedPool !== undefined && cachedDemand !== undefined && cachedDemand >= demand && cachedPool.length >= demand;
+      if (cachedPool && (cachedExhausted || coversDemand)) {
         pools.set(key, cachedPool);
-        poolDemands.set(key, cachedDemand);
+        poolDemands.set(key, cachedDemand ?? demand);
         const cachedTopUpTiers = cache?.poolTopUpTiers?.get(key);
         if (cachedTopUpTiers) poolTopUpTiers.set(key, cachedTopUpTiers);
+        if (cachedExhausted) exhaustedPoolKeys.add(key);
         return;
       }
-      const { climbs, topUpTiers } = await fetchPool(slot.grade, { ...ctx, filters: slot.filters }, demand);
+      const { climbs, topUpTiers, exhausted } = await fetchPool(slot.grade, { ...ctx, filters: slot.filters }, demand);
       // Shuffle here (not in the fetcher) so a refetch-on-refresh reshuffles.
       pools.set(key, shuffleByTier(climbs, topUpTiers, screenshotModeRandom()));
       poolDemands.set(key, demand);
       if (topUpTiers.size > 0) poolTopUpTiers.set(key, topUpTiers);
+      if (exhausted) exhaustedPoolKeys.add(key);
     }),
   );
-  return { pools, poolDemands, poolTopUpTiers };
+  return { pools, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
 }
 
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */
@@ -390,6 +418,7 @@ export async function refreshSlotInState(
   const { pools } = state;
   const cachedPool = pools.get(poolKey) ?? [];
   let poolTopUpTiers = state.poolTopUpTiers;
+  let exhaustedPoolKeys = state.exhaustedPoolKeys;
   // Exclude every climb currently shown (including this row's own) so the refresh
   // lands on a genuinely different climb that isn't already on screen elsewhere.
   // Avoided climbs only if nothing else is left; null means nothing unused at all.
@@ -409,6 +438,9 @@ export async function refreshSlotInState(
     // pools' rows may hold the same climbs, so the refetch has to reach past them.
     const rowsAtGrade = state.items.filter((preview) => preview.slot.grade === grade).length;
     const refetched = await fetchPool(grade, { ...ctx, filters }, rowsAtGrade + 1);
+    // Superseded while it fetched: its pool may be cut short, and the maps below
+    // are shared with the state a newer build reads its cache from.
+    if (ctx.isCurrent?.() === false) return { state, changed: false };
     refreshedPool = shuffleByTier(refetched.climbs, refetched.topUpTiers, screenshotModeRandom());
     pools.set(poolKey, refreshedPool);
     // Every state from buildPoolsReusing carries poolDemands. Without it the
@@ -417,6 +449,9 @@ export async function refreshSlotInState(
     poolTopUpTiers = new Map(poolTopUpTiers);
     if (refetched.topUpTiers.size > 0) poolTopUpTiers.set(poolKey, refetched.topUpTiers);
     else poolTopUpTiers.delete(poolKey);
+    exhaustedPoolKeys = new Set(exhaustedPoolKeys);
+    if (refetched.exhausted) exhaustedPoolKeys.add(poolKey);
+    else exhaustedPoolKeys.delete(poolKey);
     nextClimb = pickPreferred(refreshedPool, refetched.topUpTiers);
   }
 
@@ -437,5 +472,8 @@ export async function refreshSlotInState(
   };
   const usedUuids = new Set(items.map((preview) => preview.item.climb.uuid));
 
-  return { state: { items, pools, usedUuids, poolDemands: state.poolDemands, poolTopUpTiers }, changed: true };
+  return {
+    state: { items, pools, usedUuids, poolDemands: state.poolDemands, poolTopUpTiers, exhaustedPoolKeys },
+    changed: true,
+  };
 }

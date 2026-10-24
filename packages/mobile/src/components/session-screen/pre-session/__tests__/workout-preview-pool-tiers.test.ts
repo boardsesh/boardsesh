@@ -253,3 +253,79 @@ describe('refreshSlotInState with top-ups', () => {
     expect(state.poolTopUpTiers?.get(key)?.size).toBe(5);
   });
 });
+
+describe('pools that hold every climb their grade has', () => {
+  /** Two climbs at grade 15: all the catalogue has under these filters. */
+  const thinPool = (): GradePool => ({
+    climbs: [makeClimb('thin-0'), makeClimb('thin-1')],
+    topUpTiers: NO_TOP_UPS,
+    exhausted: true,
+  });
+
+  it('reuses a short pool whatever the demand, so editing the plan does not search again', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => thinPool());
+    let built = await buildPoolsReusing([slot(15, 0), slot(15, 1), slot(15, 2)], ctx, fetchPool);
+    expect(built.exhaustedPoolKeys.has(poolKeyForSlot(slot(15, 0)))).toBe(true);
+
+    for (let slotCount = 3; slotCount <= 8; slotCount++) {
+      const slots = Array.from({ length: slotCount }, (_, index) => slot(15, index));
+      built = await buildPoolsReusing(slots, ctx, fetchPool, built);
+    }
+
+    expect(fetchPool).toHaveBeenCalledTimes(1);
+    expect(
+      built.pools
+        .get(poolKeyForSlot(slot(15, 0)))
+        ?.map((climb) => climb.uuid)
+        .sort(),
+    ).toEqual(['thin-0', 'thin-1']);
+  });
+
+  it('still refetches a short pool that may have more', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => ({ ...thinPool(), exhausted: false }));
+    const slots = [slot(15, 0), slot(15, 1), slot(15, 2)];
+    const first = await buildPoolsReusing(slots, ctx, fetchPool);
+
+    await buildPoolsReusing(slots, ctx, fetchPool, first);
+
+    expect(first.exhaustedPoolKeys.size).toBe(0);
+    expect(fetchPool).toHaveBeenCalledTimes(2);
+  });
+
+  it('records whether a refresh refetch read the grade out', async () => {
+    const slots = [slot(15, 0)];
+    const key = poolKeyForSlot(slots[0]);
+    const pools = new Map([[key, [makeClimb('only')]]]);
+    const { items, usedUuids } = selectItemsFromPools(slots, pools);
+    const fetchPool = vi.fn<FetchGradePool>(async () => thinPool());
+
+    const { state } = await refreshSlotInState({ items, pools, usedUuids }, items[0].item.uuid, ctx, fetchPool);
+
+    expect(state.exhaustedPoolKeys?.has(key)).toBe(true);
+  });
+
+  it('leaves the shared pools alone when a refresh is superseded mid-fetch', async () => {
+    const slots = [slot(15, 0)];
+    const key = poolKeyForSlot(slots[0]);
+    const cachedPool = [makeClimb('only')];
+    const pools = new Map([[key, cachedPool]]);
+    const poolDemands = new Map([[key, 1]]);
+    const { items, usedUuids } = selectItemsFromPools(slots, pools);
+    let current = true;
+    const fetchPool = vi.fn<FetchGradePool>(async () => {
+      current = false; // the climber edits the plan while the refresh is out
+      return thinPool();
+    });
+
+    const result = await refreshSlotInState(
+      { items, pools, usedUuids, poolDemands },
+      items[0].item.uuid,
+      { ...ctx, isCurrent: () => current },
+      fetchPool,
+    );
+
+    expect(result.changed).toBe(false);
+    expect(pools.get(key)).toBe(cachedPool);
+    expect(poolDemands.get(key)).toBe(1);
+  });
+});

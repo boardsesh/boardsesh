@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { onlineManager } from '@tanstack/react-query';
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import { DEFAULT_WORKOUT_FILTERS } from '../workout-blocks';
 import type { PreviewFetchContext, PreviewFilters } from '../workout-preview-pool';
@@ -72,6 +73,10 @@ beforeEach(() => {
   offlineAwareRequestMock.mockReset();
 });
 
+afterEach(() => {
+  onlineManager.setOnline(true);
+});
+
 describe('searchTiers', () => {
   it('puts never-tried, then tried, then sent climbs in order for the default Unfamiliar', () => {
     expect(searchTiers(DEFAULT_WORKOUT_FILTERS, true)).toEqual([
@@ -81,12 +86,11 @@ describe('searchTiers', () => {
     ]);
   });
 
-  it('prefers climbs you have not sent for Attempted and Any too', () => {
+  it('keeps Attempted and Any to the one search each always sent, sent climbs mixed in', () => {
     expect(searchTiers({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted' }, true)).toEqual([
-      { showOnlyAttempted: true, hideCompleted: true },
       { showOnlyAttempted: true },
     ]);
-    expect(searchTiers({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any' }, true)).toEqual([{ hideCompleted: true }, {}]);
+    expect(searchTiers({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any' }, true)).toEqual([{}]);
   });
 
   it('keeps only the tiers that hide sent climbs when Skip what I have sent is on', () => {
@@ -174,6 +178,31 @@ describe('fetchGradePool tiers', () => {
     expect(offlineAwareRequestMock.mock.calls[0][1]).toEqual({ input: buildClimbSearchInput(15, signedIn()) });
     expect(pool.climbs).toHaveLength(50);
     expect(pool.topUpTiers.size).toBe(0);
+    expect(pool.exhausted).toBe(false);
+  });
+
+  it('asks once when the first tier covers every slot and the slack, even under 50', async () => {
+    // A thin grade, or an active climber with only 30 never-tried climbs left at it.
+    serveCatalogue([...climbs('fresh', 30), ...climbs('sent', 40, { sent: true })]);
+
+    const pool = await fetchGradePool(15, signedIn(), 2);
+
+    expect(offlineAwareRequestMock).toHaveBeenCalledTimes(1);
+    expect(pool.climbs).toHaveLength(30);
+    expect(pool.topUpTiers.size).toBe(0);
+    // The tried and sent climbs were never read, so a bigger demand could find more.
+    expect(pool.exhausted).toBe(false);
+  });
+
+  it('reads the top-ups once a refresh asks for more than the first tier has', async () => {
+    serveCatalogue([...climbs('fresh', 30), ...climbs('sent', 40, { sent: true })]);
+
+    // A refresh asks for every row at the grade plus one: 30 rows here.
+    const pool = await fetchGradePool(15, signedIn(), 31);
+
+    expect(requestedFlags()).toEqual([{ hideAttempted: true, hideCompleted: true }, { hideCompleted: true }, {}]);
+    expect(pool.climbs.length).toBeGreaterThanOrEqual(41);
+    expect(pool.climbs.slice(0, 30).every((climb) => climb.uuid.startsWith('fresh'))).toBe(true);
   });
 
   it('tops a short grade up with tried, then sent climbs, and names each top-up', async () => {
@@ -210,6 +239,7 @@ describe('fetchGradePool tiers', () => {
     expect(requestedFlags()).toEqual([{ hideAttempted: true, hideCompleted: true }, { hideCompleted: true }]);
     expect(pool.climbs).toHaveLength(50);
     expect(pool.climbs.some((climb) => climb.uuid.startsWith('sent'))).toBe(false);
+    expect(pool.exhausted).toBe(false);
   });
 
   it('fills from sent climbs when every climb at the grade is sent', async () => {
@@ -254,6 +284,43 @@ describe('fetchGradePool tiers', () => {
     const pool = await fetchGradePool(15, signedIn(), 20);
 
     expect(pool.climbs.map((climb) => climb.uuid)).toEqual(['fresh-0', 'fresh-1', 'sent-0']);
+    // Every tier ran out: this is all the grade has, so a rebuild can keep it.
+    expect(pool.exhausted).toBe(true);
+  });
+
+  it('marks an empty grade exhausted once every tier has said so', async () => {
+    serveCatalogue([]);
+
+    const pool = await fetchGradePool(15, signedIn({ ...DEFAULT_WORKOUT_FILTERS, onlyBenchmarks: true }), 20);
+
+    expect(pool.climbs).toEqual([]);
+    expect(pool.exhausted).toBe(true);
+  });
+
+  it('never marks a pool exhausted from a request sent offline', async () => {
+    serveCatalogue([]);
+    onlineManager.setOnline(false);
+
+    const pool = await fetchGradePool(15, signedIn(), 20);
+
+    // The empty offline answer says nothing about the grade.
+    expect(pool.climbs).toEqual([]);
+    expect(pool.exhausted).toBe(false);
+  });
+
+  it('stops before its next request once the build it serves is superseded', async () => {
+    serveCatalogue([...climbs('fresh', 3), ...climbs('sent', 60, { sent: true })]);
+    let current = true;
+    offlineAwareRequestMock.mockImplementationOnce(async () => {
+      current = false; // a newer build starts while the first search is out
+      return { searchClimbs: { climbs: [{ uuid: 'fresh-0' } as Climb], hasMore: false } };
+    });
+
+    const pool = await fetchGradePool(15, { ...signedIn(), isCurrent: () => current }, 20);
+
+    expect(offlineAwareRequestMock).toHaveBeenCalledTimes(1);
+    expect(pool.climbs.map((climb) => climb.uuid)).toEqual(['fresh-0']);
+    expect(pool.exhausted).toBeFalsy();
   });
 
   it('reads one tier with no personal flags signed out', async () => {
@@ -275,6 +342,8 @@ describe('fetchGradePool tiers', () => {
 
     expect(pool.climbs.map((climb) => climb.uuid)).toEqual(['fresh-0']);
     expect(offlineAwareRequestMock).toHaveBeenCalledTimes(2);
+    // The failed tier might have had more: fetch it again next time.
+    expect(pool.exhausted).toBe(false);
   });
 
   it('fails when the first tier fails', async () => {

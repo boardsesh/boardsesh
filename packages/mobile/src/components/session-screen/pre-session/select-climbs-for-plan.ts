@@ -1,3 +1,4 @@
+import { onlineManager } from '@tanstack/react-query';
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { ClimbBias, PlannedClimbSlot } from '@boardsesh/playlist-generator';
@@ -42,14 +43,14 @@ const TRIED_NOT_SENT: ClimbSearchTier = { showOnlyAttempted: true, hideCompleted
 const TRIED: ClimbSearchTier = { showOnlyAttempted: true };
 const ANY_CLIMB: ClimbSearchTier = {};
 
-function tiersForBias(climbBias: ClimbBias): ClimbSearchTier[] {
+function tiersForBias(climbBias: ClimbBias, skipSent: boolean): ClimbSearchTier[] {
   switch (climbBias) {
     case 'unfamiliar':
-      return [NEVER_TRIED, NOT_SENT, ANY_CLIMB];
+      return skipSent ? [NEVER_TRIED, NOT_SENT] : [NEVER_TRIED, NOT_SENT, ANY_CLIMB];
     case 'attempted':
-      return [TRIED_NOT_SENT, TRIED];
+      return [skipSent ? TRIED_NOT_SENT : TRIED];
     case 'any':
-      return [NOT_SENT, ANY_CLIMB];
+      return [skipSent ? NOT_SENT : ANY_CLIMB];
   }
 }
 
@@ -57,21 +58,23 @@ function tiersForBias(climbBias: ClimbBias): ClimbSearchTier[] {
  * The search tiers for one set of filters, best first (#6232). Each tier
  * returns every climb the one before it does and more, and `fetchGradePool`
  * reads them in order until the pool is full, so the later tiers only top it
- * up: climbs you have not sent come first and sent ones fill what is left.
+ * up.
  *
- * - Unfamiliar: never tried, then tried but not sent, then sent. The first tier
- *   is the request this bias always sent, so a grade that fills from it costs
- *   one request, as before.
- * - Attempted: only climbs you have tried; not sent, then sent.
- * - Any: not sent, then sent.
+ * - Unfamiliar (the default): never tried, then tried but not sent, then sent.
+ *   The first tier is the request this bias always sent, so a grade that fills
+ *   from it costs one request, as before, and climbs you have sent only fill
+ *   what is left.
+ * - Attempted and Any: the one search each always sent, so a climber who picks
+ *   them gets their sent climbs mixed in as before.
  *
- * Skip what I've sent keeps only the tiers that hide sent climbs. Signed out
- * there is no logbook to read: one tier, no personal flags.
+ * Skip what I've sent keeps only searches that hide sent climbs: Unfamiliar
+ * drops its last tier, Attempted keeps the climbs you have tried but not sent,
+ * and Any the ones you have not sent. Signed out there is no logbook to read:
+ * one tier, no personal flags.
  */
 export function searchTiers(filters: PreviewFilters | undefined, isAuthenticated: boolean): ClimbSearchTier[] {
   if (!isAuthenticated || !filters) return [ANY_CLIMB];
-  const tiers = tiersForBias(filters.climbBias);
-  return filters.skipSent ? tiers.filter((tier) => tier.hideCompleted) : tiers;
+  return tiersForBias(filters.climbBias, filters.skipSent === true);
 }
 
 /**
@@ -121,6 +124,16 @@ export function gradePoolTarget(demand: number): number {
 }
 
 /**
+ * How many climbs a top-up tier reads up to: every slot plus the slack, not
+ * the 50-climb floor. The floor is refresh headroom, and the first tier's
+ * climbs already give a row somewhere to go; a refresh that runs out of them
+ * refetches with a bigger demand and reaches the top-ups then.
+ */
+function topUpTarget(demand: number): number {
+  return demand + POOL_SLACK_PER_GRADE;
+}
+
+/**
  * Fetch the candidate climb pool for one grade. The mobile-only fetcher injected
  * into `@boardsesh/playlist-generator`'s pure pool helpers; the shared package
  * intentionally stays platform-agnostic (no GraphQL client). Shuffling happens
@@ -131,14 +144,23 @@ export function gradePoolTarget(demand: number): number {
  * later blocks empty. Past the backend's 100-per-page cap it reads the next
  * pages until it has enough or the grade runs out.
  *
- * It reads the filters' search tiers (`searchTiers`) in order and stops as soon
- * as the pool is full, so a grade the first tier fills costs what it always
- * did. A climb a later tier adds is a top-up, named in `topUpTiers` with the
- * tier it came from. A later tier that fails leaves the pool with what the
- * earlier ones found; only a failing first tier fails the fetch.
+ * It reads the filters' search tiers (`searchTiers`) in order. The first tier
+ * reads up to the full target, as the one request always did, so a grade it
+ * fills costs what it always did. A later tier is read only while the pool is
+ * short of `topUpTarget`. A climb a later tier adds is a top-up, named in
+ * `topUpTiers` with the tier it came from. A later tier that fails leaves the
+ * pool with what the earlier ones found; only a failing first tier fails the
+ * fetch.
+ *
+ * The pool is `exhausted` when its last tier ran out: it then holds every climb
+ * the grade has under these filters, and a rebuild reuses it instead of asking
+ * again. A request sent while offline never counts, since the empty offline
+ * answer says nothing about the grade. Once `ctx.isCurrent` says the build or
+ * refresh is superseded, the fetch sends nothing more and hands back what it has.
  */
 export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, demand = 0): Promise<GradePool> {
   const target = gradePoolTarget(demand);
+  const topUpLimit = topUpTarget(demand);
   const pageSize = Math.min(target, MAX_SEARCH_PAGE_SIZE);
   // Two pages beyond what the target needs, so a backend that keeps saying
   // hasMore while repeating climbs can't keep the preview loading forever.
@@ -153,10 +175,16 @@ export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, de
   const climbs: Climb[] = [];
   const seenUuids = new Set<string>();
   const topUpTiers = new Map<string, number>();
+  let lastTierRanOut = false;
+  let sentOffline = false;
   for (const [tierIndex, tier] of tiers.entries()) {
-    if (climbs.length >= target) break;
+    const tierTarget = tierIndex === 0 ? target : topUpLimit;
+    if (climbs.length >= tierTarget) break;
+    let tierRanOut = false;
     try {
-      for (let page = 0; climbs.length < target && page < maxPagesPerTier; page++) {
+      for (let page = 0; climbs.length < tierTarget && page < maxPagesPerTier; page++) {
+        if (ctx.isCurrent?.() === false) return { climbs, topUpTiers };
+        if (!onlineManager.isOnline()) sentOffline = true;
         const input = buildClimbSearchInput(grade, ctx, page, pageSize, tier);
         const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
         const pageClimbs = response.searchClimbs.climbs;
@@ -166,14 +194,20 @@ export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, de
           climbs.push(climb);
           if (tierIndex > 0) topUpTiers.set(climb.uuid, tierIndex);
         }
-        if (!response.searchClimbs.hasMore || pageClimbs.length < pageSize) break;
+        if (!response.searchClimbs.hasMore || pageClimbs.length < pageSize) {
+          tierRanOut = true;
+          break;
+        }
       }
     } catch (error) {
       if (tierIndex === 0) throw error;
       break;
     }
+    // Each tier holds every climb the ones before it do, so the last one
+    // running out means the pool has everything.
+    lastTierRanOut = tierRanOut && tierIndex === tiers.length - 1;
   }
-  return { climbs, topUpTiers };
+  return { climbs, topUpTiers, exhausted: lastTierRanOut && !sentOffline };
 }
 
 /**

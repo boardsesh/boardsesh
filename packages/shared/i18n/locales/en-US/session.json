@@ -640,7 +640,7 @@
       "preGeneratorWideClimbsLabel": "Wide climbs only",
       "preGeneratorWideClimbsDescription": "Use the 10x10 side expansion.",
       "preGeneratorSkipSentLabel": "Skip what I've sent",
-      "preGeneratorSkipSentDescription": "Leave out climbs you've sent at this angle. Off, they only fill gaps.",
+      "preGeneratorSkipSentDescription": "Leave out climbs you've sent at this angle, even when a grade runs short.",
       "preGeneratorSkipSentSignedOut": "Sign in to leave out climbs you've sent.",
       "preGeneratorSkipSentSummary": "Skip sent",
       "preGeneratorOnlyBenchmarksLabel": "Benchmarks only",

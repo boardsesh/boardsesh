@@ -640,7 +640,7 @@
       "preGeneratorWideClimbsLabel": "Nur breite Boulder",
       "preGeneratorWideClimbsDescription": "Nutzt die 10x10-Seitenerweiterung.",
       "preGeneratorSkipSentLabel": "Getoppte Boulder auslassen",
-      "preGeneratorSkipSentDescription": "Lässt Boulder weg, die du in diesem Winkel getoppt hast. Aus füllen sie nur Lücken.",
+      "preGeneratorSkipSentDescription": "Lässt Boulder weg, die du in diesem Winkel getoppt hast, auch wenn ein Grad zu wenige hat.",
       "preGeneratorSkipSentSignedOut": "Melde dich an, um getoppte Boulder auszulassen.",
       "preGeneratorSkipSentSummary": "Ohne Getoppte",
       "preGeneratorOnlyBenchmarksLabel": "Nur Benchmark-Boulder",

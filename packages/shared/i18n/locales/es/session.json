@@ -640,7 +640,7 @@
       "preGeneratorWideClimbsLabel": "Solo bloques anchos",
       "preGeneratorWideClimbsDescription": "Usa la extensión lateral 10x10.",
       "preGeneratorSkipSentLabel": "Saltar lo que ya encadené",
-      "preGeneratorSkipSentDescription": "Deja fuera los bloques que has encadenado en este ángulo. Desactivado, solo rellenan huecos.",
+      "preGeneratorSkipSentDescription": "Deja fuera los bloques que has encadenado en este ángulo, aunque a un grado le falten bloques.",
       "preGeneratorSkipSentSignedOut": "Inicia sesión para dejar fuera los bloques que has encadenado.",
       "preGeneratorSkipSentSummary": "Sin encadenes",
       "preGeneratorOnlyBenchmarksLabel": "Solo bloques benchmark",

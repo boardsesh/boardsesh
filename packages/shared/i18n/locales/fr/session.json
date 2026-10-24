@@ -640,7 +640,7 @@
       "preGeneratorWideClimbsLabel": "Blocs larges uniquement",
       "preGeneratorWideClimbsDescription": "Utilise l'extension latérale 10x10.",
       "preGeneratorSkipSentLabel": "Ignorer mes blocs enchaînés",
-      "preGeneratorSkipSentDescription": "Écarte les blocs que tu as enchaînés à cet angle. Désactivé, ils servent seulement à compléter.",
+      "preGeneratorSkipSentDescription": "Écarte les blocs que tu as enchaînés à cet angle, même si une cotation manque de blocs.",
       "preGeneratorSkipSentSignedOut": "Connecte-toi pour écarter les blocs que tu as enchaînés.",
       "preGeneratorSkipSentSummary": "Sans enchaînés",
       "preGeneratorOnlyBenchmarksLabel": "Blocs benchmark uniquement",

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { onlineManager } from '@tanstack/react-query';
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import {
   DEFAULT_GRADE_FOCUS_OPTIONS,
@@ -44,13 +45,18 @@ describe('fetchGradePool', () => {
     expect(offlineAwareRequestMock).toHaveBeenCalledExactlyOnceWith(SEARCH_CLIMBS, {
       input: buildClimbSearchInput(15, ctx),
     });
-    expect(pool).toEqual({ climbs, topUpTiers: new Map() });
+    expect(pool).toEqual({ climbs, topUpTiers: new Map(), exhausted: true });
   });
 
-  it('returns the empty pool from the offline fallback', async () => {
+  it('returns the empty pool from the offline fallback, never as all the grade has', async () => {
+    onlineManager.setOnline(false);
     offlineAwareRequestMock.mockResolvedValue({ searchClimbs: { climbs: [], hasMore: false } });
 
-    await expect(fetchGradePool(15, ctx)).resolves.toEqual({ climbs: [], topUpTiers: new Map() });
+    try {
+      await expect(fetchGradePool(15, ctx)).resolves.toEqual({ climbs: [], topUpTiers: new Map(), exhausted: false });
+    } finally {
+      onlineManager.setOnline(true);
+    }
   });
 
   it('reads past the 100-climb page cap when the demand needs it', async () => {
@@ -70,9 +76,10 @@ describe('fetchGradePool', () => {
   it('stops when the grade runs out', async () => {
     serveCatalogue(120);
 
-    const { climbs } = await fetchGradePool(15, ctx, 400);
+    const { climbs, exhausted } = await fetchGradePool(15, ctx, 400);
 
     expect(climbs).toHaveLength(120);
+    expect(exhausted).toBe(true);
     expect(requestedPages().map(({ page }) => page)).toEqual([0, 1]);
   });
 
@@ -80,10 +87,11 @@ describe('fetchGradePool', () => {
     const repeatedPage = Array.from({ length: MAX_SEARCH_PAGE_SIZE }, (_, index) => ({ uuid: `climb-${index}` }));
     offlineAwareRequestMock.mockResolvedValue({ searchClimbs: { climbs: repeatedPage, hasMore: true } });
 
-    const { climbs } = await fetchGradePool(15, ctx, 150);
+    const { climbs, exhausted } = await fetchGradePool(15, ctx, 150);
 
     // 160 wanted fits in 2 pages of 100; 2 more are allowed before giving up.
     expect(climbs).toHaveLength(MAX_SEARCH_PAGE_SIZE);
+    expect(exhausted).toBe(false);
     expect(offlineAwareRequestMock).toHaveBeenCalledTimes(4);
   });
 
