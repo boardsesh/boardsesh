@@ -388,12 +388,11 @@ export function PlaylistDetailView({
   playAllClimbsRef.current = climbs;
   const onActivateClimbRef = useRef(onActivateClimb);
   onActivateClimbRef.current = onActivateClimb;
-  const disableActivateAll = !!boardBanner;
+  // `showPlayAll` already hides the button behind the board banner.
   const handleActivateAll = useCallback(() => {
-    if (disableActivateAll) return;
     const first = playAllClimbsRef.current[0];
     if (first) onActivateClimbRef.current(first, undefined, { deliberate: true });
-  }, [disableActivateAll]);
+  }, []);
 
   const navigation = useNavigation();
   const headerTitle = hero.name;
@@ -420,9 +419,9 @@ export function PlaylistDetailView({
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
       // a rendered node: a fresh element each render would re-set the options on
-      // every render. No item at all while there is nothing to show (a smart list
-      // with its hero up, a signed-out viewer): iOS draws an empty glass capsule
-      // for an item that renders nothing. `ownHeaderRight` also clears any
+      // every render. No item at all while there is nothing to show (an empty
+      // list, behind the board banner, or edit mode without owner actions): iOS
+      // draws an empty glass capsule for an item that renders nothing. `ownHeaderRight` also clears any
       // native bar item.
       ...ownHeaderRight(
         filterButton || actionButtons || playButton

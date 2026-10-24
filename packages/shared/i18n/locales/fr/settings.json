@@ -489,7 +489,7 @@
       "onTapLabel": "Allumer en sélectionnant dans la liste",
       "onTapDescription": "Allume la board quand vous sélectionnez un bloc dans une liste.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer en sélectionnant dans la liste est désactivé, utilisez Lecture pour la charger."
     },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",

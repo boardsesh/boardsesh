@@ -798,9 +798,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
-    it('leaves a tap the climber asked to load into the queue doing that', async () => {
-      // A preview puts up one climb, never the list, so it cannot honour
-      // "Tapping a playlist loads it into my queue".
+    it('previews a row tap with the playlist switch on too, since a replace lights the wall', async () => {
       setSetting('lightOnClimbTap', false);
       setSetting('playlistTapLoadsQueue', true);
       const climb = makeClimb('a');
@@ -809,6 +807,22 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
       await act(async () => {
         await result.current.activate(climb);
+      });
+
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.activate).not.toHaveBeenCalled();
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
+    });
+
+    it('leaves the Play button loading the list with the playlist switch on', async () => {
+      setSetting('lightOnClimbTap', false);
+      setSetting('playlistTapLoadsQueue', true);
+      const climb = makeClimb('a');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(climb, undefined, { deliberate: true });
       });
 
       expect(mocks.setQueue.mock.calls[0]?.[1].climb.uuid).toBe('a');
@@ -1478,21 +1492,58 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       await waitFor(() => {
         expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1);
       });
-      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['b', 'c']);
+      // The tapped climb goes in once, after the current climb, so the batch
+      // behind the queue leaves it out.
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['c']);
       // Nothing was cleared, and the current climb was never handed over.
       expect(mocks.setQueue).not.toHaveBeenCalled();
       expect(mocks.appendQueueItems.mock.calls[0][1]).toBeUndefined();
       // The entryPoint split is the whole point of the property — it answers
       // whether people find the additive path on its own or only once the
       // destructive prompt offers it.
+      // The tapped climb is in the queue, so it counts as landed.
       expect(mocks.track.mock.calls[0][1]).toMatchObject({
         entryPoint: 'replacePrompt',
         sourceKind: 'playlist',
         outcome: 'added',
+        fetchedCount: 2,
+        appendedCount: 2,
       });
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 2 });
       // And the climb they tapped opens, playing from the list.
       expect(mocks.activate).toHaveBeenCalledWith(tapped);
       expect(mocks.openPlayDrawer).toHaveBeenCalledWith(tapped, { committedExternally: true });
+
+      // Its commit is a queued climb, not a browse-origin one, and it sets the
+      // track on its own so the reducer's suggested-after-current prune leaves
+      // the climbs the prompt promised to keep alone.
+      const source = { playlistUuid: 'playlist:pl-1', activatedClimbUuid: 'b', boardKey: 'kilter:1:2:3', climbs: [] };
+      const dispatched = await captured().queueApi!.setCurrentClimb(tapped, { playlistSuggestionSource: source });
+      expect(dispatched).toMatchObject({ climb: tapped });
+      expect(dispatched?.suggested).toBeUndefined();
+      expect(mocks.setPlaylistSuggestionSource).toHaveBeenCalledWith(source);
+      expect(mocks.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(dispatched, {
+        playlistSuggestionSource: undefined,
+      });
+    });
+
+    it('queues the tapped climb once when it is the whole list', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      const tapped = makeClimb('b');
+      mocks.choose.mockResolvedValue('append');
+      const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false }), {
+        replaceQueueOnActivate: true,
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 1 }));
+      expect(mocks.appendQueueItems).not.toHaveBeenCalled();
+      expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
     it('says so instead of silently dropping the pick when an append is already in flight', async () => {
