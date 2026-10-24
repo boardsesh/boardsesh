@@ -173,9 +173,9 @@ describe('WorkoutRunCard', () => {
     });
   });
 
-  it('names a warm-up queued after the last block "Cool-down"', () => {
+  it('names a warm-up planned as a cool-down "Cool-down"', () => {
     setWorkoutRun('session-1', {
-      stages: [...run.stages, { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2'] }],
+      stages: [...run.stages, { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2'], coolDown: true }],
     });
     queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'm2', 'c1', 'c2']);
     queueState.currentClimbQueueItem = { uuid: 'c1' };

@@ -56,8 +56,8 @@ export type WorkoutStageFilters = Pick<
  * Climbs stepping up to a target grade: its own `targetGrade` when set
  * (partner `warmUp` blocks carry their own range), else the grade of the first
  * workout stage after it. The app's warm-ups never set one. With neither, after
- * the last workout stage, it steps back down from that stage's grade instead: a
- * cool-down.
+ * the last workout stage, it steps back down from where that stage ends
+ * instead: a cool-down.
  */
 export type WarmUpStage = {
   id: string;
@@ -155,35 +155,53 @@ export const planFromBlocks = (blocks: readonly WorkoutBlockSpec[], makeId: Stag
   return { stages };
 };
 
-/** The grade of the nearest runnable workout stage before `stagePosition`, skipping warm-ups. */
-const gradeOfWorkoutBefore = (stages: readonly WorkoutStage[], stagePosition: number): number | undefined => {
+/** The grade a warm-up ramps up to: its own `targetGrade`, else the first runnable workout stage after it. */
+const warmUpRampTarget = (stages: readonly WorkoutStage[], stage: WarmUpStage, stagePosition: number) =>
+  stage.targetGrade ?? stages.slice(stagePosition + 1).find(isRunnableMainStage)?.options.targetGrade;
+
+/**
+ * Where the warm-up at `stagePosition` takes a cool-down from: the position of
+ * the nearest runnable workout stage before it, skipping warm-ups. -1 when it
+ * ramps up instead (`warmUpRampTarget`) or no runnable workout stage comes
+ * before it.
+ */
+const coolDownSourcePosition = (stages: readonly WorkoutStage[], stage: WarmUpStage, stagePosition: number): number => {
+  if (warmUpRampTarget(stages, stage, stagePosition) !== undefined) return -1;
   for (let before = stagePosition - 1; before >= 0; before--) {
-    const stage = stages[before];
-    if (isRunnableMainStage(stage)) return stage.options.targetGrade;
+    if (isRunnableMainStage(stages[before])) return before;
   }
-  return undefined;
+  return -1;
 };
 
 /**
- * A warm-up stage's slots. It ramps up to its own `targetGrade`, else to the
- * first workout stage after it. With neither, it is a cool-down: the climbs
- * the same warm-up would plan for the nearest workout stage before it, hardest
- * first, in the `coolDown` section. A warm-up with no workout on either side
- * plans nothing.
+ * A warm-up stage's slots. It ramps up to `warmUpRampTarget`. With nothing to
+ * ramp to, it is a cool-down after the nearest workout stage before it: the
+ * climbs the same warm-up would plan for the grade that stage ends on, hardest
+ * first, in the `coolDown` section. That stage ends on its last planned climb,
+ * capped at its target grade (a volume block's spread can end above it), so the
+ * cool-down always starts below the climb before it: after a pyramid it carries
+ * on down from the last step. A warm-up with no workout on either side plans
+ * nothing. `slotsByStagePosition` holds what the stages before it planned.
  */
 const warmUpStageSlots = (
   stages: readonly WorkoutStage[],
   stagePosition: number,
   stage: WarmUpStage,
+  slotsByStagePosition: readonly (readonly PlannedClimbSlot[])[],
   grades: GeneratorGradeScale,
 ): PlannedClimbSlot[] => {
-  const rampTarget =
-    stage.targetGrade ?? stages.slice(stagePosition + 1).find(isRunnableMainStage)?.options.targetGrade;
+  const rampTarget = warmUpRampTarget(stages, stage, stagePosition);
   if (rampTarget !== undefined) return generateWarmUp(rampTarget, stage.warmUpType, grades);
 
-  const coolDownFrom = gradeOfWorkoutBefore(stages, stagePosition);
-  if (coolDownFrom === undefined) return [];
-  return generateWarmUp(coolDownFrom, stage.warmUpType, grades)
+  const sourcePosition = coolDownSourcePosition(stages, stage, stagePosition);
+  const source = stages[sourcePosition];
+  if (!isRunnableMainStage(source)) return [];
+  const sourceSlots = slotsByStagePosition[sourcePosition] ?? [];
+  const lastSourceSlot = sourceSlots[sourceSlots.length - 1];
+  const easeOffFrom = lastSourceSlot
+    ? Math.min(source.options.targetGrade, lastSourceSlot.grade)
+    : source.options.targetGrade;
+  return generateWarmUp(easeOffFrom, stage.warmUpType, grades)
     .reverse()
     .map((slot, index): PlannedClimbSlot => ({ ...slot, section: 'coolDown', index }));
 };
@@ -193,24 +211,28 @@ const warmUpStageSlots = (
  * plan, so a warm-up plus one workout yields exactly what `generateWorkoutPlan`
  * yields for the same options. A warm-up stage ramps to its own `targetGrade`,
  * else to the first workout stage after it, skipping any warm-ups in between;
- * after the last workout stage it ramps back down from the nearest one before
- * it (a cool-down), and with no workout stage at all it generates nothing. A
- * workout stage whose `kind` no longer matches `options.type` generates nothing
- * rather than throwing on persisted data.
+ * after the last workout stage it steps back down from where the nearest one
+ * before it ends (a cool-down), and with no workout stage at all it generates
+ * nothing. A workout stage whose `kind` no longer matches `options.type`
+ * generates nothing rather than throwing on persisted data.
  */
 export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScale): StagedSlot[] => {
   const stagedSlots: StagedSlot[] = [];
+  // Each stage's own slots, so a cool-down reads what the stage before it
+  // actually planned: a volume block's spread is random.
+  const slotsByStagePosition: PlannedClimbSlot[][] = [];
 
   plan.stages.forEach((stage, stagePosition) => {
     let stageSlots: PlannedClimbSlot[];
     if (isWarmUpStage(stage)) {
-      stageSlots = warmUpStageSlots(plan.stages, stagePosition, stage, grades);
+      stageSlots = warmUpStageSlots(plan.stages, stagePosition, stage, slotsByStagePosition, grades);
     } else if (!isRunnableMainStage(stage)) {
       stageSlots = [];
     } else {
       // Force `warmUp: 'none'` in case persisted data carries an older value.
       stageSlots = generateWorkoutPlan({ ...stage.options, warmUp: 'none' }, grades);
     }
+    slotsByStagePosition.push(stageSlots);
 
     const indexOffset = stagedSlots.length;
     for (const slot of stageSlots) {
@@ -255,12 +277,17 @@ export type WorkoutRunStage = {
    * entry has no round.
    */
   roundByUuid?: Record<string, number>;
+  /**
+   * Set on a warm-up stage planned as a cool-down (`generateStagedPlan`), so it
+   * reads "Cool-down" however the queue is reordered or extended later.
+   */
+  coolDown?: true;
 };
 
 /** What a run stage says about itself, without its climbs. */
 export type WorkoutRunStageIdentity = Pick<
   WorkoutRunStage,
-  'id' | 'kind' | 'targetGrade' | 'filters' | 'pacing' | 'rounds' | 'roundByUuid'
+  'id' | 'kind' | 'targetGrade' | 'filters' | 'pacing' | 'rounds' | 'roundByUuid' | 'coolDown'
 >;
 
 /** Stages in workout order. A stage with no items is never kept. */
@@ -290,6 +317,7 @@ const roundsFor = (
  * are dropped, and a stage id repeated in the plan is emitted once, so no two
  * run stages ever share an `itemUuids` list. A workout stage keeps the pacing
  * and rounds its options give, and every stage keeps the rounds its entries name.
+ * A warm-up the plan steps back down (a cool-down) is marked `coolDown`.
  */
 export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: WorkoutPlan): WorkoutRun => {
   // Each uuid belongs to one stage: the first entry naming a stage in the plan
@@ -313,7 +341,7 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
 
   const stages: WorkoutRunStage[] = [];
   const emittedStageIds = new Set<string>();
-  for (const stage of plan.stages) {
+  for (const [stagePosition, stage] of plan.stages.entries()) {
     if (emittedStageIds.has(stage.id)) continue;
     emittedStageIds.add(stage.id);
     const itemUuids = uuidsByStageId.get(stage.id);
@@ -327,6 +355,8 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
       if (pacing) runStage.pacing = pacing;
       const rounds = roundsForOptions(stage.options);
       if (rounds !== undefined) runStage.rounds = rounds;
+    } else if (coolDownSourcePosition(plan.stages, stage, stagePosition) >= 0) {
+      runStage.coolDown = true;
     }
     if (stage.filters) runStage.filters = stage.filters;
     const stageRounds = roundsFor(roundByUuid, itemUuids);
@@ -341,9 +371,10 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
  * with the same kind gets the items appended to it instead; the same id with a
  * different kind is a caller bug and throws. Uuids already in the run are
  * skipped, and when nothing is left to add the same run object comes back. A
- * new stage keeps the `targetGrade`, `filters`, `pacing` and `rounds` it was
- * given. Rounds in `stage.roundByUuid` are kept for the uuids added, on a new
- * stage and an existing one alike; an existing stage keeps its own pacing.
+ * new stage keeps the `targetGrade`, `filters`, `pacing`, `rounds` and
+ * `coolDown` it was given. Rounds in `stage.roundByUuid` are kept for the uuids
+ * added, on a new stage and an existing one alike; an existing stage keeps its
+ * own pacing.
  */
 export const appendStageToRun = (
   run: WorkoutRun,
@@ -373,6 +404,7 @@ export const appendStageToRun = (
     if (stage.filters !== undefined) newStage.filters = stage.filters;
     if (stage.pacing !== undefined) newStage.pacing = stage.pacing;
     if (stage.rounds !== undefined) newStage.rounds = stage.rounds;
+    if (stage.coolDown === true) newStage.coolDown = true;
     if (addedRounds) newStage.roundByUuid = addedRounds;
     return { stages: [...run.stages, newStage] };
   }
@@ -437,9 +469,8 @@ export type WorkoutRunPosition = {
   /** Set only when the current climb has a round (a 4x4): where it sits among the stage's rounds. */
   round?: WorkoutRunRoundPosition;
   /**
-   * Set only on a warm-up stage queued after every workout stage: a warm-up
-   * there was planned stepping back down (`generateStagedPlan`), so it reads as
-   * a cool-down.
+   * Set only on a stage planned as a cool-down (`WorkoutRunStage.coolDown`). It
+   * follows the plan, not the queue order: its climbs step down wherever they sit.
    */
   isCoolDown?: true;
 };
@@ -452,7 +483,6 @@ export type WorkoutRunPosition = {
  * reason only uuids still in the queue count, and stages with none are skipped.
  * Stages are ordered by the queue position of their first queued climb, so
  * `stageIndex` matches the order the climber sees after moving a stage around.
- * In that order, a warm-up stage after every workout stage is a cool-down.
  * Returns null when the current uuid is not queued or belongs to no stage.
  */
 export const locateInRun = (
@@ -475,10 +505,6 @@ export const locateInRun = (
   }
   const firstQueuePosition = (queuedStage: WorkoutRunStage) => queuePositionByUuid.get(queuedStage.itemUuids[0]) ?? 0;
   queuedStages.sort((left, right) => firstQueuePosition(left) - firstQueuePosition(right));
-  let lastWorkoutStageIndex = -1;
-  queuedStages.forEach((queuedStage, stageIndex) => {
-    if (queuedStage.kind !== 'warmUp') lastWorkoutStageIndex = stageIndex;
-  });
 
   for (let stageIndex = 0; stageIndex < queuedStages.length; stageIndex++) {
     const queuedStage = queuedStages[stageIndex];
@@ -493,9 +519,7 @@ export const locateInRun = (
       stageSize: queuedStage.itemUuids.length,
       remainingInStage: queuedStage.itemUuids.length - positionInStage - 1,
     };
-    if (queuedStage.kind === 'warmUp' && lastWorkoutStageIndex >= 0 && stageIndex > lastWorkoutStageIndex) {
-      position.isCoolDown = true;
-    }
+    if (queuedStage.kind === 'warmUp' && queuedStage.coolDown === true) position.isCoolDown = true;
     const round = queuedStage.roundByUuid
       ? locateRound(queuedStage.itemUuids, queuedStage.roundByUuid, currentUuid)
       : null;

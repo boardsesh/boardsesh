@@ -329,6 +329,70 @@ describe('generateStagedPlan cool-downs', () => {
     ]);
   });
 
+  const coolDownGradesAfter = (stages: WorkoutStage[]) =>
+    generateStagedPlan({ stages: [...stages, { id: 'cool', kind: 'warmUp', warmUpType: 'standard' }] }, DENSE_GRADES)
+      .filter((slot) => slot.stageId === 'cool')
+      .map((slot) => slot.grade);
+
+  it('carries on down from where a pyramid ends, never climbing back up to its peak', () => {
+    const pyramid: WorkoutStage = {
+      id: 'main',
+      kind: 'pyramid',
+      options: { ...DEFAULT_PYRAMID_OPTIONS, warmUp: 'none', targetGrade: 15 },
+    };
+    const plan: WorkoutPlan = { stages: [pyramid, { id: 'cool', kind: 'warmUp', warmUpType: 'standard' }] };
+
+    expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => `${slot.section}:${slot.grade}`)).toEqual([
+      'increasing:13',
+      'increasing:14',
+      'peak:15',
+      'decreasing:14',
+      'decreasing:13',
+      'coolDown:12',
+      'coolDown:11',
+      'coolDown:10',
+      'coolDown:9',
+    ]);
+  });
+
+  it('eases off from the top of a ladder, which ends on its target grade', () => {
+    const ladder: WorkoutStage = {
+      id: 'main',
+      kind: 'ladder',
+      options: { ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 15 },
+    };
+
+    expect(coolDownGradesAfter([ladder])).toEqual([14, 13, 12, 11]);
+  });
+
+  it('starts below the last climb of a volume block whose spread ended low', () => {
+    // Every draw is the bottom of the spread: the block's climbs all land on V8.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const spread: WorkoutStage = {
+      id: 'main',
+      kind: 'volume',
+      options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10, mainSetClimbs: 2, mainSetVariability: 2 },
+    };
+
+    expect(coolDownGradesAfter([spread])).toEqual([7, 6, 5, 4]);
+  });
+
+  it("never starts above the block's grade when a volume spread ended high", () => {
+    // Every draw is the top of the spread: the block's climbs all land on V12.
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const spread: WorkoutStage = {
+      id: 'main',
+      kind: 'volume',
+      options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade: 10, mainSetClimbs: 2, mainSetVariability: 2 },
+    };
+
+    expect(coolDownGradesAfter([spread])).toEqual([9, 8, 7, 6]);
+  });
+
+  it('eases off from the target grade of a block that planned no climbs', () => {
+    expect(coolDownGradesAfter([volumeStage('main', 10, 0)])).toEqual([9, 8, 7, 6]);
+  });
+
   it('leaves a warm-up between two blocks ramping up to the block after it', () => {
     const plan: WorkoutPlan = {
       stages: [
@@ -906,17 +970,61 @@ describe('locateInRun', () => {
   });
 });
 
+describe('the run marks cool-downs', () => {
+  const volumeStage = (id: string, targetGrade: number): WorkoutStage => ({
+    id,
+    kind: 'volume',
+    options: { ...DEFAULT_VOLUME_OPTIONS, warmUp: 'none', targetGrade, mainSetClimbs: 1 },
+  });
+  const entriesFor = (plan: WorkoutPlan): WorkoutRunEntry[] =>
+    plan.stages.map((stage) => ({ uuid: `${stage.id}-1`, stageId: stage.id }));
+
+  it('marks a warm-up after the last workout stage, and no other stage', () => {
+    const plan: WorkoutPlan = {
+      stages: [
+        { id: 'warm', kind: 'warmUp', warmUpType: 'standard' },
+        volumeStage('main', 10),
+        { id: 'cool', kind: 'warmUp', warmUpType: 'standard' },
+      ],
+    };
+
+    expect(buildWorkoutRun(entriesFor(plan), plan).stages.map((stage) => [stage.id, stage.coolDown])).toEqual([
+      ['warm', undefined],
+      ['main', undefined],
+      ['cool', true],
+    ]);
+  });
+
+  it('leaves a trailing warm-up with its own target unmarked: it ramps up to it', () => {
+    const plan: WorkoutPlan = {
+      stages: [volumeStage('main', 10), { id: 'warm', kind: 'warmUp', warmUpType: 'standard', targetGrade: 12 }],
+    };
+
+    expect(buildWorkoutRun(entriesFor(plan), plan).stages[1]).toEqual({
+      id: 'warm',
+      kind: 'warmUp',
+      itemUuids: ['warm-1'],
+    });
+  });
+
+  it('keeps the mark on a stage appended to a run', () => {
+    const next = appendStageToRun({ stages: [] }, { id: 'cool', kind: 'warmUp', coolDown: true }, ['c1']);
+
+    expect(next.stages).toEqual([{ id: 'cool', kind: 'warmUp', itemUuids: ['c1'], coolDown: true }]);
+  });
+});
+
 describe('locateInRun cool-downs', () => {
   const COOL_RUN: WorkoutRun = {
     stages: [
       { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
       { id: 'main', kind: 'volume', itemUuids: ['m1', 'm2'] },
-      { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2'] },
+      { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2'], coolDown: true },
     ],
   };
   const COOL_QUEUE = ['w1', 'm1', 'm2', 'c1', 'c2'];
 
-  it('marks a warm-up queued after every workout stage as a cool-down', () => {
+  it('flags a climb of a stage planned as a cool-down', () => {
     expect(locateInRun(COOL_RUN, 'c2', COOL_QUEUE)).toEqual({
       stageIndex: 2,
       stageCount: 3,
@@ -934,34 +1042,38 @@ describe('locateInRun cool-downs', () => {
     expect(locateInRun(COOL_RUN, 'm1', COOL_QUEUE)).not.toHaveProperty('isCoolDown');
   });
 
-  it('follows the queue: a trailing warm-up moved before the workout is a warm-up again', () => {
-    const moved = ['c1', 'c2', 'w1', 'm1', 'm2'];
-
-    expect(locateInRun(COOL_RUN, 'c1', moved)).not.toHaveProperty('isCoolDown');
-  });
-
-  it('is a warm-up again once a workout block is queued after it', () => {
-    const extended: WorkoutRun = {
-      stages: [...COOL_RUN.stages, { id: 'more', kind: 'gradeFocus', itemUuids: ['g1'] }],
-    };
-
-    expect(locateInRun(extended, 'c1', [...COOL_QUEUE, 'g1'])).not.toHaveProperty('isCoolDown');
-  });
-
-  it('never marks a run made only of warm-ups', () => {
-    const warmUpsOnly: WorkoutRun = {
+  it('leaves the flag off a warm-up that was not planned as one, wherever it is queued', () => {
+    // A warm-up the climber dragged behind the workout, or a partner warm-up
+    // with its own target: both ramp up, so neither reads "Cool-down".
+    const rampsUp: WorkoutRun = {
       stages: [
-        { id: 'first', kind: 'warmUp', itemUuids: ['a'] },
-        { id: 'second', kind: 'warmUp', itemUuids: ['b'] },
+        { id: 'main', kind: 'volume', itemUuids: ['m1'] },
+        { id: 'warm', kind: 'warmUp', itemUuids: ['w1', 'w2'] },
       ],
     };
 
-    expect(locateInRun(warmUpsOnly, 'b', ['a', 'b'])).not.toHaveProperty('isCoolDown');
+    expect(locateInRun(rampsUp, 'w1', ['m1', 'w1', 'w2'])).not.toHaveProperty('isCoolDown');
   });
 
-  it('counts only workout stages with climbs still queued', () => {
-    // The volume block's climbs left the queue: nothing workout-shaped sits before the warm-ups.
-    expect(locateInRun(COOL_RUN, 'c1', ['w1', 'c1', 'c2'])).not.toHaveProperty('isCoolDown');
+  it('keeps the flag when the climber queues the cool-down before the workout', () => {
+    expect(locateInRun(COOL_RUN, 'c1', ['c1', 'c2', 'w1', 'm1', 'm2'])).toMatchObject({
+      stageIndex: 0,
+      isCoolDown: true,
+    });
+  });
+
+  it('keeps the flag once a block added mid-session lands after the cool-down', () => {
+    const extended = appendStageToRun(COOL_RUN, { id: 'more', kind: 'pyramid', targetGrade: 10 }, ['p1']);
+
+    expect(locateInRun(extended, 'c1', [...COOL_QUEUE, 'p1'])).toMatchObject({ stageId: 'cool', isCoolDown: true });
+    expect(locateInRun(extended, 'p1', [...COOL_QUEUE, 'p1'])).not.toHaveProperty('isCoolDown');
+  });
+
+  it('ignores the mark on a workout stage', () => {
+    // Persisted data can drift: only a warm-up reads as a cool-down.
+    const drifted: WorkoutRun = { stages: [{ id: 'main', kind: 'volume', itemUuids: ['m1'], coolDown: true }] };
+
+    expect(locateInRun(drifted, 'm1', ['m1'])).not.toHaveProperty('isCoolDown');
   });
 });
 

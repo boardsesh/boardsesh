@@ -168,8 +168,8 @@ export function warmUpTarget(blocks: readonly WorkoutBlockSpec[], position: numb
 /**
  * What the warm-up at `position` eases off from when no workout block follows
  * it: the nearest workout block before it, with its 1-based block number. Its
- * climbs then step back down from that block's grade, hardest first
- * (`generateStagedPlan`). Null when a workout block follows (it ramps up to
+ * climbs then step back down from where that block ends, hardest first
+ * (`generateStagedPlan`): below its last climb, never above its grade. Null when a workout block follows (it ramps up to
  * that one, `warmUpTarget`) or none comes before, and a warm-up with no workout
  * block on either side plans no climbs.
  */

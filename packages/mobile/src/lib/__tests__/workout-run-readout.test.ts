@@ -54,12 +54,12 @@ describe('cool-downs', () => {
     stages: [
       { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
       { id: 'main', kind: 'volume', itemUuids: ['m1', 'm2'] },
-      { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2', 'c3'] },
+      { id: 'cool', kind: 'warmUp', itemUuids: ['c1', 'c2', 'c3'], coolDown: true },
     ],
   };
   const queue = ['w1', 'm1', 'm2', 'c1', 'c2', 'c3'];
 
-  it('flags a warm-up queued after every workout stage, and only that one', () => {
+  it('flags the warm-up planned as a cool-down, and only that one', () => {
     const readout = describeWorkoutRun(coolDownRun, queue, 'c2');
 
     expect(readout?.stages.map((stage) => [stage.id, stage.isCoolDown])).toEqual([
@@ -83,14 +83,30 @@ describe('cool-downs', () => {
     );
   });
 
-  it('reads "Warm-up" again once the climber queues its climbs before the workout', () => {
+  it('still reads "Cool-down" once the climber queues its climbs before the workout', () => {
     const readout = describeWorkoutRun(coolDownRun, ['c1', 'c2', 'c3', 'w1', 'm1', 'm2'], 'c1');
 
-    expect(readout?.stages.every((stage) => !stage.isCoolDown)).toBe(true);
+    expect(readout?.stages.map((stage) => [stage.id, stage.isCoolDown])).toEqual([
+      ['cool', true],
+      ['warm', false],
+      ['main', false],
+    ]);
     if (!readout?.current) throw new Error('expected a current climb');
     expect(formatWorkoutStagePosition(readout.current, t)).toBe(
-      'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionWarmUp,position=1,total=3)',
+      'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionCoolDown,position=1,total=3)',
     );
+  });
+
+  it('reads "Warm-up" for a warm-up queued last that was not planned as a cool-down', () => {
+    const rampsUp: WorkoutRun = {
+      stages: [
+        { id: 'main', kind: 'volume', itemUuids: ['m1'] },
+        { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+      ],
+    };
+    const readout = describeWorkoutRun(rampsUp, ['m1', 'w1'], 'w1');
+
+    expect(readout?.stages.every((stage) => !stage.isCoolDown)).toBe(true);
   });
 
   it('never names a workout stage a cool-down', () => {
