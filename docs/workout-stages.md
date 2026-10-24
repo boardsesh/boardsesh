@@ -294,9 +294,9 @@ logbook, since the search names no direction. A tier that does not pin the climb
   and says why, and the fetch drops it (`fetchFilters`). Signed out it behaves like Skip
   what I've sent. Optional and left off when off, like the others.
 - **Benchmarks only** (`onlyBenchmarks`) adds `onlyBenchmarks: true` to every tier and
-  never falls back to other climbs. It needs no account. It is hidden on spray walls and
-  Woods, which have no benchmarks, except while it is on, so a block brought over from
-  another board can still turn it off. Benchmarks are scarce: a median of 10 per grade on
+  never falls back to other climbs. It needs no account. It is hidden on spray walls,
+  Woods, SoILL and Touchstone, which have no benchmarks, except while it is on, so a block
+  brought over from another board can still turn it off. Benchmarks are scarce: a median of 10 per grade on
   Kilter layout 1, 13 to 41 on Tension and 28 to 65 on MoonBoard (the catalogue counts
   in [#6719](https://github.com/boardsesh/boardsesh/pull/6719),
   `docs/workout-catalogue-depth.md`), so a 20-climb block shows a shortfall on most boards.

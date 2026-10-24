@@ -174,11 +174,13 @@ describe('WorkoutBlockFilters', () => {
 });
 
 describe('offersBenchmarksOnly', () => {
-  it('offers it on boards with benchmarks, not on spray walls, Woods or an unknown board', () => {
+  it('offers it on boards with benchmarks, not on spray walls, Woods, SoILL, Touchstone or an unknown board', () => {
     expect(offersBenchmarksOnly('kilter', DEFAULT_WORKOUT_FILTERS)).toBe(true);
     expect(offersBenchmarksOnly('moonboard', DEFAULT_WORKOUT_FILTERS)).toBe(true);
     expect(offersBenchmarksOnly('spray', DEFAULT_WORKOUT_FILTERS)).toBe(false);
     expect(offersBenchmarksOnly('woods', DEFAULT_WORKOUT_FILTERS)).toBe(false);
+    expect(offersBenchmarksOnly('soill', DEFAULT_WORKOUT_FILTERS)).toBe(false);
+    expect(offersBenchmarksOnly('touchstone', DEFAULT_WORKOUT_FILTERS)).toBe(false);
     expect(offersBenchmarksOnly(null, DEFAULT_WORKOUT_FILTERS)).toBe(false);
   });
 });

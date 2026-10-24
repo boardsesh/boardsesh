@@ -214,6 +214,23 @@ describe('fetchGradePool tiers', () => {
     expect(pool.exhausted).toBe(false);
   });
 
+  it('skips the top-up tiers when the first tier covers every slot and the slack but not the 50 floor', async () => {
+    // 20 slots: the target is 50, a top-up tier reads only below 30. The first
+    // tier's 40 cover every slot and the slack, so no tried or sent climb is read.
+    serveCatalogue([
+      ...climbs('fresh', 40),
+      ...climbs('project', 20, { tried: true }),
+      ...climbs('sent', 20, { sent: true }),
+    ]);
+
+    const pool = await fetchGradePool(15, signedIn(), 20);
+
+    expect(requestedFlags()).toEqual([{ hideAttempted: true, hideCompleted: true }]);
+    expect(pool.climbs).toHaveLength(40);
+    expect(pool.topUpTiers.size).toBe(0);
+    expect(pool.exhausted).toBe(false);
+  });
+
   it('reads the top-ups once a refresh asks for more than the first tier has', async () => {
     serveCatalogue([...climbs('fresh', 30), ...climbs('sent', 40, { sent: true })]);
 

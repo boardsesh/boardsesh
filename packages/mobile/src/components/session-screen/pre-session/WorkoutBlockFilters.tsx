@@ -52,8 +52,10 @@ export function sizeFilterAvailability(
   return { tall: scope?.hasShorter ?? false, wide: scope?.hasNarrower ?? false };
 }
 
-// Spray walls have no benchmarks (#5960) and the Woods import brings none.
-const BOARDS_WITHOUT_BENCHMARKS: ReadonlySet<BoardName> = new Set<BoardName>(['spray', 'woods']);
+// Spray walls have no benchmarks (#5960), and the Woods, SoILL and Touchstone
+// catalogues hold none (docs/workout-catalogue-depth.md), so a Benchmarks only
+// block there could only come back empty.
+const BOARDS_WITHOUT_BENCHMARKS: ReadonlySet<BoardName> = new Set<BoardName>(['spray', 'woods', 'soill', 'touchstone']);
 
 /**
  * Whether a block on this board shows Benchmarks only: not on a board without

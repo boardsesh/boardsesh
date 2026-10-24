@@ -94,10 +94,16 @@ export function searchTiers(filters: WorkoutStageFilters | undefined, isAuthenti
 
 /**
  * The mark the search that found a pool climb proves, by that search's index in
- * the pool's tiers (`GradePool.topUpTiers`, 0 when absent). `filters` are the
- * filters the pool was fetched with (`fetchFilters`), which signed out are
- * already reduced to one search with no personal flags, so they read as signed in.
+ * the pool's tiers (`GradePool.topUpTiers`, 0 when absent).
+ *
+ * Takes the filters as `fetchFilters` returned them, the ones the pool was
+ * fetched with: signed out those are already one search with no personal
+ * flags, so they are read as signed in here. Raw stored block filters would
+ * give a signed-out pool a mark its search never proved.
  */
-export function tierAscentStatus(filters: WorkoutStageFilters | undefined, tierIndex: number): TierAscentStatus | null {
-  return searchTierRules(filters, true)[tierIndex]?.adds ?? null;
+export function tierAscentStatus(
+  fetchNormalizedFilters: WorkoutStageFilters | undefined,
+  tierIndex: number,
+): TierAscentStatus | null {
+  return searchTierRules(fetchNormalizedFilters, true)[tierIndex]?.adds ?? null;
 }
