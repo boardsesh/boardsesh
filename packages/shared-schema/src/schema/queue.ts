@@ -51,6 +51,17 @@ export const queueTypeDefs = /* GraphQL */ `
   }
 
   """
+  How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+  NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
+  STEP: Previous on the queue walk; the pointer steps back into History.
+  Omitted by shipped clients, the native socket and the LED path.
+  """
+  enum CurrentClimbPlacement {
+    NOW
+    STEP
+  }
+
+  """
   The complete state of a session's climb queue.
   Used for synchronization between clients.
   """
@@ -65,6 +76,10 @@ export const queueTypeDefs = /* GraphQL */ `
     queue: [ClimbQueueItem!]!
     "The climb currently being attempted"
     currentClimbQueueItem: ClimbQueueItem
+    "Entries before Up next. Equals the current index when a climb is current. Null from a pre-F3 server."
+    historyCount: Int
+    "When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server."
+    currentChangedAt: String
   }
 
   """

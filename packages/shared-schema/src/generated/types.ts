@@ -2222,6 +2222,14 @@ export type CurrentClimbChanged = {
   stateHashOrdered?: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+ * NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
+ * STEP: Previous on the queue walk; the pointer steps back into History.
+ * Omitted by shipped clients, the native socket and the LED path.
+ */
+export type CurrentClimbPlacement = 'NOW' | 'STEP';
+
 /** Information needed before account deletion. */
 export type DeleteAccountInfo = {
   __typename?: 'DeleteAccountInfo';
@@ -4662,6 +4670,8 @@ export type Mutation = {
   /**
    * Set the currently displayed climb.
    * Optionally adds it to the queue if not already present.
+   * `placement` (F3) marks a client that puts the climb in the Now slot instead of copying it;
+   * omit it for the shipped behaviour.
    */
   setCurrentClimb?: Maybe<ClimbQueueItem>;
   /**
@@ -4678,6 +4688,10 @@ export type Mutation = {
    * that point and re-appends any climb a peer added inside the window instead of
    * silently overwriting it (issue #3933). Omit it for the historical wholesale
    * overwrite — old clients send nothing here.
+   *
+   * `historyCount` (F3) is the number of `queue` entries before Up next when no climb is
+   * current in `queue`. Ignored when the current climb is in `queue`. Omit it to have the
+   * server derive the line from the stored History.
    */
   setQueue: QueueState;
   /**
@@ -5166,6 +5180,7 @@ export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
   initialCurrentClimb?: InputMaybe<ClimbQueueItemInput>;
+  initialHistoryCount?: InputMaybe<Scalars['Int']['input']>;
   initialQueue?: InputMaybe<Array<ClimbQueueItemInput>>;
   participantId?: InputMaybe<Scalars['ID']['input']>;
   sessionId: Scalars['ID']['input'];
@@ -5519,6 +5534,7 @@ export type MutationSetContentAudienceArgs = {
 export type MutationSetCurrentClimbArgs = {
   correlationId?: InputMaybe<Scalars['ID']['input']>;
   item?: InputMaybe<ClimbQueueItemInput>;
+  placement?: InputMaybe<CurrentClimbPlacement>;
   shouldAddToQueue?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -5532,6 +5548,7 @@ export type MutationSetIntegrationAutoSyncArgs = {
 export type MutationSetQueueArgs = {
   baselineSequence?: InputMaybe<Scalars['Int']['input']>;
   currentClimbQueueItem?: InputMaybe<ClimbQueueItemInput>;
+  historyCount?: InputMaybe<Scalars['Int']['input']>;
   queue: Array<ClimbQueueItemInput>;
 };
 
@@ -8541,8 +8558,12 @@ export type QueueReordered = {
  */
 export type QueueState = {
   __typename?: 'QueueState';
+  /** When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server. */
+  currentChangedAt?: Maybe<Scalars['String']['output']>;
   /** The climb currently being attempted */
   currentClimbQueueItem?: Maybe<ClimbQueueItem>;
+  /** Entries before Up next. Equals the current index when a climb is current. Null from a pre-F3 server. */
+  historyCount?: Maybe<Scalars['Int']['output']>;
   /** List of climbs in the queue */
   queue: Array<ClimbQueueItem>;
   /** Monotonically increasing sequence number for ordering events */
@@ -12349,6 +12370,7 @@ export type ResolversTypes = ResolversObject<{
   CrewFeedResult: ResolverTypeWrapper<Omit<CrewFeedResult, 'items'> & { items: Array<ResolversTypes['CrewFeedItem']> }>;
   CrewSessionItem: ResolverTypeWrapper<CrewSessionItem>;
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
+  CurrentClimbPlacement: CurrentClimbPlacement;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
   DeleteHoldOutlineOverrideInput: DeleteHoldOutlineOverrideInput;
@@ -17873,7 +17895,9 @@ export type QueueStateResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['QueueState'] = ResolversParentTypes['QueueState'],
 > = ResolversObject<{
+  currentChangedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   currentClimbQueueItem?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
+  historyCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   queue?: Resolver<Array<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stateHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

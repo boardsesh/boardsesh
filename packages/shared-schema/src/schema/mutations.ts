@@ -16,6 +16,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
       initialQueue: [ClimbQueueItemInput!]
       initialCurrentClimb: ClimbQueueItemInput
       sessionName: String
+      "Entries of initialQueue before Up next when no seed climb is current in it (F3). Ignored when initialCurrentClimb is in initialQueue."
+      initialHistoryCount: Int
     ): Session!
 
     """
@@ -66,8 +68,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     Set the currently displayed climb.
     Optionally adds it to the queue if not already present.
+    \`placement\` (F3) marks a client that puts the climb in the Now slot instead of copying it;
+    omit it for the shipped behaviour.
     """
-    setCurrentClimb(item: ClimbQueueItemInput, shouldAddToQueue: Boolean, correlationId: ID): ClimbQueueItem
+    setCurrentClimb(
+      item: ClimbQueueItemInput
+      shouldAddToQueue: Boolean
+      correlationId: ID
+      placement: CurrentClimbPlacement
+    ): ClimbQueueItem
 
     """
     Toggle mirrored display for the current climb.
@@ -96,11 +105,16 @@ export const mutationsTypeDefs = /* GraphQL */ `
     that point and re-appends any climb a peer added inside the window instead of
     silently overwriting it (issue #3933). Omit it for the historical wholesale
     overwrite — old clients send nothing here.
+
+    \`historyCount\` (F3) is the number of \`queue\` entries before Up next when no climb is
+    current in \`queue\`. Ignored when the current climb is in \`queue\`. Omit it to have the
+    server derive the line from the stored History.
     """
     setQueue(
       queue: [ClimbQueueItemInput!]!
       currentClimbQueueItem: ClimbQueueItemInput
       baselineSequence: Int
+      historyCount: Int
     ): QueueState!
 
     """
