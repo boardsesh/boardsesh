@@ -117,6 +117,15 @@ runs:
           build "iOS Release launch plumbing changed"
         fi
 
+        # The Swift unit tests sit outside the generated ios/ project and the
+        # fingerprint, so a test-only change would compare equal below and skip
+        # the only job that runs them (prepare-rn-ios-tests.mjs + xcodebuild
+        # test-without-building). Build whenever the tests or their harness move.
+        if [ "$PLATFORM" = ios ] && [ -n "$(changed \
+              packages/mobile/ios-tests scripts/prepare-rn-ios-tests.mjs)" ]; then
+          build "iOS Swift tests changed"
+        fi
+
         # Path screen: nothing in the canonical native-input set (mirrors the
         # ios-rn-ci Pods cache key) changed → skip without paying for a resolve.
         if [ -z "$(changed \

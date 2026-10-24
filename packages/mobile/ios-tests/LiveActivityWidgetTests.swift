@@ -452,6 +452,33 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
     }
 
+    // F3 (docs/current-climb-outside-queue.md, sections 2 and 4): every queue
+    // reshape is a FullSync followed by a CurrentClimbChanged under the SAME
+    // sequence, so a locked phone still repaints the wall. These three pin the
+    // native gates that trailing event passes; tightening any of them to reject
+    // an equal sequence would silently stop the repaint.
+
+    func testTrailingCurrentClimbChangedAtTheFullSyncSequenceIsApplied() {
+        let fullSync = QueueUpdateEvent.fullSync(items: [], currentItem: nil, sequence: 9)
+        XCTAssertEqual(QueueSequencePolicy.decision(for: fullSync, lastKnown: 8), .apply(newLastSequence: 9))
+        let trailing = QueueUpdateEvent.currentClimbChanged(item: makeQueueItem(), sequence: 9)
+        XCTAssertEqual(
+            QueueSequencePolicy.decision(for: trailing, lastKnown: 9),
+            .apply(newLastSequence: 9)
+        )
+    }
+
+    func testMirrorStatePersistsTwiceAtTheSameSequence() {
+        XCTAssertTrue(SharedMirrorState.persist(items: [makeQueueItem()], currentIndex: 0, sequence: 9, in: defaults))
+        XCTAssertTrue(SharedMirrorState.persist(items: [makeQueueItem()], currentIndex: 0, sequence: 9, in: defaults))
+        XCTAssertEqual(SharedMirrorState.sequence(in: defaults), 9)
+    }
+
+    func testCurrentClimbChangedRepaintsTheBoard() {
+        XCTAssertTrue(QueueEventRepaintPolicy.shouldRepaintBoard(for: .currentClimbChanged(item: makeQueueItem(), sequence: 9)))
+        XCTAssertFalse(QueueEventRepaintPolicy.shouldRepaintBoard(for: .fullSync(items: [], currentItem: nil, sequence: 9)))
+    }
+
     func testClimbMirroredUpdatesOnlyTheMatchingItem() {
         var state = makeQueueState(uuids: ["A", "B"], currentIndex: 0)
         state = QueueStateReducer.apply(.climbMirrored(uuid: "B", mirrored: true, sequence: 1), to: state)
