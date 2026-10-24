@@ -356,6 +356,30 @@ describe('WorkoutRunCard', () => {
     });
   });
 
+  describe('off the plan', () => {
+    it('takes you back to the workout climb you left for a climb from search, without counting it skipped', () => {
+      setWorkoutRun('session-1', run);
+      // On m1, nothing logged, the climber opened a climb from search: it went in
+      // right after m1 and onto the wall.
+      queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'from-search', 'm2']);
+      queueState.currentClimbQueueItem = { uuid: 'from-search' };
+      for (const uuid of ['w1', 'w2', 'w3']) {
+        noteWorkoutRunTick('session-1', { queueItemUuid: uuid, status: 'send', climbedAt: '2026-10-24T12:00:00.000Z' });
+      }
+      render(createElement(WorkoutRunCard));
+
+      expect(screen.getByTestId('workout-runner-resume').textContent).toBe('backToWorkoutClimb m1');
+      expect(rowTexts()).toEqual([
+        'workout-stage|preWorkoutSectionWarmUptallySent:3',
+        'workout-stage|preGeneratorVolumeworkoutStageClimbs:2',
+      ]);
+      fireEvent.click(screen.getByTestId('workout-runner-resume'));
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'm1' }), {
+        playlistSuggestionSource: null,
+      });
+    });
+  });
+
   describe('Add a block', () => {
     it('sits under the stages and opens the sheet', () => {
       setWorkoutRun('session-1', run);
