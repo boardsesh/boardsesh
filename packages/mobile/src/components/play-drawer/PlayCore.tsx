@@ -28,7 +28,7 @@ import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { configKey, isClimbOnReachableBoard } from '@boardsesh/queue';
+import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { formatRenderBoardLabel, resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
@@ -380,7 +380,6 @@ export function PlayCore({
     setCurrentClimb,
     nextClimb,
     previousClimb,
-    addToQueue,
     mirrorCurrentClimb,
     getQueueSnapshot,
     refreshPlaylistSuggestionSource,
@@ -1257,6 +1256,16 @@ export function PlayCore({
     );
   }, [displayedClimb, boardName, layoutId, showToast, tClimbs]);
 
+  // The similar-climbs strip plays as a list (#6665), on the board the player
+  // draws the climb on, which is the board its similar climbs come from.
+  const similarTrack = useMemo(
+    () => ({
+      boardKey: getQueueBoardKey({ board_name: boardName, layout_id: layoutId, size_id: sizeId, set_ids: setIds }),
+      label: t('playView.track.similarClimbs'),
+    }),
+    [boardName, layoutId, sizeId, setIds, t],
+  );
+
   const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall, continueIntoQueue } =
     usePlaySelectionController({
       openTarget,
@@ -1270,7 +1279,8 @@ export function PlayCore({
         setDrawerPreviewIsWallClimb,
         setSharedBrowseLatched,
       },
-      queue: { currentClimbQueueItem, setCurrentClimb, addToQueue, previousClimb, nextClimb },
+      queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
+      similarTrack,
       navigation: { navigationState, lightOnSwipe, browseByDefault },
       chrome: { clearMirror, resetFavoriteOverride, setIsTickBarActive, setActiveSubDrawer },
       confirmation: {

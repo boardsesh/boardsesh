@@ -527,10 +527,10 @@ function lastActionBarProps(): Props {
   return props;
 }
 
-function lastSimilarClimbHandler(): (climb: Climb) => Promise<void> {
+function lastSimilarClimbHandler(): (climb: Climb, similarClimbs?: Climb[]) => void {
   const props = recorded.deferredSections.at(-1);
   if (!props) throw new Error('DeferredSections never rendered');
-  return props.onSimilarClimbPress as (climb: Climb) => Promise<void>;
+  return props.onSimilarClimbPress as (climb: Climb, similarClimbs?: Climb[]) => void;
 }
 
 /**
@@ -865,7 +865,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     const onSimilarClimbPress = lastSimilarClimbHandler();
 
     return act(async () => {
-      await onSimilarClimbPress(SIMILAR_CLIMB);
+      onSimilarClimbPress(SIMILAR_CLIMB);
     }).then(() => {
       // The member branch appends to the crew's queue AND takes the wall.
       expect(queueActions.addToQueue).not.toHaveBeenCalled();
@@ -1805,7 +1805,7 @@ describe('PlayDrawer — the anonymous joins', () => {
     const onSimilarClimbPress = lastSimilarClimbHandler();
 
     await act(async () => {
-      await onSimilarClimbPress(SIMILAR_CLIMB);
+      onSimilarClimbPress(SIMILAR_CLIMB);
     });
 
     // Both halves matter. `addToQueue` is a queue a signed-out visitor cannot
@@ -1819,16 +1819,28 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
   });
 
-  it('still queues and activates a similar climb for a member', async () => {
+  // Issue #6665: a member's tap plays from the similar-climbs strip. It goes
+  // up once, inserted after the current climb, and is never appended to the
+  // end of the queue first.
+  it('activates a similar climb for a member, playing from the strip, without queuing it', async () => {
     renderDrawer('member');
     const onSimilarClimbPress = lastSimilarClimbHandler();
 
     await act(async () => {
-      await onSimilarClimbPress(SIMILAR_CLIMB);
+      onSimilarClimbPress(SIMILAR_CLIMB, [SIMILAR_CLIMB]);
     });
 
-    expect(queueActions.addToQueue).toHaveBeenCalledTimes(1);
+    expect(queueActions.addToQueue).not.toHaveBeenCalled();
     expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: SIMILAR_CLIMB.uuid }) }),
+      {
+        playlistSuggestionSource: expect.objectContaining({
+          activatedClimbUuid: SIMILAR_CLIMB.uuid,
+          label: 'playView.track.similarClimbs',
+        }),
+      },
+    );
   });
 
   it('shows a signed-out reader no wall-state chrome at all', () => {

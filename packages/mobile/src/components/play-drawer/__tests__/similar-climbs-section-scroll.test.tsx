@@ -23,7 +23,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // assert the strip's scroller came from the gesture-handler module.
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
+  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-testid': 'rn-scroll' }, children),
   StyleSheet: {
@@ -66,14 +67,15 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ClimbListThumbnail', () => ({ ClimbListThumbnail: () => null }));
+const ranked = vi.hoisted(() => ({
+  climbs: [] as {
+    climb: { uuid: string; name: string; difficultyName: string; frames: string; layoutId: number };
+    compatible: boolean;
+  }[],
+}));
 vi.mock('../similar-climbs-utils', () => ({
-  rankBySizeCompatibility: () => [
-    {
-      climb: { uuid: 'sc-1', name: 'Test Similar', difficultyName: 'V4', frames: '', layoutId: 1 },
-      compatible: true,
-    },
-  ],
-  buildClimbStub: () => ({ uuid: 'sc-1' }),
+  rankBySizeCompatibility: () => ranked.climbs,
+  buildClimbStub: (similarClimb: { uuid: string }) => ({ uuid: similarClimb.uuid }),
   formatByline: () => '',
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
@@ -156,8 +158,13 @@ const props = {
 };
 const garage = { boardType: 'kilter', layoutId: 1, sizeId: 10, name: 'Garage' };
 
+function rankedClimb(uuid: string, name: string, compatible: boolean) {
+  return { climb: { uuid, name, difficultyName: 'V4', frames: '', layoutId: 1 }, compatible };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  ranked.climbs = [rankedClimb('sc-1', 'Test Similar', true)];
   similar.data = [{ uuid: 'sc-1' }];
   similar.isLoading = false;
   similar.isError = false;
@@ -272,5 +279,30 @@ describe('SimilarClimbsSection — source states', () => {
     offer.enabledScopeKeys = ['kilter:1:10'];
     const { getByText } = render(createElement(SimilarClimbsSection, props));
     expect(getByText('mobile.similarClimbs.waitingForDownload')).toBeTruthy();
+  });
+});
+
+// Issue #6665: a similar climb plays from the strip.
+describe('SimilarClimbsSection taps', () => {
+  it('hands the tapped climb and the strip, the climbs this wall fits, in order', () => {
+    ranked.climbs = [
+      rankedClimb('sc-1', 'Fits One', true),
+      rankedClimb('sc-2', 'Fits Two', true),
+      rankedClimb('sc-3', 'Too Big', false),
+      rankedClimb('sc-4', 'Too Big Too', false),
+    ];
+    const onClimbPress = vi.fn();
+    const { getByText } = render(createElement(SimilarClimbsSection, { ...props, onClimbPress }));
+
+    fireEvent.click(getByText('Fits Two'));
+    expect(onClimbPress).toHaveBeenLastCalledWith({ uuid: 'sc-2' }, [{ uuid: 'sc-1' }, { uuid: 'sc-2' }]);
+
+    // A dimmed card still opens, and keeps its place in the strip.
+    fireEvent.click(getByText('Too Big'));
+    expect(onClimbPress).toHaveBeenLastCalledWith({ uuid: 'sc-3' }, [
+      { uuid: 'sc-1' },
+      { uuid: 'sc-2' },
+      { uuid: 'sc-3' },
+    ]);
   });
 });

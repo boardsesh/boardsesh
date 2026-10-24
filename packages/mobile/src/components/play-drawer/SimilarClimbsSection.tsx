@@ -33,7 +33,11 @@ type SimilarClimbsSectionProps = {
   sizeId: number;
   setIds: string;
   angle: number;
-  onClimbPress: (climb: Climb) => void;
+  /**
+   * A card was tapped. `similarClimbs` is the strip in its order, the climbs
+   * this wall fits plus the tapped one, for the player to play from (#6665).
+   */
+  onClimbPress: (climb: Climb, similarClimbs: Climb[]) => void;
 };
 
 const SKELETON_COUNT = 3;
@@ -65,12 +69,26 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
   // Wall-compatible climbs rank first; incompatible ones are dimmed and last.
   const ranked = useMemo(() => rankBySizeCompatibility(climbs ?? [], sizeId), [climbs, sizeId]);
 
+  // The strip as climbs, built once per result rather than per tap.
+  const rankedStubs = useMemo(
+    () => ranked.map(({ climb: similar, compatible }) => ({ stub: buildClimbStub(similar, boardName), compatible })),
+    [ranked, boardName],
+  );
+
   const handlePress = useCallback(
     (similar: SimilarClimb) => {
       void Haptics.selectionAsync();
-      onClimbPress(buildClimbStub(similar, boardName));
+      // Dimmed cards don't fit this wall, so swipes skip them; the tapped one
+      // stays where it is in the strip.
+      const similarClimbs: Climb[] = [];
+      let tapped: Climb | null = null;
+      for (const { stub, compatible } of rankedStubs) {
+        if (stub.uuid === similar.uuid) tapped = stub;
+        if (compatible || stub.uuid === similar.uuid) similarClimbs.push(stub);
+      }
+      onClimbPress(tapped ?? buildClimbStub(similar, boardName), similarClimbs);
     },
-    [onClimbPress, boardName],
+    [onClimbPress, boardName, rankedStubs],
   );
 
   const handleRetry = useCallback(() => {

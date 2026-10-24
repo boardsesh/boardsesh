@@ -834,6 +834,7 @@
       "createdClimbs": "Erstellte Boulder",
       "hardestSend": "Schwerste Begehung",
       "wallHistory": "Wandverlauf",
+      "similarClimbs": "Ähnliche Boulder",
       "end": {
         "title": "Ende von {{name}}",
         "titleUnnamed": "Ende der Liste",
