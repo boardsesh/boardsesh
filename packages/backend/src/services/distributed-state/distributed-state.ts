@@ -206,13 +206,14 @@ export class DistributedStateManager {
     return getSessionRestCadence(this.redis, sessionId);
   }
 
-  /** Compare-and-set the session's shared rest clock at `expectedRevision + 1`. */
+  /** Compare-and-set the session's shared rest clock at max(`expectedRevision` + 1, `minimumRevision`). */
   async casSessionRestCadence(
     sessionId: string,
     expectedRevision: number,
     nextDoc: string,
+    minimumRevision: number,
   ): Promise<RestCadenceCasResult> {
-    return casSessionRestCadence(this.redis, sessionId, expectedRevision, nextDoc);
+    return casSessionRestCadence(this.redis, sessionId, expectedRevision, nextDoc, minimumRevision);
   }
 
   /**

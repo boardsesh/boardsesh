@@ -427,9 +427,8 @@ export class RedisSessionStore {
     multi.expire(`boardsesh:session:${sessionId}`, this.TTL);
     multi.expire(`boardsesh:session:${sessionId}:users`, this.TTL);
     // Keep the shared rest clock alive while anyone is connected. If its hash
-    // expired mid-session the revision would restart at 1, and every live
-    // client holding a higher revision would drop the next change until it
-    // resubscribed. EXPIRE on a missing key is a no-op.
+    // expired mid-session the clock would read as off for the whole crew.
+    // EXPIRE on a missing key is a no-op.
     multi.expire(KEYS.sessionRestCadence(sessionId), TTL.sessionMembership);
     multi.zadd('boardsesh:session:recent', Date.now(), sessionId);
     await multi.exec();

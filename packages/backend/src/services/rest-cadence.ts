@@ -57,6 +57,24 @@ export const REST_CADENCE_LATE_CLAMP_MS = 60_000;
 /** Internal retries for an un-fenced write that lost a compare-and-set race. */
 export const REST_CADENCE_CAS_ATTEMPTS = 5;
 
+/** Revisions count from here (2026-01-01 UTC). See restCadenceRevisionFloor. */
+export const REST_CADENCE_REVISION_EPOCH_MS = Date.UTC(2026, 0, 1);
+
+/**
+ * The lowest revision a write at `nowMs` may take: whole seconds since
+ * REST_CADENCE_REVISION_EPOCH_MS. Every store writes max(stored + 1, this), so
+ * the revision keeps climbing even when the store loses the hash (Redis
+ * restarting from an older snapshot, a failover to a lagging replica, an
+ * expired key). Without it, every phone holding a higher revision would drop
+ * each change until it resubscribed. A phone can only hold a revision ahead of
+ * this clock by the writes beyond one a second it has seen, which a reset
+ * outlasts; `rewound` in commitRestCadenceAction covers a FIRE that still lands
+ * in that gap. Whole seconds since 2026 fit GraphQL's 32-bit Int until 2094.
+ */
+export function restCadenceRevisionFloor(nowMs: number): number {
+  return Math.max(0, Math.floor((nowMs - REST_CADENCE_REVISION_EPOCH_MS) / 1000));
+}
+
 export type RestCadenceConfig = {
   mode: RestCadenceMode;
   /** null = Off: the timer counts up and never fires. */
@@ -397,11 +415,24 @@ export type RestCadenceCasResult = { ok: boolean; revision: number; doc: string 
 
 export type RestCadenceStore = {
   read(): Promise<StoredRestCadence>;
-  /** Write `nextDoc` at expectedRevision + 1 only if the stored revision still equals expectedRevision. */
-  compareAndSet(expectedRevision: number, nextDoc: string): Promise<RestCadenceCasResult>;
+  /**
+   * Write `nextDoc` only if the stored revision still equals expectedRevision,
+   * at max(expectedRevision + 1, minimumRevision).
+   */
+  compareAndSet(expectedRevision: number, nextDoc: string, minimumRevision: number): Promise<RestCadenceCasResult>;
 };
 
-export type RestCadenceCommit = { applied: boolean; stored: StoredRestCadence };
+export type RestCadenceCommit = {
+  applied: boolean;
+  stored: StoredRestCadence;
+  /**
+   * The caller sent an expectedRevision above the stored one. Only a store
+   * that lost state can do that, so every phone may hold a revision the clock
+   * no longer reaches: the caller sends `stored` as a snapshot, which resets
+   * that floor.
+   */
+  rewound: boolean;
+};
 
 /**
  * Read → reduce → compare-and-set. A call that carries `expectedRevision` (FIRE
@@ -417,18 +448,24 @@ export async function commitRestCadenceAction(
   nowMs: number,
   participantId: string,
 ): Promise<RestCadenceCommit> {
-  const fenced = input.expectedRevision != null;
+  const expectedRevision = input.expectedRevision ?? null;
+  const minimumRevision = restCadenceRevisionFloor(nowMs);
+  const refused = (stored: StoredRestCadence): RestCadenceCommit => ({
+    applied: false,
+    stored,
+    rewound: expectedRevision !== null && expectedRevision > stored.revision,
+  });
   let current = await store.read();
   for (let attempt = 0; attempt < REST_CADENCE_CAS_ATTEMPTS; attempt++) {
-    if (fenced && current.revision !== input.expectedRevision) return { applied: false, stored: current };
+    if (expectedRevision !== null && current.revision !== expectedRevision) return refused(current);
     const reduction = applyRestCadenceAction(current.cadence, input, nowMs, participantId);
-    if (!reduction.applicable || sameRestCadence(reduction.next, current.cadence)) {
-      return { applied: false, stored: current };
+    if (!reduction.applicable || sameRestCadence(reduction.next, current.cadence)) return refused(current);
+    const result = await store.compareAndSet(current.revision, serializeRestCadence(reduction.next), minimumRevision);
+    if (result.ok) {
+      return { applied: true, rewound: false, stored: { revision: result.revision, cadence: reduction.next } };
     }
-    const result = await store.compareAndSet(current.revision, serializeRestCadence(reduction.next));
-    if (result.ok) return { applied: true, stored: { revision: result.revision, cadence: reduction.next } };
     current = { revision: result.revision, cadence: parseRestCadence(result.doc) };
-    if (fenced) return { applied: false, stored: current };
+    if (expectedRevision !== null) return refused(current);
   }
-  return { applied: false, stored: current };
+  return refused(current);
 }

@@ -33,12 +33,15 @@ const { sessionMutations } = await import('../graphql/resolvers/sessions/mutatio
 const { roomManager } = await import('../services/room-manager');
 const { pubsub } = await import('../pubsub/index');
 const sharedHelpers = await import('../graphql/resolvers/shared/helpers');
+const { restCadenceRevisionFloor } = await import('../services/rest-cadence');
 
 const pubsubMock = pubsub as unknown as { publishSessionEvent: ReturnType<typeof vi.fn> };
 const requireSessionMember = sharedHelpers.requireSessionMember as unknown as ReturnType<typeof vi.fn>;
 const applyRateLimit = sharedHelpers.applyRateLimit as unknown as ReturnType<typeof vi.fn>;
 
 const NOW = 1_800_000_000_000;
+// A first write takes the seconds-since-2026 floor; later writes at the same instant count up from it.
+const FIRST_REVISION = restCadenceRevisionFloor(NOW);
 const SESSION_ID = 'crew-session-1';
 // The session HMAC peers already see as SessionUser.id; it must go out verbatim.
 const PARTICIPANT_ID = 'a1b2c3d4e5f6';
@@ -97,7 +100,7 @@ describe('setSessionRestCadence', () => {
           lastTickStatus: null,
           setByParticipantId: PARTICIPANT_ID,
         },
-        revision: 1,
+        revision: FIRST_REVISION,
         serverNow: String(NOW),
         isSnapshot: false,
         action: 'ARM',
@@ -177,7 +180,7 @@ describe('setSessionRestCadence', () => {
     );
 
     expect(holder.applied).toBe(true);
-    expect(holder.change.revision).toBe(2);
+    expect(holder.change.revision).toBe(FIRST_REVISION + 1);
     expect(holder.change.restCadence?.lastFiredBeatAt).toBe(String(NOW - 200));
     expect(otherPhone).toEqual({ applied: false, change: { ...holder.change, action: null } });
     expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
@@ -189,11 +192,11 @@ describe('setSessionRestCadence', () => {
     await setRestCadence({ action: 'TICK', tickQueueItemUuid: 'item-1', tickStatus: 'send' });
     pubsubMock.publishSessionEvent.mockClear();
 
-    const stale = await setRestCadence({ action: 'FIRE', expectedRevision: 1 });
+    const stale = await setRestCadence({ action: 'FIRE', expectedRevision: FIRST_REVISION });
 
     expect(stale.applied).toBe(false);
     expect(stale.change).toMatchObject({
-      revision: 2,
+      revision: FIRST_REVISION + 1,
       action: null,
       isSnapshot: false,
       restCadence: { lastTickQueueItemUuid: 'item-1', lastTickStatus: 'send' },
@@ -233,9 +236,74 @@ describe('setSessionRestCadence', () => {
   it('DISARM turns the clock off for everyone and keeps the revision climbing', async () => {
     await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
     const off = await setRestCadence({ action: 'DISARM' });
-    expect(off.change).toMatchObject({ restCadence: null, revision: 2, action: 'DISARM' });
+    expect(off.change).toMatchObject({ restCadence: null, revision: FIRST_REVISION + 1, action: 'DISARM' });
 
     const rearmed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
-    expect(rearmed.change.revision).toBe(3);
+    expect(rearmed.change.revision).toBe(FIRST_REVISION + 2);
+  });
+
+  describe('after the store lost state (#5382 review)', () => {
+    /** Drop the clock's stored state, as a Redis restart or an expired hash would. */
+    const loseStoredState = () => roomManager.reset();
+
+    it('sends the stored clock to the whole crew as a snapshot when a FIRE is ahead of the store', async () => {
+      const armed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+      loseStoredState();
+      const rearmed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      // The holder saw a burst of writes the seconds floor has not caught up with yet.
+      const held = armed.change.revision + 40;
+      const fire = await setRestCadence({ action: 'FIRE', expectedRevision: held, firedBeatAgoMs: 0 });
+
+      expect(fire.applied).toBe(false);
+      expect(fire.change).toMatchObject({
+        revision: rearmed.change.revision,
+        isSnapshot: true,
+        action: null,
+        restCadence: { lastFiredBeatAt: null },
+      });
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, fire.change);
+      // The holder adopts the snapshot and claims the next beat on the stored revision.
+      const retry = await setRestCadence({ action: 'FIRE', expectedRevision: fire.change.revision });
+      expect(retry.applied).toBe(true);
+    });
+
+    it('sends a snapshot of "off" when the clock itself was lost', async () => {
+      const armed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+      loseStoredState();
+      pubsubMock.publishSessionEvent.mockClear();
+
+      const fire = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+
+      expect(fire).toEqual({
+        applied: false,
+        change: expect.objectContaining({ restCadence: null, revision: 0, isSnapshot: true, action: null }),
+      });
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, fire.change);
+    });
+
+    it('a write after the loss still climbs past what the crew holds, so nobody drops it', async () => {
+      await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+      const held = (await setRestCadence({ action: 'TICK', tickStatus: 'send' })).change.revision;
+      loseStoredState();
+      vi.setSystemTime(NOW + 3_000);
+
+      const rearmed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+
+      expect(rearmed.change.revision).toBeGreaterThan(held);
+      expect(rearmed.change.isSnapshot).toBe(false);
+    });
+
+    it('an un-fenced call never publishes a snapshot', async () => {
+      await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      const paused = await setRestCadence({ action: 'PAUSE' });
+
+      expect(paused.change.isSnapshot).toBe(false);
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, paused.change);
+    });
   });
 });

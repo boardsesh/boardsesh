@@ -16,6 +16,7 @@ import { RedisSessionStore } from '../services/redis-session-store';
 import { RoomManager } from '../services/room-manager';
 import {
   commitRestCadenceAction,
+  restCadenceRevisionFloor,
   serializeRestCadence,
   type RestCadenceInput,
   type RestCadenceState,
@@ -41,6 +42,10 @@ async function isRedisAvailable(): Promise<boolean> {
 const redisAvailable = await isRedisAvailable();
 
 const NOW = 1_800_000_000_000;
+// The revision a write at NOW takes on a session whose revision is below it.
+const FLOOR = restCadenceRevisionFloor(NOW);
+// The storage tests below drive the CAS directly with no floor, so revisions count 1, 2, 3.
+const NO_FLOOR = 0;
 const CLOCK: RestCadenceState = {
   mode: 'afterTick',
   targetSeconds: 60,
@@ -59,7 +64,8 @@ const CLOCK: RestCadenceState = {
 function storeFor(manager: DistributedStateManager, sessionId: string): RestCadenceStore {
   return {
     read: () => manager.getSessionRestCadence(sessionId),
-    compareAndSet: (expectedRevision, nextDoc) => manager.casSessionRestCadence(sessionId, expectedRevision, nextDoc),
+    compareAndSet: (expectedRevision, nextDoc, minimumRevision) =>
+      manager.casSessionRestCadence(sessionId, expectedRevision, nextDoc, minimumRevision),
   };
 }
 
@@ -102,7 +108,7 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
 
   it('writes the next revision with the session TTL, and another instance reads it back', async () => {
     const sessionId = newSessionId();
-    const result = await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK));
+    const result = await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
     expect(result).toEqual({ ok: true, revision: 1, doc: serializeRestCadence(CLOCK) });
     expect(await instanceTwo.getSessionRestCadence(sessionId)).toEqual({ revision: 1, cadence: CLOCK });
     const ttl = await instanceOneRedis.ttl(KEYS.sessionRestCadence(sessionId));
@@ -112,16 +118,16 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
 
   it('refuses a stale revision and hands back what is stored', async () => {
     const sessionId = newSessionId();
-    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK));
-    await instanceOne.casSessionRestCadence(sessionId, 1, '');
-    const stale = await instanceTwo.casSessionRestCadence(sessionId, 1, serializeRestCadence(CLOCK));
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
+    await instanceOne.casSessionRestCadence(sessionId, 1, '', NO_FLOOR);
+    const stale = await instanceTwo.casSessionRestCadence(sessionId, 1, serializeRestCadence(CLOCK), NO_FLOOR);
     expect(stale).toEqual({ ok: false, revision: 2, doc: '' });
     expect(await instanceOne.getSessionRestCadence(sessionId)).toEqual({ revision: 2, cadence: null });
   });
 
   it('lets exactly one of many racing FIREs from two instances claim the beat', async () => {
     const sessionId = newSessionId();
-    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK));
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
     const fire: RestCadenceInput = { action: 'FIRE', expectedRevision: 1, firedBeatAgoMs: 0 };
 
     const commits = await Promise.all(
@@ -137,16 +143,17 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
 
     const winners = commits.filter((commit) => commit.applied);
     expect(winners).toHaveLength(1);
-    expect(winners[0].stored.revision).toBe(2);
-    expect((await instanceOne.getSessionRestCadence(sessionId)).revision).toBe(2);
+    expect(winners[0].stored.revision).toBe(FLOOR);
+    expect((await instanceOne.getSessionRestCadence(sessionId)).revision).toBe(FLOOR);
     for (const loser of commits.filter((commit) => !commit.applied)) {
-      expect(loser.stored.revision).toBe(2);
+      expect(loser.stored.revision).toBe(FLOOR);
+      expect(loser.rewound).toBe(false);
     }
   });
 
   it('gives racing un-fenced writes from two instances distinct, increasing revisions', async () => {
     const sessionId = newSessionId();
-    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK));
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
 
     const [fromOne, fromTwo] = await Promise.all([
       commitRestCadenceAction(
@@ -164,9 +171,12 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     ]);
 
     expect(fromOne.applied && fromTwo.applied).toBe(true);
-    expect([fromOne.stored.revision, fromTwo.stored.revision].sort((left, right) => left - right)).toEqual([2, 3]);
+    expect([fromOne.stored.revision, fromTwo.stored.revision].sort((left, right) => left - right)).toEqual([
+      FLOOR,
+      FLOOR + 1,
+    ]);
     const stored = await instanceOne.getSessionRestCadence(sessionId);
-    const last = fromOne.stored.revision === 3 ? fromOne : fromTwo;
+    const last = fromOne.stored.revision === FLOOR + 1 ? fromOne : fromTwo;
     expect(stored).toEqual(last.stored);
   });
 
@@ -192,7 +202,7 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
         NOW,
       );
       expect(commit.applied).toBe(true);
-      expect(commit.stored.revision).toBe(1);
+      expect(commit.stored.revision).toBe(FLOOR);
       // Another instance sees the write: it went to Redis, not the local fallback.
       expect(await instanceTwo.getSessionRestCadence(sessionId)).toEqual(commit.stored);
       expect(await manager.getSessionRestCadence(sessionId)).toEqual(commit.stored);
@@ -202,11 +212,52 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     }
   });
 
+  it('never writes below the floor it is given, so a lost hash cannot rewind the revision', async () => {
+    const sessionId = newSessionId();
+    const key = KEYS.sessionRestCadence(sessionId);
+    expect(await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), FLOOR)).toMatchObject({
+      ok: true,
+      revision: FLOOR,
+    });
+    // Above the floor, the revision counts up by one.
+    expect(await instanceTwo.casSessionRestCadence(sessionId, FLOOR, '', FLOOR)).toMatchObject({
+      ok: true,
+      revision: FLOOR + 1,
+    });
+
+    // Redis restarts from an older snapshot: the hash is back at revision 3.
+    await instanceOneRedis.hset(key, 'rev', '3');
+    const afterRestart = await instanceOne.casSessionRestCadence(sessionId, 3, serializeRestCadence(CLOCK), FLOOR + 4);
+    expect(afterRestart).toMatchObject({ ok: true, revision: FLOOR + 4 });
+
+    // The hash expires or is evicted outright.
+    await instanceOneRedis.del(key);
+    const afterLoss = await instanceTwo.casSessionRestCadence(sessionId, 0, '', FLOOR + 6);
+    expect(afterLoss).toMatchObject({ ok: true, revision: FLOOR + 6 });
+    expect(await instanceOne.getSessionRestCadence(sessionId)).toEqual({ revision: FLOOR + 6, cadence: null });
+  });
+
+  it('flags a FIRE from a phone that holds more than a rewound hash, without writing', async () => {
+    const sessionId = newSessionId();
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), FLOOR);
+    await instanceOneRedis.hset(KEYS.sessionRestCadence(sessionId), 'rev', '3');
+
+    const commit = await commitRestCadenceAction(
+      storeFor(instanceTwo, sessionId),
+      { action: 'FIRE', expectedRevision: FLOOR, firedBeatAgoMs: 0 },
+      NOW,
+      'holder',
+    );
+
+    expect(commit).toEqual({ applied: false, rewound: true, stored: { revision: 3, cadence: CLOCK } });
+    expect((await instanceOne.getSessionRestCadence(sessionId)).revision).toBe(3);
+  });
+
   it('is cleared with the rest of the session in cleanupEmptySession and deleteSession', async () => {
     const emptied = newSessionId();
     const ended = newSessionId();
-    await instanceOne.casSessionRestCadence(emptied, 0, serializeRestCadence(CLOCK));
-    await instanceOne.casSessionRestCadence(ended, 0, serializeRestCadence(CLOCK));
+    await instanceOne.casSessionRestCadence(emptied, 0, serializeRestCadence(CLOCK), NO_FLOOR);
+    await instanceOne.casSessionRestCadence(ended, 0, serializeRestCadence(CLOCK), NO_FLOOR);
 
     await instanceOne.cleanupEmptySession(emptied);
     await new RedisSessionStore(instanceOneRedis).deleteSession(ended);
@@ -217,7 +268,7 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
 
   it('stays alive while the session is active, so its revision never restarts mid-session', async () => {
     const sessionId = newSessionId();
-    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK));
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
     await instanceOneRedis.expire(KEYS.sessionRestCadence(sessionId), 30);
 
     await new RedisSessionStore(instanceOneRedis).refreshTTL(sessionId);

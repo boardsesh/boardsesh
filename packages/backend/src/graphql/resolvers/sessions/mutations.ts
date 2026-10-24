@@ -761,10 +761,13 @@ export const sessionMutations = {
    * HMAC, or an anonymous connection id, exactly what peers see as
    * `SessionUser.id`). Every write is a compare-and-set on the per-session
    * revision; FIRE must carry `expectedRevision`, so exactly one phone claims
-   * each beat. `SessionRestCadenceChanged` is published only when the call
+   * each beat. `SessionRestCadenceChanged` is published when the call
    * applied, so a lost race or a no-op reaches nobody but the caller, who gets
-   * the state that won. Session identity comes from the WebSocket connection
-   * context — no `sessionId` argument.
+   * the state that won. The one exception is a caller whose expectedRevision is
+   * above the stored one: the store lost state, so the stored clock goes out
+   * to the whole crew as a snapshot that resets every phone's revision floor.
+   * Session identity comes from the WebSocket connection context — no
+   * `sessionId` argument.
    */
   setSessionRestCadence: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     // Its own bucket, so a runaway rest timer cannot starve climb switching.
@@ -779,18 +782,21 @@ export const sessionMutations = {
       throw new Error('setSessionRestCadence requires ctx.participantId; refusing to fall back to connectionId.');
     }
 
-    const { applied, stored } = await roomManager.updateSessionRestCadence(
+    const { applied, rewound, stored } = await roomManager.updateSessionRestCadence(
       sessionId,
       validInput,
       ctx.participantId,
       Date.now(),
     );
     const change = buildRestCadenceChange(stored, {
-      isSnapshot: false,
+      // Every phone drops a revision at or below the one it holds unless the
+      // event is a snapshot. After the store lost state, the crew's floors sit
+      // above anything the store holds, so only a snapshot reaches them.
+      isSnapshot: rewound,
       action: applied ? validInput.action : null,
       serverNowMs: Date.now(),
     });
-    if (applied) {
+    if (applied || rewound) {
       pubsub.publishSessionEvent(sessionId, change);
     }
     return { applied, change };

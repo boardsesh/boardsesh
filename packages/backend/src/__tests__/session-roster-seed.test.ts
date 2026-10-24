@@ -190,7 +190,7 @@ describe('sessionUpdates roster seed ↔ real backend (#2860)', () => {
         await waitFor(() => blake.restCadenceEvents.length > 1, { label: 'Blake live rest clock' });
 
         const live = blake.restCadenceEvents[1];
-        expect(live).toMatchObject({ revision: 1, isSnapshot: false, action: 'ARM' });
+        expect(live).toMatchObject({ revision: armed.change.revision, isSnapshot: false, action: 'ARM' });
         expect(live.restCadence).toMatchObject({ ...SETTINGS_CONFIG, isRunning: true });
         // The setter is named by the same id Blake's roster shows for Alex.
         expect(live.restCadence?.setByParticipantId).toBe(alex.participantId);
@@ -201,7 +201,7 @@ describe('sessionUpdates roster seed ↔ real backend (#2860)', () => {
         await blake.reconnect();
         await waitFor(() => blake.restCadenceEvents.length > 0, { label: 'Blake rest clock re-seed' });
         expect(blake.restCadenceEvents[0]).toMatchObject({
-          revision: 1,
+          revision: armed.change.revision,
           isSnapshot: true,
           action: null,
           restCadence: { ...SETTINGS_CONFIG, setByParticipantId: alex.participantId },

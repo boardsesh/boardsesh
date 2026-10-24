@@ -724,13 +724,19 @@ export const EVICT_PARTICIPANT_IF_GHOST_SCRIPT = `
  * ARGV[1] = the revision the caller read
  * ARGV[2] = the next doc ('' = clock off)
  * ARGV[3] = TTL seconds (session membership)
+ * ARGV[4] = the lowest revision this write may take (restCadenceRevisionFloor)
  *
- * Writes rev + 1 only when the stored revision still equals ARGV[1], so two
- * instances racing on one session can never both commit against the same
- * read: the loser gets the winner's { rev, doc } back and either retries or,
- * for a FIRE, reports that the beat was already claimed. One atomic script,
- * never WATCH: a WATCH belongs to the connection, so every concurrent caller on
- * the shared ioredis client would share (and clear) it.
+ * Writes only when the stored revision still equals ARGV[1], so two instances
+ * racing on one session can never both commit against the same read: the
+ * loser gets the winner's { rev, doc } back and either retries or, for a FIRE,
+ * reports that the beat was already claimed. One atomic script, never WATCH: a
+ * WATCH belongs to the connection, so every concurrent caller on the shared
+ * ioredis client would share (and clear) it.
+ *
+ * The new revision is max(rev + 1, ARGV[4]). A hash Redis lost (a restart from
+ * an older snapshot, a lagging replica promoted, an expired key) reads as an
+ * old revision, and without the floor the next write would land below what
+ * every live phone holds, so they would all drop it.
  *
  * Returns { 1, newRev, doc } on commit, { 0, storedRev, storedDoc } otherwise.
  */
@@ -739,6 +745,7 @@ export const CAS_SESSION_REST_CADENCE_SCRIPT = `
   local expectedRev = tonumber(ARGV[1])
   local nextDoc = ARGV[2]
   local ttl = tonumber(ARGV[3])
+  local minimumRev = tonumber(ARGV[4]) or 0
 
   local storedRev = tonumber(redis.call('HGET', cadenceKey, 'rev') or '0') or 0
   if storedRev ~= expectedRev then
@@ -746,7 +753,7 @@ export const CAS_SESSION_REST_CADENCE_SCRIPT = `
     return { 0, storedRev, storedDoc }
   end
 
-  local nextRev = storedRev + 1
+  local nextRev = math.max(storedRev + 1, minimumRev)
   redis.call('HSET', cadenceKey, 'rev', tostring(nextRev), 'doc', nextDoc)
   redis.call('EXPIRE', cadenceKey, ttl)
   return { 1, nextRev, nextDoc }

@@ -541,8 +541,8 @@ class RoomManager {
     if (distributedState) {
       return {
         read: () => distributedState.getSessionRestCadence(sessionId),
-        compareAndSet: (expectedRevision, nextDoc) =>
-          distributedState.casSessionRestCadence(sessionId, expectedRevision, nextDoc),
+        compareAndSet: (expectedRevision, nextDoc, minimumRevision) =>
+          distributedState.casSessionRestCadence(sessionId, expectedRevision, nextDoc, minimumRevision),
       };
     }
     // Single-instance (no Redis): the in-memory shadow is the source of truth.
@@ -552,10 +552,10 @@ class RoomManager {
         const stored = local.get(sessionId);
         return { revision: stored?.revision ?? 0, cadence: parseRestCadence(stored?.doc) };
       },
-      compareAndSet: async (expectedRevision, nextDoc) => {
+      compareAndSet: async (expectedRevision, nextDoc, minimumRevision) => {
         const stored = local.get(sessionId) ?? { revision: 0, doc: '' };
         if (stored.revision !== expectedRevision) return { ok: false, ...stored };
-        const committed = { revision: stored.revision + 1, doc: nextDoc };
+        const committed = { revision: Math.max(stored.revision + 1, minimumRevision), doc: nextDoc };
         local.set(sessionId, committed);
         return { ok: true, ...committed };
       },

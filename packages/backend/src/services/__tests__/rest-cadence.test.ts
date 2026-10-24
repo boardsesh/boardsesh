@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   REST_CADENCE_CAS_ATTEMPTS,
+  REST_CADENCE_REVISION_EPOCH_MS,
   applyRestCadenceAction,
   buildRestCadenceChange,
   commitRestCadenceAction,
   parseRestCadence,
+  restCadenceRevisionFloor,
   sameRestCadence,
   serializeRestCadence,
   toWireRestCadence,
@@ -343,17 +345,17 @@ describe('stored doc codec and wire projection', () => {
   });
 });
 
-/** An in-memory store whose compare-and-set can be made to lose races on demand. */
+/** An in-memory store, held to the store contract, whose compare-and-set can be made to lose races on demand. */
 function memoryStore(initial: StoredRestCadence, racingWriter?: () => StoredRestCadence | null) {
   let stored = { revision: initial.revision, doc: serializeRestCadence(initial.cadence) };
   const writes: string[] = [];
   const store: RestCadenceStore = {
     read: async () => ({ revision: stored.revision, cadence: parseRestCadence(stored.doc) }),
-    compareAndSet: async (expectedRevision, nextDoc) => {
+    compareAndSet: async (expectedRevision, nextDoc, minimumRevision) => {
       const raced = racingWriter?.();
       if (raced) stored = { revision: raced.revision, doc: serializeRestCadence(raced.cadence) };
       if (stored.revision !== expectedRevision) return { ok: false, ...stored };
-      stored = { revision: stored.revision + 1, doc: nextDoc };
+      stored = { revision: Math.max(stored.revision + 1, minimumRevision), doc: nextDoc };
       writes.push(nextDoc);
       return { ok: true, ...stored };
     },
@@ -361,20 +363,48 @@ function memoryStore(initial: StoredRestCadence, racingWriter?: () => StoredRest
   return { store, writes, current: () => stored };
 }
 
+describe('restCadenceRevisionFloor', () => {
+  it('counts whole seconds since the start of 2026', () => {
+    expect(restCadenceRevisionFloor(REST_CADENCE_REVISION_EPOCH_MS)).toBe(0);
+    expect(restCadenceRevisionFloor(REST_CADENCE_REVISION_EPOCH_MS + 2_999)).toBe(2);
+    expect(restCadenceRevisionFloor(NOW + 1_000)).toBe(restCadenceRevisionFloor(NOW) + 1);
+  });
+
+  it('never goes below zero for a clock set before 2026', () => {
+    expect(restCadenceRevisionFloor(REST_CADENCE_REVISION_EPOCH_MS - 60_000)).toBe(0);
+  });
+
+  it("fits GraphQL's 32-bit Int until 2094", () => {
+    expect(restCadenceRevisionFloor(Date.UTC(2094, 0, 1))).toBeLessThan(2_147_483_647);
+  });
+});
+
+// Revisions sit above the floor once a session has had a write at NOW.
+const FLOOR = restCadenceRevisionFloor(NOW);
+
 describe('commitRestCadenceAction', () => {
   it('writes the next revision when the action applies', async () => {
-    const { store, writes } = memoryStore({ revision: 3, cadence: clock() });
+    const { store, writes } = memoryStore({ revision: FLOOR + 3, cadence: clock() });
     const commit = await commitRestCadenceAction(store, { action: 'TICK', tickStatus: 'send' }, NOW, ME);
     expect(commit.applied).toBe(true);
-    expect(commit.stored.revision).toBe(4);
+    expect(commit.rewound).toBe(false);
+    expect(commit.stored.revision).toBe(FLOOR + 4);
     expect(commit.stored.cadence?.anchorMs).toBe(NOW);
     expect(writes).toHaveLength(1);
+  });
+
+  it('writes no lower than the seconds-since-2026 floor, so a store that lost state still climbs', async () => {
+    // Redis came back from an old snapshot at revision 3; the crew holds revisions near FLOOR.
+    const { store } = memoryStore({ revision: 3, cadence: clock() });
+    const commit = await commitRestCadenceAction(store, { action: 'DISARM' }, NOW + 5_000, ME);
+    expect(commit).toEqual({ applied: true, rewound: false, stored: { revision: FLOOR + 5, cadence: null } });
   });
 
   it('writes nothing for an action that does not apply, or changes nothing', async () => {
     const { store, writes } = memoryStore({ revision: 3, cadence: clock({ isRunning: false }) });
     expect(await commitRestCadenceAction(store, { action: 'PAUSE' }, NOW, ME)).toEqual({
       applied: false,
+      rewound: false,
       stored: { revision: 3, cadence: clock({ isRunning: false }) },
     });
     const unchanged = clock({ setByParticipantId: ME });
@@ -388,8 +418,24 @@ describe('commitRestCadenceAction', () => {
   it('refuses a FIRE whose revision is stale, without writing', async () => {
     const { store, writes } = memoryStore({ revision: 5, cadence: clock() });
     const commit = await commitRestCadenceAction(store, { action: 'FIRE', expectedRevision: 4 }, NOW, ME);
-    expect(commit).toEqual({ applied: false, stored: { revision: 5, cadence: clock() } });
+    expect(commit).toEqual({ applied: false, rewound: false, stored: { revision: 5, cadence: clock() } });
     expect(writes).toEqual([]);
+  });
+
+  it('flags a FIRE from a phone ahead of the store as rewound, without writing', async () => {
+    // The holder saw revision 50; the store came back at 3.
+    const { store, writes } = memoryStore({ revision: 3, cadence: clock() });
+    const commit = await commitRestCadenceAction(store, { action: 'FIRE', expectedRevision: 50 }, NOW, ME);
+    expect(commit).toEqual({ applied: false, rewound: true, stored: { revision: 3, cadence: clock() } });
+    expect(writes).toEqual([]);
+  });
+
+  it('flags a rewind whatever the action, as long as the call is fenced', async () => {
+    const { store } = memoryStore({ revision: 0, cadence: null });
+    expect((await commitRestCadenceAction(store, { action: 'PAUSE', expectedRevision: 12 }, NOW, ME)).rewound).toBe(
+      true,
+    );
+    expect((await commitRestCadenceAction(store, { action: 'PAUSE' }, NOW, ME)).rewound).toBe(false);
   });
 
   it('a FIRE that loses the race reports the winner and never retries', async () => {
@@ -401,16 +447,16 @@ describe('commitRestCadenceAction', () => {
       return { revision: 6, cadence: winner };
     });
     const commit = await commitRestCadenceAction(store, { action: 'FIRE', expectedRevision: 5 }, NOW, ME);
-    expect(commit).toEqual({ applied: false, stored: { revision: 6, cadence: winner } });
+    expect(commit).toEqual({ applied: false, rewound: false, stored: { revision: 6, cadence: winner } });
     expect(writes).toEqual([]);
   });
 
   it('an un-fenced call re-reads and retries a lost race on the winning state', async () => {
     let races = 0;
-    const { store } = memoryStore({ revision: 1, cadence: clock() }, () => {
+    const { store } = memoryStore({ revision: FLOOR + 1, cadence: clock() }, () => {
       if (races >= 2) return null;
       races += 1;
-      return { revision: 1 + races, cadence: clock({ isRunning: races % 2 === 0 }) };
+      return { revision: FLOOR + 1 + races, cadence: clock({ isRunning: races % 2 === 0 }) };
     });
     const commit = await commitRestCadenceAction(
       store,
@@ -419,7 +465,7 @@ describe('commitRestCadenceAction', () => {
       ME,
     );
     expect(commit.applied).toBe(true);
-    expect(commit.stored.revision).toBe(4);
+    expect(commit.stored.revision).toBe(FLOOR + 4);
     expect(commit.stored.cadence?.lastTick).toEqual({ queueItemUuid: 'item-9', status: 'flash' });
   });
 
@@ -431,6 +477,7 @@ describe('commitRestCadenceAction', () => {
     });
     const commit = await commitRestCadenceAction(store, { action: 'RESET' }, NOW, ME);
     expect(commit.applied).toBe(false);
+    expect(commit.rewound).toBe(false);
     expect(commit.stored.revision).toBe(1 + REST_CADENCE_CAS_ATTEMPTS);
     expect(writes).toEqual([]);
   });
