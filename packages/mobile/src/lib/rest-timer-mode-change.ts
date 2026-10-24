@@ -3,6 +3,7 @@
 // what a change does to a timer that is already running.
 
 import { getSetting, setSetting } from '../settings';
+import { getEffectiveRestPacing } from '../hooks/use-effective-rest-pacing';
 import { nowMs } from './clock';
 import { type RestTimerMode } from './rest-timer';
 import { armRestTimer, getRestTimerState } from './rest-timer-store';
@@ -28,6 +29,10 @@ export function changeRestTimerMode(
 ): boolean {
   if (nextMode === getSetting('restTimerMode')) return false;
   setSetting('restTimerMode', nextMode);
-  if (armed) armRestTimer(nextMode, nowMs(), sessionId);
+  // Only the climber's own cadence is re-armed. While a stage or the crew paces
+  // the timer, the saved cadence is not what runs, and re-arming would drop the
+  // stage's anchor mid-block.
+  const pacing = getEffectiveRestPacing();
+  if (armed && pacing.source === 'settings') armRestTimer(pacing.mode, nowMs(), sessionId);
   return true;
 }

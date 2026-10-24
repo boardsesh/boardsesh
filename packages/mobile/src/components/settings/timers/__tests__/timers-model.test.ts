@@ -26,8 +26,7 @@ function makeInput(
       ...overrides.rest,
     },
     cues: {
-      countdownCues: true,
-      onCountdownCuesChange: vi.fn(),
+      countdownCues: null,
       sound: null,
       ...overrides.cues,
     },
@@ -46,12 +45,7 @@ function find<T>(input: TimersModelInput, key: string, kind: string): T {
 describe('buildTimersModel', () => {
   it('runs the rest section, then the cues', () => {
     expect(buildTimersModel(makeInput()).sections.map((section) => section.key)).toEqual(['rest', 'cues']);
-    expect(rowsOf(makeInput()).map((row) => row.key)).toEqual([
-      'restLength',
-      'restMode',
-      'autoAdvance',
-      'countdownCues',
-    ]);
+    expect(rowsOf(makeInput()).map((row) => row.key)).toEqual(['restLength', 'restMode', 'autoAdvance']);
   });
 
   describe('rest length', () => {
@@ -170,11 +164,19 @@ describe('buildTimersModel', () => {
     });
 
     it('writes the countdown switch', () => {
-      const onCountdownCuesChange = vi.fn();
-      const row = find<MoreToggleRow>(makeInput({ cues: { onCountdownCuesChange } }), 'countdownCues', 'toggle');
+      const onChange = vi.fn();
+      const row = find<MoreToggleRow>(
+        makeInput({ cues: { countdownCues: { enabled: true, onChange } } }),
+        'countdownCues',
+        'toggle',
+      );
       expect(row.value).toBe(true);
       row.onValueChange(false);
-      expect(onCountdownCuesChange).toHaveBeenCalledWith(false);
+      expect(onChange).toHaveBeenCalledWith(false);
+    });
+
+    it('leaves the countdown row out until something reads it', () => {
+      expect(rowsOf(makeInput()).map((row) => row.key)).not.toContain('countdownCues');
     });
   });
 });

@@ -21,7 +21,6 @@ export function TimersSettingsScreen() {
   const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
   const [mode] = useSetting('restTimerMode');
   const [autoAdvance, setAutoAdvance] = useSetting('restTimerAutoAdvance');
-  const [countdownCues, setCountdownCues] = useSetting('restTimerCountdownCues');
   const [sound, setSound] = useSetting('restTimerSound');
   const { blockedReason } = useSessionTimerDriver();
   const { sessionId } = useQueueSessionId();
@@ -63,8 +62,9 @@ export function TimersSettingsScreen() {
             onAutoAdvanceChange: onToggle(setAutoAdvance),
           },
           cues: {
-            countdownCues,
-            onCountdownCuesChange: onToggle(setCountdownCues),
+            // No reader on this branch yet: the countdown buzz lands with #5396,
+            // which passes `{ enabled, onChange }` here.
+            countdownCues: null,
             sound: soundAvailable ? { enabled: sound, onChange: onToggle(setSound) } : null,
           },
         }),
@@ -80,8 +80,6 @@ export function TimersSettingsScreen() {
       onModeChange,
       onToggle,
       setAutoAdvance,
-      countdownCues,
-      setCountdownCues,
       soundAvailable,
       sound,
       setSound,

@@ -133,7 +133,7 @@ agree. The root row shows the rest length (or Off).
 | Section | Rows |
 | --- | --- |
 | Rest | Rest length (a menu: Off, 0:30 to 10:00 in 30 s rungs, plus a saved length that sits between rungs), cadence, auto-advance |
-| Cues | Count down the last seconds; Sound, only when `isRestTimerSoundAvailable()` |
+| Cues | Sound, only when `isRestTimerSoundAvailable()` |
 
 - A cadence change goes through `changeRestTimerMode` (`lib/rest-timer-mode-change.ts`), the one
   re-arm rule the sheet's cadence control uses too: choosing the saved cadence does nothing, and a

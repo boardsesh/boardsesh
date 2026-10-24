@@ -101,10 +101,11 @@ describe('TimersSettingsScreen', () => {
     expect(row<MoreToggleRow>('autoAdvance', 'toggle').disabled).toBe(true);
   });
 
-  it('writes the countdown cues switch', () => {
+  it('leaves the countdown row out while nothing reads it', () => {
     render(<TimersSettingsScreen />);
-    row<MoreToggleRow>('countdownCues', 'toggle').onValueChange(false);
-    expect(values.get('restTimerCountdownCues')).toBe(false);
+    expect(captured.model?.sections.flatMap((section) => section.rows).map((r) => r.key)).not.toContain(
+      'countdownCues',
+    );
   });
 
   it('leaves the sound row out when this build cannot play one', () => {

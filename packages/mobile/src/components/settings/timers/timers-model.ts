@@ -22,8 +22,11 @@ export type TimersModelInput = {
     onAutoAdvanceChange: (enabled: boolean) => void;
   };
   cues: {
-    countdownCues: boolean;
-    onCountdownCuesChange: (enabled: boolean) => void;
+    /**
+     * `null` until something reads the setting and emits the countdown buzz
+     * (#5396): the row is left out, never shown as a switch that does nothing.
+     */
+    countdownCues: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
     /** `null` on a build that cannot play a sound: the row is left out, not greyed. */
     sound: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
   };
@@ -132,14 +135,18 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
         title: t('mobile.settings.timers.cuesTitle'),
         footer: t('mobile.settings.timers.cuesFooter'),
         rows: [
-          {
-            kind: 'toggle',
-            key: 'countdownCues',
-            label: t('mobile.settings.timers.countdownCues'),
-            subtitle: t('mobile.settings.timers.countdownCuesHint'),
-            value: cues.countdownCues,
-            onValueChange: cues.onCountdownCuesChange,
-          },
+          ...(cues.countdownCues
+            ? [
+                {
+                  kind: 'toggle' as const,
+                  key: 'countdownCues',
+                  label: t('mobile.settings.timers.countdownCues'),
+                  subtitle: t('mobile.settings.timers.countdownCuesHint'),
+                  value: cues.countdownCues.enabled,
+                  onValueChange: cues.countdownCues.onChange,
+                },
+              ]
+            : []),
           ...(cues.sound
             ? [
                 {

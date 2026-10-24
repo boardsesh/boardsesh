@@ -8,6 +8,18 @@ vi.mock('../../settings', () => ({
   },
 }));
 
+const pacingOverride = vi.hoisted(() => ({ source: null as 'stage' | 'crew' | null }));
+vi.mock('../../hooks/use-effective-rest-pacing', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../hooks/use-effective-rest-pacing')>();
+  return {
+    ...original,
+    getEffectiveRestPacing: () => {
+      const pacing = original.getEffectiveRestPacing();
+      return pacingOverride.source ? { ...pacing, source: pacingOverride.source } : pacing;
+    },
+  };
+});
+
 import { changeRestTimerMode } from '../rest-timer-mode-change';
 import { armRestTimer, getRestTimerState, noteRestTimerTick, resetRestTimerStoreForTests } from '../rest-timer-store';
 
@@ -15,6 +27,7 @@ beforeEach(() => {
   resetRestTimerStoreForTests();
   settingsStore.values.clear();
   settingsStore.values.set('restTimerMode', 'afterTick');
+  pacingOverride.source = null;
 });
 
 describe('changeRestTimerMode', () => {
@@ -40,5 +53,15 @@ describe('changeRestTimerMode', () => {
     const state = getRestTimerState();
     expect(state).toMatchObject({ armed: true, armedForSessionId: 'session-1' });
     expect(state.anchorMs).not.toBeNull();
+  });
+
+  it.each(['stage', 'crew'] as const)('saves the cadence but keeps a %s-paced timer armed as it was', (source) => {
+    pacingOverride.source = source;
+    settingsStore.values.set('restTimerMode', 'onTheMinute');
+    armRestTimer('onTheMinute', Date.now(), 'session-1');
+    const before = getRestTimerState();
+    expect(changeRestTimerMode('afterTick', 'session-1')).toBe(true);
+    expect(settingsStore.values.get('restTimerMode')).toBe('afterTick');
+    expect(getRestTimerState()).toBe(before);
   });
 });
