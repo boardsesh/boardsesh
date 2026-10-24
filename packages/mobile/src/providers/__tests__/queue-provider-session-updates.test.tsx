@@ -7,6 +7,8 @@ import { getQueueBoardKey, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue'
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
+import { getRestTimerState, resetRestTimerStoreForTests } from '../../lib/rest-timer-store';
+import { resetCrewCadenceForTests } from '../../lib/crew-rest-cadence';
 
 // The preview-first gate is flagged. Default it ON here so these tests exercise
 // the roster logic rather than the rollout switch; one test below flips it off
@@ -1685,6 +1687,59 @@ describe('QueueProvider session update subscription', () => {
     await waitFor(() => {
       expect(snapshots.at(-1)?.isSessionWallLit).toBe(true);
     });
+  });
+
+  it('hands the crew rest clock to the rest-timer store, through its revision floor (#5382)', async () => {
+    resetRestTimerStoreForTests();
+    resetCrewCadenceForTests();
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+    const crewClock = (revision: number, targetSeconds: number, isSnapshot: boolean) => ({
+      data: {
+        sessionUpdates: {
+          __typename: 'SessionRestCadenceChanged',
+          restCadence: {
+            mode: 'onTheMinute',
+            targetSeconds,
+            autoAdvance: true,
+            advanceOn: 'deadline',
+            source: 'settings',
+            isRunning: true,
+            anchorAt: '1800000000000',
+            pausedElapsedSeconds: 0,
+            lastFiredBeatAt: null,
+            lastTickQueueItemUuid: null,
+            lastTickStatus: null,
+            // Another member: the joined participant here is 'participant-self'.
+            setByParticipantId: 'participant-2',
+          },
+          revision,
+          serverNow: '1800000001000',
+          isSnapshot,
+          action: isSnapshot ? null : 'CONFIGURE',
+        },
+      },
+    });
+
+    act(() => sessionUpdatesSink.next(crewClock(5, 120, true)));
+    expect(getRestTimerState().armedForSessionId).toBe('session-1');
+    expect(getRestTimerState().crew?.config?.targetSeconds).toBe(120);
+
+    // An older revision arriving late changes nothing.
+    act(() => sessionUpdatesSink.next(crewClock(4, 90, false)));
+    expect(getRestTimerState().crew?.config?.targetSeconds).toBe(120);
+
+    // Other members of the union still pass by untouched.
+    act(() => sessionUpdatesSink.next({ data: { sessionUpdates: { __typename: 'SomethingNewer' } } }));
+    expect(getRestTimerState().crew?.revision).toBe(5);
+    resetRestTimerStoreForTests();
+    resetCrewCadenceForTests();
   });
 
   it('turns the lightbulb off on WallDisconnected without clearing the current climb', async () => {

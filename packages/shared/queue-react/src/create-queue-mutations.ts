@@ -20,11 +20,14 @@
 //     explicit Start button / an explicit join, never lazily here).
 // Party / best-effort actions (confirmClimbOnWall, reportWallDisconnect,
 // setSessionBoardSerial, setSessionBoardPath) no-op on BOTH platforms when
-// there is no active session.
+// there is no active session. So does setSessionRestCadence, which instead of
+// swallowing errors hands them back: its callers decide what a lost write means
+// for the wall (#5382).
 
 import type { Client, RateLimitRetryEvent } from '@boardsesh/graphql-client';
 import { execute } from '@boardsesh/graphql-client';
 import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
 import {
   ADD_QUEUE_ITEM,
@@ -40,6 +43,7 @@ import {
   REPORT_WALL_DISCONNECT,
   SET_SESSION_BOARD_SERIAL,
   SET_SESSION_BOARD_PATH,
+  SET_SESSION_REST_CADENCE,
 } from '@boardsesh/graphql/operations/queue-session';
 
 export type PublishPlaybackStateInput = {
@@ -64,6 +68,14 @@ export type PublishPlaybackStateInput = {
 };
 
 const NOT_CONNECTED = 'Not connected to session';
+
+/** Per-call transport options for `setSessionRestCadence`. */
+export type SessionRestCadenceSendOptions = {
+  /** Give up after this long (the holder's FIRE waits 2 s, then lets the beat go). */
+  timeoutMs?: number;
+  /** Re-send on RATE_LIMITED. Off for a FIRE: a beat claimed late is no use. */
+  retryWhenRateLimited?: boolean;
+};
 
 /**
  * Does this failure mean the server doesn't know `setQueue`'s `baselineSequence`
@@ -236,6 +248,17 @@ export type QueueMutationsActions<TItem> = {
    * for instant feedback. Best-effort; no-op in solo.
    */
   setSessionBoardPath: (boardPath: string) => Promise<void>;
+  /**
+   * Change the session's shared rest clock (#5382). Resolves null when there is
+   * no session (solo stays local), and THROWS on a transport or server error:
+   * a FIRE that never landed must not move the wall, and the caller decides
+   * whether to skip the beat or repair the clock. `applied: false` in the reply
+   * means the change did not land; the reply's clock is the server's truth.
+   */
+  setSessionRestCadence: (
+    input: SessionRestCadenceInput,
+    options?: SessionRestCadenceSendOptions,
+  ) => Promise<SetSessionRestCadencePayload | null>;
 };
 
 export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): QueueMutationsActions<TItem> {
@@ -630,6 +653,22 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       } catch (error) {
         onBestEffortError?.('setSessionBoardPath', error);
       }
+    },
+
+    setSessionRestCadence: async (input, options = {}) => {
+      const ready = await resolveCurrent();
+      if (!ready) return null;
+      const { timeoutMs, retryWhenRateLimited = true } = options;
+      const result = await execute<{ setSessionRestCadence: SetSessionRestCadencePayload }>(
+        ready.client,
+        { query: SET_SESSION_REST_CADENCE, variables: { input } },
+        {
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          ...(retryWhenRateLimited ? {} : { rateLimitRetries: 0 }),
+          ...(onRateLimited ? { onRateLimited } : {}),
+        },
+      );
+      return result.setSessionRestCadence;
     },
   };
 }

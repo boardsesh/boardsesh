@@ -2406,6 +2406,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     (input: PublishPlaybackStateInput) => mutations.publishPlaybackState(input),
     [mutations],
   );
+  // The crew rest clock's one write path (#5382): the publisher and the
+  // auto-advance scheduler send through here, so the call joins the session first.
+  const setSessionRestCadence = useCallback<QueueActionsContextValue['setSessionRestCadence']>(
+    (input, options) => mutations.setSessionRestCadence(input, options),
+    [mutations],
+  );
 
   // Stable action bundle. Split out of contextValue so consumers that only need
   // to dispatch (the climb list's addToQueue) can subscribe via useQueueActions()
@@ -2443,6 +2449,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setSessionBoardSerial,
       subscribeToPlaybackEvents,
       publishPlaybackState,
+      setSessionRestCadence,
     }),
     [
       addToQueue,
@@ -2474,6 +2481,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setSessionBoardSerial,
       subscribeToPlaybackEvents,
       publishPlaybackState,
+      setSessionRestCadence,
     ],
   );
 
