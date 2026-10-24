@@ -487,7 +487,9 @@
       "onSwipeLabel": "Boulder beim Wischen beleuchten",
       "onSwipeDescription": "Beleuchtet das Board, wenn du zwischen Bouldern wischst.",
       "onTapLabel": "Boulder beim Antippen in der Liste beleuchten",
-      "onTapDescription": "Beleuchtet das Board, wenn du einen Boulder aus einer Liste auswählst."
+      "onTapDescription": "Beleuchtet das Board, wenn du einen Boulder aus einer Liste auswählst.",
+      "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange."
     },
     "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",

@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   moonboardGridLabels: true,
   lightOnSwipe: true,
   lightOnClimbTap: true,
+  playlistTapLoadsQueue: false,
   gradeRowShown: false,
   restTimerTargetSeconds: null,
   restTimerAutoAdvance: false,

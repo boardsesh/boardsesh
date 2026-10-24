@@ -487,7 +487,9 @@
       "onSwipeLabel": "Iluminar bloques al deslizar",
       "onSwipeDescription": "Enciende el plafón al deslizar entre bloques.",
       "onTapLabel": "Iluminar bloques al tocar la lista",
-      "onTapDescription": "Enciende el plafón al seleccionar un bloque de una lista."
+      "onTapDescription": "Enciende el plafón al seleccionar un bloque de una lista.",
+      "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
+      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter sustituye tu cola por esa lista."
     },
     "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",

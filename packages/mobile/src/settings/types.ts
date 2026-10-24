@@ -118,6 +118,13 @@ export type AppSettings = {
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
   /**
+   * A row tap on a playlist, a For You list or a setter's page loads that list
+   * into the queue in place of what was there (the behaviour before F4, #6667).
+   * Off (the default), the tap plays from the list and leaves the queue alone,
+   * as every other list does. Read at the tap, never subscribed to.
+   */
+  playlistTapLoadsQueue: boolean;
+  /**
    * The climbs list shows its grade row under the filter chips. Off until the
    * climber opens the row with the Grade chip; it then stays open, across
    * launches too, until the chip hides it again.
