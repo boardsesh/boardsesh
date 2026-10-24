@@ -13,6 +13,7 @@ const climb = { uuid: 'setter-climb', name: 'First problem' } as Climb;
 const mocks = vi.hoisted(() => ({
   board: null as typeof board | null,
   shared: false,
+  crossAngleStatsFlag: false,
   push: vi.fn(),
   search: vi.fn(),
   count: vi.fn(),
@@ -164,6 +165,9 @@ vi.mock('../../../../src/lib/playlists/use-playlist-render-board', () => ({
   usePlaylistRenderBoard: () => ({ renderBoard: mocks.board }),
 }));
 vi.mock('../../../../src/providers/queue-provider', () => ({ useIsSharedSession: () => mocks.shared }));
+vi.mock('../../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => (key === 'cross-angle-stats' ? mocks.crossAngleStatsFlag : undefined),
+}));
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: UsePlaylistActivationOptions) => {
     mocks.activation = options;
@@ -193,6 +197,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.board = board;
   mocks.shared = false;
+  mocks.crossAngleStatsFlag = false;
   mocks.detail = null;
   mocks.activation = null;
   mocks.search.mockReturnValue({
@@ -226,7 +231,9 @@ describe('setter smart playlist route', () => {
     });
   });
 
-  it.each([false, true])('wires queue replacement and shared-session preview=%s', (shared) => {
+  // A tap plays from the setter's list unless "Tapping a playlist loads it
+  // into my queue" is on; the hook reads that switch (F4, #6667).
+  it.each([false, true])('marks the list as one a tap can load into the queue, shared-session preview=%s', (shared) => {
     mocks.shared = shared;
     const screen = render(<SetterPlaylist />);
     expect(mocks.detail).toMatchObject({ hero: { name: 'accountless-setter', climbCount: 8 }, renderBoard: board });
@@ -258,11 +265,48 @@ describe('setter smart playlist route', () => {
         sortOrder: 'desc',
         boulders: true,
         routes: true,
+        // What `useInfiniteSearchClimbs` sends for this list with the flag off.
+        crossAngleStats: false,
         page: 2,
         pageSize: 20,
       },
     });
     expect(result).toEqual({ climbs: [climb], hasMore: true });
+  });
+
+  // The order the player walks is the order on screen (#6667): with the
+  // cross-angle-stats flag on, the list's own query re-ranks by cross-angle
+  // stats, so the drawer's pages and count must ask the same.
+  describe('cross-angle stats, as the list sends them', () => {
+    it('pages and counts with them when the flag is on', async () => {
+      mocks.crossAngleStatsFlag = true;
+      render(<SetterPlaylist />);
+
+      await mocks.activation!.fetchPage({ page: 0, pageSize: 20, board, signal: new AbortController().signal });
+      const sentInput = (mocks.request.mock.calls.at(-1) as unknown[] | undefined)?.[1] as { input: ClimbSearchInput };
+      expect(sentInput.input.crossAngleStats).toBe(true);
+
+      await mocks.activation!.fetchTotal!({ board, signal: new AbortController().signal });
+      expect(countRequests.at(-1)?.crossAngleStats).toBe(true);
+    });
+
+    it('counts without them when the flag is off, the input the page counts with', async () => {
+      render(<SetterPlaylist />);
+
+      await mocks.activation!.fetchTotal!({ board, signal: new AbortController().signal });
+      expect(countRequests.at(-1)).not.toHaveProperty('crossAngleStats');
+    });
+
+    it('leaves an angle-bound board to the page, whatever the flag says', async () => {
+      const woods = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 };
+      mocks.board = woods;
+      render(<SetterPlaylist />);
+
+      await mocks.activation!.fetchPage({ page: 0, pageSize: 20, board: woods, signal: new AbortController().signal });
+      const sentInput = (mocks.request.mock.calls.at(-1) as unknown[] | undefined)?.[1] as { input: ClimbSearchInput };
+      // A setter's page is their whole catalogue on Woods (#5642).
+      expect(sentInput.input.crossAngleStats).toBe(true);
+    });
   });
 
   it('rejects aborted fetches before requesting and after a response arrives', async () => {

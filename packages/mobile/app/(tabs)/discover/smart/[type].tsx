@@ -281,15 +281,21 @@ function SmartPlaylistBody({
       board: { boardName: string };
       signal: AbortSignal;
     }) => {
+      // Under a view, the board the rows on screen were asked for: after a
+      // board switch the old rows stay up until the new board's land, and the
+      // player must walk the rows the climber is looking at, not the next
+      // board's order. With no view the list has no board of its own, so the
+      // activated board scopes it.
+      const settledBoardInput = settledView.view ? settledView.activeBoardInput : undefined;
       const input: GetSmartPlaylistInput = {
         type: smartType,
         userId,
-        boardName: board.boardName,
+        boardName: settledBoardInput?.activeBoardName ?? board.boardName,
         page,
         pageSize,
         // The view on screen, so the drawer swipes and Add to queue walk the
         // same sorted, filtered rows the climber sees.
-        ...(settledView.view ? { ...settledView.activeBoardInput, view: settledView.view } : {}),
+        ...(settledView.view ? { ...settledBoardInput, view: settledView.view } : {}),
       };
       // `signal` is what makes backing out of a playlist actually cancel the
       // load. Without it the drain only skipped the NEXT page; the in-flight

@@ -43,6 +43,7 @@ import { playlistPinnedChipsStore } from '../lib/playlist-pinned-chips-store';
 import { PLAYLIST_PINNABLE_CHIP_KINDS } from '../lib/playlist-pinnable-chips';
 import { boardConfigKey } from '../lib/last-search-store';
 import { useInfiniteSearchClimbs } from '../lib/graphql/hooks/use-infinite-search-climbs';
+import { resolveSearchCrossAngleStats } from '../lib/graphql/hooks/search-cross-angle-stats';
 import { useSearchClimbsCount } from '../lib/graphql/hooks';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../lib/graphql/operations';
 import { useFetchCachedSearchClimbsCount } from '../lib/graphql/hooks/search-climbs-count-query';
@@ -51,6 +52,7 @@ import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { toQueueClimbs } from '../lib/climb-types';
 import { useAuth } from '../providers/auth-provider';
 import { useIsSharedSession } from '../providers/queue-provider';
+import { useFeatureFlag } from '../providers/feature-flags-provider';
 import { createAbortError } from '../lib/graphql/request-timeout';
 import { spacing } from '../theme/tokens';
 import { setterPlaylistReturnTo, type SetterPlaylistTab } from '../lib/boards/board-return-to';
@@ -205,20 +207,32 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     if (viewMatchCount !== undefined) setSheetMatchCount(viewMatchCount);
   }, [viewMatchCount]);
 
+  // The list's query resolves `crossAngleStats` against the flag inside
+  // `useInfiniteSearchClimbs`; the drawer's pages and count send the same
+  // value, or with the flag on the player walks the list in another order (its
+  // stats, and so a Quality or Ascents sort, change with it) under another count.
+  const crossAngleStatsFlagOn = useFeatureFlag('cross-angle-stats') === true;
   const fetchPage = useCallback<UsePlaylistActivationOptions['fetchPage']>(
     async ({ page, pageSize, board: activatedBoard, signal }) => {
       if (signal.aborted) throw createAbortError('Setter playlist navigation was cancelled');
-      // The view on screen, with the grade source the list sends, so the
-      // drawer swipes and Add to queue walk the same rows in the same order.
+      // The view on screen, with the grade source and cross-angle stats the
+      // list sends, so the drawer swipes and Add to queue walk the same rows in
+      // the same order.
+      const listInput = setterPlaylistInput(username, activatedBoard, settledView.view ?? undefined);
       const input = withGradeSource(
-        { ...setterPlaylistInput(username, activatedBoard, settledView.view ?? undefined), page, pageSize },
+        {
+          ...listInput,
+          crossAngleStats: resolveSearchCrossAngleStats(listInput, crossAngleStatsFlagOn),
+          page,
+          pageSize,
+        },
         boardseshGrades,
       );
       const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
       if (signal.aborted) throw createAbortError('Setter playlist navigation was cancelled');
       return { climbs: toQueueClimbs(response.searchClimbs.climbs), hasMore: response.searchClimbs.hasMore };
     },
-    [username, settledView.view, boardseshGrades],
+    [username, settledView.view, boardseshGrades, crossAngleStatsFlagOn],
   );
   // The pages carry no count, so the player's "4 of 120" asks for one: the view
   // on screen, the same filters the pages walk, at the default sort (a sort
@@ -232,12 +246,18 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
       const countView = pageView
         ? { ...pageView, selection: { ...pageView.selection, sort: DEFAULT_SETTER_SORT } }
         : undefined;
+      // Counted with the cross-angle stats the pages walk: a rating or ascents
+      // filter reads them. Added only when on, as the server reads an absent
+      // value as off: the page's own count sends none, so with the flag off a
+      // tap still reuses it from the cache.
+      const trackCountInput = setterPlaylistInput(username, activatedBoard, countView);
+      const crossAngleStats = resolveSearchCrossAngleStats(trackCountInput, crossAngleStatsFlagOn);
       return fetchCachedCount(
-        withGradeSource(setterPlaylistInput(username, activatedBoard, countView), boardseshGrades),
+        withGradeSource({ ...trackCountInput, ...(crossAngleStats ? { crossAngleStats } : {}) }, boardseshGrades),
         null,
       );
     },
-    [boardseshGrades, fetchCachedCount, settledView.view, username],
+    [boardseshGrades, crossAngleStatsFlagOn, fetchCachedCount, settledView.view, username],
   );
   const isSharedSession = useIsSharedSession();
   const activation = usePlaylistActivation({
@@ -247,6 +267,8 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     fetchTotal,
     label: tSession('playView.track.setterClimbs', { name: username }),
     previewOnly: isSharedSession,
+    // A tap plays from the setter's list; with "Tapping a playlist loads it into
+    // my queue" on, it replaces the queue with it instead (F4, #6667).
     replaceQueueOnActivate: true,
     refreshErrorMessage: 'Failed to refresh setter playlist',
   });

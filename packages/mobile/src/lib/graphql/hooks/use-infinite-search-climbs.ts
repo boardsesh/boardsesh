@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
-import { getBoardCapabilities } from '@boardsesh/board-config';
 import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
@@ -9,6 +8,7 @@ import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';
 import { useGradeSourceSearchInput } from './search-grade-source';
+import { resolveSearchCrossAngleStats } from './search-cross-angle-stats';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -88,26 +88,16 @@ export function useInfiniteSearchClimbs(
   // Resolved here rather than at the call sites: this is the one choke point both
   // the climbs tab and the board preview go through, it rides `offlineAwareRequest`
   // into the on-device search for free, and putting it on the input means the query
-  // key rotates by itself when the flag or the filter flips. Always an explicit
-  // boolean, so the server never has to guess what an absent value meant.
-  //
-  // On an angle-bound board (Woods) the climber decides: the "Other angles" filter
-  // switch sets `input.crossAngleStats` through `toClimbSearchInput`, and off (the
-  // default) keeps the list to climbs set at the browsed angle. The flag is ignored
-  // there, so the list always matches the switch the climber can see.
-  //
-  // Everywhere else the flag can also turn it on. Unresolved reads as off, which is
-  // the shipped behaviour for every board this flag can move — nothing to invert.
+  // key rotates by itself when the flag or the filter flips. The rule is
+  // `resolveSearchCrossAngleStats`. Unresolved reads as off, which is the
+  // shipped behaviour for every board this flag can move — nothing to invert.
   // `useFeatureFlag` runs on every board so the hook order never changes.
   //
   // It is deliberately NOT part of the placeholder's board scope above: flipping it
   // keeps the previous rows on screen while the re-ranked page loads, which is the
   // same board and the right behaviour.
   const crossAngleStatsFlagOn = useFeatureFlag('cross-angle-stats') === true;
-  const crossAngleStatsRequested = input.crossAngleStats === true;
-  const crossAngleStats = getBoardCapabilities(boardName).angleBoundClimbs
-    ? crossAngleStatsRequested
-    : crossAngleStatsRequested || crossAngleStatsFlagOn;
+  const crossAngleStats = resolveSearchCrossAngleStats(input, crossAngleStatsFlagOn);
   // The grade source rides the input the same way, so flipping "Show Boardsesh
   // grades" rotates the query key and refetches (issue #5643). Like the flag
   // above it stays out of the placeholder's board scope.
