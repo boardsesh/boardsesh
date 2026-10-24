@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Make a playlist and climb it in order",
-        "subtitle": "Save climbs for later and load the list into your queue."
+        "subtitle": "Save climbs for later and climb the list in order."
       },
       "build": {
         "title": "Make a playlist",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Climb the whole list",
-        "intro": "Tap a climb in a playlist and your queue becomes that playlist.",
-        "p1": "It loads in order from the climb you tapped. If climbs were queued after your current one, Start playlist? asks first. The header's play button starts from the top.",
+        "intro": "Tap a climb in a playlist and you play from that playlist. Your queue stays as it is.",
+        "p1": "Swipe to walk the list in order from the climb you tapped. The header's play button starts from the top. Add to queue copies the whole list into your queue. To have a tap load the playlist into your queue instead, turn on Tapping a playlist loads it into my queue under Settings, then Board.",
         "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
         "sessionsLink": "How a session shares one queue",
         "clipAlt": "The Start playlist? sheet",
-        "clipCaption": "With climbs already queued, Start playlist? asks first."
+        "clipCaption": "With that switch on and climbs already queued, Start playlist? asks first."
       },
       "smart": {
         "title": "The eight lists Boardsesh builds for you",
@@ -557,7 +557,7 @@
       "crowd": {
         "title": "Browsing without moving the wall",
         "p1": "With someone else in your session, swiping stops lighting the board. Tap Put on the wall when you want yours up, or tap the face at the top to go back to the climb on the wall.",
-        "p2": "Climbing alone? Hold the lightbulb and turn off Light problems on swipe and Light problems when tapping the list.",
+        "p2": "Climbing alone? Hold the lightbulb and turn off Light the board when I tap a climb and Light the board as I swipe.",
         "previewLink": "Preview a climb from any list"
       },
       "history": {
@@ -703,8 +703,8 @@
         "p1": "While connected, press and hold the lightbulb for these controls, top to bottom.",
         "row1": "Auto-disconnect. Frees the board after 30 seconds idle. Change the time under Settings, then Board.",
         "row2": "Light the hold above. MoonBoard only.",
-        "row3": "Light problems on swipe.",
-        "row4": "Light problems when tapping the list. Turn both off and browsing stops changing the wall.",
+        "row3": "Light the board when I tap a climb.",
+        "row4": "Light the board as I swipe, once a climb is on the wall. Turn both off and browsing stops changing the wall.",
         "row5": "Re-light board. Sends the climb to the LEDs again.",
         "row6": "Turn off all lights. Your phone stays connected.",
         "row7": "Disconnect board. Use it when you connected to the wrong wall.",
@@ -769,7 +769,7 @@
         "title": "Preview a climb without lighting the board",
         "intro": "Preview is the first item in the list.",
         "p1": "It opens the climb in the play drawer without touching your queue. Your next swipe returns to your queue.",
-        "p2": "In a session, or with Light problems on swipe off, a Browsing pill appears. Tap Set active or Put on the wall when you want the climb.",
+        "p2": "In a session, or with Light the board as I swipe off, a Browsing pill appears. The line under the name says Only you see this in a session, or Preview, not lit when a board is connected or a climb is lit. Tap Set active or Put on the wall when you want the climb.",
         "sessionsLink": "How a session keeps browsing off the wall",
         "clipAlt": "The Browsing pill",
         "clipCaption": "The pill arrives after the swipe. The wall stays as it was."

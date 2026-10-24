@@ -152,7 +152,7 @@
   "detail": {
     "share": "Playlist teilen",
     "actions": "Playlist-Aktionen",
-    "activateAll": "Playlist starten",
+    "activateAll": "Abspielen",
     "addToQueue": {
       "action": "Zur Warteschlange hinzufügen",
       "actionCount_one": "{{count}} zur Warteschlange hinzufügen",

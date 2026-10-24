@@ -152,7 +152,7 @@
   "detail": {
     "share": "Partager la playlist",
     "actions": "Actions de la playlist",
-    "activateAll": "Lancer la playlist",
+    "activateAll": "Lecture",
     "addToQueue": {
       "action": "Ajouter à la file",
       "actionCount_one": "Ajouter {{count}} à la file",

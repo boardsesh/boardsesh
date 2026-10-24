@@ -8,6 +8,12 @@ export type BoardLightingModelInput = {
   lightOnSwipe: Toggle;
   lightOnClimbTap: Toggle;
   /**
+   * Whether a playlist, For You or setter-page tap loads that list into the
+   * queue (F4, #6667). Leads the group after the two lighting switches: like
+   * Light the board when I tap a climb, it says what a list tap does.
+   */
+  playlistTapLoadsQueue: Toggle;
+  /**
    * The MoonBoard "V2" extra LEDs, or `null` when the connected board is not a
    * MoonBoard. Same setting and handler as the board's control sheet, so it is
    * reachable without a live connection.
@@ -24,21 +30,20 @@ export type BoardLightingModelInput = {
 
 /**
  * The Board page's lighting half: what lights the connected board on its own,
- * then the Bluetooth group, which says when the phone lets go of the board so
- * another climber can connect.
+ * then what a list tap does (and the MoonBoard's extra LEDs), then the
+ * Bluetooth group, which says when the phone lets go of the board so another
+ * climber can connect.
+ *
+ * The two lighting switches get a group of their own, tap first and swipe
+ * under it, because swipe only matters once tap (or Put on the wall) has a
+ * climb on the wall: a preview never lights the board as you swipe, whatever
+ * the swipe switch says (`swipeStaysViewOnly`). The swipe row's subtitle says
+ * so, since six climbers in six read the old side-by-side pair as independent.
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
   const { t, autoDisconnectTimeout } = input;
 
   const lightingRows: MoreRow[] = [
-    {
-      kind: 'toggle',
-      key: 'lightOnSwipe',
-      label: t('settings:ble.lighting.onSwipeLabel'),
-      subtitle: t('settings:ble.lighting.onSwipeDescription'),
-      value: input.lightOnSwipe.enabled,
-      onValueChange: input.lightOnSwipe.onChange,
-    },
     {
       kind: 'toggle',
       key: 'lightOnClimbTap',
@@ -47,9 +52,27 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       value: input.lightOnClimbTap.enabled,
       onValueChange: input.lightOnClimbTap.onChange,
     },
+    {
+      kind: 'toggle',
+      key: 'lightOnSwipe',
+      label: t('settings:ble.lighting.onSwipeLabel'),
+      subtitle: t('settings:ble.lighting.onSwipeDescription'),
+      value: input.lightOnSwipe.enabled,
+      onValueChange: input.lightOnSwipe.onChange,
+    },
+  ];
+  const moreLightingRows: MoreRow[] = [
+    {
+      kind: 'toggle',
+      key: 'playlistTapLoadsQueue',
+      label: t('settings:ble.lighting.playlistTapLoadsQueueLabel'),
+      subtitle: t('settings:ble.lighting.playlistTapLoadsQueueDescription'),
+      value: input.playlistTapLoadsQueue.enabled,
+      onValueChange: input.playlistTapLoadsQueue.onChange,
+    },
   ];
   if (input.moonboardLightAdjacentHolds) {
-    lightingRows.push({
+    moreLightingRows.push({
       kind: 'toggle',
       key: 'moonboardLightAdjacentHolds',
       label: t('lightControl.lightAdjacentHolds'),
@@ -65,6 +88,11 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       title: t('settings:ble.lighting.title'),
       footer: t('settings:ble.lighting.description'),
       rows: lightingRows,
+    },
+    {
+      // Untitled: the lighting group's second card, so the pair above stays a pair.
+      key: 'lightingMore',
+      rows: moreLightingRows,
     },
     {
       key: 'bluetooth',

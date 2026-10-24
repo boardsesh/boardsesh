@@ -96,18 +96,21 @@ function BleControlSheet({
           />
         )}
         <SwitchRow
-          label={tSettings('ble.lighting.onSwipeLabel')}
-          description={tSettings('ble.lighting.onSwipeDescription')}
-          wrapDescription
-          value={lightOnSwipe}
-          onValueChange={onToggleLightOnSwipe}
-        />
-        <SwitchRow
           label={tSettings('ble.lighting.onTapLabel')}
           description={tSettings('ble.lighting.onTapDescription')}
           wrapDescription
           value={lightOnClimbTap}
           onValueChange={onToggleLightOnClimbTap}
+        />
+        {/* Under the tap switch, the same pair and order as Settings › Board:
+            swiping only lights the board once a climb is on the wall, and its
+            description says so. Not indented, so both toggles stay aligned. */}
+        <SwitchRow
+          label={tSettings('ble.lighting.onSwipeLabel')}
+          description={tSettings('ble.lighting.onSwipeDescription')}
+          wrapDescription
+          value={lightOnSwipe}
+          onValueChange={onToggleLightOnSwipe}
         />
         <Separator />
         <ListRow

@@ -484,10 +484,12 @@
     "lighting": {
       "title": "Board lighting",
       "description": "Choose what lights up the connected board automatically.",
-      "onSwipeLabel": "Light problems on swipe",
-      "onSwipeDescription": "Light the board when you swipe between climbs in the play view.",
-      "onTapLabel": "Light problems when tapping the list",
-      "onTapDescription": "Light the board when you select a climb from a climbs list."
+      "onSwipeLabel": "Light the board as I swipe",
+      "onSwipeDescription": "Only once a climb is on the wall. A preview never lights the board as you swipe.",
+      "onTapLabel": "Light the board when I tap a climb",
+      "onTapDescription": "A tap in any list puts the climb on the wall. Off, the tap opens a preview.",
+      "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. With Light the board when I tap a climb off, use Play to load it."
     },
     "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",

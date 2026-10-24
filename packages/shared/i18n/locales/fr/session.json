@@ -748,6 +748,9 @@
       "backToCurrent": "Revenir à ton bloc",
       "putOnWall": "Allumer au mur",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
+      "previewNotLit": "Aperçu, pas allumé",
+      "onlyYouSeeThis": "Toi seul le vois",
+      "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {
         "body": "Quelqu'un vient d'allumer {{name}}. Allumer le tien quand même ?",
         "confirm": "Allumer le mien",

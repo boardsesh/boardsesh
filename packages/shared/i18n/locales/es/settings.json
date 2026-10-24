@@ -484,10 +484,12 @@
     "lighting": {
       "title": "Iluminación del plafón",
       "description": "Elige qué enciende el plafón conectado automáticamente.",
-      "onSwipeLabel": "Iluminar bloques al deslizar",
-      "onSwipeDescription": "Enciende el plafón al deslizar entre bloques.",
-      "onTapLabel": "Iluminar bloques al tocar la lista",
-      "onTapDescription": "Enciende el plafón al seleccionar un bloque de una lista."
+      "onSwipeLabel": "Iluminar el plafón al deslizar",
+      "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
+      "onTapLabel": "Iluminar el plafón al tocar un bloque",
+      "onTapDescription": "Tocar un bloque en cualquier lista lo pone en el muro. Si lo desactivas, se abre una vista previa.",
+      "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
+      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter sustituye tu cola por esa lista. Si Iluminar el plafón al tocar un bloque está desactivado, usa Reproducir para cargarla."
     },
     "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",

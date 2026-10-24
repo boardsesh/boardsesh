@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Eine Playlist bauen und der Reihe nach klettern",
-        "subtitle": "Heb Boulder für später auf und lade die Liste in deine Warteschlange."
+        "subtitle": "Heb Boulder für später auf und kletter die Liste der Reihe nach."
       },
       "build": {
         "title": "Eine Playlist anlegen",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Die ganze Liste klettern",
-        "intro": "Tipp einen Boulder in einer Playlist an, und deine Warteschlange wird zu dieser Playlist.",
-        "p1": "Sie lädt der Reihe nach ab dem Boulder, den du angetippt hast. Standen schon Boulder hinter deinem aktuellen, fragt Playlist starten? erst nach. Der Play-Button oben startet von vorn.",
+        "intro": "Tipp einen Boulder in einer Playlist an, und du kletterst diese Playlist durch. Deine Warteschlange bleibt, wie sie ist.",
+        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Zur Warteschlange hinzufügen kopiert die ganze Liste in deine Warteschlange. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein.",
         "p2": "In einer Session öffnet das Antippen den Boulder nur für dich. Die geteilte Warteschlange bleibt, wie sie ist.",
         "sessionsLink": "Wie eine Session eine Warteschlange teilt",
         "clipAlt": "Das Sheet Playlist starten?",
-        "clipCaption": "Stehen schon Boulder in der Warteschlange, fragt Playlist starten? erst nach."
+        "clipCaption": "Ist diese Einstellung an und stehen schon Boulder in der Warteschlange, fragt Playlist starten? erst nach."
       },
       "smart": {
         "title": "Die acht Listen, die Boardsesh für dich baut",
@@ -557,7 +557,7 @@
       "crowd": {
         "title": "Stöbern, ohne die Wand zu bewegen",
         "p1": "Ist noch jemand in deiner Session, beleuchtet Wischen das Board nicht mehr. Tipp auf Am Board beleuchten, wenn du deinen willst, oder tipp oben aufs Profilbild, um zum Boulder an der Wand zurückzukehren.",
-        "p2": "Allein am Board? Halt die Glühbirne gedrückt und schalt Boulder beim Wischen beleuchten und Boulder beim Antippen in der Liste beleuchten aus.",
+        "p2": "Allein am Board? Halt die Glühbirne gedrückt und schalt „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ aus.",
         "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen"
       },
       "history": {
@@ -703,8 +703,8 @@
         "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
         "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board.",
         "row2": "Griff darüber beleuchten. Nur MoonBoard.",
-        "row3": "Boulder beim Wischen beleuchten.",
-        "row4": "Boulder beim Antippen in der Liste beleuchten. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
+        "row3": "Board beleuchten, wenn ich einen Boulder antippe.",
+        "row4": "Board beim Wischen beleuchten, sobald ein Boulder am Board leuchtet. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
         "row5": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
         "row6": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
         "row7": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
@@ -769,7 +769,7 @@
         "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
         "intro": "Vorschau ist der erste Eintrag in der Liste.",
         "p1": "Sie öffnet den Boulder im Player, ohne deine Warteschlange anzurühren. Dein nächster Wisch bringt dich zurück.",
-        "p2": "In einer Session, oder wenn Boulder beim Wischen beleuchten aus ist, erscheint die Anzeige Stöbern. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
+        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, erscheint die Anzeige Stöbern. Unter dem Namen steht dann in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, sobald ein Board verbunden oder ein Boulder beleuchtet ist. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
         "clipAlt": "Die Anzeige Stöbern",
         "clipCaption": "Die Anzeige kommt nach dem Wisch. Die Wand bleibt, wie sie war."

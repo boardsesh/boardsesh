@@ -219,6 +219,7 @@ vi.mock('@boardsesh/playlists-react', async () => ({
 
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
 import { SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../queue/use-queue-persistence';
+import { setSetting } from '../../settings/hooks';
 import {
   usePlaylistActivation,
   type PlaylistActivationResult,
@@ -295,6 +296,8 @@ function kilterSource(climbs: Climb[], activatedClimb: Climb): PlaylistSuggestio
 // Cases that install fake timers must not leak them into the next one.
 afterEach(() => {
   vi.useRealTimers();
+  // Settings are module state; a case that turns one on must not leak it.
+  setSetting('playlistTapLoadsQueue', false);
 });
 
 describe('QueueProvider board switch (#5099)', () => {
@@ -988,6 +991,8 @@ describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', 
   });
 
   it('walks the queue after "Start playlist" from a climb this board cannot draw, adding no copies', async () => {
+    // "Start playlist" is the replace, which a tap only does with the switch on.
+    setSetting('playlistTapLoadsQueue', true);
     // A smart list is fetched by board name, so a climb from another layout
     // comes back dimmed, and dimmed rows stay tappable. Kept as the track, the
     // provider masks it down to this board and re-anchors at its head, so the

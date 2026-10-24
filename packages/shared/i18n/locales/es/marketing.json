@@ -461,7 +461,7 @@
       "breadcrumb": "Playlists",
       "hero": {
         "title": "Monta una playlist y escálala en orden",
-        "subtitle": "Guarda bloques para luego y carga la lista en tu cola."
+        "subtitle": "Guarda bloques para luego y escala la lista en orden."
       },
       "build": {
         "title": "Crear una playlist",
@@ -488,12 +488,12 @@
       },
       "queue": {
         "title": "Escalar la lista entera",
-        "intro": "Toca un bloque de una playlist y tu cola pasa a ser esa playlist.",
-        "p1": "Se carga en orden desde el bloque que tocaste. Si tenías bloques en cola después del actual, ¿Iniciar playlist? pregunta primero. El botón de play de la cabecera empieza desde arriba.",
+        "intro": "Toca un bloque de una playlist y recorres esa playlist. Tu cola se queda como está.",
+        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Añadir a la cola copia la lista entera en tu cola. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón.",
         "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
         "sessionsLink": "Cómo una sesión comparte una sola cola",
         "clipAlt": "La hoja ¿Iniciar playlist?",
-        "clipCaption": "Con bloques ya en cola, ¿Iniciar playlist? pregunta primero."
+        "clipCaption": "Con ese ajuste activado y bloques ya en cola, ¿Iniciar playlist? pregunta primero."
       },
       "smart": {
         "title": "Las ocho listas que Boardsesh monta por ti",
@@ -557,7 +557,7 @@
       "crowd": {
         "title": "Cotillear sin mover el muro",
         "p1": "Con alguien más en tu sesión, deslizar deja de encender el plafón. Toca Ponerlo en el muro cuando quieras el tuyo, o toca la foto de perfil de arriba para volver al bloque del muro.",
-        "p2": "¿Escalas solo? Mantén pulsada la bombilla y apaga Iluminar bloques al deslizar e Iluminar bloques al tocar la lista.",
+        "p2": "¿Escalas solo? Mantén pulsada la bombilla y apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar.",
         "previewLink": "Vista previa de un bloque desde cualquier lista"
       },
       "history": {
@@ -703,8 +703,8 @@
         "p1": "Con el plafón conectado, mantén pulsada la bombilla para estos controles, de arriba abajo.",
         "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes, en Plafón.",
         "row2": "Iluminar la presa de arriba. Solo MoonBoard.",
-        "row3": "Iluminar bloques al deslizar.",
-        "row4": "Iluminar bloques al tocar la lista. Apaga los dos y explorar deja de mover el muro.",
+        "row3": "Iluminar el plafón al tocar un bloque.",
+        "row4": "Iluminar el plafón al deslizar, cuando ya hay un bloque en el muro. Apaga los dos y explorar deja de mover el muro.",
         "row5": "Reiluminar plafón. Manda el bloque a los LED otra vez.",
         "row6": "Apagar todas las luces. Tu móvil sigue conectado.",
         "row7": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
@@ -769,7 +769,7 @@
         "title": "Mira un bloque sin encender el plafón",
         "intro": "Vista previa es lo primero de la lista.",
         "p1": "Abre el bloque en el reproductor sin tocar tu cola. Tu siguiente deslizamiento vuelve a tu cola.",
-        "p2": "En una sesión, o con Iluminar bloques al deslizar apagado, sale una etiqueta Explorando. Toca Activar o Ponerlo en el muro cuando quieras el bloque.",
+        "p2": "En una sesión, o con Iluminar el plafón al deslizar apagado, sale una etiqueta Explorando. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa, sin encender cuando hay un plafón conectado o un bloque encendido. Toca Activar o Ponerlo en el muro cuando quieras el bloque.",
         "sessionsLink": "Cómo una sesión mantiene el muro quieto",
         "clipAlt": "La etiqueta Explorando",
         "clipCaption": "La etiqueta llega tras el deslizamiento. El muro se queda como estaba."

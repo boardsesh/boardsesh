@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { formatTrackLabel, MAX_TRACK_NAME_LENGTH } from '../track-label-text';
+import { formatBrowseCaption, formatTrackLabel, MAX_TRACK_NAME_LENGTH } from '../track-label-text';
 
 // Interpolates like the real catalog, so the assertions read as the header does.
 const STRINGS: Record<string, string> = {
   'playView.track.from': 'From {{name}}',
   'playView.track.fromPosition': 'From {{name}} · {{position}} of {{total}}',
+  'playView.wallState.previewNotLit': 'Preview, not lit',
+  'playView.wallState.onlyYouSeeThis': 'Only you see this',
+  'playView.wallState.onlyYouSeeThisWallOn': 'Only you see this · the wall is on {{name}}',
 };
-const t = ((key: string, values: Record<string, string>) =>
+const t = ((key: string, values: Record<string, string> = {}) =>
   (STRINGS[key] ?? key).replace(
     /\{\{(\w+)\}\}/g,
     (_, field: string) => values[field] ?? '',
@@ -42,5 +45,47 @@ describe('formatTrackLabel', () => {
   it('prints a name that fits as it is', () => {
     const name = 'b'.repeat(MAX_TRACK_NAME_LENGTH);
     expect(formatTrackLabel({ kind: 'named', name }, t, 'en-US')).toBe(`From ${name}`);
+  });
+});
+
+describe('formatBrowseCaption', () => {
+  it('says nothing when there is nothing to say', () => {
+    expect(formatBrowseCaption(null, t)).toBeNull();
+  });
+
+  it('tells a solo climber the preview is not lit', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t)).toBe('Preview, not lit');
+  });
+
+  it('tells a crew the look is private, and names the climb on the wall', () => {
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: null }, t)).toBe('Only you see this');
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: '   ' }, t)).toBe('Only you see this');
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimp Ladder' }, t)).toBe(
+      'Only you see this · the wall is on Crimp Ladder',
+    );
+  });
+
+  it('cuts a long wall climb name short, like a list name', () => {
+    const caption = formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimpladder Overhangtraverse Project' }, t);
+    expect(caption).toBe('Only you see this · the wall is on Crimpladder Overhangtra\u2026');
+    const printedName = caption?.slice('Only you see this · the wall is on '.length) ?? '';
+    expect(Array.from(printedName)).toHaveLength(MAX_TRACK_NAME_LENGTH);
+  });
+
+  it('drops the wall climb name when the line also names a list, so the position still fits', () => {
+    // The stats line holds about 45 characters at caption size on a 375pt phone.
+    const statsLineBudget = 45;
+    const caption = formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimpladder Overhangtraverse Project' }, t, {
+      sharesLine: true,
+    });
+    expect(caption).toBe('Only you see this');
+    const trackLabel = formatTrackLabel({ kind: 'counted', name: 'Projects', position: 4, total: 23 }, t, 'en-US');
+    const statsLine = [caption, trackLabel].join(' · ');
+    expect(statsLine).toBe('Only you see this · From Projects · 4 of 23');
+    expect(Array.from(statsLine).length).toBeLessThanOrEqual(statsLineBudget);
+  });
+
+  it('keeps the solo preview words when the line also names a list', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t, { sharesLine: true })).toBe('Preview, not lit');
   });
 });

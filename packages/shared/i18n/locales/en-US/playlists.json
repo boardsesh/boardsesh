@@ -152,7 +152,7 @@
   "detail": {
     "share": "Share playlist",
     "actions": "Playlist actions",
-    "activateAll": "Start playlist",
+    "activateAll": "Play",
     "addToQueue": {
       "action": "Add to queue",
       "actionCount_one": "Add {{count}} to queue",

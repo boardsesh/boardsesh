@@ -484,10 +484,12 @@
     "lighting": {
       "title": "Board-Beleuchtung",
       "description": "Lege fest, was das verbundene Board automatisch beleuchtet.",
-      "onSwipeLabel": "Boulder beim Wischen beleuchten",
-      "onSwipeDescription": "Beleuchtet das Board, wenn du zwischen Bouldern wischst.",
-      "onTapLabel": "Boulder beim Antippen in der Liste beleuchten",
-      "onTapDescription": "Beleuchtet das Board, wenn du einen Boulder aus einer Liste auswählst."
+      "onSwipeLabel": "Board beim Wischen beleuchten",
+      "onSwipeDescription": "Nur wenn schon ein Boulder am Board leuchtet. Eine Vorschau beleuchtet beim Wischen nie das Board.",
+      "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
+      "onTapDescription": "Tippst du in einer Liste einen Boulder an, wird er am Board beleuchtet. Ist das aus, öffnet das Antippen eine Vorschau.",
+      "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange. Ist „Board beleuchten, wenn ich einen Boulder antippe“ aus, lädst du sie mit Abspielen."
     },
     "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",

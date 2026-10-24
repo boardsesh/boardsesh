@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canLeavePreview,
+  resolveBrowseCaption,
   resolveCommitBarModel,
   resolveHeaderPillState,
   resolveWallPillState,
@@ -9,6 +10,8 @@ import {
   shouldArmBusyWallConfirm,
   shouldShowHolderBadge,
   WALL_READ_PRE_LATCH_TOLERANCE_MS,
+  type BrowseCaption,
+  type BrowseCaptionInput,
   type CommitBarModel,
   type CommitBarModelInput,
   type HeaderPill,
@@ -514,5 +517,52 @@ describe('resolveWallStateAnnouncement', () => {
 
   it.each(cases)('%s → %j', (_scenario, overrides, expected) => {
     expect(resolveWallStateAnnouncement({ ...announceBase, ...overrides })).toBe(expected);
+  });
+});
+
+describe('resolveBrowseCaption', () => {
+  /** Solo, previewing someone else's climb while a board is connected and the wall shows yours. */
+  const captionBase: BrowseCaptionInput = {
+    isAnonymous: false,
+    isPreview: true,
+    climbUuid: THEIR_CLIMB,
+    committedHeadUuid: MY_CLIMB,
+    wallClimbUuid: MY_CLIMB,
+    wallClimbName: 'Crimp Ladder',
+    inCrew: false,
+    wallDriven: true,
+  };
+  const cases: Array<[string, Partial<BrowseCaptionInput>, BrowseCaption]> = [
+    // Confusion 1: Light on tap off opened a preview, and nothing said it was not lit.
+    ['solo preview while a board is connected', {}, { kind: 'preview' }],
+    ['solo preview, board connected, wall dark', { wallClimbUuid: null }, { kind: 'preview' }],
+    ['solo preview, nothing connected but a climb is lit', { wallDriven: false }, { kind: 'preview' }],
+    // No board and nothing lit: "not lit" is about something the climber hasn't got.
+    ['solo preview with no board and nothing lit', { wallDriven: false, wallClimbUuid: null }, null],
+    // Confusion 4: in a crew, say the look is private and what the room has up.
+    ['crew preview, the room has a climb lit', { inCrew: true }, { kind: 'crew', wallClimbName: 'Crimp Ladder' }],
+    ['crew preview, wall dark', { inCrew: true, wallClimbUuid: null }, { kind: 'crew', wallClimbName: null }],
+    [
+      'crew preview, nothing connected locally: still private',
+      { inCrew: true, wallDriven: false, wallClimbUuid: null },
+      { kind: 'crew', wallClimbName: null },
+    ],
+    [
+      'crew preview, lit climb with no name yet',
+      { inCrew: true, wallClimbName: null },
+      { kind: 'crew', wallClimbName: null },
+    ],
+    // Nothing to say.
+    ['the preview is the lit climb', { climbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB }, null],
+    ['the crew preview is the lit climb', { inCrew: true, climbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB }, null],
+    ["previewing the climber's own current climb", { climbUuid: MY_CLIMB, wallClimbUuid: WALL_CLIMB }, null],
+    ['not a preview', { isPreview: false }, null],
+    ['not a preview, in a crew', { isPreview: false, inCrew: true }, null],
+    ['no climb on screen', { climbUuid: null }, null],
+    ['anonymous viewer', { isAnonymous: true, inCrew: true }, null],
+  ];
+
+  it.each(cases)('%s', (_scenario, overrides, expected) => {
+    expect(resolveBrowseCaption({ ...captionBase, ...overrides })).toEqual(expected);
   });
 });

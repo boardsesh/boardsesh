@@ -478,6 +478,23 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.prevItem?.climb.uuid).toBe('x');
     expect(state.prevItem?.suggested).toBe(true);
   });
+
+  it('gives a trackless preview nothing to swipe to, even when its climb is queued', () => {
+    // Settings promises "a preview never lights the board as you swipe". With
+    // Light the board as I swipe on, a trackless preview's swipe is not view-only
+    // (`getViewOnlyPreviewNavigationTarget`), so the promise rests on this: every
+    // trackless preview is a fresh queue item (`climbToQueueItem`), an orphan with
+    // no list, and an orphan has nowhere to go. A swipe that could land would
+    // commit and light the climb it reached.
+    const queued = makeItem('a');
+    const queue = [makeItem('before'), queued, makeItem('after')];
+    const tracklessPreview: ClimbQueueItem = { ...queued, uuid: 'fresh-preview-uuid' };
+    const state = computeNavigationStateWithSuggestions(queue, tracklessPreview, null);
+    expect(state.canNext).toBe(false);
+    expect(state.nextItem).toBeNull();
+    expect(state.canPrevious).toBe(false);
+    expect(state.prevItem).toBeNull();
+  });
 });
 
 describe('findUpcomingQueueItemsWithSuggestions', () => {

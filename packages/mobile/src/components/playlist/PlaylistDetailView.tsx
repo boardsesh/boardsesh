@@ -29,6 +29,8 @@ import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
+import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
+import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -42,6 +44,7 @@ import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
 import { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
 import { PlaylistFilterHeaderButton } from './PlaylistFilterHeaderButton';
+import { PlaylistPlayHeaderButton } from './PlaylistPlayHeaderButton';
 import { ownHeaderRight } from '../../hooks/use-header-actions';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
@@ -150,8 +153,12 @@ export type PlaylistDetailViewProps = {
   isFetchingNextPage: boolean;
   hasNextPage: boolean;
   fetchNextPage: () => void;
-  /** Activate a tapped climb (wires the queue + opens the play drawer). */
-  onActivateClimb: (climb: Climb) => void;
+  /**
+   * Activate a tapped climb (wires the queue + opens the play drawer). The
+   * header's Play button calls it with the first row and `deliberate` (see
+   * `PlaylistActivationOptions`).
+   */
+  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
   /** An unavailable climb source keeps the hero while explaining the gap. */
@@ -367,6 +374,26 @@ export function PlaylistDetailView({
   //
   // Material keeps its in-body app bar, so the native header stays hidden
   // ("header XOR in-body Appbar", theme/variants/README.md).
+  // Play: plays the list from its first row (#6667), in the glass header and
+  // Material's app bar alike. Hidden on an empty list, behind the switch-board
+  // banner (row taps still open the drawer so it can explain the mismatch) and
+  // in edit mode. A deliberate play, so Light the board when I tap a climb (a
+  // row-tap setting) does not turn it into a preview.
+  //
+  // The rows and the callback are read through refs: both change identity as
+  // pages land, and the glass header re-sets its native options whenever the
+  // handler changes.
+  const showPlayAll = climbs.length > 0 && !boardBanner && !editMode;
+  const playAllClimbsRef = useRef(climbs);
+  playAllClimbsRef.current = climbs;
+  const onActivateClimbRef = useRef(onActivateClimb);
+  onActivateClimbRef.current = onActivateClimb;
+  // `showPlayAll` already hides the button behind the board banner.
+  const handleActivateAll = useCallback(() => {
+    const first = playAllClimbsRef.current[0];
+    if (first) onActivateClimbRef.current(first, undefined, { deliberate: true });
+  }, []);
+
   const navigation = useNavigation();
   const headerTitle = hero.name;
   useLayoutEffect(() => {
@@ -382,6 +409,7 @@ export function PlaylistDetailView({
         <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
       ) : null;
     const actionButtons = actions?.(collapsed) ?? null;
+    const playButton = showPlayAll ? <PlaylistPlayHeaderButton onPress={handleActivateAll} /> : null;
     navigation.setOptions({
       headerShown: true,
       headerLargeTitle: false,
@@ -391,22 +419,34 @@ export function PlaylistDetailView({
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
       // a rendered node: a fresh element each render would re-set the options on
-      // every render. No item at all while there is nothing to show (a smart list
-      // with its hero up, a signed-out viewer): iOS draws an empty glass capsule
-      // for an item that renders nothing. `ownHeaderRight` also clears any
+      // every render. No item at all while there is nothing to show (an empty
+      // list, behind the board banner, or edit mode without owner actions): iOS
+      // draws an empty glass capsule for an item that renders nothing. `ownHeaderRight` also clears any
       // native bar item.
       ...ownHeaderRight(
-        filterButton || actionButtons
+        filterButton || actionButtons || playButton
           ? () => (
               <ButtonSurfaceProvider surface="glass">
                 {filterButton}
                 {actionButtons}
+                {playButton}
               </ButtonSurfaceProvider>
             )
           : undefined,
       ),
     });
-  }, [navigation, isMaterial, headerTitle, actions, collapsed, filterBarScrolledAway, filterAction, editMode]);
+  }, [
+    navigation,
+    isMaterial,
+    headerTitle,
+    actions,
+    collapsed,
+    filterBarScrolledAway,
+    filterAction,
+    editMode,
+    showPlayAll,
+    handleActivateAll,
+  ]);
 
   // A new sort or filter lands while the climber is scrolled down past the
   // filter bar: bring them back up to it (the hero just tucked under the bar), so
@@ -460,20 +500,6 @@ export function PlaylistDetailView({
     },
     [addToQueue],
   );
-
-  // Activate-all only needs to know whether the board-switch banner is present;
-  // row taps still open the drawer so it can explain incompatible climbs.
-  const disableActivateAll = !!boardBanner;
-
-  // Activate-all: queue the playlist from the top. Reuses the same row-tap path
-  // (which seeds the suggestion source from the whole list), so swiping the play
-  // drawer walks the playlist. No-op on an empty list or while the switch-board
-  // banner is shown.
-  const handleActivateAll = useCallback(() => {
-    if (disableActivateAll) return;
-    const first = climbs[0];
-    if (first) onActivateClimb(first);
-  }, [disableActivateAll, climbs, onActivateClimb]);
 
   // List-level drag-to-reorder for edit mode. Always instantiated (hooks can't be
   // conditional); only the edit rows wire up its handles. `isDragging` locks the
@@ -818,7 +844,7 @@ export function PlaylistDetailView({
             <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
           ) : null}
           {actions?.(true)}
-          {climbs.length > 0 && !boardBanner && !editMode ? (
+          {showPlayAll ? (
             <Appbar.Action
               icon="play"
               color={accent as string}

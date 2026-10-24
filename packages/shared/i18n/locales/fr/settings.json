@@ -484,10 +484,12 @@
     "lighting": {
       "title": "Éclairage de la board",
       "description": "Choisissez ce qui allume automatiquement la board connectée.",
-      "onSwipeLabel": "Allumer en faisant défiler les blocs",
-      "onSwipeDescription": "Allume la board quand vous passez d'un bloc à l'autre en faisant défiler.",
-      "onTapLabel": "Allumer en sélectionnant dans la liste",
-      "onTapDescription": "Allume la board quand vous sélectionnez un bloc dans une liste."
+      "onSwipeLabel": "Allumer la board quand je fais défiler",
+      "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
+      "onTapLabel": "Allumer la board quand je touche un bloc",
+      "onTapDescription": "Toucher un bloc dans une liste l'allume au mur. Désactivé, le toucher ouvre un aperçu.",
+      "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer la board quand je touche un bloc est désactivé, utilisez Lecture pour la charger."
     },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",

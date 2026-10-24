@@ -579,6 +579,65 @@ describe('PlaylistDetailView', () => {
     expect(ctrl.setOptions.mock.calls.length).toBe(callsAfterMount);
   });
 
+  // ── Play in the glass header (#6667) ───────────────────────────────────────
+
+  describe('glass header Play', () => {
+    function headerRightNode(): HTMLElement {
+      const headerRight = lastHeaderOptions().headerRight as (() => ReactNode) | undefined;
+      if (!headerRight) throw new Error('no headerRight');
+      return render(createElement('div', null, headerRight())).container;
+    }
+
+    it('plays the list from its first row, as a deliberate start', () => {
+      const onActivateClimb = vi.fn();
+      const second = { ...CLIMB, uuid: 'second-row' };
+      render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB, second], onActivateClimb })} />);
+
+      const play = headerRightNode().querySelector('[data-icon="play.fill"]') as HTMLElement;
+      expect(play).not.toBeNull();
+      expect(play.getAttribute('aria-label')).toBe('detail.activateAll');
+      fireEvent.click(play);
+      expect(onActivateClimb).toHaveBeenCalledTimes(1);
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+    });
+
+    it('sits after the playlist controls, inside the glass region', () => {
+      const actions = vi.fn(() => createElement('span', { 'data-owner-action': 'true' }));
+      render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], actions })} />);
+      const order = Array.from(headerRightNode().querySelectorAll('[data-owner-action], [data-icon="play.fill"]')).map(
+        (node) => (node.hasAttribute('data-owner-action') ? 'actions' : 'play'),
+      );
+      expect(order).toEqual(['actions', 'play']);
+    });
+
+    it('is absent on an empty list, behind the board banner and in edit mode', () => {
+      const banner = { title: 't', subtitle: 's', cta: 'c', onPress: vi.fn() };
+      const { rerender } = render(<PlaylistDetailView {...makeProps({ climbs: [] })} />);
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
+
+      rerender(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], boardBanner: banner })} />);
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
+
+      rerender(<PlaylistDetailView {...makeProps({ climbs: [CLIMB], editMode: true })} />);
+      expect(lastHeaderOptions().headerRight).toBeUndefined();
+    });
+
+    it('does not re-set the header when more rows land or the handler changes identity', () => {
+      const props = makeProps({ climbs: [CLIMB] });
+      const { rerender } = render(<PlaylistDetailView {...props} />);
+      const callsAfterMount = ctrl.setOptions.mock.calls.length;
+      const second = { ...CLIMB, uuid: 'second-row' };
+      const onActivateClimb = vi.fn();
+
+      rerender(<PlaylistDetailView {...props} climbs={[CLIMB, second]} onActivateClimb={onActivateClimb} />);
+      expect(ctrl.setOptions.mock.calls.length).toBe(callsAfterMount);
+
+      // The handler the header already holds calls the newest callback.
+      fireEvent.click(headerRightNode().querySelector('[data-icon="play.fill"]') as HTMLElement);
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+    });
+  });
+
   // ── Pull to refresh (HIG Refresh content controls) ─────────────────────────
 
   it('refreshes on a pull and spins until the refetch settles', async () => {
@@ -984,7 +1043,10 @@ describe('PlaylistDetailView', () => {
       const playAction = container.querySelector('[data-appbar-action="play"]');
       expect(playAction).not.toBeNull();
       fireEvent.click(playAction as HTMLElement);
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
+      // A deliberate start: Light the board when I tap a climb (a row-tap
+      // setting) must not turn the Play button into a preview (#6667).
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(playAction?.getAttribute('aria-label')).toBe('detail.activateAll');
     });
 
     it('omits the activate-all action when the list is empty', () => {

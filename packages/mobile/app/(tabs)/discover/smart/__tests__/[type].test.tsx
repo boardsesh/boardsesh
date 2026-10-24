@@ -6,10 +6,11 @@ import type { Climb } from '@boardsesh/queue';
 import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
 import type { SmartListSelection } from '../../../../../src/lib/playlists/smart-list-view';
 
-// Parity guard for the smart-playlist detail screen: it must opt into whole-queue
-// replacement (replaceQueueOnActivate) and thread the queue-replace sheet through,
-// exactly like the regular playlist detail screen. The hook + sheet themselves are
-// unit-tested elsewhere; here we only assert the wiring.
+// Parity guard for the smart-playlist detail screen: it must mark itself as a
+// list a tap can load into the queue (replaceQueueOnActivate, honoured only with
+// "Tapping a playlist loads it into my queue" on, F4 #6667) exactly like the
+// regular playlist detail screen. The hook itself is unit-tested elsewhere; here
+// we only assert the wiring.
 type CapturedOptions = {
   sourceId: string;
   replaceQueueOnActivate?: boolean;
@@ -259,7 +260,7 @@ afterEach(() => {
 });
 
 describe('SmartPlaylistDetail queue replacement wiring', () => {
-  it('activates with replaceQueueOnActivate', () => {
+  it('marks the list as one a tap can load into the queue (replaceQueueOnActivate)', () => {
     const { container } = render(<SmartPlaylistDetail />);
 
     expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
@@ -292,7 +293,7 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
     expect(smartMocks.activationOptions?.previewOnly).toBe(true);
   });
 
-  it('leaves a solo row tap replacing the queue as before', () => {
+  it('leaves a solo row tap to the hook, which plays from the list unless the switch is on', () => {
     sessionMock.isShared = false;
     render(<SmartPlaylistDetail />);
 
@@ -544,6 +545,47 @@ describe('SmartPlaylistDetail sort and filters (#6651)', () => {
       signal: new AbortController().signal,
     });
     expect(smartMocks.request.mock.calls.at(-1)?.[0].variables.input).toMatchObject({ activeAngle: 50 });
+  });
+
+  // The order the player walks is the order on screen (#6667). After a board
+  // switch the previous board's rows stay up until the new board's land, so
+  // the drawer's pages ask for the board those rows were read on.
+  it('pages the drawer with the board the rows on screen were read on, not the board it just switched to', async () => {
+    let loading = false;
+    smartMocks.pageFor = (view) => ({
+      climbs: smartMocks.allClimbs,
+      totalCount: 1,
+      unfilteredCount: null,
+      placeholder: !!view && loading,
+    });
+    filterSession.initialSelection = selectionWith({ sort: HARDEST_FIRST });
+    const { rerender } = render(<SmartPlaylistDetail />);
+    expect(smartMocks.activationOptions?.sourceId).toBe(`smart:LIKED_CLIMBS:u-1|${HARDEST_FIRST_ON_KILTER}`);
+
+    loading = true;
+    smartMocks.activeBoard = { uuid: 'tb', boardType: 'tension', layoutId: 9, sizeId: 5, setIds: '1,2', angle: 35 };
+    rerender(<SmartPlaylistDetail />);
+    // The Kilter rows are still the ones on screen.
+    expect(smartMocks.activationOptions?.sourceId).toBe(`smart:LIKED_CLIMBS:u-1|${HARDEST_FIRST_ON_KILTER}`);
+    await smartMocks.activationOptions?.fetchPage({
+      page: 0,
+      pageSize: 20,
+      board: { boardName: 'tension' },
+      signal: new AbortController().signal,
+    });
+    expect(smartMocks.request.mock.calls.at(-1)?.[0].variables.input).toEqual({
+      type: 'LIKED_CLIMBS',
+      userId: 'u-1',
+      boardName: 'kilter',
+      page: 0,
+      pageSize: 20,
+      activeBoardName: 'kilter',
+      activeAngle: 40,
+      activeLayoutId: 1,
+      activeSizeId: 10,
+      activeSetIds: '1,20',
+      view: { sortBy: 'difficulty', sortOrder: 'desc' },
+    });
   });
 
   it('settles on rows a failed refetch kept, since they are what is on screen', () => {
