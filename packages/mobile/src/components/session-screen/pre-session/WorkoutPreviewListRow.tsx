@@ -36,7 +36,7 @@ export function WorkoutPreviewListRow({
   if (row.kind === 'stage') return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} />;
   if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
   if (!board) return null;
-  const { item } = row.preview;
+  const { item, knownStatus = null } = row.preview;
   const isRefreshing = refreshingUuids.has(item.uuid);
   return (
     <WorkoutPreviewRow
@@ -46,6 +46,7 @@ export function WorkoutPreviewListRow({
       isRefreshing={isRefreshing}
       // Refreshes run one at a time, so another row's refresh blocks this one.
       refreshDisabled={refreshLocked || (refreshingUuids.size > 0 && !isRefreshing)}
+      knownStatus={knownStatus}
       onPress={onPress}
       onRefresh={onRefresh}
     />

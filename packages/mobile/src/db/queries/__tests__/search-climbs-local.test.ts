@@ -785,6 +785,46 @@ describe('searchClimbsLocal: tall/wide (Kilter Homewall size grid)', () => {
   });
 });
 
+// The server's onlyBenchmarks rule (#6232): a real number above zero. SQLite
+// turns a bound NaN into NULL, so the leak to guard here is TEXT, which SQLite
+// ranks above every number.
+describe('searchClimbsLocal: Benchmarks only', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    const benchmarks: Array<[string, number | null]> = [
+      ['real', 22],
+      ['zero', 0],
+      ['none', null],
+      ['nan', Number.NaN],
+    ];
+    for (const [uuid, benchmarkDifficulty] of benchmarks) {
+      await insertClimb(db, { uuid });
+      await insertStat(db, { climbUuid: uuid, displayDifficulty: 20, ascensionistCount: 10, benchmarkDifficulty });
+    }
+    await insertClimb(db, { uuid: 'text' });
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, benchmark_difficulty, updated_at)
+       VALUES ('kilter', 'text', 40, 20, 10, 'NaN', '2026-01-01T00:00:00Z')`,
+    );
+  });
+
+  it('keeps only the climb with a real benchmark difficulty, and counts the same', async () => {
+    const input = makeInput({ onlyBenchmarks: true });
+    const result = await searchClimbsLocal(db, input);
+    expect(uuids(result)).toEqual(['real']);
+    expect(result.climbs[0].benchmark_difficulty).toBe('22');
+    expect(await countClimbsLocal(db, input)).toBe(1);
+  });
+
+  it('keeps every climb with the switch off', async () => {
+    expect(uuids(await searchClimbsLocal(db, makeInput())).sort()).toEqual(['nan', 'none', 'real', 'text', 'zero']);
+  });
+});
+
 describe('isOfflineSearchSupported', () => {
   it('supports the core filters', () => {
     expect(isOfflineSearchSupported(makeInput({ minGrade: 16, name: 'x', boulders: true }))).toBe(true);

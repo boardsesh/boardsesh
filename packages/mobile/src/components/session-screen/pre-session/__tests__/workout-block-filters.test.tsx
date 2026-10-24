@@ -194,3 +194,56 @@ describe('blockFiltersSummary', () => {
     );
   });
 });
+
+describe("Skip what I've tried", () => {
+  const SKIP_TRIED = 'mobile.session.preGeneratorSkipTriedLabel';
+
+  it('turns on for the block', () => {
+    renderFilters();
+    fireEvent.click(switchNamed(SKIP_TRIED) as HTMLInputElement);
+    expect(onFiltersChange).toHaveBeenCalledWith({ skipTried: true });
+  });
+
+  it('shows on when the block has it on', () => {
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipTried: true });
+    expect(switchNamed(SKIP_TRIED)?.checked).toBe(true);
+    expect(switchNamed(SKIP_TRIED)?.getAttribute('aria-description')).toBe(
+      'mobile.session.preGeneratorSkipTriedDescription',
+    );
+  });
+
+  it('is disabled signed out, says why, and shows off', () => {
+    auth.isAuthenticated = false;
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, skipTried: true });
+
+    const skip = switchNamed(SKIP_TRIED);
+    expect(skip?.disabled).toBe(true);
+    expect(skip?.checked).toBe(false);
+    expect(skip?.getAttribute('aria-description')).toBe('mobile.session.preGeneratorSkipTriedSignedOut');
+    expect(screen.getByTestId('collapsed-header').textContent).not.toContain(
+      'mobile.session.preGeneratorSkipTriedSummary',
+    );
+  });
+
+  it('is disabled under Attempted, which picks climbs you have tried, and says why', () => {
+    renderFilters({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', skipTried: true });
+
+    const skip = switchNamed(SKIP_TRIED);
+    expect(skip?.disabled).toBe(true);
+    expect(skip?.checked).toBe(false);
+    expect(skip?.getAttribute('aria-description')).toBe('mobile.session.preGeneratorSkipTriedAttempted');
+  });
+
+  it('stands in for Skip sent on the closed line, since it leaves sent climbs out too', () => {
+    expect(blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, skipTried: true }, t)).toBe(
+      'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasUnfamiliar · ' +
+        'mobile.session.preGeneratorSkipTriedSummary',
+    );
+    expect(
+      blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', skipSent: true, skipTried: true }, t),
+    ).toBe(
+      'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasAttempted · ' +
+        'mobile.session.preGeneratorSkipSentSummary',
+    );
+  });
+});

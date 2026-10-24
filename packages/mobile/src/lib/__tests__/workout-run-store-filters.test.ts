@@ -48,8 +48,8 @@ beforeEach(() => {
   storage.reset();
 });
 
-describe('workout-run-store: Skip what I have sent and Benchmarks only', () => {
-  it('keeps both switches through a relaunch', async () => {
+describe('workout-run-store: the skip switches and Benchmarks only', () => {
+  it('keeps every switch through a relaunch', async () => {
     const run: WorkoutRun = {
       stages: [
         {
@@ -57,7 +57,7 @@ describe('workout-run-store: Skip what I have sent and Benchmarks only', () => {
           kind: 'gradeFocus',
           itemUuids: ['g1'],
           targetGrade: 18,
-          filters: { ...plainFilters, climbBias: 'any', skipSent: true, onlyBenchmarks: true },
+          filters: { ...plainFilters, climbBias: 'any', skipSent: true, skipTried: true, onlyBenchmarks: true },
         },
       ],
     };
@@ -82,6 +82,7 @@ describe('workout-run-store: Skip what I have sent and Benchmarks only', () => {
     await storeStages([
       { id: 'main', kind: 'volume', itemUuids: ['v1'], targetGrade: 18, filters: { ...plainFilters, skipSent: 'yes' } },
       { id: 'next', kind: 'ladder', itemUuids: ['l1'], filters: { ...plainFilters, onlyBenchmarks: 1 } },
+      { id: 'last', kind: 'pyramid', itemUuids: ['p1'], filters: { ...plainFilters, skipTried: 'on' } },
     ]);
 
     await hydrateWorkoutRun('session-1');
@@ -90,6 +91,7 @@ describe('workout-run-store: Skip what I have sent and Benchmarks only', () => {
       stages: [
         { id: 'main', kind: 'volume', itemUuids: ['v1'], targetGrade: 18 },
         { id: 'next', kind: 'ladder', itemUuids: ['l1'] },
+        { id: 'last', kind: 'pyramid', itemUuids: ['p1'] },
       ],
     });
   });

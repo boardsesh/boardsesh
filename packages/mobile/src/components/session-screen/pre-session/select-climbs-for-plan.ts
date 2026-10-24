@@ -1,7 +1,7 @@
 import { onlineManager } from '@tanstack/react-query';
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { ClimbBias, PlannedClimbSlot } from '@boardsesh/playlist-generator';
+import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
 import { withGradeSource } from '../../../lib/graphql/hooks/search-grade-source';
 import { offlineAwareRequest } from '../../../lib/graphql/offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../lib/graphql/operations';
@@ -12,6 +12,7 @@ import {
   type PreviewFetchContext,
   type PreviewFilters,
 } from './workout-preview-pool';
+import { searchTiers, type ClimbSearchTier } from './workout-search-tiers';
 
 /** Smallest pool fetched per grade: enough to shuffle and refresh from. */
 export const POOL_SIZE_PER_GRADE = 50;
@@ -32,50 +33,20 @@ type SelectClimbsForPlanOptions = {
 };
 
 /**
- * The personal flags of one search tier: which climbs of a grade it returns,
- * read from your logbook at this angle. Only the flags a tier sets are sent.
+ * How Benchmarks only orders a grade: most ascents first. A server from before
+ * the NaN fix in `createClimbFilters` (#6232) still answers `onlyBenchmarks` on
+ * Kilter with tens of thousands of climbs that are not benchmarks, mostly
+ * little-repeated ones, and the quality sort put those first: a block read its
+ * page bound of them and found no benchmark, and loosening Min ascents let in
+ * more of them, so the pool shrank. Benchmarks are among the most repeated
+ * climbs of their grade (on Kilter layout 1 at 40°, 119 of its 122 rank in the
+ * top 150 of their grade by ascents and 1 by quality, in the dev database on
+ * 2026-10-24), so this order reaches them within the same requests. It also makes a looser Min ascents
+ * keep every climb a stricter one found: a looser floor only adds climbs below
+ * the ones it already had. With the fixed server every row is a benchmark and
+ * a grade holds a few dozen at most, so the order costs nothing there.
  */
-export type ClimbSearchTier = Readonly<Pick<ClimbSearchInput, 'hideAttempted' | 'hideCompleted' | 'showOnlyAttempted'>>;
-
-const NEVER_TRIED: ClimbSearchTier = { hideAttempted: true, hideCompleted: true };
-const NOT_SENT: ClimbSearchTier = { hideCompleted: true };
-const TRIED_NOT_SENT: ClimbSearchTier = { showOnlyAttempted: true, hideCompleted: true };
-const TRIED: ClimbSearchTier = { showOnlyAttempted: true };
-const ANY_CLIMB: ClimbSearchTier = {};
-
-function tiersForBias(climbBias: ClimbBias, skipSent: boolean): ClimbSearchTier[] {
-  switch (climbBias) {
-    case 'unfamiliar':
-      return skipSent ? [NEVER_TRIED, NOT_SENT] : [NEVER_TRIED, NOT_SENT, ANY_CLIMB];
-    case 'attempted':
-      return [skipSent ? TRIED_NOT_SENT : TRIED];
-    case 'any':
-      return [skipSent ? NOT_SENT : ANY_CLIMB];
-  }
-}
-
-/**
- * The search tiers for one set of filters, best first (#6232). Each tier
- * returns every climb the one before it does and more, and `fetchGradePool`
- * reads them in order until the pool is full, so the later tiers only top it
- * up.
- *
- * - Unfamiliar (the default): never tried, then tried but not sent, then sent.
- *   The first tier is the request this bias always sent, so a grade that fills
- *   from it costs one request, as before, and climbs you have sent only fill
- *   what is left.
- * - Attempted and Any: the one search each always sent, so a climber who picks
- *   them gets their sent climbs mixed in as before.
- *
- * Skip what I've sent keeps only searches that hide sent climbs: Unfamiliar
- * drops its last tier, Attempted keeps the climbs you have tried but not sent,
- * and Any the ones you have not sent. Signed out there is no logbook to read:
- * one tier, no personal flags.
- */
-export function searchTiers(filters: PreviewFilters | undefined, isAuthenticated: boolean): ClimbSearchTier[] {
-  if (!isAuthenticated || !filters) return [ANY_CLIMB];
-  return tiersForBias(filters.climbBias, filters.skipSent === true);
-}
+const BENCHMARK_SORT = 'ascents';
 
 /**
  * Build the SEARCH_CLIMBS input for a single target grade and search tier:
@@ -84,6 +55,8 @@ export function searchTiers(filters: PreviewFilters | undefined, isAuthenticated
  * sent (the server ignores them without a user). A filter that is off adds
  * no key, so the default request stays the one the screenshot fixtures
  * recorded. The tier defaults to the first one the filters search.
+ *
+ * Benchmarks only sorts by ascents instead (`BENCHMARK_SORT`).
  */
 export function buildClimbSearchInput(
   grade: number,
@@ -105,8 +78,9 @@ export function buildClimbSearchInput(
     pageSize,
     page,
     // Quality-sorted so the generator favours the better climbs at each grade
-    // rather than whatever happens to be most-recently published.
-    sortBy: 'quality',
+    // rather than whatever happens to be most-recently published. Benchmarks
+    // only reads by ascents (`BENCHMARK_SORT`); off, the request is unchanged.
+    sortBy: filters?.onlyBenchmarks ? BENCHMARK_SORT : 'quality',
     sortOrder: 'desc',
     ...(filters?.minAscents != null ? { minAscents: filters.minAscents } : {}),
     ...(filters?.minRating != null ? { minRating: filters.minRating } : {}),
@@ -122,13 +96,9 @@ export function buildClimbSearchInput(
  * Whether a search row is a benchmark: a positive benchmark difficulty, the
  * same test that draws the benchmark ribbon on a row.
  *
- * Benchmarks only checks every row with it, because the server's
- * `onlyBenchmarks` is not enough on Kilter. Its `benchmark_difficulty > 0` lets
- * through about 45,000 Kilter layout 1 climbs at 40° that come back with no
- * benchmark difficulty, against the few hundred benchmarks the board has. NaN
- * in the stored value is the one value that passes that SQL test and maps to
- * no benchmark (Postgres ranks NaN above every number). Without the check a
- * Kilter block filled up with climbs that are not benchmarks.
+ * Benchmarks only checks every row with it, in case the server is one from
+ * before the NaN fix (see `BENCHMARK_SORT`), whose `onlyBenchmarks` kept Kilter
+ * climbs that come back with no benchmark difficulty.
  */
 export function isBenchmarkClimb(climb: Pick<Climb, 'benchmark_difficulty'>): boolean {
   return Number(climb.benchmark_difficulty) > 0;
@@ -170,7 +140,8 @@ function topUpTarget(demand: number): number {
  *
  * Under Benchmarks only a row that is not a benchmark (`isBenchmarkClimb`) is
  * dropped and does not count towards the target, so the fetch reads on to the
- * next page instead. Paging still stops at `maxPagesPerTier`.
+ * next page instead. Paging still stops at `maxPagesPerTier`; the ascents
+ * order (`BENCHMARK_SORT`) is what keeps benchmarks inside it.
  *
  * The pool is `exhausted` when its last tier ran out: it then holds every climb
  * the grade has under these filters, and a rebuild reuses it instead of asking

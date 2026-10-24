@@ -10,7 +10,8 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'qi-0' }));
 vi.mock('../../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 
 import { offlineAwareRequest } from '../../../../lib/graphql/offline-request';
-import { buildClimbSearchInput, fetchGradePool, isBenchmarkClimb, searchTiers } from '../select-climbs-for-plan';
+import { buildClimbSearchInput, fetchGradePool, isBenchmarkClimb } from '../select-climbs-for-plan';
+import { searchTiers } from '../workout-search-tiers';
 
 const offlineAwareRequestMock = vi.mocked(offlineAwareRequest);
 

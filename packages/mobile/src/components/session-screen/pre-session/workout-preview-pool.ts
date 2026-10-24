@@ -4,6 +4,7 @@ import type { PlannedClimbSlot, WorkoutStageFilters } from '@boardsesh/playlist-
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import type { RandomSource } from '../../../lib/seeded-random';
+import { biasCanSkipTried, tierAscentStatus, type TierAscentStatus } from './workout-search-tiers';
 
 /**
  * Pure climb-pool bookkeeping for the live workout preview. No GraphQL, no React
@@ -40,7 +41,7 @@ export type PreviewFetchContext = {
 /**
  * The tier of each top-up climb in a pool, by climb uuid: 1 for a climb first
  * found by the second search tier, 2 for the third. A climb with no entry came
- * from the first tier. See `searchTiers` (select-climbs-for-plan.ts).
+ * from the first tier. See `searchTiers` (workout-search-tiers.ts).
  */
 export type TopUpTiers = ReadonlyMap<string, number>;
 
@@ -79,8 +80,9 @@ export type PreviewSlot = PlannedClimbSlot & { stageId?: string; filters?: Previ
 
 /**
  * One string per distinct set of filters, so equal filters share a pool and
- * different ones never do. `skipSent` and `onlyBenchmarks` are added only when
- * on, so the default filters keep the signature they had before those existed.
+ * different ones never do. `skipSent`, `skipTried` and `onlyBenchmarks` are
+ * added only when on, so the default filters keep the signature they had
+ * before those existed.
  */
 export function filtersSignature(filters: PreviewFilters | undefined): string {
   if (!filters) return 'unfiltered';
@@ -92,24 +94,34 @@ export function filtersSignature(filters: PreviewFilters | undefined): string {
     filters.climbBias,
   ];
   if (filters.skipSent) parts.push('skipSent');
+  if (filters.skipTried) parts.push('skipTried');
   if (filters.onlyBenchmarks) parts.push('benchmarks');
   return parts.join(':');
 }
 
 /**
- * The filters a fetch can actually apply. Signed out, climb bias and Skip what
- * I've sent never reach the search (they read your logbook), so bias is set to
- * `any` and `skipSent` dropped: two blocks that differ only in those then share
- * one pool instead of fetching the same climbs twice.
+ * The filters a fetch can actually apply. Signed out, climb bias and the skip
+ * switches never reach the search (they read your logbook), so bias is set to
+ * `any` and `skipSent` and `skipTried` dropped. Under the Attempted bias Skip
+ * what I've tried cannot apply (`biasCanSkipTried`) and is dropped too. Two
+ * blocks that differ only in what got dropped then share one pool instead of
+ * fetching the same climbs twice.
  */
 export function fetchFilters(
   filters: PreviewFilters | undefined,
   isAuthenticated: boolean,
 ): PreviewFilters | undefined {
-  if (!filters || isAuthenticated) return filters;
-  if (filters.climbBias === 'any' && !filters.skipSent) return filters;
+  if (!filters) return filters;
+  if (isAuthenticated) {
+    if (!filters.skipTried || biasCanSkipTried(filters.climbBias)) return filters;
+    const applicable: PreviewFilters = { ...filters };
+    delete applicable.skipTried;
+    return applicable;
+  }
+  if (filters.climbBias === 'any' && !filters.skipSent && !filters.skipTried) return filters;
   const anyoneCanApply: PreviewFilters = { ...filters, climbBias: 'any' };
   delete anyoneCanApply.skipSent;
+  delete anyoneCanApply.skipTried;
   return anyoneCanApply;
 }
 
@@ -122,7 +134,20 @@ export function poolKeyForSlot(slot: PreviewSlot): string {
 export type PreviewItem = {
   item: ClimbQueueItem;
   slot: PreviewSlot;
+  /**
+   * The ascent mark the search that found this climb proves (`tierAscentStatus`):
+   * set on a top-up from the "tried, not sent" or the "sent" search. The row
+   * draws it while the climb's logbook has not loaded, so a sent top-up never
+   * reads as a climb you have not done. Absent when the search proves nothing.
+   */
+  knownStatus?: TierAscentStatus;
 };
+
+/** A preview row for `item` in `slot`, with the mark its pool's search proves. */
+function toPreviewItem(slot: PreviewSlot, item: ClimbQueueItem, topUpTiers: TopUpTiers): PreviewItem {
+  const knownStatus = tierAscentStatus(slot.filters, tierOf(item.climb.uuid, topUpTiers));
+  return knownStatus ? { slot, item, knownStatus } : { slot, item };
+}
 
 export type WorkoutPreviewData = {
   items: PreviewItem[];
@@ -211,7 +236,7 @@ export function pickRandomUnused(
 ): Climb | null {
   const unused = pool.filter((climb) => !used.has(climb.uuid));
   if (unused.length === 0) return null;
-  const bestTier = Math.min(...unused.map((climb) => tierOf(climb.uuid, topUpTiers)));
+  const bestTier = unused.reduce((lowest, climb) => Math.min(lowest, tierOf(climb.uuid, topUpTiers)), Infinity);
   const candidates = unused.filter((climb) => tierOf(climb.uuid, topUpTiers) === bestTier);
   return candidates[Math.floor(random() * candidates.length)];
 }
@@ -332,6 +357,8 @@ export function reshufflePools(
 
 export const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
 
+const NO_POOL_TOP_UPS: ReadonlyMap<string, TopUpTiers> = new Map();
+
 /**
  * Walk each slot's shuffled pool, skipping climbs already chosen in ANY pool,
  * so one climb never fills two slots even when two filter sets both return it.
@@ -350,12 +377,16 @@ export const NO_AVOIDED_CLIMBS: ReadonlySet<string> = new Set();
  * the slot's pool, unused and not avoided, so a block the climber did not touch
  * keeps its climbs when another block changes. Kept rows are placed first, so a
  * changed block never takes one of their climbs.
+ *
+ * `poolTopUpTiers` (`BuiltPools.poolTopUpTiers`) gives each row the mark its
+ * climb's search proves (`PreviewItem.knownStatus`). Left out, no row gets one.
  */
 export function selectItemsFromPools(
   slots: readonly PreviewSlot[],
   pools: ReadonlyMap<string, Climb[]>,
   avoidClimbUuids: ReadonlySet<string> = NO_AVOIDED_CLIMBS,
   keptItems: ReadonlyArray<ClimbQueueItem | undefined> = [],
+  poolTopUpTiers: ReadonlyMap<string, TopUpTiers> = NO_POOL_TOP_UPS,
 ): { items: PreviewItem[]; usedUuids: Set<string> } {
   const usedUuids = new Set<string>();
   const keptBySlot = new Map<number, ClimbQueueItem>();
@@ -369,18 +400,20 @@ export function selectItemsFromPools(
   });
   const items: PreviewItem[] = [];
   for (const [position, slot] of slots.entries()) {
+    const poolKey = poolKeyForSlot(slot);
+    const topUpTiers = poolTopUpTiers.get(poolKey) ?? NO_TOP_UPS;
     const kept = keptBySlot.get(position);
     if (kept) {
-      items.push({ slot, item: kept });
+      items.push(toPreviewItem(slot, kept, topUpTiers));
       continue;
     }
-    const pool = pools.get(poolKeyForSlot(slot)) ?? [];
+    const pool = pools.get(poolKey) ?? [];
     const next =
       pool.find((climb) => !usedUuids.has(climb.uuid) && !avoidClimbUuids.has(climb.uuid)) ??
       pickUnused(pool, usedUuids);
     if (!next) continue;
     usedUuids.add(next.uuid);
-    items.push({ slot, item: climbToQueueItem(next, { suggested: true }) });
+    items.push(toPreviewItem(slot, climbToQueueItem(next, { suggested: true }), topUpTiers));
   }
   return { items, usedUuids };
 }
@@ -466,10 +499,11 @@ export async function refreshSlotInState(
   // Keep the queue-item uuid (swap `.climb` only); recompute usedUuids from the
   // items so the invariant holds even across pre-existing short-pool repeats.
   const items = state.items.slice();
-  items[index] = {
-    slot: current.slot,
-    item: climbToQueueItem(nextClimb, { uuid: current.item.uuid, suggested: true }),
-  };
+  items[index] = toPreviewItem(
+    current.slot,
+    climbToQueueItem(nextClimb, { uuid: current.item.uuid, suggested: true }),
+    poolTopUpTiers?.get(poolKey) ?? NO_TOP_UPS,
+  );
   const usedUuids = new Set(items.map((preview) => preview.item.climb.uuid));
 
   return {

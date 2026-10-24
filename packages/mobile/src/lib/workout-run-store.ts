@@ -139,6 +139,7 @@ function isStageFilters(candidate: unknown): candidate is WorkoutStageFilters {
     typeof filters.onlyWideClimbs === 'boolean' &&
     // Newer than the key: filters stored without them still read.
     (filters.skipSent === undefined || typeof filters.skipSent === 'boolean') &&
+    (filters.skipTried === undefined || typeof filters.skipTried === 'boolean') &&
     (filters.onlyBenchmarks === undefined || typeof filters.onlyBenchmarks === 'boolean')
   );
 }

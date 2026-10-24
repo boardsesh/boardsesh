@@ -80,6 +80,20 @@ describe('useWorkoutPreview with sent climbs as top-up', () => {
     }
   });
 
+  it('marks every sent top-up sent, through a build and a Shuffle, with no logbook loaded', async () => {
+    const { result } = renderPreview(gradeFocus(7), async (grade) => poolAt(grade));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const marks = () =>
+      result.current.items.map((preview) => [isSent(preview.item.climb.uuid), preview.knownStatus ?? null]);
+    const expected = (rows: ReturnType<typeof marks>) => rows.map(([sent]) => [sent, sent ? 'send' : null]);
+    expect(marks()).toEqual(expected(marks()));
+    expect(marks().filter(([sent]) => sent)).toHaveLength(3);
+
+    act(() => result.current.shuffle());
+    expect(marks()).toEqual(expected(marks()));
+  });
+
   it('carries Skip what I have sent into the fetch and into the run that starts', async () => {
     const skipping = { ...DEFAULT_WORKOUT_FILTERS, skipSent: true };
     const fetchPool = vi.fn<FetchGradePool>(async (grade) => ({

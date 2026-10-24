@@ -15,6 +15,7 @@ import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
 import { formatQuality, formatSends } from '../../../lib/format-climb-stats';
 import { useClimbRowDisplay } from '../../../lib/climb-row-display-preference';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
+import type { TierAscentStatus } from './workout-search-tiers';
 
 type WorkoutPreviewRowProps = {
   item: ClimbQueueItem;
@@ -30,6 +31,11 @@ type WorkoutPreviewRowProps = {
    * instead of silently swallowing the tap.
    */
   refreshDisabled: boolean;
+  /**
+   * The mark the search that found this climb proves (`PreviewItem.knownStatus`),
+   * drawn until the climb's logbook loads. Absent or null when it proves nothing.
+   */
+  knownStatus?: TierAscentStatus | null;
   /**
    * Opens the climb in the play drawer. Left out where the drawer would open
    * under a modal sheet (the add-block sheet): the climb area is then plain
@@ -51,6 +57,7 @@ function WorkoutPreviewRowComponent({
   isActive,
   isRefreshing,
   refreshDisabled,
+  knownStatus = null,
   onPress,
   onRefresh,
 }: WorkoutPreviewRowProps) {
@@ -110,6 +117,7 @@ function WorkoutPreviewRowComponent({
       sizeId={board.sizeId}
       setIds={board.setIds}
       angle={board.angle}
+      knownAscentStatus={knownStatus}
     />
   ) : (
     <Text variant="body" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.missingClimbText}>
@@ -192,6 +200,7 @@ export const WorkoutPreviewRow = memo(WorkoutPreviewRowComponent, (prev, next) =
     prev.isActive === next.isActive &&
     prev.isRefreshing === next.isRefreshing &&
     prev.refreshDisabled === next.refreshDisabled &&
+    prev.knownStatus === next.knownStatus &&
     prev.onPress === next.onPress &&
     prev.onRefresh === next.onRefresh &&
     prev.board.boardName === next.board.boardName &&

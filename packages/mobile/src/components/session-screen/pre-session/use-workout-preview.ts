@@ -415,7 +415,7 @@ export function useWorkoutPreview(
         const keptItems = canReuse
           ? keptRowsFor(plan, rowKeyByStageId, previous.plan, previous.rowKeyByStageId, previous.data.items)
           : [];
-        const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools, avoided, keptItems);
+        const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools, avoided, keptItems, poolTopUpTiers);
         dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
         planRef.current = plan;
         workoutPlanRef.current = workoutPlan;
@@ -495,7 +495,13 @@ export function useWorkoutPreview(
     // Within each pool's tiers, so the climbs you have not sent stay first.
     const pools = reshufflePools(dataRef.current.pools, poolTopUpTiers, screenshotModeRandom());
     const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
-    const { items: nextItems, usedUuids } = selectItemsFromPools(planRef.current, pools, avoided);
+    const { items: nextItems, usedUuids } = selectItemsFromPools(
+      planRef.current,
+      pools,
+      avoided,
+      undefined,
+      poolTopUpTiers,
+    );
     dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
     setItems(nextItems);
   }, []);

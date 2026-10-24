@@ -15,7 +15,7 @@ import {
   type GeneratorOptions,
 } from '@boardsesh/playlist-generator';
 import type { GeneratorSelection, WorkoutBlock, WorkoutFilters } from '../workout-blocks';
-import type { FetchGradePool } from '../workout-preview-pool';
+import { NO_TOP_UPS, type FetchGradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
@@ -38,8 +38,13 @@ const ANY_FILTERS: WorkoutFilters = {
   climbBias: 'any',
 };
 
-const fetchPool: FetchGradePool = async (grade) =>
-  Array.from({ length: 30 }, (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}` }) as Climb);
+const fetchPool: FetchGradePool = async (grade) => ({
+  climbs: Array.from(
+    { length: 30 },
+    (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}` }) as Climb,
+  ),
+  topUpTiers: NO_TOP_UPS,
+});
 
 const selectionWith = (options: GeneratorOptions): GeneratorSelection => ({
   blocks: [{ id: 'timed', kind: 'workout', options, filters: ANY_FILTERS } satisfies WorkoutBlock],

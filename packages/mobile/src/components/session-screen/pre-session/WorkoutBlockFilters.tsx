@@ -1,5 +1,5 @@
 // One block's climb filters: min ascents, min rating, climb bias, Skip what I've
-// sent, Benchmarks only where the board has benchmarks and, where the board has
+// sent, Skip what I've tried, Benchmarks only where the board has benchmarks and, where the board has
 // smaller sizes, tall or wide climbs only. A collapsed disclosure at the bottom
 // of the block's fields, with a summary line under its title, so the Record
 // tab's block cards and the in-session "Add a block" sheet both get it.
@@ -26,6 +26,7 @@ import { selectByVariant } from '../../../theme/variants';
 import { spacing } from '../../../theme/tokens';
 import { Chip, generatorControlStyles } from './generator-controls';
 import type { SizeFilterAvailability, WorkoutFilters } from './workout-blocks';
+import { biasCanSkipTried } from './workout-search-tiers';
 
 type Translate = (key: string, options?: Record<string, string | number>) => string;
 
@@ -65,9 +66,15 @@ export function offersBenchmarksOnly(boardName: BoardName | null, filters: Worko
   return boardName !== null && !BOARDS_WITHOUT_BENCHMARKS.has(boardName);
 }
 
+/** Whether a block's Skip what I've tried applies: on, and under a bias it can apply to. */
+function skipsTried(filters: WorkoutFilters): boolean {
+  return filters.skipTried === true && biasCanSkipTried(filters.climbBias);
+}
+
 /**
  * The closed disclosure's line, built like ClimbFilterSheet's refineSummary:
- * min ascents · stars · climb bias, then Skip sent and Benchmarks when on.
+ * min ascents · stars · climb bias, then Skip tried or Skip sent and Benchmarks
+ * when on. Skip tried leaves out sent climbs too, so it stands in for Skip sent.
  * Stars render as filled glyphs (a symbol, not translatable copy); "Any" rating
  * shows nothing so the line stays short.
  */
@@ -78,9 +85,16 @@ export function blockFiltersSummary(filters: WorkoutFilters, t: Translate): stri
   const ratingValue = getMinRatingPickerValue(filters.minRating);
   if (ratingValue != null && ratingValue > 0) parts.push('★'.repeat(ratingValue));
   parts.push(climbBiasLabel(filters.climbBias, t));
-  if (filters.skipSent) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
+  if (skipsTried(filters)) parts.push(t('mobile.session.preGeneratorSkipTriedSummary'));
+  else if (filters.skipSent) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
   if (filters.onlyBenchmarks) parts.push(t('mobile.session.preGeneratorOnlyBenchmarksSummary'));
   return parts.join(' · ');
+}
+
+function skipTriedDescription(filters: WorkoutFilters, isAuthenticated: boolean, t: Translate): string {
+  if (!isAuthenticated) return t('mobile.session.preGeneratorSkipTriedSignedOut');
+  if (!biasCanSkipTried(filters.climbBias)) return t('mobile.session.preGeneratorSkipTriedAttempted');
+  return t('mobile.session.preGeneratorSkipTriedDescription');
 }
 
 type WorkoutBlockFiltersProps = {
@@ -95,13 +109,15 @@ type WorkoutBlockFiltersProps = {
 export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFiltersChange }: WorkoutBlockFiltersProps) {
   const { t } = useTranslation('session');
   const { systemColors, variant, m3 } = useTheme();
-  // Skip what I've sent reads your logbook, so it needs an account. Signed out
-  // the search never sees it (`fetchFilters`), and the switch shows it as off.
+  // The skip switches read your logbook, so they need an account. Signed out
+  // the search never sees them (`fetchFilters`), and the switches show them as
+  // off. Skip what I've tried is off under Attempted, which picks tried climbs.
   const { isAuthenticated } = useAuth();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const { tall: showTallClimbsFilter, wide: showWideClimbsFilter } = sizeFilters;
   const showBenchmarksFilter = offersBenchmarksOnly(boardName, filters);
   const skipsSent = isAuthenticated && filters.skipSent === true;
+  const canSkipTried = isAuthenticated && biasCanSkipTried(filters.climbBias);
 
   const minAscentsOptions = useMemo(() => {
     const baseOptions = getMinAscentsFilterOptions();
@@ -109,9 +125,9 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
     return [...baseOptions, filters.minAscents].sort((first, second) => first - second);
   }, [filters.minAscents]);
   const title = t('mobile.session.preGeneratorClimbFilters');
-  // Signed out a stored Skip what I've sent does nothing, so the line leaves it out too.
+  // Signed out a stored skip switch does nothing, so the line leaves it out too.
   const summary = useMemo(
-    () => blockFiltersSummary(isAuthenticated ? filters : { ...filters, skipSent: false }, t),
+    () => blockFiltersSummary(isAuthenticated ? filters : { ...filters, skipSent: false, skipTried: false }, t),
     [filters, isAuthenticated, t],
   );
   // While closed, the title with the line under it, wrapping across the card's
@@ -225,6 +241,20 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
             value={skipsSent}
             disabled={!isAuthenticated}
             onValueChange={(skipSent) => onFiltersChange({ skipSent })}
+          />
+          <View
+            style={[
+              generatorControlStyles.groupDivider,
+              { backgroundColor: isMaterial ? m3.outlineVariant : systemColors.separator },
+            ]}
+          />
+          <SwitchRow
+            label={t('mobile.session.preGeneratorSkipTriedLabel')}
+            description={skipTriedDescription(filters, isAuthenticated, t)}
+            wrapDescription
+            value={canSkipTried && filters.skipTried === true}
+            disabled={!canSkipTried}
+            onValueChange={(skipTried) => onFiltersChange({ skipTried })}
           />
           {showBenchmarksFilter ? (
             <>
