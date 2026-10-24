@@ -850,6 +850,9 @@
       "backToCurrent": "Back to your climb",
       "putOnWall": "Put on the wall",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
+      "previewNotLit": "Preview, not lit",
+      "onlyYouSeeThis": "Only you see this",
+      "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
         "body": "Someone just lit {{name}}. Put yours up instead?",
         "confirm": "Put mine up",

@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { formatTrackLabelParts } from '../track-label-text';
+import { formatBrowseCaption, formatTrackLabelParts, MAX_CAPTION_NAME_LENGTH } from '../track-label-text';
 
 // Interpolates like the real catalog, so the assertions read as the top bar does.
 const STRINGS: Record<string, string> = {
   'playView.track.position': '{{position}} of {{total}}',
   'playView.track.playingFromAria': 'Playing from {{name}}',
   'playView.track.playingFromPositionAria': 'Playing from {{name}}, {{position}} of {{total}}',
+  'playView.wallState.previewNotLit': 'Preview, not lit',
+  'playView.wallState.onlyYouSeeThis': 'Only you see this',
+  'playView.wallState.onlyYouSeeThisWallOn': 'Only you see this · the wall is on {{name}}',
 };
-const t = ((key: string, values: Record<string, string>) =>
+const t = ((key: string, values: Record<string, string> = {}) =>
   (STRINGS[key] ?? key).replace(
     /\{\{(\w+)\}\}/g,
     (_, field: string) => values[field] ?? '',
@@ -43,5 +46,30 @@ describe('formatTrackLabelParts', () => {
     expect(parts?.name).toBe(name);
     expect(parts?.count).toBe('1 of 29,182');
     expect(parts?.accessibilityLabel).toBe(`Playing from ${name}, 1 of 29,182`);
+  });
+});
+
+describe('formatBrowseCaption', () => {
+  it('says nothing when there is nothing to say', () => {
+    expect(formatBrowseCaption(null, t)).toBeNull();
+  });
+
+  it('tells a solo climber the preview is not lit', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t)).toBe('Preview, not lit');
+  });
+
+  it('tells a crew the look is private, and names the climb on the wall', () => {
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: null }, t)).toBe('Only you see this');
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: '   ' }, t)).toBe('Only you see this');
+    expect(formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimp Ladder' }, t)).toBe(
+      'Only you see this · the wall is on Crimp Ladder',
+    );
+  });
+
+  it('cuts a long wall climb name short', () => {
+    const caption = formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimpladder Overhangtraverse Project' }, t);
+    expect(caption).toBe('Only you see this · the wall is on Crimpladder Overhangtra\u2026');
+    const printedName = caption?.slice('Only you see this · the wall is on '.length) ?? '';
+    expect(Array.from(printedName)).toHaveLength(MAX_CAPTION_NAME_LENGTH);
   });
 });

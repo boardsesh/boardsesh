@@ -52,7 +52,7 @@ import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
 import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
-import { formatTrackLabelParts } from './track-label-text';
+import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
@@ -73,6 +73,7 @@ import {
   shouldAdoptLateWallRead,
   shouldArmBusyWallConfirm,
   shouldShowHolderBadge,
+  resolveBrowseCaption,
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
 import { useWallClimb } from './use-wall-climb';
@@ -1192,6 +1193,25 @@ export function PlayCore({
   // the way back. On the wall and Live it opens the explainer.
   const wallPillPress = headerPillState === 'browsing' ? handleBackToLive : handleOpenWallCallout;
 
+  // What looking at this climb does to the wall, while it is only a preview
+  // (`resolveBrowseCaption`): "Preview, not lit", or in a crew "Only you see
+  // this · the wall is on Crimp Ladder". It rides the top bar's second line
+  // (#6745), not the stats line, so it never pushes the sends and stars off;
+  // the top bar does not swipe, so the peeks carry none of their own.
+  const browseCaption = formatBrowseCaption(
+    resolveBrowseCaption({
+      isAnonymous,
+      isPreview,
+      climbUuid: displayedClimbUuid ?? null,
+      committedHeadUuid,
+      wallClimbUuid,
+      wallClimbName: wallClimb.name,
+      inCrew: isSharedSession,
+      wallDriven: lightbulbActive,
+    }),
+    t,
+  );
+
   // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
   // the render board's, which follows the displayed climb).
   //
@@ -1960,7 +1980,7 @@ export function PlayCore({
                         {/* The workout stage or the list the player walks, under the grabber. Takes no
                           touches of its own, but keeps them (no pointerEvents="none"),
                           which on Android would hide it from TalkBack's explore by touch. */}
-                        {topBarParts ? (
+                        {topBarParts || browseCaption ? (
                           <View
                             style={[
                               styles.topListContext,
@@ -1972,7 +1992,11 @@ export function PlayCore({
                               topListContextFrame.measured ? null : styles.topListContextUnmeasured,
                             ]}
                           >
-                            <PlayListContext parts={topBarParts} testID="play-drawer-track-label" />
+                            <PlayListContext
+                              parts={topBarParts}
+                              caption={browseCaption}
+                              testID="play-drawer-track-label"
+                            />
                           </View>
                         ) : null}
                         {/* Mirrored across the grabber from the close chevron: the rest

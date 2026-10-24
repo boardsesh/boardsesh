@@ -170,6 +170,57 @@ export function resolveHeaderPillState({
   return { state: wallPillState, backTarget: null };
 }
 
+/**
+ * The one-line caption on the top bar's second line while a climb is only
+ * being looked at (#6667 panel, confusions 1 and 4; #6745 moved it off the
+ * header's stats line):
+ *
+ * - `preview` — solo: "Preview, not lit". A tap with Light on tap off, or the
+ *   Preview action, shows the climb without lighting it, and nothing else on
+ *   screen said so.
+ * - `crew` — "Only you see this", plus the climb the room has on the wall when
+ *   one is lit, so a crewmate can tell a private look from taking the wall.
+ * - `null` — nothing to say: the climb on screen is lit, or is the climber's
+ *   own current climb, or (solo) no board is connected and nothing is lit, the
+ *   same case the commit button falls back to Set active for.
+ */
+export type BrowseCaption = { kind: 'preview' } | { kind: 'crew'; wallClimbName: string | null } | null;
+
+export type BrowseCaptionInput = {
+  isAnonymous: boolean;
+  /**
+   * The header's climb is a preview: the pinned one, or (for a swipe peek) the
+   * one a view-only swipe would open.
+   */
+  isPreview: boolean;
+  climbUuid: string | null;
+  /** The climber's own committed climb (the queue head), if any. */
+  committedHeadUuid: string | null;
+  /** The climb physically lit on the board, if any. */
+  wallClimbUuid: string | null;
+  wallClimbName: string | null;
+  /** Someone else is in the session. */
+  inCrew: boolean;
+  /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
+  wallDriven: boolean;
+};
+
+export function resolveBrowseCaption({
+  isAnonymous,
+  isPreview,
+  climbUuid,
+  committedHeadUuid,
+  wallClimbUuid,
+  wallClimbName,
+  inCrew,
+  wallDriven,
+}: BrowseCaptionInput): BrowseCaption {
+  if (isAnonymous || !isPreview || climbUuid === null) return null;
+  if (climbUuid === wallClimbUuid || climbUuid === committedHeadUuid) return null;
+  if (inCrew) return { kind: 'crew', wallClimbName: wallClimbUuid !== null ? wallClimbName : null };
+  return wallClimbUuid !== null || wallDriven ? { kind: 'preview' } : null;
+}
+
 /** What the action bar's secondary row is doing. */
 export type CommitBarMode = 'actions' | 'commit';
 
