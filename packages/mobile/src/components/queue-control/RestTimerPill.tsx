@@ -36,7 +36,12 @@ import {
   formatRestTimerTarget,
   isRestTimerTargetExceeded,
 } from '../../lib/rest-timer';
-import { getRestTimerCycleElapsedSeconds } from '../../lib/rest-timer-auto-advance';
+import {
+  getMsUntilNextRestTimerSecond,
+  getRestTimerCountdownLeadSeconds,
+  getRestTimerCycleElapsedSeconds,
+  isRestTimerFinalCountdown,
+} from '../../lib/rest-timer-auto-advance';
 import { REST_TIMER_PILL_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE, REST_CLOCK_MAX_FONT_SCALE } from '../../theme/typography';
@@ -55,28 +60,42 @@ const RESET_ACTION = 'rest-timer-reset';
  *   paused      frozen; the number does not move
  *   queueEnded  an auto-advance found nothing left to advance to
  *   exceeded    past the target — the red state, deliberately NOT green
+ *   final       the last seconds before the target, through 0:00 (#5396): the
+ *               brand tint, so "get on the holds now" is one glance
  *   running     counting up, still inside the target
  */
-export type RestTimerPhase = 'waiting' | 'paused' | 'queueEnded' | 'exceeded' | 'running';
+export type RestTimerPhase = 'waiting' | 'paused' | 'queueEnded' | 'exceeded' | 'final' | 'running';
 
 /**
- * The 1 Hz ticker. Deliberately a component-local `useState` + `setInterval`
+ * The 1 Hz ticker. Deliberately a component-local `useState` + `setTimeout`
  * rather than anything shared: every consumer that calls this re-renders once a
- * second, so it must only ever be called by a leaf. The interval is not created
- * at all while `active` is false (paused, waiting for a tick, disarmed), so a
- * pill that is not counting costs nothing.
+ * second, so it must only ever be called by a leaf. No timer exists at all while
+ * `active` is false (paused, waiting for a tick, disarmed), so a pill that is not
+ * counting costs nothing.
+ *
+ * Each wait runs to the anchor's next whole second, not a flat 1000 ms, so the
+ * digits flip on the same instants the countdown cues land on (#5396). A free
+ * interval started part way through a second shows "0:03" up to a second after
+ * the "3" buzz.
  */
-export function useRestTimerNow(active: boolean): number {
+export function useRestTimerNow(active: boolean, anchorMs: number | null): number {
   const [now, setNow] = useState<number>(() => nowMs());
 
   useEffect(() => {
     if (!active) return undefined;
-    // Re-sample immediately: the pill may have been mounted (or resumed) part
-    // way through a second, and the first interval fire is up to 1 s away.
-    setNow(nowMs());
-    const intervalId = setInterval(() => setNow(nowMs()), 1000);
-    return () => clearInterval(intervalId);
-  }, [active]);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    // Sampled straight away: the pill may have been mounted (or resumed) part
+    // way through a second.
+    const sample = () => {
+      const sampledAtMs = nowMs();
+      setNow(sampledAtMs);
+      timeoutId = setTimeout(sample, getMsUntilNextRestTimerSecond(anchorMs, sampledAtMs));
+    };
+    sample();
+    return () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+  }, [active, anchorMs]);
 
   return now;
 }
@@ -103,6 +122,8 @@ export type RestTimerDisplay = {
   targetLabel: string | null;
   /** In `queueEnded`: it was the end of the list being walked, with the queue still behind it. */
   listEnded: boolean;
+  /** How many seconds the final countdown runs for this rest. 0 with no rest set. */
+  leadSeconds: number;
 };
 
 /**
@@ -116,7 +137,7 @@ export function useRestTimerDisplay(): RestTimerDisplay {
 
   // Only a running timer with something to count from needs a heartbeat.
   const ticking = armed && isRunning && anchorMs !== null;
-  const now = useRestTimerNow(ticking);
+  const now = useRestTimerNow(ticking, anchorMs);
 
   const elapsedSeconds = getRestTimerCycleElapsedSeconds({
     mode,
@@ -128,6 +149,8 @@ export function useRestTimerDisplay(): RestTimerDisplay {
   });
   const hasTarget = targetSeconds !== null && targetSeconds > 0;
   const exceeded = hasTarget && isRestTimerTargetExceeded(elapsedSeconds, targetSeconds);
+  const remainingSeconds = hasTarget ? targetSeconds - elapsedSeconds : null;
+  const leadSeconds = getRestTimerCountdownLeadSeconds(targetSeconds);
 
   const phase: RestTimerPhase = !isRunning
     ? 'paused'
@@ -137,9 +160,9 @@ export function useRestTimerDisplay(): RestTimerDisplay {
         ? 'queueEnded'
         : exceeded
           ? 'exceeded'
-          : 'running';
-
-  const remainingSeconds = hasTarget ? targetSeconds - elapsedSeconds : null;
+          : isRestTimerFinalCountdown(remainingSeconds, leadSeconds)
+            ? 'final'
+            : 'running';
 
   return {
     armed,
@@ -158,6 +181,7 @@ export function useRestTimerDisplay(): RestTimerDisplay {
           : formatRestTimerElapsed(elapsedSeconds),
     targetLabel: hasTarget ? formatRestTimerTarget(targetSeconds) : null,
     listEnded: queueEnded && listEnded,
+    leadSeconds,
   };
 }
 
@@ -197,12 +221,17 @@ type PhaseColorInputs = {
   label: ColorValue;
   secondaryLabel: ColorValue;
   tertiaryLabel: ColorValue;
+  accent: ColorValue;
 };
 
 /**
  * The colour is the state. Past the target the digits go RED — a product
  * decision (you are over your rest, not "done"), so this must never become a
- * success green.
+ * success green. The final countdown is the brand tint, `accent` (#6D28D9
+ * light, #A78BFA dark, a notch further under Increase Contrast on iOS): 4.5:1 or
+ * better on every opaque surface the pill and sheet draw on. Same semibold
+ * digits, no animation: the number counting is the motion, so Reduce Motion has
+ * nothing to turn off.
  */
 function phaseColor(phase: RestTimerPhase, systemColors: PhaseColorInputs, brandColors: { error: string }): ColorValue {
   switch (phase) {
@@ -213,6 +242,8 @@ function phaseColor(phase: RestTimerPhase, systemColors: PhaseColorInputs, brand
       return systemColors.secondaryLabel;
     case 'exceeded':
       return brandColors.error;
+    case 'final':
+      return systemColors.accent;
     case 'running':
       return systemColors.label;
   }
