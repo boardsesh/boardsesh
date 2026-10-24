@@ -152,7 +152,7 @@
   "detail": {
     "share": "Compartir playlist",
     "actions": "Acciones de la playlist",
-    "activateAll": "Iniciar playlist",
+    "activateAll": "Reproducir",
     "addToQueue": {
       "action": "Añadir a la cola",
       "actionCount_one": "Añadir {{count}} a la cola",
