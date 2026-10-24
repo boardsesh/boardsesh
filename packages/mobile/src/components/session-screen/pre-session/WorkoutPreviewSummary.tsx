@@ -10,6 +10,7 @@ import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
+import type { StartQueueSummary } from './workout-start-queue';
 
 type WorkoutPreviewSummaryProps = {
   summary: PlanFillSummary;
@@ -17,15 +18,29 @@ type WorkoutPreviewSummaryProps = {
   onShuffle: () => void;
   /** While the preview rebuilds, a row regenerates, or Start is pending. */
   shuffleDisabled: boolean;
+  /**
+   * The queue Start hands over (`useWorkoutPreview().startQueue`): its climb
+   * count, a 4x4's rounds included, and about how long it takes. Without it the
+   * line counts the rows and gives no time.
+   */
+  startQueue?: StartQueueSummary;
 };
 
 /**
  * The line above the preview rows that says what Start will queue: how many
- * climbs and over which grades, plus a Shuffle that re-picks every climb at the
- * same grades. When a thin catalogue left slots empty, a note says how many of
- * the planned climbs were found, because those are all Start will queue.
+ * climbs (a 4x4's four rows run four rounds, so 16), over which grades, and for
+ * a timed workout about how long it takes, plus a Shuffle that re-picks every
+ * climb at the same grades. When a thin catalogue left slots empty, a note says
+ * how many of the planned climbs were found, because those are all Start will
+ * queue.
  */
-export function WorkoutPreviewSummary({ summary, boardName, onShuffle, shuffleDisabled }: WorkoutPreviewSummaryProps) {
+export function WorkoutPreviewSummary({
+  summary,
+  boardName,
+  onShuffle,
+  shuffleDisabled,
+  startQueue,
+}: WorkoutPreviewSummaryProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors, opacity } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
@@ -35,12 +50,16 @@ export function WorkoutPreviewSummary({ summary, boardName, onShuffle, shuffleDi
   const lowest = formatGradeByDifficultyId(summary.lowestGrade, boardName) ?? String(summary.lowestGrade);
   const highest = formatGradeByDifficultyId(summary.highestGrade, boardName) ?? String(summary.highestGrade);
   const grades = lowest === highest ? lowest : t('mobile.session.preWorkoutPreviewGradeSpan', { lowest, highest });
+  const count = startQueue && startQueue.climbCount > 0 ? startQueue.climbCount : summary.filled;
+  const minutes = startQueue?.estimatedMinutes ?? null;
 
   return (
     <View style={styles.container}>
       <View style={styles.summaryRow}>
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.summaryText}>
-          {t('mobile.session.preWorkoutPreviewSummary', { count: summary.filled, grades })}
+          {minutes === null
+            ? t('mobile.session.preWorkoutPreviewSummary', { count, grades })
+            : t('mobile.session.preWorkoutPreviewSummaryTimed', { count, grades, minutes })}
         </Text>
         <PressableSurface
           onPress={() => {

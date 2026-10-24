@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { Fragment, createElement, type ReactElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WorkoutBlockSpec, WorkoutRun, WorkoutStageFilters } from '@boardsesh/playlist-generator';
 import { DEFAULT_WORKOUT_FILTERS, type GeneratorSelection } from '../../pre-session/workout-blocks';
+import type { StagedQueueItems, StartQueueSummary } from '../../pre-session/workout-start-queue';
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
@@ -40,7 +41,8 @@ const preview = vi.hoisted(() => ({
   refreshingUuids: new Set<string>(),
   refreshSlot: vi.fn(),
   plannedCount: 0,
-  staged: { items: [] as ClimbQueueItem[], run: null as WorkoutRun | null },
+  staged: { items: [], run: null, slotIndexByUuid: new Map(), filledSlotCount: 0 } as StagedQueueItems,
+  startQueue: { climbCount: 0, estimatedMinutes: null } as StartQueueSummary,
 }));
 vi.mock('../../pre-session/use-workout-preview', () => ({
   useWorkoutPreview: (selection: PreviewArgs['selection'], board: unknown, options: PreviewArgs['options']) => {
@@ -53,6 +55,7 @@ vi.mock('../../pre-session/use-workout-preview', () => ({
       plannedCount: on ? preview.plannedCount : 0,
       plannedSlots: [],
       plannedStages: [],
+      startQueue: preview.startQueue,
       regenerate: vi.fn(),
       shuffle: vi.fn(),
       refreshSlot: preview.refreshSlot,
@@ -116,8 +119,9 @@ vi.mock('../../pre-session/WorkoutBlockFields', () => ({
 const sizeFilters = vi.hoisted(() => ({ tall: false, wide: false }));
 vi.mock('../../pre-session/WorkoutBlockFilters', () => ({ sizeFilterAvailability: () => ({ ...sizeFilters }) }));
 vi.mock('../../pre-session/WorkoutPreviewSummary', () => ({
-  WorkoutPreviewSummary: ({ shuffleDisabled }: { shuffleDisabled: boolean }) => {
+  WorkoutPreviewSummary: ({ shuffleDisabled, startQueue }: { shuffleDisabled: boolean; startQueue?: unknown }) => {
     summary.shuffleDisabled = shuffleDisabled;
+    summary.startQueue = startQueue;
     return createElement('div', null, 'summary');
   },
 }));
@@ -149,7 +153,7 @@ type MockRowProps = {
   onRefresh: (uuid: string) => void;
 };
 const rows = vi.hoisted(() => ({ rendered: [] as MockRowProps[] }));
-const summary = vi.hoisted(() => ({ shuffleDisabled: null as boolean | null }));
+const summary = vi.hoisted(() => ({ shuffleDisabled: null as boolean | null, startQueue: undefined as unknown }));
 vi.mock('../../pre-session/WorkoutPreviewRow', () => ({
   WorkoutPreviewRow: (props: MockRowProps) => {
     rows.rendered.push(props);
@@ -236,7 +240,43 @@ function readyPreview(uuids: string[], stageId = 'new-stage-uuid', sections?: st
     slot: { grade: 20, index, section: sections?.[index] ?? 'main' },
   }));
   preview.plannedCount = uuids.length + 1;
-  preview.staged = { items, run: { stages: [{ id: stageId, kind: 'pyramid', itemUuids: uuids, targetGrade: 20 }] } };
+  preview.staged = {
+    items,
+    run: { stages: [{ id: stageId, kind: 'pyramid', itemUuids: uuids, targetGrade: 20 }] },
+    slotIndexByUuid: new Map(uuids.map((uuid, index) => [uuid, index])),
+    filledSlotCount: uuids.length,
+  };
+}
+
+/**
+ * A 4x4 block of `rowUuids` rows, staged for `rounds` rounds: the rows, then a
+ * copy of each per later round, every copy on its row's slot.
+ */
+function readyFourByFourPreview(rowUuids: string[], rounds: number): void {
+  readyPreview(rowUuids);
+  preview.plannedCount = rowUuids.length;
+  const staged = Array.from({ length: rounds }, (_, roundIndex) =>
+    rowUuids.map((uuid, slotIndex) => ({ uuid: roundIndex === 0 ? uuid : `${uuid}-r${roundIndex + 1}`, slotIndex })),
+  ).flat();
+  preview.staged = {
+    items: staged.map(({ uuid }) => climbItem(uuid)),
+    run: {
+      stages: [
+        {
+          id: 'four-stage',
+          kind: 'fourByFour',
+          itemUuids: staged.map(({ uuid }) => uuid),
+          targetGrade: 20,
+          rounds,
+          roundByUuid: Object.fromEntries(
+            staged.map(({ uuid }, index) => [uuid, Math.floor(index / rowUuids.length) + 1]),
+          ),
+        },
+      ],
+    },
+    slotIndexByUuid: new Map(staged.map(({ uuid, slotIndex }) => [uuid, slotIndex])),
+    filledSlotCount: rowUuids.length,
+  };
 }
 
 /** One tap on "Add to session", letting the confirm's storage read settle. */
@@ -270,7 +310,9 @@ beforeEach(() => {
   rows.rendered = [];
   summary.shuffleDisabled = null;
   preview.plannedCount = 0;
-  preview.staged = { items: [], run: null };
+  preview.staged = { items: [], run: null, slotIndexByUuid: new Map(), filledSlotCount: 0 };
+  preview.startQueue = { climbCount: 0, estimatedMinutes: null };
+  summary.startQueue = undefined;
   sheet.modal = null;
   sheet.topBar = null;
   fields.block = null;
@@ -364,10 +406,77 @@ describe('AddWorkoutBlockSheet', () => {
     expect(preview.calls.at(-1)?.selection.blocks[0].filters).toEqual(fields.filters);
   });
 
-  it('offers the workout types only, never a warm-up', () => {
+  describe('block types', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('offers the workout types only, never a warm-up', () => {
+      vi.stubGlobal('__DEV__', false);
+      renderSheet(true);
+
+      expect(fields.blockTypes).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus']);
+    });
+
+    it('adds the timed types where they are offered', () => {
+      vi.stubGlobal('__DEV__', true);
+      renderSheet(true);
+
+      expect(fields.blockTypes).toEqual([
+        'volume',
+        'pyramid',
+        'ladder',
+        'gradeFocus',
+        'onTheMinute',
+        'fourByFour',
+        'limitBouldering',
+      ]);
+    });
+  });
+
+  it('hands the summary line the queue the block adds', () => {
+    preview.startQueue = { climbCount: 16, estimatedMinutes: 25 };
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
     renderSheet(true);
 
-    expect(fields.blockTypes).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus']);
+    expect(summary.startQueue).toEqual({ climbCount: 16, estimatedMinutes: 25 });
+  });
+
+  it("counts a 4x4's rounds as saved climbs and its slots once for what failed", async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    renderSheet(true);
+
+    await press();
+
+    expect(queue.appendQueueItems.mock.calls).toEqual([[preview.staged.items]]);
+    expect(getWorkoutRunForSession('session-1')).toEqual(preview.staged.run);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Session Queue Generated',
+      expect.objectContaining({ savedCount: 16, failedCount: 0 }),
+    );
+  });
+
+  it('counts the slots a nearly full queue left out as failed, never below zero', async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    // Room for 6: round 1 lands whole and two of round 2's copies follow it.
+    queue.appendQueueItems.mockImplementation((items: unknown[]) => Math.min(items.length, 6));
+    renderSheet(true);
+
+    await press();
+    expect(analytics.track).toHaveBeenLastCalledWith(
+      'Session Queue Generated',
+      expect.objectContaining({ savedCount: 6, failedCount: 0 }),
+    );
+  });
+
+  it('counts a slot as failed when not even its first round landed', async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    queue.appendQueueItems.mockImplementation((items: unknown[]) => Math.min(items.length, 3));
+    renderSheet(true);
+
+    await press();
+    expect(analytics.track).toHaveBeenLastCalledWith(
+      'Session Queue Generated',
+      expect.objectContaining({ savedCount: 3, failedCount: 1 }),
+    );
   });
 
   it('asks the preview to pass over the climbs already queued', () => {

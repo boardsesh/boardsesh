@@ -49,10 +49,11 @@ import { sizeFilterAvailability } from '../pre-session/WorkoutBlockFilters';
 import { WorkoutPreviewListRow } from '../pre-session/WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from '../pre-session/WorkoutPreviewSummary';
 import { useWorkoutPreview } from '../pre-session/use-workout-preview';
+import { countFilledSlots } from '../pre-session/workout-start-queue';
 import {
   DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
-  WORKOUT_BLOCK_TYPES,
+  addBlockTypes,
   buildDefaultOptions,
   singleBlockSelection,
   withAvailableSizeFilters,
@@ -64,8 +65,6 @@ import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workou
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { addWorkoutBlock, defaultMidSessionBlock, defaultMidSessionFilters } from './add-workout-block';
 
-/** Workout types only: mid-session the climber is already warm. */
-export const ADD_BLOCK_TYPES: readonly WorkoutBlockType[] = WORKOUT_BLOCK_TYPES.filter((type) => type !== 'warmUp');
 // Keys the one block this sheet edits. Stage ids are minted per plan, so a
 // fixed id never reaches the run.
 const ADD_BLOCK_ID = 'add-block';
@@ -162,6 +161,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     plannedCount,
     plannedSlots,
     plannedStages,
+    startQueue,
     refreshSlot,
     shuffle,
     toStagedQueueItems,
@@ -203,7 +203,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
 
   const handleAdd = useCallback(async () => {
     if (submittedRef.current || !canAdd || !options || !activeBoard || sessionId === null) return;
-    const { items: stagedItems, run: blockRun } = toStagedQueueItems();
+    const { items: stagedItems, run: blockRun, slotIndexByUuid } = toStagedQueueItems();
     if (stagedItems.length === 0 || !blockRun) return;
     submittedRef.current = true;
     setIsSubmitting(true);
@@ -260,7 +260,16 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       boardName: activeBoard.boardType,
       angle: activeBoard.angle,
       savedCount: result.landedCount,
-      failedCount: plannedCount - result.landedCount,
+      // Planned slots with no climb in the queue: the queue keeps the first
+      // `landedCount`, and a 4x4's rounds queue each slot more than once.
+      failedCount: Math.max(
+        0,
+        plannedCount -
+          countFilledSlots(
+            slotIndexByUuid,
+            blockItems.slice(0, result.landedCount).map((item) => item.uuid),
+          ),
+      ),
       stageCount: result.addedStageCount,
       phase: 'in_session',
     });
@@ -357,7 +366,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               boardName={boardName}
               railGrades={railGrades}
               groupLabel={title}
-              blockTypes={ADD_BLOCK_TYPES}
+              // Workout types only: mid-session the climber is already warm.
+              blockTypes={addBlockTypes()}
               filters={effectiveFilters}
               sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}
@@ -375,6 +385,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
               boardName={boardName}
               onShuffle={shuffle}
               shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isSubmitting}
+              startQueue={startQueue}
             />
           ) : null}
           {previewStateMessage ? (
@@ -403,6 +414,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       handleFiltersChange,
       hasPreviewItems,
       planSummary,
+      startQueue,
       shuffle,
       status,
       isRefreshingAnyRow,
