@@ -33,7 +33,9 @@ export function useAscentStatus(
 ): AscentStatusValue | null {
   const logbook = useOptionalBoardLogbook();
   const display = useClimbListTickDisplay();
-  const scopedEntries = useClimbProgressEntries(boardName, climbUuid, angle);
+  // The offline-aware display already owns these marks; keep the hook mounted
+  // without subscribing to the unused scoped bucket.
+  const scopedEntries = useClimbProgressEntries(display ? undefined : boardName, climbUuid, angle);
   const key = logbookClimbAngleKey(climbUuid, angle);
   const entries = display
     ? display.entriesByClimbAngle.get(key)

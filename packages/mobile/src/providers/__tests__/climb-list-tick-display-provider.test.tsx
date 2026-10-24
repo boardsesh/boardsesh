@@ -109,6 +109,8 @@ vi.mock('../../components/ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () =
 
 import { ClimbListTickDisplayProvider } from '../climb-list-tick-display-provider';
 import { ClimbListItemContent, type ClimbListItemClimb } from '../../components/ClimbListItemContent';
+import { ClimbProgressContext } from '../../lib/climb-progress-context';
+import { createClimbProgressStore, type ClimbProgressStore } from '../../lib/climb-progress-store';
 
 function tick(overrides: Partial<LogbookSourceTick> = {}): LogbookEntry {
   return toLogbookEntry({
@@ -140,6 +142,7 @@ const baseClimb = { uuid: 'climb-1', name: 'First row', frames: 'p1r1', difficul
 function renderList(
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, networkMode: 'offlineFirst' } } }),
   rowClimb: ClimbListItemClimb = baseClimb,
+  progressStore: ClimbProgressStore | null = null,
 ) {
   const tree = () => {
     const adapter: BoardAdapter = {
@@ -155,9 +158,18 @@ function renderList(
       <QueryClientProvider client={queryClient}>
         <BoardAdapterProvider value={adapter}>
           <BoardProvider boardName="kilter">
-            <ClimbListTickDisplayProvider boardName="kilter" climbUuids={climbUuids}>
-              <ClimbListItemContent climb={rowClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />
-            </ClimbListTickDisplayProvider>
+            <ClimbProgressContext.Provider value={progressStore}>
+              <ClimbListTickDisplayProvider boardName="kilter" climbUuids={climbUuids}>
+                <ClimbListItemContent
+                  climb={rowClimb}
+                  boardName="kilter"
+                  layoutId={1}
+                  sizeId={1}
+                  setIds="1"
+                  angle={40}
+                />
+              </ClimbListTickDisplayProvider>
+            </ClimbProgressContext.Provider>
           </BoardProvider>
         </BoardAdapterProvider>
       </QueryClientProvider>
@@ -192,6 +204,17 @@ afterEach(() => {
 });
 
 describe('climb-list tick display', () => {
+  it('uses offline display marks without subscribing to an unused scoped tick bucket', async () => {
+    onlineManager.setOnline(false);
+    const progressStore = createClimbProgressStore(0, () => 0);
+    progressStore.publish('kilter', [tick({ status: 'attempt' })]);
+    const subscribe = vi.spyOn(progressStore, 'subscribe');
+    const { container } = renderList(undefined, baseClimb, progressStore);
+    await waitFor(() => expect(hasIcon(container, 'tick.outline')).toBe(true));
+    expect(hasIcon(container, 'ascent.attempt')).toBe(false);
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
   it.each(['send', 'attempt'] as const)(
     'renders a preloaded %s and personal grade on the first row render',
     (status) => {
