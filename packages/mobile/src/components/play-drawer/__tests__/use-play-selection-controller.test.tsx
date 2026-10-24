@@ -378,6 +378,20 @@ describe('similar-climb selection', () => {
     expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
     expect(initialProps.chrome.setIsTickBarActive).toHaveBeenCalledWith(false);
   });
+
+  it('keeps one handler across player moves and keys the track on the climb shown at tap time', () => {
+    const initialProps = inputs();
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    const firstHandler = result.current.handleSimilarClimbPress;
+
+    rerender({ ...initialProps, confirmation: { ...initialProps.confirmation, displayedClimbUuid: 'moved-to' } });
+
+    expect(result.current.handleSimilarClimbPress).toBe(firstHandler);
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), {
+      playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'similar:moved-to' }),
+    });
+  });
 });
 
 // Issue #6664: the end card's "Keep going with your queue" from a committed
