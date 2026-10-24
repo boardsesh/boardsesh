@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useMemo, useSyncExternalStore } from 
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, Stack, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isThemeOverride, isUiVariantPreference } from '@boardsesh/key-value-storage';
 import { Text } from '../../components/Text';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
@@ -10,26 +9,12 @@ import { STORIES } from './registry';
 import { findStory } from './registry-core';
 import { getScenarioOverrides, setScenarioOverrides, subscribeScenarioOverrides } from './scenario-overrides';
 import { isScenarioStory, type ComponentStory, type RegisteredStory, type ScenarioStory } from './types';
+import { useStoryAppearance } from './use-story-appearance';
 
 const HIDDEN_HEADER = { headerShown: false } as const;
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-/**
- * `?theme=dark|light|system` and `?variant=liquidGlass|material|auto` switch the
- * whole app through the real theme setters, so a scenario route opened next is
- * drawn the same way. Both persist on the simulator like a Settings change.
- */
-function useStoryAppearance(themeParam: string | undefined, variantParam: string | undefined): void {
-  const { themeOverride, setThemeOverride, uiVariantPreference, setUiVariant } = useTheme();
-  useEffect(() => {
-    if (isThemeOverride(themeParam) && themeParam !== themeOverride) void setThemeOverride(themeParam);
-  }, [themeParam, themeOverride, setThemeOverride]);
-  useEffect(() => {
-    if (isUiVariantPreference(variantParam) && variantParam !== uiVariantPreference) void setUiVariant(variantParam);
-  }, [variantParam, uiVariantPreference, setUiVariant]);
 }
 
 function logReady(id: string): void {

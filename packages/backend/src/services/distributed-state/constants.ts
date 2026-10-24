@@ -51,6 +51,12 @@ export const KEYS = {
   // moves on before the mutation reaches the server). LPUSH-ed on every
   // current-climb write and trimmed to RECENT_CLIMBS_BUFFER_SIZE.
   sessionRecentClimbs: (sessionId: string) => `boardsesh:session:${sessionId}:recentClimbs`,
+  // HASH { rev, doc }: the session's shared rest clock (#5382). `rev` is the
+  // per-session revision clients order events by; `doc` is the JSON clock, or
+  // '' while it is off (the hash outlives a DISARM, and every write takes at
+  // least restCadenceRevisionFloor, so the revision never goes backwards even
+  // if the hash is lost). Written only by CAS_SESSION_REST_CADENCE_SCRIPT.
+  sessionRestCadence: (sessionId: string) => `boardsesh:session:${sessionId}:restCadence`,
   // Set: instanceId -> set of connectionIds owned by this instance
   instanceConnections: (instanceId: string) => `boardsesh:instance:${instanceId}:conns`,
   // String: instanceId -> heartbeat timestamp

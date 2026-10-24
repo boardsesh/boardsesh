@@ -251,6 +251,46 @@ export const SET_SESSION_BOARD_PATH = `
   }
 `;
 
+// The crew rest clock (#5382). One selection for the mutation payload and the
+// sessionUpdates arm, so a client adopts both through the same mapper. The
+// clock nests under `restCadence` because its field names (mode, source,
+// isRunning...) would otherwise collide with sibling SessionEvent arms.
+const REST_CADENCE_CHANGE_FIELDS = `
+  restCadence {
+    mode
+    targetSeconds
+    autoAdvance
+    advanceOn
+    source
+    isRunning
+    anchorAt
+    pausedElapsedSeconds
+    lastFiredBeatAt
+    lastTickQueueItemUuid
+    lastTickStatus
+    setByParticipantId
+  }
+  revision
+  serverNow
+  isSnapshot
+  action
+`;
+
+// Change the crew rest clock. FIRE carries expectedRevision (compare-and-set);
+// `applied: false` means the change did not land and the wall must not move.
+// Used by the backend's headless test client; the mobile app keeps its own
+// documents in packages/mobile/src/lib/graphql/operations.ts.
+export const SET_SESSION_REST_CADENCE = `
+  mutation SetSessionRestCadence($input: SessionRestCadenceInput!) {
+    setSessionRestCadence(input: $input) {
+      applied
+      change {
+        ${REST_CADENCE_CHANGE_FIELDS}
+      }
+    }
+  }
+`;
+
 export const SET_QUEUE = `
   mutation SetQueue($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput) {
     setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem) {
@@ -395,6 +435,9 @@ export const SESSION_UPDATES = `
       ... on SessionEnded {
         reason
         newPath
+      }
+      ... on SessionRestCadenceChanged {
+        ${REST_CADENCE_CHANGE_FIELDS}
       }
       ... on SessionStatsUpdated {
         sessionId

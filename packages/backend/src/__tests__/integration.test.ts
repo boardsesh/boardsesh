@@ -182,7 +182,9 @@ function collectEvents<T>(client: Client, query: string, count: number, timeout 
         next: (data) => {
           const d = data.data as Record<string, T> | null | undefined;
           const event = d?.queueUpdates || d?.sessionUpdates;
-          if (event && (event as { __typename?: string }).__typename !== 'SessionRosterSnapshot') {
+          // Skip the two subscribe seeds (roster, then the crew rest clock).
+          const typename = (event as { __typename?: string } | undefined)?.__typename;
+          if (event && typename !== 'SessionRosterSnapshot' && typename !== 'SessionRestCadenceChanged') {
             events.push(event);
             if (events.length >= count) {
               clearTimeout(timeoutId);

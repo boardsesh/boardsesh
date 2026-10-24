@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useSessionDetail } from '../../lib/graphql/hooks/use-session-detail';
 import { useStoredUserId } from '../../hooks/use-current-user-id';
-import { getSetting } from '../../settings';
+import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
 import { getNewerTickAt, getLatestUserSessionTickAt } from '../../lib/rest-timer-hydration';
 import {
@@ -56,7 +56,7 @@ export function RestTimerSessionSync() {
     const newerTickAt = getNewerTickAt(state.lastTickAt, hydratedTickAt);
     if (!newerTickAt || newerTickAt === state.lastTickAt) return;
 
-    noteRestTimerTick(newerTickAt, getSetting('restTimerMode'), nowMs());
+    noteRestTimerTick(newerTickAt, getEffectiveRestPacing().mode, nowMs());
   }, [sessionDetail, sessionId, userId]);
 
   return null;

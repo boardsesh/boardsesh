@@ -40,6 +40,7 @@ vi.mock('../services/room-manager', () => ({
       { id: 'climber', userId: 'climber', username: 'Named climber', isLeader: false, connectionState: 'CONNECTED' },
     ],
     getSessionById: async () => ({ boardPath: hooks.path }),
+    getSessionRestCadence: async () => ({ revision: 0, cadence: null }),
   },
 }));
 vi.mock('../services/board-session-privacy', () => ({
@@ -131,6 +132,12 @@ describe('targeted session wall identity refresh', () => {
         __typename: 'SessionRosterSnapshot',
         users: [{ userId: 'climber', username: 'Named climber' }],
       });
+      // The crew rest clock seed always follows the roster seed (#5382).
+      expect(payload(await stream.next()).sessionUpdates).toMatchObject({
+        __typename: 'SessionRestCadenceChanged',
+        isSnapshot: true,
+        restCadence: null,
+      });
       moveWall();
       expect(payload(await stream.next()).sessionUpdates).toMatchObject({
         __typename: 'UserPresenceChanged',
@@ -157,6 +164,7 @@ describe('targeted session wall identity refresh', () => {
     const queueStream = queueSubscriptions.queueUpdates.subscribe(undefined, { sessionId: 'party' }, context);
     try {
       payload(await sessionStream.next());
+      payload(await sessionStream.next());
       payload(await queueStream.next());
       for (const callback of hooks.session)
         callback({
@@ -182,6 +190,7 @@ describe('targeted session wall identity refresh', () => {
   it('re-projects a wall that moved under an unchanged path without sending a path event', async () => {
     const stream = sessionSubscriptions.sessionUpdates.subscribe(undefined, { sessionId: 'party' }, context);
     try {
+      payload(await stream.next());
       payload(await stream.next());
       hooks.path = '/b/foreign/40';
       for (const callback of hooks.session)

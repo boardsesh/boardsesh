@@ -157,6 +157,23 @@ const controls = async () =>
     .from(providerSyncControls)
     .where(inArray(providerSyncControls.userId, [...ACCOUNTS]));
 
+/**
+ * The interactive Aurora runs queued for this file's accounts. The ledger is
+ * shared with every other serial file in the worker database, and some leave
+ * their own `aurora-user-sync` runs behind, so a read by family alone would
+ * count those too.
+ */
+const interactiveRuns = async () =>
+  database
+    .select()
+    .from(backgroundJobRuns)
+    .where(
+      and(
+        eq(backgroundJobRuns.family, 'aurora-user-sync'),
+        sql`${backgroundJobRuns.payload}->>'userId' LIKE 'routine-%'`,
+      ),
+    );
+
 /** A stand-in provider that records who it synced and marks the credential synced through the fence. */
 function recordingSync(synced: string[], afterEach?: (userId: string) => void | Promise<void>) {
   return async (
@@ -386,10 +403,7 @@ describe('provider-routine-cycle', () => {
 
     // The first sync goes to the 30-minute interactive lease; the cycle moves on.
     expect(synced).toEqual(['routine-b']);
-    const interactive = await database
-      .select()
-      .from(backgroundJobRuns)
-      .where(eq(backgroundJobRuns.family, 'aurora-user-sync'));
+    const interactive = await interactiveRuns();
     expect(interactive).toHaveLength(1);
     expect(interactive[0]).toMatchObject({
       role: 'interactive-import',
@@ -405,9 +419,7 @@ describe('provider-routine-cycle', () => {
       .set({ lastSyncAttemptAt: new Date(Date.now() - 3 * 60 * 60 * 1000) })
       .where(eq(auroraCredentials.userId, 'routine-a'));
     expect((await runCycle()).result).toBe('succeeded');
-    expect(
-      await database.select().from(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'aurora-user-sync')),
-    ).toHaveLength(1);
+    expect(await interactiveRuns()).toHaveLength(1);
     expect(synced).toEqual(['routine-b']);
   });
 

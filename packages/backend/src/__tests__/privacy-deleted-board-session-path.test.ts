@@ -55,6 +55,11 @@ async function streamedPaths(userId: string): Promise<string[]> {
   };
   try {
     const seed = await nextPath();
+    // The crew rest clock seed always follows the roster seed (#5382).
+    const { value: restCadenceSeed } = (await stream.next()) as IteratorResult<SessionUpdate>;
+    if (restCadenceSeed.sessionUpdates.__typename !== 'SessionRestCadenceChanged') {
+      throw new Error(`unexpected ${restCadenceSeed.sessionUpdates.__typename}`);
+    }
     pubsub.publishSessionEvent(SESSION_ID, {
       __typename: 'SessionBoardPathChanged',
       boardPath: `/b/${SLUG}/45`,

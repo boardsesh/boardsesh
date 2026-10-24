@@ -26,6 +26,13 @@ export type ScenarioOverrides = {
      */
     isSharedSession?: boolean;
     /**
+     * "Someone else is in this session", flag or no flag: who may move the wall
+     * (the rest timer's auto-advance). Follows `isSharedSession` when left out,
+     * so a crew story is a crew for both; set it on its own to fake a crew with
+     * the browse flag off.
+     */
+    isCrewSession?: boolean;
+    /**
      * A session id for display only. Nothing exists on the server under it,
      * so any request made with it fails.
      */

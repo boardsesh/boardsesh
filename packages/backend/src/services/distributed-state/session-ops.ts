@@ -20,9 +20,11 @@ import {
   REMOVE_PARTICIPANT_SCRIPT,
   MARK_RECONNECTING_IF_IDLE_SCRIPT,
   EVICT_PARTICIPANT_IF_GHOST_SCRIPT,
+  CAS_SESSION_REST_CADENCE_SCRIPT,
 } from './lua-scripts';
 import { electNewLeaderAfterRemoval } from './leader-election';
 import { logger } from '../../utils/logger';
+import { parseRestCadence, type RestCadenceCasResult, type StoredRestCadence } from '../rest-cadence';
 
 /**
  * Join a session. Handles leader election for first member.
@@ -649,6 +651,54 @@ export async function setSessionBoardSerialAndReturnPrevious(
 }
 
 /**
+ * Read the session's shared rest clock. A missing hash is revision 0, clock off.
+ */
+export async function getSessionRestCadence(redis: Redis, sessionId: string): Promise<StoredRestCadence> {
+  validateSessionId(sessionId);
+  const [storedRevision, storedDoc] = await redis.hmget(KEYS.sessionRestCadence(sessionId), 'rev', 'doc');
+  const revision = Number.parseInt(storedRevision ?? '0', 10);
+  return { revision: Number.isFinite(revision) ? revision : 0, cadence: parseRestCadence(storedDoc) };
+}
+
+/**
+ * Compare-and-set the session's shared rest clock: writes `nextDoc` at
+ * max(`expectedRevision` + 1, `minimumRevision`) only when the stored revision
+ * still equals `expectedRevision`, and refreshes the hash's TTL whether it
+ * commits or loses. See CAS_SESSION_REST_CADENCE_SCRIPT.
+ */
+export async function casSessionRestCadence(
+  redis: Redis,
+  sessionId: string,
+  expectedRevision: number,
+  nextDoc: string,
+  minimumRevision: number,
+): Promise<RestCadenceCasResult> {
+  validateSessionId(sessionId);
+  const reply: unknown = await redis.eval(
+    CAS_SESSION_REST_CADENCE_SCRIPT,
+    1,
+    KEYS.sessionRestCadence(sessionId),
+    expectedRevision.toString(),
+    nextDoc,
+    TTL.sessionMembership.toString(),
+    minimumRevision.toString(),
+  );
+  // ioredis maps a nil bulk string to null; the script never returns one today,
+  // so a malformed reply is a script regression and must not reach parsing.
+  if (
+    !Array.isArray(reply) ||
+    reply.length !== 3 ||
+    typeof reply[0] !== 'number' ||
+    typeof reply[1] !== 'number' ||
+    typeof reply[2] !== 'string'
+  ) {
+    throw new Error('Unexpected reply from the rest cadence CAS script');
+  }
+  const [committed, revision, doc] = reply as [number, number, string];
+  return { ok: committed === 1, revision, doc };
+}
+
+/**
  * Push a climbUuid to the per-session recent-climbs ring buffer. Called on
  * every authoritative "current climb" write so confirmClimbOnWall can accept
  * a confirm that arrives after a member has quickly navigated on. LPUSH +
@@ -809,6 +859,7 @@ export async function cleanupEmptySession(redis: Redis, sessionId: string): Prom
   multi.del(KEYS.sessionMembers(sessionId));
   multi.del(KEYS.sessionLeader(sessionId));
   multi.del(KEYS.sessionBoardSerial(sessionId));
+  multi.del(KEYS.sessionRestCadence(sessionId));
   await multi.exec();
 
   logger.info(`[DistributedState] Cleaned up empty session: ${sessionId.slice(0, 8)}`);

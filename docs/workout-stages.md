@@ -268,7 +268,8 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   tick belongs to.
 - **Per-stage pacing.** `RestTimerAutoAdvanceScheduler` runs one rest length for the whole
   session. A stage could carry its own rest and cadence, so a warm-up rests less than a
-  limit block.
+  limit block. Every rest-timer reader already goes through `useEffectiveRestPacing()`, so a
+  stage's pacing plugs in there (`docs/rest-timer.md`).
 - **Limit bouldering** ([#6231](https://github.com/boardsesh/boardsesh/issues/6231)) as its
   own stage kind.
 - **Partner `plan_snapshot`.** Partner workouts (`docs/partner-workouts-internal.md`) map

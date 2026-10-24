@@ -1,7 +1,7 @@
 import type Redis from 'ioredis';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
-import { KEYS } from './distributed-state/constants';
+import { KEYS, TTL } from './distributed-state/constants';
 
 /**
  * Safely parse JSON with fallback for empty strings and malformed data.
@@ -426,6 +426,10 @@ export class RedisSessionStore {
     const multi = this.redis.multi();
     multi.expire(`boardsesh:session:${sessionId}`, this.TTL);
     multi.expire(`boardsesh:session:${sessionId}:users`, this.TTL);
+    // Keep the shared rest clock alive while anyone is connected. If its hash
+    // expired mid-session the clock would read as off for the whole crew.
+    // EXPIRE on a missing key is a no-op.
+    multi.expire(KEYS.sessionRestCadence(sessionId), TTL.sessionMembership);
     multi.zadd('boardsesh:session:recent', Date.now(), sessionId);
     await multi.exec();
   }
@@ -441,6 +445,7 @@ export class RedisSessionStore {
     multi.del(`boardsesh:session:${sessionId}`);
     multi.del(`boardsesh:session:${sessionId}:users`);
     multi.del(KEYS.sessionBoardSerial(sessionId));
+    multi.del(KEYS.sessionRestCadence(sessionId));
     multi.srem('boardsesh:session:active', sessionId);
     multi.zrem('boardsesh:session:recent', sessionId);
     await multi.exec();

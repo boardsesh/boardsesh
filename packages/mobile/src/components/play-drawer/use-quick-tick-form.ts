@@ -1,48 +1,23 @@
-import { hasGraphqlErrorCode } from '@boardsesh/offline-sync/error-classification';
-import { usePublicationAudience } from '../privacy/use-publication-audience';
-// The create-tick form's state, derivations and save path.
+// The create-tick form's state and derivations.
 //
 // Lifted out of QuickTickBar so the two halves of the sheet can live in
 // different slots: the field stack renders in ModalSheet's scroll body, the
 // Attempt/Send pair in its pinned footer. Both read the same form object, so
-// there is still exactly one source of truth for what gets saved.
+// there is still exactly one source of truth for what gets saved. The save
+// itself goes through useTickSaver, the one path every mobile tick takes.
 //
 // Every returned callback has a stable identity — the row subtrees are
 // React.memo'd, and a keystroke in the note must not re-render the grade and
 // tries rails.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  resolveTickBoardContext,
-  createInitialTickState,
-  deriveAscentType,
-  clampAttempts,
-  type QuickTickState,
-  type TickStatus,
-} from '@boardsesh/play-view';
-import {
-  useOptionalBoardActions,
-  useOptionalBoardLogbook,
-  useSaveTick,
-  logbookClimbAngleKey,
-} from '@boardsesh/board-react';
-import { toBoardName, type TickClimbIdentity } from '@boardsesh/board-config';
-import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
+import { createInitialTickState, deriveAscentType, type QuickTickState, type TickStatus } from '@boardsesh/play-view';
+import type { TickClimbIdentity } from '@boardsesh/board-config';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
 import { useToast } from '../../providers/toast-provider';
-import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
-import { getSetting } from '../../settings';
-import { nowMs } from '../../lib/clock';
-import { noteRestTimerTick } from '../../lib/rest-timer-store';
-import { useBoardPresenceControls } from '../../providers/board-presence-provider';
-import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
-import { useIsOffline } from '../../hooks/use-is-offline';
-import { track } from '../../lib/analytics';
-import { hapticError } from '../../lib/haptics';
 import { getDifficultyIdForGradeName } from '../../lib/grade-label';
+import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver, type TickSaver } from './use-tick-saver';
 
 // Read once at module load rather than allocating a fresh createInitialTickState()
 // on every field-snapshot sync (see below) just to read this one default.
@@ -87,7 +62,7 @@ export type QuickTickFormInput = {
 };
 
 export type QuickTickForm = {
-  privacy?: ReturnType<typeof usePublicationAudience>;
+  privacy?: TickSaver['privacy'];
   /** The climb this form is bound to. Surfaced so presentational children can
    *  tell "a new climb loaded" from "the climber changed a field" — the hosting
    *  sheet stays mounted across climbs, so no value change is a reliable signal. */
@@ -153,70 +128,20 @@ export function useQuickTickForm({
 }: QuickTickFormInput): QuickTickForm {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { t: tSettings } = useTranslation('settings');
   const { showToast } = useToast();
-  const privacy = usePublicationAudience(climbUuid);
-  // Only the (stable, memoized) startStopwatch action is used here — depend on
-  // it directly so the save handler isn't recreated on every timer status /
-  // deviceName change.
-  const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
-  const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
-
-  const { data: activeBoard } = useActiveBoard();
-  const liveContext = resolveTickBoardContext(
+  const tickSaver = useTickSaver({
     climb,
-    { boardName, layoutId, sizeId, setIds },
-    activeBoard ? { ...activeBoard, boardName: activeBoard.boardType } : null,
-    boardPresenceEnabled ? boardPresenceBoardId : null,
-  );
-  // The selected wall is a snapshot of opening the form, not a live presence
-  // binding that can move the ascent to another wall while someone types.
-  const contextRef = useRef({ climbUuid, visible, context: liveContext });
-  if (contextRef.current.climbUuid !== climbUuid || (visible && !contextRef.current.visible)) {
-    contextRef.current = { climbUuid, visible, context: liveContext };
-  }
-  contextRef.current.visible = visible;
-  const tickContext = contextRef.current.context;
-  const saveTick = useSaveTick(toBoardName(tickContext.boardName));
-  const { data: grades } = useGrades(tickContext.boardName);
-
-  // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
-  // populated server-side, so we read the user's accumulated logbook
-  // (denormalised via `BoardProvider` → `useLogbook`) directly. Same
-  // logbook source the climb-row status glyph reads.
-  //
-  // Two failure modes the save-button label must guard against:
-  // 1. `BoardProvider` not mounted → no logbook context at all → `Send`.
-  // 2. Provider is mounted but this climb's ticks haven't been fetched
-  //    yet → the lookup returns nothing. We trigger `getLogbook` on mount
-  //    (idempotent thanks to useLogbook's fetched-uuid dedupe) so the
-  //    answer becomes authoritative on the next render after the fetch
-  //    resolves. In the brief window before then the label may still read
-  //    `Flash` for a climb that actually has history — bounded to flows
-  //    that bypass the climbs-index pre-fetch (e.g. deep link to
-  //    /climbs/[uuid]).
-  //
-  // Read the prebuilt `logbookByClimbAngle` index (an O(1) Map lookup the
-  // BoardProvider rebuilds once per logbook change) rather than scanning
-  // the raw `logbook` array — otherwise every logbook merge while this
-  // sheet is open (own tick saves, list paging, peer ticks in a session)
-  // re-runs an O(logbook) scan. Same index `useAscentStatus` reads.
-  const boardActions = useOptionalBoardActions();
-  const boardLogbook = useOptionalBoardLogbook();
-  const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, tickContext.boardName);
-  // Read through a ref so the save handler's identity doesn't change on every
-  // connectivity flip (the file's existing stable-identity idiom). A save that
-  // fails while offline has already exhausted the local write, the retry ladder
-  // and the outbox degrade — the network error's own message is a technical,
-  // English-only string, so say what happened in the climber's language instead.
-  // Online, the error's own message is worth reading and stays.
-  const isOffline = useIsOffline();
-  const isOfflineRef = useRef(isOffline);
-  isOfflineRef.current = isOffline;
-  useEffect(() => {
-    if (!boardActions) return;
-    void boardActions.getLogbook([climbUuid]);
-  }, [boardActions, climbUuid]);
+    climbUuid,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    sessionId,
+    active: visible,
+    surface: 'mobile_quick_tick',
+  });
+  const { save: saveTick, tickBoardName } = tickSaver;
+  const { data: grades } = useGrades(tickBoardName);
 
   // The angle the climber picked in the angle row. It lives as long as the
   // other fields do: cleared with them on a new climb and after a save, kept
@@ -231,25 +156,7 @@ export function useQuickTickForm({
   // are unknown here.
   const atOpeningAngle = selectedAngle === angle;
 
-  const hasPriorHistory = useMemo(() => {
-    // A locally-queued tick that hasn't drained yet still counts as history so
-    // the label stays `Send` while offline.
-    // The pending count is per climb, not per angle, so an offline-queued 40°
-    // tick also reads Send at 45°. Conservative on purpose: a wrong Send costs a
-    // label, a wrong Flash writes a phantom flash.
-    if (localPendingTicks > 0) return true;
-    // No provider → assume history so the label stays `Send` (failure mode 1).
-    if (!boardLogbook) return true;
-    // Not fetched yet → also assume history (failure mode 2). An empty index
-    // lookup can't distinguish "no ticks" from "not loaded", and guessing
-    // "no ticks" offers a green Flash on a climb the user has sent many times;
-    // tapping it in that window writes a phantom flash, which is worse than a
-    // Send label that resolves to Flash a moment later (#3940).
-    if (!boardLogbook.fetchedLogbookClimbUuids.has(climbUuid)) return true;
-    // Flash vs Send asks about the angle being logged, not the one the sheet
-    // opened at: a climb sent at 40° is a flash candidate at 45°.
-    return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, selectedAngle))?.length ?? 0) > 0;
-  }, [boardLogbook, climbUuid, selectedAngle, localPendingTicks]);
+  const hasPriorHistory = useHasPriorTickHistory(climbUuid, tickBoardName, selectedAngle);
 
   const [tickState, setTickState] = useState(createInitialTickState);
   const [comment, setComment] = useState('');
@@ -266,14 +173,12 @@ export function useQuickTickForm({
   // failed. Cleared on the next attempt or on success.
   const [lastError, setLastError] = useState<string | null>(null);
 
+  // The first ascent of a spray climb (#5971). `baseAscensionistCount` is the
+  // count the sheet opened with, so it says nothing about any other angle.
+  const firstAscent = isFirstAscentTick(boardName, baseAscensionistCount) && atOpeningAngle;
   // Resolve the consensus grade *name* (e.g. "V5") to a numeric difficulty
   // id by matching against the loaded grades list. The id is what
   // GradeSingleSelectRail compares against each chip's `difficultyId`.
-  // The first ascent of a spray climb (#5971): nobody has sent it, so the
-  // climber's grade is the one the climb takes. Spray only, where the climbers'
-  // vote is the grade; `baseAscensionistCount` is the count the sheet opened with,
-  // so it says nothing about any other angle.
-  const firstAscent = boardName === 'spray' && baseAscensionistCount === 0 && atOpeningAngle;
   const consensusDifficultyId = useMemo(() => {
     // No outline on a first ascent: whatever grade the climb carries is not a
     // consensus yet, and the climber's grade should be their own. None at another
@@ -366,83 +271,38 @@ export function useQuickTickForm({
 
   const handleSaveWithStatus = useCallback(
     (status: TickStatus) => {
-      if (saveTick.isPending) return;
       // A first-ascent flash or send sets the climb's grade, so it needs one. An
       // attempt sets nothing and goes through.
       if (status !== 'attempt' && saveBlockedByGrade) return;
       setLastError(null);
 
-      // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
-      const finalAttempts = clampAttempts(tickState.attemptCount, status);
-
-      // Hoisted out of the variables object so the rest timer anchors on the
-      // exact instant we send, rather than re-deriving one after onSuccess has
-      // already reset `hasEditedClimbedAtRef`.
+      // Hoisted out of the fields so the rest timer anchors on the exact instant
+      // we send, rather than re-deriving one after onSaved has already reset
+      // `hasEditedClimbedAtRef`.
       // Untouched: log a fresh save-time "now". Edited: honour the pick
       // (clamped, in case the sheet sat open past the chosen minute).
       const climbedAtIso = (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString();
 
-      saveTick.mutate(
+      saveTick(
         {
-          climbUuid,
-          ...(privacy.publication ? { privacy: privacy.publication } : {}),
+          status,
+          attemptCount: tickState.attemptCount,
           angle: selectedAngle,
           isMirror,
-          status,
-          attemptCount: finalAttempts,
-          quality: tickState.quality != null && tickState.quality > 0 ? tickState.quality : null,
-          difficulty: tickState.difficulty ?? null,
           isBenchmark,
+          quality: tickState.quality,
+          difficulty: tickState.difficulty ?? null,
+          comment,
+          climbedAtIso,
           // The count the sheet opened with is the opening angle's senders. Sent
           // with a tick at another angle, it would floor THAT angle's optimistic
           // count at one above the opening angle's (37 senders at 40° shows 38 at
           // a 45° nobody has sent). Without it, the count waits for the server.
           baseAscensionistCount: atOpeningAngle ? baseAscensionistCount : undefined,
-          comment,
-          climbedAt: climbedAtIso,
-          ...(sessionId ? { sessionId } : {}),
-          ...(tickContext.layoutId != null ? { layoutId: tickContext.layoutId } : {}),
-          ...('sizeId' in tickContext ? { sizeId: tickContext.sizeId, setIds: tickContext.setIds } : {}),
-          ...('boardId' in tickContext ? { boardId: tickContext.boardId } : {}),
-          ...('boardUuid' in tickContext ? { boardUuid: tickContext.boardUuid } : {}),
+          gradeName: resolvedGradeName ?? null,
         },
         {
-          onSuccess: () => {
-            // One event per committed tick. This used to fire QuickTickSaved and
-            // TickLogged back to back with the same climb/status, plus a
-            // TickButtonClicked on the way in — four events per tick once
-            // QuickTickOpened is counted. TickLogged is the canonical
-            // cross-platform join event, so it absorbed QuickTickSaved's payload.
-            track(SHARED_EVENTS.TickLogged, {
-              climbUuid,
-              layoutId: layoutId ?? null,
-              // The board the tick was logged on, which is the tick's own board
-              // and not necessarily the active one. `layoutId` cannot classify a
-              // spray wall; this can.
-              ...boardTypeProperty(boardName),
-              status,
-              platform: 'mobile',
-              surface: 'mobile_quick_tick',
-              attemptCount: finalAttempts,
-              hasQuality: tickState.quality != null && tickState.quality > 0,
-              hasDifficulty: tickState.difficulty != null,
-              difficulty: tickState.difficulty ?? null,
-              grade: resolvedGradeName ?? null,
-              hasComment: comment.length > 0,
-            });
-            // No haptic here: the saved toast below plays the success haptic.
-            // Kick off the paired gym timer's stopwatch. No-op unless a Rogue
-            // timer is connected — which only happens while this user is driving
-            // the wall (see RogueTimerProvider), so a passenger's tick can't
-            // touch the timer. Fire-and-forget; never block the save flow.
-            void startTimerStopwatch?.();
-            // Anchor the in-app rest timer on the same instant (#5378). No-op
-            // unless the climber armed it. This runs on the offline-queued
-            // delivery too, which is correct: a rest timer is about when YOU
-            // logged the send, not when the server heard about it. The outbox
-            // drainer replays without this hook, so a tick delivered twenty
-            // minutes later can never reset a live timer.
-            noteRestTimerTick(climbedAtIso, getSetting('restTimerMode'), nowMs());
+          onSaved: () => {
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());
@@ -458,49 +318,26 @@ export function useQuickTickForm({
             if (savedRef) savedRef.current = true;
             onDismiss();
           },
-          onError: (error: unknown) => {
-            hapticError();
-            track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
-            const message = hasGraphqlErrorCode(error, 'PRIVACY_REVISION_CONFLICT')
-              ? tSettings('privacy.revisionChanged')
-              : isOfflineRef.current
-                ? tClimbs('mobile.logAscent.offlineErrorMessage')
-                : isClimbNotFound(error)
-                  ? // The setter deleted it (#5960), or it never existed. The server's
-                    // own words are English-only, so say it in the climber's language.
-                    tClimbs('mobile.logAscent.climbDeletedMessage')
-                  : error instanceof Error && error.message
-                    ? error.message
-                    : tClimbs('mobile.logAscent.errorMessage');
-            setLastError(message);
-          },
+          onFailed: setLastError,
         },
       );
     },
     [
       saveTick,
-      privacy.publication,
       saveBlockedByGrade,
-      climbUuid,
-      boardName,
       selectedAngle,
       isMirror,
       isBenchmark,
       baseAscensionistCount,
       atOpeningAngle,
-      sessionId,
-      layoutId,
-      tickContext,
       tickState,
       comment,
       climbedAt,
       onDismiss,
       showToast,
       tClimbs,
-      tSettings,
       resolvedGradeName,
       savedRef,
-      startTimerStopwatch,
     ],
   );
 
@@ -525,7 +362,7 @@ export function useQuickTickForm({
     resolvedGradeName,
     ascentType,
     saveLabel,
-    isPending: saveTick.isPending,
+    isPending: tickSaver.isPending,
     lastError,
     onQualitySelect: handleQualitySelect,
     onAngleSelect: handleAngleSelect,
@@ -535,14 +372,7 @@ export function useQuickTickForm({
     onClimbedAtChange: handleClimbedAtChange,
     onFutureAdjusted: handleFutureAdjusted,
     onSave: handleSave,
-    privacy,
+    privacy: tickSaver.privacy,
     onAttempt: handleAttempt,
   };
-}
-
-/** A save the server refused because the climb is gone (`saveTick`'s CLIMB_NOT_FOUND). */
-function isClimbNotFound(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const lifted = (error as { extensions?: { code?: unknown } | null }).extensions?.code;
-  return (typeof lifted === 'string' ? lifted : extractGraphqlCode(error)) === 'CLIMB_NOT_FOUND';
 }

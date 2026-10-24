@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   startupScreen: 'climbs',
   hapticFeedbackEnabled: true,
+  restTimerSound: true,
+  restTimerCountdownCues: true,
   notifySessionInvites: true,
   notifyClimbComments: true,
   kioskHintSeen: false,

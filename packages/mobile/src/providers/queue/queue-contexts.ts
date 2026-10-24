@@ -213,6 +213,7 @@ export const QueueContext = createContext<QueueContextValue | null>(null);
  * - useQueueSessionControls(): session id, serial/wall controls, and the member-userId set for party surfaces.
  * - useQueueLiveStats(): high-frequency live stats and roster updates.
  * - useIsSharedSession(): "is anyone else here" — browse-by-default gating.
+ * - useIsCrewSession(): the same roster answer without the browse rollout flag — the wall-driver rule.
  * - useActiveClimbUuid(): row-level active-climb highlighting.
  * - useHasActiveClimb(): presence-only bottom chrome metrics.
  * - usePlaylistSuggestionSource(): playlist peek/suggestion navigation.
@@ -294,6 +295,15 @@ export const QueueLiveStatsContext = createContext<QueueLiveStatsContextValue | 
  */
 type QueueSharedSessionContextValue = {
   isSharedSession: boolean;
+  /**
+   * The roster half of `isSharedSession` alone: someone else is in this session,
+   * past the arming dwell, whatever the `shared-session-browse` flag says. The
+   * flag gates how GESTURES behave in a crew; it must never gate who may move a
+   * crew's wall, or every armed phone in a flag-off crew could advance it.
+   * Read through `useIsCrewSession` by the wall-driver rule
+   * (`lib/session-timer/driver-rule.ts`).
+   */
+  isCrewSession: boolean;
 };
 
 export const QueueSharedSessionContext = createContext<QueueSharedSessionContextValue | null>(null);
@@ -395,6 +405,17 @@ export function useIsSharedSession(): boolean {
   const context = useContext(QueueSharedSessionContext);
   if (!context) throw new Error('useIsSharedSession must be used within QueueProvider');
   return context.isSharedSession;
+}
+
+/**
+ * True when another climber is in this session with me, past the arming dwell —
+ * the crew test for "may my timer move the wall", independent of the browse
+ * rollout flag. See {@link QueueSharedSessionContext}.
+ */
+export function useIsCrewSession(): boolean {
+  const context = useContext(QueueSharedSessionContext);
+  if (!context) throw new Error('useIsCrewSession must be used within QueueProvider');
+  return context.isCrewSession;
 }
 
 export function useActiveClimbUuid(): string | null {

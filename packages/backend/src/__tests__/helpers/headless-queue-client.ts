@@ -34,6 +34,11 @@ import {
 import { mapSubscriptionEnvelopeToAction } from '@boardsesh/queue-runtime';
 import { createQueueMutations, type QueueMutationsActions } from '@boardsesh/queue-react/create-queue-mutations';
 import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import type {
+  SessionRestCadence,
+  SessionRestCadenceInput,
+  SetSessionRestCadencePayload,
+} from '@boardsesh/shared-schema/generated';
 import {
   JOIN_SESSION,
   LEAVE_SESSION,
@@ -41,6 +46,7 @@ import {
   SESSION_UPDATES,
   EVENTS_REPLAY,
   REORDER_QUEUE_ITEM,
+  SET_SESSION_REST_CADENCE,
 } from '@boardsesh/graphql/operations/queue-session';
 import { startServer } from '../../server';
 
@@ -118,7 +124,22 @@ type RawSessionEvent =
   | { __typename: 'SessionBoardSerialChanged'; lastConnectedBoardSerial: string | null }
   | { __typename: 'SessionBoardPathChanged'; boardPath: string; changedByParticipantId: string | null }
   | { __typename: 'SessionEnded'; reason: string; newPath: string | null }
-  | { __typename: 'SessionStatsUpdated'; sessionId: string };
+  | { __typename: 'SessionStatsUpdated'; sessionId: string }
+  | RestCadenceChangedView;
+
+/**
+ * The crew rest clock event (#5382). Every field but `__typename` is optional:
+ * a participant subscribed with a legacy document (no fragment for this type)
+ * receives the bare `__typename` and nothing else.
+ */
+export type RestCadenceChangedView = {
+  __typename: 'SessionRestCadenceChanged';
+  restCadence?: Omit<SessionRestCadence, '__typename'> | null;
+  revision?: number;
+  serverNow?: string;
+  isSnapshot?: boolean;
+  action?: string | null;
+};
 
 type JoinSessionData = {
   joinSession: {
@@ -284,6 +305,8 @@ export class HeadlessParticipant {
   wallConfirmations: Array<{ climbUuid: string; queueItemUuid: string | null }> = [];
   wallDisconnects: Array<{ disconnectedByParticipantId: string | null }> = [];
   boardPathChanges = 0;
+  // Every SessionRestCadenceChanged received, seed included, in arrival order.
+  restCadenceEvents: RestCadenceChangedView[] = [];
 
   // Local queue state — driven by the real reducer
   private state: QueueState;
@@ -310,13 +333,18 @@ export class HeadlessParticipant {
   private unsubQueue?: () => void;
   private unsubSession?: () => void;
 
+  private readonly sessionUpdatesDocument: string;
+
   constructor(
     private readonly url: string,
     readonly sessionId: string,
     readonly username: string,
     boardPath = '/kilter/1/2/3/40',
+    /** Override the sessionUpdates document, e.g. a frozen copy of an installed app's. */
+    { sessionUpdatesDocument = SESSION_UPDATES }: { sessionUpdatesDocument?: string } = {},
   ) {
     this.boardPath = boardPath;
+    this.sessionUpdatesDocument = sessionUpdatesDocument;
     this.state = initialState<Record<string, unknown>>({});
     // Coordinator clientId is overwritten with the backend-assigned clientId on
     // join (echo suppression relies on eventClientId === myClientId).
@@ -426,7 +454,7 @@ export class HeadlessParticipant {
     );
     this.unsubSession = subscribe<{ sessionUpdates: RawSessionEvent }>(
       this.client,
-      { query: SESSION_UPDATES, variables: { sessionId: this.sessionId } },
+      { query: this.sessionUpdatesDocument, variables: { sessionId: this.sessionId } },
       { next: (payload) => this.handleSessionEvent(payload.sessionUpdates), error: () => {}, complete: () => {} },
     );
     return waitFor(() => sawFullSync, { label: `${this.username} FullSync`, timeout: 8000 }).catch(() => {
@@ -455,6 +483,15 @@ export class HeadlessParticipant {
 
   async leave(): Promise<void> {
     await execute(this.client, { query: LEAVE_SESSION });
+  }
+
+  /** Change the session's crew rest clock (#5382) on this participant's socket. */
+  async setRestCadence(input: SessionRestCadenceInput): Promise<SetSessionRestCadencePayload> {
+    const data = await execute<{ setSessionRestCadence: SetSessionRestCadencePayload }>(this.client, {
+      query: SET_SESSION_REST_CADENCE,
+      variables: { input },
+    });
+    return data.setSessionRestCadence;
   }
 
   async dispose(): Promise<void> {
@@ -535,6 +572,9 @@ export class HeadlessParticipant {
       case 'SessionBoardPathChanged':
         this.boardPath = event.boardPath;
         this.boardPathChanges += 1;
+        break;
+      case 'SessionRestCadenceChanged':
+        this.restCadenceEvents.push(event);
         break;
       default:
         break;
