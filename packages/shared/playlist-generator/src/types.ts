@@ -24,6 +24,14 @@ export type BaseGeneratorOptions = {
   minRating: number;
   onlyTallClimbs: boolean;
   onlyWideClimbs: boolean;
+  /**
+   * Leave out every climb the climber has sent at this angle. Off or absent,
+   * climbs they have not sent come first and sent ones only fill what is left.
+   * Optional, so filters stored before it existed still read.
+   */
+  skipSent?: boolean;
+  /** Only benchmark climbs. Optional like `skipSent`; absent means off. */
+  onlyBenchmarks?: boolean;
 };
 
 export type VolumeOptions = {

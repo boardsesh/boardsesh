@@ -1,7 +1,8 @@
-// One block's climb filters: min ascents, min rating, climb bias and, where the
-// board has smaller sizes, tall or wide climbs only. A collapsed disclosure at
-// the bottom of the block's fields, with a one-line summary, so the Record tab's
-// block cards and the in-session "Add a block" sheet both get it.
+// One block's climb filters: min ascents, min rating, climb bias, Skip what I've
+// sent, Benchmarks only where the board has benchmarks and, where the board has
+// smaller sizes, tall or wide climbs only. A collapsed disclosure at the bottom
+// of the block's fields, with a one-line summary, so the Record tab's block
+// cards and the in-session "Add a block" sheet both get it.
 
 import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -19,6 +20,7 @@ import { SegmentedControl } from '../../SegmentedControl';
 import { StarRating } from '../../StarRating';
 import { SwitchRow } from '../../SwitchRow';
 import { Text } from '../../Text';
+import { useAuth } from '../../../providers/auth-provider';
 import { useTheme } from '../../../providers/theme-provider';
 import { selectByVariant } from '../../../theme/variants';
 import { spacing } from '../../../theme/tokens';
@@ -49,10 +51,25 @@ export function sizeFilterAvailability(
   return { tall: scope?.hasShorter ?? false, wide: scope?.hasNarrower ?? false };
 }
 
+// Spray walls have no benchmarks (#5960) and the Woods import brings none.
+const BOARDS_WITHOUT_BENCHMARKS: ReadonlySet<BoardName> = new Set<BoardName>(['spray', 'woods']);
+
+/**
+ * Whether a block on this board shows Benchmarks only: not on a board without
+ * benchmarks, nor while the board is unknown. A switch already on stays, so a
+ * filter picked on another board can still be turned off (the filter sheet's
+ * Collection keeps Benchmarks on a spray wall the same way).
+ */
+export function offersBenchmarksOnly(boardName: BoardName | null, filters: WorkoutFilters): boolean {
+  if (filters.onlyBenchmarks) return true;
+  return boardName !== null && !BOARDS_WITHOUT_BENCHMARKS.has(boardName);
+}
+
 /**
  * The closed disclosure's line, built like ClimbFilterSheet's refineSummary:
- * min ascents · stars · climb bias. Stars render as filled glyphs (a symbol, not
- * translatable copy); "Any" rating shows nothing so the line stays short.
+ * min ascents · stars · climb bias, then Skip sent and Benchmarks when on.
+ * Stars render as filled glyphs (a symbol, not translatable copy); "Any" rating
+ * shows nothing so the line stays short.
  */
 export function blockFiltersSummary(filters: WorkoutFilters, t: Translate): string {
   const parts: string[] = [
@@ -61,28 +78,41 @@ export function blockFiltersSummary(filters: WorkoutFilters, t: Translate): stri
   const ratingValue = getMinRatingPickerValue(filters.minRating);
   if (ratingValue != null && ratingValue > 0) parts.push('★'.repeat(ratingValue));
   parts.push(climbBiasLabel(filters.climbBias, t));
+  if (filters.skipSent) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
+  if (filters.onlyBenchmarks) parts.push(t('mobile.session.preGeneratorOnlyBenchmarksSummary'));
   return parts.join(' · ');
 }
 
 type WorkoutBlockFiltersProps = {
   filters: WorkoutFilters;
+  /** The board the block's climbs come from: Benchmarks only shows where it has benchmarks. */
+  boardName: BoardName | null;
   /** Which size filters the board offers; the others are not shown. */
   sizeFilters: SizeFilterAvailability;
   onFiltersChange: (patch: Partial<WorkoutFilters>) => void;
 };
 
-export function WorkoutBlockFilters({ filters, sizeFilters, onFiltersChange }: WorkoutBlockFiltersProps) {
+export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFiltersChange }: WorkoutBlockFiltersProps) {
   const { t } = useTranslation('session');
   const { systemColors, variant, m3 } = useTheme();
+  // Skip what I've sent reads your logbook, so it needs an account. Signed out
+  // the search never sees it (`fetchFilters`), and the switch shows it as off.
+  const { isAuthenticated } = useAuth();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const { tall: showTallClimbsFilter, wide: showWideClimbsFilter } = sizeFilters;
+  const showBenchmarksFilter = offersBenchmarksOnly(boardName, filters);
+  const skipsSent = isAuthenticated && filters.skipSent === true;
 
   const minAscentsOptions = useMemo(() => {
     const baseOptions = getMinAscentsFilterOptions();
     if (baseOptions.includes(filters.minAscents)) return baseOptions;
     return [...baseOptions, filters.minAscents].sort((first, second) => first - second);
   }, [filters.minAscents]);
-  const summary = useMemo(() => blockFiltersSummary(filters, t), [filters, t]);
+  // Signed out a stored Skip what I've sent does nothing, so the line leaves it out too.
+  const summary = useMemo(
+    () => blockFiltersSummary(isAuthenticated ? filters : { ...filters, skipSent: false }, t),
+    [filters, isAuthenticated, t],
+  );
   const climbBiasOptions = useMemo(
     () => CLIMB_BIAS_OPTIONS.map((climbBias) => ({ key: climbBias, label: climbBiasLabel(climbBias, t) })),
     [t],
@@ -161,6 +191,43 @@ export function WorkoutBlockFilters({ filters, sizeFilters, onFiltersChange }: W
             onSelect={handleClimbBiasSelect}
             accessibilityLabel={t('mobile.session.preGeneratorClimbBias')}
           />
+        </View>
+
+        <View
+          style={[
+            generatorControlStyles.groupedCard,
+            { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill },
+          ]}
+        >
+          <SwitchRow
+            label={t('mobile.session.preGeneratorSkipSentLabel')}
+            description={
+              isAuthenticated
+                ? t('mobile.session.preGeneratorSkipSentDescription')
+                : t('mobile.session.preGeneratorSkipSentSignedOut')
+            }
+            wrapDescription
+            value={skipsSent}
+            disabled={!isAuthenticated}
+            onValueChange={(skipSent) => onFiltersChange({ skipSent })}
+          />
+          {showBenchmarksFilter ? (
+            <>
+              <View
+                style={[
+                  generatorControlStyles.groupDivider,
+                  { backgroundColor: isMaterial ? m3.outlineVariant : systemColors.separator },
+                ]}
+              />
+              <SwitchRow
+                label={t('mobile.session.preGeneratorOnlyBenchmarksLabel')}
+                description={t('mobile.session.preGeneratorOnlyBenchmarksDescription')}
+                wrapDescription
+                value={filters.onlyBenchmarks === true}
+                onValueChange={(onlyBenchmarks) => onFiltersChange({ onlyBenchmarks })}
+              />
+            </>
+          ) : null}
         </View>
 
         {showTallClimbsFilter || showWideClimbsFilter ? (

@@ -403,7 +403,7 @@ export function useWorkoutPreview(
           setStatus('ready');
           return;
         }
-        const { pools, poolDemands } = await buildPoolsReusing(
+        const { pools, poolDemands, poolTopUpTiers } = await buildPoolsReusing(
           plan,
           ctx,
           fetchPoolRef.current,
@@ -415,7 +415,7 @@ export function useWorkoutPreview(
           ? keptRowsFor(plan, rowKeyByStageId, previous.plan, previous.rowKeyByStageId, previous.data.items)
           : [];
         const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools, avoided, keptItems);
-        dataRef.current = { items: nextItems, pools, usedUuids, poolDemands };
+        dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers };
         planRef.current = plan;
         workoutPlanRef.current = workoutPlan;
         committedFetchKeyRef.current = fetchKey;
@@ -484,10 +484,12 @@ export function useWorkoutPreview(
       boardseshGradesRef.current,
     );
     if (committedPreviewKeyRef.current !== currentPreviewKey || planRef.current.length === 0) return;
-    const pools = reshufflePools(dataRef.current.pools, screenshotModeRandom());
+    const { poolDemands, poolTopUpTiers } = dataRef.current;
+    // Within each pool's tiers, so the climbs you have not sent stay first.
+    const pools = reshufflePools(dataRef.current.pools, poolTopUpTiers, screenshotModeRandom());
     const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
     const { items: nextItems, usedUuids } = selectItemsFromPools(planRef.current, pools, avoided);
-    dataRef.current = { items: nextItems, pools, usedUuids, poolDemands: dataRef.current.poolDemands };
+    dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers };
     setItems(nextItems);
   }, []);
 

@@ -177,9 +177,10 @@ every block.
 The preview stamps every slot with its stage's filters and fetches one pool per grade
 and filter set (`workout-preview-pool.ts`, `poolKeyForSlot`). Blocks with equal filters
 share a pool at each grade; a block with its own filters gets its own pool even at a
-grade another block uses. Signed out, climb bias never reaches the search, so it is set
-to `any` in the pool key (`fetchFilters`) and blocks that differ only in bias share a
-pool; the run still records the bias the climber picked.
+grade another block uses. Signed out, climb bias and Skip what I've sent never reach the
+search, so bias is set to `any` and `skipSent` dropped in the pool key (`fetchFilters`),
+and blocks that differ only in those share a pool; the run still records what the
+climber picked.
 
 Every pool at a grade is sized for all the slots at that grade, not only its own. Two
 filter sets at one grade mostly return the same top-quality climbs: a V5 x20 block on
@@ -241,6 +242,52 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   with a climb on the wall, the append writes the whole queue with this phone's current
   climb, so a crew member's wall change that has not reached this phone yet can be
   reverted.
+
+### Sent climbs and benchmarks
+
+Issue [#6232](https://github.com/boardsesh/boardsesh/issues/6232). A pool takes the
+climbs you have not sent first and tops up with the ones you have. `fetchGradePool`
+(`select-climbs-for-plan.ts`) reads the filters' search tiers (`searchTiers`) in order,
+each returning everything the one before it does and more, and stops as soon as the pool
+holds its target (every slot at the grade plus 10, at least 50):
+
+| Climb bias           | Tiers, best first                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Unfamiliar (default) | never tried (`hideAttempted` + `hideCompleted`), then tried but not sent (`hideCompleted`), then sent (no flag) |
+| Attempted            | tried, not sent (`showOnlyAttempted` + `hideCompleted`), then tried and sent (`showOnlyAttempted`)              |
+| Any                  | not sent (`hideCompleted`), then sent (no flag)                                                                 |
+
+A climb a later tier adds is a top-up, named in the pool's `topUpTiers` with the tier it
+came from. A pool is shuffled within each tier (`shuffleByTier`), on the first build and
+on Shuffle, so the rows walk the unsent climbs first and take a sent one only when the
+pool has nothing else. A row refresh picks from the earliest tier that still has a free
+climb. The rows carry the usual sent marks, so a top-up shows as one.
+
+- **Default change.** Unfamiliar used to hide every climb you had tried or sent, so a
+  grade you had climbed out came up short. It is now a preference: those climbs fill in
+  after the new ones. Attempted and Any put unsent climbs first too.
+- **Skip what I've sent** (`skipSent`) keeps only the tiers with `hideCompleted`, so a
+  grade you have sent out shows a shortfall instead of sent climbs. It reads your
+  logbook: signed out the switch is disabled and says why, and the fetch drops it.
+- **Benchmarks only** (`onlyBenchmarks`) adds `onlyBenchmarks: true` to every tier and
+  never falls back to other climbs. It needs no account. It is hidden on spray walls and
+  Woods, which have no benchmarks, except while it is on, so a block brought over from
+  another board can still turn it off. Benchmarks are scarce: a median of 10 per grade on
+  Kilter layout 1, 13 to 41 on Tension and 28 to 65 on MoonBoard
+  ([workout catalogue depth](workout-catalogue-depth.md)), so a 20-climb block shows a
+  shortfall on most boards.
+- **Requests.** A grade the first tier fills costs one request, the same one as before:
+  a switch that is off adds no key, so the screenshot fixtures still replay it. A short
+  grade costs one more request per tier it reads, each paged the usual way. A top-up
+  tier that fails keeps what the earlier tiers found; a failing first tier fails the
+  preview as before. Screenshot captures read the first tier only: the pinned fixture set
+  has no answer for a second tier where the first came back short (Woods, and MoonBoard
+  at the recorded grade). Remove that line and re-record the set to show top-ups there.
+- **Stored filters.** Both fields are optional and left off when off. Filters stored
+  before them still read (`isStageFilters`), the default filters, pool keys and preview
+  keys are what they were, and an older bundle that reads a stored `true` ignores it.
+- **Defaults stay global.** `minAscents 5` and `minRating 2` are unchanged; the
+  measurement behind that is in [workout catalogue depth](workout-catalogue-depth.md).
 
 ## What comes next
 
