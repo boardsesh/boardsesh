@@ -570,13 +570,26 @@ describe('cues', () => {
     expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['warning', 'advance']);
   });
 
-  it('plays no advance cue at the end of the queue, where the wall did not move', () => {
+  // The one gap in "one terminal cue per deadline" (docs/rest-timer.md, Cues):
+  // a dead end shows the toast and plays neither `advance` nor `reached`. The
+  // countdown (#5396) closes it; flip these assertions there, not by accident.
+  it.each([
+    { where: 'the queue', endsAtTrack: false },
+    { where: 'a list', endsAtTrack: true },
+  ])('plays the warning and no terminal cue at the end of $where, where the wall did not move', ({ endsAtTrack }) => {
     canNext = false;
+    atTrackEnd = endsAtTrack;
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
     advance(60_000);
     expect(nextClimb).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(playRestTimerCue).mock.calls.map(([cue]) => cue.kind)).toEqual(['warning']);
+
+    // The latch holds the rest past its mark: still no late `reached`.
+    advance(120_000);
+    expect(cueCount('reached')).toBe(0);
     expect(cueCount('advance')).toBe(0);
   });
 

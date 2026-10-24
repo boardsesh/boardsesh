@@ -5,7 +5,10 @@
 //
 // Invariants the scheduler keeps (docs/rest-timer.md):
 // - Exactly one terminal cue per deadline: `advance` when it called nextClimb(),
-//   `reached` when the rest ran out and the wall did not move.
+//   `reached` when the rest ran out and the wall did not move. One gap today: at
+//   a dead end (the end of the queue or the list) the toast is the only signal
+//   and no terminal cue plays. The countdown (#5396) closes it; a scheduler test
+//   pins the gap until then.
 // - Countdown ticks and the single `warning` never both play for one rest.
 
 import { getSetting } from '../settings';

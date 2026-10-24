@@ -72,12 +72,23 @@ The scheduler names a moment and `playRestTimerCue` decides what it feels and so
 
 Rules the scheduler keeps:
 
-- One terminal cue per deadline: `advance` when `nextClimb()` ran, `reached` when it did not.
-  A dead end (end of the queue or list) moves nothing and plays neither.
+- One terminal cue per deadline: `advance` when `nextClimb()` ran, `reached` when the rest ran
+  out and the wall did not move. One gap today: at a dead end (the end of the queue or the list)
+  the toast is the only signal, so that deadline plays no terminal cue. The countdown PR (#5396)
+  closes it in the reached region it owns; until then a scheduler test pins the gap, so the change
+  is deliberate.
 - Countdown ticks and the single `warning` never both play for one rest.
 - `playRestTimerCue` never throws. The haptic always plays. The sound plays only when
   `isRestTimerSoundAvailable()` and the `restTimerSound` setting are both true, and the player is
   built once, on the first cue that wants it.
+
+## Sound (native train)
+
+On `main` there is no sound: `packages/mobile/src/lib/sounds.ts` is a placeholder whose
+`isSoundSupported()` returns false and `createSoundPlayer()` returns null, so every cue is the
+haptic alone and the Sound setting row stays hidden. Playing a sound needs `expo-audio`, a native
+module, so the body ships in a `[native-train]` PR on `release/next` (#5395). Only that PR edits
+this section and `sounds.ts`.
 
 ## Which phone moves the wall
 
@@ -120,17 +131,17 @@ Several PRs change these files at once, so each owns its region:
 | --- | --- |
 | `rest-timer-pacing.ts`, `use-effective-rest-pacing.ts` | the seam PR; the workout pacing PR adds the stage input, the crew PR the crew input |
 | `rest-timer-cues.ts`, `driver-rule.ts` and their hooks | the seam PR |
-| `sounds.ts` and the `## Sound (native train)` section below | the native train PR only, until the merge-back |
+| `sounds.ts` and the `## Sound (native train)` section | the native train PR only, until the merge-back |
 | Scheduler: the pacing and driver reads, the cue calls | the seam PR |
 | Scheduler: the fire's anchor and the advance-rule check | the workout pacing PR |
 | Scheduler: the warning, reached and keep-awake region | the countdown PR |
 | Scheduler: the fire's crew compare-and-set, the AppState effect | the crew PR |
 | `RestTimerSheet.tsx` lines the release train changed | nobody on `main` until the merge-back |
+| A `## Countdown` section, directly above `## Settings` | the countdown PR |
+| `## Settings`, and a Timers page section directly after it | the Timers page PR |
+| The session timer and Rogue sections, directly above `## Who edits what` | the Rogue timer PR |
 
-## Sound (native train)
-
-On `main` there is no sound: `packages/mobile/src/lib/sounds.ts` is a placeholder whose
-`isSoundSupported()` returns false and `createSoundPlayer()` returns null, so every cue is the
-haptic alone and the Sound setting row stays hidden. Playing a sound needs `expo-audio`, a native
-module, so the body ships in a `[native-train]` PR on `release/next` (#5395). Only that PR edits
-this section and `sounds.ts`.
+New sections go at those anchors, never at the end of the file and never against
+`## Sound (native train)`. The Release Train Sync merges `main` into `release/next` on every push
+to `main` and hourly, and git reads a `main` edit that touches the train's lines, or sits directly
+against them, as a conflict. One untouched line between the two edits is enough for a clean merge.
