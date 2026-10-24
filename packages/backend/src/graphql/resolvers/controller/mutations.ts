@@ -23,7 +23,7 @@ import {
 import { withQueueVersionRetry } from '../shared/queue-retry';
 import { capHistory, historyLine, normaliseOrphanCurrent, placeOnWall, upNextStart } from '@boardsesh/queue';
 import { isNowSlotSession } from '../../../services/queue-now-slot-rollout';
-import { publishFullSync } from '../../../services/queue-now-slot-events';
+import { publishFullSync, publishTrailingCurrentClimb } from '../../../services/queue-now-slot-events';
 import { randomBytes, randomUUID } from 'crypto';
 import { matchClimbByFrames, getClimbByUuid } from '../../../db/queries/climbs';
 import { roomManager } from '../../../services/room-manager';
@@ -407,13 +407,19 @@ export const controllerMutations = {
     // mid-navigation is retried against the new queue instead of being
     // overwritten by one derived from the old one (#3906). `update` is null on
     // the paths that don't write (empty queue, already at an end).
-    const outcome = await withQueueVersionRetry('navigateQueue', sessionId, async (currentState) => {
-      const { queue, currentClimbQueueItem } = currentState;
-
-      if (queue.length === 0) {
+    //
+    // F3 (invariant 1): a stored orphan current climb (a room written before
+    // F3) is inserted at the line first, so the move keeps it in History and
+    // the write publishes a `FullSync` instead of the pointer event. Next and
+    // Previous land on the same climb either way.
+    const outcome = await withQueueVersionRetry('navigateQueue', sessionId, async (storedState) => {
+      if (storedState.queue.length === 0) {
         logger.info(`[Controller] Navigate: queue is empty`);
-        return { item: null, update: null };
+        return { item: null, update: null, queue: storedState.queue, normalised: false };
       }
+
+      const currentState = { ...storedState, ...normaliseOrphanCurrent(storedState) };
+      const { queue, currentClimbQueueItem } = currentState;
 
       let newCurrentClimb: ClimbQueueItem;
       let targetIndex: number;
@@ -437,7 +443,7 @@ export const controllerMutations = {
             currentState.version,
             targetIndex,
           );
-          return { item: newCurrentClimb, update: updated };
+          return { item: newCurrentClimb, update: updated, queue, normalised: currentState.normalised };
         }
       }
 
@@ -470,14 +476,14 @@ export const controllerMutations = {
             targetIndex = firstUpNext;
           } else if (stopAtEnds) {
             logger.info(`[Controller] Navigate next: nothing current and Up next is empty`);
-            return { item: null, update: null };
+            return { item: null, update: null, queue, normalised: false };
           } else {
             targetIndex = 0;
           }
         } else if (currentIndex >= queue.length - 1) {
           // Already at end, stay there
           logger.info(`[Controller] Navigate next: already at end of queue`);
-          return { item: queue[currentIndex], update: null }; // Return the climb at current index
+          return { item: queue[currentIndex], update: null, queue, normalised: false }; // Return the climb at current index
         } else {
           targetIndex = currentIndex + 1;
         }
@@ -488,14 +494,14 @@ export const controllerMutations = {
             targetIndex = lastHistory;
           } else if (stopAtEnds) {
             logger.info(`[Controller] Navigate previous: nothing current and History is empty`);
-            return { item: null, update: null };
+            return { item: null, update: null, queue, normalised: false };
           } else {
             targetIndex = queue.length - 1;
           }
         } else if (currentIndex <= 0) {
           // Already at beginning, stay there
           logger.info(`[Controller] Navigate previous: already at start of queue`);
-          return { item: queue[currentIndex], update: null }; // Return the climb at current index
+          return { item: queue[currentIndex], update: null, queue, normalised: false }; // Return the climb at current index
         } else {
           targetIndex = currentIndex - 1;
         }
@@ -517,7 +523,7 @@ export const controllerMutations = {
         currentState.version,
         targetIndex,
       );
-      return { item: newCurrentClimb, update: updated };
+      return { item: newCurrentClimb, update: updated, queue, normalised: currentState.normalised };
     });
 
     // A controller's context has no session of its own, so the item's
@@ -529,6 +535,15 @@ export const controllerMutations = {
         await sessionVisibleUserIds(queueItemUserIds([outcome.item]), ctx.userId, sessionId),
       );
     if (!outcome.item || !outcome.update) {
+      return projectedItem;
+    }
+
+    // A move that also normalised an orphan reshaped the array: FullSync, then
+    // the same-sequence trailing CurrentClimbChanged (clientId null, so the
+    // ESP32 still gets its LedUpdate).
+    if (outcome.normalised) {
+      publishFullSync(pubsub, sessionId, outcome.update, outcome.queue, outcome.item);
+      publishTrailingCurrentClimb(pubsub, sessionId, outcome.update, outcome.item, null);
       return projectedItem;
     }
 

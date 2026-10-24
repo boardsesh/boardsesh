@@ -88,7 +88,10 @@ function storedLine(queue: ClimbQueueItem[], currentClimbQueueItem: ClimbQueueIt
  * fields in, and `board_session_queues` has no column for them (no migration,
  * section 2). They live here, keyed by session, and count only while the row's
  * version still matches. After a restart the line comes back as derived.
+ * Bounded: past {@link MAX_POSTGRES_ONLY_LINES} sessions the least recently
+ * written is forgotten, and its line comes back as derived too.
  */
+const MAX_POSTGRES_ONLY_LINES = 5000;
 const postgresOnlyLines = new Map<
   string,
   { version: number; historyCount: number; currentUuid: string | null; currentChangedAt: string }
@@ -104,7 +107,13 @@ function rememberPostgresOnlyLine(
   const previous = postgresOnlyLines.get(sessionId);
   const currentChangedAt =
     previous && previous.currentUuid === currentUuid ? previous.currentChangedAt : new Date().toISOString();
+  // Delete first so the Map's insertion order is least recently written first.
+  postgresOnlyLines.delete(sessionId);
   postgresOnlyLines.set(sessionId, { version, historyCount, currentUuid, currentChangedAt });
+  if (postgresOnlyLines.size > MAX_POSTGRES_ONLY_LINES) {
+    const oldestSessionId = postgresOnlyLines.keys().next().value;
+    if (oldestSessionId !== undefined) postgresOnlyLines.delete(oldestSessionId);
+  }
   return currentChangedAt;
 }
 

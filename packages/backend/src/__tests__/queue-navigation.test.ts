@@ -28,7 +28,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { setCurrentClimbAndPublish } from '../services/queue-navigation';
+import { navigateToQueueItem, setCurrentClimbAndPublish } from '../services/queue-navigation';
 import type { RoomManager } from '../services/room-manager/room-manager';
 import type { pubsub as PubSubInstance } from '../pubsub/index';
 // The mocked room manager + pubsub satisfy only the slice of the interfaces
@@ -621,6 +621,52 @@ describe('setCurrentClimbAndPublish — F3 Now slot', () => {
       expect(room.room.currentClimbQueueItem).toBeNull();
       expect(room.room.historyCount).toBe(2);
     });
+  });
+});
+
+describe('navigateToQueueItem — F3 orphan normalisation', () => {
+  const itemA = wallItem('a');
+  const itemC = wallItem('c');
+  const itemD = wallItem('d');
+
+  async function navigate(room: ReturnType<typeof makeRoom>, targetIndex: number) {
+    const pubsubMock = makePubsub();
+    const result = await navigateToQueueItem(
+      'session-f3',
+      targetIndex,
+      room.roomManager as unknown as RoomManager,
+      pubsubMock as unknown as typeof PubSubInstance,
+      'client-widget',
+      'corr-widget',
+    );
+    return { result, events: publishedEvents(pubsubMock) };
+  }
+
+  it('keeps a pre-F3 orphan in History on a widget Next and publishes FullSync + trailing', async () => {
+    // Stored before F3: [A | C D] with orphan X current, line 1. The widget's
+    // Next reads queue[historyCount] = C.
+    const orphan = wallItem('orphan');
+    const room = makeRoom({ queue: [itemA, itemC, itemD], current: orphan, historyCount: 1 });
+    const { result, events } = await navigate(room, 1);
+
+    expect(result?.item.uuid).toBe('c');
+    expect(uuidsOf(room.room.queue)).toEqual(['a', 'orphan', 'c', 'd']);
+    expect(room.room.currentClimbQueueItem?.uuid).toBe('c');
+    expect(room.room.historyCount).toBe(2);
+    expect(events.map(({ event }) => event.__typename)).toEqual(['FullSync', 'CurrentClimbChanged']);
+    expect(events[1].options).toEqual({ buffer: false });
+    expect(events[1].event.correlationId).toBeNull();
+  });
+
+  it('keeps the pointer event when nothing needed normalising', async () => {
+    const room = makeRoom({ queue: [itemA, itemC, itemD], current: itemA });
+    const { result, events } = await navigate(room, 1);
+
+    expect(result?.item.uuid).toBe('c');
+    expect(uuidsOf(room.room.queue)).toEqual(['a', 'c', 'd']);
+    expect(room.room.historyCount).toBe(1);
+    expect(events).toHaveLength(1);
+    expect(events[0].event).toMatchObject({ __typename: 'CurrentClimbChanged', correlationId: 'corr-widget' });
   });
 });
 

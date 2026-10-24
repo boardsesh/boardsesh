@@ -394,6 +394,44 @@ describe('navigateQueue mutation', () => {
         expect(result!.uuid).toBe(history.uuid);
       });
 
+      it('a pre-F3 orphan current climb stays in History on "next", with FullSync + trailing', async () => {
+        const history = createMockQueueItem({ climb: createMockClimb({ name: 'History' }) });
+        const upNext = createMockQueueItem({ climb: createMockClimb({ name: 'Up next' }) });
+        const orphan = createMockQueueItem({ climb: createMockClimb({ name: 'Orphan' }) });
+        getQueueStateSpy.mockResolvedValue({
+          queue: [history, upNext],
+          currentClimbQueueItem: orphan,
+          historyCount: 1,
+          version: 1,
+          sequence: 1,
+          stateHash: 'test-hash',
+        });
+        updateQueueStateSpy.mockResolvedValue({
+          version: 2,
+          sequence: 2,
+          stateHash: 'new-hash',
+          stateHashOrdered: 'new-ordered',
+          historyCount: 2,
+        });
+        const controllerCtx = createControllerContext(registeredController.controllerId, registeredController.apiKey);
+        const result = await controllerMutations.navigateQueue(
+          undefined,
+          { sessionId: TEST_SESSION_ID, direction: 'next', currentClimbUuid: orphan.uuid },
+          controllerCtx,
+        );
+        expect(result!.uuid).toBe(upNext.uuid);
+        expect(updateQueueStateSpy).toHaveBeenCalledWith(
+          TEST_SESSION_ID,
+          [history, orphan, upNext],
+          expect.objectContaining({ uuid: upNext.uuid }),
+          1,
+          2,
+        );
+        const publishedCalls = publishSpy.mock.calls as unknown as [string, { __typename: string }, unknown?][];
+        expect(publishedCalls.map(([, event]) => event.__typename)).toEqual(['FullSync', 'CurrentClimbChanged']);
+        expect(publishedCalls[1][2]).toEqual({ buffer: false });
+      });
+
       it('inside the percent, "next" with Up next empty stops instead of jumping to queue[0]', async () => {
         process.env.QUEUE_NOW_SLOT_PERCENT = '100';
         const history = createMockQueueItem({ climb: createMockClimb({ name: 'History' }) });

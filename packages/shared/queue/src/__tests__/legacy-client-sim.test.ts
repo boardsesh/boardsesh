@@ -828,22 +828,28 @@ class SimServer {
     const line = normaliseHistoryCount(historyCount, queue, current) ?? derivedLine;
     const normalised = normaliseOrphanCurrent({ queue, currentClimbQueueItem: current, historyCount: line });
 
-    let next: ServerState = normalised;
+    let next: ServerState;
     if (historyCount !== undefined || this.percent === 100) {
       const capped = capHistory(normalised);
-      if (capped.currentClimbQueueItem && isUpNextFull(capped, 0)) return false;
-      // With nothing current the excess comes off the head instead of throwing.
-      // The climb on the wall doesn't count toward the cap.
-      const excess = Math.max(historyAndUpNextCount(capped) - MAX_SYNCED_QUEUE_ITEMS, 0);
+      // History goes first; Up next is never trimmed, current climb or not.
+      if (isUpNextFull(capped, 0)) return false;
+      next = capped;
+      if (capped.trimmedCount > 0) this.stats.trims += 1;
+    } else {
+      // Outside the caps the raw guard is 501 entries when the payload's
+      // current climb is in it, else 500 (the climb on the wall is extra). An
+      // orphan inserted into a full payload becomes that extra entry.
+      const currentInPayload = queue.some(({ uuid }) => uuid === current?.uuid);
+      if (queue.length > MAX_SYNCED_QUEUE_ITEMS + (currentInPayload ? 1 : 0)) return false;
+      const overflow = Math.min(
+        Math.max(historyAndUpNextCount(normalised) - MAX_SYNCED_QUEUE_ITEMS, 0),
+        historyLine(normalised),
+      );
       next = {
-        queue: capped.queue.slice(excess),
-        currentClimbQueueItem: capped.currentClimbQueueItem,
-        historyCount: lineAfterDelta(capped, { kind: 'trim', count: excess }),
+        queue: normalised.queue.slice(overflow),
+        currentClimbQueueItem: normalised.currentClimbQueueItem,
+        historyCount: lineAfterDelta(normalised, { kind: 'trim', count: overflow }),
       };
-      if (capped.trimmedCount + excess > 0) this.stats.trims += 1;
-    } else if (queue.length > MAX_SYNCED_QUEUE_ITEMS + (queue.some(({ uuid }) => uuid === current?.uuid) ? 1 : 0)) {
-      // The raw guard: 501 entries when the payload's current climb is in it, else 500.
-      return false;
     }
     const stored = this.commit(next);
     this.publish([{ event: fullSyncOf(stored), stored }], originId);

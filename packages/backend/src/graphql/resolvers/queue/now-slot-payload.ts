@@ -1,11 +1,15 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import { GraphQLError } from 'graphql';
 import {
   capHistory,
+  historyLine,
   historyOf,
   isUpNextFull,
+  lineAfterDelta,
   normaliseHistoryCount,
   normaliseOrphanCurrent,
   MAX_SYNCED_QUEUE_ITEMS,
+  QUEUE_FULL,
   type NowSlotState,
 } from '@boardsesh/queue';
 
@@ -17,9 +21,17 @@ import {
  */
 export const MAX_RAW_PAYLOAD_ITEMS = 1000;
 
-export class UpNextOverCapError extends Error {
+/**
+ * A whole-queue payload whose Now + Up next alone are over
+ * `MAX_SYNCED_QUEUE_ITEMS`. Carries the same `extensions.code` as
+ * `addQueueItem`'s rejection (`QUEUE_FULL`), so a client can tell it apart
+ * from a malformed payload.
+ */
+export class UpNextOverCapError extends GraphQLError {
   constructor(nowAndUpNextCount: number) {
-    super(`Invalid queue: Now and Up next hold ${nowAndUpNextCount} climbs, over ${MAX_SYNCED_QUEUE_ITEMS}`);
+    super(`Invalid queue: Now and Up next hold ${nowAndUpNextCount} climbs, over ${MAX_SYNCED_QUEUE_ITEMS}`, {
+      extensions: { code: QUEUE_FULL },
+    });
     this.name = 'UpNextOverCapError';
   }
 }
@@ -76,9 +88,14 @@ export function payloadNeedsStoredLine(
  *    (an old solo snapshot) is inserted at that line, never cleared and never
  *    appended. A seed of only a current climb becomes `[current]`.
  * 3. With `capsApply`: History is trimmed (100 kept, trimmed at 125, and
- *    further while the array is over 500). With a climb current, Now and Up
- *    next alone over 500 throws; with nothing current the excess comes off
- *    the head of the array and the line moves down with it.
+ *    further while the array is over 500). Up next is never trimmed: when Now
+ *    and Up next alone are over 500 (a climb current or not) the payload is
+ *    rejected with {@link UpNextOverCapError}, as today's 500 check did.
+ * 4. Without `capsApply`, the payload is stored as sent except that an array
+ *    over 500 (an orphan inserted into a 500-item payload, or merge
+ *    survivors) loses its oldest History entries down to 500, so the phone's
+ *    next placement-less `setQueue` isn't rejected. With no History to trim it
+ *    is stored over the cap (a percent-0 residual, section 5).
  */
 export function composeQueuePayload(input: {
   queue: ClimbQueueItem[];
@@ -94,36 +111,29 @@ export function composeQueuePayload(input: {
   const normalised = normaliseOrphanCurrent({ queue, currentClimbQueueItem, historyCount: line });
 
   if (!capsApply) {
+    const overflow = normalised.queue.length - MAX_SYNCED_QUEUE_ITEMS;
+    const trimmedCount = overflow > 0 ? Math.min(overflow, historyLine(normalised)) : 0;
     return {
-      queue: normalised.queue,
+      queue: normalised.queue.slice(trimmedCount),
       currentClimbQueueItem: normalised.currentClimbQueueItem,
-      historyCount: normalised.historyCount,
+      historyCount: lineAfterDelta(normalised, { kind: 'trim', count: trimmedCount }),
       orphanInserted: normalised.normalised,
-      trimmedCount: 0,
+      trimmedCount,
     };
   }
 
+  // After the trim, anything still over the cap is Now and Up next: History
+  // goes first, all of it if needed.
   const capped = capHistory(normalised, 0);
-  let cappedQueue = capped.queue;
-  let cappedLine = capped.historyCount;
-  let trimmedCount = capped.trimmedCount;
-
-  if (capped.currentClimbQueueItem) {
-    if (isUpNextFull(capped, 0)) {
-      throw new UpNextOverCapError(capped.queue.length - capped.historyCount);
-    }
-  } else if (cappedQueue.length > MAX_SYNCED_QUEUE_ITEMS) {
-    const excess = cappedQueue.length - MAX_SYNCED_QUEUE_ITEMS;
-    cappedQueue = cappedQueue.slice(excess);
-    cappedLine = Math.max(cappedLine - excess, 0);
-    trimmedCount += excess;
+  if (isUpNextFull(capped, 0)) {
+    throw new UpNextOverCapError(capped.queue.length - historyLine(capped));
   }
 
   return {
-    queue: cappedQueue,
+    queue: capped.queue,
     currentClimbQueueItem: capped.currentClimbQueueItem,
-    historyCount: cappedLine,
+    historyCount: capped.historyCount,
     orphanInserted: normalised.normalised,
-    trimmedCount,
+    trimmedCount: capped.trimmedCount,
   };
 }

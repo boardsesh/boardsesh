@@ -242,6 +242,12 @@ export async function setCurrentClimbAndPublish(
  * REST widget-navigate endpoint so the optimistic-locking + event-publish
  * behaviour stays in one place.
  *
+ * `targetIndex` indexes the stored array, as the caller read it. A stored
+ * orphan current climb (a room written before F3) is inserted at the line
+ * first (invariant 1), so it stays in History instead of vanishing; that
+ * write publishes a `FullSync` plus the same-sequence trailing
+ * `CurrentClimbChanged` instead of the pointer event.
+ *
  * Returns the selected item and the resulting sequence number, or `null` when
  * the target index is out of bounds / the queue is empty.
  */
@@ -253,10 +259,12 @@ export async function navigateToQueueItem(
   clientId?: string,
   correlationId?: string,
 ): Promise<{ item: ClimbQueueItem; sequence: number } | null> {
-  let resultItem: ClimbQueueItem | null = null;
-  let resultSequence = 0;
-  let resultStateHash = '';
-  let resultStateHashOrdered = '';
+  let navigation: {
+    item: ClimbQueueItem;
+    queue: ClimbQueueItem[];
+    write: QueueWriteResult;
+    normalised: boolean;
+  } | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const currentState = await roomManager.getQueueState(sessionId);
@@ -268,14 +276,13 @@ export async function navigateToQueueItem(
     }
 
     const item = queue[targetIndex];
+    const normalised = normaliseOrphanCurrent(currentState);
+    const itemIndex = normalised.queue.findIndex((queueItem) => queueItem.uuid === item.uuid);
 
     try {
       // The target becomes current, so the line is its index (F3).
-      const result = await roomManager.updateQueueState(sessionId, queue, item, version, targetIndex);
-      resultItem = item;
-      resultSequence = result.sequence;
-      resultStateHash = result.stateHash;
-      resultStateHashOrdered = result.stateHashOrdered;
+      const write = await roomManager.updateQueueState(sessionId, normalised.queue, item, version, itemIndex);
+      navigation = { item, queue: normalised.queue, write, normalised: normalised.normalised };
       break; // success
     } catch (error) {
       if (error instanceof VersionConflictError && attempt < MAX_RETRIES - 1) {
@@ -285,21 +292,27 @@ export async function navigateToQueueItem(
     }
   }
 
-  if (resultItem) {
-    // Record the climb in the session's recent-climbs ring buffer so a
-    // confirmClimbOnWall arriving after a quick navigate-on still correlates.
-    // See setCurrentClimbAndPublish above for the rationale.
-    await roomManager.pushRecentClimb(sessionId, resultItem.climb.uuid).catch(() => undefined);
+  if (!navigation) return null;
+
+  const { item, queue, write, normalised } = navigation;
+  // Record the climb in the session's recent-climbs ring buffer so a
+  // confirmClimbOnWall arriving after a quick navigate-on still correlates.
+  // See setCurrentClimbAndPublish above for the rationale.
+  await roomManager.pushRecentClimb(sessionId, item.climb.uuid).catch(() => undefined);
+  if (normalised) {
+    publishFullSync(pubsub, sessionId, write, queue, item);
+    publishTrailingCurrentClimb(pubsub, sessionId, write, item, clientId ?? null);
+  } else {
     pubsub.publishQueueEvent(sessionId, {
       __typename: 'CurrentClimbChanged',
-      sequence: resultSequence,
-      stateHash: resultStateHash,
-      stateHashOrdered: resultStateHashOrdered,
-      item: resultItem,
+      sequence: write.sequence,
+      stateHash: write.stateHash,
+      stateHashOrdered: write.stateHashOrdered,
+      item,
       clientId: clientId ?? null,
       correlationId: correlationId ?? null,
     });
   }
 
-  return resultItem ? { item: resultItem, sequence: resultSequence } : null;
+  return { item, sequence: write.sequence };
 }
