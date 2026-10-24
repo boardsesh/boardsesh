@@ -762,20 +762,23 @@ class SimServer {
     const line = normaliseHistoryCount(historyCount, queue, current) ?? derivedLine;
     const normalised = normaliseOrphanCurrent({ queue, currentClimbQueueItem: current, historyCount: line });
 
-    let next: ServerState = normalised;
+    let next: ServerState;
     if (historyCount !== undefined || this.percent === 100) {
       const capped = capHistory(normalised);
-      if (capped.currentClimbQueueItem && isUpNextFull(capped, 0)) return false;
-      // With nothing current the excess comes off the head instead of throwing.
-      const excess = Math.max(capped.queue.length - MAX_SYNCED_QUEUE_ITEMS, 0);
+      // History goes first; Up next is never trimmed, current climb or not.
+      if (isUpNextFull(capped, 0)) return false;
+      next = capped;
+      if (capped.trimmedCount > 0) this.stats.trims += 1;
+    } else {
+      // Outside the caps the raw payload limit is today's 500; an orphan
+      // inserted into a full payload trims the oldest History entry.
+      if (queue.length > MAX_SYNCED_QUEUE_ITEMS) return false;
+      const overflow = Math.min(Math.max(normalised.queue.length - MAX_SYNCED_QUEUE_ITEMS, 0), historyLine(normalised));
       next = {
-        queue: capped.queue.slice(excess),
-        currentClimbQueueItem: capped.currentClimbQueueItem,
-        historyCount: lineAfterDelta(capped, { kind: 'trim', count: excess }),
+        queue: normalised.queue.slice(overflow),
+        currentClimbQueueItem: normalised.currentClimbQueueItem,
+        historyCount: lineAfterDelta(normalised, { kind: 'trim', count: overflow }),
       };
-      if (capped.trimmedCount + excess > 0) this.stats.trims += 1;
-    } else if (normalised.queue.length > MAX_SYNCED_QUEUE_ITEMS) {
-      return false;
     }
     const stored = this.commit(next);
     this.publish([{ event: fullSyncOf(stored), stored }], originId);

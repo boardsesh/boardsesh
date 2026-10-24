@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import { GraphQLError } from 'graphql';
 import { queueMutations } from '../graphql/resolvers/queue/mutations';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { pubsub } from '../pubsub/index';
@@ -1156,13 +1157,38 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
       expect(state.currentClimbQueueItem?.uuid).toBe(current.uuid);
     });
 
-    it('trims a 600-item payload from the head with nothing current when it carries historyCount', async () => {
+    it('rejects a 600-climb Up next with nothing current with QUEUE_FULL, never dropping its first climbs', async () => {
       const sessionId = await roomWith([], null, 0);
       const queue = Array.from({ length: 600 }, () => createTestClimb());
-      const state = await queueMutations.setQueue({}, { queue, historyCount: 0 }, ctxFor(sessionId));
+      const error = await queueMutations.setQueue({}, { queue, historyCount: 0 }, ctxFor(sessionId)).then(
+        () => null,
+        (rejection: unknown) => rejection,
+      );
+      expect(error).toBeInstanceOf(GraphQLError);
+      expect((error as GraphQLError).extensions.code).toBe('QUEUE_FULL');
+      expect((error as GraphQLError).message).toMatch(/Now and Up next/);
+    });
+
+    it('trims History, not Up next, from a 600-item payload with nothing current', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      const state = await queueMutations.setQueue({}, { queue, historyCount: 200 }, ctxFor(sessionId));
+      // History 200 -> 100 (the History cap); the 400 Up next climbs are kept.
       expect(state.queue).toHaveLength(500);
-      expect(uuidsOf(state.queue)[0]).toBe(queue[100].uuid);
-      expect(state.historyCount).toBe(0);
+      expect(state.historyCount).toBe(100);
+      expect(uuidsOf(state.queue)[100]).toBe(queue[200].uuid);
+    });
+
+    it('outside the percent, an orphan in a 500-item payload trims one History entry instead of storing 501', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '0';
+      const queue = Array.from({ length: 500 }, () => createTestClimb());
+      const sessionId = await roomWith(queue, null, 10);
+      const orphan = createTestClimb();
+      const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: orphan }, ctxFor(sessionId));
+      expect(state.queue).toHaveLength(500);
+      expect(uuidsOf(state.queue)[0]).toBe(queue[1].uuid);
+      expect(uuidsOf(state.queue)[9]).toBe(orphan.uuid);
+      expect(state.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
     });
 
     it('still throws a 600-item placement-less payload outside the percent', async () => {

@@ -307,7 +307,7 @@ export const queueMutations = {
 
     const nowSlotRules = isNowSlotSession(sessionId);
 
-    const { write, state, reshaped } = await withQueueVersionRetry(
+    const { write, state, clamped, orphanNormalised } = await withQueueVersionRetry(
       'reorderQueueItem',
       sessionId,
       async (currentState) => {
@@ -348,11 +348,11 @@ export const queueMutations = {
           { currentClimbQueueItem: normalised.currentClimbQueueItem },
           normalised.historyCount,
         );
-        return { write: updated, state: normalised, reshaped: clamped || normalised.normalised };
+        return { write: updated, state: normalised, clamped, orphanNormalised: normalised.normalised };
       },
     );
 
-    if (reshaped) {
+    if (clamped || orphanNormalised) {
       publishFullSync(pubsub, sessionId, write, state.queue, state.currentClimbQueueItem);
     } else {
       pubsub.publishQueueEvent(sessionId, {
@@ -370,7 +370,8 @@ export const queueMutations = {
 
     logMutationMetrics('reorderQueueItem', performance.now() - startTime, sessionId, {
       nowSlotRules,
-      clamped: reshaped,
+      clamped,
+      orphanNormalised,
     });
     return true;
   },
