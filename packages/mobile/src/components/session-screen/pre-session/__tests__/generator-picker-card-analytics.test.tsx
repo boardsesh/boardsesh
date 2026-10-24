@@ -49,6 +49,8 @@ vi.mock('../../../SwitchRow', () => ({ SwitchRow: () => null }));
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+// WorkoutBlockFilters reads sign-in for Skip what I've sent.
+vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, variant: 'liquidGlass', m3: {} }),
 }));

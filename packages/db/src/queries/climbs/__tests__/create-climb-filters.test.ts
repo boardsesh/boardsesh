@@ -741,6 +741,11 @@ void describe('createClimbFilters: onlyBenchmarks', () => {
     assert.match(rendered, /benchmark_difficulty/);
     assert.match(rendered, /> 0/);
   });
+
+  void it('leaves out a NaN benchmark_difficulty, which passes > 0 in Postgres (#6232)', () => {
+    const rendered = sqlToString(createClimbFilters(params, { onlyBenchmarks: true }).climbStatsConditions[0]);
+    assert.match(rendered, /<> 'NaN'::double precision/);
+  });
 });
 
 void describe('createClimbFilters: grade range', () => {

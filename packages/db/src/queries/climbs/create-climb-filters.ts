@@ -1,4 +1,4 @@
-import { type SQL, desc, eq, gt, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
+import { type SQL, desc, eq, gt, isNotNull, ne, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { QueryBuilder, alias } from 'drizzle-orm/pg-core';
 import { getMoonBoardGeometryByLayoutId, isSizeScopedBoard, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
@@ -715,9 +715,18 @@ export const createClimbFilters = (
   }
 
   // Benchmark/classic-only: imported board feeds mark these climbs with a
-  // positive benchmark_difficulty. Zero and NULL both mean "not flagged".
+  // positive benchmark_difficulty. Zero and NULL both mean "not flagged" (NULL
+  // fails `> 0` on its own). So does NaN, which `> 0` alone lets through:
+  // Postgres ranks NaN above every number, and the row mapper reads it as no
+  // benchmark (`mapResultToClimbRow`), so a NaN row came back as a climb with no
+  // benchmark ribbon. On Kilter that let tens of thousands of climbs into
+  // Benchmarks only and buried the real ones (#6232). The literal stays SQL: a
+  // bound NaN is not portable across drivers (JSON turns it into null).
   if (searchParams.onlyBenchmarks) {
-    climbStatsConditions.push(sql`${statsCol('benchmarkDifficulty')} > 0`);
+    const benchmarkDifficulty = statsCol('benchmarkDifficulty');
+    climbStatsConditions.push(
+      sql`(${gt(benchmarkDifficulty, 0)} AND ${ne(benchmarkDifficulty, sql`'NaN'::double precision`)})`,
+    );
   }
 
   // Name search condition. The shared pattern builder escapes the user's own

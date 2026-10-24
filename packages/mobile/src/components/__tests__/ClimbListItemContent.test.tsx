@@ -1476,6 +1476,49 @@ describe('ClimbListItemContent original and mirror statuses', () => {
   });
 });
 
+// The workout preview knows a top-up came from the search for sent climbs before
+// that climb's ticks have loaded (#6232), and hands the row that status.
+describe('ClimbListItemContent known ascent status', () => {
+  const renderTension = (layoutId: number, knownAscentStatus: 'send' | 'attempt' | null) =>
+    render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="tension"
+        layoutId={layoutId}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        knownAscentStatus={knownAscentStatus}
+      />,
+    );
+  const statusLabels = (container: HTMLElement) =>
+    [...container.querySelectorAll('[aria-label]')]
+      .map((node) => node.getAttribute('aria-label') ?? '')
+      .filter((label) => label.includes('ascentStatus.'));
+
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+    statusLogbook.current = null;
+  });
+
+  it('draws the known status while the logbook has none for the climb', () => {
+    expect(statusLabels(renderTension(11, 'send').container)).toEqual(['mobile.climbRow.ascentStatus.send']);
+    expect(statusLabels(renderTension(11, 'attempt').container)).toEqual(['mobile.climbRow.ascentStatus.attempt']);
+    expect(statusLabels(renderTension(11, null).container)).toEqual([]);
+  });
+
+  it('lets the logbook win once it has a status', () => {
+    statusLogbook.current = {
+      logbookByClimbAngle: new Map([['c1:40', [{ status: 'flash', is_ascent: true, tries: 1, is_mirror: false }]]]),
+    };
+    expect(statusLabels(renderTension(11, 'send').container)).toEqual(['mobile.climbRow.ascentStatus.flash']);
+  });
+
+  it('draws nothing from it on a board that mirrors, where it names no direction', () => {
+    expect(statusLabels(renderTension(1, 'send').container)).toEqual([]);
+  });
+});
+
 describe('multi-frame route pips', () => {
   beforeEach(() => {
     resetClimbRowDisplayForTests();

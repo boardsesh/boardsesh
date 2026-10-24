@@ -16,7 +16,7 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../../../theme/variants';
 import { hapticSelection } from '../../../lib/haptics';
-import { spacing, borderRadius } from '../../../theme/tokens';
+import { borderRadius, opacity, spacing } from '../../../theme/tokens';
 import { springs } from '../../../theme/animations';
 // Aliased: the selected chip is a FILL with white text that must stay legible in
 // both schemes, so it reads the static brand set (mirrors ClimbFilterSheet).
@@ -51,6 +51,8 @@ type ChipProps = {
   accessibilityLabel?: string;
   /** Grows the touch target past the drawn pill, e.g. to 44pt in a dense row. */
   hitSlop?: Insets;
+  /** Dimmed and not pressable, for a choice that does not apply here; say why next to the row. */
+  disabled?: boolean;
 };
 
 // Filled-rest-state chip (no faint border), matching the ClimbFilterSheet
@@ -62,12 +64,13 @@ type ChipProps = {
 // branch's reanimated hooks stay unconditional across a runtime variant flip.
 export const Chip = createVariantComponent('Chip', { liquidGlass: ChipGlass, material: ChipMaterial });
 
-function ChipMaterial({ label, selected, onPress, accessibilityLabel, hitSlop }: ChipProps) {
+function ChipMaterial({ label, selected, onPress, accessibilityLabel, hitSlop, disabled = false }: ChipProps) {
   return (
     <PaperChip
       mode="flat"
       selected={selected}
       showSelectedCheck
+      disabled={disabled}
       hitSlop={hitSlop}
       onPress={() => {
         hapticSelection();
@@ -80,7 +83,7 @@ function ChipMaterial({ label, selected, onPress, accessibilityLabel, hitSlop }:
   );
 }
 
-function ChipGlass({ label, selected, onPress, accessibilityLabel, hitSlop }: ChipProps) {
+function ChipGlass({ label, selected, onPress, accessibilityLabel, hitSlop, disabled = false }: ChipProps) {
   const { systemColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -89,9 +92,11 @@ function ChipGlass({ label, selected, onPress, accessibilityLabel, hitSlop }: Ch
     paddingVertical: spacing[2],
     borderRadius: 20,
     backgroundColor: selected ? staticBrandColors.primary : systemColors.fill,
+    opacity: disabled ? opacity.disabled : 1,
   };
   return (
     <AnimatedPressable
+      disabled={disabled}
       onPress={() => {
         hapticSelection();
         onPress();
@@ -103,7 +108,7 @@ function ChipGlass({ label, selected, onPress, accessibilityLabel, hitSlop }: Ch
         scale.value = withSpring(1, springs.snappy);
       }}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
       hitSlop={hitSlop}
       style={[animatedStyle, chipStyle]}

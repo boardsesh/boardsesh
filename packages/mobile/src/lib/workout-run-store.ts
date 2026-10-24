@@ -136,7 +136,11 @@ function isStageFilters(candidate: unknown): candidate is WorkoutStageFilters {
     typeof filters.minAscents === 'number' &&
     typeof filters.minRating === 'number' &&
     typeof filters.onlyTallClimbs === 'boolean' &&
-    typeof filters.onlyWideClimbs === 'boolean'
+    typeof filters.onlyWideClimbs === 'boolean' &&
+    // Newer than the key: filters stored without them still read.
+    (filters.skipSent === undefined || typeof filters.skipSent === 'boolean') &&
+    (filters.skipTried === undefined || typeof filters.skipTried === 'boolean') &&
+    (filters.onlyBenchmarks === undefined || typeof filters.onlyBenchmarks === 'boolean')
   );
 }
 

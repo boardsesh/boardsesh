@@ -14,7 +14,14 @@ export type WarmUpType = 'standard' | 'extended' | 'none';
 
 export type EffortLevel = 'moderate' | 'challenging' | 'veryDifficult' | 'maxEffort';
 
-export type ClimbBias = 'unfamiliar' | 'attempted' | 'any';
+/**
+ * Which climbs of a grade a block draws from. `unfamiliar` prefers climbs the
+ * climber has not tried, and `any` takes the whole catalogue. `attempted`,
+ * `sent` and `liked` draw from the climber's own climbs: the ones they have
+ * tried or sent at this angle, or hearted at any angle (#6739). Tried but not
+ * sent is `attempted` with `skipSent`, not a value of its own.
+ */
+export type ClimbBias = 'unfamiliar' | 'attempted' | 'sent' | 'liked' | 'any';
 
 export type BaseGeneratorOptions = {
   warmUp: WarmUpType;
@@ -24,6 +31,20 @@ export type BaseGeneratorOptions = {
   minRating: number;
   onlyTallClimbs: boolean;
   onlyWideClimbs: boolean;
+  /**
+   * Leave out every climb the climber has sent at this angle. Off or absent,
+   * climbs they have not sent come first and sent ones only fill what is left.
+   * Optional, so filters stored before it existed still read.
+   */
+  skipSent?: boolean;
+  /**
+   * Leave out every climb the climber has tried or sent at this angle, so a
+   * flash block never tops up with one. Wins over `skipSent`; does nothing under
+   * the `attempted` bias. Optional like `skipSent`; absent means off.
+   */
+  skipTried?: boolean;
+  /** Only benchmark climbs. Optional like `skipSent`; absent means off. */
+  onlyBenchmarks?: boolean;
 };
 
 export type VolumeOptions = {
@@ -118,7 +139,7 @@ export const WARM_UP_OPTIONS: WarmUpType[] = ['none', 'standard', 'extended'];
 
 export const EFFORT_LEVELS: EffortLevel[] = ['moderate', 'challenging', 'veryDifficult', 'maxEffort'];
 
-export const CLIMB_BIAS_OPTIONS: ClimbBias[] = ['unfamiliar', 'attempted', 'any'];
+export const CLIMB_BIAS_OPTIONS: ClimbBias[] = ['unfamiliar', 'attempted', 'sent', 'liked', 'any'];
 
 export const DEFAULT_VOLUME_OPTIONS: Omit<VolumeOptions, 'targetGrade'> = {
   type: 'volume',

@@ -21,6 +21,8 @@ import {
   reshufflePools,
   selectItemsFromPools,
   shuffleInPlace,
+  NO_TOP_UPS,
+  type GradePool,
   type PreviewFetchContext,
   type PreviewFilters,
   type PreviewSlot,
@@ -44,6 +46,11 @@ function makeClimb(uuid: string): Climb {
     benchmark_difficulty: null,
     is_no_match: false,
   } as Climb;
+}
+
+/** A fetched pool with no top-up climbs, as a grade the first search tier fills. */
+function poolOf(climbs: Climb[]): GradePool {
+  return { climbs, topUpTiers: NO_TOP_UPS };
 }
 
 function slot(grade: number, index: number, filters?: PreviewFilters): PreviewSlot {
@@ -146,7 +153,7 @@ describe('selectItemsFromPools', () => {
 
 describe('buildPools', () => {
   it('fetches one shuffled pool per unique grade', async () => {
-    const fetchPool = vi.fn(async (grade: number) => [makeClimb(`${grade}-x`), makeClimb(`${grade}-y`)]);
+    const fetchPool = vi.fn(async (grade: number) => poolOf([makeClimb(`${grade}-x`), makeClimb(`${grade}-y`)]));
     const pools = await buildPools([slot(10, 0), slot(10, 1), slot(12, 2)], ctx, fetchPool);
     expect(fetchPool).toHaveBeenCalledTimes(2); // grades 10 and 12, deduped
     expect(pools.get(key(10))).toHaveLength(2);
@@ -164,9 +171,9 @@ describe('pools keyed by grade and filters', () => {
   });
 
   it('fetches each slot with its own filters, one pool per grade and filter set', async () => {
-    const fetchPool = vi.fn(async (grade: number, fetchCtx: PreviewFetchContext) => [
-      makeClimb(`${grade}-${filtersSignature(fetchCtx.filters)}`),
-    ]);
+    const fetchPool = vi.fn(async (grade: number, fetchCtx: PreviewFetchContext) =>
+      poolOf([makeClimb(`${grade}-${filtersSignature(fetchCtx.filters)}`)]),
+    );
     const pools = await buildPools([slot(10, 0, LOOSE), slot(10, 1, STRICT), slot(12, 2, STRICT)], ctx, fetchPool);
 
     expect(fetchPool).toHaveBeenCalledTimes(3);
@@ -179,7 +186,7 @@ describe('pools keyed by grade and filters', () => {
   });
 
   it('shares one pool between slots with equal filters, sized by their combined demand', async () => {
-    const fetchPool = vi.fn(async () => [makeClimb('a')]);
+    const fetchPool = vi.fn(async () => poolOf([makeClimb('a')]));
     // Two stages' slots, each with its own copy of the same filters.
     await buildPools(
       [slot(10, 0, { ...STRICT }), slot(10, 1, { ...STRICT }), slot(10, 2, { ...STRICT })],
@@ -196,7 +203,7 @@ describe('pools keyed by grade and filters', () => {
     // at one grade. Both filter sets return the same top-quality climbs, sized
     // like fetchGradePool (at least 50, else demand + 10).
     const fetchPool = vi.fn(async (_grade: number, _ctx: PreviewFetchContext, demand: number) =>
-      Array.from({ length: Math.max(50, demand + 10) }, (_, index) => makeClimb(`climb-${index}`)),
+      poolOf(Array.from({ length: Math.max(50, demand + 10) }, (_, index) => makeClimb(`climb-${index}`))),
     );
     const slots = [
       ...Array.from({ length: 20 }, (_, index) => slot(10, index, LOOSE)),
@@ -213,7 +220,7 @@ describe('pools keyed by grade and filters', () => {
   });
 
   it('reuses a cached pool fetched for enough slots, and refetches one that is new or too small', async () => {
-    const fetchPool = vi.fn(async (grade: number) => [makeClimb(`fresh-${grade}`)]);
+    const fetchPool = vi.fn(async (grade: number) => poolOf([makeClimb(`fresh-${grade}`)]));
     const cachedLoose = [makeClimb('cached-loose'), makeClimb('cached-loose-2')];
     const cachedStrict = [makeClimb('cached-strict')];
     const cache = {
@@ -244,7 +251,7 @@ describe('pools keyed by grade and filters', () => {
   });
 
   it('refetches a cached pool that came back with fewer climbs than its slots', async () => {
-    const fetchPool = vi.fn(async (grade: number) => [makeClimb(`fresh-${grade}`)]);
+    const fetchPool = vi.fn(async (grade: number) => poolOf([makeClimb(`fresh-${grade}`)]));
     const cache = { pools: new Map([[key(10, LOOSE), []]]), poolDemands: new Map([[key(10, LOOSE), 5]]) };
 
     const { pools } = await buildPoolsReusing([slot(10, 0, LOOSE)], ctx, fetchPool, cache);
@@ -295,7 +302,7 @@ describe('pools keyed by grade and filters', () => {
     ]);
     const { items, usedUuids } = selectItemsFromPools([slot(10, 0, LOOSE), slot(10, 1, STRICT)], pools);
     const state: WorkoutPreviewData = { items, pools, usedUuids };
-    const fetchPool = vi.fn(async () => [makeClimb('strict-a'), makeClimb('strict-b')]);
+    const fetchPool = vi.fn(async () => poolOf([makeClimb('strict-a'), makeClimb('strict-b')]));
 
     const { state: next } = await refreshSlotInState(state, items[1].item.uuid, ctx, fetchPool);
 
@@ -383,7 +390,7 @@ describe('refreshSlotInState', () => {
     ]);
     const targetUuid = state.items[0].item.uuid; // currently 'a'
     // Refetch returns a fresh climb 'c' not shown anywhere.
-    const fetchPool = vi.fn(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
 
     const { state: next, changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
 
@@ -400,7 +407,7 @@ describe('refreshSlotInState', () => {
       [10, 1],
     ]);
     const targetUuid = state.items[0].item.uuid; // 'a'
-    const fetchPool = vi.fn(async () => [makeClimb('a'), makeClimb('b')]);
+    const fetchPool = vi.fn(async () => poolOf([makeClimb('a'), makeClimb('b')]));
 
     const { state: next, changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
 
@@ -411,7 +418,7 @@ describe('refreshSlotInState', () => {
   it('no-ops when the grade has only the climb already shown', async () => {
     const state = buildState({ 10: ['a'] }, [[10, 0]]);
     const targetUuid = state.items[0].item.uuid;
-    const fetchPool = vi.fn(async () => [makeClimb('a')]);
+    const fetchPool = vi.fn(async () => poolOf([makeClimb('a')]));
 
     const { changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
 
@@ -452,7 +459,7 @@ describe('refreshSlotInState', () => {
       [10, 1],
     ]);
     const targetUuid = state.items[0].item.uuid; // 'a'
-    const fetchPool = vi.fn(async () => ['a', 'b', 'c', 'd'].map(makeClimb));
+    const fetchPool = vi.fn(async () => poolOf(['a', 'b', 'c', 'd'].map(makeClimb)));
 
     const { state: next } = await refreshSlotInState(state, targetUuid, ctx, fetchPool, new Set(['c']));
 
@@ -517,7 +524,7 @@ describe('reshufflePools', () => {
       [key(11), elevens],
     ]);
 
-    const reshuffled = reshufflePools(pools, mulberry32(7));
+    const reshuffled = reshufflePools(pools, undefined, mulberry32(7));
 
     expect(reshuffled).not.toBe(pools);
     expect(reshuffled.get(key(10))).not.toBe(tens);

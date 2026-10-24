@@ -79,8 +79,13 @@ const workoutBlock = (id: string, options: GeneratorOptions, filters: WorkoutFil
 const selectionOf = (blocks: WorkoutBlock[]): GeneratorSelection => ({ blocks });
 
 // A deep pool at every grade, with climb uuids unique across grades.
-const fetchPool: FetchGradePool = async (grade) =>
-  Array.from({ length: 30 }, (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}` }) as Climb);
+const fetchPool: FetchGradePool = async (grade) => ({
+  climbs: Array.from(
+    { length: 30 },
+    (_, index) => ({ uuid: `g${grade}-${index}`, name: `g${grade}-${index}` }) as Climb,
+  ),
+  topUpTiers: new Map(),
+});
 
 describe('useWorkoutPreview stages', () => {
   it('plans the same slots as before and groups the queued climbs by stage', async () => {
