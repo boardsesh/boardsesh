@@ -1032,10 +1032,17 @@ export function usePlaylistActivation({
           if (decision === 'cancel') return;
           if (decision === 'append') {
             // The board-scoped list is already in hand — no second round trip.
+            // A seeded tap already put the tapped climb in the queue, so while
+            // that item is still there the batch leaves the climb out and
+            // counts it as landed, the same as the first prompt's Add to queue.
+            const seedItemUuid = options.previewQueueItem?.uuid;
+            const seedStillQueued =
+              seedItemUuid !== undefined && getQueueSnapshot().queue.some(({ uuid }) => uuid === seedItemUuid);
             await appendClimbsToQueue({
               loadedClimbs: climbs,
               drainStopReason,
               entryPoint: 'replacePrompt',
+              excludeClimbUuid: seedStillQueued ? climb.uuid : undefined,
             });
             return;
           }
