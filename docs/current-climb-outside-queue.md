@@ -426,14 +426,20 @@ crewmate's newly opened climb. That is today's behaviour and stays out of scope.
   `:1548`, `:1895`), title and notes edits (`social/session-mutations.ts:154`) and board-path
   changes (`room-manager/session-discovery.ts:82`) also bump. When `historyCountVersion` is
   stale (an old-script write), the reader returns `lastActivity`, which that old write just
-  stamped; it errs towards lighting.
+  stamped; it errs towards lighting. The write side follows the same rule: when the stored
+  fields are stale (no `currentUuid`, or `historyCountVersion` behind `version`), the stored uuid
+  can't be trusted, so the next new-script write stamps `currentChangedAt = now` whatever the
+  uuids say. That also errs towards lighting, once per room after the deploy.
 - **Writes that need the stored line are versioned.** The derivation with nothing current needs
   the stored `historyCount` and queue, read in Node. Today's no-baseline `setQueue` is a blind
   `CAS_ANY_VERSION` write (`queue/mutations.ts:522`, `queue-state.ts:137`), so a crewmate's
   removal between the read and the write would leave the line one off. Rule: a write that
   leaves nothing current always passes the version it read and retries on conflict, the way
   `setCurrentClimbAndPublish` does (`resolvers/shared/queue-retry.ts:38-39`). A blind write is
-  allowed only when a climb is current, because then the line is derived.
+  allowed only when a climb is current, because then the line is derived. The same holds for a
+  payload orphan without `historyCount`, whose line is the same derivation. If the versioned
+  write burns its retries, it falls back to a blind write composed from a fresh read, as the
+  #3933 merge does, so a contended session never turns a `setQueue` into a user-facing error.
 
 ### Postgres (`packages/db/src/schema/app/sessions.ts:172-182`)
 
@@ -477,8 +483,8 @@ percent gates only the placement rules, the clamps and the caps (section 8). The
 | `reorderQueueItem` | `lineAfterDelta` for the reorder (after the clamp, inside the percent) |
 | `removeQueueItem` (`queue/mutations.ts:147-154`) | `lineAfterDelta`: the current climb's index when it was removed, −1 for a History entry |
 | `setQueue`, `joinSession` seed | `normaliseHistoryCount` on the input, or the derivation in section 3 when there is none |
-| `replaceQueueItem` (`queue/mutations.ts:313-361`) | The stored value: it swaps an entry by uuid in place |
-| `mirrorSessionClimb` (`services/queue-mirror.ts:14-36`) | The stored value: it rewrites the current entry in place |
+| `replaceQueueItem` (`queue/mutations.ts:313-361`) | The stored value: it swaps an entry by uuid in place. A stored orphan is normalised by the write (it already publishes a `FullSync`). |
+| `mirrorSessionClimb` (`services/queue-mirror.ts:14-36`) | The stored value: it rewrites the current entry in place. A write that normalises a stored orphan publishes a `FullSync` instead of `ClimbMirrored`; the widget route still answers with the mirror fields. |
 | `navigateToQueueItem` (`services/queue-navigation.ts:127-183`), widget and Garmin `navigateSessionQueue`, controller `navigateQueue` | Derived: they always set a current climb |
 
 `getQueueState` (`:401`) returns `historyCount` and `currentChangedAt` beside `queue`.
@@ -734,8 +740,9 @@ climbs, not one per climb.
 
 **An add that trims or clamps is two writes.** Write 1 stores the add (at the clamped position)
 and publishes `QueueItemAdded` under sequence n. Write 2, only when write 1 left History over
-125, the array over 500, or the position clamped, is a versioned write of the array, trimmed
-when needed, under the version write 1 returned, and publishes `FullSync` under n + 1. The `FullSync`
+125, the array over 500, the position clamped, or write 1 normalised a stored orphan
+(invariant 1, at every percent), is a versioned write of the array, trimmed when needed, under
+the version write 1 returned, and publishes `FullSync` under n + 1. The `FullSync`
 corrects an old phone that inserted at its own position. Publishing only a `FullSync` would hide
 the add from the #3933 merge: an old phone's in-flight Undo would find no `QueueItemAdded` in
 its window and overwrite the crewmate's add. The cost is one more Redis round trip on one add in
@@ -968,7 +975,11 @@ PR 3 test plan says so.
   It governs requests **without** `placement` (old clients, the native socket, the LED path,
   every `addQueueItem` and `reorderQueueItem`): their placement rules, the History clamps, the
   stop-at-the-ends navigate and the caps. At 0 those requests produce today's arrays and events,
-  with one exception: no orphan is stored. The `historyCount` bookkeeping and the orphan rules
+  with two exceptions: no orphan is stored, and the widget, Garmin and controller navigate read
+  the line with nothing current (Next goes to `queue[historyCount]`, Previous to
+  `queue[historyCount - 1]`), because both are pointer moves every shipped client predicts and
+  the line they read is maintained at every percent anyway. Only their stop at the ends is
+  gated. The `historyCount` bookkeeping and the orphan rules
   (invariant 1) run at every percent (section 2, the backend choke point). No shipped client
   reads `historyCount`, and without it a new phone's line would be erased by an old phone's add.
   The orphan rules turn today's orphan writes (the native socket's stale item, a payload orphan
