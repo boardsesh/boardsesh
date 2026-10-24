@@ -821,6 +821,7 @@
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
       "queueCountAria": "Queue, {{count}} climbs",
+      "queueUpNextAria_zero": "Queue, nothing up next",
       "queueUpNextAria_one": "Queue, {{count}} climb up next",
       "queueUpNextAria_other": "Queue, {{count}} climbs up next",
       "changeAngle": "Change angle"

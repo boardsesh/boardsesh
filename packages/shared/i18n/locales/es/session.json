@@ -821,6 +821,7 @@
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
       "queueCountAria": "Cola, {{count}} bloques",
+      "queueUpNextAria_zero": "Cola, nada a continuación",
       "queueUpNextAria_one": "Cola, {{count}} bloque a continuación",
       "queueUpNextAria_other": "Cola, {{count}} bloques a continuación",
       "changeAngle": "Cambiar ángulo"
