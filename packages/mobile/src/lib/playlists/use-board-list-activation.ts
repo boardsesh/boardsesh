@@ -6,7 +6,7 @@
 // What a tap does, by the hook's rules:
 // - The row is on another board model than the one the climber is at (or none
 //   is picked): a preview on the row's board, the list as its track.
-// - A crew is here, or "Light problems when tapping the list" is off: a preview
+// - A crew is here, or "Light the board when I tap a climb" is off: a preview
 //   on the active board, the list as its track. The wall stays where it is.
 // - Otherwise the climb goes up, inserted after the current climb and flagged
 //   `suggested` like every list play, with the list as its track.

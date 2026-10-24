@@ -372,7 +372,7 @@ export function usePlaySelectionController({
    *   write and `setCurrentClimb` would re-arm the BLE auto-sender;
    * - a crew is here (also `getSimilarClimbTapMode`): a look must not take
    *   their wall;
-   * - the climber turned off Light problems when tapping the list;
+   * - the climber turned off Light the board when I tap a climb;
    * - the player is showing a climb from another board, whose similar climbs
    *   are on that board too and can't go up on this one. That used to be the
    *   queue add's cross-board prompt; there is no add any more.

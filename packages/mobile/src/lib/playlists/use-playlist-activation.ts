@@ -15,7 +15,7 @@
 // on them plays from the list like any other list tap, unless the climber turned
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
-// so previous/next walk the circuit; with Light problems when tapping the list
+// so previous/next walk the circuit; with Light the board when I tap a climb
 // off, a row tap is still a preview. Because a replace clears any future queue
 // items, a three-way prompt warns first whenever the queue has items after the
 // current: start the playlist (destructive), add it behind what's queued and
@@ -255,7 +255,7 @@ export type UsePlaylistActivationOptions = {
    * climber's "Tapping a playlist loads it into my queue" setting on, a tap
    * replaces the queue with the list instead of playing from it. The setting is
    * read at the tap. Off (the default), the tap plays from the list. Either way
-   * "Light problems when tapping the list" off makes a row tap a preview; the
+   * "Light the board when I tap a climb" off makes a row tap a preview; the
    * Play button (`deliberate`) still plays or loads the list.
    */
   replaceQueueOnActivate?: boolean;
@@ -276,8 +276,8 @@ export type PlaylistAddToQueueState = {
 
 export type PlaylistActivationOptions = {
   /**
-   * A deliberate play, not a row tap: the list header's Play button. "Light
-   * problems when tapping the list" is about row taps, so it does not turn this
+   * A deliberate play, not a row tap: the list header's Play button. "Light the board
+   * when I tap a climb" is about row taps, so it does not turn this
    * into a preview. The crew rule still does.
    */
   deliberate?: boolean;
@@ -1361,7 +1361,7 @@ export function usePlaylistActivation({
 
       // Two reasons to preview, either one enough: there are other climbers in
       // the session (`previewOnly`), so a tap must not take their wall; or the
-      // climber turned off "Light problems when tapping the list" (issue #6665:
+      // climber turned off "Light the board when I tap a climb" (issue #6665:
       // every list reads it, not only search). The setting is read here, at the
       // tap, so the callback does not change identity when it flips.
       //
