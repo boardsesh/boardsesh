@@ -49,7 +49,7 @@ import { sizeFilterAvailability } from '../pre-session/WorkoutBlockFilters';
 import { WorkoutPreviewListRow } from '../pre-session/WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from '../pre-session/WorkoutPreviewSummary';
 import { useWorkoutPreview } from '../pre-session/use-workout-preview';
-import { countFilledSlots } from '../pre-session/workout-start-queue';
+import { countFilledSlots, withoutQueuedSlots } from '../pre-session/workout-start-queue';
 import {
   DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
@@ -227,9 +227,11 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       setIsSubmitting(false);
       return;
     }
-    // Belt and braces for this path: never queue a uuid twice.
+    // Belt and braces for this path: never queue a slot twice. A reopen during
+    // the slide-down can keep a preview that is already queued, and its 4x4
+    // copies come back under fresh uuids, so the check is by slot, not by uuid.
     const queuedUuids = new Set(getQueueSnapshot().queue.map((queueItem) => queueItem.uuid));
-    const blockItems = stagedItems.filter((item) => !queuedUuids.has(item.uuid));
+    const blockItems = withoutQueuedSlots(stagedItems, slotIndexByUuid, queuedUuids);
     if (blockItems.length === 0) {
       onClose();
       return;

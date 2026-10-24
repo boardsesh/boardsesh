@@ -614,6 +614,32 @@ describe('AddWorkoutBlockSheet', () => {
     expect(getWorkoutRunForSession('session-1')?.stages[0].itemUuids).toEqual(['v2']);
   });
 
+  it('closes without queueing a 4x4 whose first round is already queued', async () => {
+    // The preview a reopen kept after the same block was added: round 1 under
+    // the rows' uuids, which the queue holds, and every later round under fresh ones.
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    queue.queued = ['f1', 'f2', 'f3', 'f4'].map((uuid) => ({ uuid, climb: { uuid: `climb-${uuid}` } }));
+    const { onClose } = renderSheet(true);
+
+    await press();
+
+    expect(queue.appendQueueItems).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves out every round of a 4x4 row whose first round is queued', async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    queue.queued = [{ uuid: 'f1', climb: { uuid: 'climb-f1' } }];
+    renderSheet(true);
+
+    await press();
+
+    const appended = (queue.appendQueueItems.mock.calls[0][0] as ClimbQueueItem[]).map((item) => item.uuid);
+    expect(appended).toHaveLength(12);
+    expect(appended.filter((uuid) => uuid.startsWith('f1'))).toEqual([]);
+  });
+
   it('closes without queueing when the session switches during the confirm', async () => {
     let finishRead: (value: string | null) => void = () => undefined;
     // Holds the store's first slot read; the store reads its other slot after it.

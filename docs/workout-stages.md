@@ -296,9 +296,9 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   would need a positioned insert the queue does not have: a per-item add carries no
   position and the server appends. Climbs cut by the queue's size cap get no stage; a
   climb whose wire send fails afterwards keeps its stage, which is harmless because
-  readers count only queued climbs. Climbs already in the queue are left out, and a
-  second tap during the slide-down does nothing. The pure part is
-  `add-workout-block.ts`.
+  readers count only queued climbs. A slot with a climb already in the queue is left out,
+  every round of it, since a 4x4's later rounds get fresh uuids on each add; a second tap
+  during the slide-down does nothing. The pure part is `add-workout-block.ts`.
 - Before it composes the run, the confirm waits for the store to finish reading this
   session's run after a cold start, so the run queued at Start is never overwritten.
 - `Session Queue Generated` fires with `phase: 'in_session'`. Start sends
