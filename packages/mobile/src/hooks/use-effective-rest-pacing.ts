@@ -1,8 +1,10 @@
 // The ONE place the rest timer's pacing is read (#5396, #5380, #5382). The
 // scheduler, the pill and hero clock, the session sync and the arm row all read
 // through here, so a workout stage or the crew clock changes what they run on
-// without any of them changing. The sheet's controls keep WRITING the settings
-// directly: they edit the climber's own preferences, not the effective value.
+// without any of them changing. The sheet's controls keep WRITING the settings:
+// they edit the climber's own preferences, not the effective value. While a
+// crew clock runs they show its values and copy them into the settings before
+// an edit (useRestPacingControls in RestTimerSheet.tsx).
 //
 // It resolves the three settings, the workout stage pacing of the climb on the
 // wall (which `RestTimerPacingSync` keeps in the rest-timer store) and the

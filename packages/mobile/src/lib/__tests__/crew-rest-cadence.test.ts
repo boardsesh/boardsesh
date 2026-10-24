@@ -132,6 +132,31 @@ describe('handleCrewCadenceChange: the revision floor', () => {
     handleCrewCadenceChange(change({ revision: 50 }), context);
     expect(handleCrewCadenceChange(change({ revision: 2 }), { ...context, sessionId: 'session-2' })).toBe('adopted');
   });
+
+  it('still converts the held clock again from a change too old to take, once its sample moves the offset', () => {
+    handleCrewCadenceChange(change({ revision: 10, serverNow: String(T0 + 1_000) }), context);
+    expect(getRestTimerState().anchorMs).toBe(T0);
+    // A FIRE's reply at the same revision, sent at +0.8 s and back at +1 s: the
+    // server reads 4.1 s ahead of this phone.
+    expect(
+      handleCrewCadenceChange(change({ revision: 10, serverNow: String(T0 + 5_000), action: null }), {
+        ...context,
+        sentAtMs: T0 + 800,
+      }),
+    ).toBe('stale');
+    expect(getRestTimerState().anchorMs).toBe(T0 - 4_100);
+  });
+
+  it('leaves the held clock alone for a sample that barely moves the offset', () => {
+    handleCrewCadenceChange(change({ revision: 10, serverNow: String(T0 + 1_000) }), context);
+    const before = getRestTimerState();
+    handleCrewCadenceChange(change({ revision: 10, serverNow: String(T0 + 1_100), action: null }), {
+      ...context,
+      receivedAtMs: T0 + 1_010,
+      sentAtMs: T0 + 990,
+    });
+    expect(getRestTimerState()).toBe(before);
+  });
 });
 
 describe('handleCrewCadenceChange: who may take an armed clock', () => {

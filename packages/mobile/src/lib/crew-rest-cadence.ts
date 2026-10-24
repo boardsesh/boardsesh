@@ -16,8 +16,10 @@
 //     phone's own ARM can never re-arm a timer it has since turned off.
 //   - A mode or advance rule this app does not know makes the clock
 //     unsupported: it is held (config null) so the scheduler never fires on it.
-//   - Every instant is server epoch ms on the wire and is converted once, when
-//     the change is taken, through the server clock offset (server-clock.ts).
+//   - Every instant is server epoch ms on the wire and is converted when the
+//     change is taken, through the server clock offset (server-clock.ts). A
+//     later sample that moves the offset by more than 250 ms converts the held
+//     clock again, even from a change too old to take (adoptCrewCadence).
 
 import type {
   SessionRestCadenceAnchor,
@@ -27,7 +29,13 @@ import type {
 import type { RestTimerMode } from './rest-timer';
 import type { CrewRestConfig, RestAdvanceRule, RestTimerLastTick } from './rest-timer-pacing';
 import type { SessionRestCadenceChangeWire, SessionRestCadenceWire } from './graphql/operations';
-import { adoptCrewCadence, clearCrewCadence, getRestTimerState, type RestTimerState } from './rest-timer-store';
+import {
+  adoptCrewCadence,
+  clearCrewCadence,
+  crewConversionMoved,
+  getRestTimerState,
+  type RestTimerState,
+} from './rest-timer-store';
 import { noteServerTimeFromEvent, noteServerTimeFromMutation, serverToLocalMs, localToServerMs } from './server-clock';
 
 /**
@@ -186,7 +194,12 @@ export function handleCrewCadenceChange(
   else noteServerTimeFromMutation({ serverNowMs, sentAtMs, receivedAtMs });
 
   if (revisionFloor?.sessionId !== sessionId) revisionFloor = null;
-  if (!change.isSnapshot && revisionFloor !== null && change.revision <= revisionFloor.revision) return 'stale';
+  if (!change.isSnapshot && revisionFloor !== null && change.revision <= revisionFloor.revision) {
+    // Too old to take, but its clock sample still counts: a FIRE that came back
+    // refused or too late is often the round trip that shows the offset was out.
+    reconvertHeldCrewCadence(sessionId);
+    return 'stale';
+  }
   revisionFloor = { sessionId, revision: change.revision };
 
   const outcome = applyCrewCadence(change, sessionId, ownParticipantId);
@@ -217,6 +230,22 @@ function applyCrewCadence(
   const crew = parseCrewRestCadence(sessionId, change.revision, wire);
   adoptCrewCadence(crew, { replaceLocal: change.isSnapshot });
   return crew.config === null ? 'unsupported' : 'adopted';
+}
+
+/**
+ * Convert the held clock's server instants again with the offset as it stands
+ * now, when that moves one of them past the threshold. adoptCrewCadence keeps
+ * an action of this phone's own that is still waiting for its echo.
+ */
+function reconvertHeldCrewCadence(sessionId: string): void {
+  const { crew } = getRestTimerState();
+  if (crew === null || crew.sessionId !== sessionId || crew.config === null) return;
+  const anchorMs = crew.anchorServerMs === null ? null : serverToLocalMs(crew.anchorServerMs);
+  const lastFiredBeatMs = crew.lastFiredBeatServerMs === null ? null : serverToLocalMs(crew.lastFiredBeatServerMs);
+  if (!crewConversionMoved(crew.anchorMs, anchorMs) && !crewConversionMoved(crew.lastFiredBeatMs, lastFiredBeatMs)) {
+    return;
+  }
+  adoptCrewCadence({ ...crew, anchorMs, lastFiredBeatMs });
 }
 
 /** The last subscribe seed seen, so a publisher that mounts after it still knows. */

@@ -30,10 +30,12 @@ import {
   clearRestTimerQueueEnded,
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
+  noteRestTimerCrewBeatSkipped,
   noteRestTimerQueueEnded,
   reanchorRestTimerAfterBackground,
 } from '../../lib/rest-timer-store';
 import {
+  AUTO_ADVANCE_OVERDUE_GRACE_MS,
   getAutoAdvanceDeadlineMs,
   getRestTimerCountdownCueTimes,
   getRestTimerCountdownLeadSeconds,
@@ -51,6 +53,7 @@ import {
   crewBeatServerMs,
   handleCrewCadenceChange,
   planCrewFireOutcome,
+  type CrewRestCadence,
 } from '../../lib/crew-rest-cadence';
 import { serverToLocalMs } from '../../lib/server-clock';
 import { reportHandledError } from '../../lib/error-reporting';
@@ -79,6 +82,20 @@ async function withinCrewFireTimeout<T>(request: Promise<T>): Promise<T> {
   } finally {
     if (timer !== null) clearTimeout(timer);
   }
+}
+
+/**
+ * Whether the crew's clock still has this beat due: running, moving the wall,
+ * and with the same anchor and length the FIRE claimed it on. A crewmate who
+ * paused it, changed it or switched auto-advance off since keeps what they did.
+ */
+function crewBeatStillDue(crew: CrewRestCadence, localDeadlineMs: number, beatServerMs: number): boolean {
+  return (
+    crew.isRunning &&
+    crew.config !== null &&
+    crew.config.autoAdvance &&
+    crewBeatServerMs(crew, localDeadlineMs) === beatServerMs
+  );
 }
 
 /** The scheduler pages only the committed track; it has no preview to update. */
@@ -227,6 +244,34 @@ export function RestTimerAutoAdvanceScheduler() {
     [mode, advanceOn, nextClimb],
   );
 
+  /**
+   * A crew beat this phone let go without moving the wall. On the minute the
+   * crew's beat never moves here, so this one is marked spent and the scheduler
+   * goes on to the next: nothing else in the store changed, and it would sit on
+   * the beat that went. After a tick the rest stays on a deadline nobody can
+   * claim once 5 s have gone, so it restarts then, as coming back from the
+   * background would (contracts §10), while the server's clock still has the
+   * beat due and this phone still paces it.
+   */
+  const letCrewBeatGo = useCallback(
+    (crew: CrewRestCadence, localDeadlineMs: number, beatServerMs: number) => {
+      if (crew.config?.mode === 'onTheMinute') {
+        noteRestTimerCrewBeatSkipped(localDeadlineMs);
+        return;
+      }
+      scheduleCrewTimer(
+        () => {
+          const currentCrew = getRestTimerState().crew;
+          if (currentCrew === null || !pacesTheCrew()) return;
+          if (!crewBeatStillDue(currentCrew, localDeadlineMs, beatServerMs)) return;
+          reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
+        },
+        serverToLocalMs(beatServerMs + CREW_FIRE_LATE_TOLERANCE_MS) + CREW_REPAIR_MARGIN_MS - nowMs(),
+      );
+    },
+    [pacesTheCrew, scheduleCrewTimer],
+  );
+
   const fireCrewBeat = useCallback(
     async ({
       expectedCycleId,
@@ -248,6 +293,20 @@ export function RestTimerAutoAdvanceScheduler() {
       const wallQueueItemUuid = advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null;
       const alone = roleRef.current === 'solo';
 
+      // No answer: an error, the 2 s timeout, or no session to send it on.
+      const beatGotNoAnswer = () => {
+        if (alone) {
+          // Nobody else to claim it: the wall moves from here, as long as the
+          // beat is still one the climber is watching.
+          if (!isAutoAdvanceDeadlineStale(localDeadlineMs, nowMs())) advanceLocally(expectedCycleId, localDeadlineMs);
+          else letCrewBeatGo(crew, localDeadlineMs, beatServerMs);
+          return;
+        }
+        // The beat is skipped; the server may not have taken it either.
+        playRestTimerCue({ kind: 'reached' });
+        letCrewBeatGo(crew, localDeadlineMs, beatServerMs);
+      };
+
       crewFireInFlightRef.current = true;
       const sentAtMs = nowMs();
       let payload: SetSessionRestCadencePayload | null;
@@ -265,30 +324,15 @@ export function RestTimerAutoAdvanceScheduler() {
       } catch (error) {
         crewFireInFlightRef.current = false;
         reportHandledError(error, { tags: { source: 'crew-rest-clock', op: 'fire' } });
-        if (!mountedRef.current) return;
-        if (alone) {
-          // Nobody else to claim it: the wall moves from here, as long as the
-          // beat is still one the climber is watching.
-          if (!isAutoAdvanceDeadlineStale(localDeadlineMs, nowMs())) advanceLocally(expectedCycleId, localDeadlineMs);
-          return;
-        }
-        // The beat is skipped. If the server never took it either, its rest
-        // stays on a deadline nobody can claim once 5 s have gone: restart it
-        // then, as coming back from the background would (contracts §10).
-        playRestTimerCue({ kind: 'reached' });
-        const staleAnchorServerMs = crew.anchorServerMs;
-        scheduleCrewTimer(
-          () => {
-            const currentCrew = getRestTimerState().crew;
-            if (currentCrew === null || currentCrew.anchorServerMs !== staleAnchorServerMs || !pacesTheCrew()) return;
-            reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
-          },
-          serverToLocalMs(beatServerMs + CREW_FIRE_LATE_TOLERANCE_MS) + CREW_REPAIR_MARGIN_MS - nowMs(),
-        );
+        if (mountedRef.current) beatGotNoAnswer();
         return;
       }
       crewFireInFlightRef.current = false;
-      if (payload === null || !mountedRef.current) return;
+      if (!mountedRef.current) return;
+      if (payload === null) {
+        beatGotNoAnswer();
+        return;
+      }
 
       handleCrewCadenceChange(payload.change, {
         sessionId: crew.sessionId,
@@ -314,14 +358,12 @@ export function RestTimerAutoAdvanceScheduler() {
           );
           return;
         }
+        // Too late by the server's clock, so nobody can claim the beat now; or
+        // the clock no longer has it, or the retries ran out.
         case 'lost':
-          // Too late by the server's clock, so the rest is stuck on a deadline
-          // nobody can claim: restart it now, if this phone still paces it.
-          playRestTimerCue({ kind: 'reached' });
-          if (pacesTheCrew()) reanchorRestTimerAfterBackground(nowMs(), localDeadlineMs);
-          return;
         case 'refused':
           playRestTimerCue({ kind: 'reached' });
+          letCrewBeatGo(crew, localDeadlineMs, beatServerMs);
           return;
         case 'claimed':
           return;
@@ -331,7 +373,7 @@ export function RestTimerAutoAdvanceScheduler() {
         }
       }
     },
-    [advanceLocally, nextClimb, pacesTheCrew, scheduleCrewTimer, setSessionRestCadence],
+    [advanceLocally, letCrewBeatGo, nextClimb, scheduleCrewTimer, setSessionRestCadence],
   );
 
   const fireAdvance = useCallback(
@@ -349,6 +391,9 @@ export function RestTimerAutoAdvanceScheduler() {
         if (getRestTimerState().crew === null || pacesTheCrew()) {
           reanchorRestTimerAfterBackground(nowMs(), scheduledDeadlineMs);
         }
+        // A crew's beat on the minute never moves here: spend the stale one, so
+        // the next beat gets scheduled.
+        noteRestTimerCrewBeatSkipped(scheduledDeadlineMs);
         return;
       }
 
@@ -467,6 +512,36 @@ export function RestTimerAutoAdvanceScheduler() {
     timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs));
     return () => clearCueTimeouts(timeouts);
   }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds]);
+
+  // A crew rest after a tick whose deadline this phone paces but will never fire
+  // on: it was already past when the phone took the board over, or when the
+  // crew's clock came in (a crewmate's send logged a whole rest late). Nothing
+  // is scheduled for a deadline already past, and nobody can claim one more
+  // than 5 s gone, so the whole crew's rest would sit on it until the next
+  // tick. Restart it once nobody can claim it, as coming back from the
+  // background does (contracts §10). A FIRE in flight, or a retry or restart
+  // already waiting, settles the beat itself.
+  const pacesCrewRestAfterTick =
+    timerState.crew?.config?.mode === 'afterTick' && (role === 'holder' || role === 'solo');
+  const missedCrewDeadlineMs =
+    pacesCrewRestAfterTick && candidateDeadlineMs !== null && candidateDeadlineMs <= nowMs()
+      ? candidateDeadlineMs
+      : null;
+  useEffect(() => {
+    if (missedCrewDeadlineMs === null) return undefined;
+    const restartCrewRest = () => {
+      if (crewFireInFlightRef.current || crewTimersRef.current.size > 0) return;
+      if (getRestTimerState().cycleId !== cycleId) return;
+      reanchorRestTimerAfterBackground(nowMs(), missedCrewDeadlineMs);
+    };
+    const untilUnclaimableMs = missedCrewDeadlineMs + AUTO_ADVANCE_OVERDUE_GRACE_MS + CREW_REPAIR_MARGIN_MS - nowMs();
+    if (untilUnclaimableMs <= 0) {
+      restartCrewRest();
+      return undefined;
+    }
+    const timeout = setTimeout(restartCrewRest, untilUnclaimableMs);
+    return () => clearTimeout(timeout);
+  }, [cycleId, missedCrewDeadlineMs]);
 
   // The rest ran out and nothing moved the wall: auto-advance off, a crew
   // passenger, or the end of the queue or the list. The same countdown, then one

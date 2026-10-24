@@ -176,4 +176,36 @@ describe('RestTimerCrewPublisher', () => {
     expect(getLastCrewCadenceSnapshot()).toBeNull();
     expect(getServerClockOffsetMs()).toBeNull();
   });
+
+  it('lets go of a crew clock this app cannot run when the session goes', () => {
+    const { rerender } = render(<RestTimerCrewPublisher />);
+    act(() => {
+      handleCrewCadenceChange(
+        {
+          restCadence: {
+            mode: 'everyOtherMinute',
+            targetSeconds: 60,
+            autoAdvance: true,
+            advanceOn: 'deadline',
+            source: 'settings',
+            isRunning: true,
+            anchorAt: String(T0),
+            pausedElapsedSeconds: 0,
+            setByParticipantId: 'participant-sam',
+          },
+          revision: 3,
+          serverNow: String(T0),
+          isSnapshot: true,
+          action: null,
+        },
+        { sessionId: 'session-1', ownParticipantId: 'participant-me', receivedAtMs: T0 },
+      );
+    });
+    // Held on an unarmed phone: the "needs a newer version" note reads it.
+    expect(getRestTimerState().crew?.config).toBeNull();
+    expect(getRestTimerState().armed).toBe(false);
+    harness.sessionId = null;
+    rerender(<RestTimerCrewPublisher />);
+    expect(getRestTimerState().crew).toBeNull();
+  });
 });

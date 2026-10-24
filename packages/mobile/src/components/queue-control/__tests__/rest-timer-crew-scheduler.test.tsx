@@ -560,3 +560,167 @@ describe('back from the background', () => {
     expect(getRestTimerState().anchorMs).toBe(T0);
   });
 });
+
+describe('on the minute, a beat this phone lets go', () => {
+  // Each case leaves the store as it was before the beat: only marking the beat
+  // spent gets the scheduler on to the next one.
+  it('still claims the next beat after a FIRE that got no answer', async () => {
+    crewArmed({ mode: 'onTheMinute' });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockRejectedValueOnce(new Error('socket closed'));
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    expect(cueCount('reached')).toBe(1);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(T0 + 120_000) } }),
+    );
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(2);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('still claims the next beat when the climber locked the phone through one', async () => {
+    crewArmed({ mode: 'onTheMinute' });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(T0 + 120_000) } }),
+    );
+    // Locked from 0:00 to 1:20: the clock moved, the timers did not.
+    currentNowMs += 80_000;
+    act(() => appStateListener?.('active'));
+    act(() => {
+      vi.advanceTimersByTime(80_000);
+    });
+    await settle();
+    expect(fireCalls()).toHaveLength(0);
+    advance(39_000);
+    expect(fireCalls()).toHaveLength(0);
+    advance(1_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('still claims the next beat after the retries of one ran out', async () => {
+    crewArmed({ mode: 'onTheMinute' });
+    render(<RestTimerAutoAdvanceScheduler />);
+    // The server keeps saying "not yet" at the same revision.
+    setSessionRestCadence.mockImplementation(async () => fireReply({ applied: false }));
+    advance(60_000);
+    for (let round = 0; round < 5; round++) {
+      await settle();
+      advance(10);
+    }
+    await settle();
+    expect(fireCalls()).toHaveLength(3);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(T0 + 120_000) } }),
+    );
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(4);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('claims the next beat on the server’s clock after one came back too late', async () => {
+    crewArmed({ mode: 'onTheMinute' });
+    render(<RestTimerAutoAdvanceScheduler />);
+    // The server's clock runs 6 s ahead of what this phone took it for, so the
+    // FIRE lands 6 s after the beat: lost. Its round trip shows the real offset.
+    setSessionRestCadence.mockImplementationOnce(async () =>
+      fireReply({ applied: false, serverNowMs: currentNowMs + 6_000 }),
+    );
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    expect(nextClimb).not.toHaveBeenCalled();
+    // The beats now land 6 s earlier on this phone: the next is at 1:54, not 2:00.
+    expect(getRestTimerState().anchorMs).toBe(T0 - 6_000);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(T0 + 120_000) }, serverNowMs: currentNowMs + 6_000 }),
+    );
+    advance(53_000);
+    expect(fireCalls()).toHaveLength(1);
+    advance(1_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(2);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a FIRE with no session to send it on', () => {
+  it('lets the beat go on a crew holder’s phone', async () => {
+    crewArmed();
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockResolvedValue(null);
+    advance(60_000);
+    await settle();
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('reached')).toBe(1);
+  });
+
+  it('moves the wall from a phone alone in its session', async () => {
+    isCrewSession = false;
+    inAppBoardConnection = 'disconnected';
+    crewArmed();
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockResolvedValue(null);
+    advance(60_000);
+    await settle();
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a crew rest after a tick that was already past', () => {
+  it.each([
+    ['a passenger', 'heldByPeer'],
+    ['an unheld wall', 'disconnected'],
+  ])('%s leaves it alone', (_label, connection) => {
+    inAppBoardConnection = connection;
+    // The deadline went 10 s ago, while nobody paced the wall.
+    crewArmed({ anchorAt: String(T0 - 70_000) });
+    const actions: LocalRestTimerAction[] = [];
+    subscribeLocalRestTimerActions((action) => actions.push(action));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(10_000);
+    expect(actions).toEqual([]);
+    expect(setSessionRestCadence).not.toHaveBeenCalled();
+    expect(getRestTimerState().anchorMs).toBe(T0 - 70_000);
+  });
+
+  it('is restarted once by the phone that takes the board over', () => {
+    inAppBoardConnection = 'heldByPeer';
+    crewArmed({ anchorAt: String(T0 - 70_000) });
+    const actions: LocalRestTimerAction[] = [];
+    subscribeLocalRestTimerActions((action) => actions.push(action));
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+    expect(actions).toEqual([]);
+
+    inAppBoardConnection = 'connectedByMe';
+    rerender(<RestTimerAutoAdvanceScheduler />);
+    // Sent on as RESET by the crew publisher; nobody's wall moves.
+    expect(actions).toEqual([{ type: 'reanchored', sessionId: SESSION }]);
+    expect(getRestTimerState().anchorMs).toBe(T0);
+    rerender(<RestTimerAutoAdvanceScheduler />);
+    advance(1_000);
+    expect(actions).toHaveLength(1);
+    expect(setSessionRestCadence).not.toHaveBeenCalled();
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+
+  it('is restarted by the holder once nobody can claim it, when it came in just past', () => {
+    // A crewmate's send logged a whole rest late: the deadline is 2 s gone.
+    crewArmed({ anchorAt: String(T0 - 62_000) });
+    const actions: LocalRestTimerAction[] = [];
+    subscribeLocalRestTimerActions((action) => actions.push(action));
+    render(<RestTimerAutoAdvanceScheduler />);
+    advance(3_000);
+    expect(actions).toEqual([]);
+    advance(300);
+    expect(actions).toEqual([{ type: 'reanchored', sessionId: SESSION }]);
+    expect(setSessionRestCadence).not.toHaveBeenCalled();
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+});

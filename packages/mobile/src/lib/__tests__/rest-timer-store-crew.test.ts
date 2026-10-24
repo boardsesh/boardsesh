@@ -12,6 +12,7 @@ import {
   disarmRestTimer,
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
+  noteRestTimerCrewBeatSkipped,
   noteRestTimerQueueEnded,
   noteRestTimerTick,
   pauseRestTimer,
@@ -297,5 +298,89 @@ describe('a late tick under a crew clock’s tick rule (the wall climb keeps its
     });
     expect(getRestTimerState().lastTick).toEqual({ status: 'attempt', queueItemUuid: 'item-previous' });
     expect(reader).not.toHaveBeenCalled();
+  });
+});
+
+const ON_THE_MINUTE: NonNullable<CrewRestCadence['config']> = {
+  mode: 'onTheMinute',
+  targetSeconds: 60,
+  autoAdvance: true,
+  advanceOn: 'deadline',
+  source: 'settings',
+  setByParticipantId: 'participant-sam',
+};
+
+describe('a better clock offset', () => {
+  it('leaves the held anchor alone for a small move, and converts it again past 250 ms', () => {
+    adoptCrewCadence(crewClock());
+    const { cycleId } = getRestTimerState();
+    // The same server anchor, converted with an offset 100 ms better.
+    adoptCrewCadence(crewClock({ revision: 6, anchorMs: T0 - 100 }));
+    expect(getRestTimerState().anchorMs).toBe(T0);
+    expect(getRestTimerState().cycleId).toBe(cycleId);
+    // A cold start's first estimate was 4 s out.
+    adoptCrewCadence(crewClock({ revision: 7, anchorMs: T0 - 4_000 }));
+    expect(getRestTimerState().anchorMs).toBe(T0 - 4_000);
+    expect(getRestTimerState().crew?.anchorMs).toBe(T0 - 4_000);
+    expect(getRestTimerState().cycleId).toBe(cycleId + 1);
+  });
+
+  it('adds up small moves against the conversion held, not the last one seen', () => {
+    adoptCrewCadence(crewClock());
+    adoptCrewCadence(crewClock({ revision: 6, anchorMs: T0 - 200 }));
+    adoptCrewCadence(crewClock({ revision: 7, anchorMs: T0 - 400 }));
+    expect(getRestTimerState().anchorMs).toBe(T0 - 400);
+  });
+
+  it('never moves an action of this phone’s own that is waiting for its echo', () => {
+    adoptCrewCadence(crewClock());
+    resetRestTimer(T0 + 20_000);
+    adoptCrewCadence(crewClock({ revision: 6, anchorMs: T0 - 4_000 }));
+    expect(getRestTimerState().anchorMs).toBe(T0 + 20_000);
+  });
+
+  it('moves the last beat fired with the grid on the minute', () => {
+    adoptCrewCadence(
+      crewClock({ config: ON_THE_MINUTE, lastFiredBeatMs: T0 + 60_000, lastFiredBeatServerMs: T0 + 60_000 }),
+    );
+    adoptCrewCadence(
+      crewClock({
+        revision: 6,
+        config: ON_THE_MINUTE,
+        anchorMs: T0 - 4_000,
+        lastFiredBeatMs: T0 + 56_000,
+        lastFiredBeatServerMs: T0 + 60_000,
+      }),
+    );
+    expect(getRestTimerState().anchorMs).toBe(T0 - 4_000);
+    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 56_000);
+  });
+});
+
+describe('noteRestTimerCrewBeatSkipped', () => {
+  it('spends a crew beat on the minute without announcing anything', () => {
+    adoptCrewCadence(crewClock({ config: ON_THE_MINUTE }));
+    const actions = recordActions();
+    const { cycleId } = getRestTimerState();
+    noteRestTimerCrewBeatSkipped(T0 + 60_000);
+    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 60_000);
+    expect(getRestTimerState().cycleId).toBe(cycleId + 1);
+    expect(getRestTimerState().anchorMs).toBe(T0);
+    expect(actions).toEqual([]);
+    // Never back past a beat already spent.
+    noteRestTimerCrewBeatSkipped(T0 + 30_000);
+    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 60_000);
+  });
+
+  it('leaves a rest after a tick, and a timer with no crew clock, alone', () => {
+    adoptCrewCadence(crewClock());
+    const before = getRestTimerState();
+    noteRestTimerCrewBeatSkipped(T0 + 60_000);
+    expect(getRestTimerState()).toBe(before);
+
+    armRestTimer('onTheMinute', T0, SESSION);
+    const ownTimer = getRestTimerState();
+    noteRestTimerCrewBeatSkipped(T0 + 60_000);
+    expect(getRestTimerState()).toBe(ownTimer);
   });
 });

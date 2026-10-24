@@ -96,6 +96,10 @@ export type RestTimerState = {
    * device clock), the same beat is returned, and the fresh cycle id from the
    * fire waves the second advance straight through. Two climbs skipped, the wall
    * lit for the wrong one.
+   *
+   * On a crew's clock on the minute it is also the last beat this phone let go
+   * without an advance (`noteRestTimerCrewBeatSkipped`), so the scheduler moves
+   * on to the next beat.
    */
   lastFiredDeadlineMs: number | null;
   /**
@@ -496,6 +500,24 @@ export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: numb
 }
 
 /**
+ * A beat of a crew's clock on the minute went by without this phone moving the
+ * wall: its FIRE failed, came back refused or too late, or its timeout ran with
+ * the beat already stale. The crew's beat is never moved here (see above), so
+ * nothing else in the store changes, and the scheduler, which works out the
+ * next beat when it renders, would sit on the one that went. Marking it spent
+ * walks the scheduler on to the next beat. Announces nothing: the crew's clock
+ * did not change.
+ */
+export function noteRestTimerCrewBeatSkipped(beatMs: number): void {
+  if (!state.armed || state.crew?.config?.mode !== 'onTheMinute') return;
+  setState({
+    ...state,
+    lastFiredDeadlineMs: Math.max(state.lastFiredDeadlineMs ?? beatMs, beatMs),
+    cycleId: state.cycleId + 1,
+  });
+}
+
+/**
  * The workout stage on the wall changed (`RestTimerPacingSync`). Stores it and,
  * while armed, applies the planned transition
  * (`planRestTimerPacingTransition`): `anchorNow` starts the beat now,
@@ -546,16 +568,35 @@ function sameLastTick(left: RestTimerLastTick | null, right: RestTimerLastTick |
 }
 
 /**
+ * How far a better clock-offset estimate has to move a crew instant the server
+ * did not move before this phone takes the new conversion. Below it the instant
+ * stays put, so the deadline does not jitter with every clock sample.
+ */
+export const CREW_RECONVERT_THRESHOLD_MS = 250;
+
+/** Whether a fresh conversion of a server instant moved it past the threshold from the one held. */
+export function crewConversionMoved(heldMs: number | null, freshMs: number | null): boolean {
+  if (heldMs === null || freshMs === null) return heldMs !== freshMs;
+  return Math.abs(freshMs - heldMs) > CREW_RECONVERT_THRESHOLD_MS;
+}
+
+/**
  * Follow the crew clock (lib/crew-rest-cadence.ts decides when). The timer is
  * armed for the crew's session and runs on its anchor, pause and last tick.
  *
  * What the SERVER changed is what moves: when its anchor, pause and running
  * state are the ones already held, this phone's own fields stay as they are,
  * so an action this phone just took (a reset whose echo is still on its way)
- * is not undone by an unrelated change, and a better clock-offset estimate
- * alone never shifts the deadline. The cycle rolls only when something the
- * scheduler reads changed. The last advance is the later of the two clocks',
- * so neither phone's beat can fire twice.
+ * is not undone by an unrelated change. The cycle rolls only when something
+ * the scheduler reads changed. The last advance is the later of the two
+ * clocks', so neither phone's beat can fire twice.
+ *
+ * An instant the server did not move keeps the conversion already held, unless
+ * the clock offset estimate moved it by more than CREW_RECONVERT_THRESHOLD_MS
+ * and this phone has no action of its own waiting. A clock is converted when it
+ * is taken, and on a cold start the first estimate can be seconds out (a lower
+ * bound, read late); on the minute the server never moves the anchor, so that
+ * error would otherwise last the whole block.
  *
  * A clock this app cannot run (config null) is only held: the timer keeps its
  * own state and the scheduler refuses to fire while it is there.
@@ -579,14 +620,33 @@ export function adoptCrewCadence(
     previous.isRunning === crew.isRunning &&
     previous.pausedElapsedSeconds === crew.pausedElapsedSeconds;
   const serverTickHeld = previous !== null && sameLastTick(previous.lastTick, crew.lastTick);
-  const anchorMs = serverClockHeld && state.armed ? state.anchorMs : crew.anchorMs;
-  const isRunning = serverClockHeld && state.armed ? state.isRunning : crew.isRunning;
-  const pausedElapsedSeconds = serverClockHeld && state.armed ? state.pausedElapsedSeconds : crew.pausedElapsedSeconds;
+  const lastFiredHeld = previous !== null && previous.lastFiredBeatServerMs === crew.lastFiredBeatServerMs;
+  // The crew's instants on this phone's clock, as held unless the server or the offset moved them.
+  const crewAnchorMs =
+    serverClockHeld && !crewConversionMoved(previous.anchorMs, crew.anchorMs) ? previous.anchorMs : crew.anchorMs;
+  const crewLastFiredBeatMs =
+    lastFiredHeld && !crewConversionMoved(previous.lastFiredBeatMs, crew.lastFiredBeatMs)
+      ? previous.lastFiredBeatMs
+      : crew.lastFiredBeatMs;
+  // The server's clock is the one held and this phone's own fields still match
+  // it: no action of this phone's is waiting for its echo.
+  const followsHeldClock =
+    serverClockHeld &&
+    state.anchorMs === previous.anchorMs &&
+    state.isRunning === previous.isRunning &&
+    state.pausedElapsedSeconds === previous.pausedElapsedSeconds;
+  const keepsOwnClock = serverClockHeld && state.armed && !followsHeldClock;
+  const anchorMs = keepsOwnClock ? state.anchorMs : crewAnchorMs;
+  const isRunning = keepsOwnClock ? state.isRunning : crew.isRunning;
+  const pausedElapsedSeconds = keepsOwnClock ? state.pausedElapsedSeconds : crew.pausedElapsedSeconds;
   const lastTick = serverTickHeld && state.armed ? state.lastTick : crew.lastTick;
   const lastFiredDeadlineMs =
-    crew.lastFiredBeatMs === null
+    crewLastFiredBeatMs === null
       ? state.lastFiredDeadlineMs
-      : Math.max(state.lastFiredDeadlineMs ?? crew.lastFiredBeatMs, crew.lastFiredBeatMs);
+      : lastFiredHeld && state.lastFiredDeadlineMs === previous.lastFiredBeatMs
+        ? // Nothing fired or let go here since: follow the conversion.
+          crewLastFiredBeatMs
+        : Math.max(state.lastFiredDeadlineMs ?? crewLastFiredBeatMs, crewLastFiredBeatMs);
   const timerChanged =
     !state.armed ||
     state.armedForSessionId !== crew.sessionId ||
@@ -599,7 +659,7 @@ export function adoptCrewCadence(
     ...state,
     armed: true,
     armedForSessionId: crew.sessionId,
-    crew: { ...crew, config },
+    crew: { ...crew, config, anchorMs: crewAnchorMs, lastFiredBeatMs: crewLastFiredBeatMs },
     anchorMs,
     isRunning,
     pausedElapsedSeconds,
