@@ -557,7 +557,7 @@
       "crowd": {
         "title": "Explorer sans bouger le mur",
         "p1": "Avec quelqu'un d'autre dans ta session, faire défiler n'allume plus la board. Touche Allumer au mur quand tu veux le tien, ou touche l'avatar en haut pour revenir au bloc au mur.",
-        "p2": "Tu grimpes seul ? Garde l'ampoule appuyée et désactive Allumer en faisant défiler les blocs et Allumer en sélectionnant dans la liste.",
+        "p2": "Tu grimpes seul ? Garde l'ampoule appuyée et désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler.",
         "previewLink": "Voir un bloc depuis n'importe quelle liste"
       },
       "history": {
@@ -703,8 +703,8 @@
         "p1": "Une fois connecté, garde l'ampoule appuyée pour ces réglages, de haut en bas.",
         "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres, puis Board.",
         "row2": "Allumer la prise du dessus. MoonBoard uniquement.",
-        "row3": "Allumer en faisant défiler les blocs.",
-        "row4": "Allumer en sélectionnant dans la liste. Désactive les deux et explorer ne change plus le mur.",
+        "row3": "Allumer la board quand je touche un bloc.",
+        "row4": "Allumer la board quand je fais défiler, une fois un bloc au mur. Désactive les deux et explorer ne change plus le mur.",
         "row5": "Rallumer la board. Renvoie le bloc aux LED.",
         "row6": "Tout éteindre. Ton téléphone reste connecté.",
         "row7": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
@@ -769,7 +769,7 @@
         "title": "Voir un bloc sans allumer la board",
         "intro": "Aperçu est le premier élément de la liste.",
         "p1": "Ça ouvre le bloc dans le lecteur sans toucher à ta file. Ton glissement suivant te ramène à ta file.",
-        "p2": "En session, ou avec Allumer en faisant défiler les blocs désactivé, une étiquette Exploration apparaît. Touche Activer ou Allumer au mur quand tu veux le bloc.",
+        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, une étiquette Exploration apparaît. La ligne sous le nom indique Aperçu, pas allumé, ou Il n'y a que toi qui le vois en session. Touche Activer ou Allumer au mur quand tu veux le bloc.",
         "sessionsLink": "Comment une session garde le mur tranquille",
         "clipAlt": "L'étiquette Exploration",
         "clipCaption": "L'étiquette arrive après le glissement. Le mur ne bouge pas."

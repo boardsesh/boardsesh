@@ -377,7 +377,7 @@ export function PlaylistDetailView({
   // Play: plays the list from its first row (#6667), in the glass header and
   // Material's app bar alike. Hidden on an empty list, behind the switch-board
   // banner (row taps still open the drawer so it can explain the mismatch) and
-  // in edit mode. A deliberate play, so Light problems when tapping the list (a
+  // in edit mode. A deliberate play, so Light the board when I tap a climb (a
   // row-tap setting) does not turn it into a preview.
   //
   // The rows and the callback are read through refs: both change identity as

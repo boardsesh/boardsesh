@@ -1063,7 +1063,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   // A board-history row (the sheet and the iPad wall column) plays from the
   // wall's history like any list (issue #6665): swipes walk back through what
-  // was lit. Like every list it reads Light problems when tapping the list, and
+  // was lit. Like every list it reads Light the board when I tap a climb, and
   // in a crew it opens a preview, so looking never takes a crewmate's wall.
   // The queue entry the wall's climb already has is reused either way, so
   // putting it up from the preview doesn't queue a second copy.

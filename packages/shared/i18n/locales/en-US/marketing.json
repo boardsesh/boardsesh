@@ -557,7 +557,7 @@
       "crowd": {
         "title": "Browsing without moving the wall",
         "p1": "With someone else in your session, swiping stops lighting the board. Tap Put on the wall when you want yours up, or tap the face at the top to go back to the climb on the wall.",
-        "p2": "Climbing alone? Hold the lightbulb and turn off Light problems on swipe and Light problems when tapping the list.",
+        "p2": "Climbing alone? Hold the lightbulb and turn off Light the board when I tap a climb and Light the board as I swipe.",
         "previewLink": "Preview a climb from any list"
       },
       "history": {
@@ -703,8 +703,8 @@
         "p1": "While connected, press and hold the lightbulb for these controls, top to bottom.",
         "row1": "Auto-disconnect. Frees the board after 30 seconds idle. Change the time under Settings, then Board.",
         "row2": "Light the hold above. MoonBoard only.",
-        "row3": "Light problems on swipe.",
-        "row4": "Light problems when tapping the list. Turn both off and browsing stops changing the wall.",
+        "row3": "Light the board when I tap a climb.",
+        "row4": "Light the board as I swipe, once a climb is on the wall. Turn both off and browsing stops changing the wall.",
         "row5": "Re-light board. Sends the climb to the LEDs again.",
         "row6": "Turn off all lights. Your phone stays connected.",
         "row7": "Disconnect board. Use it when you connected to the wrong wall.",
@@ -769,7 +769,7 @@
         "title": "Preview a climb without lighting the board",
         "intro": "Preview is the first item in the list.",
         "p1": "It opens the climb in the play drawer without touching your queue. Your next swipe returns to your queue.",
-        "p2": "In a session, or with Light problems on swipe off, a Browsing pill appears. Tap Set active or Put on the wall when you want the climb.",
+        "p2": "In a session, or with Light the board as I swipe off, a Browsing pill appears. The line under the name says Preview, not lit, or Only you see this in a session. Tap Set active or Put on the wall when you want the climb.",
         "sessionsLink": "How a session keeps browsing off the wall",
         "clipAlt": "The Browsing pill",
         "clipCaption": "The pill arrives after the swipe. The wall stays as it was."

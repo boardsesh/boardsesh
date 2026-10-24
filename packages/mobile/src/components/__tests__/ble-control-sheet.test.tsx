@@ -102,8 +102,9 @@ describe('BleControlSheet', () => {
     expect(rows).toEqual([
       'ble.autoDisconnect.toggleTitle',
       'lightControl.lightAdjacentHolds',
-      'ble.lighting.onSwipeLabel',
+      // Tap first, swipe nested under it: the same pair as Settings › Board.
       'ble.lighting.onTapLabel',
+      'ble.lighting.onSwipeLabel',
     ]);
   });
 

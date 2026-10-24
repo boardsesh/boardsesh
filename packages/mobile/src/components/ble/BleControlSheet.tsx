@@ -96,19 +96,24 @@ function BleControlSheet({
           />
         )}
         <SwitchRow
-          label={tSettings('ble.lighting.onSwipeLabel')}
-          description={tSettings('ble.lighting.onSwipeDescription')}
-          wrapDescription
-          value={lightOnSwipe}
-          onValueChange={onToggleLightOnSwipe}
-        />
-        <SwitchRow
           label={tSettings('ble.lighting.onTapLabel')}
           description={tSettings('ble.lighting.onTapDescription')}
           wrapDescription
           value={lightOnClimbTap}
           onValueChange={onToggleLightOnClimbTap}
         />
+        {/* Indented under the tap switch, the same pair as Settings › Board:
+            swiping only lights the board once a climb is on the wall, and its
+            description says so. */}
+        <View style={styles.nestedSwitch}>
+          <SwitchRow
+            label={tSettings('ble.lighting.onSwipeLabel')}
+            description={tSettings('ble.lighting.onSwipeDescription')}
+            wrapDescription
+            value={lightOnSwipe}
+            onValueChange={onToggleLightOnSwipe}
+          />
+        </View>
         <Separator />
         <ListRow
           title={tSettings('ble.relightBoard')}
@@ -138,5 +143,8 @@ export { BleControlSheet };
 const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[2],
+  },
+  nestedSwitch: {
+    paddingLeft: spacing[4],
   },
 });

@@ -838,7 +838,7 @@ describe('DrawerHostProvider board sheet climb actions', () => {
 
   it.each([
     ['in a crew', true, true],
-    ['with Light problems when tapping the list off', false, false],
+    ['with Light the board when I tap a climb off', false, false],
   ] as const)('opens a preview with the wall history and leaves the wall alone %s', async (_case, crew, light) => {
     queue.isSharedSession = crew;
     setSetting('lightOnClimbTap', light);

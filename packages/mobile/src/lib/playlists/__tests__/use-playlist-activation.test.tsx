@@ -738,9 +738,9 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
   });
 
-  // Issue #6665: every list reads "Light problems when tapping the list", not
+  // Issue #6665: every list reads "Light the board when I tap a climb", not
   // only search, and with it off a tap is a preview that still walks the list.
-  describe('Light problems when tapping the list, off', () => {
+  describe('Light the board when I tap a climb, off', () => {
     it('opens a preview seeded with this list instead of committing', async () => {
       setSetting('lightOnClimbTap', false);
       const climbA = makeClimb('a');
