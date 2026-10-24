@@ -23,7 +23,7 @@ function card(overrides: Partial<Parameters<typeof resolveTrackEndCard>[0]> = {}
     queue,
     committedQueueIndex: 1,
     queueSuccessor: queue[2],
-    previewPinned: false,
+    previewOverNow: false,
     ...overrides,
   });
 }
@@ -48,7 +48,7 @@ describe('resolveTrackEndCard (#6664)', () => {
 
   it("sends a preview back to the queue's Now", () => {
     // It goes back to Now, which is not Up next, so it names no climb (#6238).
-    expect(card({ previewPinned: true })).toEqual({
+    expect(card({ previewOverNow: true })).toEqual({
       listName: 'Projects',
       upNextCount: 2,
       firstUpNextName: null,
@@ -63,8 +63,31 @@ describe('resolveTrackEndCard (#6664)', () => {
       firstUpNextName: null,
       action: null,
     });
-    // No committed climb at all: nothing to go back to either.
-    expect(card({ committedQueueIndex: -1, previewPinned: true })?.action).toBeNull();
+    // An empty queue with no Now: nothing to go back to either.
+    expect(card({ queue: [], committedQueueIndex: -1, queueSuccessor: null })?.action).toBeNull();
+  });
+
+  // A crew preview opened from a list while the room's queue has climbs but no
+  // Now: the whole queue is Up next, as the queue sheet's header says.
+  it('counts the whole queue as Up next without a Now, and opens its first climb', () => {
+    const queued = [item('q1'), item('q2'), item('q3')];
+    expect(card({ queue: queued, committedQueueIndex: -1, queueSuccessor: null })).toEqual({
+      listName: 'Projects',
+      upNextCount: 3,
+      firstUpNextName: 'q1',
+      action: { kind: 'nextInQueue', target: queued[0] },
+    });
+    // The queue walk from the top lands past what this board cannot draw.
+    expect(card({ queue: queued, committedQueueIndex: -1, queueSuccessor: queued[1] })?.action).toEqual({
+      kind: 'nextInQueue',
+      target: queued[1],
+    });
+  });
+
+  it('names nothing, and does not throw, for a peer item whose climb has not landed', () => {
+    const shell = { uuid: 'queue-shell' } as unknown as ClimbQueueItem;
+    const shellQueue = [item('history'), item('now'), shell];
+    expect(card({ queue: shellQueue, queueSuccessor: shell })?.firstUpNextName).toBeNull();
   });
 
   it('has no card away from the end, or while more of the list is loading', () => {
@@ -112,20 +135,21 @@ describe('truncateClimbName', () => {
 });
 
 describe('Up next count and the queue badge (#6238)', () => {
-  it('counts what is queued after Now, and nothing without a Now', () => {
+  it('counts what is queued after Now, and the whole queue without one', () => {
     expect(countUpNext(4, 1)).toBe(2);
     expect(countUpNext(4, 3)).toBe(0);
-    expect(countUpNext(4, -1)).toBe(0);
+    expect(countUpNext(4, -1)).toBe(4);
+    expect(countUpNext(0, -1)).toBe(0);
   });
 
   it('agrees with the end card', () => {
     expect(card()?.upNextCount).toBe(countUpNext(queue.length, 1));
   });
 
-  it('badges Up next only while the header names a list', () => {
+  it('counts Up next only while the header names a list', () => {
     expect(resolveListWalkUpNextBadge(named, 3)).toBe(3);
     expect(resolveListWalkUpNextBadge({ kind: 'named', name: 'Projects' }, 3)).toBe(3);
-    expect(resolveListWalkUpNextBadge({ kind: 'hidden' }, 3)).toBe(0);
+    expect(resolveListWalkUpNextBadge({ kind: 'hidden' }, 3)).toBeNull();
     expect(resolveListWalkUpNextBadge(named, 0)).toBe(0);
   });
 });

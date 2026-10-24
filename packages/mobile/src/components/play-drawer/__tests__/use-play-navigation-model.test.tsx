@@ -187,7 +187,32 @@ describe('usePlayNavigationModel', () => {
     it('shows none while playing from the queue', () => {
       const { result } = renderHook(() => usePlayNavigationModel(inputs(queue)));
       expect(result.current.currentTrackLabel.kind).toBe('hidden');
-      expect(result.current.listWalkUpNextCount).toBe(0);
+      expect(result.current.listWalkUpNextCount).toBeNull();
+    });
+
+    // A crew preview opened from a list while the room's queue holds climbs
+    // added with no Now: the whole queue is Up next, as the queue sheet says.
+    it('counts the whole queue when the queue has no Now, end card included', () => {
+      const preview = item('c');
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queued),
+          displayedQueueItem: preview,
+          displayedClimb: preview.climb,
+          drawerPreviewItem: preview,
+          drawerPreviewSuggestionSource: projects,
+          currentClimbQueueItem: null,
+        }),
+      );
+      expect(result.current.currentTrackLabel.kind).toBe('counted');
+      expect(result.current.listWalkUpNextCount).toBe(2);
+      // No Now to go back to: the card carries on into the queue.
+      expect(result.current.trackEndCard).toEqual({
+        listName: 'Projects',
+        upNextCount: 2,
+        firstUpNextName: 'Climb q1',
+        action: { kind: 'nextInQueue', target: queued[0] },
+      });
     });
 
     it('follows the queue as climbs are added', () => {

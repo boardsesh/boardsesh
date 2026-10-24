@@ -789,8 +789,8 @@
       "removeFavoriteAria": "Retirer des favoris",
       "climbActionsAria": "Actions du bloc",
       "queueCountAria": "File, {{count}} blocs",
-      "queueUpNextAria_one": "File d'attente, {{count}} bloc à suivre",
-      "queueUpNextAria_other": "File d'attente, {{count}} blocs à suivre",
+      "queueUpNextAria_one": "File, {{count}} bloc à suivre",
+      "queueUpNextAria_other": "File, {{count}} blocs à suivre",
       "changeAngle": "Changer l’inclinaison"
     },
     "track": {

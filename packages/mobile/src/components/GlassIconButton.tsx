@@ -16,7 +16,7 @@ import { GlassSurface } from './GlassSurface';
 import { PressableSurface } from './PressableSurface';
 import { Icon } from './Icon';
 import { Text } from './Text';
-import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from './count-badge-style';
+import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from './count-badge-style';
 import { iconMap, type IconName } from './icon-map';
 import { createVariantComponent } from '../theme/variants';
 import { brandColors } from '../theme/colors';
@@ -68,11 +68,9 @@ type GlassIconButtonProps = {
   active?: boolean;
 };
 
-const MAX_BADGE_COUNT = 99;
-
 function formatBadgeCount(badgeCount: number | undefined): string | null {
   if (badgeCount == null || badgeCount <= 0) return null;
-  return badgeCount > MAX_BADGE_COUNT ? `${MAX_BADGE_COUNT}+` : String(badgeCount);
+  return formatCountBadge(badgeCount);
 }
 
 /**

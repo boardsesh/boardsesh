@@ -8,13 +8,15 @@ import type { NavigationState, TrackLabelModel } from '@boardsesh/play-view';
  *   carries on with what is queued after it. `target` is that climb.
  * - `backToCommitted`: the climb on screen is a preview (wrong board, a crew
  *   tap), which is not in the queue, so "your queue" starts back at its Now.
+ *   Only while there is a Now: a preview over a queue with none carries on
+ *   with `nextInQueue` instead.
  */
 export type TrackEndAction = { kind: 'nextInQueue'; target: ClimbQueueItem } | { kind: 'backToCommitted' };
 
 export type TrackEndCardModel = {
   /** The list that ended, as the header named it; null for a list nobody named. */
   listName: string | null;
-  /** How many climbs are Up next after the queue's Now. */
+  /** How many climbs are Up next: after the queue's Now, or the whole queue without one. */
   upNextCount: number;
   /**
    * The climb "Keep going" opens, named on the card so the climber knows what
@@ -33,23 +35,32 @@ const ELLIPSIS = '\u2026';
 
 /**
  * How many climbs are Up next: everything queued after the queue's Now
- * (`committedQueueIndex`, -1 without one). The end card's number and the queue
- * button's badge both read this, so they always agree.
+ * (`committedQueueIndex`), or the whole queue when Now is not in it (-1). The
+ * end card's number, the queue button's badge and the queue sheet's "Up next"
+ * header all count this way, so they always agree.
  */
 export function countUpNext(queueLength: number, committedQueueIndex: number): number {
-  return committedQueueIndex >= 0 ? Math.max(0, queueLength - committedQueueIndex - 1) : 0;
+  return Math.max(0, queueLength - committedQueueIndex - 1);
 }
 
 /**
- * The queue button's badge while the player walks a list (#6238): Up next is
- * not what Next plays then, so the badge keeps it in sight. Zero, so no badge,
- * whenever the header names no list.
+ * The queue button's Up next count while the player walks a list (#6238): Up
+ * next is not what Next plays then, so the button keeps it in sight. Null
+ * whenever the header names no list: the button then counts what a swipe
+ * reaches, as it always has. Zero is a walked list with nothing Up next: no
+ * badge, but the button still speaks Up next.
  */
-export function resolveListWalkUpNextBadge(trackLabel: TrackLabelModel, upNextCount: number): number {
-  return trackLabel.kind === 'hidden' ? 0 : upNextCount;
+export function resolveListWalkUpNextBadge(trackLabel: TrackLabelModel, upNextCount: number): number | null {
+  return trackLabel.kind === 'hidden' ? null : upNextCount;
 }
 
-/** A climb name short enough for one line of the end card, cut on whole characters. */
+/**
+ * A climb name short enough for one line of the end card, cut between whole
+ * code points, so a surrogate pair is never split. A multi-code-point emoji (a
+ * flag, a skin tone, a ZWJ family) or a letter with a combining accent that
+ * straddles the cut can still lose its tail: Hermes has no `Intl.Segmenter`
+ * to cut on grapheme clusters, and climb names that long rarely carry them.
+ */
 export function truncateClimbName(name: string, maxLength = MAX_FIRST_UP_NEXT_NAME_LENGTH): string {
   const characters = Array.from(name.trim());
   if (characters.length <= maxLength) return characters.join('');
@@ -60,7 +71,8 @@ export function truncateClimbName(name: string, maxLength = MAX_FIRST_UP_NEXT_NA
 }
 
 function firstUpNextNameOf(target: ClimbQueueItem): string | null {
-  const name = truncateClimbName(target.climb.name ?? '');
+  // The wire boundary is untyped: a peer's item can land before its climb does.
+  const name = truncateClimbName(target.climb?.name ?? '');
   return name.length > 0 ? name : null;
 }
 
@@ -71,12 +83,17 @@ function firstUpNextNameOf(target: ClimbQueueItem): string | null {
  * while more of it is still on its way: a track that pages in more climbs ends
  * where the list ends, not where the first load stopped.
  *
- * `committedQueueIndex` is where the queue's Now sits (-1 without one); the
- * caller already has the queue indexed. `queueSuccessor` is where a forward
- * walk of the queue lands from Now, board rules included, so the card goes
- * where Next would have gone before the list took over the swipe. When that
- * walk finds nothing the queue can draw, the card still offers the next queued
- * climb, which then opens on its own board: the number on the button counts it.
+ * `committedQueueIndex` is where the queue's Now sits (-1 when Now is not in
+ * the queue); the caller already has the queue indexed. `queueSuccessor` is
+ * where a forward walk of the queue lands from Now (from the top without one),
+ * board rules included, so the card goes where Next would have gone before the
+ * list took over the swipe. When that walk finds nothing the queue can draw,
+ * the card still offers the next queued climb, which then opens on its own
+ * board: the number on the button counts it.
+ *
+ * `previewOverNow` is a preview pinned while the queue has a Now: the action
+ * goes back to that Now. A preview with no Now to go back to carries on into
+ * the queue like a committed climb would.
  */
 export function resolveTrackEndCard({
   navigationState,
@@ -85,7 +102,7 @@ export function resolveTrackEndCard({
   queue,
   committedQueueIndex,
   queueSuccessor,
-  previewPinned,
+  previewOverNow,
 }: {
   navigationState: Pick<NavigationState, 'atTrackEnd'>;
   moreToLoad: boolean;
@@ -93,14 +110,14 @@ export function resolveTrackEndCard({
   queue: readonly ClimbQueueItem[];
   committedQueueIndex: number;
   queueSuccessor: ClimbQueueItem | null;
-  previewPinned: boolean;
+  previewOverNow: boolean;
 }): TrackEndCardModel | null {
   if (!navigationState.atTrackEnd || moreToLoad) return null;
   const listName = trackLabel.kind === 'hidden' ? null : trackLabel.name;
   const upNextCount = countUpNext(queue.length, committedQueueIndex);
   if (upNextCount <= 0) return { listName, upNextCount: 0, firstUpNextName: null, action: null };
   // A preview's action goes back to Now, which is not Up next: no name to promise.
-  if (previewPinned) return { listName, upNextCount, firstUpNextName: null, action: { kind: 'backToCommitted' } };
+  if (previewOverNow) return { listName, upNextCount, firstUpNextName: null, action: { kind: 'backToCommitted' } };
   const target = queueSuccessor ?? queue[committedQueueIndex + 1];
   if (!target) return { listName, upNextCount, firstUpNextName: null, action: null };
   return { listName, upNextCount, firstUpNextName: firstUpNextNameOf(target), action: { kind: 'nextInQueue', target } };
