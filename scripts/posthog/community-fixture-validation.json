@@ -1,0 +1,121 @@
+{
+  "executedAt": "2026-10-24",
+  "projectId": 412845,
+  "fixtures": {
+    "monthlyPeople": {
+      "querySha256": "88339c3bc1827b6dee8c97700c01450757ef224070f4a6e33b676f4cf0df8959",
+      "rows": [
+        {
+          "month_label": "2026-10",
+          "climbers_who_lit": "1900",
+          "climbers_who_logged": "1700",
+          "new_accounts": "1300"
+        },
+        {
+          "month_label": "2026-11",
+          "climbers_who_lit": "2104",
+          "climbers_who_logged": "1850",
+          "new_accounts": "1450"
+        },
+        {
+          "month_label": "2026-12 (so far)",
+          "climbers_who_lit": "400",
+          "climbers_who_logged": "380",
+          "new_accounts": "300"
+        }
+      ]
+    },
+    "monthlyClimbs": {
+      "querySha256": "b66c2a55be5aaa1181c540210e75ad65c52204976c48308460d690b11c78422a",
+      "rows": [
+        {
+          "month_label": "2026-10",
+          "climbs_lit": "50000",
+          "sends_logged": "16000"
+        },
+        {
+          "month_label": "2026-11",
+          "climbs_lit": "1234567",
+          "sends_logged": "18400"
+        },
+        {
+          "month_label": "2026-12 (so far)",
+          "climbs_lit": "9000",
+          "sends_logged": "2000"
+        }
+      ]
+    },
+    "topGyms": {
+      "querySha256": "bf39d1339467f0aaeeb8f617141e39b41f5c6109f0e801874d40a3b7696ec9ba",
+      "rows": [
+        {
+          "rank": "1",
+          "gym": "Gym A",
+          "climbers": "1500",
+          "climbs_lit": "5000",
+          "vs_last_month": "+2",
+          "link": "https://boardsesh.com/gym/gym-a",
+          "month": "2026-11"
+        },
+        {
+          "rank": "2",
+          "gym": "Crag B",
+          "climbers": "1200",
+          "climbs_lit": "3900",
+          "vs_last_month": "-1",
+          "link": "https://boardsesh.com/gym/crag-b",
+          "month": "2026-11"
+        },
+        {
+          "rank": "3",
+          "gym": "No Link Gym",
+          "climbers": "40",
+          "climbs_lit": "900",
+          "vs_last_month": "new",
+          "link": "",
+          "month": "2026-11"
+        }
+      ]
+    },
+    "topClimbers": {
+      "querySha256": "283f8fa26a7e85c4b930b6d9403c16d567282856681b888757d7b5194991090a",
+      "rows": [
+        {
+          "rank": "1",
+          "climber": "Sam",
+          "sends": "1412",
+          "flashes": "50",
+          "days_with_a_send": "22",
+          "vs_last_month": "+1",
+          "month": "2026-11"
+        },
+        {
+          "rank": "2",
+          "climber": "Anonymous climber",
+          "sends": "380",
+          "flashes": "30",
+          "days_with_a_send": "15",
+          "vs_last_month": "",
+          "month": "2026-11"
+        },
+        {
+          "rank": "3",
+          "climber": "Alex",
+          "sends": "300",
+          "flashes": "25",
+          "days_with_a_send": "12",
+          "vs_last_month": "new",
+          "month": "2026-11"
+        }
+      ]
+    },
+    "redditPost": {
+      "querySha256": "9c01b77275fd7f8dd9a24a6d3ba774e1bea08950639b2a60e7bdf9c10c1c3d11",
+      "rows": [
+        {
+          "reddit_post": "**Boardsesh in November 2026**\n\n- 2,104 climbers lit 1,234,567 climbs on their boards (+2369% on last month)\n- 18,400 sends logged\n- Climbers were active at 342 gyms\n- 1,450 new climbers joined\n- 3,105 climbers used Boardsesh in the last 30 days\n\n**Busiest gyms** (climbers who lit a climb there)\n1. [Gym A](https://boardsesh.com/gym/gym-a): 1,500 climbers\n2. [Crag B](https://boardsesh.com/gym/crag-b): 1,200 climbers\n3. No Link Gym: 40 climbers\n\n**Most sends logged**\n1. Sam: 1,412 sends\n2. Anonymous climber: 380 sends\n3. Alex: 300 sends"
+        }
+      ]
+    }
+  }
+}

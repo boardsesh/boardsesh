@@ -551,7 +551,7 @@ are not repeated here: read them from `Active Users Snapshot` (above).
   `boardsesh:community-monthly:<month>:<list>:<rank>`. A query can still see
   several copies of one uuid, so every tile keeps one row per uuid, the one
   with the newest `created_at`, which is the latest measurement
-  (`argMax(properties.X, created_at) ... GROUP BY uuid`).
+  (`ORDER BY created_at DESC LIMIT 1 BY uuid`).
 - **No cohort, not zero.** A month in which nobody lit a climb sends nothing,
   not a summary of zeros. A month that had events and then lost every lit
   climb (every board behind them deleted) keeps its last events.
@@ -629,6 +629,22 @@ missed, for example after eight weeks off:
 **What may be published.** Totals and per-gym counts may go in the post. A
 count of Boardsesh users split by board brand may not, so no tile breaks these
 numbers down by board type.
+
+**Dashboard and queries.** The tiles on
+[Community: monthly recap](https://us.posthog.com/project/412845/dashboard/2254130)
+are versioned in `scripts/posthog/community-queries.ts`: climbers and climbs
+per month, the top 10 gyms and climbers of the latest complete month with
+their movement since the month before, and a "Reddit post draft" tile that
+returns one markdown block to paste. The post's 30-day active line comes from
+`Active Users Snapshot` and is left out for any month ending before
+2026-11-07, the first day that number covers a full 30 days. Each query is
+built from three swappable sources; `community-fixtures.ts` runs the same text
+against literal rows, and `community-fixture-validation.json` records what
+PostHog returned for it (checked by `community-queries.test.ts`). After
+changing a query, print the fixtures with
+`vp exec node --import tsx scripts/posthog/export-community-dashboard.ts --fixtures`,
+run each through PostHog, and record the new rows and hashes; drop
+`--fixtures` to print the live queries for the tiles.
 
 ## Acquisition
 
