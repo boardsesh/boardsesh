@@ -322,7 +322,12 @@ export function useCarouselGesture({
 
         // Past the list's last climb the board gives a little toward the end
         // card; anywhere else with nowhere to go, it stays put.
-        const atTrackEnd = offset < 0 && !canStep(1) && trackEndAvailable.value;
+        const atTrackEnd =
+          offset < 0 &&
+          !hasMountedPage(1) &&
+          trackEndAvailable.value &&
+          jsState.value.processedStep === uiSteps.value &&
+          jsState.value.center === anchorPage.value;
         if (offset < 0 && !canStep(1)) offset = atTrackEnd ? offset * TRACK_END_DRAG_RESISTANCE : 0;
         if (offset > 0 && !canStep(-1)) offset = 0;
 
@@ -378,9 +383,14 @@ export function useCarouselGesture({
             step: uiSteps.value,
             generation: resetGeneration.value,
           };
-        // A forward swipe past the list's last climb shows the end card only
-        // once React has confirmed that this really is the end of the track.
-        } else if (direction === 1 && !canStep(1) && trackEndAvailable.value) {
+          // A forward swipe past the list's last climb shows the end card only
+          // once React has confirmed that this really is the end of the track.
+        } else if (
+          direction === 1 &&
+          !hasMountedPage(1) &&
+          trackEndAvailable.value &&
+          jsState.value.center === anchorPage.value
+        ) {
           runOnJS(reachTrackEnd)();
         }
         if (offset !== 0) {
@@ -447,6 +457,7 @@ export function useCarouselGesture({
         enabled: enabledSV.value,
         zoomed: isZoomedSV?.value ?? false,
         pageArt: pageArt?.value,
+        trackEndAvailable: trackEndAvailable.value,
       };
     },
     (snapshot) => {
@@ -462,23 +473,42 @@ export function useCarouselGesture({
         pendingRelease.value = null;
         return;
       }
-      if (state.processedStep !== pending.step) return;
-      // A queue change or refused step may have put a different page in the
-      // middle. A real queue boundary must still reject the retained release.
-      if (state.center !== pending.anchor || !(pending.direction > 0 ? state.hasNext : state.hasPrevious)) {
-        pendingRelease.value = null;
-        return;
-      }
+      // Failure cancels intent even before React acknowledges the previous
+      // swipe. A repaired image must not revive an already cancelled release.
       const targetArt = snapshot.pageArt?.[pending.anchor + pending.direction];
       if (targetArt === 'failed') {
         pendingRelease.value = null;
+        return;
+      }
+      if (state.processedStep !== pending.step) return;
+      // A queue change or refused step may have put a different page in the
+      // middle. A real queue boundary must still reject the retained release.
+      if (state.center !== pending.anchor) {
+        pendingRelease.value = null;
+        return;
+      }
+      if (!(pending.direction > 0 ? state.hasNext : state.hasPrevious)) {
+        pendingRelease.value = null;
+        if (pending.direction > 0 && snapshot.trackEndAvailable) runOnJS(reachTrackEnd)();
         return;
       }
       if (snapshot.pageArt && targetArt !== 'ready') return;
       pendingRelease.value = null;
       startFling(pending.direction, pending.velocity);
     },
-    [pendingRelease, jsState, anchorPage, uiSteps, resetGeneration, enabledSV, isZoomedSV, pageArt, startFling],
+    [
+      pendingRelease,
+      jsState,
+      anchorPage,
+      uiSteps,
+      resetGeneration,
+      enabledSV,
+      isZoomedSV,
+      pageArt,
+      trackEndAvailable,
+      reachTrackEnd,
+      startFling,
+    ],
   );
 
   return { gesture };

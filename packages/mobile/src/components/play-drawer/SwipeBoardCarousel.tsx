@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, {
+  runOnUI,
   useAnimatedStyle,
   useSharedValue,
   type AnimatedStyle,
@@ -174,25 +175,43 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   zoomStyle,
 }: CarouselBoardSlotProps) {
   const mountedRef = useRef(true);
+  const lastArtReadinessRef = useRef<BoardArtReadiness | undefined>(undefined);
   const handleArtReadinessChange = useCallback(
     (readiness: BoardArtReadiness) => {
-      if (!mountedRef.current || pageArt.value[page] === readiness) return;
-      pageArt.value = { ...pageArt.value, [page]: readiness };
+      lastArtReadinessRef.current = readiness;
+      if (!mountedRef.current) return;
+      // JS shared-value getters can lag queued writes from another slot. Merge
+      // on the UI thread so one image cannot overwrite its neighbour's readiness.
+      runOnUI((nextReadiness: BoardArtReadiness) => {
+        'worklet';
+        if (pageArt.value[page] === nextReadiness) return;
+        pageArt.value = { ...pageArt.value, [page]: nextReadiness };
+      })(readiness);
     },
     [page, pageArt],
   );
   useLayoutEffect(() => {
     mountedRef.current = true;
-    // A climb on another board deliberately has no peek; navigation swaps the
-    // board on commit. There is no pending image for this slot to wait for.
-    if (!frames) handleArtReadinessChange('ready');
+    // Effect replay can report from the child before this setup runs, while
+    // ownership is still suspended by the previous cleanup.
+    if (lastArtReadinessRef.current !== undefined) handleArtReadinessChange(lastArtReadinessRef.current);
     return () => {
       mountedRef.current = false;
-      const remainingPages = { ...pageArt.value };
-      delete remainingPages[page];
-      pageArt.value = remainingPages;
+      runOnUI(() => {
+        'worklet';
+        const remainingPages = { ...pageArt.value };
+        delete remainingPages[page];
+        pageArt.value = remainingPages;
+      })();
     };
-  }, [frames, handleArtReadinessChange, page, pageArt]);
+  }, [handleArtReadinessChange, page, pageArt]);
+  useLayoutEffect(() => {
+    // A climb on another board deliberately has no peek; navigation swaps the
+    // board on commit. There is no pending image for this slot to wait for.
+    // Keep this separate from mount ownership: descendant image layout effects
+    // report before this slot's setup when a retained page changes frames.
+    if (!frames) handleArtReadinessChange('ready');
+  }, [frames, handleArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
     const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth);
     // Opacity and transform only, and never zIndex. Two pages that are both

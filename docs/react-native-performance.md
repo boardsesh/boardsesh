@@ -526,9 +526,18 @@ reference numbers):
 - A release blocked because React or the neighbour's artwork is behind retains one direction and
   velocity. It starts its fling after the matching step renders and native display events confirm
   the current artwork attempt, including all background layers. A new touch, cancellation,
-  navigation reset, queue boundary, zoom, disable, or carousel unmount discards that intent. The
+  navigation reset, backward queue boundary, zoom, disable, or carousel unmount discards that intent. The
   current complete board stays centred until its neighbour is ready; no extra board slot is mounted.
-  An exhausted artwork attempt cancels the retained release instead of making a bare photo navigable.
+  A confirmed forward boundary opens the track-end card once. A loading neighbour never counts as
+  that boundary. An exhausted artwork attempt cancels the retained release immediately, even while
+  React is behind; a later repair cannot revive it. Unresolved or absent backgrounds are not ready.
+- Readiness belongs to a mounted page, including when its climb frames change. Only unmounting
+  removes the page's entry: a frames-dependent parent cleanup can otherwise discard the child's
+  synchronous image-readiness report and leave a previous page impossible to swipe back to.
+  Merge readiness updates and remove pages on the UI thread. A JS shared-value getter can still
+  see the map from before its queued writes: spreading that map can overwrite another slot's
+  `ready` signal or resurrect an unmounted page, permanently blocking a reverse swipe. Keep native
+  display ownership in refs so effect replay preserves an image's genuine display event.
 - The displayed holds for the same climb bridge a replacement caused by board-size refinement.
   Keep them until the replacement overlay's native display event, with the replacement transition
   disabled. Scope that bridge to the board and climb frames so another climb cannot inherit it.

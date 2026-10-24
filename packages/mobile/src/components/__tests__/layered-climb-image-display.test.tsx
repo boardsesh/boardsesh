@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, useLayoutEffect, type ReactNode } from 'react';
+import { Activity, createElement, useLayoutEffect, type ReactNode } from 'react';
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -92,6 +92,81 @@ describe('native artwork display handoff', () => {
     act(() => latest('file:///fallback-board.webp').load?.());
     expect(readiness).toHaveBeenLastCalledWith(false);
     act(() => latest('file:///fallback-board.webp').display?.());
+    expect(readiness).toHaveBeenLastCalledWith(true);
+  });
+
+  it('restores displayed readiness after layout effects replay around retained native images', () => {
+    const readiness = vi.fn();
+    const props = {
+      overlayUri: 'file:///retained-native-holds.png',
+      overlayLoadKey: 'retained:0',
+      backgroundPaths: ['/retained-native-board.webp'],
+      onArtReadinessChange: readiness,
+    };
+    const board = createElement(LayeredClimbImage, props);
+    const { container, rerender } = render(createElement(Activity, { mode: 'visible', children: board }));
+    act(() => {
+      latest('file:///retained-native-board.webp').display?.();
+      latest(props.overlayUri).display?.();
+    });
+    expect(readiness).toHaveBeenLastCalledWith(true);
+    const originalImages = Array.from(container.querySelectorAll('img'));
+
+    // Activity disconnects effects while retaining the native image instances,
+    // reproducing the ownership replay without inventing another display event.
+    rerender(createElement(Activity, { mode: 'hidden', children: board }));
+    expect(readiness).toHaveBeenLastCalledWith(false);
+    rerender(createElement(Activity, { mode: 'visible', children: board }));
+
+    const revealedImages = Array.from(container.querySelectorAll('img'));
+    expect(revealedImages).toHaveLength(originalImages.length);
+    for (const [imageIndex, originalImage] of originalImages.entries()) {
+      expect(revealedImages[imageIndex]).toBe(originalImage);
+    }
+    expect(readiness).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each([true, false])('refuses an unresolved background layer when overlayRequired is %s', (overlayRequired) => {
+    const readiness = vi.fn();
+    const props = {
+      overlayUri: overlayRequired ? 'file:///incomplete-holds.png' : null,
+      overlayLoadKey: overlayRequired ? 'incomplete:0' : null,
+      overlayRequired,
+      backgroundPaths: ['/available-board.webp'],
+      missingBackgroundCount: 1,
+      onArtReadinessChange: readiness,
+    };
+    const { rerender } = render(createElement(LayeredClimbImage, props));
+    act(() => {
+      latest('file:///available-board.webp').display?.();
+      if (props.overlayUri) latest(props.overlayUri).display?.();
+    });
+    expect(readiness).not.toHaveBeenCalledWith(true);
+
+    // The resolved layer list was already displayed; clearing the missing-layer
+    // barrier must publish readiness without requiring duplicate native events.
+    rerender(createElement(LayeredClimbImage, { ...props, missingBackgroundCount: 0 }));
+    expect(readiness).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each([true, false])('waits for an actual background when overlayRequired is %s', (overlayRequired) => {
+    const readiness = vi.fn();
+    const props = {
+      overlayUri: overlayRequired ? 'file:///backgroundless-holds.png' : null,
+      overlayLoadKey: overlayRequired ? 'backgroundless:0' : null,
+      overlayRequired,
+      backgroundPaths: [] as string[],
+      onArtReadinessChange: readiness,
+    };
+    const { rerender } = render(createElement(LayeredClimbImage, props));
+    act(() => {
+      if (props.overlayUri) latest(props.overlayUri).display?.();
+    });
+    expect(readiness).not.toHaveBeenCalledWith(true);
+
+    rerender(createElement(LayeredClimbImage, { ...props, backgroundPaths: ['/resolved-board.webp'] }));
+    expect(readiness).toHaveBeenLastCalledWith(false);
+    act(() => latest('file:///resolved-board.webp').display?.());
     expect(readiness).toHaveBeenLastCalledWith(true);
   });
 

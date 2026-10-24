@@ -159,10 +159,12 @@ export function backgroundImageUri(path: string): string {
   return `file://${path}`;
 }
 
+type NativeImageToken = { displayed: boolean };
+
 type NativeImageLayerProps = ComponentProps<typeof Image> & {
   nativeDisplayIdentity: string;
-  onNativeMounted: (identity: string, token: object) => () => void;
-  onNativeDisplayed: (identity: string, token: object) => boolean;
+  onNativeMounted: (identity: string, token: NativeImageToken) => () => void;
+  onNativeDisplayed: (identity: string, token: NativeImageToken) => boolean;
 };
 
 /** A token belongs to this mounted native image, not to a cached path or capture label. */
@@ -173,7 +175,13 @@ const NativeImageLayer = React.memo(function NativeImageLayer({
   onDisplay,
   ...imageProps
 }: NativeImageLayerProps) {
-  const token = useMemo(() => ({}), [nativeDisplayIdentity]);
+  // A layout-effect replay retains this native Image. Its display event does
+  // not repeat, so keep the displayed bit with the instance's exact token.
+  // A ref also survives Fast Refresh invalidating memo caches.
+  const tokenRef = useRef({ identity: nativeDisplayIdentity, token: { displayed: false } });
+  if (tokenRef.current.identity !== nativeDisplayIdentity)
+    tokenRef.current = { identity: nativeDisplayIdentity, token: { displayed: false } };
+  const { token } = tokenRef.current;
   useLayoutEffect(() => onNativeMounted(nativeDisplayIdentity, token), [nativeDisplayIdentity, onNativeMounted, token]);
   return (
     <Image
@@ -276,7 +284,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const nativeOverlayIdentity = JSON.stringify([overlayUri, overlayLoadKey, recyclingKey, visibilityEpoch]);
   const nativeBackgroundIdentity = (path: string) =>
     JSON.stringify(['background', backgroundImageUri(path), visibilityEpoch]);
-  const mountedNativeLayersRef = useRef(new Map<string, { token: object; displayed: boolean }>());
+  const mountedNativeLayersRef = useRef(new Map<string, { token: NativeImageToken; displayed: boolean }>());
   const displayedAttemptRef = useRef({
     identity: displayAttempt,
     nativeOverlayIdentity,
@@ -289,8 +297,8 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       reported: false,
     };
   }
-  const onNativeMounted = useCallback((identity: string, token: object) => {
-    mountedNativeLayersRef.current.set(identity, { token, displayed: false });
+  const onNativeMounted = useCallback((identity: string, token: NativeImageToken) => {
+    mountedNativeLayersRef.current.set(identity, { token, displayed: token.displayed });
     displayedAttemptRef.current.reported = false;
     return () => {
       if (mountedNativeLayersRef.current.get(identity)?.token !== token) return;
@@ -298,10 +306,11 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       displayedAttemptRef.current.reported = false;
     };
   }, []);
-  const onNativeDisplayed = useCallback((identity: string, token: object) => {
+  const onNativeDisplayed = useCallback((identity: string, token: NativeImageToken) => {
     const layer = mountedNativeLayersRef.current.get(identity);
     if (visibilityEpochRef.current.hidden || layer?.token !== token) return false;
     layer.displayed = true;
+    token.displayed = true;
     return true;
   }, []);
   const actualLayersDisplayed = () =>
@@ -411,6 +420,8 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   artReadinessRef.current = () =>
     !hidden &&
     !awaitingOverlay &&
+    missingBackgroundCount === 0 &&
+    backgroundPaths.length > 0 &&
     (!overlayRequired || mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true) &&
     backgroundPaths.every(
       (path) => mountedNativeLayersRef.current.get(nativeBackgroundIdentity(path))?.displayed === true,
@@ -418,7 +429,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   useLayoutEffect(() => {
     onArtReadinessChange?.(artReadinessRef.current());
     return () => onArtReadinessChange?.(false);
-  }, [displayAttempt, overlayRequired, onArtReadinessChange, awaitingOverlay]);
+  }, [displayAttempt, missingBackgroundCount, overlayRequired, onArtReadinessChange, awaitingOverlay]);
   useEffect(() => {
     if (!awaitingOverlay) return;
     const timer = setTimeout(() => setRevealed({ key: revealIdentity }), OVERLAY_REVEAL_TIMEOUT_MS);

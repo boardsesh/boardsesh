@@ -48,6 +48,7 @@ vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
   return {
     default: { View: renderView },
+    runOnUI: (worklet: (...args: unknown[]) => unknown) => worklet,
     useSharedValue: (initial: unknown) => {
       const ref = useRef<{ value: unknown } | null>(null);
       if (ref.current === null) ref.current = { value: initial };

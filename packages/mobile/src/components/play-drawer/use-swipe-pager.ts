@@ -37,9 +37,10 @@ import {
  * What the JS thread still decides is how far ahead a swipe may go: one page
  * either side of ITS middle page, because those are the boards it has mounted.
  * A second swipe the same way has to wait for it to render the first step, 30 to
- * 66 ms on an iPhone 13 Pro from when it is told; a swipe back never does. A
- * qualifying second release inside that wait is retained until the render
- * confirms its neighbour (#6351), unless another touch or navigation replaces it.
+ * 66 ms on an iPhone 13 Pro from when it is told; a swipe back needs no new
+ * page mount. Either direction still waits for its neighbour’s native artwork.
+ * A qualifying release is retained until the mounted neighbour’s background and
+ * holds display (#6351), unless another touch or navigation replaces it.
  *
  * The JS thread takes the steps one at a time (`requestStep`). Two of them can
  * be waiting when it has been busy, and the navigation callbacks read state that

@@ -490,6 +490,25 @@ describe('useCarouselGesture', () => {
       expect(pager.isAnimating.value).toBe(false);
     });
 
+    it('opens the end card once when a retained forward release reaches the confirmed last climb', () => {
+      const { pager, catchUp } = releaseWhileBehind();
+      pager.trackEndAvailable.value = true;
+      // The end-card layout effect can run before the pager's passive effect
+      // acknowledges the preceding step. Neither can show it prematurely.
+      catchUp();
+      expect(pager.reachTrackEnd).not.toHaveBeenCalled();
+
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: false, processedStep: 1 };
+      catchUp();
+      catchUp();
+
+      expect(pager.reachTrackEnd).toHaveBeenCalledExactlyOnceWith();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.anchorPage.value).toBe(1);
+      expect(pager.translateX.value).toBe(0);
+      expect(pager.isAnimating.value).toBe(false);
+    });
+
     it('discards the release when the queue refused or replaced the preceding step', () => {
       const { pager, catchUp } = releaseWhileBehind();
       pager.jsState.value = { center: 0, hasPrevious: true, hasNext: true, processedStep: 1 };
@@ -588,6 +607,23 @@ describe('useCarouselGesture', () => {
   });
 
   describe('a mounted neighbour still waiting for its holds', () => {
+    it('does not offer end-card drag feedback while a real next climb is loading', async () => {
+      const { hapticMedium } = await import('../../../lib/haptics');
+      const pager = makePager({}, { trackEnd: true });
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'loading' });
+      renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -(SWIPE_THRESHOLD + 1) });
+
+      expect(pager.translateX.value).toBe(0);
+      expect(hapticMedium).not.toHaveBeenCalled();
+      handlers.onEnd({ translationX: -(SWIPE_THRESHOLD + 1), velocityX: -1200 });
+      expect(pager.reachTrackEnd).not.toHaveBeenCalled();
+      expect(pager.uiSteps.value).toBe(0);
+    });
+
     it.each([1, -1] as const)('retains a release toward %s without exposing a bare board', (direction) => {
       const pager = makePager();
       const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', [direction]: 'loading' });
@@ -676,6 +712,32 @@ describe('useCarouselGesture', () => {
       expect(pager.translateX.value).toBe(0);
       expect(pager.isAnimating.value).toBe(false);
       expect(springCallbacks).toHaveLength(0);
+      expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
+    });
+
+    it('never revives a release when failed artwork recovers before React acknowledges its previous step', () => {
+      const pager = makePager();
+      const pageArt = shared<Readonly<Record<number, BoardArtReadiness>>>({ 0: 'ready', 1: 'ready', 2: 'loading' });
+      const { catchUp } = renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+      landFling();
+      swipe(handlers, -(SWIPE_THRESHOLD + 1));
+
+      // The failure and repair both happen while React remains one step behind.
+      pageArt.value = { ...pageArt.value, 2: 'failed' };
+      catchUp();
+      pageArt.value = { ...pageArt.value, 2: 'ready' };
+      catchUp();
+      expect(pager.jsState.value.processedStep).toBe(0);
+
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+
+      expect(pager.uiSteps.value).toBe(1);
+      expect(pager.anchorPage.value).toBe(1);
+      expect(pager.translateX.value).toBe(0);
+      expect(pager.isAnimating.value).toBe(false);
       expect(pager.requestStep).toHaveBeenCalledExactlyOnceWith(1, 1);
     });
 
