@@ -139,6 +139,55 @@ describe('generateLadderPlan', () => {
   });
 });
 
+describe('generateLadderPlan descending', () => {
+  const descendingOptions = { ...DEFAULT_LADDER_OPTIONS, descending: true, targetGrade: 18 };
+
+  it('runs hardest first: t, t, t-1, t-1, ...', () => {
+    const slots = generateLadderPlan(
+      { ...descendingOptions, warmUp: 'none', numberOfSteps: 4, climbsPerStep: 2 },
+      GRADES,
+    );
+
+    expect(slots.map((slot) => slot.grade)).toEqual([18, 18, 17, 17, 16, 16, 15, 15]);
+    expect(slots.map((slot) => slot.section)).toEqual(['peak', 'peak', ...Array<string>(6).fill('decreasing')]);
+    expect(slots.map((slot) => slot.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('keeps indices continuous after the warm-up', () => {
+    const slots = generateLadderPlan(
+      { ...descendingOptions, warmUp: 'standard', numberOfSteps: 3, climbsPerStep: 1 },
+      GRADES,
+    );
+
+    expect(slots.map((slot) => slot.index)).toEqual(slots.map((_, position) => position));
+    const mainSlots = slots.filter((slot) => slot.section !== 'warmUp');
+    expect(mainSlots.map((slot) => slot.grade)).toEqual([18, 17, 16]);
+  });
+
+  it('steps through the ids a sparse scale has', () => {
+    const moonboardGrades: GeneratorGradeScale = [13, 17, 21, 25].map((difficulty_id) => ({ difficulty_id }));
+    const slots = generateLadderPlan(
+      { ...descendingOptions, warmUp: 'none', targetGrade: 25, numberOfSteps: 3, climbsPerStep: 1 },
+      moonboardGrades,
+    );
+
+    expect(slots.map((slot) => slot.grade)).toEqual([25, 21, 17]);
+  });
+
+  it('matches the ascending plan reversed by step', () => {
+    const ascending = generateLadderPlan(
+      { ...DEFAULT_LADDER_OPTIONS, warmUp: 'none', targetGrade: 18, numberOfSteps: 4, climbsPerStep: 1 },
+      GRADES,
+    );
+    const descending = generateLadderPlan(
+      { ...descendingOptions, warmUp: 'none', numberOfSteps: 4, climbsPerStep: 1 },
+      GRADES,
+    );
+
+    expect(descending.map((slot) => slot.grade)).toEqual(ascending.map((slot) => slot.grade).reverse());
+  });
+});
+
 describe('generateGradeFocusPlan', () => {
   it('emits numberOfClimbs main slots all at target grade', () => {
     const slots = generateGradeFocusPlan(

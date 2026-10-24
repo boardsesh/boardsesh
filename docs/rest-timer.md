@@ -151,8 +151,11 @@ in the crew.
   tab's length, cadence and auto-advance controls show the crew's values, not the climber's own.
   An edit copies the crew's other two values into the climber's settings and then writes the one
   changed, so the crew gets its own clock with that one change; the sheet says so ("Changes here
-  go to everyone"). Auto-advance becomes the crew's setting: a passenger can switch it, and its
-  line names whose phone moves the wall.
+  go to everyone"). A cadence change there still goes through `changeRestTimerMode`, which does
+  not re-arm under a crew clock: the CONFIGURE moves the anchor. Settings › Timers keeps showing
+  the climber's own saved defaults, and an edit there hands the crew this phone's pacing.
+  Auto-advance becomes the crew's setting: a passenger can switch it, and its line names whose
+  phone moves the wall.
 - **What a passenger sees.** The crew's rest, counted from the crew's anchor, with "Sam is
   pacing the wall" under the digits. If the holder's phone sleeps the rest runs past zero and
   nothing moves; the holder's phone restarts it when it comes back.
@@ -253,6 +256,29 @@ against the live timer; shoot it with the clock frozen for a still.
 | `restTimerAutoAdvance` | off | effective pacing |
 | `restTimerSound` | on | `playRestTimerCue`, on a binary that can play sound |
 | `restTimerCountdownCues` | on | the countdown (#5396) |
+
+## Settings › Timers
+
+Settings › Timers (`/settings/timers`, the last page of the climbing group) holds the rest timer's
+saved defaults and its cues, over the same settings the in-session sheet writes, so the two always
+agree. The root row shows the rest length (or Off).
+
+| Section | Rows |
+| --- | --- |
+| Rest | Rest length (a menu: Off, 0:30 to 10:00 in 30 s rungs, plus a saved length that sits between rungs), cadence, auto-advance |
+| Cues | Sound, only when `isRestTimerSoundAvailable()` |
+
+- A cadence change goes through `changeRestTimerMode` (`lib/rest-timer-mode-change.ts`), the one
+  re-arm rule the sheet's cadence control uses too: choosing the saved cadence does nothing, and a
+  running timer is re-armed on the new one.
+- Auto-advance is disabled with the reason when a crewmate drives the wall (`useSessionTimerDriver`)
+  or no rest length is set, crew first. This is the sheet's rule.
+- The Sound row is absent on a binary that cannot play sound, so the mute lives here and the native
+  train needs no UI edit.
+- `keepScreenAwake` was deleted: nothing read it. The rest timer and the play drawer keep the screen
+  awake through `useKeepAwakeWhile`.
+- Copy lives in `common.json` under `mobile.settings.timers`, the settings-page convention, not in
+  `settings.json` as #5398 first said. The Rogue pairing row joins the page in a later PR.
 
 ## Who edits what
 

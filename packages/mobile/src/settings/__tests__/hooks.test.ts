@@ -109,7 +109,7 @@ describe('settings', () => {
 
       expect(settings.theme).toBe('dark');
       expect(settings.autoConnectBle).toBe(false);
-      expect(settings.keepScreenAwake).toBe(DEFAULT_SETTINGS.keepScreenAwake);
+      expect(settings.restTimerSound).toBe(DEFAULT_SETTINGS.restTimerSound);
       expect(settings.hapticFeedbackEnabled).toBe(DEFAULT_SETTINGS.hapticFeedbackEnabled);
       expect(settings.notifySessionInvites).toBe(DEFAULT_SETTINGS.notifySessionInvites);
       expect(settings.notifyClimbComments).toBe(DEFAULT_SETTINGS.notifyClimbComments);
@@ -153,7 +153,7 @@ describe('settings', () => {
     it('deletes all settings keys from storage', () => {
       mockStorage.set('theme', '"dark"');
       mockStorage.set('autoConnectBle', 'false');
-      mockStorage.set('keepScreenAwake', 'false');
+      mockStorage.set('restTimerCountdownCues', 'false');
 
       resetAllSettings();
 
@@ -194,8 +194,8 @@ describe('settings', () => {
 
   describe('setSetting then getSetting roundtrip', () => {
     it('roundtrips a boolean', () => {
-      setSetting('keepScreenAwake', false);
-      expect(getSetting('keepScreenAwake')).toBe(false);
+      setSetting('restTimerCountdownCues', false);
+      expect(getSetting('restTimerCountdownCues')).toBe(false);
     });
 
     it('roundtrips a string', () => {

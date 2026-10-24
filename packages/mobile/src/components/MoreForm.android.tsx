@@ -116,6 +116,8 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   climbs: require('../../assets/material-icons/climbs.xml'),
   // Material Symbols' outlined home, the Home tab's glyph.
   home: require('../../assets/material-icons/home.xml'),
+  // Material Symbols' outlined timer.
+  timers: require('../../assets/material-icons/timers.xml'),
   earlyAccess: require('../../assets/material-icons/earlyAccess.xml'),
   developer: require('../../assets/material-icons/developer.xml'),
   export: require('../../assets/material-icons/export.xml'),

@@ -10,6 +10,7 @@ import type { BoardName, Grade } from '@boardsesh/shared-schema';
 import { getGradesForBoard } from '@boardsesh/board-config';
 import { MAX_STAGE_ROUNDS, MIN_STAGE_INTERVAL_SECONDS, type GeneratorOptions } from '@boardsesh/playlist-generator';
 import { Stepper } from '../../Stepper';
+import { SwitchRow } from '../../SwitchRow';
 import { RestLengthPicker } from '../../queue-control/RestLengthPicker';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
@@ -248,6 +249,24 @@ export function workoutStepperRows(
         ),
       ];
     case 'pyramid':
+      return [
+        stepperRow(
+          t('mobile.session.preGeneratorNumberOfSteps'),
+          'numberOfSteps',
+          options.numberOfSteps,
+          3,
+          15,
+          (numberOfSteps) => onOptionsChange({ ...options, numberOfSteps }),
+        ),
+        stepperRow(
+          t('mobile.session.preGeneratorClimbsPerStep'),
+          'climbsPerStep',
+          options.climbsPerStep,
+          1,
+          5,
+          (climbsPerStep) => onOptionsChange({ ...options, climbsPerStep }),
+        ),
+      ];
     case 'ladder':
       return [
         stepperRow(
@@ -266,6 +285,17 @@ export function workoutStepperRows(
           5,
           (climbsPerStep) => onOptionsChange({ ...options, climbsPerStep }),
         ),
+        {
+          key: 'descending',
+          node: (
+            <SwitchRow
+              label={t('mobile.session.preGeneratorHardestFirst')}
+              description={t('mobile.session.preGeneratorHardestFirstDescription')}
+              value={options.descending === true}
+              onValueChange={(descending) => onOptionsChange({ ...options, descending })}
+            />
+          ),
+        },
       ];
     case 'gradeFocus':
       return [

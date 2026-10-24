@@ -20,7 +20,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lightOnSwipe: true,
   lightOnClimbTap: true,
   gradeRowShown: false,
-  keepScreenAwake: true,
   restTimerTargetSeconds: null,
   restTimerAutoAdvance: false,
   restTimerMode: 'afterTick',

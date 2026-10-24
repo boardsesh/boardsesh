@@ -170,8 +170,10 @@ function getBlockSlotSettingsKey(block: WorkoutBlockSpec): string {
     case 'volume':
       return `${commonKey}:${options.mainSetClimbs}:${options.mainSetVariability}`;
     case 'pyramid':
-    case 'ladder':
       return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}`;
+    case 'ladder':
+      // ':down' only when hardest first, so every existing key stays as it was.
+      return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}${options.descending === true ? ':down' : ''}`;
     case 'gradeFocus':
     case 'onTheMinute':
     case 'limitBouldering':

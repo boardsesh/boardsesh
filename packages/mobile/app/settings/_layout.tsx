@@ -122,6 +122,7 @@ export default function SettingsLayout() {
         />
         <Stack.Screen name="climbs" options={{ title: settingsPageTitle('climbs', t) }} />
         <Stack.Screen name="home" options={{ title: settingsPageTitle('home', t) }} />
+        <Stack.Screen name="timers" options={{ title: settingsPageTitle('timers', t) }} />
         <Stack.Screen name="early-access" options={{ title: settingsPageTitle('earlyAccess', t) }} />
         <Stack.Screen name="developer" options={{ title: settingsPageTitle('developer', t) }} />
         {/* The pages those pages open. */}

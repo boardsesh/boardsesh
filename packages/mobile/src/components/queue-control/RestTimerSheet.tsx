@@ -34,13 +34,8 @@ import { useRestTimerArmed, useRestTimerState } from '../../hooks/use-rest-timer
 import { nowMs } from '../../lib/clock';
 import { hapticMedium } from '../../lib/haptics';
 import { type RestTimerMode } from '../../lib/rest-timer';
-import {
-  armRestTimer,
-  disarmRestTimer,
-  pauseRestTimer,
-  resetRestTimer,
-  resumeRestTimer,
-} from '../../lib/rest-timer-store';
+import { changeRestTimerMode } from '../../lib/rest-timer-mode-change';
+import { disarmRestTimer, pauseRestTimer, resetRestTimer, resumeRestTimer } from '../../lib/rest-timer-store';
 import { spacing } from '../../theme/tokens';
 import { RestTimerHeroClock } from './RestTimerPill';
 import { RestLengthPicker } from './RestLengthPicker';
@@ -57,9 +52,9 @@ import { restTimerCrewAutoAdvanceDescription } from './RestTimerPacerCaption';
  * what the timer runs on and what everyone in the session sees, and a settings
  * edit goes out as the crew's new config (lib/crew-rest-publisher.ts). Showing
  * the climber's own values there made one tap hand the crew this climber's
- * other two values as well. So an edit first copies the crew's other two values
- * into the settings, then writes the one changed: the crew gets its own clock
- * with exactly that change.
+ * other two values as well. So an edit first copies the crew's values into the
+ * settings (`takeCrewPacing`), then writes the one changed: the crew gets its
+ * own clock with exactly that change.
  */
 function useRestPacingControls() {
   const [ownTargetSeconds, writeTargetSeconds] = useSetting('restTimerTargetSeconds');
@@ -74,29 +69,28 @@ function useRestPacingControls() {
         mode: ownMode,
         autoAdvance: ownAutoAdvance,
         setTargetSeconds: writeTargetSeconds,
-        setMode: writeMode,
         setAutoAdvance: writeAutoAdvance,
+        takeCrewPacing: () => {},
       };
     }
+    const takeCrewPacing = () => {
+      writeTargetSeconds(crewConfig.targetSeconds);
+      writeMode(crewConfig.mode);
+      writeAutoAdvance(crewConfig.autoAdvance);
+    };
     return {
       targetSeconds: crewConfig.targetSeconds,
       mode: crewConfig.mode,
       autoAdvance: crewConfig.autoAdvance,
       setTargetSeconds: (next: number | null) => {
-        writeMode(crewConfig.mode);
-        writeAutoAdvance(crewConfig.autoAdvance);
+        takeCrewPacing();
         writeTargetSeconds(next);
       },
-      setMode: (next: RestTimerMode) => {
-        writeTargetSeconds(crewConfig.targetSeconds);
-        writeAutoAdvance(crewConfig.autoAdvance);
-        writeMode(next);
-      },
       setAutoAdvance: (next: boolean) => {
-        writeTargetSeconds(crewConfig.targetSeconds);
-        writeMode(crewConfig.mode);
+        takeCrewPacing();
         writeAutoAdvance(next);
       },
+      takeCrewPacing,
     };
   }, [crewConfig, ownAutoAdvance, ownMode, ownTargetSeconds, writeAutoAdvance, writeMode, writeTargetSeconds]);
 }
@@ -242,7 +236,7 @@ function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const { mode, setMode, targetSeconds } = useRestPacingControls();
+  const { mode, targetSeconds, takeCrewPacing } = useRestPacingControls();
   // Only whether it is armed: the full state emits on every tick, pause and
   // reset, and this block sits on the Record card as well as the sheet.
   const armed = useRestTimerArmed();
@@ -262,17 +256,13 @@ function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
 
   const handleSelect = useCallback(
     (nextMode: RestTimerMode) => {
-      // Paper's SegmentedButtons (Android, web) calls back on a press of the
-      // segment that is ALREADY selected. Re-arming on that would restart a
-      // fixed window mid-block, or wipe a running after-tick rest (#5664).
+      // The cadence on screen is the one to change from: the crew's while a crew
+      // clock runs, which the settings only hold once it is copied over.
       if (nextMode === mode) return;
-      setMode(nextMode);
-      // Re-arm rather than leave a half-converted anchor: `onTheMinute` needs an
-      // anchor from this instant, `afterTick` needs none until the next tick, and
-      // the two cannot be reconciled by editing the existing one.
-      if (armed) armRestTimer(nextMode, nowMs(), sessionId);
+      takeCrewPacing();
+      changeRestTimerMode(nextMode, sessionId, armed);
     },
-    [armed, mode, sessionId, setMode],
+    [armed, mode, sessionId, takeCrewPacing],
   );
   // Match the iOS segmented control's large-text fallback. Paper's fixed-width
   // Android segments ellipsize the cadence labels when the text grows.

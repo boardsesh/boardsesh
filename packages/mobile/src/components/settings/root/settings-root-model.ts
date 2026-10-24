@@ -20,7 +20,7 @@ import {
  */
 export const SETTINGS_ROOT_ORDER = [
   { key: 'app', pages: ['general', 'privacy', 'account', 'integrations'] },
-  { key: 'climbing', pages: ['board', 'climbs', 'home'] },
+  { key: 'climbing', pages: ['board', 'climbs', 'home', 'timers'] },
   { key: 'testing', pages: ['earlyAccess', 'developer'] },
 ] as const satisfies readonly { key: string; pages: readonly SettingsRootPage[] }[];
 

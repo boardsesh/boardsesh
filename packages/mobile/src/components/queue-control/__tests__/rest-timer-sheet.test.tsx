@@ -187,6 +187,10 @@ vi.mock('../../../settings', async () => {
       return [settingsStore.values[key], write];
     },
     getSetting: (key: string) => settingsStore.values[key],
+    setSetting: (key: string, next: unknown) => {
+      settingsStore.values[key] = next;
+      for (const listener of settingsStore.listeners) listener();
+    },
   };
 });
 
