@@ -110,12 +110,13 @@ export function EditProfileScreen() {
         input.displayName = trimmedName;
       }
 
+      let avatarUploadFailed = false;
       if (pickedAvatar) {
         try {
           input.avatarUrl = await uploadAvatar(pickedAvatar, profile.id);
         } catch (error) {
-          // Match web: a failed avatar upload warns but still saves the name, so
-          // the user doesn't lose a name edit to an image hiccup.
+          // Keep the name edit, but leave the selected photo here for retry.
+          avatarUploadFailed = true;
           reportError(error);
           showToast(t('profile.avatarUploadFailed'), 'warning');
         }
@@ -129,6 +130,7 @@ export function EditProfileScreen() {
       }
 
       await updateProfile.mutateAsync(input);
+      if (avatarUploadFailed) return;
       // showToast fires the success/error haptic itself based on the variant.
       showToast(t('profile.saved'), 'success');
       router.back();
