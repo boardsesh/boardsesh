@@ -219,12 +219,15 @@ export function RestTimerAutoAdvanceScheduler() {
       currentQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
       lastTick: timerState.lastTick,
     });
+  // One clock read for the three rules below, so the deadline, its staleness
+  // and the rest floor always agree within a render.
+  const renderNowMs = nowMs();
   const candidateDeadlineMs = wantsAdvance
     ? getAutoAdvanceDeadlineMs({
         mode,
         anchorMs: timerState.anchorMs,
         targetSeconds,
-        nowMs: nowMs(),
+        nowMs: renderNowMs,
         lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
       })
     : null;
@@ -234,7 +237,7 @@ export function RestTimerAutoAdvanceScheduler() {
   // scheduled rather than arming a pointless timer: otherwise the timer wedges
   // (no advance, and the target buzz below stays suppressed because it is gated
   // on nothing being pending) and the screen-wake lock is held for nothing.
-  const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, nowMs());
+  const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, renderNowMs);
   const scheduled = wantsAdvance && !deadlineStale;
   const deadlineMs = scheduled ? candidateDeadlineMs : null;
 
@@ -248,7 +251,7 @@ export function RestTimerAutoAdvanceScheduler() {
         mode,
         anchorMs: timerState.anchorMs,
         targetSeconds,
-        nowMs: nowMs(),
+        nowMs: renderNowMs,
         lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
       })
     : null;

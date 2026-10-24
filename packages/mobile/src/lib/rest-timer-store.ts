@@ -425,7 +425,8 @@ export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: numb
  * one that ran out. Written down rather than worked out on every read: the rule
  * depends on the clock, and once the old anchor's own end went by it would let
  * go, so everything that reads the anchor (the pill, a pause) counts from this one.
- * Refused on any other cycle than the one it was asked for.
+ * From then on it behaves as a rest started at the advance, also under a later,
+ * shorter rest length. Refused on any other cycle than the one it was asked for.
  */
 export function floorRestTimerAnchorAtLastAdvance(
   expectedCycleId: number,
