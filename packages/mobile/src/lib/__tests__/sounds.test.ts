@@ -127,7 +127,11 @@ beforeEach(() => {
   appState.listeners = [];
   appState.addEventListener.mockImplementation((_event: string, listener: (nextState: string) => void) => {
     appState.listeners.push(listener);
-    return { remove: vi.fn() };
+    return {
+      remove: vi.fn(() => {
+        appState.listeners = appState.listeners.filter((registered) => registered !== listener);
+      }),
+    };
   });
 });
 
@@ -251,6 +255,37 @@ describe('createSoundPlayer', () => {
     fake.createAudioPlayer.mockImplementation(() => tickPlayer as unknown as AudioPlayer);
     expect(createSoundPlayer()).not.toBeNull();
     expect(fake.createAudioPlayer).toHaveBeenCalledTimes(4);
+  });
+
+  // ./rest-timer-cues builds a fresh player after a throw. Each build must
+  // replace the app-state listener, not add one for the rest of the app run.
+  it("leaves exactly one app-state listener, the newest player's, when the player is built twice", async () => {
+    const firstFake = makeFakeAudio();
+    const secondFake = makeFakeAudio();
+    const fakes = [firstFake, secondFake];
+    setSoundNativeBindingsForTests({
+      hasExpoAudio: () => true,
+      loadExpoAudio: () => {
+        const next = fakes.shift();
+        if (next === undefined) throw new Error('built more than twice');
+        return next.audio;
+      },
+    });
+
+    const firstPlayer = createSoundPlayer();
+    const secondPlayer = createSoundPlayer();
+    if (firstPlayer === null || secondPlayer === null) throw new Error('expected two sound players');
+
+    expect(appState.addEventListener).toHaveBeenCalledTimes(2);
+    expect(appState.listeners).toHaveLength(1);
+
+    secondPlayer.play('tick');
+    await settle();
+    emitAppState('background');
+    await settle();
+
+    expect(secondFake.nativeCalls).toEqual(['set audio mode', 'seek tick 0', 'play tick', 'audio off']);
+    expect(firstFake.nativeCalls).toEqual([]);
   });
 });
 

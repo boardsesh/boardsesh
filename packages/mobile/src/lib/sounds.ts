@@ -33,7 +33,7 @@
 // before it plays. `inactive` counts as away: a phone call, Control Center, the
 // app switcher, the first moment of a lock.
 
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, type AppStateStatus, type NativeEventSubscription } from 'react-native';
 import type * as ExpoAudioModule from 'expo-audio';
 import type * as ExpoModulesCore from 'expo-modules-core';
 
@@ -102,6 +102,15 @@ const NATIVE_BINDINGS: SoundNativeBindings = {
 let bindings: SoundNativeBindings = NATIVE_BINDINGS;
 // `undefined` = not checked yet. The answer cannot change within an app run.
 let soundSupported: boolean | undefined;
+// The live player's app-state listener. ./rest-timer-cues builds a fresh player
+// after a throw, so each build replaces the previous player's listener instead
+// of adding one more for the rest of the app run.
+let appStateSubscription: NativeEventSubscription | null = null;
+
+function listenToAppState(listener: (nextState: AppStateStatus) => void): void {
+  appStateSubscription?.remove();
+  appStateSubscription = AppState.addEventListener('change', listener);
+}
 
 /** Whether this binary can play a sound at all. Never throws. */
 export function isSoundSupported(): boolean {
@@ -132,13 +141,15 @@ export function createSoundPlayer(): SoundPlayer | null {
 }
 
 /**
- * Swaps the native bindings and forgets the capability answer. `undefined`
- * puts back the real ones. Tests only.
+ * Swaps the native bindings and forgets the capability answer and the last
+ * player's app-state listener. `undefined` puts back the real ones. Tests only.
  */
 export function setSoundNativeBindingsForTests(next: SoundNativeBindings | undefined): void {
   bindings = next ?? NATIVE_BINDINGS;
   soundSupported = undefined;
   reportedFailureSteps.clear();
+  appStateSubscription?.remove();
+  appStateSubscription = null;
 }
 
 type SoundStep = 'create' | 'play' | 'release';
@@ -270,7 +281,9 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
     }, SOUND_SESSION_IDLE_MS);
   }
 
-  AppState.addEventListener('change', (nextState) => {
+  // Only the newest player listens: one that was replaced is no longer asked to
+  // play, and its own idle timer still hands back any session it holds.
+  listenToAppState((nextState) => {
     if (nextState === 'background') {
       cancelIdleRelease();
       // Queued, not checked here: a beep already queued holds the session by the time this runs.
