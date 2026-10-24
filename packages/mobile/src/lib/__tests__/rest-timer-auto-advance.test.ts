@@ -23,6 +23,8 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   queueEnded: false,
   listEnded: false,
   lastFiredDeadlineMs: null,
+  stagePacing: null,
+  lastTick: null,
   ...overrides,
 });
 

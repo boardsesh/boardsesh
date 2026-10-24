@@ -156,6 +156,49 @@ The limits that follow:
   their stage. Readers skip uuids that are not queued, so the stale ones cost nothing,
   and the whole run goes when the session ends.
 
+## Pacing
+
+A timed stage paces the rest timer itself (#5380, #6231): its own rest, its own cadence, and
+its own rule for when a finished rest moves the wall. Every other stage, and a climb in no
+stage, leaves the climber's own rest settings in charge, exactly as before. The rest timer side
+(effective pacing, the advance rules, who may move the wall) is in `docs/rest-timer.md`.
+
+- **What the climb on the wall gets.** `RestTimerPacingSync` (mounted with the rest timer, but
+  outside its armed gate) locates the current climb in the run once per queue change and
+  resolves it with `resolveStageRestPacing` into a `RestTimerStagePacing`: the stage, the queue
+  item, the cadence, the rest after THIS climb (`stageRestSeconds`: a 4x4's round rest on the
+  last queued climb of a round, the 10 s changeover for a rest of 0, the interval on the
+  minute) and the advance rule (`tick` for a 4x4, `send` for limit, `deadline` on the minute).
+  It sits in the rest-timer store, never in settings, and is not persisted; the readers merge
+  it with the settings through `useEffectiveRestPacing()`. A stage always auto-advances.
+- **Moving on.** Under `tick` or `send` the wall moves only once the climb on it was logged
+  (limit: flashed or sent), and the fire clears the anchor, so the next climb rests only after
+  its own tick. A 4x4 never walks on with nobody climbing, and a fall on a limit climb rests
+  and stays on it, with the "rest over" cue. On the minute moves on every beat, logged or not.
+- **Which climb a tick is for.** The tick path (`use-tick-saver.ts`) reads the committed
+  current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
+  only when it is that climb's. The status and queue item go to the rest timer (`lastTick`)
+  and to the run's tick log. A tick on any other climb counts for no queue item, and leaves the
+  rest timer's last tick as it was: it says nothing about the climb on the wall. A save started
+  on the previous climb keeps that climb's queue item when it finishes after the advance, but it
+  never replaces a tick the new climb already has, so the new climb still moves on at its rest.
+- **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute
+  stage starting, or changing interval, starts its beat at that moment, so its first climb gets
+  a whole interval. A new climb of a `tick` or `send` stage, or on the minute ending, clears
+  the anchor: the rest waits for the next tick. A paused timer takes the change too, so Resume
+  starts a fresh rest instead of carrying the last climb's into the new stage: the first climb
+  on the minute still gets a whole interval.
+- **Arming.** Start, and "Add a block", arm the timer when the workout (for a mid-session
+  block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
+  timed block runs hands-free. A timer the climber already set up is left alone, and arming
+  still never survives a cold start.
+- **The sheet.** While a stage paces the timer, the rest timer sheet and the Record tab's arm
+  row show "Set by your workout" (`RestTimerWorkoutPacingRow`: the stage, its rests and how it
+  moves on) in place of the rest length, cadence and auto-advance controls, which edit the
+  climber's own settings. Pause, Reset and Turn off stay.
+- **Crew.** Stage pacing lives on the phone that built the workout. In a crew only the phone
+  holding the wall moves it (`docs/rest-timer.md`), stage or not; a passenger's sheet says so.
+
 ## Building a workout
 
 **Before Start.** The Record tab shows the workout as a list of block cards, and it
@@ -247,10 +290,9 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 - **4x4 rounds** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)): a
   `fourByFour` stage that knows it is four climbs repeated four times, and which round a
   tick belongs to.
-- **Per-stage pacing.** `RestTimerAutoAdvanceScheduler` runs one rest length for the whole
-  session. A stage could carry its own rest and cadence, so a warm-up rests less than a
-  limit block. Every rest-timer reader already goes through `useEffectiveRestPacing()`, so a
-  stage's pacing plugs in there (`docs/rest-timer.md`).
+- **Per-stage pacing for untimed blocks.** Timed blocks pace the rest timer (see "Pacing"); a
+  volume, pyramid, ladder or grade-focus block still runs on the climber's own rest. A partner
+  `restSeconds` on those blocks would reach the same `WorkoutRunStage.pacing`.
 - **Limit bouldering** ([#6231](https://github.com/boardsesh/boardsesh/issues/6231)) as its
   own stage kind.
 - **Partner `plan_snapshot`.** Partner workouts (`docs/partner-workouts-internal.md`) map

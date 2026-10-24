@@ -16,6 +16,8 @@ and which phone may move the wall. The workout stages that pace it are in
 | The pill, the hero clock and their 1 Hz ticker | `packages/mobile/src/components/queue-control/RestTimerPill.tsx` |
 | The options sheet and the Record tab's arm row | `RestTimerSheet.tsx`, `session-screen/RestTimerArmRow.tsx` |
 | Effective pacing | `packages/mobile/src/lib/rest-timer-pacing.ts`, `src/hooks/use-effective-rest-pacing.ts` |
+| Workout stage pacing: the sync, the arm at Start, "Set by your workout" | `src/components/queue-control/RestTimerPacingSync.tsx`, `src/lib/rest-timer-effective.ts`, `RestTimerWorkoutPacingRow.tsx` |
+| Which queue item a tick counts for | `packages/mobile/src/lib/tick-attribution.ts`, read by `play-drawer/use-tick-saver.ts` |
 | Cues | `packages/mobile/src/lib/rest-timer-cues.ts`, `src/lib/sounds.ts` |
 | Wall-driver rule | `packages/mobile/src/lib/session-timer/driver-rule.ts`, `src/hooks/use-session-timer-driver.ts` |
 
@@ -41,8 +43,10 @@ as they land. A new source changes `rest-timer-pacing.ts` and the hook, never th
 sheet's controls keep writing the settings directly: they edit the climber's preferences, not the
 effective value.
 
-Today only `settings` is wired, so the hook returns exactly the three settings with
-`advanceOn: 'deadline'` and `source: 'settings'`.
+`settings` and `stage` are wired. With no workout stage on the wall the hook returns exactly the
+three settings with `advanceOn: 'deadline'` and `source: 'settings'`. The stage input is the
+`stagePacing` that `RestTimerPacingSync` keeps in the store for the climb on the wall (see
+"Pacing" in `docs/workout-stages.md`). The crew input lands with #5382's mobile PR.
 
 The advance rule:
 
@@ -55,6 +59,23 @@ The advance rule:
 `onTheMinute` keeps its beat whatever the rule (`anchorAfterFire`). `restAdvanceAllowed` is the
 pure check; it only lets a tick count when it was logged against the queue item on the wall, so a
 tick on the previous climb, or one from a list, never lights the next.
+
+The scheduler asks `restAdvanceAllowed` when it schedules and again when the timeout fires, with the
+store's `lastTick`. A tick that counts for no queue item leaves `lastTick` as it was, so it never
+cancels an advance the climb on the wall already earned. Nor does a late tick on another queue item:
+a save started on the previous climb that finishes after the advance never replaces a tick the climb
+on the wall (`stagePacing.queueItemUuid`) already has. A refilled queue under a tick rule also waits
+for the next tick and forgets the last one, as the fire does (`clearRestTimerQueueEnded` with
+`anchorAfterFire`): that tick's rest already ran out at the dead end.
+
+A tick never starts a rest earlier than the rest already running or the last advance, and never
+in the future (`noteRestTimerTick`'s floor:
+`min(now, max(tick, anchor, lastFiredDeadlineMs))`). The `afterTick` deadline is the anchor plus
+the rest, with no walk past the last fire, so without the floor a send saved 2 s after an advance
+but dated 55 s back would move the wall again 7 s later and skip the climb it just lit. The one
+change a climber sees: a back-dated tick (the tick sheet's date picker, or a slow save of the
+previous climb) can no longer shorten a running rest. It still shows as the last tick. On the
+minute keeps its beat; a tick only fills a missing anchor, with the same floor.
 
 ## Cues
 

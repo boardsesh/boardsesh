@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import { logbookClimbAngleKey, type LogbookEntry, type SaveTickOptions } from '@boardsesh/board-react';
 import { MIN_ATTEMPT_COUNT } from '@boardsesh/play-view';
 
@@ -23,11 +24,14 @@ const saveMock = vi.hoisted(() => {
     isPending: false,
     result: undefined as { savedTick: { uuid: string } } | undefined,
     boardNames: [] as Array<string | null>,
+    /** Runs between the mutate call and its outcome: the wall moving while a save is in flight. */
+    whileSaving: null as (() => void) | null,
   };
   return {
     state,
     mutate: vi.fn(
       (_input: unknown, callbacks?: { onSuccess?: (result: unknown) => void; onError?: (error: unknown) => void }) => {
+        state.whileSaving?.();
         if (state.failure) callbacks?.onError?.(state.failure);
         else callbacks?.onSuccess?.(state.result);
       },
@@ -109,6 +113,15 @@ vi.mock('../../../lib/rest-timer-store', async (importOriginal) => {
     }),
   };
 });
+vi.mock('../../../lib/workout-run-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/workout-run-store')>();
+  return {
+    ...actual,
+    noteWorkoutRunTick: vi.fn(() => {
+      callLog.push('workoutRun');
+    }),
+  };
+});
 vi.mock('../../privacy/use-publication-audience', () => ({
   usePublicationAudience: () => ({
     enabled: false,
@@ -128,7 +141,14 @@ import {
 } from '../use-tick-saver';
 import { track } from '../../../lib/analytics';
 import { hapticError } from '../../../lib/haptics';
-import { noteRestTimerTick } from '../../../lib/rest-timer-store';
+import {
+  applyRestTimerStagePacing,
+  noteRestTimerTick,
+  resetRestTimerStoreForTests,
+} from '../../../lib/rest-timer-store';
+import { noteWorkoutRunTick } from '../../../lib/workout-run-store';
+import { QueueActionsContext } from '../../../providers/queue/queue-contexts';
+import type { RestTimerStagePacing } from '../../../lib/rest-timer-pacing';
 
 const SAVER_INPUT: UseTickSaverInput = {
   climbUuid: CLIMB_UUID,
@@ -153,9 +173,25 @@ function fields(overrides: Partial<TickSaveFields> = {}): TickSaveFields {
   };
 }
 
-function renderSaver(overrides: Partial<UseTickSaverInput> = {}) {
+/** The committed current climb, as the queue provider's snapshot reports it. */
+const queueSnapshot = {
+  current: null as { uuid: string; climb: { uuid: string } } | null,
+};
+const getQueueSnapshot = vi.fn(() => ({
+  queue: [],
+  currentClimbQueueItem: queueSnapshot.current,
+  playlistSuggestionSource: null,
+}));
+const queueActions = { getQueueSnapshot } as unknown as NonNullable<React.ContextType<typeof QueueActionsContext>>;
+
+function renderSaver(overrides: Partial<UseTickSaverInput> = {}, { withQueue = false } = {}) {
+  const wrapper = withQueue
+    ? ({ children }: { children: ReactNode }) =>
+        createElement(QueueActionsContext.Provider, { value: queueActions }, children)
+    : undefined;
   return renderHook((props: UseTickSaverInput) => useTickSaver(props), {
     initialProps: { ...SAVER_INPUT, ...overrides },
+    wrapper,
   });
 }
 
@@ -170,6 +206,11 @@ beforeEach(() => {
   saveMock.state.isPending = false;
   saveMock.state.result = undefined;
   saveMock.state.boardNames = [];
+  saveMock.state.whileSaving = null;
+  queueSnapshot.current = null;
+  getQueueSnapshot.mockClear();
+  resetRestTimerStoreForTests();
+  vi.mocked(noteWorkoutRunTick).mockClear();
   boardState.current = null;
   presenceState.enabled = false;
   presenceState.boardId = null;
@@ -344,7 +385,31 @@ describe('useTickSaver after a save', () => {
     result.current.save(fields({ climbedAtIso: '2026-10-24T09:31:15.000Z' }));
 
     expect(sentInput().climbedAt).toBe('2026-10-24T09:31:15.000Z');
-    expect(noteRestTimerTick).toHaveBeenCalledWith('2026-10-24T09:31:15.000Z', 'onTheMinute', NOW_MS);
+    expect(noteRestTimerTick).toHaveBeenCalledWith('2026-10-24T09:31:15.000Z', 'onTheMinute', NOW_MS, {
+      status: 'send',
+      queueItemUuid: null,
+    });
+  });
+
+  it('anchors in the workout stage’s cadence while one paces the timer', () => {
+    settingsState.restTimerMode = 'afterTick';
+    const onTheMinuteStage: RestTimerStagePacing = {
+      sessionId: 'session-1',
+      stageId: 'stage-emom',
+      kind: 'onTheMinute',
+      queueItemUuid: 'queue-7',
+      mode: 'onTheMinute',
+      targetSeconds: 60,
+      advanceOn: 'deadline',
+      closesRound: false,
+      stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
+    };
+    applyRestTimerStagePacing(onTheMinuteStage, NOW_MS, 'none');
+    const { result } = renderSaver();
+
+    result.current.save(fields({ climbedAtIso: '2026-10-24T09:31:15.000Z' }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[1]).toBe('onTheMinute');
   });
 
   it('reports one Tick Logged with the surface and the clamped tries', () => {
@@ -371,6 +436,63 @@ describe('useTickSaver after a save', () => {
         },
       ],
     ]);
+  });
+
+  it('counts the tick for the climb on the wall, in the rest timer and the workout log', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
+    const onSaved = vi.fn(() => {
+      callLog.push('saved');
+    });
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ status: 'attempt', climbedAtIso: '2026-10-24T09:32:00.000Z' }), { onSaved });
+
+    expect(noteRestTimerTick).toHaveBeenCalledWith('2026-10-24T09:32:00.000Z', 'afterTick', NOW_MS, {
+      status: 'attempt',
+      queueItemUuid: 'queue-7',
+    });
+    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
+      queueItemUuid: 'queue-7',
+      status: 'attempt',
+      climbedAt: '2026-10-24T09:32:00.000Z',
+      tickUuid: 'tick-9',
+    });
+    expect(callLog).toEqual(['track:Tick Logged', 'restTimer', 'workoutRun', 'saved']);
+  });
+
+  it('keeps the climb that was up when the save started, even if the wall moves before it lands', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    saveMock.state.whileSaving = () => {
+      queueSnapshot.current = { uuid: 'queue-8', climb: { uuid: 'climb-2' } };
+    };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields());
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({ queueItemUuid: 'queue-7' });
+    expect(getQueueSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a tick on any other climb for no queue item, and leaves the workout log alone', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: 'climb-on-the-wall' } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields());
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: null });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('writes no workout log for a tick outside a session', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    const { result } = renderSaver({ sessionId: null }, { withQueue: true });
+
+    result.current.save(fields());
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
   });
 
   it('hands back no uuid when the save returned none', () => {
@@ -402,6 +524,7 @@ describe('useTickSaver when a save fails', () => {
     expect(onFailed).toHaveBeenCalledWith('Board is offline');
     expect(startStopwatch).not.toHaveBeenCalled();
     expect(noteRestTimerTick).not.toHaveBeenCalled();
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
     expect(hapticError).toHaveBeenCalledTimes(1);
     expect(vi.mocked(track).mock.calls).toEqual([['Quick Tick Failed', { climbUuid: CLIMB_UUID, layoutId: 1 }]]);
   });
