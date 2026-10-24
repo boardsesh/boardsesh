@@ -95,19 +95,30 @@ After each successful cycle the runner asks whether another Boardsesh user is
 mapped to the same `(board_type, aurora_user_id)` and owns Aurora-synced ticks
 on that board (`getLogbookOwnershipConflictState`; `json-import-%` ids don't
 count). If so, it stores the logbook code instead of any circuits code: the
-column holds one value, and the logbook copy covers playlists too. Like the
-circuits read it is a state question and fails open. The REST response sends
-this code unchanged. It is never folded onto the legacy circuits code, because
-the older circuits copy told the climber their sends were still arriving.
+column holds one value, and this is the one that explains an empty logbook.
+The card says "some sends", because sends nobody owns yet still import. Like
+the circuits read it is a state question that never fails the cycle; when the
+read itself fails, the runner keeps what it stored last cycle and warns
+(`onWarn`, which a worker routes to warn rather than debug). The REST response
+sends this code unchanged. It is never folded onto the legacy circuits code,
+because the older circuits copy told the climber their sends were still
+arriving. An older www bundle prints an unrecognised code verbatim, so between
+the worker deploy and the web deploy the raw code shows on the www card.
 
 It has to be a state question because the user-sync cursor
 (`board_user_syncs`) is keyed on the Aurora user id, not on the Boardsesh user.
 A second Boardsesh account linking the same board login starts from the first
 account's watermark, so Aurora never sends it that history, and the
 cross-user skip in `applyLogbookChunk` only sees rows edited upstream since.
-Known gap: when the first account unlinked (its mapping is gone), this check
-can't see the conflict, and the second account still never receives the
-history.
+Known gap, tracked in #6692: when the first account unlinked (its mapping is
+gone), this check can't see the conflict, and the second account still never
+receives the history.
+
+Known false positive: the other account relinked this board to a different
+Aurora login. Its older ticks still carry real `aurora_id`s, so the check fires
+even though none of them came from this login. Ticks don't record the Aurora
+user id, so there is no cheap exact check. It needs a relink to a different
+login on the same board and then an expired link, so it is rare.
 
 The arbitration integration job uses a fresh, pinned development-database
 container. Its opt-in preparation script adds only the legacy playlist columns

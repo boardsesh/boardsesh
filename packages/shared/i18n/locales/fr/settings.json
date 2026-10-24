@@ -215,7 +215,7 @@
       "syncingHint": "Synchronisation en cours, reviens dans un moment",
       "foreignAccountCircuits": "Les circuits ne se synchronisent pas sur ce compte, car un autre compte Boardsesh possède les playlists correspondantes. Contactez l'assistance Boardsesh pour régler la propriété des playlists.",
       "ambiguousAccountCircuits": "Les circuits ne se synchronisent pas, car les playlists correspondantes appartiennent à plusieurs comptes Boardsesh. Contactez l'assistance Boardsesh pour régler la propriété des playlists.",
-      "foreignAccountLogbook": "Vos croix et vos playlists liées à ces identifiants de board sont sur un autre compte Boardsesh, donc elles n'apparaîtront pas ici. Connectez-vous à ce compte pour les voir."
+      "foreignAccountLogbook": "Certaines croix liées à ces identifiants de board sont sur un autre compte Boardsesh, donc elles n'apparaîtront pas ici. Connectez-vous à ce compte ou contactez l'assistance Boardsesh."
     },
     "unsynced": {
       "title_one": "{{count}} élément en attente de synchro",

@@ -215,7 +215,7 @@
       "syncingHint": "Syncing, check back in a bit",
       "foreignAccountCircuits": "Circuits aren't syncing on this account because another Boardsesh account owns the matching playlists. Contact Boardsesh support to resolve playlist ownership.",
       "ambiguousAccountCircuits": "Circuits aren't syncing because the matching playlists have multiple Boardsesh owners. Contact Boardsesh support to resolve playlist ownership.",
-      "foreignAccountLogbook": "Your sends and playlists from this board login are on another Boardsesh account, so they won't show up here. Sign in to that account to see them."
+      "foreignAccountLogbook": "Some sends from this board login are on another Boardsesh account, so they won't show up here. Sign in to that account, or contact Boardsesh support."
     },
     "unsynced": {
       "title_one": "{{count}} item pending sync",

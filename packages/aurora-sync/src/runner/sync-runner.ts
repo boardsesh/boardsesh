@@ -26,7 +26,11 @@ import {
   type SharedSyncClaimToken,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
-import { boardAccountSyncErrorCode, circuitPlaylistConflictSyncError } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR,
+  boardAccountSyncErrorCode,
+  circuitPlaylistConflictSyncError,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import {
   syncUserData,
   getCircuitPlaylistOwnershipConflictState,
@@ -295,6 +299,18 @@ export class SyncRunner {
       this.config.onLog(message);
     } else {
       console.info(message);
+    }
+  }
+
+  /**
+   * A condition an operator should see that is not a sync failure. Separate
+   * from `log` because a background worker routes `onLog` to debug.
+   */
+  private warn(message: string): void {
+    if (this.config.onWarn) {
+      this.config.onWarn(message);
+    } else {
+      console.warn(message);
     }
   }
 
@@ -769,21 +785,28 @@ export class SyncRunner {
 
     // Same question for the logbook (#6687): does another Boardsesh account
     // already hold this board login's sends? A state read for the same reason
-    // as the circuits one, and fail-open for the same reason. When it is true
-    // its code wins over the circuits code: it is what explains an empty
-    // logbook, and its copy covers the playlists too.
+    // as the circuits one. When it is true its code wins over the circuits
+    // code: it is what explains an empty logbook, and signing in to the other
+    // account is the same answer for its playlists.
+    //
+    // A failed read keeps whatever the last cycle concluded. Like the circuits
+    // read it must not fail the cycle, but answering "no conflict" would clear
+    // a correct warning over one transient error. It warns rather than logs:
+    // a read that fails every cycle (a lost grant, a statement timeout) would
+    // otherwise freeze the card with nothing above debug level to say why.
     const logbookOwnedElsewhere = await getLogbookOwnershipConflictState(
       db,
       boardType,
       cred.auroraUserId,
       cred.userId,
     ).catch((error: unknown) => {
-      this.log(
-        `[SyncRunner] Foreign-logbook-owner check failed for user ${cred.userId} (${boardType}); treating as no duplicate: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      const keptStoredState = cred.syncError === FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR;
+      this.warn(
+        `[SyncRunner] Foreign-logbook-owner check failed for user ${cred.userId} (${boardType}); keeping the stored state (${
+          keptStoredState ? 'owned elsewhere' : 'not owned elsewhere'
+        }): ${error instanceof Error ? error.message : String(error)}`,
       );
-      return false;
+      return keptStoredState;
     });
     if (logbookOwnedElsewhere) {
       this.log(

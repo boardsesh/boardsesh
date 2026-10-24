@@ -137,7 +137,13 @@ export async function getCircuitPlaylistOwnershipConflictState(
  * (the shape the link guard lets a second account claim) and goes on unlink or
  * account deletion, so the state clears itself once the conflict is resolved.
  * A first account that unlinked leaves no mapping behind; that case is not
- * visible from here (follow-up to #6687).
+ * visible from here (#6692).
+ *
+ * Known false positive: the other account relinked this board to a different
+ * Aurora login. Its old ticks keep their real aurora_ids, so it still
+ * qualifies, though none of them came from this login. Ticks don't record the
+ * Aurora user id, so there is no cheap exact check; it needs a relink to a
+ * different login on the same board AND an expired link, so it is rare.
  *
  * Index-served: `board_user_mapping_idx (board_type, board_user_id)`, then
  * `boardsesh_ticks_user_board_idx (user_id, board_type)` per candidate.

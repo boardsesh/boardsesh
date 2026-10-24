@@ -45,7 +45,9 @@ const {
   mockDecrypt: vi.fn(),
   mockEncrypt: vi.fn(),
   mockRefreshAccessToken: vi.fn(),
-  mockSyncKilterUserData: vi.fn(),
+  // Typed, so a clean-cycle stub that leaves a result field out fails typecheck
+  // instead of quietly feeding the runner `undefined` (#6687 review).
+  mockSyncKilterUserData: vi.fn<typeof import('../sync/user-sync').syncKilterUserData>(),
   mockSyncKilterCatalog: vi.fn(),
   mockClaimSharedSyncSlot: vi.fn(),
   mockDeferCredentialSyncAttempt: vi.fn(),
@@ -182,7 +184,7 @@ describe('SyncRunner.syncNextUser', () => {
     // runner destructures (skippedForeignCircuits drives the duplicate-account
     // sync_error), so a bare `undefined` resolve would throw rather than fail
     // an assertion.
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
     process.env.KILTER_OAUTH_CLIENT_ID = 'kilter-test-client';
@@ -212,7 +214,7 @@ describe('SyncRunner.syncNextUser', () => {
       token_type: 'Bearer',
       // No refresh_token rotation in this case.
     });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     const summary = await runner.syncNextUser();
 
@@ -401,7 +403,7 @@ describe('SyncRunner.syncNextUser', () => {
       // refresh_token is different from `decrypted-enc-refresh` → triggers re-encrypt+write
       refresh_token: 'rotated-refresh-token',
     });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     await runner.syncNextUser();
 
@@ -423,7 +425,7 @@ describe('SyncRunner.syncNextUser', () => {
       token_type: 'Bearer',
       refresh_token: 'decrypted-enc-refresh', // matches the decrypted incoming value → no rotation
     });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     await runner.syncNextUser();
 
@@ -475,7 +477,7 @@ describe('SyncRunner.syncNextUser', () => {
     vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(credential({ consecutiveFailures: 3 }));
 
     mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     await runner.syncNextUser();
 
@@ -497,7 +499,7 @@ describe('SyncRunner.syncNextUser', () => {
     vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(credential());
 
     mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 3 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 3, skippedForeignLogs: 0 });
 
     const summary = await runner.syncNextUser();
 
@@ -552,6 +554,28 @@ describe('SyncRunner.syncNextUser', () => {
     expect(activeUpdate?.set.syncError).toBe(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR);
   });
 
+  it('clears a stored foreign-logbook code once a cycle finds no foreign logs (#6687)', async () => {
+    // The other account let go of the sends (support moved them, or it was
+    // deleted). PowerSync redelivers the whole logbook, so a zero count is the
+    // current state and the warning must go with it.
+    const runner = new SyncRunner();
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db, updates } = createDbShim();
+    vi.spyOn(privates, 'getClient').mockReturnValue({ client: {}, db });
+    vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(
+      credential({ syncError: FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR }),
+    );
+
+    mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
+
+    await runner.syncNextUser();
+
+    const activeUpdate = updates.find((u) => u.set.syncStatus === 'active');
+    expect(activeUpdate?.set.syncStatus).toBe('active');
+    expect(activeUpdate?.set.syncError).toBeNull();
+  });
+
   it('leaves sync_error null on a clean cycle', async () => {
     const runner = new SyncRunner();
     const privates = runner as unknown as SyncRunnerPrivates;
@@ -560,7 +584,7 @@ describe('SyncRunner.syncNextUser', () => {
     vi.spyOn(privates, 'getNextCredentialToSync').mockResolvedValue(credential());
 
     mockRefreshAccessToken.mockResolvedValue({ access_token: 'tok', expires_in: 300, token_type: 'Bearer' });
-    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0 });
+    mockSyncKilterUserData.mockResolvedValue({ skippedForeignCircuits: 0, skippedForeignLogs: 0 });
 
     await runner.syncNextUser();
 
