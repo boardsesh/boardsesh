@@ -179,7 +179,9 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
   only when it is that climb's. The status and queue item go to the rest timer (`lastTick`)
   and to the run's tick log. A tick on any other climb counts for no queue item, and leaves the
-  rest timer's last tick as it was: it says nothing about the climb on the wall.
+  rest timer's last tick as it was: it says nothing about the climb on the wall. A save started
+  on the previous climb keeps that climb's queue item when it finishes after the advance, but it
+  never replaces a tick the new climb already has, so the new climb still moves on at its rest.
 - **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute
   stage starting, or changing interval, starts its beat at that moment, so its first climb gets
   a whole interval. A new climb of a `tick` or `send` stage, or on the minute ending, clears

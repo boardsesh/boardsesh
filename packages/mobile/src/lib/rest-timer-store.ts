@@ -89,7 +89,8 @@ export type RestTimerState = {
   /**
    * The last tick this phone logged on a queue item while armed: its status and
    * that queue item. Cleared on arm, on disarm, and by a fire or a refilled queue
-   * that waits for the next tick, so one tick never moves the wall twice.
+   * that waits for the next tick, so one tick never moves the wall twice. A tick
+   * on another climb never replaces one on the climb on the wall.
    */
   lastTick: RestTimerLastTick | null;
 };
@@ -171,6 +172,24 @@ function tickAnchorMs(tickStartMs: number, nowMs: number): number {
 }
 
 /**
+ * The last tick after this one lands. A tick naming no queue item, or left out,
+ * keeps the last one. A tick on another queue item than the climb on the wall
+ * (`stagePacing.queueItemUuid`) keeps the last one too when that one is the
+ * wall's: a save started on the previous climb can finish after the advance,
+ * even after the new climb's own tick, and taking its place would leave the new
+ * climb never moving on under a tick or send rule until it was logged again.
+ * With no stage naming the climb on the wall (the climber's own settings, which
+ * advance on the deadline) every tick on a queue item replaces it, as before.
+ */
+function lastTickAfter(tick: RestTimerLastTick | undefined): RestTimerLastTick | null {
+  if (!tick || tick.queueItemUuid === null) return state.lastTick;
+  const onTheWall = state.stagePacing?.queueItemUuid ?? null;
+  const wallTickStands =
+    onTheWall !== null && tick.queueItemUuid !== onTheWall && state.lastTick?.queueItemUuid === onTheWall;
+  return wallTickStands ? state.lastTick : { status: tick.status, queueItemUuid: tick.queueItemUuid };
+}
+
+/**
  * A tick landed. `afterTick` re-anchors on it — that is the whole mode.
  * `onTheMinute` keeps its own beat and only adopts the tick as a starting
  * anchor if it somehow has none. Either way the anchor goes through
@@ -181,7 +200,9 @@ function tickAnchorMs(tickStartMs: number, nowMs: number): number {
  * Left out (a tick read back from the session after a cold start), or naming no
  * queue item (a climb from a list or the logbook), the last one this phone logged
  * stands: such a tick says nothing about the climb on the wall, so it must not
- * cancel an advance that climb already earned.
+ * cancel an advance that climb already earned. A late tick on the previous climb
+ * never takes the place of one the climb on the wall already earned either
+ * (`lastTickAfter`); it still goes through the anchor floor.
  */
 export function noteRestTimerTick(
   climbedAt: string,
@@ -191,8 +212,7 @@ export function noteRestTimerTick(
 ): void {
   if (!state.armed) return;
   const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const lastTick =
-    tick && tick.queueItemUuid !== null ? { status: tick.status, queueItemUuid: tick.queueItemUuid } : state.lastTick;
+  const lastTick = lastTickAfter(tick);
 
   if (mode === 'onTheMinute') {
     setState({

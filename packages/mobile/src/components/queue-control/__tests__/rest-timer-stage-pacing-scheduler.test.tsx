@@ -711,6 +711,78 @@ describe('the tick floor: a tick never starts a rest before the last advance or 
   });
 });
 
+describe('a late tick on the previous climb', () => {
+  it('never takes the place of the new climb’s own tick: b1 still moves on at its rest', () => {
+    startWorkout(FOUR_BY_FOUR, ['a1', 'b1', 'a2', 'b2']);
+    renderRuntime();
+    armTimer();
+    logTick('attempt');
+    // A second log on a1 starts saving 8 s in; the changeover moves the wall at 10 s.
+    advance(10_000);
+    expect(current()).toBe('b1');
+
+    advance(5_000);
+    logTick('attempt', 'b1');
+    // a1's save finishes now, 12 s after it started.
+    advance(5_000);
+    logTick('send', 'a1', 12_000);
+    expect(getRestTimerState().lastTick).toEqual({ status: 'attempt', queueItemUuid: 'b1' });
+
+    // b1 closes round 1: its 30 s round rest from its own tick, 15 s after the advance.
+    advance(24_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b1');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('a2');
+  });
+
+  it('in the other order, never walks b1 on by itself, and b1’s own tick still moves it on at its rest', () => {
+    startWorkout(FOUR_BY_FOUR, ['a1', 'b1', 'a2', 'b2']);
+    renderRuntime();
+    armTimer();
+    logTick('attempt');
+    advance(10_000);
+    expect(current()).toBe('b1');
+
+    // a1's late save lands first.
+    advance(2_000);
+    logTick('send', 'a1', 4_000);
+    advance(30_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b1');
+
+    logTick('attempt', 'b1');
+    advance(29_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('a2');
+  });
+
+  it('never takes the place of a send under limit bouldering either', () => {
+    startWorkout(LIMIT, ['l1', 'l2', 'hand-1']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(180_000);
+    expect(current()).toBe('l2');
+
+    advance(10_000);
+    logTick('send', 'l2');
+    // A fall on l1, saved before the advance, finishing 20 s after it.
+    advance(10_000);
+    logTick('attempt', 'l1', 25_000);
+
+    advance(169_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('l2');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('hand-1');
+  });
+});
+
 describe('the pacing sync', () => {
   it('never reads the queue without a workout, and leaves no stage behind one', () => {
     harness.settings = { ...harness.settings, restTimerAutoAdvance: true };

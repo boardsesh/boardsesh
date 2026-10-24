@@ -93,6 +93,44 @@ describe('the last tick', () => {
     expect(getRestTimerState().lastTick).toBeNull();
   });
 
+  it('keeps the wall climb’s tick when a late tick on the previous climb lands after it', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    applyRestTimerStagePacing({ ...LIMIT_STAGE, queueItemUuid: 'queue-2' }, T0, 'none');
+    noteRestTimerTick(tickAt(10), 'afterTick', T0 + 10_000, { status: 'send', queueItemUuid: 'queue-2' });
+
+    // A save started on queue-1 before the advance, finishing now.
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 20_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'queue-2' },
+      // It still goes through the anchor floor, and still shows as the last tick.
+      anchorMs: T0 + 10_000,
+      lastTickAt: tickAt(5),
+    });
+  });
+
+  it('takes a tick on another climb while the wall climb has none, and the wall climb’s own over it', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    applyRestTimerStagePacing({ ...LIMIT_STAGE, queueItemUuid: 'queue-2' }, T0, 'none');
+
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().lastTick).toEqual({ status: 'send', queueItemUuid: 'queue-1' });
+    noteRestTimerTick(tickAt(6), 'afterTick', T0 + 6_000, { status: 'attempt', queueItemUuid: 'queue-3' });
+    expect(getRestTimerState().lastTick).toEqual({ status: 'attempt', queueItemUuid: 'queue-3' });
+
+    noteRestTimerTick(tickAt(20), 'afterTick', T0 + 20_000, { status: 'attempt', queueItemUuid: 'queue-2' });
+    expect(getRestTimerState().lastTick).toEqual({ status: 'attempt', queueItemUuid: 'queue-2' });
+    // The wall climb's next tick replaces its own: a fall, then the send.
+    noteRestTimerTick(tickAt(90), 'afterTick', T0 + 90_000, { status: 'send', queueItemUuid: 'queue-2' });
+    expect(getRestTimerState().lastTick).toEqual({ status: 'send', queueItemUuid: 'queue-2' });
+  });
+
+  it('lets every tick on a queue item replace the last one while no stage names the climb on the wall', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-2' });
+    noteRestTimerTick(tickAt(9), 'afterTick', T0 + 9_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().lastTick).toEqual({ status: 'attempt', queueItemUuid: 'queue-1' });
+  });
+
   it('is forgotten on arm and on disarm, so an old tick never moves a new rest', () => {
     armRestTimer('afterTick', T0, 'session-1');
     noteRestTimerTick(tickAt(5), 'afterTick', T0 + 5_000, { status: 'send', queueItemUuid: 'queue-1' });

@@ -60,12 +60,13 @@ The advance rule:
 pure check; it only lets a tick count when it was logged against the queue item on the wall, so a
 tick on the previous climb, or one from a list, never lights the next.
 
-The scheduler asks `restAdvanceAllowed` when it schedules and again when the timeout fires, with
-the store's `lastTick`. A tick that counts for no queue item leaves `lastTick` as it was, so it
-never cancels an advance the climb on the wall already earned. A refilled queue under a tick rule
-also waits for the next tick and forgets the last one, as the fire does
-(`clearRestTimerQueueEnded` with `anchorAfterFire`): that tick's rest already ran out at the dead
-end.
+The scheduler asks `restAdvanceAllowed` when it schedules and again when the timeout fires, with the
+store's `lastTick`. A tick that counts for no queue item leaves `lastTick` as it was, so it never
+cancels an advance the climb on the wall already earned. Nor does a late tick on another queue item:
+a save started on the previous climb that finishes after the advance never replaces a tick the climb
+on the wall (`stagePacing.queueItemUuid`) already has. A refilled queue under a tick rule also waits
+for the next tick and forgets the last one, as the fire does (`clearRestTimerQueueEnded` with
+`anchorAfterFire`): that tick's rest already ran out at the dead end.
 
 A tick never starts a rest earlier than the rest already running or the last advance, and never
 in the future (`noteRestTimerTick`'s floor:
