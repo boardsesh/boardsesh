@@ -104,15 +104,27 @@ The climber's music:
   category, which is what `playsInSilentMode` selects, so the beep also plays through the silent
   switch. If the mode cannot be set, that beep is skipped: the default session would stop the
   music.
-- Both players are made with `keepAudioSessionActive`, so a countdown keeps the session from its
-  first tick to its final tone and the music dips once, not once a second. 1.2 s after the last
-  beep (`SOUND_SESSION_IDLE_MS`), `setIsAudioActiveAsync(false)` hands the session back and the
-  music returns to full volume. Leaving the foreground hands it back at once.
+- Both players are made with `keepAudioSessionActive`. On iOS a countdown keeps the session from
+  its first tick to its final tone, so the music dips once, not once a second. 1.2 s after the
+  last beep (`SOUND_SESSION_IDLE_MS`), `setIsAudioActiveAsync(false)` hands the session back and
+  the music returns to full volume. Leaving the foreground hands it back at once.
+- Android is different. expo-audio 57.0.5 takes `keepAudioSessionActive` and never uses it, and
+  gives up audio focus as soon as no player is playing. So on Android the music dips under each
+  beep and comes back between ticks: a countdown makes it pump once a second. That is expected,
+  not a bug.
+- Coming back to the foreground hands the session back once more, 1.2 s later, when the last
+  hand-back happened while the app was away: in the background, or inactive through a phone call.
+  iOS expo-audio turns the session back on by itself at those moments. It resumes the rest of a
+  tone it paused on the way out, and it reactivates the session when a call ends. Without this
+  the music would stay dipped until the next rest's beeps.
 - After a hand-back, the next beep calls `setIsAudioActiveAsync(true)` first. Android refuses
   every play until audio is turned back on; on iOS `play()` reactivates the session anyway.
 - Native calls run one at a time, in order, and each gets 1 s to answer
   (`SOUND_NATIVE_CALL_DEADLINE_MS`), so one stuck call costs one beep, not every beep after it.
   Each failing step (`create`, `play`, `release`) reports once per app run, as a warning.
+- A player that cannot be built throws (after its report) instead of returning null, so the cue
+  module builds a fresh one on the next cue. If the tick player was built and the final one
+  failed, the tick player is removed first.
 - Foreground only. The JavaScript timers that fire the cues stop in the background anyway, and a
   locked-phone alert is #6530's local notification.
 
@@ -137,8 +149,19 @@ To change one, regenerate it with the same parameters and check the length still
 `SOUND_SESSION_IDLE_MS`.
 
 Testing: the iOS simulator plays the beeps through the Mac's speakers, but its screen recordings
-are silent. Ducking another app's music, the silent switch and Bluetooth headphones can only be
-checked on a phone.
+are silent. These can only be checked on a phone:
+
+- Ducking another app's music, and the music coming back about a second after the final tone.
+- Android: the music pumps once per tick through a countdown. Expected.
+- Locking the phone during the final tone, then unlocking: the music is back to full volume about
+  a second later.
+- A phone call during a countdown: after hanging up, the music is back to full volume.
+- The silent switch, and Bluetooth headphones.
+
+The beep is on by default and plays through the silent switch, so the Sound switch on
+Settings › Timers is the only way to mute it. The `[native-train]` PR therefore merges into
+`release/next` only after the Timers page is on `main` and the Release Train Sync has brought it
+into the train.
 
 ## Which phone moves the wall
 

@@ -3,6 +3,7 @@ import type { AudioPlayer } from 'expo-audio';
 
 const platform = vi.hoisted(() => ({ os: 'ios' as string }));
 const appState = vi.hoisted(() => ({
+  currentState: 'active',
   listeners: [] as Array<(nextState: string) => void>,
   addEventListener: vi.fn(),
 }));
@@ -14,7 +15,12 @@ vi.mock('react-native', () => ({
       return platform.os;
     },
   },
-  AppState: { addEventListener: appState.addEventListener },
+  AppState: {
+    get currentState() {
+      return appState.currentState;
+    },
+    addEventListener: appState.addEventListener,
+  },
 }));
 
 vi.mock('../error-reporting', () => ({ reportHandledError: reporting.reportHandledError }));
@@ -36,7 +42,10 @@ type FakeAudio = {
   audio: ExpoAudio;
   /** Every native call, in the order the sink made it. */
   nativeCalls: string[];
-  players: Record<PlayerName, { seekTo: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> }>;
+  players: Record<
+    PlayerName,
+    { seekTo: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }
+  >;
   setAudioModeAsync: ReturnType<typeof vi.fn>;
   setIsAudioActiveAsync: ReturnType<typeof vi.fn>;
   createAudioPlayer: ReturnType<typeof vi.fn>;
@@ -50,6 +59,9 @@ function makeFakeAudio(): FakeAudio {
     }),
     play: vi.fn(() => {
       nativeCalls.push(`play ${name}`);
+    }),
+    remove: vi.fn(() => {
+      nativeCalls.push(`remove ${name}`);
     }),
   });
   const players = { tick: makePlayer('tick'), final: makePlayer('final') };
@@ -94,7 +106,9 @@ async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
 }
 
+/** React Native updates `currentState` before it tells the listeners. */
 function emitAppState(nextState: string): void {
+  appState.currentState = nextState;
   for (const listener of appState.listeners) listener(nextState);
 }
 
@@ -109,6 +123,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   platform.os = 'ios';
+  appState.currentState = 'active';
   appState.listeners = [];
   appState.addEventListener.mockImplementation((_event: string, listener: (nextState: string) => void) => {
     appState.listeners.push(listener);
@@ -190,20 +205,52 @@ describe('createSoundPlayer', () => {
     expect(fake.setIsAudioActiveAsync).not.toHaveBeenCalled();
   });
 
-  it('returns null and reports once when expo-audio cannot build a player', () => {
+  // ./rest-timer-cues keeps a null as "no sound" for the app run, and builds a
+  // fresh player on the next cue only after a throw.
+  it('throws, and reports once, when expo-audio cannot build a player', () => {
     const fake = makeFakeAudio();
     fake.createAudioPlayer.mockImplementation(() => {
       throw new Error('asset missing');
     });
     installBindings(fake);
 
-    expect(createSoundPlayer()).toBeNull();
-    expect(createSoundPlayer()).toBeNull();
+    expect(() => createSoundPlayer()).toThrow('asset missing');
+    expect(() => createSoundPlayer()).toThrow('asset missing');
     expect(reporting.reportHandledError).toHaveBeenCalledTimes(1);
     expect(reporting.reportHandledError).toHaveBeenCalledWith(
       expect.any(Error),
       expect.objectContaining({ level: 'warning', tags: { source: 'rest-timer-sound', step: 'create' } }),
     );
+    expect(appState.addEventListener).not.toHaveBeenCalled();
+  });
+
+  it('throws when expo-audio itself cannot load', () => {
+    const fake = makeFakeAudio();
+    const bindings = installBindings(fake);
+    bindings.loadExpoAudio.mockImplementation(() => {
+      throw new Error('ExpoAudio init failed');
+    });
+
+    expect(() => createSoundPlayer()).toThrow('ExpoAudio init failed');
+    expect(reporting.reportHandledError).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the tick player when the final one cannot be built, then builds a fresh pair', () => {
+    const fake = makeFakeAudio();
+    const tickPlayer = fake.players.tick;
+    fake.createAudioPlayer
+      .mockImplementationOnce(() => tickPlayer as unknown as AudioPlayer)
+      .mockImplementationOnce(() => {
+        throw new Error('asset missing');
+      });
+    installBindings(fake);
+
+    expect(() => createSoundPlayer()).toThrow('asset missing');
+    expect(tickPlayer.remove).toHaveBeenCalledTimes(1);
+
+    fake.createAudioPlayer.mockImplementation(() => tickPlayer as unknown as AudioPlayer);
+    expect(createSoundPlayer()).not.toBeNull();
+    expect(fake.createAudioPlayer).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -377,6 +424,17 @@ describe('handing the session back', () => {
     expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('hands back a beep still queued when the app goes to the background', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('tick');
+    emitAppState('background');
+    await settle();
+
+    expect(fake.nativeCalls).toEqual(['set audio mode', 'seek tick 0', 'play tick', 'audio off']);
+  });
+
   it('has nothing to hand back when no beep has played', async () => {
     const fake = makeFakeAudio();
     makePlayer(fake);
@@ -397,5 +455,120 @@ describe('handing the session back', () => {
     await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
 
     expect(fake.setIsAudioActiveAsync).not.toHaveBeenCalled();
+  });
+});
+
+// expo-audio turns the session back on behind the sink's back: iOS resumes a
+// player it paused on the way out, and reactivates the session after a call.
+describe('coming back to the foreground', () => {
+  it('hands the session back once more, SOUND_SESSION_IDLE_MS after a background hand-back', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('final');
+    await settle();
+    emitAppState('inactive');
+    emitAppState('background');
+    await settle();
+    expect(fake.setIsAudioActiveAsync.mock.calls).toEqual([[false]]);
+
+    emitAppState('active');
+    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS - 1);
+    expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.setIsAudioActiveAsync.mock.calls).toEqual([[false], [false]]);
+
+    // Once per trip away, not on every later return.
+    emitAppState('inactive');
+    emitAppState('active');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks the background hand-back even when the app is back before it runs', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('final');
+    await settle();
+    emitAppState('background');
+    emitAppState('active');
+    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+
+    expect(fake.setIsAudioActiveAsync.mock.calls).toEqual([[false], [false]]);
+  });
+
+  // A phone call keeps the app inactive; the idle hand-back lands during it.
+  it('hands the session back once more after an idle hand-back that landed while inactive', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('tick');
+    await settle();
+    emitAppState('inactive');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    expect(fake.setIsAudioActiveAsync.mock.calls).toEqual([[false]]);
+
+    emitAppState('active');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    expect(fake.setIsAudioActiveAsync.mock.calls).toEqual([[false], [false]]);
+  });
+
+  it('makes no native call on a return when the session was handed back in the foreground', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('tick');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(1);
+
+    emitAppState('inactive');
+    emitAppState('active');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    expect(fake.setIsAudioActiveAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the hand-back to a beep asked for right after the return', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('tick');
+    await settle();
+    emitAppState('background');
+    await settle();
+    emitAppState('active');
+    player.play('final');
+    await settle();
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+
+    expect(fake.nativeCalls).toEqual([
+      'set audio mode',
+      'seek tick 0',
+      'play tick',
+      'audio off',
+      'audio on',
+      'seek final 0',
+      'play final',
+      'audio off',
+    ]);
+  });
+
+  it('turns audio back on before the first beep after the extra hand-back', async () => {
+    const fake = makeFakeAudio();
+    const player = makePlayer(fake);
+
+    player.play('final');
+    await settle();
+    emitAppState('background');
+    await settle();
+    emitAppState('active');
+    await vi.advanceTimersByTimeAsync(SOUND_SESSION_IDLE_MS);
+    player.play('tick');
+    await settle();
+
+    expect(fake.nativeCalls.slice(-4)).toEqual(['audio off', 'audio on', 'seek tick 0', 'play tick']);
   });
 });

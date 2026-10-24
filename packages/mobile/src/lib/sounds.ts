@@ -17,10 +17,13 @@
 // audio mode is set once to `duckOthers`: their music dips under the beep and
 // keeps playing. iOS only ducks from the `.playback` category
 // (`playsInSilentMode: true`), so the beep also plays through the silent switch,
-// which is what a rest timer is for. The players keep the session active between
-// beeps, so a countdown dips the music once rather than once a second, and
-// SOUND_SESSION_IDLE_MS after the last beep `setIsAudioActiveAsync(false)` hands
-// it back. Leaving the foreground hands it back at once. Nothing plays in the
+// which is what a rest timer is for. On iOS the players keep the session active
+// between beeps, so a countdown dips the music once rather than once a second,
+// and SOUND_SESSION_IDLE_MS after the last beep `setIsAudioActiveAsync(false)`
+// hands it back. Android's expo-audio ignores `keepAudioSessionActive` and gives
+// up audio focus as each beep ends, so there the music dips once per tick.
+// Leaving the foreground hands the session back at once, and coming back hands
+// it back once more (see the AppState listener). Nothing plays in the
 // background: the binary has no `audio` background mode.
 
 import { AppState, Platform } from 'react-native';
@@ -69,8 +72,8 @@ const CUE_AUDIO_MODE: Partial<ExpoAudioModule.AudioMode> = {
 
 /**
  * How long after the last beep the session is handed back. Longer than the
- * 450 ms final tone, and longer than the 1 s between countdown ticks, so a
- * countdown holds the dip from its first tick to its final tone.
+ * 450 ms final tone, and longer than the 1 s between countdown ticks, so on iOS
+ * a countdown holds the dip from its first tick to its final tone.
  */
 export const SOUND_SESSION_IDLE_MS = 1200;
 
@@ -105,14 +108,19 @@ export function isSoundSupported(): boolean {
   return soundSupported;
 }
 
-/** A player for the cue sounds, or null where there is none. */
+/**
+ * A player for the cue sounds, or null on a binary that has none. Throws when
+ * this binary has sound but the player could not be built: null would be kept
+ * as "no sound" for the app run, and a throw lets ./rest-timer-cues build a
+ * fresh one on the next cue.
+ */
 export function createSoundPlayer(): SoundPlayer | null {
   if (!isSoundSupported()) return null;
   try {
     return createCueSoundPlayer(bindings.loadExpoAudio());
   } catch (error) {
     reportSoundFailure('create', error);
-    return null;
+    throw error;
   }
 }
 
@@ -157,13 +165,30 @@ async function withDeadline<Result>(call: Promise<Result>): Promise<Result> {
   }
 }
 
+/**
+ * Both load now, on the first cue that wants a sound, so the second beep and
+ * every one after it starts from a loaded file. If the second cannot be built
+ * the first is removed, since the caller builds a fresh pair on its next cue.
+ */
+function loadCuePlayers(audio: ExpoAudio): Readonly<Record<CueSound, ExpoAudioModule.AudioPlayer>> {
+  const tickPlayer = audio.createAudioPlayer(SOUND_SOURCES.tick, { keepAudioSessionActive: true });
+  try {
+    return {
+      tick: tickPlayer,
+      final: audio.createAudioPlayer(SOUND_SOURCES.final, { keepAudioSessionActive: true }),
+    };
+  } catch (error) {
+    try {
+      tickPlayer.remove();
+    } catch {
+      // The build failure is the one worth reporting.
+    }
+    throw error;
+  }
+}
+
 function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
-  // Both load now, on the first cue that wants a sound, so the second beep and
-  // every one after it starts from a loaded file.
-  const players: Readonly<Record<CueSound, ExpoAudioModule.AudioPlayer>> = {
-    tick: audio.createAudioPlayer(SOUND_SOURCES.tick, { keepAudioSessionActive: true }),
-    final: audio.createAudioPlayer(SOUND_SOURCES.final, { keepAudioSessionActive: true }),
-  };
+  const players = loadCuePlayers(audio);
 
   let audioModeSet = false;
   // Whether this sink may be holding the audio session (iOS) or audio focus (Android).
@@ -173,6 +198,11 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
   let releasedSinceLastPlay = false;
   // Bumped by every play request, so a release armed before it knows to stand down.
   let playRequestCount = 0;
+  // Set by a hand-back while the app is not in the foreground. expo-audio can
+  // turn the session back on behind this sink's back: iOS resumes a player it
+  // paused on the way out, and reactivates the session when a phone call ends.
+  // Coming back to the foreground then hands it back once more.
+  let handedBackWhileAway = false;
   let idleReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   // Native calls run one at a time and in order, so a release never lands
   // between turning audio back on and the play it was for.
@@ -189,11 +219,29 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
     }
   }
 
-  async function releaseSession(): Promise<void> {
+  async function releaseSession(leavingForeground = false): Promise<void> {
     if (!holdsSession) return;
     holdsSession = false;
     releasedSinceLastPlay = true;
+    // The background hand-back is marked even if the app is already back by
+    // the time it runs. An idle one counts when it lands while the app is
+    // inactive, as it is through a phone call.
+    if (leavingForeground || AppState.currentState !== 'active') handedBackWhileAway = true;
     await withDeadline(audio.setIsAudioActiveAsync(false));
+  }
+
+  function handBackAgainAfterReturn(): void {
+    const requestNumber = playRequestCount;
+    enqueue('release', async () => {
+      if (!handedBackWhileAway) return;
+      handedBackWhileAway = false;
+      // A beep asked for since the return arms its own hand-back.
+      if (requestNumber !== playRequestCount) return;
+      // If nothing turned the session back on, this costs one native call
+      // that turns off audio already off.
+      holdsSession = true;
+      armIdleRelease(requestNumber);
+    });
   }
 
   function armIdleRelease(requestNumber: number): void {
@@ -211,9 +259,13 @@ function createCueSoundPlayer(audio: ExpoAudio): SoundPlayer {
   }
 
   AppState.addEventListener('change', (nextState) => {
-    if (nextState !== 'background' || !holdsSession) return;
-    cancelIdleRelease();
-    enqueue('release', releaseSession);
+    if (nextState === 'background') {
+      cancelIdleRelease();
+      // Queued, not checked here: a beep already queued holds the session by the time this runs.
+      enqueue('release', () => releaseSession(true));
+    } else if (nextState === 'active') {
+      handBackAgainAfterReturn();
+    }
   });
 
   return {
